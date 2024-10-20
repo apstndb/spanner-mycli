@@ -44,7 +44,7 @@ const (
 	DisplayModeTab
 
 	defaultPrompt      = `spanner\t> `
-	defaultHistoryFile = `/tmp/spanner_cli_readline.tmp`
+	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
 
 	exitCodeSuccess = 0
 	exitCodeError   = 1
