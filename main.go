@@ -137,7 +137,7 @@ func exitf(format string, a ...interface{}) {
 	os.Exit(1)
 }
 
-const cnfFileName = ".spanner_cli.cnf"
+const cnfFileName = ".spanner_mycli.cnf"
 
 func readConfigFile(parser *flags.Parser) error {
 	var cnfFiles []string
