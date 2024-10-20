@@ -30,7 +30,6 @@ import (
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
-	"github.com/cloudspannerecosystem/memefish/token"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 )
@@ -1195,7 +1194,7 @@ func logParseStatement(stmt string) {
 	if !logMemefish {
 		return
 	}
-	n, err := newParser("", stmt).ParseStatement()
+	n, err := memefish.ParseStatement("", stmt)
 	if err != nil {
 		log.Printf("SQL can't parsed as a statement, err: %v", err)
 	} else {
@@ -1206,16 +1205,5 @@ func logParseStatement(stmt string) {
 func logParseStatements(stmts []string) {
 	for _, stmt := range stmts {
 		logParseStatement(stmt)
-	}
-}
-
-func newParser(filepath, s string) *memefish.Parser {
-	return &memefish.Parser{
-		Lexer: &memefish.Lexer{
-			File: &token.File{
-				FilePath: filepath,
-				Buffer:   s,
-			},
-		},
 	}
 }
