@@ -42,12 +42,15 @@ type spannerOptions struct {
 	Verbose      bool   `short:"v" long:"verbose" description:"Display verbose output."`
 	Credential   string `long:"credential" description:"Use the specific credential file"`
 	Prompt       string `long:"prompt" description:"Set the prompt to the specified format"`
+	LogMemefish  bool   `long:"log-memefish" description:"Emit SQL parse log using memefish"`
 	HistoryFile  string `long:"history" description:"Set the history file to the specified path"`
 	Priority     string `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role         string `long:"role" description:"Use the specific database role"`
 	Endpoint     string `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
 	DirectedRead string `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
 }
+
+var logMemefish bool
 
 func main() {
 	var gopts globalOptions
@@ -63,6 +66,9 @@ func main() {
 	}
 
 	opts := gopts.Spanner
+
+	logMemefish = opts.LogMemefish
+
 	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}

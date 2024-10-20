@@ -1192,6 +1192,9 @@ func parsePriority(priority string) (pb.RequestOptions_Priority, error) {
 }
 
 func logParseStatement(stmt string) {
+	if !logMemefish {
+		return
+	}
 	n, err := newParser("", stmt).ParseStatement()
 	if err != nil {
 		log.Printf("SQL can't parsed as a statement, err: %v, SQL: %v", err, stmt)
