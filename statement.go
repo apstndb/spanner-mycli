@@ -1197,7 +1197,7 @@ func logParseStatement(stmt string) {
 	}
 	n, err := newParser("", stmt).ParseStatement()
 	if err != nil {
-		log.Printf("SQL can't parsed as a statement, err: %v, SQL: %v", err, stmt)
+		log.Printf("SQL can't parsed as a statement, err: %v", err)
 	} else {
 		log.Printf("parsed: %v", n.SQL())
 	}
