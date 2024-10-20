@@ -1,13 +1,11 @@
-spanner-cli [![run-tests](https://github.com/cloudspannerecosystem/spanner-cli/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/cloudspannerecosystem/spanner-cli/actions/workflows/run-tests.yaml)
+spanner-mycli [![run-tests](https://github.com/apstndb/spanner-my-cli/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/cloudspannerecosystem/spanner-my-cli/actions/workflows/run-tests.yaml)
 ===
 
-Interactive command line tool for Cloud Spanner.
-
-![gif](https://github.com/cloudspannerecosystem/spanner-cli/blob/master/image/spanner_cli.gif)
+My personal fork of spanner-cli, interactive command line tool for Cloud Spanner.
 
 ## Description
 
-`spanner-cli` is an interactive command line tool for [Google Cloud Spanner](https://cloud.google.com/spanner/).  
+`spanner-mycli` is an interactive command line tool for [Google Cloud Spanner](https://cloud.google.com/spanner/).  
 You can control your Spanner databases with idiomatic SQL commands.
 
 ## Install
@@ -16,25 +14,22 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 ```
 # For Go 1.16+
-go install github.com/cloudspannerecosystem/spanner-cli@latest
-
-# For Go <1.16
-go get -u github.com/cloudspannerecosystem/spanner-cli
+go install github.com/apstndb/spanner-mycli@latest
 ```
 
 Or you can build a docker image.
 
 ```
-git clone https://github.com/cloudspannerecosystem/spanner-cli.git
-cd spanner-cli
-docker build -t spanner-cli .
+git clone https://github.com/apstndb/spanner-mycli.git
+cd spanner-mycli
+docker build -t spanner-mycli .
 ```
 
 ## Usage
 
 ```
 Usage:
-  spanner-cli [OPTIONS]
+  spanner-mycli [OPTIONS]
 
 spanner:
   -p, --project=       (required) GCP Project ID. [$SPANNER_PROJECT_ID]
@@ -62,13 +57,13 @@ Unless you specify a credential file with `--credential`, this tool uses [Applic
 
 Please make sure to prepare your credential by `gcloud auth application-default login`.
 
-If you're running spanner-cli in docker container on your local machine, you have to pass local credentials to the container with the following command.
+If you're running spanner-mycli in docker container on your local machine, you have to pass local credentials to the container with the following command.
 
 ```
 docker run -it \
   -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json \
   -v $HOME/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro \
-  spanner-cli --help
+  spanner-mycli --help
 ```
 
 ## Example
@@ -76,7 +71,7 @@ docker run -it \
 ### Interactive mode
 
 ```
-$ spanner-cli -p myproject -i myinstance -d mydb
+$ spanner-mycli -p myproject -i myinstance -d mydb
 Connected.
 spanner> CREATE TABLE users (
       ->   id INT64 NOT NULL,
@@ -134,10 +129,10 @@ Bye
 
 ### Batch mode
 
-By passing SQL from standard input, `spanner-cli` runs in batch mode.
+By passing SQL from standard input, `spanner-mycli` runs in batch mode.
 
 ```
-$ echo 'SELECT * FROM users;' | spanner-cli -p myproject -i myinstance -d mydb
+$ echo 'SELECT * FROM users;' | spanner-mycli -p myproject -i myinstance -d mydb
 id      name    active
 1       foo     true
 2       bar     false
@@ -146,7 +141,7 @@ id      name    active
 You can also pass SQL with command line option `-e`.
 
 ```
-$ spanner-cli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 id      name    active
 1       foo     true
 2       bar     false
@@ -155,7 +150,7 @@ id      name    active
 With `-t` option, results are displayed in table format.
 
 ```
-$ spanner-cli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
@@ -166,8 +161,8 @@ $ spanner-cli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 
 ### Directed reads mode
 
-spanner-cli now supports directed reads, a feature that allows you to read data from a specific replica of a Spanner database. 
-To use directed reads with spanner-cli, you need to specify the `--directed-read` flag.
+spanner-mycli now supports directed reads, a feature that allows you to read data from a specific replica of a Spanner database. 
+To use directed reads with spanner-mycli, you need to specify the `--directed-read` flag.
 The `--directed-read` flag takes a single argument, which is the name of the replica that you want to read from.
 The replica name can be specified in one of the following formats:
 
@@ -178,11 +173,11 @@ The `<replica_location>` specifies the region where the replica is located such 
 The `<replica_type>` specifies the type of the replica either `READ_WRITE` or `READ_ONLY`. 
  
 ```
-$ spanner-cli -p myproject -i myinstance -d mydb --directed-read us-central1
+$ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1
 
-$ spanner-cli -p myproject -i myinstance -d mydb --directed-read us-central1:READ_ONLY
+$ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1:READ_ONLY
 
-$ spanner-cli -p myproject -i myinstance -d mydb --directed-read asia-northeast2:READ_WRITE
+$ spanner-mycli -p myproject -i myinstance -d mydb --directed-read asia-northeast2:READ_WRITE
 ```
 
 Directed reads are only effective for single queries or queries within a read-only transaction.
@@ -256,7 +251,7 @@ Variables:
 Example:
 
 ```
-$ spanner-cli -p myproject -i myinstance -d mydb --prompt='[\p:\i:\d]\t> '
+$ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[\p:\i:\d]\t> '
 Connected.
 [myproject:myinstance:mydb]> SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
@@ -277,8 +272,8 @@ The default prompt is `spanner\t> `.
 
 ## Config file
 
-This tool supports a configuration file called `spanner_cli.cnf`, similar to `my.cnf`.  
-The config file path must be `~/.spanner_cli.cnf`.  
+This tool supports a configuration file called `spanner_mycli.cnf`, similar to `my.cnf`.  
+The config file path must be `~/.spanner_mycli.cnf`.  
 In the config file, you can set default option values for command line options.
 
 Example:
@@ -294,8 +289,8 @@ prompt = "[\\p:\\i:\\d]\\t> "
 
 1. Command line flags(highest)
 2. Environment variables
-3. `.spanner_cli.cnf` in current directory
-4. `.spanner_cli.cnf` in home directory(lowest)
+3. `.spanner_mycli.cnf` in current directory
+4. `.spanner_mycli.cnf` in home directory(lowest)
 
 ## Request Priority
 
@@ -327,7 +322,7 @@ Note that transaction-level priority takes precedence over command-level priorit
 ## Transaction Tags and Request Tags
 
 In a read-write transaction, you can add a tag following `BEGIN RW TAG <tag>`.
-spanner-cli adds the tag set in `BEGIN RW TAG` as a transaction tag.
+spanner-mycli adds the tag set in `BEGIN RW TAG` as a transaction tag.
 The tag will also be used as request tags within the transaction.
 
 ```
@@ -349,7 +344,7 @@ The tag will also be used as request tags within the transaction.
 ```
 
 In a read-only transaction, you can add a tag following `BEGIN RO TAG <tag>`.
-Since read-only transaction doesn't support transaction tag, spanner-cli adds the tag set in `BEGIN RO TAG` as request tags.
+Since read-only transaction doesn't support transaction tag, spanner-mycli adds the tag set in `BEGIN RO TAG` as request tags.
 ```
 # Read-only transaction
 # transaction_tag = N/A
@@ -373,7 +368,7 @@ $ export SPANNER_EMULATOR_HOST=localhost:9010
 # Or with gcloud env-init:
 $ $(gcloud emulators spanner env-init)
 
-$ spanner-cli -p myproject -i myinstance -d mydb
+$ spanner-mycli -p myproject -i myinstance -d mydb
 ```
 
 ## How to develop
@@ -398,4 +393,4 @@ $ PROJECT=${PROJECT_ID} INSTANCE=${INSTANCE_ID} DATABASE=${DATABASE_ID} CREDENTI
 
 Do not use this tool for production databases as the tool is still alpha quality.
 
-Please feel free to report issues and send pull requests, but note that this application is not officially supported as part of the Cloud Spanner product.
+Generally, this project don't accept feature requests, please contact the original [spanner-cli](https://github.com/cloudspannerecosystem/spanner-cli).
