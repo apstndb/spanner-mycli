@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,6 +29,8 @@ import (
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 )
@@ -403,6 +406,7 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Resu
 }
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
+	logParseStatements(ddls)
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:   session.DatabasePath(),
 		Statements: ddls,
@@ -1184,5 +1188,31 @@ func parsePriority(priority string) (pb.RequestOptions_Priority, error) {
 		return pb.RequestOptions_PRIORITY_LOW, nil
 	default:
 		return pb.RequestOptions_PRIORITY_UNSPECIFIED, fmt.Errorf("invalid priority: %q", priority)
+	}
+}
+
+func logParseStatement(stmt string) {
+	n, err := newParser("", stmt).ParseStatement()
+	if err != nil {
+		log.Printf("SQL can't parsed as a statement, err: %v, SQL: %v", err, stmt)
+	} else {
+		log.Printf("parsed: %v", n.SQL())
+	}
+}
+
+func logParseStatements(stmts []string) {
+	for _, stmt := range stmts {
+		logParseStatement(stmt)
+	}
+}
+
+func newParser(filepath, s string) *memefish.Parser {
+	return &memefish.Parser{
+		Lexer: &memefish.Lexer{
+			File: &token.File{
+				FilePath: filepath,
+				Buffer:   s,
+			},
+		},
 	}
 }
