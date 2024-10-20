@@ -261,6 +261,7 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	logParseStatement(stmt.SQL)
 	if s.InReadWriteTransaction() {
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
@@ -283,6 +284,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 // It returns error if there is no running read-write transaction.
 // useUpdate flag enforce to use Update function internally and disable `THEN RETURN` result printing.
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpdate bool) ([]Row, []string, int64, *pb.ResultSetMetadata, error) {
+	logParseStatement(stmt.SQL)
 	if !s.InReadWriteTransaction() {
 		return nil, nil, 0, nil, errors.New("read-write transaction is not running")
 	}
