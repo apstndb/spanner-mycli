@@ -30,8 +30,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/chzyer/readline"
 	"github.com/olekukonko/tablewriter"
+	"github.com/reeflective/readline"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 )
@@ -103,13 +103,23 @@ func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, crede
 }
 
 func (c *Cli) RunInteractive() int {
-	rl, err := readline.NewEx(&readline.Config{
-		Stdin:       c.InStream,
-		HistoryFile: c.HistoryFile,
-	})
-	if err != nil {
-		return c.ExitOnError(err)
+	shell := readline.NewShell()
+	shell.AcceptMultiline = func(line []rune) (accept bool) {
+		statements := separateInput(string(line))
+		switch len(statements) {
+		case 0:
+			return false
+		case 1:
+			if statements[0].delim != delimiterUndefined {
+				return true
+			}
+		default:
+			return true
+		}
+		return false
 	}
+
+	shell.History.AddFromFile("history name", c.HistoryFile)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -123,9 +133,17 @@ func (c *Cli) RunInteractive() int {
 
 	for {
 		prompt := c.getInterpolatedPrompt()
-		rl.SetPrompt(prompt)
 
-		input, err := readInteractiveInput(rl, prompt)
+		shell.Prompt.Primary(func() string {
+			return prompt
+		})
+
+		// TODO: Currently not work
+		shell.Prompt.Secondary(func() string {
+			return "->"
+		})
+
+		input, err := readInteractiveInput(shell, prompt)
 		if err == io.EOF {
 			return c.Exit()
 		}
@@ -321,9 +339,7 @@ func createSession(projectId string, instanceId string, databaseId string, crede
 	return NewSession(projectId, instanceId, databaseId, priority, role, directedRead, opts...)
 }
 
-func readInteractiveInput(rl *readline.Instance, prompt string) (*inputStatement, error) {
-	defer rl.SetPrompt(prompt)
-
+func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {
 	var input string
 	for {
 		line, err := rl.Readline()
@@ -350,8 +366,9 @@ func readInteractiveInput(rl *readline.Instance, prompt string) (*inputStatement
 		if l := len(prompt); l >= 3 {
 			margin = strings.Repeat(" ", l-3)
 		}
-		rl.SetPrompt(margin + "-> ")
+		_ = margin
 	}
+
 }
 
 func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, verbose bool) {
