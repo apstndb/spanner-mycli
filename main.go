@@ -36,7 +36,7 @@ type spannerOptions struct {
 	ProjectId    string `short:"p" long:"project" env:"SPANNER_PROJECT_ID" description:"(required) GCP Project ID."`
 	InstanceId   string `short:"i" long:"instance" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
 	DatabaseId   string `short:"d" long:"database" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
-	Execute      string `short:"e" long:"execute" description:"Execute SQL statement and quit."`
+	Execute      string `short:"e" long:"execute" description:"Execute SQL statement and quit. --sql is an alias."`
 	File         string `short:"f" long:"file" description:"Execute SQL statement from file and quit."`
 	Table        bool   `short:"t" long:"table" description:"Display output in table format for batch mode."`
 	Verbose      bool   `short:"v" long:"verbose" description:"Display verbose output."`
@@ -48,6 +48,7 @@ type spannerOptions struct {
 	Role         string `long:"role" description:"Use the specific database role"`
 	Endpoint     string `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
 	DirectedRead string `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
+	SQL          string `long:"sql" description:"alias of --execute" hidden:"true"`
 }
 
 var logMemefish bool
@@ -73,9 +74,16 @@ func main() {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
-	if opts.File != "" && opts.Execute != "" {
-		exitf("Invalid combination: -e, -f are exclusive\n")
+	var cnt int
+	for _, b := range []bool{opts.File != "", opts.Execute != "", opts.SQL != ""} {
+		if b {
+			cnt += 1
+		}
 	}
+	if cnt > 1 {
+		exitf("Invalid combination: -e, -f, --sql are exclusive\n")
+	}
+
 	var cred []byte
 	if opts.Credential != "" {
 		var err error
@@ -107,9 +115,15 @@ func main() {
 		exitf("Failed to connect to Spanner: %v", err)
 	}
 
+	if opts.Execute != "" && opts.SQL != "" {
+		exitf("--execute and --sql are mutually exclusive\n")
+	}
+
 	var input string
 	if opts.Execute != "" {
 		input = opts.Execute
+	} else if opts.SQL != "" {
+		input = opts.SQL
 	} else if opts.File == "-" {
 		b, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
