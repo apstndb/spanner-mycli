@@ -15,6 +15,7 @@ type systemVariables struct {
 	ReadOnlyStaleness          *spanner.TimestampBound
 	ReadTimestamp              time.Time
 	OptimizerVersion           string
+	OptimizerStatisticsPackage string
 }
 
 var errIgnored = errors.New("ignored")
@@ -116,8 +117,16 @@ var accessorMap = map[string]accessor{
 			return this.OptimizerVersion, nil
 		},
 	},
-	"OPTIMIZER_STATISTICS_PACKAGE": {},
-	"RETURN_COMMIT_STATS":          {},
+	"OPTIMIZER_STATISTICS_PACKAGE": {
+		func(this *systemVariables, value string) error {
+			this.OptimizerStatisticsPackage = unquoteString(value)
+			return nil
+		},
+		func(this *systemVariables) (string, error) {
+			return this.OptimizerStatisticsPackage, nil
+		},
+	},
+	"RETURN_COMMIT_STATS": {},
 	"RPC_PRIORITY": {
 		func(this *systemVariables, value string) error {
 			s := unquoteString(value)

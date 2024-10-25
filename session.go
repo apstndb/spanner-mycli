@@ -261,17 +261,15 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	logParseStatement(stmt.SQL)
+
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
 
 	opts.Options.OptimizerVersion = s.systemVariables.OptimizerVersion
-	// opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
+	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
 
-	fmt.Println("runQueryWithOptions:", opts.Options)
-	fmt.Println("systemVariables.OptimizerVersion:", s.systemVariables.OptimizerVersion)
-
-	logParseStatement(stmt.SQL)
 	if s.InReadWriteTransaction() {
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
