@@ -42,3 +42,11 @@ jobs:
           PROJECT: fake-project
           INSTANCE: fake-instance
           DATABASE: fake-database
+      - name: make test with Cloud Spanner Emulator
+        run: make test
+        env:
+          SPANNER_EMULATOR_HOST: localhost:9010
+          SPANNER_EMULATOR_HOST_REST: localhost:9020
+          PROJECT: fake-project
+          INSTANCE: fake-instance
+          DATABASE: fake-database
