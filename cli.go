@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"os"
 	"os/signal"
@@ -229,8 +230,20 @@ func (c *Cli) RunInteractive() int {
 			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
 		}
 
-		if !result.Timestamp.IsZero() {
-			c.SystemVariables.ReadTimestamp = result.Timestamp
+		if result.UpdateVariables {
+			if result.IsMutation {
+				c.SystemVariables.ReadTimestamp = time.Time{}
+				c.SystemVariables.CommitTimestamp = result.Timestamp
+			} else {
+				c.SystemVariables.ReadTimestamp = result.Timestamp
+				c.SystemVariables.CommitTimestamp = time.Time{}
+			}
+
+			if result.CommitStats != nil {
+				c.SystemVariables.CommitResponse = &pb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+			} else {
+				c.SystemVariables.CommitResponse = nil
+			}
 		}
 
 		if input.delim == delimiterHorizontal {

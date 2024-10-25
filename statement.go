@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -64,6 +65,7 @@ type Result struct {
 	Timestamp        time.Time
 	ForceVerbose     bool
 	CommitStats      *sppb.CommitResponse_CommitStats
+	UpdateVariables  bool
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
 	ColumnTypes []*sppb.StructType_Field
@@ -263,8 +265,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	result := &Result{
-		ColumnNames: columnNames,
-		Rows:        rows,
+		ColumnNames:     columnNames,
+		Rows:            rows,
+		UpdateVariables: true,
 	}
 	result.ColumnTypes = iter.Metadata.GetRowType().GetFields()
 
@@ -437,38 +440,52 @@ type ShowVariableStatement struct {
 }
 
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	a, ok := accessorMap[s.VarName]
+	name := s.VarName
+	upperName := strings.ToUpper(name)
+	a, ok := accessorMap[upperName]
 	if !ok {
-		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
+		return nil, fmt.Errorf("unknown variable name: %v", name)
 	}
 	if a.Getter == nil {
-		return nil, fmt.Errorf("getter unimplemented: %v", s.VarName)
+		return nil, fmt.Errorf("getter unimplemented: %v", name)
 	}
 
-	value, err := a.Getter(session.systemVariables)
+	value, err := a.Getter(session.systemVariables, name)
 	if err != nil && !errors.Is(err, errIgnored) {
 		return nil, err
 	}
-	fmt.Println(value)
-	return &Result{}, nil
+
+	columnNames := slices.Sorted(maps.Keys(value))
+	var row []string
+	for n := range slices.Values(columnNames) {
+		row = append(row, value[n])
+	}
+	return &Result{ColumnNames: columnNames, Rows: []Row{{Columns: row}}}, nil
 }
 
 type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	var rows []Row
+	merged := make(map[string]string)
 	for k, v := range accessorMap {
 		if v.Getter == nil {
 			continue
 		}
-		value, err := v.Getter(session.systemVariables)
+		value, err := v.Getter(session.systemVariables, k)
 		if errors.Is(err, errIgnored) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, Row{Columns: []string{k, value}})
+		for k, v := range value {
+			merged[k] = v
+		}
+	}
+
+	var rows []Row
+	for k, v := range merged {
+		rows = append(rows, Row{sliceOf(k, v)})
 	}
 
 	slices.SortFunc(rows, func(a, b Row) int {
@@ -491,15 +508,17 @@ type SetStatement struct {
 }
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	a, ok := accessorMap[s.VarName]
+	name := s.VarName
+	upper := strings.ToUpper(name)
+	a, ok := accessorMap[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
+		return nil, fmt.Errorf("unknown variable name: %v", name)
 	}
 	if a.Setter == nil {
-		return nil, fmt.Errorf("setter unimplemented: %v", s.VarName)
+		return nil, fmt.Errorf("setter unimplemented: %v", name)
 	}
 
-	err := a.Setter(session.systemVariables, s.Value)
+	err := a.Setter(session.systemVariables, upper, s.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -926,7 +945,7 @@ type DmlStatement struct {
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	stmt := spanner.NewStatement(s.Dml)
 
-	result := &Result{IsMutation: true}
+	result := &Result{IsMutation: true, UpdateVariables: true}
 
 	var rows []Row
 	var columnNames []string

@@ -296,6 +296,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 // useUpdate flag enforce to use Update function internally and disable `THEN RETURN` result printing.
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpdate bool) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
 	logParseStatement(stmt.SQL)
+
 	if !s.InReadWriteTransaction() {
 		return nil, nil, 0, nil, errors.New("read-write transaction is not running")
 	}
