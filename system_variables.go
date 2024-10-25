@@ -1,13 +1,17 @@
 package main
 
 import (
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"strconv"
+	"fmt"
+	"regexp"
 	"strings"
+	"time"
 )
 
 type systemVariables struct {
-	RPCPriority sppb.RequestOptions_Priority
+	RPCPriority       sppb.RequestOptions_Priority
+	ReadOnlyStaleness *spanner.TimestampBound
 }
 
 type setter = func(this *systemVariables, value string) error
@@ -19,21 +23,91 @@ type accessor struct {
 	Getter getter
 }
 
+func unquoteString(s string) string {
+	return strings.Trim(s, `"'`)
+}
+
 var accessorMap = map[string]accessor{
-	"AUTOCOMMIT":                   {},
-	"RETRY_ABORTS_INTERNALLY":      {},
-	"AUTOCOMMIT_DML_MODE":          {},
-	"STATEMENT_TIMEOUT":            {},
-	"READ_ONLY_STALENESS":          {},
+	"AUTOCOMMIT":              {},
+	"RETRY_ABORTS_INTERNALLY": {},
+	"AUTOCOMMIT_DML_MODE":     {},
+	"STATEMENT_TIMEOUT":       {},
+	"READ_ONLY_STALENESS": {
+		func(this *systemVariables, value string) error {
+			s := unquoteString(value)
+
+			var staleness spanner.TimestampBound
+			switch {
+			case s == "STRONG":
+				staleness = spanner.StrongRead()
+			case strings.HasPrefix(s, "MIN_READ_TIMESTAMP ") || strings.HasPrefix(s, "READ_TIMESTAMP "):
+				var minReadTimestamp bool
+				if strings.HasPrefix(s, "MIN_") {
+					minReadTimestamp = true
+					s = strings.TrimPrefix(s, "MIN_")
+				}
+				ts, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(strings.TrimPrefix(s, "READ_TIMESTAMP ")))
+				if err != nil {
+					return err
+				}
+				if minReadTimestamp {
+					staleness = spanner.MinReadTimestamp(ts)
+				} else {
+					staleness = spanner.ReadTimestamp(ts)
+				}
+			case strings.HasPrefix(s, "MAX_STALENESS ") || strings.HasPrefix(s, "MIN_STALENESS "):
+				var maxStaleness bool
+				if strings.HasPrefix(s, "MAX_STALENESS ") {
+					maxStaleness = true
+					s = strings.TrimPrefix(s, "MAX_STALENESS ")
+				} else {
+					s = strings.TrimPrefix(s, "EXACT_STALENESS ")
+				}
+				ts, err := time.ParseDuration(strings.TrimSpace(s))
+				if err != nil {
+					return err
+				}
+				if maxStaleness {
+					staleness = spanner.MaxStaleness(ts)
+				} else {
+					staleness = spanner.ExactStaleness(ts)
+				}
+			}
+			this.ReadOnlyStaleness = &staleness
+			return nil
+		},
+		func(this *systemVariables) (string, error) {
+			if this.ReadOnlyStaleness == nil {
+				return "NULL", nil
+			}
+			s := this.ReadOnlyStaleness.String()
+			stalenessRe := regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
+			matches := stalenessRe.FindStringSubmatch(s)
+			if matches == nil {
+				return s, nil
+			}
+			switch matches[1] {
+			case "strong":
+				return "STRONG", nil
+			case "exactStaleness":
+				return fmt.Sprintf("EXACT_STALENESS %v", matches[2]), nil
+			case "maxStaleness":
+				return fmt.Sprintf("MAX_STALENESS %v", matches[2]), nil
+			case "readTimestamp":
+				return fmt.Sprintf("READ_TIMESTAMP %v", matches[2]), nil
+			case "minReadTimestamp":
+				return fmt.Sprintf("MIN_READ_TIMESTAMP %v", matches[2]), nil
+			default:
+				return s, nil
+			}
+		},
+	},
 	"OPTIMIZER_VERSION":            {},
 	"OPTIMIZER_STATISTICS_PACKAGE": {},
 	"RETURN_COMMIT_STATS":          {},
 	"RPC_PRIORITY": {
 		func(this *systemVariables, value string) error {
-			s, err := strconv.Unquote(value)
-			if err != nil {
-				return err
-			}
+			s := unquoteString(value)
 
 			p, err := parsePriority(s)
 			if err != nil {

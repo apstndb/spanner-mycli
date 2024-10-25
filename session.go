@@ -277,6 +277,9 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	}
 
 	txn := s.client.Single()
+	if s.systemVariables.ReadOnlyStaleness != nil {
+		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
+	}
 	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
 
