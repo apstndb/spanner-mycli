@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -445,7 +446,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}
 
 	value, err := a.Getter(session.systemVariables)
-	if err != nil {
+	if err != nil && !errors.Is(err, errIgnored) {
 		return nil, err
 	}
 	fmt.Println(value)
@@ -461,11 +462,25 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 			continue
 		}
 		value, err := v.Getter(session.systemVariables)
+		if errors.Is(err, errIgnored) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, Row{Columns: []string{k, value}})
 	}
+
+	slices.SortFunc(rows, func(a, b Row) int {
+		switch {
+		case a.Columns[0] == b.Columns[0]:
+			return 0
+		case a.Columns[0] < b.Columns[0]:
+			return -1
+		default:
+			return 1
+		}
+	})
 
 	return &Result{ColumnNames: []string{"name", "value"}, Rows: rows}, nil
 }

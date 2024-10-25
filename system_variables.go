@@ -3,6 +3,7 @@ package main
 import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,7 +13,10 @@ import (
 type systemVariables struct {
 	RPCPriority       sppb.RequestOptions_Priority
 	ReadOnlyStaleness *spanner.TimestampBound
+	ReadTimestamp     time.Time
 }
+
+var errIgnored = errors.New("ignored")
 
 type setter = func(this *systemVariables, value string) error
 
@@ -121,9 +125,18 @@ var accessorMap = map[string]accessor{
 			return strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_"), nil
 		},
 	},
-	"STATEMENT_TAG":    {},
-	"TRANSACTION_TAG":  {},
-	"READ_TIMESTAMP":   {},
+	"STATEMENT_TAG":   {},
+	"TRANSACTION_TAG": {},
+	"READ_TIMESTAMP": {
+		nil,
+		func(this *systemVariables) (string, error) {
+			ts := this.ReadTimestamp
+			if ts.IsZero() {
+				return "", errIgnored
+			}
+			return ts.Format(time.RFC3339Nano), nil
+		},
+	},
 	"COMMIT_TIMESTAMP": {},
 	"COMMIT_RESPONSE":  {},
 }

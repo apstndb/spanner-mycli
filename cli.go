@@ -229,6 +229,10 @@ func (c *Cli) RunInteractive() int {
 			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
 		}
 
+		if !result.Timestamp.IsZero() {
+			c.SystemVariables.ReadTimestamp = result.Timestamp
+		}
+
 		if input.delim == delimiterHorizontal {
 			c.PrintResult(result, DisplayModeTable, true)
 		} else {
@@ -256,6 +260,8 @@ func (c *Cli) RunBatch(input string, displayTable bool) int {
 			c.PrintBatchError(err)
 			return exitCodeError
 		}
+
+		c.SystemVariables.ReadTimestamp = result.Timestamp
 
 		if displayTable {
 			c.PrintResult(result, DisplayModeTable, false)
