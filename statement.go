@@ -437,6 +437,10 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
 	}
+	if a.Getter == nil {
+		return nil, fmt.Errorf("getter unimplemented: %v", s.VarName)
+	}
+
 	value, err := a.Getter(session.systemVariables)
 	if err != nil {
 		return nil, err
@@ -455,6 +459,10 @@ func (s *SetVariableStatement) Execute(ctx context.Context, session *Session) (*
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
 	}
+	if a.Setter == nil {
+		return nil, fmt.Errorf("setter unimplemented: %v", s.VarName)
+	}
+
 	err := a.Setter(session.systemVariables, s.Value)
 	if err != nil {
 		return nil, err

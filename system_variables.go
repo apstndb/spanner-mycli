@@ -10,9 +10,9 @@ type systemVariables struct {
 	RPCPriority sppb.RequestOptions_Priority
 }
 
-type setter func(this *systemVariables, value string) error
+type setter = func(this *systemVariables, value string) error
 
-type getter func(this *systemVariables) (string, error)
+type getter = func(this *systemVariables) (string, error)
 
 type accessor struct {
 	Setter setter
@@ -20,6 +20,14 @@ type accessor struct {
 }
 
 var accessorMap = map[string]accessor{
+	"AUTOCOMMIT":                   {},
+	"RETRY_ABORTS_INTERNALLY":      {},
+	"AUTOCOMMIT_DML_MODE":          {},
+	"STATEMENT_TIMEOUT":            {},
+	"READ_ONLY_STALENESS":          {},
+	"OPTIMIZER_VERSION":            {},
+	"OPTIMIZER_STATISTICS_PACKAGE": {},
+	"RETURN_COMMIT_STATS":          {},
 	"RPC_PRIORITY": {
 		func(this *systemVariables, value string) error {
 			s, err := strconv.Unquote(value)
@@ -39,4 +47,9 @@ var accessorMap = map[string]accessor{
 			return strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_"), nil
 		},
 	},
+	"STATEMENT_TAG":    {},
+	"TRANSACTION_TAG":  {},
+	"READ_TIMESTAMP":   {},
+	"COMMIT_TIMESTAMP": {},
+	"COMMIT_RESPONSE":  {},
 }
