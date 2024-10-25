@@ -235,6 +235,9 @@ and `{}` for a mutually exclusive keyword.
 | Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority. The tag you set is used as request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
 | End Read-Only Transaction | `CLOSE;` | |
 | Exit CLI | `EXIT;` | |
+| Show variable | `SHOW VARIABLE <name>;` | |
+| Set variable | `SET VARIABLE <name> = <value>;` | |
+| Show variables | `SHOW VARIABLES;` | |
 
 ## Customize prompt
 
