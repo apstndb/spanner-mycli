@@ -127,7 +127,7 @@ var (
 	explainRe         = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
-	setVariableRe     = regexp.MustCompile(`(?is)^SET\s+VARIABLE\s+([^\s=]+)\s*=\s*([^\s]+)\s*$`)
+	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
 	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
@@ -228,9 +228,9 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 	case showVariableRe.MatchString(stripped):
 		matched := showVariableRe.FindStringSubmatch(stripped)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
-	case setVariableRe.MatchString(stripped):
-		matched := setVariableRe.FindStringSubmatch(stripped)
-		return &SetVariableStatement{VarName: matched[1], Value: matched[2]}, nil
+	case setRe.MatchString(stripped):
+		matched := setRe.FindStringSubmatch(stripped)
+		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 	case showVariablesRe.MatchString(stripped):
 		return &ShowVariablesStatement{}, nil
 	}
@@ -470,12 +470,12 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	return &Result{ColumnNames: []string{"name", "value"}, Rows: rows}, nil
 }
 
-type SetVariableStatement struct {
+type SetStatement struct {
 	VarName string
 	Value   string
 }
 
-func (s *SetVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	a, ok := accessorMap[s.VarName]
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
