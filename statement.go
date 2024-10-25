@@ -128,6 +128,7 @@ var (
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
 	setVariableRe     = regexp.MustCompile(`(?is)^SET\s+VARIABLE\s+([^\s=]+)\s*=\s*([^\s]+)\s*$`)
+	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
 var (
@@ -230,6 +231,8 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 	case setVariableRe.MatchString(stripped):
 		matched := setVariableRe.FindStringSubmatch(stripped)
 		return &SetVariableStatement{VarName: matched[1], Value: matched[2]}, nil
+	case showVariablesRe.MatchString(stripped):
+		return &ShowVariablesStatement{}, nil
 	}
 
 	return nil, errors.New("invalid statement")
@@ -447,6 +450,24 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}
 	fmt.Println(value)
 	return &Result{}, nil
+}
+
+type ShowVariablesStatement struct{}
+
+func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	var rows []Row
+	for k, v := range accessorMap {
+		if v.Getter == nil {
+			continue
+		}
+		value, err := v.Getter(session.systemVariables)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, Row{Columns: []string{k, value}})
+	}
+
+	return &Result{ColumnNames: []string{"name", "value"}, Rows: rows}, nil
 }
 
 type SetVariableStatement struct {
