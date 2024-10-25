@@ -11,9 +11,10 @@ import (
 )
 
 type systemVariables struct {
-	RPCPriority       sppb.RequestOptions_Priority
-	ReadOnlyStaleness *spanner.TimestampBound
-	ReadTimestamp     time.Time
+	RPCPriority                sppb.RequestOptions_Priority
+	ReadOnlyStaleness          *spanner.TimestampBound
+	ReadTimestamp              time.Time
+	OptimizerVersion           string
 }
 
 var errIgnored = errors.New("ignored")
@@ -106,7 +107,15 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
-	"OPTIMIZER_VERSION":            {},
+	"OPTIMIZER_VERSION": {
+		func(this *systemVariables, value string) error {
+			this.OptimizerVersion = unquoteString(value)
+			return nil
+		},
+		func(this *systemVariables) (string, error) {
+			return this.OptimizerVersion, nil
+		},
+	},
 	"OPTIMIZER_STATISTICS_PACKAGE": {},
 	"RETURN_COMMIT_STATS":          {},
 	"RPC_PRIORITY": {
