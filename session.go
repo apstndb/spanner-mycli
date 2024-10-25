@@ -54,10 +54,10 @@ type Session struct {
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
-	defaultPriority pb.RequestOptions_Priority
 	directedRead    *pb.DirectedReadOptions
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
+	systemVariables *systemVariables
 }
 
 type transactionContext struct {
@@ -68,7 +68,7 @@ type transactionContext struct {
 	roTxn         *spanner.ReadOnlyTransaction
 }
 
-func NewSession(projectId string, instanceId string, databaseId string, priority pb.RequestOptions_Priority, role string, directedRead *pb.DirectedReadOptions, opts ...option.ClientOption) (*Session, error) {
+func NewSession(projectId string, instanceId string, databaseId string, role string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	ctx := context.Background()
 	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectId, instanceId, databaseId)
 	clientConfig := defaultClientConfig
@@ -85,8 +85,8 @@ func NewSession(projectId string, instanceId string, databaseId string, priority
 		return nil, err
 	}
 
-	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = defaultPriority
+	if sysVars.RPCPriority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
+		sysVars.RPCPriority = defaultPriority
 	}
 
 	session := &Session{
@@ -97,8 +97,8 @@ func NewSession(projectId string, instanceId string, databaseId string, priority
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
-		defaultPriority: priority,
 		directedRead:    directedRead,
+		systemVariables: sysVars,
 	}
 	go session.startHeartbeat()
 
@@ -123,7 +123,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority pb.Req
 
 	// Use session's priority if transaction priority is not set.
 	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.defaultPriority
+		priority = s.systemVariables.RPCPriority
 	}
 
 	opts := spanner.TransactionOptions{
@@ -189,7 +189,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 
 	// Use session's priority if transaction priority is not set.
 	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.defaultPriority
+		priority = s.systemVariables.RPCPriority
 	}
 
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
@@ -363,7 +363,7 @@ func (s *Session) currentPriority() pb.RequestOptions_Priority {
 	if s.tc != nil {
 		return s.tc.priority
 	}
-	return s.defaultPriority
+	return s.systemVariables.RPCPriority
 }
 
 // startHeartbeat starts heartbeat for read-write transaction.

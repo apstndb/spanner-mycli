@@ -67,6 +67,7 @@ func main() {
 	}
 
 	opts := gopts.Spanner
+	var sysVars systemVariables
 
 	logMemefish = opts.LogMemefish
 
@@ -92,13 +93,12 @@ func main() {
 		}
 	}
 
-	var priority pb.RequestOptions_Priority
 	if opts.Priority != "" {
-		var err error
-		priority, err = parsePriority(opts.Priority)
+		priority, err := parsePriority(opts.Priority)
 		if err != nil {
 			exitf("priority must be either HIGH, MEDIUM, or LOW\n")
 		}
+		sysVars.RPCPriority = priority
 	}
 
 	var directedRead *pb.DirectedReadOptions
@@ -110,7 +110,7 @@ func main() {
 		}
 	}
 
-	cli, err := NewCli(opts.ProjectId, opts.InstanceId, opts.DatabaseId, opts.Prompt, opts.HistoryFile, cred, os.Stdin, os.Stdout, os.Stderr, opts.Verbose, priority, opts.Role, opts.Endpoint, directedRead)
+	cli, err := NewCli(opts.ProjectId, opts.InstanceId, opts.DatabaseId, opts.Prompt, opts.HistoryFile, cred, os.Stdin, os.Stdout, os.Stderr, opts.Verbose, opts.Role, opts.Endpoint, directedRead, &sysVars)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}

@@ -58,16 +58,17 @@ var (
 )
 
 type Cli struct {
-	Session     *Session
-	Prompt      string
-	HistoryFile string
-	Credential  []byte
-	InStream    io.ReadCloser
-	OutStream   io.Writer
-	ErrStream   io.Writer
-	Verbose     bool
-	Priority    pb.RequestOptions_Priority
-	Endpoint    string
+	Session         *Session
+	Prompt          string
+	HistoryFile     string
+	Credential      []byte
+	InStream        io.ReadCloser
+	OutStream       io.Writer
+	ErrStream       io.Writer
+	Verbose         bool
+	Priority        pb.RequestOptions_Priority
+	Endpoint        string
+	SystemVariables *systemVariables
 }
 
 type command struct {
@@ -75,8 +76,8 @@ type command struct {
 	Vertical bool
 }
 
-func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, verbose bool, priority pb.RequestOptions_Priority, role string, endpoint string, directedRead *pb.DirectedReadOptions) (*Cli, error) {
-	session, err := createSession(projectId, instanceId, databaseId, credential, priority, role, endpoint, directedRead)
+func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
+	session, err := createSession(projectId, instanceId, databaseId, credential, role, endpoint, directedRead, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -90,15 +91,16 @@ func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, crede
 	}
 
 	return &Cli{
-		Session:     session,
-		Prompt:      prompt,
-		HistoryFile: historyFile,
-		Credential:  credential,
-		InStream:    inStream,
-		OutStream:   outStream,
-		ErrStream:   errStream,
-		Verbose:     verbose,
-		Endpoint:    endpoint,
+		Session:         session,
+		Prompt:          prompt,
+		HistoryFile:     historyFile,
+		Credential:      credential,
+		InStream:        inStream,
+		OutStream:       outStream,
+		ErrStream:       errStream,
+		Verbose:         verbose,
+		Endpoint:        endpoint,
+		SystemVariables: sysVars,
 	}, nil
 }
 
@@ -166,7 +168,7 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if s, ok := stmt.(*UseStatement); ok {
-			newSession, err := createSession(c.Session.projectId, c.Session.instanceId, s.Database, c.Credential, c.Priority, s.Role, c.Endpoint, c.Session.directedRead)
+			newSession, err := createSession(c.Session.projectId, c.Session.instanceId, s.Database, c.Credential, s.Role, c.Endpoint, c.Session.directedRead, c.SystemVariables)
 			if err != nil {
 				c.PrintInteractiveError(err)
 				continue
@@ -328,7 +330,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 	return prompt
 }
 
-func createSession(projectId string, instanceId string, databaseId string, credential []byte, priority pb.RequestOptions_Priority, role string, endpoint string, directedRead *pb.DirectedReadOptions) (*Session, error) {
+func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))
@@ -336,7 +338,7 @@ func createSession(projectId string, instanceId string, databaseId string, crede
 	if endpoint != "" {
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
-	return NewSession(projectId, instanceId, databaseId, priority, role, directedRead, opts...)
+	return NewSession(projectId, instanceId, databaseId, role, directedRead, sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {
