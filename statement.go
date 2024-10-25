@@ -65,7 +65,7 @@ type Result struct {
 	Timestamp        time.Time
 	ForceVerbose     bool
 	CommitStats      *sppb.CommitResponse_CommitStats
-	UpdateVariables  bool
+	KeepVariables    bool
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
 	ColumnTypes []*sppb.StructType_Field
@@ -265,9 +265,8 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	result := &Result{
-		ColumnNames:     columnNames,
-		Rows:            rows,
-		UpdateVariables: true,
+		ColumnNames: columnNames,
+		Rows:        rows,
 	}
 	result.ColumnTypes = iter.Metadata.GetRowType().GetFields()
 
@@ -400,7 +399,9 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{
+		IsMutation: true,
+	}, nil
 }
 
 type DdlStatement struct {
@@ -460,7 +461,11 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	for n := range slices.Values(columnNames) {
 		row = append(row, value[n])
 	}
-	return &Result{ColumnNames: columnNames, Rows: []Row{{Columns: row}}}, nil
+	return &Result{
+		ColumnNames:   columnNames,
+		Rows:          []Row{{Columns: row}},
+		KeepVariables: true,
+	}, nil
 }
 
 type ShowVariablesStatement struct{}
@@ -499,7 +504,11 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		}
 	})
 
-	return &Result{ColumnNames: []string{"name", "value"}, Rows: rows}, nil
+	return &Result{
+		ColumnNames:   []string{"name", "value"},
+		Rows:          rows,
+		KeepVariables: true,
+	}, nil
 }
 
 type SetStatement struct {
@@ -522,7 +531,7 @@ func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	if err != nil {
 		return nil, err
 	}
-	return &Result{}, nil
+	return &Result{KeepVariables: true}, nil
 }
 
 type ShowDatabasesStatement struct {
@@ -945,7 +954,7 @@ type DmlStatement struct {
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	stmt := spanner.NewStatement(s.Dml)
 
-	result := &Result{IsMutation: true, UpdateVariables: true}
+	result := &Result{IsMutation: true}
 
 	var rows []Row
 	var columnNames []string

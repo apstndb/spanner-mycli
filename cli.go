@@ -230,7 +230,7 @@ func (c *Cli) RunInteractive() int {
 			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
 		}
 
-		if result.UpdateVariables {
+		if !result.KeepVariables {
 			if result.IsMutation {
 				c.SystemVariables.ReadTimestamp = time.Time{}
 				c.SystemVariables.CommitTimestamp = result.Timestamp
