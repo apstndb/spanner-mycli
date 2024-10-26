@@ -32,6 +32,36 @@ type accessor struct {
 	Getter getter
 }
 
+func (sv *systemVariables) Set(name string, value string) error {
+	upperName := strings.ToUpper(name)
+	a, ok := accessorMap[upperName]
+	if !ok {
+		return fmt.Errorf("unknown variable name: %v", name)
+	}
+	if a.Setter == nil {
+		return fmt.Errorf("setter unimplemented: %v", name)
+	}
+
+	return a.Setter(sv, upperName, value)
+}
+
+func (sv *systemVariables) Get(name string) (map[string]string, error) {
+	upperName := strings.ToUpper(name)
+	a, ok := accessorMap[upperName]
+	if !ok {
+		return nil, fmt.Errorf("unknown variable name: %v", name)
+	}
+	if a.Getter == nil {
+		return nil, fmt.Errorf("getter unimplemented: %v", name)
+	}
+
+	value, err := a.Getter(sv, name)
+	if err != nil && !errors.Is(err, errIgnored) {
+		return nil, err
+	}
+	return value, nil
+}
+
 func unquoteString(s string) string {
 	return strings.Trim(s, `"'`)
 }
@@ -51,19 +81,19 @@ var accessorMap = map[string]accessor{
 	"STATEMENT_TIMEOUT":       {},
 	"READ_ONLY_STALENESS": {
 		func(this *systemVariables, name, value string) error {
-			s := unquoteString(value)
+			first, second, _ := strings.Cut(unquoteString(value), " ")
 
+			upper := strings.ToUpper(first)
 			var staleness spanner.TimestampBound
 			switch {
-			case s == "STRONG":
+			case upper == "STRONG":
 				staleness = spanner.StrongRead()
-			case strings.HasPrefix(s, "MIN_READ_TIMESTAMP ") || strings.HasPrefix(s, "READ_TIMESTAMP "):
+			case upper == "MIN_READ_TIMESTAMP" || upper == "READ_TIMESTAMP":
 				var minReadTimestamp bool
-				if strings.HasPrefix(s, "MIN_") {
+				if strings.HasPrefix(upper, "MIN_") {
 					minReadTimestamp = true
-					s = strings.TrimPrefix(s, "MIN_")
 				}
-				ts, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(strings.TrimPrefix(s, "READ_TIMESTAMP ")))
+				ts, err := time.Parse(time.RFC3339Nano, second)
 				if err != nil {
 					return err
 				}
@@ -72,24 +102,22 @@ var accessorMap = map[string]accessor{
 				} else {
 					staleness = spanner.ReadTimestamp(ts)
 				}
-			case strings.HasPrefix(s, "MAX_STALENESS ") || strings.HasPrefix(s, "MIN_STALENESS "):
-				var maxStaleness bool
-				if strings.HasPrefix(s, "MAX_STALENESS ") {
-					maxStaleness = true
-					s = strings.TrimPrefix(s, "MAX_STALENESS ")
-				} else {
-					s = strings.TrimPrefix(s, "EXACT_STALENESS ")
-				}
-				ts, err := time.ParseDuration(strings.TrimSpace(s))
+			case upper == "MAX_STALENESS":
+				ts, err := time.ParseDuration(second)
 				if err != nil {
 					return err
 				}
-				if maxStaleness {
-					staleness = spanner.MaxStaleness(ts)
-				} else {
-					staleness = spanner.ExactStaleness(ts)
+				staleness = spanner.MaxStaleness(ts)
+			case upper == "EXACT_STALENESS":
+				ts, err := time.ParseDuration(second)
+				if err != nil {
+					return err
 				}
+				staleness = spanner.ExactStaleness(ts)
+			default:
+				return fmt.Errorf("unknown staleness: %v", first)
 			}
+
 			this.ReadOnlyStaleness = &staleness
 			return nil
 		},

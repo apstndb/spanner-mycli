@@ -441,18 +441,8 @@ type ShowVariableStatement struct {
 }
 
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	name := s.VarName
-	upperName := strings.ToUpper(name)
-	a, ok := accessorMap[upperName]
-	if !ok {
-		return nil, fmt.Errorf("unknown variable name: %v", name)
-	}
-	if a.Getter == nil {
-		return nil, fmt.Errorf("getter unimplemented: %v", name)
-	}
-
-	value, err := a.Getter(session.systemVariables, name)
-	if err != nil && !errors.Is(err, errIgnored) {
+	value, err := session.systemVariables.Get(s.VarName)
+	if err != nil {
 		return nil, err
 	}
 
@@ -517,18 +507,7 @@ type SetStatement struct {
 }
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	name := s.VarName
-	upper := strings.ToUpper(name)
-	a, ok := accessorMap[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown variable name: %v", name)
-	}
-	if a.Setter == nil {
-		return nil, fmt.Errorf("setter unimplemented: %v", name)
-	}
-
-	err := a.Setter(session.systemVariables, upper, s.Value)
-	if err != nil {
+	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
