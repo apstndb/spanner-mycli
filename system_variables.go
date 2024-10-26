@@ -108,7 +108,7 @@ var accessorMap = map[string]accessor{
 				return singletonMap(name, "STRONG"), nil
 
 			case "exactStaleness":
-				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v")), nil
+				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
 			case "maxStaleness":
 				return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
 			// TODO: re-format timestamp as RFC3339
