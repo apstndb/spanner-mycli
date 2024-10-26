@@ -236,7 +236,7 @@ and `{}` for a mutually exclusive keyword.
 | End Read-Only Transaction | `CLOSE;` | |
 | Exit CLI | `EXIT;` | |
 | Show variable | `SHOW VARIABLE <name>;` | |
-| Set variable | `SET VARIABLE <name> = <value>;` | |
+| Set variable | `SET <name> = <value>;` | |
 | Show variables | `SHOW VARIABLES;` | |
 
 ## Customize prompt
