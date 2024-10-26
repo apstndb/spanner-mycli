@@ -74,6 +74,10 @@ func singletonMap[K comparable, V any](k K, v V) map[K]V {
 	return map[K]V{k: v}
 }
 
+func parseTimeString(s string) (time.Time, error) {
+	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s)
+}
+
 var accessorMap = map[string]accessor{
 	"AUTOCOMMIT":              {},
 	"RETRY_ABORTS_INTERNALLY": {},
@@ -102,15 +106,24 @@ var accessorMap = map[string]accessor{
 			switch matches[1] {
 			case "strong":
 				return singletonMap(name, "STRONG"), nil
+
 			case "exactStaleness":
-				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
+				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v")), nil
 			case "maxStaleness":
 				return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
 			// TODO: re-format timestamp as RFC3339
 			case "readTimestamp":
-				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", matches[2])), nil
+				ts, err := parseTimeString(matches[2])
+				if err != nil {
+					return nil, err
+				}
+				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
 			case "minReadTimestamp":
-				return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", matches[2])), nil
+				ts, err := parseTimeString(matches[2])
+				if err != nil {
+					return nil, err
+				}
+				return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
 			default:
 				return singletonMap(name, s), nil
 			}
