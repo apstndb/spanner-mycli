@@ -85,30 +85,28 @@ var accessorMap = map[string]accessor{
 
 			upper := strings.ToUpper(first)
 			var staleness spanner.TimestampBound
-			switch {
-			case upper == "STRONG":
+			switch upper {
+			case "STRONG":
 				staleness = spanner.StrongRead()
-			case upper == "MIN_READ_TIMESTAMP" || upper == "READ_TIMESTAMP":
-				var minReadTimestamp bool
-				if strings.HasPrefix(upper, "MIN_") {
-					minReadTimestamp = true
-				}
+			case "MIN_READ_TIMESTAMP":
 				ts, err := time.Parse(time.RFC3339Nano, second)
 				if err != nil {
 					return err
 				}
-				if minReadTimestamp {
-					staleness = spanner.MinReadTimestamp(ts)
-				} else {
-					staleness = spanner.ReadTimestamp(ts)
+				staleness = spanner.MinReadTimestamp(ts)
+			case "READ_TIMESTAMP":
+				ts, err := time.Parse(time.RFC3339Nano, second)
+				if err != nil {
+					return err
 				}
-			case upper == "MAX_STALENESS":
+				staleness = spanner.ReadTimestamp(ts)
+			case "MAX_STALENESS":
 				ts, err := time.ParseDuration(second)
 				if err != nil {
 					return err
 				}
 				staleness = spanner.MaxStaleness(ts)
-			case upper == "EXACT_STALENESS":
+			case "EXACT_STALENESS":
 				ts, err := time.ParseDuration(second)
 				if err != nil {
 					return err
