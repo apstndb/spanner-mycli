@@ -81,39 +81,9 @@ var accessorMap = map[string]accessor{
 	"STATEMENT_TIMEOUT":       {},
 	"READ_ONLY_STALENESS": {
 		func(this *systemVariables, name, value string) error {
-			first, second, _ := strings.Cut(unquoteString(value), " ")
-
-			upper := strings.ToUpper(first)
-			var staleness spanner.TimestampBound
-			switch upper {
-			case "STRONG":
-				staleness = spanner.StrongRead()
-			case "MIN_READ_TIMESTAMP":
-				ts, err := time.Parse(time.RFC3339Nano, second)
-				if err != nil {
-					return err
-				}
-				staleness = spanner.MinReadTimestamp(ts)
-			case "READ_TIMESTAMP":
-				ts, err := time.Parse(time.RFC3339Nano, second)
-				if err != nil {
-					return err
-				}
-				staleness = spanner.ReadTimestamp(ts)
-			case "MAX_STALENESS":
-				ts, err := time.ParseDuration(second)
-				if err != nil {
-					return err
-				}
-				staleness = spanner.MaxStaleness(ts)
-			case "EXACT_STALENESS":
-				ts, err := time.ParseDuration(second)
-				if err != nil {
-					return err
-				}
-				staleness = spanner.ExactStaleness(ts)
-			default:
-				return fmt.Errorf("unknown staleness: %v", first)
+			staleness, err := parseTimestampBound(unquoteString(value))
+			if err != nil {
+				return err
 			}
 
 			this.ReadOnlyStaleness = &staleness
@@ -121,7 +91,7 @@ var accessorMap = map[string]accessor{
 		},
 		func(this *systemVariables, name string) (map[string]string, error) {
 			if this.ReadOnlyStaleness == nil {
-				return singletonMap(name, "NULL"), nil
+				return nil, errIgnored
 			}
 			s := this.ReadOnlyStaleness.String()
 			stalenessRe := regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
@@ -136,6 +106,7 @@ var accessorMap = map[string]accessor{
 				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
 			case "maxStaleness":
 				return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
+			// TODO: re-format timestamp as RFC3339
 			case "readTimestamp":
 				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", matches[2])), nil
 			case "minReadTimestamp":
@@ -185,11 +156,10 @@ var accessorMap = map[string]accessor{
 	"READ_TIMESTAMP": {
 		nil,
 		func(this *systemVariables, name string) (map[string]string, error) {
-			ts := this.ReadTimestamp
-			if ts.IsZero() {
+			if this.ReadTimestamp.IsZero() {
 				return nil, errIgnored
 			}
-			return singletonMap(name, ts.Format(time.RFC3339Nano)), nil
+			return singletonMap(name, this.ReadTimestamp.Format(time.RFC3339Nano)), nil
 		},
 	},
 	"COMMIT_TIMESTAMP": {
@@ -215,4 +185,42 @@ var accessorMap = map[string]accessor{
 			}, nil
 		},
 	},
+}
+
+func parseTimestampBound(s string) (spanner.TimestampBound, error) {
+	first, second, _ := strings.Cut(s, " ")
+
+	// only for error result
+	nilStaleness := spanner.StrongRead()
+
+	switch strings.ToUpper(first) {
+	case "STRONG":
+		return spanner.StrongRead(), nil
+	case "MIN_READ_TIMESTAMP":
+		ts, err := time.Parse(time.RFC3339Nano, second)
+		if err != nil {
+			return nilStaleness, err
+		}
+		return spanner.MinReadTimestamp(ts), nil
+	case "READ_TIMESTAMP":
+		ts, err := time.Parse(time.RFC3339Nano, second)
+		if err != nil {
+			return nilStaleness, err
+		}
+		return spanner.ReadTimestamp(ts), nil
+	case "MAX_STALENESS":
+		ts, err := time.ParseDuration(second)
+		if err != nil {
+			return nilStaleness, err
+		}
+		return spanner.MaxStaleness(ts), nil
+	case "EXACT_STALENESS":
+		ts, err := time.ParseDuration(second)
+		if err != nil {
+			return nilStaleness, err
+		}
+		return spanner.ExactStaleness(ts), nil
+	default:
+		return nilStaleness, fmt.Errorf("unknown staleness: %v", first)
+	}
 }
