@@ -42,7 +42,8 @@ jobs:
           PROJECT: fake-project
           INSTANCE: fake-instance
           DATABASE: fake-database
-      - uses: iFaxity/wait-on-action
+      - name: Wait on
+        uses: iFaxity/wait-on-action@v1.2.1
         with:
           resource: http://localhost:9020
       - name: make test with Cloud Spanner Emulator
