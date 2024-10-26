@@ -35,6 +35,10 @@ jobs:
         with:
           go-version: '1.23'
       - run: go version
+      - name: Wait on
+        uses: iFaxity/wait-on-action@v1.2.1
+        with:
+          resource: http://localhost:9020
       - run: make setup-emulator
         env:
           SPANNER_EMULATOR_HOST: localhost:9010
@@ -42,10 +46,6 @@ jobs:
           PROJECT: fake-project
           INSTANCE: fake-instance
           DATABASE: fake-database
-      - name: Wait on
-        uses: iFaxity/wait-on-action@v1.2.1
-        with:
-          resource: http://localhost:9020
       - name: make test with Cloud Spanner Emulator
         run: make test
         env:
