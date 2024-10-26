@@ -85,10 +85,6 @@ func NewSession(projectId string, instanceId string, databaseId string, role str
 		return nil, err
 	}
 
-	if sysVars.RPCPriority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		sysVars.RPCPriority = defaultPriority
-	}
-
 	session := &Session{
 		projectId:       projectId,
 		instanceId:      instanceId,

@@ -67,6 +67,7 @@ func main() {
 	}
 
 	opts := gopts.Spanner
+
 	var sysVars systemVariables
 
 	logMemefish = opts.LogMemefish
@@ -99,6 +100,8 @@ func main() {
 			exitf("priority must be either HIGH, MEDIUM, or LOW\n")
 		}
 		sysVars.RPCPriority = priority
+	} else {
+		sysVars.RPCPriority = defaultPriority
 	}
 
 	var directedRead *pb.DirectedReadOptions

@@ -231,19 +231,7 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if !result.KeepVariables {
-			if result.IsMutation {
-				c.SystemVariables.ReadTimestamp = time.Time{}
-				c.SystemVariables.CommitTimestamp = result.Timestamp
-			} else {
-				c.SystemVariables.ReadTimestamp = result.Timestamp
-				c.SystemVariables.CommitTimestamp = time.Time{}
-			}
-
-			if result.CommitStats != nil {
-				c.SystemVariables.CommitResponse = &pb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
-			} else {
-				c.SystemVariables.CommitResponse = nil
-			}
+			c.updateSystemVariables(result)
 		}
 
 		if input.delim == delimiterHorizontal {
@@ -254,6 +242,22 @@ func (c *Cli) RunInteractive() int {
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
+	}
+}
+
+func (c *Cli) updateSystemVariables(result *Result) {
+	if result.IsMutation {
+		c.SystemVariables.ReadTimestamp = time.Time{}
+		c.SystemVariables.CommitTimestamp = result.Timestamp
+	} else {
+		c.SystemVariables.ReadTimestamp = result.Timestamp
+		c.SystemVariables.CommitTimestamp = time.Time{}
+	}
+
+	if result.CommitStats != nil {
+		c.SystemVariables.CommitResponse = &pb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+	} else {
+		c.SystemVariables.CommitResponse = nil
 	}
 }
 
@@ -274,7 +278,9 @@ func (c *Cli) RunBatch(input string, displayTable bool) int {
 			return exitCodeError
 		}
 
-		c.SystemVariables.ReadTimestamp = result.Timestamp
+		if !result.KeepVariables {
+			c.updateSystemVariables(result)
+		}
 
 		if displayTable {
 			c.PrintResult(result, DisplayModeTable, false)
