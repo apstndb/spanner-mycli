@@ -38,7 +38,7 @@ jobs:
       - name: Wait on
         uses: iFaxity/wait-on-action@v1.2.1
         with:
-          resource: http://localhost:9020/v1/projects/fake-project/instances
+          resource: http-get://localhost:9020/v1/projects/fake-project/instances
       - run: make setup-emulator
         env:
           SPANNER_EMULATOR_HOST: localhost:9010
