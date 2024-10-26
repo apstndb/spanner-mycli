@@ -39,7 +39,7 @@ func TestRequestPriority(t *testing.T) {
 		want                pb.RequestOptions_Priority
 	}{
 		{
-			desc:                "use default MEDIUM priority",
+			desc:                "use default priority",
 			sessionPriority:     pb.RequestOptions_PRIORITY_UNSPECIFIED,
 			transactionPriority: pb.RequestOptions_PRIORITY_UNSPECIFIED,
 			want:                pb.RequestOptions_PRIORITY_UNSPECIFIED,
