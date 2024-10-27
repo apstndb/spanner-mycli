@@ -13,6 +13,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
+	github.com/samber/lo v1.47.0
 	github.com/xlab/treeprint v1.0.1-0.20200715141336-10e0bc383e01
 	google.golang.org/api v0.180.0
 	google.golang.org/genproto v0.0.0-20240401170217-c3f982113cda

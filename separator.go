@@ -16,8 +16,6 @@
 
 package main
 
-import "github.com/apstndb/gsqlsep"
-
 const (
 	delimiterUndefined  = ""
 	delimiterHorizontal = ";"
@@ -30,14 +28,24 @@ type inputStatement struct {
 	delim                    string
 }
 
-func separateInput(input string) []inputStatement {
+func separateInput(input string) ([]inputStatement, error) {
+	stmts, err := SeparateInputPreserveCommentsWithStatus("", input)
+
 	var result []inputStatement
-	for _, stmt := range gsqlsep.SeparateInputPreserveComments(input, delimiterVertical) {
+	for _, stmt := range stmts {
+		stripped, err := stmt.StripComments()
+		if err != nil {
+			result = append(result, inputStatement{
+				statement:                stmt.Statement,
+				statementWithoutComments: stmt.Statement,
+				delim:                    stmt.Terminator,
+			})
+		}
 		result = append(result, inputStatement{
 			statement:                stmt.Statement,
-			statementWithoutComments: stmt.StripComments().Statement,
+			statementWithoutComments: stripped.Statement,
 			delim:                    stmt.Terminator,
 		})
 	}
-	return result
+	return result, err
 }

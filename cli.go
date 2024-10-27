@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"os"
@@ -108,7 +109,16 @@ func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, crede
 func (c *Cli) RunInteractive() int {
 	shell := readline.NewShell()
 	shell.AcceptMultiline = func(line []rune) (accept bool) {
-		statements := separateInput(string(line))
+		statements, err := separateInput(string(line))
+		if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
+			shell.Prompt.Secondary(func() string {
+				return e.WaitingString + "->"
+			})
+			return false
+		}
+		if err != nil {
+			return true
+		}
 		switch len(statements) {
 		case 0:
 			return false
@@ -375,7 +385,11 @@ func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, e
 		}
 		input += line + "\n"
 
-		statements := separateInput(input)
+		statements, err := separateInput(input)
+		if err != nil {
+			return nil, err
+		}
+
 		switch len(statements) {
 		case 0:
 			// read next input
@@ -528,7 +542,12 @@ func resultLine(result *Result, verbose bool) string {
 func buildCommands(input string) ([]*command, error) {
 	var cmds []*command
 	var pendingDdls []string
-	for _, separated := range separateInput(input) {
+
+	stmts, err := separateInput(input)
+	if err != nil {
+		return nil, err
+	}
+	for _, separated := range stmts {
 		// Ignore the last empty statement
 		if separated.delim == delimiterUndefined && separated.statementWithoutComments == "" {
 			continue

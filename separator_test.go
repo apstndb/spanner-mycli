@@ -304,7 +304,10 @@ func TestSeparateInput(t *testing.T) {
 		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
-			got := separateInput(tt.input)
+			got, err := separateInput(tt.input)
+			if err != nil {
+				t.Error(err)
+			}
 			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(inputStatement{})); diff != "" {
 				t.Errorf("difference in statements: (-want +got):\n%s", diff)
 			}
