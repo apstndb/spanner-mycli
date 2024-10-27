@@ -8,6 +8,21 @@ My personal fork of spanner-cli, interactive command line tool for Cloud Spanner
 `spanner-mycli` is an interactive command line tool for [Google Cloud Spanner](https://cloud.google.com/spanner/).  
 You can control your Spanner databases with idiomatic SQL commands.
 
+## Differences from original spanner-cli
+
+* Concept
+  * Respects minor use cases.
+  * Respects batch use cases as well as interactive use cases.
+  * More `gcloud spanner` compatibilities
+    * Support `--sql` flag
+  * Minimize to use own syntax.
+    * System variables concept inspired by Spanner JDBC
+      * `SET <name> = <value>` statement
+      * `SHOW VARIABLES` statement
+      * `SHOW VARIABLE <name> statement`
+      * `--set <name>=<value>` flag
+  * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
+
 ## Install
 
 [Install Go](https://go.dev/doc/install) and run the following command.
