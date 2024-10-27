@@ -21,14 +21,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -62,10 +64,11 @@ type Result struct {
 	IsMutation       bool
 	Timestamp        time.Time
 	ForceVerbose     bool
-	CommitStats      *pb.CommitResponse_CommitStats
+	CommitStats      *sppb.CommitResponse_CommitStats
+	KeepVariables    bool
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
-	ColumnTypes []*pb.StructType_Field
+	ColumnTypes []*sppb.StructType_Field
 }
 
 type Row struct {
@@ -126,6 +129,9 @@ var (
 	showIndexRe       = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
 	explainRe         = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
+	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
+	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
 var (
@@ -222,6 +228,14 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		return &RollbackStatement{}, nil
 	case closeRe.MatchString(stripped):
 		return &CloseStatement{}, nil
+	case showVariableRe.MatchString(stripped):
+		matched := showVariableRe.FindStringSubmatch(stripped)
+		return &ShowVariableStatement{VarName: matched[1]}, nil
+	case setRe.MatchString(stripped):
+		matched := setRe.FindStringSubmatch(stripped)
+		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+	case showVariablesRe.MatchString(stripped):
+		return &ShowVariablesStatement{}, nil
 	}
 
 	return nil, errors.New("invalid statement")
@@ -274,7 +288,7 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 }
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
-func extractColumnNames(fields []*pb.StructType_Field) []string {
+func extractColumnNames(fields []*sppb.StructType_Field) []string {
 	var names []string
 	for _, field := range fields {
 		names = append(names, field.GetName())
@@ -385,7 +399,9 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{
+		IsMutation: true,
+	}, nil
 }
 
 type DdlStatement struct {
@@ -418,6 +434,83 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	return &Result{IsMutation: true}, nil
+}
+
+type ShowVariableStatement struct {
+	VarName string
+}
+
+func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	value, err := session.systemVariables.Get(s.VarName)
+	if err != nil {
+		return nil, err
+	}
+
+	columnNames := slices.Sorted(maps.Keys(value))
+	var row []string
+	for n := range slices.Values(columnNames) {
+		row = append(row, value[n])
+	}
+	return &Result{
+		ColumnNames:   columnNames,
+		Rows:          []Row{{Columns: row}},
+		KeepVariables: true,
+	}, nil
+}
+
+type ShowVariablesStatement struct{}
+
+func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	merged := make(map[string]string)
+	for k, v := range accessorMap {
+		if v.Getter == nil {
+			continue
+		}
+		value, err := v.Getter(session.systemVariables, k)
+		if errors.Is(err, errIgnored) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range value {
+			merged[k] = v
+		}
+	}
+
+	var rows []Row
+	for k, v := range merged {
+		rows = append(rows, Row{sliceOf(k, v)})
+	}
+
+	slices.SortFunc(rows, func(a, b Row) int {
+		switch {
+		case a.Columns[0] == b.Columns[0]:
+			return 0
+		case a.Columns[0] < b.Columns[0]:
+			return -1
+		default:
+			return 1
+		}
+	})
+
+	return &Result{
+		ColumnNames:   []string{"name", "value"},
+		Rows:          rows,
+		KeepVariables: true,
+	}, nil
+}
+
+type SetStatement struct {
+	VarName string
+	Value   string
+}
+
+func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
+		return nil, err
+	}
+	return &Result{KeepVariables: true}, nil
 }
 
 type ShowDatabasesStatement struct {
@@ -592,13 +685,13 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *pb.QueryPlan, commitTimestamp time.Time, metadata *pb.ResultSetMetadata, err error) {
+func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
 	if !isDML {
 		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *pb.QueryPlan, *pb.ResultSetMetadata, error) {
+	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return 0, plan, metadata, err
 	})
@@ -657,15 +750,15 @@ func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session)
 	return result, nil
 }
 
-func processPlanWithStats(plan *pb.QueryPlan) (rows []Row, predicates []string, err error) {
+func processPlanWithStats(plan *sppb.QueryPlan) (rows []Row, predicates []string, err error) {
 	return processPlanImpl(plan, true)
 }
 
-func processPlanWithoutStats(plan *pb.QueryPlan) (rows []Row, predicates []string, err error) {
+func processPlanWithoutStats(plan *sppb.QueryPlan) (rows []Row, predicates []string, err error) {
 	return processPlanImpl(plan, false)
 }
 
-func processPlanImpl(plan *pb.QueryPlan, withStats bool) (rows []Row, predicates []string, err error) {
+func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicates []string, err error) {
 	planNodes := plan.GetPlanNodes()
 	maxWidthOfNodeID := len(fmt.Sprint(getMaxRelationalNodeID(plan)))
 	widthOfNodeIDWithIndicator := maxWidthOfNodeID + 1
@@ -845,7 +938,7 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	var rows []Row
 	var columnNames []string
 	var numRows int64
-	var metadata *pb.ResultSetMetadata
+	var metadata *sppb.ResultSetMetadata
 	var err error
 	if session.InReadWriteTransaction() {
 		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
@@ -923,7 +1016,7 @@ type ExplainAnalyzeDmlStatement struct {
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	stmt := spanner.NewStatement(s.Dml)
 
-	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *pb.QueryPlan, *pb.ResultSetMetadata, error) {
+	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt)
 		defer iter.Stop()
 		err := iter.Do(func(r *spanner.Row) error { return nil })
@@ -955,7 +1048,7 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 
 // runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
 // It execute a function in the current RW transaction or an implicit RW transaction.
-func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *pb.QueryPlan, metadata *pb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *pb.QueryPlan, metadata *pb.ResultSetMetadata, err error) {
+func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 	if session.InReadWriteTransaction() {
 		affected, plan, metadata, err := f()
 		if err != nil {
@@ -990,7 +1083,7 @@ func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func
 }
 
 type BeginRwStatement struct {
-	Priority pb.RequestOptions_Priority
+	Priority sppb.RequestOptions_Priority
 	Tag      string
 }
 
@@ -1079,7 +1172,7 @@ type BeginRoStatement struct {
 	TimestampBoundType timestampBoundType
 	Staleness          time.Duration
 	Timestamp          time.Time
-	Priority           pb.RequestOptions_Priority
+	Priority           sppb.RequestOptions_Priority
 	Tag                string
 }
 
@@ -1177,17 +1270,21 @@ type UseStatement struct {
 	NopStatement
 }
 
-func parsePriority(priority string) (pb.RequestOptions_Priority, error) {
-	switch strings.ToUpper(priority) {
-	case "HIGH":
-		return pb.RequestOptions_PRIORITY_HIGH, nil
-	case "MEDIUM":
-		return pb.RequestOptions_PRIORITY_MEDIUM, nil
-	case "LOW":
-		return pb.RequestOptions_PRIORITY_LOW, nil
-	default:
-		return pb.RequestOptions_PRIORITY_UNSPECIFIED, fmt.Errorf("invalid priority: %q", priority)
+func parsePriority(priority string) (sppb.RequestOptions_Priority, error) {
+	upper := strings.ToUpper(priority)
+
+	var value string
+	if !strings.HasPrefix(upper, "PRIORITY_") {
+		value = "PRIORITY_" + upper
+	} else {
+		value = upper
 	}
+
+	p, ok := sppb.RequestOptions_Priority_value[value]
+	if !ok {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, fmt.Errorf("invalid priority: %q", value)
+	}
+	return sppb.RequestOptions_Priority(p), nil
 }
 
 func logParseStatement(stmt string) {

@@ -8,6 +8,24 @@ My personal fork of spanner-cli, interactive command line tool for Cloud Spanner
 `spanner-mycli` is an interactive command line tool for [Google Cloud Spanner](https://cloud.google.com/spanner/).  
 You can control your Spanner databases with idiomatic SQL commands.
 
+## Differences from original spanner-cli
+
+* Respects my minor use cases
+* Respects batch use cases as well as interactive use cases
+* More `gcloud spanner databases execute-sql` compatibilities
+  * Support `--sql` flag
+* Minimize to use own syntax
+  * Generalized system variables concept inspired by Spanner JDBC
+    * `SET <name> = <value>` statement
+    * `SHOW VARIABLES` statement
+    * `SHOW VARIABLE <name> statement`
+    * `--set <name>=<value>` flag
+* Improved interactive experience
+  * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
+    * Native multi-line editing and histories
+* Utilize other libraries
+  * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
+
 ## Install
 
 [Install Go](https://go.dev/doc/install) and run the following command.
@@ -235,6 +253,9 @@ and `{}` for a mutually exclusive keyword.
 | Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority. The tag you set is used as request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
 | End Read-Only Transaction | `CLOSE;` | |
 | Exit CLI | `EXIT;` | |
+| Show variable | `SHOW VARIABLE <name>;` | |
+| Set variable | `SET <name> = <value>;` | |
+| Show variables | `SHOW VARIABLES;` | |
 
 ## Customize prompt
 

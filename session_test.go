@@ -39,10 +39,10 @@ func TestRequestPriority(t *testing.T) {
 		want                pb.RequestOptions_Priority
 	}{
 		{
-			desc:                "use default MEDIUM priority",
+			desc:                "use default priority",
 			sessionPriority:     pb.RequestOptions_PRIORITY_UNSPECIFIED,
 			transactionPriority: pb.RequestOptions_PRIORITY_UNSPECIFIED,
-			want:                pb.RequestOptions_PRIORITY_MEDIUM,
+			want:                pb.RequestOptions_PRIORITY_UNSPECIFIED,
 		},
 		{
 			desc:                "use session priority",
@@ -66,7 +66,7 @@ func TestRequestPriority(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			defer recorder.flush()
 
-			session, err := NewSession("project", "instance", "database", test.sessionPriority, "role", nil, option.WithGRPCConn(conn))
+			session, err := NewSession("project", "instance", "database", "role", nil, &systemVariables{RPCPriority: test.sessionPriority}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
 			}

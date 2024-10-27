@@ -1,14 +1,13 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.21
+go 1.23
 
-toolchain go1.21.5
+toolchain go1.23.1
 
 require (
 	cloud.google.com/go v0.113.0
 	cloud.google.com/go/spanner v1.62.0
 	github.com/apstndb/gsqlsep v0.0.0-20230324124551-0e8335710080
-	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241020063446-60438f4a9ffb
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.4.0

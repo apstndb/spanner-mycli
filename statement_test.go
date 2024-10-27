@@ -596,7 +596,6 @@ func TestBuildStatement(t *testing.T) {
 	}{
 		{"FOO BAR"},
 		{"SELEC T FROM t1"},
-		{"SET @a = 1"},
 		{"BEGIN PRIORITY CRITICAL"},
 	} {
 		got, err := BuildStatement(test.input)

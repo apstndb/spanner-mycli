@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 var defaultClientConfig = spanner.ClientConfig{
@@ -44,7 +44,7 @@ var defaultClientOpts = []option.ClientOption{
 }
 
 // Use MEDIUM priority not to disturb regular workloads on the database.
-const defaultPriority = pb.RequestOptions_PRIORITY_MEDIUM
+const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
 	projectId       string
@@ -54,21 +54,21 @@ type Session struct {
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
-	defaultPriority pb.RequestOptions_Priority
-	directedRead    *pb.DirectedReadOptions
+	directedRead    *sppb.DirectedReadOptions
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
+	systemVariables *systemVariables
 }
 
 type transactionContext struct {
 	tag           string
-	priority      pb.RequestOptions_Priority
+	priority      sppb.RequestOptions_Priority
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
 	rwTxn         *spanner.ReadWriteStmtBasedTransaction
 	roTxn         *spanner.ReadOnlyTransaction
 }
 
-func NewSession(projectId string, instanceId string, databaseId string, priority pb.RequestOptions_Priority, role string, directedRead *pb.DirectedReadOptions, opts ...option.ClientOption) (*Session, error) {
+func NewSession(projectId string, instanceId string, databaseId string, role string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	ctx := context.Background()
 	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectId, instanceId, databaseId)
 	clientConfig := defaultClientConfig
@@ -85,10 +85,6 @@ func NewSession(projectId string, instanceId string, databaseId string, priority
 		return nil, err
 	}
 
-	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = defaultPriority
-	}
-
 	session := &Session{
 		projectId:       projectId,
 		instanceId:      instanceId,
@@ -97,8 +93,8 @@ func NewSession(projectId string, instanceId string, databaseId string, priority
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
-		defaultPriority: priority,
 		directedRead:    directedRead,
+		systemVariables: sysVars,
 	}
 	go session.startHeartbeat()
 
@@ -116,14 +112,14 @@ func (s *Session) InReadOnlyTransaction() bool {
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority pb.RequestOptions_Priority, tag string) error {
+func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority, tag string) error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
 
 	// Use session's priority if transaction priority is not set.
-	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.defaultPriority
+	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		priority = s.systemVariables.RPCPriority
 	}
 
 	opts := spanner.TransactionOptions{
@@ -172,7 +168,7 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 }
 
 // BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
-func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority pb.RequestOptions_Priority, tag string) (time.Time, error) {
+func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority, tag string) (time.Time, error) {
 	if s.InReadOnlyTransaction() {
 		return time.Time{}, errors.New("read-only transaction is already running")
 	}
@@ -188,8 +184,8 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	}
 
 	// Use session's priority if transaction priority is not set.
-	if priority == pb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.defaultPriority
+	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		priority = s.systemVariables.RPCPriority
 	}
 
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
@@ -224,7 +220,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
-	mode := pb.ExecuteSqlRequest_PROFILE
+	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
 		Priority: s.currentPriority(),
@@ -242,8 +238,8 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 }
 
 // RunAnalyzeQuery analyzes a statement either on the running transaction or on the temporal read-only transaction.
-func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (*pb.QueryPlan, *pb.ResultSetMetadata, error) {
-	mode := pb.ExecuteSqlRequest_PLAN
+func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	mode := sppb.ExecuteSqlRequest_PLAN
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
 		Priority: s.currentPriority(),
@@ -262,6 +258,14 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	logParseStatement(stmt.SQL)
+
+	if opts.Options == nil {
+		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
+	}
+
+	opts.Options.OptimizerVersion = s.systemVariables.OptimizerVersion
+	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
+
 	if s.InReadWriteTransaction() {
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
@@ -277,14 +281,18 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	}
 
 	txn := s.client.Single()
+	if s.systemVariables.ReadOnlyStaleness != nil {
+		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
+	}
 	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
 
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
 // useUpdate flag enforce to use Update function internally and disable `THEN RETURN` result printing.
-func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpdate bool) ([]Row, []string, int64, *pb.ResultSetMetadata, error) {
+func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpdate bool) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
 	logParseStatement(stmt.SQL)
+
 	if !s.InReadWriteTransaction() {
 		return nil, nil, 0, nil, errors.New("read-write transaction is not running")
 	}
@@ -359,11 +367,11 @@ func (s *Session) RecreateClient() error {
 	return nil
 }
 
-func (s *Session) currentPriority() pb.RequestOptions_Priority {
+func (s *Session) currentPriority() sppb.RequestOptions_Priority {
 	if s.tc != nil {
 		return s.tc.priority
 	}
-	return s.defaultPriority
+	return s.systemVariables.RPCPriority
 }
 
 // startHeartbeat starts heartbeat for read-write transaction.
@@ -391,7 +399,7 @@ func (s *Session) startHeartbeat() {
 	}
 }
 
-func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority pb.RequestOptions_Priority) error {
+func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority sppb.RequestOptions_Priority) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	iter := txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), spanner.QueryOptions{Priority: priority})
@@ -400,31 +408,31 @@ func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority pb.RequestOp
 	return err
 }
 
-func parseDirectedReadOption(directedReadOptionText string) (*pb.DirectedReadOptions, error) {
+func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadOptions, error) {
 	directedReadOption := strings.Split(directedReadOptionText, ":")
 	if len(directedReadOption) > 2 {
 		return nil, fmt.Errorf("directed read option must be in the form of <replica_location>:<replica_type>, but got %q", directedReadOptionText)
 	}
 
-	replicaSelection := pb.DirectedReadOptions_ReplicaSelection{
+	replicaSelection := sppb.DirectedReadOptions_ReplicaSelection{
 		Location: directedReadOption[0],
 	}
 
 	if len(directedReadOption) == 2 {
 		switch strings.ToUpper(directedReadOption[1]) {
 		case "READ_ONLY":
-			replicaSelection.Type = pb.DirectedReadOptions_ReplicaSelection_READ_ONLY
+			replicaSelection.Type = sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY
 		case "READ_WRITE":
-			replicaSelection.Type = pb.DirectedReadOptions_ReplicaSelection_READ_WRITE
+			replicaSelection.Type = sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE
 		default:
 			return nil, fmt.Errorf("<replica_type> must be either READ_WRITE or READ_ONLY, but got %q", directedReadOption[1])
 		}
 	}
 
-	return &pb.DirectedReadOptions{
-		Replicas: &pb.DirectedReadOptions_IncludeReplicas_{
-			IncludeReplicas: &pb.DirectedReadOptions_IncludeReplicas{
-				ReplicaSelections:    []*pb.DirectedReadOptions_ReplicaSelection{&replicaSelection},
+	return &sppb.DirectedReadOptions{
+		Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+			IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+				ReplicaSelections:    []*sppb.DirectedReadOptions_ReplicaSelection{&replicaSelection},
 				AutoFailoverDisabled: true,
 			},
 		},
