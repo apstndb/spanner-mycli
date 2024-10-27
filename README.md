@@ -10,9 +10,9 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 ## Differences from original spanner-cli
 
-* Respects minor use cases
+* Respects my minor use cases
 * Respects batch use cases as well as interactive use cases
-* More `gcloud spanner` compatibilities
+* More `gcloud spanner databases execute-sql` compatibilities
   * Support `--sql` flag
 * Minimize to use own syntax
   * Generalized system variables concept inspired by Spanner JDBC
@@ -23,6 +23,8 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Improved interactive experience
   * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
     * Native multi-line editing and histories
+* Utilize other libraries
+  * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
 
 ## Install
 
