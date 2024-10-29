@@ -7,7 +7,6 @@ toolchain go1.23.1
 require (
 	cloud.google.com/go v0.113.0
 	cloud.google.com/go/spanner v1.62.0
-	github.com/apstndb/gsqlsep v0.0.0-20230324124551-0e8335710080
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241025043324-0b37cb66062c
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.4.0
