@@ -217,11 +217,8 @@ func TestSeparateInput(t *testing.T) {
 					delim:                    delimiterHorizontal,
 				},
 				{
-					// TODO: Fix when Lexer is fixed
-					// statement:                `SELECT "45`,
-					// statementWithoutComments: `SELECT "45`,
-					statement:                `SELECT `,
-					statementWithoutComments: `SELECT `,
+					statement:                `SELECT "45`,
+					statementWithoutComments: `SELECT "45`,
 					delim:                    delimiterUndefined,
 				},
 			},
@@ -232,8 +229,8 @@ func TestSeparateInput(t *testing.T) {
 			input: `a"""""""""'''''''''b`,
 			want: []inputStatement{
 				{
-					statement:                `a""""""`,
-					statementWithoutComments: `a""""""`,
+					statement:                `a"""""""""'''''''''b`,
+					statementWithoutComments: `a"""""""""'''''''''b`,
 					delim:                    delimiterUndefined,
 				},
 			},
