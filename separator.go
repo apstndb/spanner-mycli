@@ -16,7 +16,11 @@
 
 package main
 
-import "log"
+import (
+	"github.com/samber/lo"
+	"slices"
+	"spheric.cloud/xiter"
+)
 
 const (
 	delimiterUndefined  = ""
@@ -32,22 +36,11 @@ type inputStatement struct {
 
 func separateInput(input string) ([]inputStatement, error) {
 	stmts, err := SeparateInputPreserveCommentsWithStatus("", input)
+	return slices.Collect(xiter.Map(slices.Values(stmts), convertStatement)), err
+}
 
-	var result []inputStatement
-	for _, stmt := range stmts {
-		stripped, err := stmt.StripComments()
-		var stmtWithoutComments string
-		if err != nil {
-			log.Printf("separateInput error ignored: %v", err)
-			stmtWithoutComments = stmt.Statement
-		} else {
-			stmtWithoutComments = stripped.Statement
-		}
-		result = append(result, inputStatement{
-			statement:                stmt.Statement,
-			statementWithoutComments: stmtWithoutComments,
-			delim:                    stmt.Terminator,
-		})
-	}
-	return result, err
+func convertStatement(stmt RawStatement) inputStatement {
+	stripped, err := stmt.StripComments()
+	strippedStmt := lo.Ternary(err != nil, stmt, stripped).Statement
+	return inputStatement{statement: stmt.Statement, statementWithoutComments: strippedStmt, delim: stmt.Terminator}
 }

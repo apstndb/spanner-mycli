@@ -7,6 +7,9 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/samber/lo"
+	"iter"
+	"slices"
+	"spheric.cloud/xiter"
 	"strings"
 )
 
@@ -14,6 +17,20 @@ type RawStatement struct {
 	Pos, End   token.Pos
 	Statement  string
 	Terminator string
+}
+
+func lexerSeq(lexer *memefish.Lexer) iter.Seq2[token.Token, error] {
+	return func(yield func(token.Token, error) bool) {
+		for {
+			if err := lexer.NextToken(); err != nil {
+				yield(lexer.Token, err)
+				return
+			}
+			if !yield(lexer.Token, nil) {
+				return
+			}
+		}
+	}
 }
 
 func (stmt *RawStatement) StripComments() (RawStatement, error) {
@@ -34,73 +51,65 @@ func (e *ErrLexerStatus) Error() string {
 	return fmt.Sprintf("lexer error with waiting: %v", e.WaitingString)
 }
 
+func identity[T any](v T) func() T {
+	return func() T {
+		return v
+	}
+}
+
 func SeparateInputPreserveCommentsWithStatus(filepath, s string) ([]RawStatement, error) {
-	lex := newLexer(filepath, s)
+	lexer := newLexer(filepath, s)
 
 	var results []RawStatement
 	var pos token.Pos
 outer:
-	for {
-		err := lex.NextToken()
-
+	for tok, err := range lexerSeq(lexer) {
 		if err != nil {
-			if e, ok := lo.ErrorsAs[*memefish.Error](err); ok {
-				results = append(results, RawStatement{
-					Pos:        pos,
-					End:        e.Position.End,
-					Statement:  lex.Buffer[pos:e.Position.End],
-					Terminator: "",
-				})
-
-				switch e.Message {
-				case `unclosed triple-quoted string literal`:
-					if strings.HasPrefix(lex.Buffer[lex.Token.Pos:], `"""`) {
-						return results, &ErrLexerStatus{
-							WaitingString: `"""`,
-						}
-					}
-					return results, &ErrLexerStatus{
-						WaitingString: `'''`,
-					}
-				case `unclosed comment`:
-					return results, &ErrLexerStatus{
-						WaitingString: `*/`,
-					}
-				default:
-					return results, err
-				}
+			if err, ok := lo.ErrorsAs[*memefish.Error](err); ok {
+				results = append(results, RawStatement{Pos: pos, End: err.Position.End, Statement: lexer.Buffer[pos:err.Position.End]})
+				return results, toErrLexerStatus(err, lexer.Buffer[tok.Pos:])
 			}
 			return results, err
 		}
 
 		// renew pos to first comment or first token of a statement.
 		if pos.Invalid() {
-			if len(lex.Token.Comments) > 0 {
-				pos = lex.Token.Comments[0].Pos
-			} else {
-				pos = lex.Token.Pos
-			}
+			tokenComment, ok := lo.First(tok.Comments)
+			pos = lo.Ternary(ok, tokenComment.Pos, tok.Pos)
 		}
 
-		switch lex.Token.Kind {
+		switch tok.Kind {
 		case token.TokenEOF:
-			// If pos:lex.Token.Pos is not empty, add remaining part of buffer to result.
-			if pos != lex.Token.Pos {
-				results = append(results, RawStatement{Statement: s[pos:lex.Token.Pos], Pos: pos, End: lex.Token.Pos, Terminator: ""})
+			// If pos:tok.Pos is not empty, add remaining part of buffer to result.
+			if pos != tok.Pos {
+				results = append(results, RawStatement{Statement: s[pos:tok.Pos], Pos: pos, End: tok.Pos})
 			}
-
 			// no need to continue
 			break outer
 		case ";":
-			results = append(results, RawStatement{Statement: s[pos:lex.Token.Pos], Pos: pos, End: lex.Token.End, Terminator: ";"})
-
+			results = append(results, RawStatement{Statement: s[pos:tok.Pos], Pos: pos, End: tok.End, Terminator: ";"})
 			pos = token.InvalidPos
-
-			continue
 		default:
 		}
 	}
 	return results, nil
+}
+
+const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
+const errMessageUnclosedComment = `unclosed comment`
+
+// NOTE: memefish.Error.Message can be changed.
+func toErrLexerStatus(err *memefish.Error, head string) error {
+	switch {
+	case err.Message == errMessageUnclosedTripleQuotedStringLiteral && strings.HasPrefix(head, `"""`):
+		return &ErrLexerStatus{WaitingString: `"""`}
+	case err.Message == errMessageUnclosedTripleQuotedStringLiteral:
+		return &ErrLexerStatus{WaitingString: `'''`}
+	case err.Message == errMessageUnclosedComment:
+		return &ErrLexerStatus{WaitingString: `*/`}
+	default:
+		return err
+	}
 }
 
 // StripComments strips comments in an input string without parsing.
@@ -115,36 +124,42 @@ func StripComments(filepath, s string) (string, error) {
 	var b strings.Builder
 	var prevEnd token.Pos
 	var stmtFirstPos token.Pos
-	for {
-		if lex.Token.Kind == ";" {
-			stmtFirstPos = lex.Token.End
+	for tok, err := range lexerSeq(lex) {
+		if err != nil {
+			return "", err
 		}
 
-		if len(lex.Token.Comments) > 0 {
+		if tok.Kind == ";" {
+			stmtFirstPos = tok.End
+		}
+
+		if comment, ok := lo.First(tok.Comments); ok {
 			// flush all string before comments
-			b.WriteString(s[prevEnd:lex.Token.Comments[0].Pos])
-			if lex.Token.Kind == token.TokenEOF {
+			b.WriteString(s[prevEnd:comment.Pos])
+			if tok.Kind == token.TokenEOF {
 				// no need to continue
 				break
 			}
 
-			var commentStrBuilder strings.Builder
-			var hasNewline bool
-			for _, comment := range lex.Token.Comments {
-				// skip single line comment at the very first of statement.
-				if stmtFirstPos == comment.Pos && comment.Space == "" && (strings.HasPrefix(comment.Raw, "--") || strings.HasPrefix(comment.Raw, "#")) {
-					continue
+			/// var spacesBuilder strings.Builder
+			it := xiter.Filter(slices.Values(tok.Comments), func(comment token.TokenComment) bool {
+				raw := comment.Raw
+				switch {
+				case stmtFirstPos != comment.Pos:
+					return true
+				case comment.Space != "":
+					return true
+				case strings.HasPrefix(raw, "--") || strings.HasPrefix(raw, "#"):
+					return false
+				default:
+					return false
 				}
-				commentStrBuilder.WriteString(comment.Space)
-				if strings.ContainsAny(comment.Raw, "\n") {
-					hasNewline = true
-				}
-			}
-			commentStr := strings.TrimSpace(commentStrBuilder.String())
+			})
 
-			if commentStr != "" {
-				b.WriteString(commentStr)
-			} else if stmtFirstPos != lex.Token.Comments[0].Pos {
+			hasNewline := xiter.Any(it, func(comment token.TokenComment) bool {
+				return strings.ContainsAny(comment.Raw, "\n")
+			})
+			if stmtFirstPos != comment.Pos {
 				// Unless the comment is placed at the head of statement, comments will be a whitespace.
 				if hasNewline {
 					b.WriteString("\n")
@@ -153,20 +168,16 @@ func StripComments(filepath, s string) (string, error) {
 				}
 			}
 
-			b.WriteString(lex.Token.Raw)
-			prevEnd = lex.Token.End
+			b.WriteString(tok.Raw)
+			prevEnd = tok.End
 		}
 
 		// flush EOF
-		if lex.Token.Kind == token.TokenEOF {
-			b.WriteString(s[prevEnd:lex.Token.Pos])
+		if tok.Kind == token.TokenEOF {
+			b.WriteString(s[prevEnd:tok.Pos])
 			break
 		}
 
-		err := lex.NextToken()
-		if err != nil {
-			return "", err
-		}
 	}
 	return b.String(), nil
 }
