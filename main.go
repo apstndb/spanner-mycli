@@ -19,6 +19,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/samber/lo"
 	"io/ioutil"
 	"os"
 	"os/user"
@@ -78,7 +79,7 @@ func main() {
 		if !ok {
 			exitf("invalid system variable %v\n", s)
 		}
-		sets[k] = v
+		sets[strings.ToUpper(k)] = v
 	}
 
 	logMemefish = opts.LogMemefish
@@ -164,9 +165,12 @@ func main() {
 		}
 	}
 
+	if _, ok := sets["CLI_FORMAT"]; !ok {
+		sysVars.CLIFormat = lo.Ternary(opts.Table, DisplayModeTable, DisplayModeTab)
+	}
 	var exitCode int
 	if input != "" {
-		exitCode = cli.RunBatch(input, opts.Table)
+		exitCode = cli.RunBatch(input)
 	} else {
 		exitCode = cli.RunInteractive()
 	}

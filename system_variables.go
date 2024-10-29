@@ -19,7 +19,15 @@ type systemVariables struct {
 	OptimizerStatisticsPackage string
 	CommitResponse             *sppb.CommitResponse
 	CommitTimestamp            time.Time
+	CLIFormat                  DisplayMode
 }
+
+type CLIFormat int
+
+const (
+	CLIFormatTable CLIFormat = iota
+	CLIFormatVertical
+)
 
 var errIgnored = errors.New("ignored")
 
@@ -196,6 +204,31 @@ var accessorMap = map[string]accessor{
 				"COMMIT_TIMESTAMP": this.CommitTimestamp.Format(time.RFC3339Nano),
 				"MUTATION_COUNT":   strconv.FormatInt(mutationCount, 10),
 			}, nil
+		},
+	},
+	"CLI_FORMAT": {
+		func(this *systemVariables, name, value string) error {
+			switch strings.ToUpper(unquoteString(value)) {
+			case "TABLE":
+				this.CLIFormat = DisplayModeTable
+			case "VERTICAL":
+				this.CLIFormat = DisplayModeVertical
+			case "TAB":
+				this.CLIFormat = DisplayModeTab
+			}
+			return nil
+		},
+		func(this *systemVariables, name string) (map[string]string, error) {
+			var formatStr string
+			switch this.CLIFormat {
+			case DisplayModeTable:
+				formatStr = "TABLE"
+			case DisplayModeVertical:
+				formatStr = "VERTICAL"
+			case DisplayModeTab:
+				formatStr = "TAB"
+			}
+			return singletonMap(name, formatStr), nil
 		},
 	},
 }

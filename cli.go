@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/reeflective/readline/inputrc"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
@@ -108,6 +109,20 @@ func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, crede
 
 func (c *Cli) RunInteractive() int {
 	shell := readline.NewShell()
+
+	shell.Keymap.Register(map[string]func(){"force-end-of-file": func() {
+		switch shell.Line().Len() {
+		case 0:
+			shell.Display.AcceptLine()
+			shell.History.Accept(false, false, io.EOF)
+		default:
+			shell.Display.AcceptLine()
+			shell.History.Accept(false, false, nil)
+		}
+	}})
+
+	shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+
 	shell.AcceptMultiline = func(line []rune) (accept bool) {
 		statements, err := separateInput(string(line))
 		if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
@@ -244,11 +259,7 @@ func (c *Cli) RunInteractive() int {
 			c.updateSystemVariables(result)
 		}
 
-		if input.delim == delimiterHorizontal {
-			c.PrintResult(result, DisplayModeTable, true)
-		} else {
-			c.PrintResult(result, DisplayModeVertical, true)
-		}
+		c.PrintResult(result, DisplayModeTable, true)
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
@@ -271,7 +282,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 }
 
-func (c *Cli) RunBatch(input string, displayTable bool) int {
+func (c *Cli) RunBatch(input string) int {
 	cmds, err := buildCommands(input)
 	if err != nil {
 		c.PrintBatchError(err)
@@ -292,13 +303,7 @@ func (c *Cli) RunBatch(input string, displayTable bool) int {
 			c.updateSystemVariables(result)
 		}
 
-		if displayTable {
-			c.PrintResult(result, DisplayModeTable, false)
-		} else if cmd.Vertical {
-			c.PrintResult(result, DisplayModeVertical, false)
-		} else {
-			c.PrintResult(result, DisplayModeTab, false)
-		}
+		c.PrintResult(result, c.SystemVariables.CLIFormat, false)
 	}
 
 	return exitCodeSuccess
@@ -394,12 +399,9 @@ func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, e
 		case 0:
 			// read next input
 		case 1:
-			if statements[0].delim != delimiterUndefined {
-				return &statements[0], nil
-			}
-			// read next input
+			return &statements[0], nil
 		default:
-			return nil, errors.New("sql queries are limited to single statements")
+			return nil, errors.New("sql queries are limited to single statements in interactive mode")
 		}
 
 		// show prompt to urge next input
