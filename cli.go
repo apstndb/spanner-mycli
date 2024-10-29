@@ -553,9 +553,9 @@ func buildCommands(input string) ([]*command, error) {
 			continue
 		}
 
-		stmt, err := BuildStatementWithComments(separated.statementWithoutComments, separated.statement)
+		stmt, err := BuildStatementWithComments(strings.TrimSpace(separated.statementWithoutComments), separated.statement)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.statement, separated.statementWithoutComments)
 		}
 		if ddl, ok := stmt.(*DdlStatement); ok {
 			pendingDdls = append(pendingDdls, ddl.Ddl)

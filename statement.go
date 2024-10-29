@@ -145,47 +145,48 @@ func BuildStatement(input string) (Statement, error) {
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
+	trimmed := strings.TrimSpace(stripped)
 	switch {
-	case exitRe.MatchString(stripped):
+	case exitRe.MatchString(trimmed):
 		return &ExitStatement{}, nil
-	case useRe.MatchString(stripped):
-		matched := useRe.FindStringSubmatch(stripped)
+	case useRe.MatchString(trimmed):
+		matched := useRe.FindStringSubmatch(trimmed)
 		return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
-	case selectRe.MatchString(stripped):
+	case selectRe.MatchString(trimmed):
 		return &SelectStatement{Query: raw}, nil
-	case createDatabaseRe.MatchString(stripped):
-		return &CreateDatabaseStatement{CreateStatement: stripped}, nil
-	case createRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case dropDatabaseRe.MatchString(stripped):
-		matched := dropDatabaseRe.FindStringSubmatch(stripped)
+	case createDatabaseRe.MatchString(trimmed):
+		return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
+	case createRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case dropDatabaseRe.MatchString(trimmed):
+		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
 		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
-	case dropRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case alterRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case renameRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case grantRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case revokeRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case truncateTableRe.MatchString(stripped):
-		matched := truncateTableRe.FindStringSubmatch(stripped)
+	case dropRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case alterRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case renameRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case grantRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case revokeRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case truncateTableRe.MatchString(trimmed):
+		matched := truncateTableRe.FindStringSubmatch(trimmed)
 		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
-	case analyzeRe.MatchString(stripped):
-		return &DdlStatement{Ddl: stripped}, nil
-	case showDatabasesRe.MatchString(stripped):
+	case analyzeRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
-	case showCreateTableRe.MatchString(stripped):
-		matched := showCreateTableRe.FindStringSubmatch(stripped)
+	case showCreateTableRe.MatchString(trimmed):
+		matched := showCreateTableRe.FindStringSubmatch(trimmed)
 		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
 		return &ShowCreateTableStatement{Schema: schema, Table: table}, nil
-	case showTablesRe.MatchString(stripped):
-		matched := showTablesRe.FindStringSubmatch(stripped)
+	case showTablesRe.MatchString(trimmed):
+		matched := showTablesRe.FindStringSubmatch(trimmed)
 		return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
-	case describeRe.MatchString(stripped):
-		matched := describeRe.FindStringSubmatch(stripped)
+	case describeRe.MatchString(trimmed):
+		matched := describeRe.FindStringSubmatch(trimmed)
 		isDML := dmlRe.MatchString(matched[1])
 		switch {
 		case isDML:
@@ -193,8 +194,8 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		default:
 			return &DescribeStatement{Statement: matched[1]}, nil
 		}
-	case explainRe.MatchString(stripped):
-		matched := explainRe.FindStringSubmatch(stripped)
+	case explainRe.MatchString(trimmed):
+		matched := explainRe.FindStringSubmatch(trimmed)
 		isAnalyze := matched[1] != ""
 		isDML := dmlRe.MatchString(matched[2])
 		switch {
@@ -205,36 +206,36 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		default:
 			return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
 		}
-	case showColumnsRe.MatchString(stripped):
-		matched := showColumnsRe.FindStringSubmatch(stripped)
+	case showColumnsRe.MatchString(trimmed):
+		matched := showColumnsRe.FindStringSubmatch(trimmed)
 		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
 		return &ShowColumnsStatement{Schema: schema, Table: table}, nil
-	case showIndexRe.MatchString(stripped):
-		matched := showIndexRe.FindStringSubmatch(stripped)
+	case showIndexRe.MatchString(trimmed):
+		matched := showIndexRe.FindStringSubmatch(trimmed)
 		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
 		return &ShowIndexStatement{Schema: schema, Table: table}, nil
-	case dmlRe.MatchString(stripped):
+	case dmlRe.MatchString(trimmed):
 		return &DmlStatement{Dml: raw}, nil
-	case pdmlRe.MatchString(stripped):
-		matched := pdmlRe.FindStringSubmatch(stripped)
+	case pdmlRe.MatchString(trimmed):
+		matched := pdmlRe.FindStringSubmatch(trimmed)
 		return &PartitionedDmlStatement{Dml: matched[1]}, nil
-	case beginRwRe.MatchString(stripped):
-		return newBeginRwStatement(stripped)
-	case beginRoRe.MatchString(stripped):
-		return newBeginRoStatement(stripped)
-	case commitRe.MatchString(stripped):
+	case beginRwRe.MatchString(trimmed):
+		return newBeginRwStatement(trimmed)
+	case beginRoRe.MatchString(trimmed):
+		return newBeginRoStatement(trimmed)
+	case commitRe.MatchString(trimmed):
 		return &CommitStatement{}, nil
-	case rollbackRe.MatchString(stripped):
+	case rollbackRe.MatchString(trimmed):
 		return &RollbackStatement{}, nil
-	case closeRe.MatchString(stripped):
+	case closeRe.MatchString(trimmed):
 		return &CloseStatement{}, nil
-	case showVariableRe.MatchString(stripped):
-		matched := showVariableRe.FindStringSubmatch(stripped)
+	case showVariableRe.MatchString(trimmed):
+		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
-	case setRe.MatchString(stripped):
-		matched := setRe.FindStringSubmatch(stripped)
+	case setRe.MatchString(trimmed):
+		matched := setRe.FindStringSubmatch(trimmed)
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
-	case showVariablesRe.MatchString(stripped):
+	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
 	}
 

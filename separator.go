@@ -16,6 +16,8 @@
 
 package main
 
+import "log"
+
 const (
 	delimiterUndefined  = ""
 	delimiterHorizontal = ";"
@@ -34,16 +36,16 @@ func separateInput(input string) ([]inputStatement, error) {
 	var result []inputStatement
 	for _, stmt := range stmts {
 		stripped, err := stmt.StripComments()
+		var stmtWithoutComments string
 		if err != nil {
-			result = append(result, inputStatement{
-				statement:                stmt.Statement,
-				statementWithoutComments: stmt.Statement,
-				delim:                    stmt.Terminator,
-			})
+			log.Printf("separateInput error ignored: %v", err)
+			stmtWithoutComments = stmt.Statement
+		} else {
+			stmtWithoutComments = stripped.Statement
 		}
 		result = append(result, inputStatement{
 			statement:                stmt.Statement,
-			statementWithoutComments: stripped.Statement,
+			statementWithoutComments: stmtWithoutComments,
 			delim:                    stmt.Terminator,
 		})
 	}

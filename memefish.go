@@ -38,7 +38,6 @@ func SeparateInputPreserveCommentsWithStatus(filepath, s string) ([]RawStatement
 	lex := newLexer(filepath, s)
 
 	var results []RawStatement
-	// var b strings.Builder
 	var pos token.Pos
 outer:
 	for {
@@ -74,6 +73,7 @@ outer:
 			return results, err
 		}
 
+		// renew pos to first comment or first token of a statement.
 		if pos.Invalid() {
 			if len(lex.Token.Comments) > 0 {
 				pos = lex.Token.Comments[0].Pos
@@ -84,6 +84,7 @@ outer:
 
 		switch lex.Token.Kind {
 		case token.TokenEOF:
+			// If pos:lex.Token.Pos is not empty, add remaining part of buffer to result.
 			if pos != lex.Token.Pos {
 				results = append(results, RawStatement{Statement: s[pos:lex.Token.Pos], Pos: pos, End: lex.Token.Pos, Terminator: ""})
 			}
@@ -93,7 +94,6 @@ outer:
 		case ";":
 			results = append(results, RawStatement{Statement: s[pos:lex.Token.Pos], Pos: pos, End: lex.Token.End, Terminator: ";"})
 
-			// b.Reset()
 			pos = token.InvalidPos
 
 			continue
@@ -109,43 +109,57 @@ outer:
 //
 // [terminating semicolons]: https://cloud.google.com/spanner/docs/reference/standard-sql/lexical#terminating_semicolons
 func StripComments(filepath, s string) (string, error) {
+	// TODO: refactor
 	lex := newLexer(filepath, s)
 
 	var b strings.Builder
-	var firstPos token.Pos
+	var prevEnd token.Pos
+	var stmtFirstPos token.Pos
 	for {
-		_ = firstPos
+		if lex.Token.Kind == ";" {
+			stmtFirstPos = lex.Token.End
+		}
+
 		if len(lex.Token.Comments) > 0 {
-			// flush
-			b.WriteString(s[firstPos:lex.Token.Comments[0].Pos])
+			// flush all string before comments
+			b.WriteString(s[prevEnd:lex.Token.Comments[0].Pos])
 			if lex.Token.Kind == token.TokenEOF {
 				// no need to continue
 				break
 			}
+
 			var commentStrBuilder strings.Builder
 			var hasNewline bool
 			for _, comment := range lex.Token.Comments {
+				// skip single line comment at the very first of statement.
+				if stmtFirstPos == comment.Pos && comment.Space == "" && (strings.HasPrefix(comment.Raw, "--") || strings.HasPrefix(comment.Raw, "#")) {
+					continue
+				}
 				commentStrBuilder.WriteString(comment.Space)
 				if strings.ContainsAny(comment.Raw, "\n") {
 					hasNewline = true
 				}
 			}
 			commentStr := strings.TrimSpace(commentStrBuilder.String())
+
 			if commentStr != "" {
 				b.WriteString(commentStr)
-			} else {
+			} else if stmtFirstPos != lex.Token.Comments[0].Pos {
+				// Unless the comment is placed at the head of statement, comments will be a whitespace.
 				if hasNewline {
 					b.WriteString("\n")
 				} else {
 					b.WriteString(" ")
 				}
 			}
+
 			b.WriteString(lex.Token.Raw)
-			firstPos = lex.Token.End
+			prevEnd = lex.Token.End
 		}
 
+		// flush EOF
 		if lex.Token.Kind == token.TokenEOF {
-			b.WriteString(s[firstPos:lex.Token.Pos])
+			b.WriteString(s[prevEnd:lex.Token.Pos])
 			break
 		}
 
