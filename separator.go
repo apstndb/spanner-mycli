@@ -16,7 +16,11 @@
 
 package main
 
-import "github.com/apstndb/gsqlsep"
+import (
+	"github.com/samber/lo"
+	"slices"
+	"spheric.cloud/xiter"
+)
 
 const (
 	delimiterUndefined  = ""
@@ -30,14 +34,13 @@ type inputStatement struct {
 	delim                    string
 }
 
-func separateInput(input string) []inputStatement {
-	var result []inputStatement
-	for _, stmt := range gsqlsep.SeparateInputPreserveComments(input, delimiterVertical) {
-		result = append(result, inputStatement{
-			statement:                stmt.Statement,
-			statementWithoutComments: stmt.StripComments().Statement,
-			delim:                    stmt.Terminator,
-		})
-	}
-	return result
+func separateInput(input string) ([]inputStatement, error) {
+	stmts, err := SeparateInputPreserveCommentsWithStatus("", input)
+	return slices.Collect(xiter.Map(slices.Values(stmts), convertStatement)), err
+}
+
+func convertStatement(stmt RawStatement) inputStatement {
+	stripped, err := stmt.StripComments()
+	strippedStmt := lo.Ternary(err != nil, stmt, stripped).Statement
+	return inputStatement{statement: stmt.Statement, statementWithoutComments: strippedStmt, delim: stmt.Terminator}
 }

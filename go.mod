@@ -7,17 +7,18 @@ toolchain go1.23.1
 require (
 	cloud.google.com/go v0.113.0
 	cloud.google.com/go/spanner v1.62.0
-	github.com/apstndb/gsqlsep v0.0.0-20230324124551-0e8335710080
-	github.com/cloudspannerecosystem/memefish v0.0.0-20241025043324-0b37cb66062c
+	github.com/cloudspannerecosystem/memefish v0.0.0-20241029131948-98b8bf288447
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
+	github.com/samber/lo v1.47.0
 	github.com/xlab/treeprint v1.0.1-0.20200715141336-10e0bc383e01
 	google.golang.org/api v0.180.0
 	google.golang.org/genproto v0.0.0-20240401170217-c3f982113cda
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
+	spheric.cloud/xiter v0.0.0-20240904151420-c999f37a46b2
 )
 
 require (
@@ -54,7 +55,7 @@ require (
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/oauth2 v0.21.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
