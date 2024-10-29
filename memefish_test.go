@@ -59,10 +59,8 @@ func TestSeparateInputPreserveCommentsWithStatus(t *testing.T) {
 			input: `SELECT "123`,
 			want: []RawStatement{
 				{
-					// Statement:  `SELECT "123`,
-					// TODO: Currently, position is not correct. it will be fixed.
-					Statement:  `SELECT `,
-					End:        7,
+					Statement:  `SELECT "123`,
+					End:        11,
 					Terminator: terminatorUndefined,
 				},
 			},
@@ -73,10 +71,8 @@ func TestSeparateInputPreserveCommentsWithStatus(t *testing.T) {
 			input: `SELECT '123`,
 			want: []RawStatement{
 				{
-					// TODO: Fix when Lexer is fixed
-					// Statement:  `SELECT '123`,
-					Statement:  `SELECT `,
-					End:        7,
+					Statement:  `SELECT '123`,
+					End:        11,
 					Terminator: terminatorUndefined,
 				},
 			},
@@ -98,10 +94,8 @@ func TestSeparateInputPreserveCommentsWithStatus(t *testing.T) {
 			input: "SELECT `123",
 			want: []RawStatement{
 				{
-					// TODO: Fix when Lexer is fixed
-					// Statement:  "SELECT `123",
-					Statement:  "SELECT ",
-					End:        7,
+					Statement:  "SELECT `123",
+					End:        11,
 					Terminator: terminatorUndefined,
 				},
 			},
@@ -146,10 +140,8 @@ func TestSeparateInputPreserveCommentsWithStatus(t *testing.T) {
 			input: `SELECT """123`,
 			want: []RawStatement{
 				{
-					// TODO: Fix when Lexer is fixed
-					// Statement:  `SELECT """123`,
-					Statement:  `SELECT `,
-					End:        7,
+					Statement:  `SELECT """123`,
+					End:        13,
 					Terminator: terminatorUndefined,
 				},
 			},
@@ -171,10 +163,8 @@ func TestSeparateInputPreserveCommentsWithStatus(t *testing.T) {
 			input: `SELECT '''123`,
 			want: []RawStatement{
 				{
-					// TODO: Fix after memefish.Lexer is fixed.
-					// Statement:  `SELECT '''123`,
-					Statement:  `SELECT `,
-					End:        7,
+					Statement:  `SELECT '''123`,
+					End:        13,
 					Terminator: terminatorUndefined,
 				},
 			},
