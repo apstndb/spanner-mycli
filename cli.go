@@ -24,7 +24,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"time"
 
@@ -56,13 +55,6 @@ const (
 	exitCodeError   = 1
 )
 
-var (
-	promptReInTransaction = regexp.MustCompile(`\\t`)
-	promptReProjectId     = regexp.MustCompile(`\\p`)
-	promptReInstanceId    = regexp.MustCompile(`\\i`)
-	promptReDatabaseId    = regexp.MustCompile(`\\d`)
-)
-
 type Cli struct {
 	Session         *Session
 	Prompt          string
@@ -71,9 +63,9 @@ type Cli struct {
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Verbose  bool
-	Priority sppb.RequestOptions_Priority
-	Endpoint string
+	Verbose         bool
+	Priority        sppb.RequestOptions_Priority
+	Endpoint        string
 	SystemVariables *systemVariables
 }
 
@@ -363,20 +355,17 @@ func (c *Cli) PrintProgressingMark() func() {
 }
 
 func (c *Cli) getInterpolatedPrompt() string {
-	prompt := c.Prompt
-	prompt = promptReProjectId.ReplaceAllString(prompt, c.Session.projectId)
-	prompt = promptReInstanceId.ReplaceAllString(prompt, c.Session.instanceId)
-	prompt = promptReDatabaseId.ReplaceAllString(prompt, c.Session.databaseId)
-
-	if c.Session.InReadWriteTransaction() {
-		prompt = promptReInTransaction.ReplaceAllString(prompt, "(rw txn)")
-	} else if c.Session.InReadOnlyTransaction() {
-		prompt = promptReInTransaction.ReplaceAllString(prompt, "(ro txn)")
-	} else {
-		prompt = promptReInTransaction.ReplaceAllString(prompt, "")
-	}
-
-	return prompt
+	return strings.NewReplacer(
+		"%%", "%",
+		"%n", "\n",
+		"%p", c.Session.projectId,
+		"%i", c.Session.projectId,
+		"%d", c.Session.databaseId,
+		"%t", lo.
+			If(c.Session.InReadWriteTransaction(), "(rw txn)").
+			ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
+			Else(""),
+	).Replace(c.Prompt)
 }
 
 func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
