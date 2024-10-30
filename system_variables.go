@@ -23,13 +23,6 @@ type systemVariables struct {
 	CLIFormat                  DisplayMode
 }
 
-type CLIFormat int
-
-const (
-	CLIFormatTable CLIFormat = iota
-	CLIFormatVertical
-)
-
 var errIgnored = errors.New("ignored")
 
 type setter = func(this *systemVariables, name, value string) error
