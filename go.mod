@@ -9,7 +9,7 @@ require (
 	cloud.google.com/go/spanner v1.62.0
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241029131948-98b8bf288447
 	github.com/google/go-cmp v0.6.0
-	github.com/jessevdk/go-flags v1.4.0
+	github.com/jessevdk/go-flags v1.6.1
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
 	github.com/samber/lo v1.47.0
