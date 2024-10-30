@@ -20,15 +20,16 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 
-	"github.com/samber/lo"
-
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
+	"github.com/samber/lo"
+	"spheric.cloud/xiter"
 )
 
 type globalOptions struct {
@@ -36,23 +37,23 @@ type globalOptions struct {
 }
 
 type spannerOptions struct {
-	ProjectId    string   `short:"p" long:"project" env:"SPANNER_PROJECT_ID" description:"(required) GCP Project ID."`
-	InstanceId   string   `short:"i" long:"instance" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId   string   `short:"d" long:"database" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
-	Execute      string   `short:"e" long:"execute" description:"Execute SQL statement and quit. --sql is an alias."`
-	File         string   `short:"f" long:"file" description:"Execute SQL statement from file and quit."`
-	Table        bool     `short:"t" long:"table" description:"Display output in table format for batch mode."`
-	Verbose      bool     `short:"v" long:"verbose" description:"Display verbose output."`
-	Credential   string   `long:"credential" description:"Use the specific credential file"`
-	Prompt       string   `long:"prompt" description:"Set the prompt to the specified format"`
-	LogMemefish  bool     `long:"log-memefish" description:"Emit SQL parse log using memefish"`
-	HistoryFile  string   `long:"history" description:"Set the history file to the specified path"`
-	Priority     string   `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role         string   `long:"role" description:"Use the specific database role"`
-	Endpoint     string   `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
-	DirectedRead string   `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
-	SQL          string   `long:"sql" description:"alias of --execute" hidden:"true"`
-	Set          []string `long:"set" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	ProjectId    string            `short:"p" long:"project"       env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
+	InstanceId   string            `short:"i" long:"instance"      env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
+	DatabaseId   string            `short:"d" long:"database"      env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
+	Execute      string            `short:"e" long:"execute"                                 description:"Execute SQL statement and quit. --sql is an alias."`
+	File         string            `short:"f" long:"file"                                    description:"Execute SQL statement from file and quit."`
+	Table        bool              `short:"t" long:"table"                                   description:"Display output in table format for batch mode."`
+	Verbose      bool              `short:"v" long:"verbose"                                 description:"Display verbose output."`
+	Credential   string            `          long:"credential"                              description:"Use the specific credential file"`
+	Prompt       string            `          long:"prompt"                                  description:"Set the prompt to the specified format"`
+	LogMemefish  bool              `          long:"log-memefish"                            description:"Emit SQL parse log using memefish"`
+	HistoryFile  string            `          long:"history"                                 description:"Set the history file to the specified path"`
+	Priority     string            `          long:"priority"                                description:"Set default request priority (HIGH|MEDIUM|LOW)"`
+	Role         string            `          long:"role"                                    description:"Use the specific database role"`
+	Endpoint     string            `          long:"endpoint"                                description:"Set the Spanner API endpoint (host:port)"`
+	DirectedRead string            `          long:"directed-read"                           description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
+	SQL          string            `          long:"sql"                                     description:"alias of --execute"                                                                                                     hidden:"true"`
+	Set          map[string]string `          long:"set"                                     description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"                                                                      key-value-delimiter:"="`
 }
 
 var logMemefish bool
@@ -78,15 +79,6 @@ func main() {
 	opts := gopts.Spanner
 
 	var sysVars systemVariables
-
-	sets := make(map[string]string)
-	for _, s := range opts.Set {
-		k, v, ok := strings.Cut(s, "=")
-		if !ok {
-			exitf("invalid system variable %v\n", s)
-		}
-		sets[strings.ToUpper(k)] = v
-	}
 
 	logMemefish = opts.LogMemefish
 
@@ -131,6 +123,8 @@ func main() {
 			exitf("Invalid directed read option: %v\n", err)
 		}
 	}
+
+	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 
 	for k, v := range sets {
 		if err := sysVars.Set(k, v); err != nil {
