@@ -37,23 +37,23 @@ type globalOptions struct {
 }
 
 type spannerOptions struct {
-	ProjectId    string            `short:"p" long:"project"       env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
-	InstanceId   string            `short:"i" long:"instance"      env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId   string            `short:"d" long:"database"      env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
-	Execute      string            `short:"e" long:"execute"                                 description:"Execute SQL statement and quit. --sql is an alias."`
-	File         string            `short:"f" long:"file"                                    description:"Execute SQL statement from file and quit."`
-	Table        bool              `short:"t" long:"table"                                   description:"Display output in table format for batch mode."`
-	Verbose      bool              `short:"v" long:"verbose"                                 description:"Display verbose output."`
-	Credential   string            `          long:"credential"                              description:"Use the specific credential file"`
-	Prompt       string            `          long:"prompt"                                  description:"Set the prompt to the specified format"`
-	LogMemefish  bool              `          long:"log-memefish"                            description:"Emit SQL parse log using memefish"`
-	HistoryFile  string            `          long:"history"                                 description:"Set the history file to the specified path"`
-	Priority     string            `          long:"priority"                                description:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role         string            `          long:"role"                                    description:"Use the specific database role"`
-	Endpoint     string            `          long:"endpoint"                                description:"Set the Spanner API endpoint (host:port)"`
-	DirectedRead string            `          long:"directed-read"                           description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
-	SQL          string            `          long:"sql"                                     description:"alias of --execute"                                                                                                     hidden:"true"`
-	Set          map[string]string `          long:"set"                                     description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"                                                                      key-value-delimiter:"="`
+	ProjectId    string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
+	InstanceId   string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
+	DatabaseId   string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
+	Execute      string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
+	File         string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
+	Table        bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
+	Verbose      bool              `long:"verbose" short:"v" description:"Display verbose output."`
+	Credential   string            `long:"credential" description:"Use the specific credential file"`
+	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format"`
+	LogMemefish  bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
+	HistoryFile  string            `long:"history" description:"Set the history file to the specified path"`
+	Priority     string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
+	Role         string            `long:"role" description:"Use the specific database role"`
+	Endpoint     string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
+	DirectedRead string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
+	SQL          string            `long:"sql" hidden:"true" description:"alias of --execute"`
+	Set          map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
 }
 
 var logMemefish bool
