@@ -1062,7 +1062,9 @@ func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func
 		if err != nil {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
-			rollback.Execute(ctx, session)
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
+				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
 			return 0, time.Time{}, nil, nil, fmt.Errorf("transaction was aborted: %v", err)
 		}
 		return affected, time.Time{}, plan, metadata, nil
@@ -1077,7 +1079,10 @@ func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func
 		if err != nil {
 			// once error has happened, escape from implicit transaction
 			rollback := &RollbackStatement{}
-			rollback.Execute(ctx, session)
+			_, rollbackErr := rollback.Execute(ctx, session)
+			if rollbackErr != nil {
+				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
 			return 0, time.Time{}, nil, nil, err
 		}
 
