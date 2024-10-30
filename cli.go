@@ -21,9 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/reeflective/readline/inputrc"
-	"github.com/samber/lo"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"os"
 	"os/signal"
@@ -31,8 +28,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/reeflective/readline/inputrc"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"cloud.google.com/go/spanner"
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/olekukonko/tablewriter"
 	"github.com/reeflective/readline"
 	"google.golang.org/api/option"
@@ -45,7 +46,9 @@ const (
 	DisplayModeTable DisplayMode = iota
 	DisplayModeVertical
 	DisplayModeTab
+)
 
+const (
 	defaultPrompt      = `spanner\t> `
 	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
 
@@ -68,9 +71,9 @@ type Cli struct {
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Verbose         bool
-	Priority        pb.RequestOptions_Priority
-	Endpoint        string
+	Verbose  bool
+	Priority sppb.RequestOptions_Priority
+	Endpoint string
 	SystemVariables *systemVariables
 }
 
@@ -79,7 +82,7 @@ type command struct {
 	Vertical bool
 }
 
-func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
+func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(projectId, instanceId, databaseId, credential, role, endpoint, directedRead, sysVars)
 	if err != nil {
 		return nil, err
@@ -121,7 +124,10 @@ func (c *Cli) RunInteractive() int {
 		}
 	}})
 
-	shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+	err := shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+	if err != nil {
+		return c.ExitOnError(err)
+	}
 
 	shell.AcceptMultiline = func(line []rune) (accept bool) {
 		statements, err := separateInput(string(line))
@@ -175,7 +181,7 @@ func (c *Cli) RunInteractive() int {
 		if err == io.EOF {
 			return c.Exit()
 		}
-		if err == readline.ErrInterrupt {
+		if errors.Is(err, readline.ErrInterrupt) {
 			return c.Exit()
 		}
 		if err != nil {
@@ -243,7 +249,10 @@ func (c *Cli) RunInteractive() int {
 				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 				// the Cloud Spanner's session with new one to revert the lock priority of the session.
 				// See: https://cloud.google.com/spanner/docs/reference/rest/v1/TransactionOptions#retrying-aborted-transactions
-				c.Session.RecreateClient()
+				innerErr := c.Session.RecreateClient()
+				if innerErr != nil {
+					err = errors.Join(err, innerErr)
+				}
 			}
 			c.PrintInteractiveError(err)
 			cancel()
@@ -259,7 +268,7 @@ func (c *Cli) RunInteractive() int {
 			c.updateSystemVariables(result)
 		}
 
-		c.PrintResult(result, DisplayModeTable, true)
+		c.PrintResult(result, c.SystemVariables.CLIFormat, true)
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
@@ -276,7 +285,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &pb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
@@ -370,7 +379,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 	return prompt
 }
 
-func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
+func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))
@@ -444,13 +453,13 @@ func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, v
 			table.Render()
 		}
 	} else if mode == DisplayModeVertical {
-		max := 0
+		maxLen := 0
 		for _, columnName := range result.ColumnNames {
-			if len(columnName) > max {
-				max = len(columnName)
+			if len(columnName) > maxLen {
+				maxLen = len(columnName)
 			}
 		}
-		format := fmt.Sprintf("%%%ds: %%s\n", max) // for align right
+		format := fmt.Sprintf("%%%ds: %%s\n", maxLen) // for align right
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row.Columns {

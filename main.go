@@ -19,15 +19,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/samber/lo"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	flags "github.com/jessevdk/go-flags"
+	"github.com/samber/lo"
+
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/jessevdk/go-flags"
 )
 
 type globalOptions struct {
@@ -117,7 +118,7 @@ func main() {
 		sysVars.RPCPriority = defaultPriority
 	}
 
-	var directedRead *pb.DirectedReadOptions
+	var directedRead *sppb.DirectedReadOptions
 	if opts.DirectedRead != "" {
 		var err error
 		directedRead, err = parseDirectedReadOption(opts.DirectedRead)
@@ -147,13 +148,13 @@ func main() {
 	} else if opts.SQL != "" {
 		input = opts.SQL
 	} else if opts.File == "-" {
-		b, err := ioutil.ReadAll(os.Stdin)
+		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			exitf("Read from stdin failed: %v", err)
 		}
 		input = string(b)
 	} else if opts.File != "" {
-		b, err := ioutil.ReadFile(opts.File)
+		b, err := os.ReadFile(opts.File)
 		if err != nil {
 			exitf("Read from file %v failed: %v", opts.File, err)
 		}
@@ -165,15 +166,18 @@ func main() {
 		}
 	}
 
+	interactive := input == ""
+
 	if _, ok := sets["CLI_FORMAT"]; !ok {
-		sysVars.CLIFormat = lo.Ternary(opts.Table, DisplayModeTable, DisplayModeTab)
+		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
-	var exitCode int
-	if input != "" {
-		exitCode = cli.RunBatch(input)
-	} else {
-		exitCode = cli.RunInteractive()
-	}
+
+	exitCode := lo.TernaryF(interactive,
+		cli.RunInteractive,
+		func() int {
+			return cli.RunBatch(input)
+		})
+
 	os.Exit(exitCode)
 }
 
@@ -213,13 +217,13 @@ func readCredentialFile(filepath string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(f)
+	return io.ReadAll(f)
 }
 
 func readStdin() (string, error) {
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		b, err := ioutil.ReadAll(os.Stdin)
+		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return "", err
 		}

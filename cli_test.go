@@ -19,7 +19,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -27,14 +26,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 )
-
-type nopCloser struct {
-	io.Reader
-}
-
-func (n *nopCloser) Close() error {
-	return nil
-}
 
 func TestBuildCommands(t *testing.T) {
 	tests := []struct {

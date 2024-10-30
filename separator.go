@@ -17,8 +17,9 @@
 package main
 
 import (
-	"github.com/samber/lo"
 	"slices"
+
+	"github.com/samber/lo"
 	"spheric.cloud/xiter"
 )
 

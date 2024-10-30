@@ -238,7 +238,7 @@ func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
 		}
 		return nullJSONToString(v), nil
 	default:
-		return fmt.Sprintf("%s", column.Value), nil
+		return column.Value.String(), nil
 	}
 }
 
@@ -302,7 +302,7 @@ func nullStringToString(v spanner.NullString) string {
 
 func nullTimeToString(v spanner.NullTime) string {
 	if v.Valid {
-		return fmt.Sprintf("%s", v.Time.Format(time.RFC3339Nano))
+		return v.Time.Format(time.RFC3339Nano)
 	} else {
 		return "NULL"
 	}

@@ -1,14 +1,15 @@
 package main
 
 import (
-	"cloud.google.com/go/spanner"
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 type systemVariables struct {
@@ -21,13 +22,6 @@ type systemVariables struct {
 	CommitTimestamp            time.Time
 	CLIFormat                  DisplayMode
 }
-
-type CLIFormat int
-
-const (
-	CLIFormatTable CLIFormat = iota
-	CLIFormatVertical
-)
 
 var errIgnored = errors.New("ignored")
 
