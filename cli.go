@@ -48,7 +48,7 @@ const (
 )
 
 const (
-	defaultPrompt      = `spanner\t> `
+	defaultPrompt      = `spanner%t> `
 	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
 
 	exitCodeSuccess = 0
