@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"google.golang.org/grpc/credentials/insecure"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/credentials/insecure"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/spannertest"

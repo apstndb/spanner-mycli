@@ -4,13 +4,14 @@ package main
 
 import (
 	"fmt"
+	"iter"
+	"slices"
+	"strings"
+
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/samber/lo"
-	"iter"
-	"slices"
 	"spheric.cloud/xiter"
-	"strings"
 )
 
 type RawStatement struct {

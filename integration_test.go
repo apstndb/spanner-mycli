@@ -20,12 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"google.golang.org/protobuf/testing/protocmp"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"

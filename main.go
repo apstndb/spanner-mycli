@@ -19,15 +19,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/samber/lo"
 	"io"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	flags "github.com/jessevdk/go-flags"
+	"github.com/samber/lo"
+
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/jessevdk/go-flags"
 )
 
 type globalOptions struct {
@@ -117,7 +118,7 @@ func main() {
 		sysVars.RPCPriority = defaultPriority
 	}
 
-	var directedRead *pb.DirectedReadOptions
+	var directedRead *sppb.DirectedReadOptions
 	if opts.DirectedRead != "" {
 		var err error
 		directedRead, err = parseDirectedReadOption(opts.DirectedRead)
