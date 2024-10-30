@@ -1,7 +1,6 @@
 package main
 
 import (
-	"google.golang.org/genproto/googleapis/spanner/v1"
 	"io/ioutil"
 	"testing"
 
@@ -413,7 +412,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 					},
 					{
 						Index: 1,
-						ChildLinks: []*spanner.PlanNode_ChildLink{
+						ChildLinks: []*sppb.PlanNode_ChildLink{
 							{ChildIndex: 2},
 						},
 						DisplayName: "Distributed Union",
