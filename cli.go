@@ -338,6 +338,9 @@ func (c *Cli) PrintProgressingMark() func() {
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
 	go func() {
+		// wait to avoid corruption with first output of command
+		<-ticker.C
+
 		i := 0
 		for {
 			<-ticker.C
