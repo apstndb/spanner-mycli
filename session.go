@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -387,15 +388,17 @@ func (s *Session) startHeartbeat() {
 	interval := time.NewTicker(5 * time.Second)
 	defer interval.Stop()
 
-	for {
-		select {
-		case <-interval.C:
+	for range interval.C {
+		func() {
 			s.tcMutex.Lock()
+			defer s.tcMutex.Unlock()
 			if s.tc != nil && s.tc.rwTxn != nil && s.tc.sendHeartbeat {
-				heartbeat(s.tc.rwTxn, s.currentPriority())
+				err := heartbeat(s.tc.rwTxn, s.currentPriority())
+				if err != nil {
+					log.Printf("heartbeat error: %v", err)
+				}
 			}
-			s.tcMutex.Unlock()
-		}
+		}()
 	}
 }
 

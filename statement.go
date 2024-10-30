@@ -261,7 +261,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
-			rollback.Execute(ctx, session)
+			if _, rollbackErr := rollback.Execute(ctx, session); err != nil {
+				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
 		}
 		return nil, err
 	}
@@ -946,7 +948,9 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 		if err != nil {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
-			rollback.Execute(ctx, session)
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
 			return nil, fmt.Errorf("transaction was aborted: %v", err)
 		}
 	} else {
@@ -960,7 +964,9 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 		if err != nil {
 			// once error has happened, escape from implicit transaction
 			rollback := &RollbackStatement{}
-			rollback.Execute(ctx, session)
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
 			return nil, err
 		}
 
@@ -1035,13 +1041,14 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 		return nil, err
 	}
 	result := &Result{
-		IsMutation:   true,
-		ColumnNames:  explainAnalyzeColumnNames,
-		ForceVerbose: true,
-		AffectedRows: int(affectedRows),
-		Rows:         rows,
-		Predicates:   predicates,
-		Timestamp:    timestamp,
+		IsMutation:       true,
+		ColumnNames:      explainAnalyzeColumnNames,
+		ForceVerbose:     true,
+		AffectedRows:     int(affectedRows),
+		AffectedRowsType: rowCountTypeExact,
+		Rows:             rows,
+		Predicates:       predicates,
+		Timestamp:        timestamp,
 	}
 
 	return result, nil
@@ -1215,11 +1222,13 @@ func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 
 func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
-		return nil, errors.New("You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
-		(&CloseStatement{}).Execute(ctx, session)
+		if _, err := (&CloseStatement{}).Execute(ctx, session); err != nil {
+			return nil, fmt.Errorf("error on close current transaction: %w", err)
+		}
 	}
 
 	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority, s.Tag)

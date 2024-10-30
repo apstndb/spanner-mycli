@@ -396,7 +396,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		query := spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId))
 		iter := session.client.Single().Query(ctx, query)
 		defer iter.Stop()
-		iter.Do(func(row *spanner.Row) error {
+		_ = iter.Do(func(row *spanner.Row) error {
 			t.Errorf("rollbacked, but written row found: %#v", row)
 			return nil
 		})

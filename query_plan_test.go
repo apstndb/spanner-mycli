@@ -1,15 +1,15 @@
 package main
 
 import (
+	"google.golang.org/genproto/googleapis/spanner/v1"
 	"io/ioutil"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/genproto/googleapis/spanner/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 func mustNewStruct(m map[string]interface{}) *structpb.Struct {
@@ -371,7 +371,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var plan pb.QueryPlan
+			var plan sppb.QueryPlan
 			err = protojson.Unmarshal(b, &plan)
 			if err != nil {
 				t.Fatal(err)
@@ -391,20 +391,20 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 func TestRenderTreeWithStats(t *testing.T) {
 	for _, test := range []struct {
 		title string
-		plan  *spanner.QueryPlan
+		plan  *sppb.QueryPlan
 		want  []QueryPlanRow
 	}{
 		{
 			title: "Simple Query",
-			plan: &spanner.QueryPlan{
-				PlanNodes: []*spanner.PlanNode{
+			plan: &sppb.QueryPlan{
+				PlanNodes: []*sppb.PlanNode{
 					{
 						Index: 0,
-						ChildLinks: []*spanner.PlanNode_ChildLink{
+						ChildLinks: []*sppb.PlanNode_ChildLink{
 							{ChildIndex: 1},
 						},
 						DisplayName: "Distributed Union",
-						Kind:        spanner.PlanNode_RELATIONAL,
+						Kind:        sppb.PlanNode_RELATIONAL,
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
 							"rows":              map[string]interface{}{"total": "9"},
@@ -417,7 +417,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 							{ChildIndex: 2},
 						},
 						DisplayName: "Distributed Union",
-						Kind:        spanner.PlanNode_RELATIONAL,
+						Kind:        sppb.PlanNode_RELATIONAL,
 						Metadata:    mustNewStruct(map[string]interface{}{"call_type": "Local"}),
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
@@ -427,11 +427,11 @@ func TestRenderTreeWithStats(t *testing.T) {
 					},
 					{
 						Index: 2,
-						ChildLinks: []*spanner.PlanNode_ChildLink{
+						ChildLinks: []*sppb.PlanNode_ChildLink{
 							{ChildIndex: 3},
 						},
 						DisplayName: "Serialize Result",
-						Kind:        spanner.PlanNode_RELATIONAL,
+						Kind:        sppb.PlanNode_RELATIONAL,
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
 							"rows":              map[string]interface{}{"total": "9"},
@@ -441,7 +441,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 					{
 						Index:       3,
 						DisplayName: "Scan",
-						Kind:        spanner.PlanNode_RELATIONAL,
+						Kind:        sppb.PlanNode_RELATIONAL,
 						Metadata:    mustNewStruct(map[string]interface{}{"scan_type": "IndexScan", "scan_target": "SongsBySingerAlbumSongNameDesc", "Full scan": "true"}),
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
@@ -501,7 +501,7 @@ func TestNodeString(t *testing.T) {
 		want  string
 	}{
 		{"Distributed Union with call_type=Local",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Distributed Union",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type":             "Local",
@@ -510,7 +510,7 @@ func TestNodeString(t *testing.T) {
 			}}, "Local Distributed Union",
 		},
 		{"Scan with scan_type=IndexScan and Full scan=true",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "IndexScan",
@@ -519,7 +519,7 @@ func TestNodeString(t *testing.T) {
 				}),
 			}}, "Index Scan (Full scan: true, Index: SongsBySongName)"},
 		{"Scan with scan_type=TableScan",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "TableScan",
@@ -527,7 +527,7 @@ func TestNodeString(t *testing.T) {
 				}),
 			}}, "Table Scan (Table: Songs)"},
 		{"Scan with scan_type=BatchScan",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "BatchScan",
@@ -535,21 +535,21 @@ func TestNodeString(t *testing.T) {
 				}),
 			}}, "Batch Scan (Batch: $v2)"},
 		{"Sort Limit with call_type=Local",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Local",
 				}),
 			}}, "Local Sort Limit"},
 		{"Sort Limit with call_type=Global",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Global",
 				}),
 			}}, "Global Sort Limit"},
 		{"Aggregate with iterator_type=Stream",
-			&Node{PlanNode: &spanner.PlanNode{
+			&Node{PlanNode: &sppb.PlanNode{
 				DisplayName: "Aggregate",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"iterator_type": "Stream",
@@ -565,18 +565,18 @@ func TestNodeString(t *testing.T) {
 func TestGetMaxRelationalNodeID(t *testing.T) {
 	for _, tt := range []struct {
 		desc  string
-		input *pb.QueryPlan
+		input *sppb.QueryPlan
 		want  int32
 	}{
 		{
 			desc: "pre-sorted order",
-			input: &pb.QueryPlan{
-				PlanNodes: []*pb.PlanNode{
-					{Index: 0, DisplayName: "Scalar Subquery", Kind: pb.PlanNode_SCALAR},
-					{Index: 1, DisplayName: "Index Scan", Kind: pb.PlanNode_RELATIONAL},
-					{Index: 2, DisplayName: "Index Scan", Kind: pb.PlanNode_RELATIONAL},
-					{Index: 3, DisplayName: "Index Scan", Kind: pb.PlanNode_RELATIONAL},
-					{Index: 4, DisplayName: "Constant", Kind: pb.PlanNode_SCALAR}, // This is not visible
+			input: &sppb.QueryPlan{
+				PlanNodes: []*sppb.PlanNode{
+					{Index: 0, DisplayName: "Scalar Subquery", Kind: sppb.PlanNode_SCALAR},
+					{Index: 1, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
+					{Index: 2, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
+					{Index: 3, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
+					{Index: 4, DisplayName: "Constant", Kind: sppb.PlanNode_SCALAR}, // This is not visible
 				},
 			},
 			want: 3,

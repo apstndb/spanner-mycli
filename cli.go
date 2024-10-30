@@ -123,7 +123,10 @@ func (c *Cli) RunInteractive() int {
 		}
 	}})
 
-	shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+	err := shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+	if err != nil {
+		return c.ExitOnError(err)
+	}
 
 	shell.AcceptMultiline = func(line []rune) (accept bool) {
 		statements, err := separateInput(string(line))
@@ -245,7 +248,10 @@ func (c *Cli) RunInteractive() int {
 				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 				// the Cloud Spanner's session with new one to revert the lock priority of the session.
 				// See: https://cloud.google.com/spanner/docs/reference/rest/v1/TransactionOptions#retrying-aborted-transactions
-				c.Session.RecreateClient()
+				innerErr := c.Session.RecreateClient()
+				if innerErr != nil {
+					err = errors.Join(err, innerErr)
+				}
 			}
 			c.PrintInteractiveError(err)
 			cancel()

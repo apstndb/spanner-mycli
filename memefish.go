@@ -51,12 +51,6 @@ func (e *ErrLexerStatus) Error() string {
 	return fmt.Sprintf("lexer error with waiting: %v", e.WaitingString)
 }
 
-func identity[T any](v T) func() T {
-	return func() T {
-		return v
-	}
-}
-
 func SeparateInputPreserveCommentsWithStatus(filepath, s string) ([]RawStatement, error) {
 	lexer := newLexer(filepath, s)
 
