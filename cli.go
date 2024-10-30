@@ -45,7 +45,9 @@ const (
 	DisplayModeTable DisplayMode = iota
 	DisplayModeVertical
 	DisplayModeTab
+)
 
+const (
 	defaultPrompt      = `spanner\t> `
 	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
 
