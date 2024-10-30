@@ -271,7 +271,8 @@ Variables:
 * `%i` : Cloud Spanner Instance ID
 * `%d` : Cloud Spanner Database ID
 * `%t` : In transaction
-* `%%` : Newline
+* `%n` : Newline
+* `%%` : Character `%`
 
 Example:
 
