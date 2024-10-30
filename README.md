@@ -23,6 +23,9 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Improved interactive experience
   * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
     * Native multi-line editing and histories
+  * Improved prompt
+    * Use `%` for prompt expansion, instead of `\` to avoid escaping
+    * Allow newlines in prompt using `%n`
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
 
@@ -264,17 +267,21 @@ There are some defined variables for being used in prompt.
 
 Variables:
 
-* `\p` : GCP Project ID
-* `\i` : Cloud Spanner Instance ID
-* `\d` : Cloud Spanner Database ID
-* `\t` : In transaction
+* `%p` : GCP Project ID
+* `%i` : Cloud Spanner Instance ID
+* `%d` : Cloud Spanner Database ID
+* `%t` : In transaction
+* `%%` : Newline
 
 Example:
 
 ```
-$ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[\p:\i:\d]\t> '
+$ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[%p:%i:%d]%n\t%% '
 Connected.
-[myproject:myinstance:mydb]> SELECT * FROM users ORDER BY id ASC;
+[myproject:myinstance:mydb]
+%
+[myproject:myinstance:mydb]
+% SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
@@ -283,13 +290,15 @@ Connected.
 +----+------+--------+
 2 rows in set (3.09 msecs)
 
-[myproject:myinstance:mydb]> begin;
+[myproject:myinstance:mydb]
+% begin;
 Query OK, 0 rows affected (0.08 sec)
 
-[myproject:myinstance:mydb](rw txn)> ...
+[myproject:myinstance:mydb]
+(rw txn)% ...
 ```
 
-The default prompt is `spanner\t> `.
+The default prompt is `spanner%t> `.
 
 ## Config file
 
@@ -303,7 +312,7 @@ Example:
 [spanner]
 project = myproject
 instance = myinstance
-prompt = "[\\p:\\i:\\d]\\t> "
+prompt = "[%p:%i:%d]%t> "
 ```
 
 ## Configuration Precedence
