@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 func TestBuildStatement(t *testing.T) {
@@ -260,14 +260,14 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "BEGIN PRIORITY statement",
 			input: "BEGIN PRIORITY MEDIUM",
 			want: &BeginRwStatement{
-				Priority: pb.RequestOptions_PRIORITY_MEDIUM,
+				Priority: sppb.RequestOptions_PRIORITY_MEDIUM,
 			},
 		},
 		{
 			desc:  "BEGIN RW PRIORITY statement",
 			input: "BEGIN RW PRIORITY LOW",
 			want: &BeginRwStatement{
-				Priority: pb.RequestOptions_PRIORITY_LOW,
+				Priority: sppb.RequestOptions_PRIORITY_LOW,
 			},
 		},
 		{
@@ -288,7 +288,7 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "BEGIN PRIORITY statement with TAG",
 			input: "BEGIN PRIORITY MEDIUM TAG app=spanner-cli,env=test",
 			want: &BeginRwStatement{
-				Priority: pb.RequestOptions_PRIORITY_MEDIUM,
+				Priority: sppb.RequestOptions_PRIORITY_MEDIUM,
 				Tag:      "app=spanner-cli,env=test",
 			},
 		},
@@ -310,7 +310,7 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "BEGIN PRIORITY statement with TAG whitespace",
 			input: "BEGIN PRIORITY MEDIUM TAG app=spanner-cli env=test",
 			want: &BeginRwStatement{
-				Priority: pb.RequestOptions_PRIORITY_MEDIUM,
+				Priority: sppb.RequestOptions_PRIORITY_MEDIUM,
 				Tag:      "app=spanner-cli env=test",
 			},
 		},
@@ -340,7 +340,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO PRIORITY statement",
 			input: "BEGIN RO PRIORITY LOW",
-			want:  &BeginRoStatement{TimestampBoundType: strong, Priority: pb.RequestOptions_PRIORITY_LOW},
+			want:  &BeginRoStatement{TimestampBoundType: strong, Priority: sppb.RequestOptions_PRIORITY_LOW},
 		},
 		{
 			desc:  "BEGIN RO staleness with PRIORITY statement",
@@ -348,7 +348,7 @@ func TestBuildStatement(t *testing.T) {
 			want: &BeginRoStatement{
 				Staleness:          time.Duration(10 * time.Second),
 				TimestampBoundType: exactStaleness,
-				Priority:           pb.RequestOptions_PRIORITY_HIGH,
+				Priority:           sppb.RequestOptions_PRIORITY_HIGH,
 			},
 		},
 		{
@@ -383,7 +383,7 @@ func TestBuildStatement(t *testing.T) {
 			input: "BEGIN RO PRIORITY LOW TAG app=spanner-cli,env=test",
 			want: &BeginRoStatement{
 				TimestampBoundType: strong,
-				Priority:           pb.RequestOptions_PRIORITY_LOW,
+				Priority:           sppb.RequestOptions_PRIORITY_LOW,
 				Tag:                "app=spanner-cli,env=test",
 			},
 		},
@@ -393,7 +393,7 @@ func TestBuildStatement(t *testing.T) {
 			want: &BeginRoStatement{
 				Staleness:          time.Duration(10 * time.Second),
 				TimestampBoundType: exactStaleness,
-				Priority:           pb.RequestOptions_PRIORITY_HIGH,
+				Priority:           sppb.RequestOptions_PRIORITY_HIGH,
 				Tag:                "app=spanner-cli,env=test",
 			},
 		},

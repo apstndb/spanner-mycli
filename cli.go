@@ -33,7 +33,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"cloud.google.com/go/spanner"
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/olekukonko/tablewriter"
 	"github.com/reeflective/readline"
 	"google.golang.org/api/option"
@@ -71,9 +71,9 @@ type Cli struct {
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Verbose         bool
-	Priority        pb.RequestOptions_Priority
-	Endpoint        string
+	Verbose  bool
+	Priority sppb.RequestOptions_Priority
+	Endpoint string
 	SystemVariables *systemVariables
 }
 
@@ -82,7 +82,7 @@ type command struct {
 	Vertical bool
 }
 
-func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
+func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(projectId, instanceId, databaseId, credential, role, endpoint, directedRead, sysVars)
 	if err != nil {
 		return nil, err
@@ -285,7 +285,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &pb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
@@ -379,7 +379,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 	return prompt
 }
 
-func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *pb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
+func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))

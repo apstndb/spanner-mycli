@@ -35,7 +35,7 @@ import (
 	"google.golang.org/api/option"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	pb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 const (
@@ -88,7 +88,7 @@ func setup(t *testing.T, ctx context.Context, dmls []string) (*Session, string, 
 	if testCredential != "" {
 		options = append(options, option.WithCredentialsJSON([]byte(testCredential)))
 	}
-	session, err := NewSession(testProjectId, testInstanceId, testDatabaseId, "", nil, &systemVariables{RPCPriority: pb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	session, err := NewSession(testProjectId, testInstanceId, testDatabaseId, "", nil, &systemVariables{RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
 	if err != nil {
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
@@ -188,9 +188,9 @@ func TestSelect(t *testing.T) {
 			Row{[]string{"2", "false"}},
 		},
 		AffectedRows: 2,
-		ColumnTypes: []*pb.StructType_Field{
-			{Name: "id", Type: &pb.Type{Code: pb.TypeCode_INT64}},
-			{Name: "active", Type: &pb.Type{Code: pb.TypeCode_BOOL}},
+		ColumnTypes: []*sppb.StructType_Field{
+			{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+			{Name: "active", Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
 		},
 		IsMutation: false,
 	})
@@ -491,9 +491,9 @@ func TestReadOnlyTransaction(t *testing.T) {
 				Row{[]string{"2", "false"}},
 			},
 
-			ColumnTypes: []*pb.StructType_Field{
-				{Name: "id", Type: &pb.Type{Code: pb.TypeCode_INT64}},
-				{Name: "active", Type: &pb.Type{Code: pb.TypeCode_BOOL}},
+			ColumnTypes: []*sppb.StructType_Field{
+				{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+				{Name: "active", Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
 			},
 			AffectedRows: 2,
 			IsMutation:   false,
@@ -566,9 +566,9 @@ func TestReadOnlyTransaction(t *testing.T) {
 				Row{[]string{"1", "true"}},
 				Row{[]string{"2", "false"}},
 			},
-			ColumnTypes: []*pb.StructType_Field{
-				{Name: "id", Type: &pb.Type{Code: pb.TypeCode_INT64}},
-				{Name: "active", Type: &pb.Type{Code: pb.TypeCode_BOOL}},
+			ColumnTypes: []*sppb.StructType_Field{
+				{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+				{Name: "active", Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
 			},
 			AffectedRows: 2,
 			IsMutation:   false,
