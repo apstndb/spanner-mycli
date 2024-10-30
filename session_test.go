@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"google.golang.org/grpc/credentials/insecure"
 	"testing"
 	"time"
 
@@ -22,12 +23,12 @@ func TestRequestPriority(t *testing.T) {
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
 	opts := []grpc.DialOption{
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(unaryInterceptor),
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
 	ctx := context.Background()
-	conn, err := grpc.DialContext(ctx, server.Addr, opts...)
+	conn, err := grpc.NewClient(server.Addr, opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
