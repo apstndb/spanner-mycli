@@ -321,7 +321,10 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 
 func (s *Session) Close() {
 	s.client.Close()
-	s.adminClient.Close()
+	err := s.adminClient.Close()
+	if err != nil {
+		log.Printf("error on adminClient.Close(): %v", err)
+	}
 }
 
 func (s *Session) DatabasePath() string {
