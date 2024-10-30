@@ -259,7 +259,7 @@ func (c *Cli) RunInteractive() int {
 			c.updateSystemVariables(result)
 		}
 
-		c.PrintResult(result, DisplayModeTable, true)
+		c.PrintResult(result, c.SystemVariables.CLIFormat, true)
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
