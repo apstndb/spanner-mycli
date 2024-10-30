@@ -446,13 +446,13 @@ func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, v
 			table.Render()
 		}
 	} else if mode == DisplayModeVertical {
-		max := 0
+		maxLen := 0
 		for _, columnName := range result.ColumnNames {
-			if len(columnName) > max {
-				max = len(columnName)
+			if len(columnName) > maxLen {
+				maxLen = len(columnName)
 			}
 		}
-		format := fmt.Sprintf("%%%ds: %%s\n", max) // for align right
+		format := fmt.Sprintf("%%%ds: %%s\n", maxLen) // for align right
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row.Columns {

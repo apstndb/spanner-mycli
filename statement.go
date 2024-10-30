@@ -1219,8 +1219,7 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	}
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
-		close := &CloseStatement{}
-		close.Execute(ctx, session)
+		(&CloseStatement{}).Execute(ctx, session)
 	}
 
 	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority, s.Tag)
