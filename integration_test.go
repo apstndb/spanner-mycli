@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"google.golang.org/protobuf/testing/protocmp"
 	"os"
@@ -227,7 +228,7 @@ func TestDml(t *testing.T) {
 	var gotStructs []testTableSchema
 	for {
 		row, err := iter.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -315,7 +316,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		var gotStructs []testTableSchema
 		for {
 			row, err := iter.Next()
-			if err == iterator.Done {
+			if errors.Is(err, iterator.Done) {
 				break
 			}
 			if err != nil {

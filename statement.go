@@ -303,7 +303,7 @@ func parseQueryResult(iter *spanner.RowIterator) ([]Row, []string, error) {
 	var rows []Row
 	for {
 		row, err := iter.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -526,7 +526,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 
 	for {
 		database, err := dbIter.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {

@@ -175,7 +175,7 @@ func (c *Cli) RunInteractive() int {
 		if err == io.EOF {
 			return c.Exit()
 		}
-		if err == readline.ErrInterrupt {
+		if errors.Is(err, readline.ErrInterrupt) {
 			return c.Exit()
 		}
 		if err != nil {
