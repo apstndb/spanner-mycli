@@ -65,8 +65,13 @@ func main() {
 	}
 
 	// then, process environment variables and command line options
-	// use another parser to process environment variable
-	if _, err := flags.NewParser(&gopts, flags.Default).Parse(); err != nil {
+	// use another parser to process environment variables with higher precedence than configuration files
+	flagParser := flags.NewParser(&gopts, flags.Default)
+	if _, err := flagParser.Parse(); flags.WroteHelp(err) {
+		// exit successfully
+		return
+	} else if err != nil {
+		flags.NewParser(&gopts, flags.Default).WriteHelp(os.Stderr)
 		exitf("Invalid options\n")
 	}
 
