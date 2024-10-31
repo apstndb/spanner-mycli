@@ -367,30 +367,26 @@ var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
 
 func (c *Cli) getInterpolatedPrompt() string {
 	return promptRe.ReplaceAllStringFunc(c.SystemVariables.Prompt, func(s string) string {
-		switch s {
-		case "%%":
-			return "%"
-		case "%n":
-			return "\n"
-		case "%p":
-			return c.SystemVariables.Project
-		case "%i":
-			return c.SystemVariables.Instance
-		case "%d":
-			return c.SystemVariables.Database
-		case "%t":
-			return lo.
+		return lo.Switch[string, string](s).
+			Case("%%", "%").
+			Case("%n", "\n").
+			Case("%p", c.SystemVariables.Project).
+			Case("%i", c.SystemVariables.Instance).
+			Case("%d", c.SystemVariables.Database).
+			Case("%t", lo.
 				If(c.Session.InReadWriteTransaction(), "(rw txn)").
 				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
-				Else("")
-		default:
-			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
-			value, err := c.SystemVariables.Get(varName)
-			if err != nil {
-				return fmt.Sprintf("INVALID_VAR{%v}", varName)
-			}
-			return value[varName]
-		}
+				Else("")).
+			DefaultF(
+				func() string {
+					varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
+					value, err := c.SystemVariables.Get(varName)
+					if err != nil {
+						return fmt.Sprintf("INVALID_VAR{%v}", varName)
+					}
+					return value[varName]
+				},
+			)
 	})
 }
 
