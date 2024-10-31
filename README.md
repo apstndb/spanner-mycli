@@ -437,7 +437,6 @@ $ spanner-mycli -p myproject -i myinstance -d mydb
 
 Run unit tests.
 
-
 ```
 $ make test
 ```
