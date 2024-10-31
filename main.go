@@ -47,7 +47,7 @@ type spannerOptions struct {
 	Credential   string            `long:"credential" description:"Use the specific credential file"`
 	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
 	LogMemefish  bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
-	HistoryFile  string            `long:"history" description:"Set the history file to the specified path"`
+	HistoryFile  string            `long:"history" description:"Set the history file to the specified path" default:"/tmp/spanner_mycli_readline.tmp"`
 	Priority     string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role         string            `long:"role" description:"Use the specific database role"`
 	Endpoint     string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
@@ -85,11 +85,12 @@ func main() {
 	}
 
 	sysVars := systemVariables{
-		Project:  opts.ProjectId,
-		Instance: opts.InstanceId,
-		Database: opts.DatabaseId,
-		Verbose:  opts.Verbose,
-		Prompt:   opts.Prompt,
+		Project:     opts.ProjectId,
+		Instance:    opts.InstanceId,
+		Database:    opts.DatabaseId,
+		Verbose:     opts.Verbose,
+		Prompt:      opts.Prompt,
+		HistoryFile: opts.HistoryFile,
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -132,7 +133,6 @@ func main() {
 	}
 
 	cli, err := NewCli(
-		opts.HistoryFile,
 		cred,
 		os.Stdin,
 		os.Stdout,

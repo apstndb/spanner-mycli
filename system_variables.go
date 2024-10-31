@@ -24,6 +24,7 @@ type systemVariables struct {
 	Project, Instance, Database string
 	Verbose                     bool
 	Prompt                      string
+	HistoryFile                 string
 }
 
 var errIgnored = errors.New("ignored")
@@ -250,10 +251,14 @@ var accessorMap = map[string]accessor{
 			return nil
 		},
 	},
-	"CLI_ROLE":         {},
-	"CLI_ENDPOINT":     {},
-	"CLI_DIRECT_READ":  {},
-	"CLI_HISTORY_FILE": {},
+	"CLI_ROLE":        {},
+	"CLI_ENDPOINT":    {},
+	"CLI_DIRECT_READ": {},
+	"CLI_HISTORY_FILE": {
+		Getter: stringGetter(
+			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
+		),
+	},
 	"CLI_PROMPT": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
 		Setter: stringSetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),

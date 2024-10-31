@@ -48,15 +48,12 @@ const (
 )
 
 const (
-	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
-
 	exitCodeSuccess = 0
 	exitCodeError   = 1
 )
 
 type Cli struct {
 	Session         *Session
-	HistoryFile     string
 	Credential      []byte
 	InStream        io.ReadCloser
 	OutStream       io.Writer
@@ -72,7 +69,6 @@ type command struct {
 }
 
 func NewCli(
-	historyFile string,
 	credential []byte,
 	inStream io.ReadCloser,
 	outStream, errStream io.Writer,
@@ -94,13 +90,8 @@ func NewCli(
 		return nil, err
 	}
 
-	if historyFile == "" {
-		historyFile = defaultHistoryFile
-	}
-
 	return &Cli{
 		Session:         session,
-		HistoryFile:     historyFile,
 		Credential:      credential,
 		InStream:        inStream,
 		OutStream:       outStream,
@@ -153,7 +144,7 @@ func (c *Cli) RunInteractive() int {
 		return false
 	}
 
-	shell.History.AddFromFile("history name", c.HistoryFile)
+	shell.History.AddFromFile("history name", c.SystemVariables.HistoryFile)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
