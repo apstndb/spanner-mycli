@@ -147,24 +147,12 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
-	"OPTIMIZER_VERSION": {
-		func(this *systemVariables, name, value string) error {
-			this.OptimizerVersion = unquoteString(value)
-			return nil
-		},
-		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.OptimizerVersion), nil
-		},
-	},
-	"OPTIMIZER_STATISTICS_PACKAGE": {
-		func(this *systemVariables, name, value string) error {
-			this.OptimizerStatisticsPackage = unquoteString(value)
-			return nil
-		},
-		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.OptimizerStatisticsPackage), nil
-		},
-	},
+	"OPTIMIZER_VERSION": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.OptimizerVersion
+	}),
+	"OPTIMIZER_STATISTICS_PACKAGE": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.OptimizerStatisticsPackage
+	}),
 	"RETURN_COMMIT_STATS": {},
 	"RPC_PRIORITY": {
 		func(this *systemVariables, name, value string) error {
@@ -278,10 +266,7 @@ var accessorMap = map[string]accessor{
 			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
 		),
 	},
-	"CLI_PROMPT": {
-		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
-		Setter: stringSetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
-	},
+	"CLI_PROMPT": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
 	"CLI_PROJECT": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			return singletonMap(name, this.Project), nil
@@ -299,21 +284,29 @@ var accessorMap = map[string]accessor{
 	},
 }
 
-func stringGetter(f func(*systemVariables) *string) getter {
-	return func(sysVars *systemVariables, name string) (map[string]string, error) {
-		ref := f(sysVars)
+func stringGetter(f func(sysVars *systemVariables) *string) getter {
+	return func(this *systemVariables, name string) (map[string]string, error) {
+		ref := f(this)
 		return singletonMap(name, *ref), nil
 	}
 }
 
-func stringSetter(f func(*systemVariables) *string) setter {
-	return func(sysVars *systemVariables, name, value string) error {
-		ref := f(sysVars)
+func stringSetter(f func(sysVars *systemVariables) *string) setter {
+	return func(this *systemVariables, name, value string) error {
+		ref := f(this)
 		s := unquoteString(value)
 		*ref = s
 		return nil
 	}
 }
+
+func stringAccessor(f func(variables *systemVariables) *string) accessor {
+	return accessor{
+		Setter: stringSetter(f),
+		Getter: stringGetter(f),
+	}
+}
+
 func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 	first, second, _ := strings.Cut(s, " ")
 
