@@ -58,7 +58,6 @@ type Cli struct {
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Priority        sppb.RequestOptions_Priority
 	Endpoint        string
 	SystemVariables *systemVariables
 }
