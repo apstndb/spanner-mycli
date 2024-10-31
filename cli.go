@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"time"
 
@@ -361,18 +362,36 @@ func (c *Cli) PrintProgressingMark() func() {
 	return stop
 }
 
+var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
+var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+
 func (c *Cli) getInterpolatedPrompt() string {
-	return strings.NewReplacer(
-		"%%", "%",
-		"%n", "\n",
-		"%p", c.Session.projectId,
-		"%i", c.Session.projectId,
-		"%d", c.Session.databaseId,
-		"%t", lo.
-			If(c.Session.InReadWriteTransaction(), "(rw txn)").
-			ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
-			Else(""),
-	).Replace(c.SystemVariables.Prompt)
+	return promptRe.ReplaceAllStringFunc(c.SystemVariables.Prompt, func(s string) string {
+		switch s {
+		case "%%":
+			return "%"
+		case "%n":
+			return "\n"
+		case "%p":
+			return c.SystemVariables.Project
+		case "%i":
+			return c.SystemVariables.Instance
+		case "%d":
+			return c.SystemVariables.Database
+		case "%t":
+			return lo.
+				If(c.Session.InReadWriteTransaction(), "(rw txn)").
+				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
+				Else("")
+		default:
+			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
+			value, err := c.SystemVariables.Get(varName)
+			if err != nil {
+				return fmt.Sprintf("INVALID_VAR{%v}", varName)
+			}
+			return value[varName]
+		}
+	})
 }
 
 func createSession(
