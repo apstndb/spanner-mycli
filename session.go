@@ -48,9 +48,6 @@ var defaultClientOpts = []option.ClientOption{
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
-	projectId       string
-	instanceId      string
-	databaseId      string
 	client          *spanner.Client
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
@@ -362,14 +359,18 @@ func (s *Session) Close() {
 func (s *Session) DatabasePath() string {
 	return fmt.Sprintf(
 		"projects/%s/instances/%s/databases/%s",
-		s.projectId,
-		s.instanceId,
-		s.databaseId,
+		s.systemVariables.Project,
+		s.systemVariables.Instance,
+		s.systemVariables.Database,
 	)
 }
 
 func (s *Session) InstancePath() string {
-	return fmt.Sprintf("projects/%s/instances/%s", s.projectId, s.instanceId)
+	return fmt.Sprintf(
+		"projects/%s/instances/%s",
+		s.systemVariables.Project,
+		s.systemVariables.Instance,
+	)
 }
 
 func (s *Session) DatabaseExists() (bool, error) {

@@ -113,8 +113,12 @@ var (
 	pdmlRe = regexp.MustCompile(`(?is)^PARTITIONED\s+((?:INSERT|UPDATE|DELETE)\s+.+$)`)
 
 	// Transaction
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`)
+	beginRwRe = regexp.MustCompile(
+		`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`,
+	)
+	beginRoRe = regexp.MustCompile(
+		`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`,
+	)
 	commitRe   = regexp.MustCompile(`(?is)^COMMIT$`)
 	rollbackRe = regexp.MustCompile(`(?is)^ROLLBACK$`)
 	closeRe    = regexp.MustCompile(`(?is)^CLOSE$`)
@@ -136,8 +140,14 @@ var (
 
 var (
 	explainColumnNames        = []string{"ID", "Query_Execution_Plan"}
-	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan", "Rows_Returned", "Executions", "Total_Latency"}
-	describeColumnNames       = []string{"Column_Name", "Column_Type"}
+	explainAnalyzeColumnNames = []string{
+		"ID",
+		"Query_Execution_Plan",
+		"Rows_Returned",
+		"Executions",
+		"Total_Latency",
+	}
+	describeColumnNames = []string{"Column_Name", "Column_Type"}
 )
 
 func BuildStatement(input string) (Statement, error) {
@@ -151,7 +161,10 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		return &ExitStatement{}, nil
 	case useRe.MatchString(trimmed):
 		matched := useRe.FindStringSubmatch(trimmed)
-		return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
+		return &UseStatement{
+			Database: unquoteIdentifier(matched[1]),
+			Role:     unquoteIdentifier(matched[2]),
+		}, nil
 	case selectRe.MatchString(trimmed):
 		return &SelectStatement{Query: raw}, nil
 	case createDatabaseRe.MatchString(trimmed):
@@ -397,7 +410,7 @@ type DropDatabaseStatement struct {
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
-		Database: fmt.Sprintf("projects/%s/instances/%s/databases/%s", session.projectId, session.instanceId, s.DatabaseId),
+		Database: fmt.Sprintf("projects/%s/instances/%s/databases/%s", session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
 		return nil, err
 	}
@@ -610,8 +623,13 @@ func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*R
 		return nil, errors.New(`"SHOW TABLES" can not be used in a read-write transaction`)
 	}
 
-	alias := fmt.Sprintf("Tables_in_%s", session.databaseId)
-	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
+	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
+	stmt := spanner.NewStatement(
+		fmt.Sprintf(
+			"SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema",
+			alias,
+		),
+	)
 	stmt.Params["schema"] = s.Schema
 
 	iter, _ := session.RunQuery(ctx, stmt)
@@ -636,7 +654,12 @@ type ExplainStatement struct {
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, spanner.NewStatement(s.Explain), s.IsDML)
+	queryPlan, timestamp, _, err := runAnalyzeQuery(
+		ctx,
+		session,
+		spanner.NewStatement(s.Explain),
+		s.IsDML,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -668,14 +691,22 @@ type DescribeStatement struct {
 
 // Execute processes `DESCRIBE` statement for queries and DMLs.
 func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, spanner.NewStatement(s.Statement), s.IsDML)
+	_, timestamp, metadata, err := runAnalyzeQuery(
+		ctx,
+		session,
+		spanner.NewStatement(s.Statement),
+		s.IsDML,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	var rows []Row
 	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, Row{Columns: []string{field.GetName(), formatTypeVerbose(field.GetType())}})
+		rows = append(
+			rows,
+			Row{Columns: []string{field.GetName(), formatTypeVerbose(field.GetType())}},
+		)
 	}
 
 	result := &Result{
@@ -688,16 +719,25 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
+func runAnalyzeQuery(
+	ctx context.Context,
+	session *Session,
+	stmt spanner.Statement,
+	isDML bool,
+) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
 	if !isDML {
 		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return 0, plan, metadata, err
-	})
+	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(
+		ctx,
+		session,
+		func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+			plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
+			return 0, plan, metadata, err
+		},
+	)
 	return queryPlan, timestamp, metadata, err
 }
 
@@ -727,7 +767,9 @@ func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session)
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
 	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
 	if iter.QueryPlan == nil {
-		return nil, errors.New("EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
+		return nil, errors.New(
+			"EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.",
+		)
 	}
 
 	rows, predicates, err := processPlanWithStats(iter.QueryPlan)
@@ -761,7 +803,10 @@ func processPlanWithoutStats(plan *sppb.QueryPlan) (rows []Row, predicates []str
 	return processPlanImpl(plan, false)
 }
 
-func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicates []string, err error) {
+func processPlanImpl(
+	plan *sppb.QueryPlan,
+	withStats bool,
+) (rows []Row, predicates []string, err error) {
 	planNodes := plan.GetPlanNodes()
 	maxWidthOfNodeID := len(fmt.Sprint(getMaxRelationalNodeID(plan)))
 	widthOfNodeIDWithIndicator := maxWidthOfNodeID + 1
@@ -780,7 +825,12 @@ func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicat
 			formattedID = fmt.Sprintf("%*d", widthOfNodeIDWithIndicator, row.ID)
 		}
 		if withStats {
-			rows = append(rows, Row{[]string{formattedID, row.Text, row.RowsTotal, row.Execution, row.LatencyTotal}})
+			rows = append(
+				rows,
+				Row{
+					[]string{formattedID, row.Text, row.RowsTotal, row.Execution, row.LatencyTotal},
+				},
+			)
 		} else {
 			rows = append(rows, Row{[]string{formattedID, row.Text}})
 		}
@@ -994,11 +1044,15 @@ type PartitionedDmlStatement struct {
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
+		return nil, errors.New(
+			`Partitioned DML statement can not be run in a read-write transaction`,
+		)
 	}
 	if session.InReadOnlyTransaction() {
 		// Just for user-friendly.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
+		return nil, errors.New(
+			`Partitioned DML statement can not be run in a read-only transaction`,
+		)
 	}
 
 	stmt := spanner.NewStatement(s.Dml)
@@ -1020,18 +1074,25 @@ type ExplainAnalyzeDmlStatement struct {
 	Dml string
 }
 
-func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExplainAnalyzeDmlStatement) Execute(
+	ctx context.Context,
+	session *Session,
+) (*Result, error) {
 	stmt := spanner.NewStatement(s.Dml)
 
-	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt)
-		defer iter.Stop()
-		err := iter.Do(func(r *spanner.Row) error { return nil })
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return iter.RowCount, iter.QueryPlan, iter.Metadata, nil
-	})
+	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(
+		ctx,
+		session,
+		func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+			iter, _ := session.RunQueryWithStats(ctx, stmt)
+			defer iter.Stop()
+			err := iter.Do(func(r *spanner.Row) error { return nil })
+			if err != nil {
+				return 0, nil, nil, err
+			}
+			return iter.RowCount, iter.QueryPlan, iter.Metadata, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,7 +1117,11 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 
 // runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
 // It execute a function in the current RW transaction or an implicit RW transaction.
-func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+func runInNewOrExistRwTxForExplain(
+	ctx context.Context,
+	session *Session,
+	f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+) (affected int64, ts time.Time, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 	if session.InReadWriteTransaction() {
 		affected, plan, metadata, err := f()
 		if err != nil {
@@ -1121,10 +1186,14 @@ func newBeginRwStatement(input string) (*BeginRwStatement, error) {
 
 func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
-		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+		return nil, errors.New(
+			"you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'",
+		)
 	}
 	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
+		return nil, errors.New(
+			"you're in read-only transaction. Please finish the transaction by 'CLOSE;'",
+		)
 	}
 
 	if err := session.BeginReadWriteTransaction(ctx, s.Priority, s.Tag); err != nil {
@@ -1139,7 +1208,9 @@ type CommitStatement struct{}
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
+		return nil, errors.New(
+			"you're in read-only transaction. Please finish the transaction by 'CLOSE;'",
+		)
 	}
 	if !session.InReadWriteTransaction() {
 		return result, nil
@@ -1160,7 +1231,9 @@ type RollbackStatement struct{}
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
+		return nil, errors.New(
+			"you're in read-only transaction. Please finish the transaction by 'CLOSE;'",
+		)
 	}
 	if !session.InReadWriteTransaction() {
 		return result, nil
@@ -1227,7 +1300,9 @@ func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 
 func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
-		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+		return nil, errors.New(
+			"invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'",
+		)
 	}
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
@@ -1236,7 +1311,14 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 		}
 	}
 
-	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority, s.Tag)
+	ts, err := session.BeginReadOnlyTransaction(
+		ctx,
+		s.TimestampBoundType,
+		s.Staleness,
+		s.Timestamp,
+		s.Priority,
+		s.Tag,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1251,7 +1333,9 @@ type CloseStatement struct{}
 
 func (s *CloseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
-		return nil, errors.New("You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+		return nil, errors.New(
+			"You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'",
+		)
 	}
 
 	result := &Result{IsMutation: true}

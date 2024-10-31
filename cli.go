@@ -142,7 +142,7 @@ func (c *Cli) RunInteractive() int {
 	if exists {
 		fmt.Fprintf(c.OutStream, "Connected.\n")
 	} else {
-		return c.ExitOnError(fmt.Errorf("unknown database %q", c.Session.databaseId))
+		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
 	}
 
 	for {
@@ -211,7 +211,7 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
-			if c.Session.databaseId == s.DatabaseId {
+			if c.SystemVariables.Database == s.DatabaseId {
 				c.PrintInteractiveError(
 					fmt.Errorf(
 						"database %q is currently used, it can not be dropped",
