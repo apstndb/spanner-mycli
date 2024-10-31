@@ -90,7 +90,6 @@ func setup(t *testing.T, ctx context.Context, dmls []string) (*Session, string, 
 		options = append(options, option.WithCredentialsJSON([]byte(testCredential)))
 	}
 	session, err := NewSession(
-		nil,
 		&systemVariables{
 			Project:     testProjectId,
 			Instance:    testInstanceId,

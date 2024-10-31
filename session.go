@@ -55,7 +55,6 @@ type Session struct {
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
-	directedRead    *sppb.DirectedReadOptions
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
 	systemVariables *systemVariables
@@ -70,7 +69,6 @@ type transactionContext struct {
 }
 
 func NewSession(
-	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
 	opts ...option.ClientOption,
 ) (*Session, error) {
@@ -83,7 +81,8 @@ func NewSession(
 	)
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Role
-	clientConfig.DirectedReadOptions = directedRead
+	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+
 	opts = append(opts, defaultClientOpts...)
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, opts...)
 	if err != nil {
@@ -100,7 +99,6 @@ func NewSession(
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
-		directedRead:    directedRead,
 		systemVariables: sysVars,
 	}
 	go session.startHeartbeat()

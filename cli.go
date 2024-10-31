@@ -70,12 +70,10 @@ func NewCli(
 	credential []byte,
 	inStream io.ReadCloser,
 	outStream, errStream io.Writer,
-	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
 ) (*Cli, error) {
 	session, err := createSession(
 		credential,
-		directedRead,
 		sysVars,
 	)
 	if err != nil {
@@ -187,7 +185,6 @@ func (c *Cli) RunInteractive() int {
 
 			newSession, err := createSession(
 				c.Credential,
-				c.Session.directedRead,
 				c.SystemVariables,
 			)
 			if err != nil {
@@ -381,7 +378,6 @@ func (c *Cli) getInterpolatedPrompt() string {
 
 func createSession(
 	credential []byte,
-	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
 ) (*Session, error) {
 	var opts []option.ClientOption
@@ -391,7 +387,7 @@ func createSession(
 	if sysVars.Endpoint != "" {
 		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
 	}
-	return NewSession(directedRead, sysVars, opts...)
+	return NewSession(sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {

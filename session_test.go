@@ -69,7 +69,6 @@ func TestRequestPriority(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(
-				nil,
 				&systemVariables{
 					Project:     "project",
 					Instance:    "instance",

@@ -124,6 +124,7 @@ func main() {
 		if err != nil {
 			exitf("Invalid directed read option: %v\n", err)
 		}
+		sysVars.DirectedRead = directedRead
 	}
 
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
@@ -139,7 +140,6 @@ func main() {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		directedRead,
 		&sysVars,
 	)
 	if err != nil {

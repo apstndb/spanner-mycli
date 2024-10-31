@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"spheric.cloud/xiter"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -27,6 +30,7 @@ type systemVariables struct {
 	HistoryFile                 string
 	Role                        string
 	Endpoint                    string
+	DirectedRead                *sppb.DirectedReadOptions
 }
 
 var errIgnored = errors.New("ignored")
@@ -259,7 +263,16 @@ var accessorMap = map[string]accessor{
 	"CLI_ENDPOINT": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
 	},
-	"CLI_DIRECT_READ": {},
+	"CLI_DIRECT_READ": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, xiter.Join(xiter.Map(
+				slices.Values(this.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+				func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
+					return fmt.Sprintf("%v:%v", rs.GetLocation(), rs.GetType())
+				},
+			), ",")), nil
+		},
+	},
 	"CLI_HISTORY_FILE": {
 		Getter: stringGetter(
 			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
