@@ -33,16 +33,9 @@ func TestBuildCommands(t *testing.T) {
 		Expected    []*command
 		ExpectError bool
 	}{
-		{
-			Input:    `SELECT * FROM t1;`,
-			Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}},
-		},
-		{
-			Input:    `CREATE TABLE t1;`,
-			Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}},
-		},
-		{
-			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
+		{Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
+		{Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
+		{Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []*command{{&BulkDdlStatement{[]string{
 				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
@@ -331,13 +324,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			if got := resultLine(tt.result, tt.verbose); tt.want != got {
-				t.Errorf(
-					"resultLine(%v, %v) = %q, but want = %q",
-					tt.result,
-					tt.verbose,
-					got,
-					tt.want,
-				)
+				t.Errorf("resultLine(%v, %v) = %q, but want = %q", tt.result, tt.verbose, got, tt.want)
 			}
 		})
 	}

@@ -129,19 +129,13 @@ var accessorMap = map[string]accessor{
 				if err != nil {
 					return nil, err
 				}
-				return singletonMap(
-					name,
-					fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano)),
-				), nil
+				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
 			case "minReadTimestamp":
 				ts, err := parseTimeString(matches[2])
 				if err != nil {
 					return nil, err
 				}
-				return singletonMap(
-					name,
-					fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano)),
-				), nil
+				return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
 			default:
 				return singletonMap(name, s), nil
 			}
@@ -167,10 +161,7 @@ var accessorMap = map[string]accessor{
 			return nil
 		},
 		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(
-				name,
-				strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_"),
-			), nil
+			return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
 		},
 	},
 	"STATEMENT_TAG":   {},

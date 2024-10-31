@@ -206,12 +206,7 @@ func generateUniqueTableId() string {
 	return fmt.Sprintf("spanner_cli_test_%d_%d", time.Now().UnixNano(), count)
 }
 
-func setup(
-	t *testing.T,
-	ctx context.Context,
-	spannerContainer *gcloud.GCloudContainer,
-	dmls []string,
-) (*Session, string, func()) {
+func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudContainer, dmls []string) (*Session, string, func()) {
 	options := defaultClientOptions(spannerContainer)
 	session, err := NewSession(
 		&systemVariables{
@@ -224,12 +219,7 @@ func setup(
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
 
-	dbPath := fmt.Sprintf(
-		"projects/%s/instances/%s/databases/%s",
-		spannerContainer.Settings.ProjectID,
-		testInstanceId,
-		testDatabaseId,
-	)
+	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
 
 	tableId := generateUniqueTableId()
 	tableSchema := fmt.Sprintf(`
@@ -253,16 +243,13 @@ func setup(
 	for _, dml := range dmls {
 		dml = strings.Replace(dml, "[[TABLE]]", tableId, -1)
 		stmt := spanner.NewStatement(dml)
-		_, err := session.client.ReadWriteTransaction(
-			ctx,
-			func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-				_, err = txn.Update(ctx, stmt)
-				if err != nil {
-					t.Fatalf("failed to apply DML: dml=%s, err=%s", dml, err)
-				}
-				return nil
-			},
-		)
+		_, err := session.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+			_, err = txn.Update(ctx, stmt)
+			if err != nil {
+				t.Fatalf("failed to apply DML: dml=%s, err=%s", dml, err)
+			}
+			return nil
+		})
 		if err != nil {
 			t.Fatalf("failed to apply DML: dml=%s, err=%s", dml, err)
 		}
@@ -344,9 +331,7 @@ func TestDml(t *testing.T) {
 	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 	defer tearDown()
 
-	stmt, err := BuildStatement(
-		fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId),
-	)
+	stmt, err := BuildStatement(fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId))
 	if err != nil {
 		t.Fatalf("invalid statement: error=%s", err)
 	}
@@ -466,9 +451,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		})
 
 		// insert
-		stmt, err = BuildStatement(
-			fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId),
-		)
+		stmt, err = BuildStatement(fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId))
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
 		}
@@ -500,9 +483,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		})
 
 		// check by query
-		query := spanner.NewStatement(
-			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
-		)
+		query := spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId))
 		iter := session.client.Single().Query(ctx, query)
 		defer iter.Stop()
 		var gotStructs []testTableSchema
@@ -553,9 +534,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		})
 
 		// insert
-		stmt, err = BuildStatement(
-			fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId),
-		)
+		stmt, err = BuildStatement(fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId))
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
 		}
@@ -587,9 +566,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		})
 
 		// check by query
-		query := spanner.NewStatement(
-			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
-		)
+		query := spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId))
 		iter := session.client.Single().Query(ctx, query)
 		defer iter.Stop()
 		_ = iter.Do(func(row *spanner.Row) error {
@@ -598,47 +575,42 @@ func TestReadWriteTransaction(t *testing.T) {
 		})
 	})
 
-	t.Run(
-		"heartbeat: transaction is not aborted even if the transaction is idle",
-		func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-			defer cancel()
+	t.Run("heartbeat: transaction is not aborted even if the transaction is idle", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
 
-			session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
-				"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
-			})
-			defer tearDown()
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)"})
+		defer tearDown()
 
-			// begin
-			stmt, err := BuildStatement("BEGIN")
-			if err != nil {
-				t.Fatalf("invalid statement: error=%s", err)
-			}
+		// begin
+		stmt, err := BuildStatement("BEGIN")
+		if err != nil {
+			t.Fatalf("invalid statement: error=%s", err)
+		}
 
-			if _, err := stmt.Execute(ctx, session); err != nil {
-				t.Fatalf("unexpected error happened: %s", err)
-			}
+		if _, err := stmt.Execute(ctx, session); err != nil {
+			t.Fatalf("unexpected error happened: %s", err)
+		}
 
-			// first query
-			query := spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s", tableId))
-			iter := session.client.Single().Query(ctx, query)
-			defer iter.Stop()
-			if _, err := iter.Next(); err != nil {
-				t.Fatalf("unexpected error happened: %s", err)
-			}
+		// first query
+		query := spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s", tableId))
+		iter := session.client.Single().Query(ctx, query)
+		defer iter.Stop()
+		if _, err := iter.Next(); err != nil {
+			t.Fatalf("unexpected error happened: %s", err)
+		}
 
-			// default transaction idle time is 10 secs
-			time.Sleep(10 * time.Second)
+		// default transaction idle time is 10 secs
+		time.Sleep(10 * time.Second)
 
-			// second query
-			query = spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s", tableId))
-			iter = session.client.Single().Query(ctx, query)
-			defer iter.Stop()
-			if _, err := iter.Next(); err != nil {
-				t.Fatalf("error should not happen: %s", err)
-			}
-		},
-	)
+		// second query
+		query = spanner.NewStatement(fmt.Sprintf("SELECT id, active FROM %s", tableId))
+		iter = session.client.Single().Query(ctx, query)
+		defer iter.Stop()
+		if _, err := iter.Next(); err != nil {
+			t.Fatalf("error should not happen: %s", err)
+		}
+	})
 }
 
 func TestReadOnlyTransaction(t *testing.T) {
@@ -649,9 +621,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
-			"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
-		})
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)"})
 		defer tearDown()
 
 		// begin
@@ -671,9 +641,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		})
 
 		// query
-		stmt, err = BuildStatement(
-			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
-		)
+		stmt, err = BuildStatement(fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId))
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
 		}
@@ -719,9 +687,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
-			"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
-		})
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)"})
 		defer tearDown()
 
 		// stale read also can't recognize the recent created table itself,
@@ -729,9 +695,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		time.Sleep(10 * time.Second)
 
 		// insert more fixture
-		stmt, err := BuildStatement(
-			fmt.Sprintf("INSERT INTO %s (id, active) VALUES (3, true), (4, false)", tableId),
-		)
+		stmt, err := BuildStatement(fmt.Sprintf("INSERT INTO %s (id, active) VALUES (3, true), (4, false)", tableId))
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
 		}
@@ -750,9 +714,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		}
 
 		// query
-		stmt, err = BuildStatement(
-			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
-		)
+		stmt, err = BuildStatement(fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId))
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
 		}
@@ -813,15 +775,7 @@ func TestShowCreateTable(t *testing.T) {
 	compareResult(t, result, &Result{
 		ColumnNames: []string{"Table", "Create Table"},
 		Rows: []Row{
-			Row{
-				[]string{
-					tableId,
-					fmt.Sprintf(
-						"CREATE TABLE %s (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)",
-						tableId,
-					),
-				},
-			},
+			{[]string{tableId, fmt.Sprintf("CREATE TABLE %s (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)", tableId)}},
 		},
 		AffectedRows: 1,
 		IsMutation:   false,
@@ -851,8 +805,8 @@ func TestShowColumns(t *testing.T) {
 	compareResult(t, result, &Result{
 		ColumnNames: []string{"Field", "Type", "NULL", "Key", "Key_Order", "Options"},
 		Rows: []Row{
-			Row{[]string{"id", "INT64", "NO", "PRIMARY_KEY", "ASC", "NULL"}},
-			Row{[]string{"active", "BOOL", "NO", "NULL", "NULL", "NULL"}},
+			{[]string{"id", "INT64", "NO", "PRIMARY_KEY", "ASC", "NULL"}},
+			{[]string{"active", "BOOL", "NO", "NULL", "NULL", "NULL"}},
 		},
 		AffectedRows: 2,
 		IsMutation:   false,
@@ -880,17 +834,9 @@ func TestShowIndexes(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: []string{
-			"Table",
-			"Parent_table",
-			"Index_name",
-			"Index_type",
-			"Is_unique",
-			"Is_null_filtered",
-			"Index_state",
-		},
+		ColumnNames: []string{"Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"},
 		Rows: []Row{
-			Row{[]string{tableId, "", "PRIMARY_KEY", "PRIMARY_KEY", "true", "false", "NULL"}},
+			{[]string{tableId, "", "PRIMARY_KEY", "PRIMARY_KEY", "true", "false", "NULL"}},
 		},
 		AffectedRows: 1,
 		IsMutation:   false,
@@ -944,9 +890,7 @@ func TestPartitionedDML(t *testing.T) {
 	})
 	defer tearDown()
 
-	stmt, err := BuildStatement(
-		fmt.Sprintf("PARTITIONED UPDATE %s SET active = true WHERE true", tableId),
-	)
+	stmt, err := BuildStatement(fmt.Sprintf("PARTITIONED UPDATE %s SET active = true WHERE true", tableId))
 	if err != nil {
 		t.Fatalf("invalid statement: %v", err)
 	}

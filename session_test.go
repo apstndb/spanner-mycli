@@ -226,9 +226,7 @@ func (r *requestRecorder) flush() {
 	r.requests = nil
 }
 
-func recordRequestsInterceptors(
-	recorder *requestRecorder,
-) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
+func recordRequestsInterceptors(recorder *requestRecorder) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
 	unary := func(ctx context.Context, method string, req interface{}, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		recorder.requests = append(recorder.requests, req)
 		return invoker(ctx, method, req, reply, cc, opts...)

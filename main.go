@@ -135,13 +135,7 @@ func main() {
 		}
 	}
 
-	cli, err := NewCli(
-		cred,
-		os.Stdin,
-		os.Stdout,
-		os.Stderr,
-		&sysVars,
-	)
+	cli, err := NewCli(cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}

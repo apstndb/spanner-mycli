@@ -66,16 +66,8 @@ type command struct {
 	Stmt Statement
 }
 
-func NewCli(
-	credential []byte,
-	inStream io.ReadCloser,
-	outStream, errStream io.Writer,
-	sysVars *systemVariables,
-) (*Cli, error) {
-	session, err := createSession(
-		credential,
-		sysVars,
-	)
+func NewCli(credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+	session, err := createSession(credential, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -183,10 +175,7 @@ func (c *Cli) RunInteractive() int {
 			c.SystemVariables.Database = s.Database
 			c.SystemVariables.Role = s.Role
 
-			newSession, err := createSession(
-				c.Credential,
-				c.SystemVariables,
-			)
+			newSession, err := createSession(c.Credential, c.SystemVariables)
 			if err != nil {
 				c.PrintInteractiveError(err)
 				continue
@@ -213,18 +202,12 @@ func (c *Cli) RunInteractive() int {
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
 			if c.SystemVariables.Database == s.DatabaseId {
 				c.PrintInteractiveError(
-					fmt.Errorf(
-						"database %q is currently used, it can not be dropped",
-						s.DatabaseId,
-					),
+					fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
 				)
 				continue
 			}
 
-			if !confirm(
-				c.OutStream,
-				fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId),
-			) {
+			if !confirm(c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 				continue
 			}
 		}
@@ -279,10 +262,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &sppb.CommitResponse{
-			CommitStats:     result.CommitStats,
-			CommitTimestamp: timestamppb.New(result.Timestamp),
-		}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
@@ -390,10 +370,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 	})
 }
 
-func createSession(
-	credential []byte,
-	sysVars *systemVariables,
-) (*Session, error) {
+func createSession(credential []byte, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))
@@ -424,9 +401,7 @@ func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, e
 		case 1:
 			return &statements[0], nil
 		default:
-			return nil, errors.New(
-				"sql queries are limited to single statements in interactive mode",
-			)
+			return nil, errors.New("sql queries are limited to single statements in interactive mode")
 		}
 
 		// show prompt to urge next input
@@ -553,19 +528,13 @@ func resultLine(result *Result, verbose bool) string {
 			detail += fmt.Sprintf("rows scanned:         %s rows\n", result.Stats.RowsScanned)
 		}
 		if result.Stats.DeletedRowsScanned != "" {
-			detail += fmt.Sprintf(
-				"deleted rows scanned: %s rows\n",
-				result.Stats.DeletedRowsScanned,
-			)
+			detail += fmt.Sprintf("deleted rows scanned: %s rows\n", result.Stats.DeletedRowsScanned)
 		}
 		if result.Stats.OptimizerVersion != "" {
 			detail += fmt.Sprintf("optimizer version:    %s\n", result.Stats.OptimizerVersion)
 		}
 		if result.Stats.OptimizerStatisticsPackage != "" {
-			detail += fmt.Sprintf(
-				"optimizer statistics: %s\n",
-				result.Stats.OptimizerStatisticsPackage,
-			)
+			detail += fmt.Sprintf("optimizer statistics: %s\n", result.Stats.OptimizerStatisticsPackage)
 		}
 		return fmt.Sprintf("%s (%s)\n%s", set, result.Stats.ElapsedTime, detail)
 	}
@@ -586,17 +555,9 @@ func buildCommands(input string) ([]*command, error) {
 			continue
 		}
 
-		stmt, err := BuildStatementWithComments(
-			strings.TrimSpace(separated.statementWithoutComments),
-			separated.statement,
-		)
+		stmt, err := BuildStatementWithComments(strings.TrimSpace(separated.statementWithoutComments), separated.statement)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"failed with statement, error: %w, statement: %q, without comments: %q",
-				err,
-				separated.statement,
-				separated.statementWithoutComments,
-			)
+			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.statement, separated.statementWithoutComments)
 		}
 		if ddl, ok := stmt.(*DdlStatement); ok {
 			pendingDdls = append(pendingDdls, ddl.Ddl)
