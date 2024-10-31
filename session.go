@@ -70,9 +70,6 @@ type transactionContext struct {
 }
 
 func NewSession(
-	projectId string,
-	instanceId string,
-	databaseId string,
 	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
 	opts ...option.ClientOption,
@@ -80,9 +77,9 @@ func NewSession(
 	ctx := context.Background()
 	dbPath := fmt.Sprintf(
 		"projects/%s/instances/%s/databases/%s",
-		projectId,
-		instanceId,
-		databaseId,
+		sysVars.Project,
+		sysVars.Instance,
+		sysVars.Database,
 	)
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Role
@@ -99,9 +96,6 @@ func NewSession(
 	}
 
 	session := &Session{
-		projectId:       projectId,
-		instanceId:      instanceId,
-		databaseId:      databaseId,
 		client:          client,
 		clientConfig:    clientConfig,
 		clientOpts:      opts,

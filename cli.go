@@ -75,9 +75,6 @@ func NewCli(
 	sysVars *systemVariables,
 ) (*Cli, error) {
 	session, err := createSession(
-		sysVars.Project,
-		sysVars.Instance,
-		sysVars.Database,
 		credential,
 		endpoint,
 		directedRead,
@@ -188,10 +185,10 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if s, ok := stmt.(*UseStatement); ok {
+			c.SystemVariables.Database = s.Database
+			c.SystemVariables.Role = s.Role
+
 			newSession, err := createSession(
-				c.Session.projectId,
-				c.Session.instanceId,
-				s.Database,
 				c.Credential,
 				c.Endpoint,
 				c.Session.directedRead,
@@ -387,9 +384,6 @@ func (c *Cli) getInterpolatedPrompt() string {
 }
 
 func createSession(
-	projectId string,
-	instanceId string,
-	databaseId string,
 	credential []byte,
 	endpoint string,
 	directedRead *sppb.DirectedReadOptions,
@@ -402,7 +396,7 @@ func createSession(
 	if endpoint != "" {
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
-	return NewSession(projectId, instanceId, databaseId, directedRead, sysVars, opts...)
+	return NewSession(directedRead, sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {

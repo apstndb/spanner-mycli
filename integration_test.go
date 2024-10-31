@@ -90,11 +90,12 @@ func setup(t *testing.T, ctx context.Context, dmls []string) (*Session, string, 
 		options = append(options, option.WithCredentialsJSON([]byte(testCredential)))
 	}
 	session, err := NewSession(
-		testProjectId,
-		testInstanceId,
-		testDatabaseId,
 		nil,
-		&systemVariables{RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED},
+		&systemVariables{
+			Project:     testProjectId,
+			Instance:    testInstanceId,
+			Database:    testDatabaseId,
+			RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED},
 		options...)
 	if err != nil {
 		t.Fatalf("failed to create test session: err=%s", err)
