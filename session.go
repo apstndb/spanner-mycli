@@ -67,7 +67,7 @@ type transactionContext struct {
 
 func NewSession(sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	ctx := context.Background()
-	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", sysVars.Project, sysVars.Instance, sysVars.Database)
+	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Role
 	clientConfig.DirectedReadOptions = sysVars.DirectedRead
@@ -321,20 +321,11 @@ func (s *Session) Close() {
 }
 
 func (s *Session) DatabasePath() string {
-	return fmt.Sprintf(
-		"projects/%s/instances/%s/databases/%s",
-		s.systemVariables.Project,
-		s.systemVariables.Instance,
-		s.systemVariables.Database,
-	)
+	return s.systemVariables.DatabasePath()
 }
 
 func (s *Session) InstancePath() string {
-	return fmt.Sprintf(
-		"projects/%s/instances/%s",
-		s.systemVariables.Project,
-		s.systemVariables.Instance,
-	)
+	return s.systemVariables.InstancePath()
 }
 
 func (s *Session) DatabaseExists() (bool, error) {

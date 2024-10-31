@@ -98,18 +98,6 @@ func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func
 	}
 }
 
-func projectStr(projectID string) string {
-	return fmt.Sprintf("projects/%v", projectID)
-}
-
-func instanceStr(projectID, instanceID string) string {
-	return fmt.Sprintf("projects/%v/instances/%v", projectID, instanceID)
-}
-
-func databaseStr(projectID, instanceID, databaseID string) string {
-	return fmt.Sprintf("projects/%v/instances/%v/databases/%v", projectID, instanceID, databaseID)
-}
-
 func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
 	opts := []option.ClientOption{
 		option.WithEndpoint(spannerContainer.URI),
@@ -135,7 +123,7 @@ func setupDatabase(
 	}
 
 	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
-		Parent:          instanceStr(projectID, instanceID),
+		Parent:          instancePath(projectID, instanceID),
 		CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
 		ExtraStatements: ddls,
 	})
@@ -148,7 +136,7 @@ func setupDatabase(
 		return err
 	}
 
-	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
+	cli, err := spanner.NewClient(ctx, databasePath(projectID, instanceID, databaseID), opts...)
 	if err != nil {
 		return err
 	}
@@ -184,10 +172,10 @@ func setupInstance(
 	defer instanceClient.Close()
 
 	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     projectStr(spannerContainer.Settings.ProjectID),
+		Parent:     projectPath(spannerContainer.Settings.ProjectID),
 		InstanceId: instanceID,
 		Instance: &instancepb.Instance{
-			Name:            instanceStr(spannerContainer.Settings.ProjectID, instanceID),
+			Name:            instancePath(spannerContainer.Settings.ProjectID, instanceID),
 			Config:          "regional-asia-northeast1",
 			DisplayName:     "fake",
 			ProcessingUnits: 100,
@@ -219,7 +207,7 @@ func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudCon
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
 
-	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
+	dbPath := databasePath(spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
 
 	tableId := generateUniqueTableId()
 	tableSchema := fmt.Sprintf(`

@@ -44,6 +44,18 @@ type accessor struct {
 	Getter getter
 }
 
+func (sv *systemVariables) InstancePath() string {
+	return instancePath(sv.Project, sv.Instance)
+}
+
+func (sv *systemVariables) DatabasePath() string {
+	return databasePath(sv.Project, sv.Instance, sv.Database)
+}
+
+func (sv *systemVariables) ProjectPath() string {
+	return projectPath(sv.Project)
+}
+
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
 	a, ok := accessorMap[upperName]

@@ -397,7 +397,7 @@ type DropDatabaseStatement struct {
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
-		Database: fmt.Sprintf("projects/%s/instances/%s/databases/%s", session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
+		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
 		return nil, err
 	}
