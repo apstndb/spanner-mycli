@@ -172,10 +172,12 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if s, ok := stmt.(*UseStatement); ok {
-			c.SystemVariables.Database = s.Database
-			c.SystemVariables.Role = s.Role
+			newSystemVariables := *c.SystemVariables
 
-			newSession, err := createSession(c.Credential, c.SystemVariables)
+			newSystemVariables.Database = s.Database
+			newSystemVariables.Role = s.Role
+
+			newSession, err := createSession(c.Credential, &newSystemVariables)
 			if err != nil {
 				c.PrintInteractiveError(err)
 				continue
@@ -195,6 +197,9 @@ func (c *Cli) RunInteractive() int {
 
 			c.Session.Close()
 			c.Session = newSession
+
+			c.SystemVariables = &newSystemVariables
+
 			fmt.Fprintf(c.OutStream, "Database changed")
 			continue
 		}
