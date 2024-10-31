@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+//go:build !skip_slow_test
+
 package main
 
 import (
@@ -53,9 +55,8 @@ import (
 )
 
 const (
-	skipIntegrateTest = false
-	testInstanceId    = "fake-instance"
-	testDatabaseId    = "fake-database"
+	testInstanceId = "fake-instance"
+	testDatabaseId = "fake-database"
 )
 
 var (
@@ -297,9 +298,6 @@ func compareResult(t *testing.T, got *Result, expected *Result) {
 }
 
 func TestSelect(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -337,9 +335,6 @@ func TestSelect(t *testing.T) {
 }
 
 func TestDml(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -395,10 +390,6 @@ func TestDml(t *testing.T) {
 }
 
 func TestReadWriteTransaction(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -602,10 +593,6 @@ func TestReadWriteTransaction(t *testing.T) {
 }
 
 func TestReadOnlyTransaction(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -755,10 +742,6 @@ func TestReadOnlyTransaction(t *testing.T) {
 }
 
 func TestShowCreateTable(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -797,10 +780,6 @@ func TestShowCreateTable(t *testing.T) {
 }
 
 func TestShowColumns(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -832,10 +811,6 @@ func TestShowColumns(t *testing.T) {
 }
 
 func TestShowIndexes(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -874,10 +849,6 @@ func TestShowIndexes(t *testing.T) {
 }
 
 func TestTruncateTable(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
@@ -913,10 +884,6 @@ func TestTruncateTable(t *testing.T) {
 }
 
 func TestPartitionedDML(t *testing.T) {
-	if skipIntegrateTest {
-		t.Skip("Integration tests skipped")
-	}
-
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
 
