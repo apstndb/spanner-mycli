@@ -21,10 +21,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/testcontainers/testcontainers-go"
+
+	"google.golang.org/api/option/internaloption"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -36,23 +43,22 @@ import (
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
+	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
+	"github.com/testcontainers/testcontainers-go/modules/gcloud"
+	"spheric.cloud/xiter"
 )
 
 const (
-	envTestProjectId  = "SPANNER_CLI_INTEGRATION_TEST_PROJECT_ID"
-	envTestInstanceId = "SPANNER_CLI_INTEGRATION_TEST_INSTANCE_ID"
-	envTestDatabaseId = "SPANNER_CLI_INTEGRATION_TEST_DATABASE_ID"
-	envTestCredential = "SPANNER_CLI_INTEGRATION_TEST_CREDENTIAL"
+	skipIntegrateTest = false
+	testInstanceId    = "fake-instance"
+	testDatabaseId    = "fake-database"
 )
 
 var (
-	skipIntegrateTest bool
-
-	testProjectId  string
-	testInstanceId string
-	testDatabaseId string
-	testCredential string
-
 	tableIdCounter uint32
 )
 
@@ -62,21 +68,136 @@ type testTableSchema struct {
 }
 
 func TestMain(m *testing.M) {
-	initialize()
 	os.Exit(m.Run())
 }
 
-func initialize() {
-	if os.Getenv(envTestProjectId) == "" || os.Getenv(envTestInstanceId) == "" ||
-		os.Getenv(envTestDatabaseId) == "" {
-		skipIntegrateTest = true
-		return
+func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func()) {
+	tb.Helper()
+	ctx := context.Background()
+	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
+		testcontainers.WithLogger(testcontainers.TestLogger(tb)))
+	if err != nil {
+		tb.Fatal(err)
 	}
 
-	testProjectId = os.Getenv(envTestProjectId)
-	testInstanceId = os.Getenv(envTestInstanceId)
-	testDatabaseId = os.Getenv(envTestDatabaseId)
-	testCredential = os.Getenv(envTestCredential)
+	err = setupInstance(ctx, spannerContainer, testInstanceId)
+	if err != nil {
+		testcontainers.CleanupContainer(tb, spannerContainer)
+		tb.Fatal(err)
+	}
+
+	err = setupDatabase(ctx, spannerContainer, testInstanceId, testDatabaseId, nil, nil)
+	if err != nil {
+		testcontainers.CleanupContainer(tb, spannerContainer)
+		tb.Fatal(err)
+	}
+
+	return spannerContainer, func() {
+		tb.Log(spannerContainer.Terminate(ctx))
+	}
+}
+
+func projectStr(projectID string) string {
+	return fmt.Sprintf("projects/%v", projectID)
+}
+
+func instanceStr(projectID, instanceID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v", projectID, instanceID)
+}
+
+func databaseStr(projectID, instanceID, databaseID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v/databases/%v", projectID, instanceID, databaseID)
+}
+
+func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
+	opts := []option.ClientOption{
+		option.WithEndpoint(spannerContainer.URI),
+		option.WithoutAuthentication(),
+		internaloption.SkipDialSettingsValidation(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
+	return opts
+}
+
+func setupDatabase(
+	ctx context.Context,
+	spannerContainer *gcloud.GCloudContainer,
+	instanceID, databaseID string,
+	ddls []string,
+	dmls []string,
+) error {
+	projectID := spannerContainer.Settings.ProjectID
+	opts := defaultClientOptions(spannerContainer)
+
+	dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
+	if err != nil {
+		return err
+	}
+
+	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
+		Parent:          instanceStr(projectID, instanceID),
+		CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
+		ExtraStatements: ddls,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = createDatabaseOp.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
+	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	if len(dmls) == 0 {
+		return nil
+	}
+	_, err = cli.ReadWriteTransaction(
+		ctx,
+		func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			_, err := tx.BatchUpdate(
+				ctx,
+				slices.Collect(xiter.Map(slices.Values(dmls), spanner.NewStatement)),
+			)
+			return err
+		},
+	)
+	return err
+}
+
+func setupInstance(
+	ctx context.Context,
+	spannerContainer *gcloud.GCloudContainer,
+	instanceID string,
+) error {
+	instanceClient, err := instance.NewInstanceAdminClient(
+		ctx,
+		defaultClientOptions(spannerContainer)...)
+	if err != nil {
+		return err
+	}
+	defer instanceClient.Close()
+
+	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
+		Parent:     projectStr(spannerContainer.Settings.ProjectID),
+		InstanceId: instanceID,
+		Instance: &instancepb.Instance{
+			Name:            instanceStr(spannerContainer.Settings.ProjectID, instanceID),
+			Config:          "regional-asia-northeast1",
+			DisplayName:     "fake",
+			ProcessingUnits: 100,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = createInstance.Wait(ctx)
+	return err
 }
 
 func generateUniqueTableId() string {
@@ -84,14 +205,16 @@ func generateUniqueTableId() string {
 	return fmt.Sprintf("spanner_cli_test_%d_%d", time.Now().UnixNano(), count)
 }
 
-func setup(t *testing.T, ctx context.Context, dmls []string) (*Session, string, func()) {
-	var options []option.ClientOption
-	if testCredential != "" {
-		options = append(options, option.WithCredentialsJSON([]byte(testCredential)))
-	}
+func setup(
+	t *testing.T,
+	ctx context.Context,
+	spannerContainer *gcloud.GCloudContainer,
+	dmls []string,
+) (*Session, string, func()) {
+	options := defaultClientOptions(spannerContainer)
 	session, err := NewSession(
 		&systemVariables{
-			Project:     testProjectId,
+			Project:     spannerContainer.Settings.ProjectID,
 			Instance:    testInstanceId,
 			Database:    testDatabaseId,
 			RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED},
@@ -102,7 +225,7 @@ func setup(t *testing.T, ctx context.Context, dmls []string) (*Session, string, 
 
 	dbPath := fmt.Sprintf(
 		"projects/%s/instances/%s/databases/%s",
-		testProjectId,
+		spannerContainer.Settings.ProjectID,
 		testInstanceId,
 		testDatabaseId,
 	)
@@ -177,11 +300,13 @@ func TestSelect(t *testing.T) {
 	if skipIntegrateTest {
 		t.Skip("Integration tests skipped")
 	}
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 		"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
 	})
 	defer tearDown()
@@ -215,11 +340,13 @@ func TestDml(t *testing.T) {
 	if skipIntegrateTest {
 		t.Skip("Integration tests skipped")
 	}
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{})
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 	defer tearDown()
 
 	stmt, err := BuildStatement(
@@ -272,11 +399,14 @@ func TestReadWriteTransaction(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	t.Run("begin, insert, and commit", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, []string{})
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 		defer tearDown()
 
 		// begin
@@ -363,10 +493,10 @@ func TestReadWriteTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, []string{})
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 		defer tearDown()
 
-		// begin
+		t.Log("begin")
 		stmt, err := BuildStatement("BEGIN")
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
@@ -382,7 +512,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		// insert
+		t.Log("insert")
 		stmt, err = BuildStatement(
 			fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId),
 		)
@@ -400,7 +530,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		// rollback
+		t.Log("rollback")
 		stmt, err = BuildStatement("ROLLBACK")
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
@@ -416,7 +546,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		// check by query
+		t.Log("check by query")
 		query := spanner.NewStatement(
 			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
 		)
@@ -434,7 +564,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 			defer cancel()
 
-			session, tableId, tearDown := setup(t, ctx, []string{
+			session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 				"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
 			})
 			defer tearDown()
@@ -476,11 +606,14 @@ func TestReadOnlyTransaction(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	t.Run("begin ro, query, and close", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, []string{
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 			"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
 		})
 		defer tearDown()
@@ -550,7 +683,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		session, tableId, tearDown := setup(t, ctx, []string{
+		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 			"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
 		})
 		defer tearDown()
@@ -626,10 +759,13 @@ func TestShowCreateTable(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{})
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 	defer tearDown()
 
 	stmt, err := BuildStatement(fmt.Sprintf("SHOW CREATE TABLE %s", tableId))
@@ -665,10 +801,13 @@ func TestShowColumns(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{})
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 	defer tearDown()
 
 	stmt, err := BuildStatement(fmt.Sprintf("SHOW COLUMNS FROM %s", tableId))
@@ -697,10 +836,13 @@ func TestShowIndexes(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{})
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 	defer tearDown()
 
 	stmt, err := BuildStatement(fmt.Sprintf("SHOW INDEXES FROM %s", tableId))
@@ -736,10 +878,13 @@ func TestTruncateTable(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 		"INSERT INTO [[TABLE]] (id, active) VALUES (1, true), (2, false)",
 	})
 	defer tearDown()
@@ -772,10 +917,13 @@ func TestPartitionedDML(t *testing.T) {
 		t.Skip("Integration tests skipped")
 	}
 
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	session, tableId, tearDown := setup(t, ctx, []string{
+	session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{
 		"INSERT INTO [[TABLE]] (id, active) VALUES (1, false)",
 	})
 	defer tearDown()
