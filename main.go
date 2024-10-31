@@ -78,22 +78,19 @@ func main() {
 
 	opts := gopts.Spanner
 
-	var sysVars systemVariables
-
 	logMemefish = opts.LogMemefish
 
 	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
-	var cnt int
-	for _, b := range []bool{opts.File != "", opts.Execute != "", opts.SQL != ""} {
-		if b {
-			cnt += 1
-		}
+	sysVars := systemVariables{
+		Project:  opts.ProjectId,
+		Instance: opts.InstanceId,
+		Database: opts.DatabaseId,
 	}
 
-	if cnt > 1 {
+	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
 		exitf("Invalid combination: -e, -f, --sql are exclusive\n")
 	}
 
@@ -130,9 +127,21 @@ func main() {
 		if err := sysVars.Set(k, v); err != nil {
 			exitf("failed to set system variable. name: %v, value: %v, err: %v\n", k, v, err)
 		}
-
 	}
-	cli, err := NewCli(opts.ProjectId, opts.InstanceId, opts.DatabaseId, opts.Prompt, opts.HistoryFile, cred, os.Stdin, os.Stdout, os.Stderr, opts.Verbose, opts.Role, opts.Endpoint, directedRead, &sysVars)
+
+	cli, err := NewCli(
+		opts.Prompt,
+		opts.HistoryFile,
+		cred,
+		os.Stdin,
+		os.Stdout,
+		os.Stderr,
+		opts.Verbose,
+		opts.Role,
+		opts.Endpoint,
+		directedRead,
+		&sysVars,
+	)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}

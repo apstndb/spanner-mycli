@@ -13,14 +13,15 @@ import (
 )
 
 type systemVariables struct {
-	RPCPriority                sppb.RequestOptions_Priority
-	ReadOnlyStaleness          *spanner.TimestampBound
-	ReadTimestamp              time.Time
-	OptimizerVersion           string
-	OptimizerStatisticsPackage string
-	CommitResponse             *sppb.CommitResponse
-	CommitTimestamp            time.Time
-	CLIFormat                  DisplayMode
+	RPCPriority                 sppb.RequestOptions_Priority
+	ReadOnlyStaleness           *spanner.TimestampBound
+	ReadTimestamp               time.Time
+	OptimizerVersion            string
+	OptimizerStatisticsPackage  string
+	CommitResponse              *sppb.CommitResponse
+	CommitTimestamp             time.Time
+	CLIFormat                   DisplayMode
+	Project, Instance, Database string
 }
 
 var errIgnored = errors.New("ignored")
@@ -119,13 +120,19 @@ var accessorMap = map[string]accessor{
 				if err != nil {
 					return nil, err
 				}
-				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
+				return singletonMap(
+					name,
+					fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano)),
+				), nil
 			case "minReadTimestamp":
 				ts, err := parseTimeString(matches[2])
 				if err != nil {
 					return nil, err
 				}
-				return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
+				return singletonMap(
+					name,
+					fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano)),
+				), nil
 			default:
 				return singletonMap(name, s), nil
 			}
@@ -163,7 +170,10 @@ var accessorMap = map[string]accessor{
 			return nil
 		},
 		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
+			return singletonMap(
+				name,
+				strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_"),
+			), nil
 		},
 	},
 	"STATEMENT_TAG":   {},
@@ -223,6 +233,26 @@ var accessorMap = map[string]accessor{
 				formatStr = "TAB"
 			}
 			return singletonMap(name, formatStr), nil
+		},
+	},
+	"CLI_VERBOSE":      {},
+	"CLI_ROLE":         {},
+	"CLI_ENDPOINT":     {},
+	"CLI_DIRECT_READ":  {},
+	"CLI_HISTORY_FILE": {},
+	"CLI_PROJECT": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Project), nil
+		},
+	},
+	"CLI_INSTANCE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Instance), nil
+		},
+	},
+	"CLI_DATABASE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Database), nil
 		},
 	},
 }
