@@ -63,7 +63,6 @@ type Cli struct {
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Verbose         bool
 	Priority        sppb.RequestOptions_Priority
 	Endpoint        string
 	SystemVariables *systemVariables
@@ -79,7 +78,6 @@ func NewCli(
 	credential []byte,
 	inStream io.ReadCloser,
 	outStream, errStream io.Writer,
-	verbose bool,
 	role, endpoint string,
 	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
@@ -114,7 +112,6 @@ func NewCli(
 		InStream:        inStream,
 		OutStream:       outStream,
 		ErrStream:       errStream,
-		Verbose:         verbose,
 		Endpoint:        endpoint,
 		SystemVariables: sysVars,
 	}, nil
@@ -369,7 +366,7 @@ func (c *Cli) PrintBatchError(err error) {
 }
 
 func (c *Cli) PrintResult(result *Result, mode DisplayMode, interactive bool) {
-	printResult(c.OutStream, result, mode, interactive, c.Verbose)
+	printResult(c.OutStream, result, mode, interactive, c.SystemVariables.Verbose)
 }
 
 func (c *Cli) PrintProgressingMark() func() {

@@ -88,6 +88,7 @@ func main() {
 		Project:  opts.ProjectId,
 		Instance: opts.InstanceId,
 		Database: opts.DatabaseId,
+		Verbose:  opts.Verbose,
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -136,7 +137,6 @@ func main() {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		opts.Verbose,
 		opts.Role,
 		opts.Endpoint,
 		directedRead,

@@ -22,6 +22,7 @@ type systemVariables struct {
 	CommitTimestamp             time.Time
 	CLIFormat                   DisplayMode
 	Project, Instance, Database string
+	Verbose                     bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -235,7 +236,19 @@ var accessorMap = map[string]accessor{
 			return singletonMap(name, formatStr), nil
 		},
 	},
-	"CLI_VERBOSE":      {},
+	"CLI_VERBOSE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, strings.ToUpper(strconv.FormatBool(this.Verbose))), nil
+		},
+		Setter: func(this *systemVariables, name, value string) error {
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return err
+			}
+			this.Verbose = b
+			return nil
+		},
+	},
 	"CLI_ROLE":         {},
 	"CLI_ENDPOINT":     {},
 	"CLI_DIRECT_READ":  {},
