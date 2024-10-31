@@ -68,7 +68,17 @@ func TestRequestPriority(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			defer recorder.flush()
 
-			session, err := NewSession("project", "instance", "database", "role", nil, &systemVariables{RPCPriority: test.sessionPriority}, option.WithGRPCConn(conn))
+			session, err := NewSession(
+				"project",
+				"instance",
+				"database",
+				nil,
+				&systemVariables{
+					RPCPriority: test.sessionPriority,
+					Role:        "role",
+				},
+				option.WithGRPCConn(conn),
+			)
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
 			}
@@ -217,7 +227,9 @@ func (r *requestRecorder) flush() {
 	r.requests = nil
 }
 
-func recordRequestsInterceptors(recorder *requestRecorder) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
+func recordRequestsInterceptors(
+	recorder *requestRecorder,
+) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
 	unary := func(ctx context.Context, method string, req interface{}, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		recorder.requests = append(recorder.requests, req)
 		return invoker(ctx, method, req, reply, cc, opts...)

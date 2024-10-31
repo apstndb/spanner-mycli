@@ -70,7 +70,7 @@ func NewCli(
 	credential []byte,
 	inStream io.ReadCloser,
 	outStream, errStream io.Writer,
-	role, endpoint string,
+	endpoint string,
 	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
 ) (*Cli, error) {
@@ -79,7 +79,6 @@ func NewCli(
 		sysVars.Instance,
 		sysVars.Database,
 		credential,
-		role,
 		endpoint,
 		directedRead,
 		sysVars,
@@ -194,7 +193,6 @@ func (c *Cli) RunInteractive() int {
 				c.Session.instanceId,
 				s.Database,
 				c.Credential,
-				s.Role,
 				c.Endpoint,
 				c.Session.directedRead,
 				c.SystemVariables,
@@ -393,7 +391,6 @@ func createSession(
 	instanceId string,
 	databaseId string,
 	credential []byte,
-	role string,
 	endpoint string,
 	directedRead *sppb.DirectedReadOptions,
 	sysVars *systemVariables,
@@ -405,7 +402,7 @@ func createSession(
 	if endpoint != "" {
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
-	return NewSession(projectId, instanceId, databaseId, role, directedRead, sysVars, opts...)
+	return NewSession(projectId, instanceId, databaseId, directedRead, sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {

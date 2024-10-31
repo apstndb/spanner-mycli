@@ -91,6 +91,7 @@ func main() {
 		Verbose:     opts.Verbose,
 		Prompt:      opts.Prompt,
 		HistoryFile: opts.HistoryFile,
+		Role:        opts.Role,
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -137,7 +138,6 @@ func main() {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		opts.Role,
 		opts.Endpoint,
 		directedRead,
 		&sysVars,
