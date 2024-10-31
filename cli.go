@@ -63,8 +63,7 @@ type Cli struct {
 }
 
 type command struct {
-	Stmt     Statement
-	Vertical bool
+	Stmt Statement
 }
 
 func NewCli(
@@ -610,16 +609,16 @@ func buildCommands(input string) ([]*command, error) {
 
 		// Flush pending DDLs
 		if len(pendingDdls) > 0 {
-			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}, false})
+			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
 			pendingDdls = nil
 		}
 
-		cmds = append(cmds, &command{stmt, separated.delim == delimiterVertical})
+		cmds = append(cmds, &command{stmt})
 	}
 
 	// Flush pending DDLs
 	if len(pendingDdls) > 0 {
-		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}, false})
+		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
 	}
 
 	return cmds, nil
