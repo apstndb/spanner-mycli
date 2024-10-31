@@ -48,7 +48,6 @@ const (
 )
 
 const (
-	defaultPrompt      = `spanner%t> `
 	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
 
 	exitCodeSuccess = 0
@@ -57,7 +56,6 @@ const (
 
 type Cli struct {
 	Session         *Session
-	Prompt          string
 	HistoryFile     string
 	Credential      []byte
 	InStream        io.ReadCloser
@@ -74,7 +72,7 @@ type command struct {
 }
 
 func NewCli(
-	prompt, historyFile string,
+	historyFile string,
 	credential []byte,
 	inStream io.ReadCloser,
 	outStream, errStream io.Writer,
@@ -96,17 +94,12 @@ func NewCli(
 		return nil, err
 	}
 
-	if prompt == "" {
-		prompt = defaultPrompt
-	}
-
 	if historyFile == "" {
 		historyFile = defaultHistoryFile
 	}
 
 	return &Cli{
 		Session:         session,
-		Prompt:          prompt,
 		HistoryFile:     historyFile,
 		Credential:      credential,
 		InStream:        inStream,
@@ -403,7 +396,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 			If(c.Session.InReadWriteTransaction(), "(rw txn)").
 			ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
 			Else(""),
-	).Replace(c.Prompt)
+	).Replace(c.SystemVariables.Prompt)
 }
 
 func createSession(

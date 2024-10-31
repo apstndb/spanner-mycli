@@ -23,6 +23,7 @@ type systemVariables struct {
 	CLIFormat                   DisplayMode
 	Project, Instance, Database string
 	Verbose                     bool
+	Prompt                      string
 }
 
 var errIgnored = errors.New("ignored")
@@ -253,6 +254,10 @@ var accessorMap = map[string]accessor{
 	"CLI_ENDPOINT":     {},
 	"CLI_DIRECT_READ":  {},
 	"CLI_HISTORY_FILE": {},
+	"CLI_PROMPT": {
+		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+		Setter: stringSetter(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	},
 	"CLI_PROJECT": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			return singletonMap(name, this.Project), nil
@@ -270,6 +275,21 @@ var accessorMap = map[string]accessor{
 	},
 }
 
+func stringGetter(f func(*systemVariables) *string) getter {
+	return func(sysVars *systemVariables, name string) (map[string]string, error) {
+		ref := f(sysVars)
+		return singletonMap(name, *ref), nil
+	}
+}
+
+func stringSetter(f func(*systemVariables) *string) setter {
+	return func(sysVars *systemVariables, name, value string) error {
+		ref := f(sysVars)
+		s := unquoteString(value)
+		*ref = s
+		return nil
+	}
+}
 func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 	first, second, _ := strings.Cut(s, " ")
 

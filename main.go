@@ -45,7 +45,7 @@ type spannerOptions struct {
 	Table        bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
 	Verbose      bool              `long:"verbose" short:"v" description:"Display verbose output."`
 	Credential   string            `long:"credential" description:"Use the specific credential file"`
-	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format"`
+	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
 	LogMemefish  bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
 	HistoryFile  string            `long:"history" description:"Set the history file to the specified path"`
 	Priority     string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
@@ -89,6 +89,7 @@ func main() {
 		Instance: opts.InstanceId,
 		Database: opts.DatabaseId,
 		Verbose:  opts.Verbose,
+		Prompt:   opts.Prompt,
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -131,7 +132,6 @@ func main() {
 	}
 
 	cli, err := NewCli(
-		opts.Prompt,
 		opts.HistoryFile,
 		cred,
 		os.Stdin,
