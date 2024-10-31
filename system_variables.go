@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/types/descriptorpb"
+
 	"spheric.cloud/xiter"
 
 	"cloud.google.com/go/spanner"
@@ -31,6 +33,10 @@ type systemVariables struct {
 	Role                        string
 	Endpoint                    string
 	DirectedRead                *sppb.DirectedReadOptions
+	ProtoDescriptorFile         string
+
+	// it is internal variable and hidden from system variable statements
+	ProtoDescriptor *descriptorpb.FileDescriptorProto
 }
 
 var errIgnored = errors.New("ignored")

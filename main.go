@@ -26,6 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
+
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
@@ -37,23 +40,24 @@ type globalOptions struct {
 }
 
 type spannerOptions struct {
-	ProjectId    string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
-	InstanceId   string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId   string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
-	Execute      string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
-	File         string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
-	Table        bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
-	Verbose      bool              `long:"verbose" short:"v" description:"Display verbose output."`
-	Credential   string            `long:"credential" description:"Use the specific credential file"`
-	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
-	LogMemefish  bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
-	HistoryFile  string            `long:"history" description:"Set the history file to the specified path" default:"/tmp/spanner_mycli_readline.tmp"`
-	Priority     string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role         string            `long:"role" description:"Use the specific database role"`
-	Endpoint     string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
-	DirectedRead string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
-	SQL          string            `long:"sql" hidden:"true" description:"alias of --execute"`
-	Set          map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	ProjectId           string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
+	InstanceId          string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
+	DatabaseId          string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
+	Execute             string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
+	File                string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
+	Table               bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
+	Verbose             bool              `long:"verbose" short:"v" description:"Display verbose output."`
+	Credential          string            `long:"credential" description:"Use the specific credential file"`
+	Prompt              string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
+	LogMemefish         bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
+	HistoryFile         string            `long:"history" description:"Set the history file to the specified path" default:"/tmp/spanner_mycli_readline.tmp"`
+	Priority            string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
+	Role                string            `long:"role" description:"Use the specific database role"`
+	Endpoint            string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
+	DirectedRead        string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
+	SQL                 string            `long:"sql" hidden:"true" description:"alias of --execute"`
+	Set                 map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 }
 
 var logMemefish bool
@@ -85,14 +89,28 @@ func main() {
 	}
 
 	sysVars := systemVariables{
-		Project:     opts.ProjectId,
-		Instance:    opts.InstanceId,
-		Database:    opts.DatabaseId,
-		Verbose:     opts.Verbose,
-		Prompt:      opts.Prompt,
-		HistoryFile: opts.HistoryFile,
-		Role:        opts.Role,
-		Endpoint:    opts.Endpoint,
+		Project:             opts.ProjectId,
+		Instance:            opts.InstanceId,
+		Database:            opts.DatabaseId,
+		Verbose:             opts.Verbose,
+		Prompt:              opts.Prompt,
+		HistoryFile:         opts.HistoryFile,
+		Role:                opts.Role,
+		Endpoint:            opts.Endpoint,
+		ProtoDescriptorFile: opts.ProtoDescriptorFile,
+	}
+
+	if opts.ProtoDescriptorFile != "" {
+		b, err := os.ReadFile(opts.ProtoDescriptorFile)
+		if err != nil {
+			exitf("error on read --proto-descriptor-file=%v: %v\n", opts.ProtoDescriptorFile, err)
+		}
+		var fds descriptorpb.FileDescriptorProto
+		err = proto.Unmarshal(b, &fds)
+		if err != nil {
+			exitf("error on unmarshal --proto-descriptor-file=%v: %v\n", opts.ProtoDescriptorFile, err)
+		}
+		sysVars.ProtoDescriptor = &fds
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
