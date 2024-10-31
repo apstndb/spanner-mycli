@@ -26,6 +26,7 @@ type systemVariables struct {
 	Prompt                      string
 	HistoryFile                 string
 	Role                        string
+	Endpoint                    string
 }
 
 var errIgnored = errors.New("ignored")
@@ -255,7 +256,9 @@ var accessorMap = map[string]accessor{
 	"CLI_ROLE": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
 	},
-	"CLI_ENDPOINT":    {},
+	"CLI_ENDPOINT": {
+		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+	},
 	"CLI_DIRECT_READ": {},
 	"CLI_HISTORY_FILE": {
 		Getter: stringGetter(
