@@ -437,14 +437,17 @@ $ spanner-mycli -p myproject -i myinstance -d mydb
 
 Run unit tests.
 
+
 ```
 $ make test
 ```
 
-Run integration tests, which connects to real Cloud Spanner database.
+Note: It requires Docker because integration tests using [testcontainers](https://testcontainers.com/).
+
+Or run test except integration tests.
 
 ```
-$ PROJECT=${PROJECT_ID} INSTANCE=${INSTANCE_ID} DATABASE=${DATABASE_ID} CREDENTIAL=${CREDENTIAL} make test
+$ make fasttest
 ```
 
 ## TODO
