@@ -565,7 +565,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
-			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `3`},
+			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
 		},
 		{
 			desc:  "SHOW VARIABLE statement",
