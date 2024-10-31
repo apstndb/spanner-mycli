@@ -562,6 +562,21 @@ func TestBuildStatement(t *testing.T) {
 			input: `EXPLAIN ANALYZE CALL cancel_query("1234567890123456789")`,
 			want:  &ExplainAnalyzeStatement{Query: `CALL cancel_query("1234567890123456789")`},
 		},
+		{
+			desc:  "SET statement",
+			input: `SET OPTIMIZER_VERSION = "3"`,
+			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `3`},
+		},
+		{
+			desc:  "SHOW VARIABLE statement",
+			input: `SHOW VARIABLE OPTIMIZER_VERSION`,
+			want:  &ShowVariableStatement{VarName: "OPTIMIZER_VERSION"},
+		},
+		{
+			desc:  "SHOW VARIABLES statement",
+			input: `SHOW VARIABLES`,
+			want:  &ShowVariablesStatement{},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)

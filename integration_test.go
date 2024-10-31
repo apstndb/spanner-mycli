@@ -389,6 +389,55 @@ func TestDml(t *testing.T) {
 	}
 }
 
+func buildAndExecute(t *testing.T, ctx context.Context, session *Session, s string) *Result {
+	stmt, err := BuildStatement(s)
+	if err != nil {
+		t.Fatalf("invalid statement: error=%s", err)
+	}
+
+	result, err := stmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("unexpected error happened: %s", err)
+	}
+	return result
+}
+
+func TestSystemVariables(t *testing.T) {
+	spannerContainer, teardownContainer := initialize(t)
+	defer teardownContainer()
+
+	session, _, tearDown := setup(t, context.Background(), spannerContainer, []string{})
+	defer tearDown()
+
+	t.Run("set and show string system variables", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+
+		tcases := []struct {
+			varname string
+			value   string
+		}{
+			{"OPTIMIZER_VERSION", "4"},
+			{"OPTIMIZER_STATISTICS_PACKAGE", "analyze_20241017_15_59_17UTC"},
+			{"RPC_PRIORITY", "HIGH"},
+			{"CLI_FORMAT", "TABLE"},
+		}
+
+		for _, tt := range tcases {
+			t.Run(tt.varname, func(t *testing.T) {
+				_ = buildAndExecute(t, ctx, session, fmt.Sprintf(`SET %v = "%v"`, tt.varname, tt.value))
+				result := buildAndExecute(t, ctx, session, fmt.Sprintf(`SHOW VARIABLE %v`, tt.varname))
+				if diff := cmp.Diff([]string{tt.varname}, result.ColumnNames); diff != "" {
+					t.Errorf("SHOW column names differ: %v", diff)
+				}
+				if diff := cmp.Diff([]Row{{Columns: []string{tt.value}}}, result.Rows); diff != "" {
+					t.Errorf("SHOW rows differ: %v", diff)
+				}
+			})
+		}
+	})
+}
+
 func TestReadWriteTransaction(t *testing.T) {
 	spannerContainer, teardown := initialize(t)
 	defer teardown()
@@ -487,7 +536,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		session, tableId, tearDown := setup(t, ctx, spannerContainer, []string{})
 		defer tearDown()
 
-		t.Log("begin")
+		// begin
 		stmt, err := BuildStatement("BEGIN")
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
@@ -503,7 +552,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		t.Log("insert")
+		// insert
 		stmt, err = BuildStatement(
 			fmt.Sprintf("INSERT INTO %s (id, active) VALUES (1, true), (2, false)", tableId),
 		)
@@ -521,7 +570,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		t.Log("rollback")
+		// rollback
 		stmt, err = BuildStatement("ROLLBACK")
 		if err != nil {
 			t.Fatalf("invalid statement: error=%s", err)
@@ -537,7 +586,7 @@ func TestReadWriteTransaction(t *testing.T) {
 			IsMutation:   true,
 		})
 
-		t.Log("check by query")
+		// check by query
 		query := spanner.NewStatement(
 			fmt.Sprintf("SELECT id, active FROM %s ORDER BY id ASC", tableId),
 		)
