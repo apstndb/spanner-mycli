@@ -45,9 +45,9 @@ type spannerOptions struct {
 	Table        bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
 	Verbose      bool              `long:"verbose" short:"v" description:"Display verbose output."`
 	Credential   string            `long:"credential" description:"Use the specific credential file"`
-	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format"`
+	Prompt       string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
 	LogMemefish  bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
-	HistoryFile  string            `long:"history" description:"Set the history file to the specified path"`
+	HistoryFile  string            `long:"history" description:"Set the history file to the specified path" default:"/tmp/spanner_mycli_readline.tmp"`
 	Priority     string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role         string            `long:"role" description:"Use the specific database role"`
 	Endpoint     string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
@@ -78,22 +78,24 @@ func main() {
 
 	opts := gopts.Spanner
 
-	var sysVars systemVariables
-
 	logMemefish = opts.LogMemefish
 
 	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
-	var cnt int
-	for _, b := range []bool{opts.File != "", opts.Execute != "", opts.SQL != ""} {
-		if b {
-			cnt += 1
-		}
+	sysVars := systemVariables{
+		Project:     opts.ProjectId,
+		Instance:    opts.InstanceId,
+		Database:    opts.DatabaseId,
+		Verbose:     opts.Verbose,
+		Prompt:      opts.Prompt,
+		HistoryFile: opts.HistoryFile,
+		Role:        opts.Role,
+		Endpoint:    opts.Endpoint,
 	}
 
-	if cnt > 1 {
+	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
 		exitf("Invalid combination: -e, -f, --sql are exclusive\n")
 	}
 
@@ -122,6 +124,7 @@ func main() {
 		if err != nil {
 			exitf("Invalid directed read option: %v\n", err)
 		}
+		sysVars.DirectedRead = directedRead
 	}
 
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
@@ -130,9 +133,9 @@ func main() {
 		if err := sysVars.Set(k, v); err != nil {
 			exitf("failed to set system variable. name: %v, value: %v, err: %v\n", k, v, err)
 		}
-
 	}
-	cli, err := NewCli(opts.ProjectId, opts.InstanceId, opts.DatabaseId, opts.Prompt, opts.HistoryFile, cred, os.Stdin, os.Stdout, os.Stderr, opts.Verbose, opts.Role, opts.Endpoint, directedRead, &sysVars)
+
+	cli, err := NewCli(cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}

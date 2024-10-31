@@ -23,34 +23,11 @@ name: CI
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      emulator:
-        image: gcr.io/cloud-spanner-emulator/emulator:1.5.24
-        ports:
-          - 9010:9010
-          - 9020:9020
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
       - run: go version
-      - name: Wait on
-        uses: iFaxity/wait-on-action@v1.2.1
-        with:
-          resource: http-get://localhost:9020/v1/projects/fake-project/instances
-      - run: make setup-emulator
-        env:
-          SPANNER_EMULATOR_HOST: localhost:9010
-          SPANNER_EMULATOR_HOST_REST: localhost:9020
-          PROJECT: fake-project
-          INSTANCE: fake-instance
-          DATABASE: fake-database
-      - name: make test with Cloud Spanner Emulator
+      - name: make test
         run: make test
-        env:
-          SPANNER_EMULATOR_HOST: localhost:9010
-          SPANNER_EMULATOR_HOST_REST: localhost:9020
-          PROJECT: fake-project
-          INSTANCE: fake-instance
-          DATABASE: fake-database

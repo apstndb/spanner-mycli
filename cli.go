@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,56 +49,35 @@ const (
 )
 
 const (
-	defaultPrompt      = `spanner%t> `
-	defaultHistoryFile = `/tmp/spanner_mycli_readline.tmp`
-
 	exitCodeSuccess = 0
 	exitCodeError   = 1
 )
 
 type Cli struct {
 	Session         *Session
-	Prompt          string
-	HistoryFile     string
 	Credential      []byte
 	InStream        io.ReadCloser
 	OutStream       io.Writer
 	ErrStream       io.Writer
-	Verbose         bool
-	Priority        sppb.RequestOptions_Priority
-	Endpoint        string
 	SystemVariables *systemVariables
 }
 
 type command struct {
-	Stmt     Statement
-	Vertical bool
+	Stmt Statement
 }
 
-func NewCli(projectId, instanceId, databaseId, prompt, historyFile string, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, verbose bool, role, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Cli, error) {
-	session, err := createSession(projectId, instanceId, databaseId, credential, role, endpoint, directedRead, sysVars)
+func NewCli(credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+	session, err := createSession(credential, sysVars)
 	if err != nil {
 		return nil, err
 	}
 
-	if prompt == "" {
-		prompt = defaultPrompt
-	}
-
-	if historyFile == "" {
-		historyFile = defaultHistoryFile
-	}
-
 	return &Cli{
 		Session:         session,
-		Prompt:          prompt,
-		HistoryFile:     historyFile,
 		Credential:      credential,
 		InStream:        inStream,
 		OutStream:       outStream,
 		ErrStream:       errStream,
-		Verbose:         verbose,
-		Endpoint:        endpoint,
 		SystemVariables: sysVars,
 	}, nil
 }
@@ -145,7 +125,7 @@ func (c *Cli) RunInteractive() int {
 		return false
 	}
 
-	shell.History.AddFromFile("history name", c.HistoryFile)
+	shell.History.AddFromFile("history name", c.SystemVariables.HistoryFile)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -154,7 +134,7 @@ func (c *Cli) RunInteractive() int {
 	if exists {
 		fmt.Fprintf(c.OutStream, "Connected.\n")
 	} else {
-		return c.ExitOnError(fmt.Errorf("unknown database %q", c.Session.databaseId))
+		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
 	}
 
 	for {
@@ -192,7 +172,12 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		if s, ok := stmt.(*UseStatement); ok {
-			newSession, err := createSession(c.Session.projectId, c.Session.instanceId, s.Database, c.Credential, s.Role, c.Endpoint, c.Session.directedRead, c.SystemVariables)
+			newSystemVariables := *c.SystemVariables
+
+			newSystemVariables.Database = s.Database
+			newSystemVariables.Role = s.Role
+
+			newSession, err := createSession(c.Credential, &newSystemVariables)
 			if err != nil {
 				c.PrintInteractiveError(err)
 				continue
@@ -212,13 +197,18 @@ func (c *Cli) RunInteractive() int {
 
 			c.Session.Close()
 			c.Session = newSession
+
+			c.SystemVariables = &newSystemVariables
+
 			fmt.Fprintf(c.OutStream, "Database changed")
 			continue
 		}
 
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
-			if c.Session.databaseId == s.DatabaseId {
-				c.PrintInteractiveError(fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId))
+			if c.SystemVariables.Database == s.DatabaseId {
+				c.PrintInteractiveError(
+					fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
+				)
 				continue
 			}
 
@@ -331,7 +321,7 @@ func (c *Cli) PrintBatchError(err error) {
 }
 
 func (c *Cli) PrintResult(result *Result, mode DisplayMode, interactive bool) {
-	printResult(c.OutStream, result, mode, interactive, c.Verbose)
+	printResult(c.OutStream, result, mode, interactive, c.SystemVariables.Verbose)
 }
 
 func (c *Cli) PrintProgressingMark() func() {
@@ -357,29 +347,43 @@ func (c *Cli) PrintProgressingMark() func() {
 	return stop
 }
 
+var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
+var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+
 func (c *Cli) getInterpolatedPrompt() string {
-	return strings.NewReplacer(
-		"%%", "%",
-		"%n", "\n",
-		"%p", c.Session.projectId,
-		"%i", c.Session.projectId,
-		"%d", c.Session.databaseId,
-		"%t", lo.
-			If(c.Session.InReadWriteTransaction(), "(rw txn)").
-			ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
-			Else(""),
-	).Replace(c.Prompt)
+	return promptRe.ReplaceAllStringFunc(c.SystemVariables.Prompt, func(s string) string {
+		return lo.Switch[string, string](s).
+			Case("%%", "%").
+			Case("%n", "\n").
+			Case("%p", c.SystemVariables.Project).
+			Case("%i", c.SystemVariables.Instance).
+			Case("%d", c.SystemVariables.Database).
+			Case("%t", lo.
+				If(c.Session.InReadWriteTransaction(), "(rw txn)").
+				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
+				Else("")).
+			DefaultF(
+				func() string {
+					varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
+					value, err := c.SystemVariables.Get(varName)
+					if err != nil {
+						return fmt.Sprintf("INVALID_VAR{%v}", varName)
+					}
+					return value[varName]
+				},
+			)
+	})
 }
 
-func createSession(projectId string, instanceId string, databaseId string, credential []byte, role string, endpoint string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables) (*Session, error) {
+func createSession(credential []byte, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))
 	}
-	if endpoint != "" {
-		opts = append(opts, option.WithEndpoint(endpoint))
+	if sysVars.Endpoint != "" {
+		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
 	}
-	return NewSession(projectId, instanceId, databaseId, role, directedRead, sysVars, opts...)
+	return NewSession(sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {
@@ -567,16 +571,16 @@ func buildCommands(input string) ([]*command, error) {
 
 		// Flush pending DDLs
 		if len(pendingDdls) > 0 {
-			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}, false})
+			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
 			pendingDdls = nil
 		}
 
-		cmds = append(cmds, &command{stmt, separated.delim == delimiterVertical})
+		cmds = append(cmds, &command{stmt})
 	}
 
 	// Flush pending DDLs
 	if len(pendingDdls) > 0 {
-		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}, false})
+		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
 	}
 
 	return cmds, nil

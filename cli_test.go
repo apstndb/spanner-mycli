@@ -33,8 +33,8 @@ func TestBuildCommands(t *testing.T) {
 		Expected    []*command
 		ExpectError bool
 	}{
-		{Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}, false}}},
-		{Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}, false}}},
+		{Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
+		{Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
 		{Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []*command{{&BulkDdlStatement{[]string{
 				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
@@ -42,7 +42,8 @@ func TestBuildCommands(t *testing.T) {
 				"CREATE INDEX i1 ON t1(col)",
 				"DROP INDEX i1",
 				"DROP TABLE t1",
-			}}, false}}},
+			}}}},
+		},
 		{Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk);
                 CREATE TABLE t2(pk INT64) PRIMARY KEY(pk);
                 SELECT * FROM t1;
@@ -50,10 +51,17 @@ func TestBuildCommands(t *testing.T) {
                 DROP TABLE t2;
                 SELECT 1;`,
 			Expected: []*command{
-				{&BulkDdlStatement{[]string{"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)", "CREATE TABLE t2(pk INT64) PRIMARY KEY(pk)"}}, false},
-				{&SelectStatement{"SELECT * FROM t1"}, false},
-				{&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}}, false},
-				{&SelectStatement{"SELECT 1"}, false},
+				{
+					&BulkDdlStatement{
+						[]string{
+							"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
+							"CREATE TABLE t2(pk INT64) PRIMARY KEY(pk)",
+						},
+					},
+				},
+				{&SelectStatement{"SELECT * FROM t1"}},
+				{&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}}},
+				{&SelectStatement{"SELECT 1"}},
 			}},
 		{
 			Input: `
@@ -63,11 +71,15 @@ func TestBuildCommands(t *testing.T) {
 			DELETE t1 WHERE TRUE /* AND pk = 1 */;
 			SELECT 0x1/**/A`,
 			Expected: []*command{
-				{&BulkDdlStatement{[]string{"CREATE TABLE t1(pk INT64  , col INT64) PRIMARY KEY(pk)"}}, false},
-				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}, false},
-				{&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"}, false},
-				{&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"}, false},
-				{&SelectStatement{"SELECT 0x1/**/A"}, false},
+				{
+					&BulkDdlStatement{
+						[]string{"CREATE TABLE t1(pk INT64  , col INT64) PRIMARY KEY(pk)"},
+					},
+				},
+				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}},
+				{&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"}},
+				{&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"}},
+				{&SelectStatement{"SELECT 0x1/**/A"}},
 			}},
 		{
 			// spanner-cli don't permit empty statements.
@@ -82,7 +94,7 @@ func TestBuildCommands(t *testing.T) {
 			// A comment after the last semicolon is permitted.
 			Input: `SELECT 1; /* comment */`,
 			Expected: []*command{
-				{&SelectStatement{"SELECT 1"}, false},
+				{&SelectStatement{"SELECT 1"}},
 			}},
 	}
 

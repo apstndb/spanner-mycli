@@ -4,23 +4,33 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"spheric.cloud/xiter"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 type systemVariables struct {
-	RPCPriority                sppb.RequestOptions_Priority
-	ReadOnlyStaleness          *spanner.TimestampBound
-	ReadTimestamp              time.Time
-	OptimizerVersion           string
-	OptimizerStatisticsPackage string
-	CommitResponse             *sppb.CommitResponse
-	CommitTimestamp            time.Time
-	CLIFormat                  DisplayMode
+	RPCPriority                 sppb.RequestOptions_Priority
+	ReadOnlyStaleness           *spanner.TimestampBound
+	ReadTimestamp               time.Time
+	OptimizerVersion            string
+	OptimizerStatisticsPackage  string
+	CommitResponse              *sppb.CommitResponse
+	CommitTimestamp             time.Time
+	CLIFormat                   DisplayMode
+	Project, Instance, Database string
+	Verbose                     bool
+	Prompt                      string
+	HistoryFile                 string
+	Role                        string
+	Endpoint                    string
+	DirectedRead                *sppb.DirectedReadOptions
 }
 
 var errIgnored = errors.New("ignored")
@@ -32,6 +42,18 @@ type getter = func(this *systemVariables, name string) (map[string]string, error
 type accessor struct {
 	Setter setter
 	Getter getter
+}
+
+func (sv *systemVariables) InstancePath() string {
+	return instancePath(sv.Project, sv.Instance)
+}
+
+func (sv *systemVariables) DatabasePath() string {
+	return databasePath(sv.Project, sv.Instance, sv.Database)
+}
+
+func (sv *systemVariables) ProjectPath() string {
+	return projectPath(sv.Project)
 }
 
 func (sv *systemVariables) Set(name string, value string) error {
@@ -131,24 +153,12 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
-	"OPTIMIZER_VERSION": {
-		func(this *systemVariables, name, value string) error {
-			this.OptimizerVersion = unquoteString(value)
-			return nil
-		},
-		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.OptimizerVersion), nil
-		},
-	},
-	"OPTIMIZER_STATISTICS_PACKAGE": {
-		func(this *systemVariables, name, value string) error {
-			this.OptimizerStatisticsPackage = unquoteString(value)
-			return nil
-		},
-		func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.OptimizerStatisticsPackage), nil
-		},
-	},
+	"OPTIMIZER_VERSION": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.OptimizerVersion
+	}),
+	"OPTIMIZER_STATISTICS_PACKAGE": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.OptimizerStatisticsPackage
+	}),
 	"RETURN_COMMIT_STATS": {},
 	"RPC_PRIORITY": {
 		func(this *systemVariables, name, value string) error {
@@ -225,6 +235,79 @@ var accessorMap = map[string]accessor{
 			return singletonMap(name, formatStr), nil
 		},
 	},
+	"CLI_VERBOSE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, strings.ToUpper(strconv.FormatBool(this.Verbose))), nil
+		},
+		Setter: func(this *systemVariables, name, value string) error {
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return err
+			}
+			this.Verbose = b
+			return nil
+		},
+	},
+	"CLI_ROLE": {
+		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
+	},
+	"CLI_ENDPOINT": {
+		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+	},
+	"CLI_DIRECT_READ": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, xiter.Join(xiter.Map(
+				slices.Values(this.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+				func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
+					return fmt.Sprintf("%v:%v", rs.GetLocation(), rs.GetType())
+				},
+			), ",")), nil
+		},
+	},
+	"CLI_HISTORY_FILE": {
+		Getter: stringGetter(
+			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
+		),
+	},
+	"CLI_PROMPT": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	"CLI_PROJECT": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Project), nil
+		},
+	},
+	"CLI_INSTANCE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Instance), nil
+		},
+	},
+	"CLI_DATABASE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.Database), nil
+		},
+	},
+}
+
+func stringGetter(f func(sysVars *systemVariables) *string) getter {
+	return func(this *systemVariables, name string) (map[string]string, error) {
+		ref := f(this)
+		return singletonMap(name, *ref), nil
+	}
+}
+
+func stringSetter(f func(sysVars *systemVariables) *string) setter {
+	return func(this *systemVariables, name, value string) error {
+		ref := f(this)
+		s := unquoteString(value)
+		*ref = s
+		return nil
+	}
+}
+
+func stringAccessor(f func(variables *systemVariables) *string) accessor {
+	return accessor{
+		Setter: stringSetter(f),
+		Getter: stringGetter(f),
+	}
 }
 
 func parseTimestampBound(s string) (spanner.TimestampBound, error) {

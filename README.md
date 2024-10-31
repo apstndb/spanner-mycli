@@ -13,12 +13,12 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Respects my minor use cases
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
-  * Support `--sql` flag
-* Minimize to use own syntax
-  * Generalized system variables concept inspired by Spanner JDBC
+  * Support compatible flags (`--sql`)
+* Generalized concepts to extend without a lot of original syntax
+  * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
     * `SHOW VARIABLES` statement
-    * `SHOW VARIABLE <name> statement`
+    * `SHOW VARIABLE <name>` statement
     * `--set <name>=<value>` flag
 * Improved interactive experience
   * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
@@ -26,6 +26,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Improved prompt
     * Use `%` for prompt expansion, instead of `\` to avoid escaping
     * Allow newlines in prompt using `%n`
+    * System variables expansion
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
 
@@ -260,19 +261,49 @@ and `{}` for a mutually exclusive keyword.
 | Set variable | `SET <name> = <value>;` | |
 | Show variables | `SHOW VARIABLES;` | |
 
+## System Variables
+
+### Spanner JDBC inspired variables
+
+They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
+
+| Name                         | Type       | Example                              |
+|------------------------------|------------|--------------------------------------|
+| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`     |
+| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                |
+| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                |
+| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                           |
+| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"` |
+| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"` |
+
+### spanner-mycli original variables
+
+| Name             | READ/WRITE | Example                                        |
+|------------------|------------|------------------------------------------------|
+| CLI_PROJECT      | READ_ONLY  | `"myproject"`                                  |
+| CLI_INSTANCE     | READ_ONLY  | `"myinstance"`                                 |
+| CLI_DATABASE     | READ_ONLY  | `"mydb"`                                       |
+| CLI_DIRECT_READ  | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
+| CLI_ENDPOINT     | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
+| CLI_FORMAT       | READ_WRITE | `"TABLE"`                                      |
+| CLI_HISTORY_FILE | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
+| CLI_PROMPT       | READ_WRITE | `"spanner%t> "`                                |
+| CLI_ROLE         | READ_ONLY  | `"spanner_info_reader"`                        |
+| CLI_VERBOSE      | READ_WRITE | `TRUE`                                         |
 ## Customize prompt
 
-You can customize the prompt by `--prompt` option.  
-There are some defined variables for being used in prompt.
+You can customize the prompt by `--prompt` option or `CLI_PROMPT` system variable.  
+There are some escape sequences for being used in prompt.
 
-Variables:
+Escape sequences:
 
 * `%p` : GCP Project ID
 * `%i` : Cloud Spanner Instance ID
 * `%d` : Cloud Spanner Database ID
-* `%t` : In transaction
+* `%t` : In transaction mode `(ro txn)` or `(rw txn)`
 * `%n` : Newline
 * `%%` : Character `%`
+* `%{VAR_NAME}` : System variable expansion
 
 Example:
 
@@ -304,7 +335,7 @@ The default prompt is `spanner%t> `.
 ## Config file
 
 This tool supports a configuration file called `spanner_mycli.cnf`, similar to `my.cnf`.  
-The config file path must be `~/.spanner_mycli.cnf`.  
+The config file path must be `~/.spanner_mycli.cnf`.
 In the config file, you can set default option values for command line options.
 
 Example:
@@ -328,7 +359,7 @@ prompt = "[%p:%i:%d]%t> "
 You can set [request priority](https://cloud.google.com/spanner/docs/reference/rest/v1/RequestOptions#Priority) for command level or transaction level.
 By default `MEDIUM` priority is used for every request.
 
-To set a priority for command line level, you can use `--priority={HIGH|MEDIUM|LOW}` command line option.
+To set a priority for command line level, you can use `--priority={HIGH|MEDIUM|LOW}` command line option or `CLI_PRIORITY` system variable.
 
 To set a priority for transaction level, you can use `PRIORITY {HIGH|MEDIUM|LOW}` keyword.
 
@@ -410,10 +441,12 @@ Run unit tests.
 $ make test
 ```
 
-Run integration tests, which connects to real Cloud Spanner database.
+Note: It requires Docker because integration tests using [testcontainers](https://testcontainers.com/).
+
+Or run test except integration tests.
 
 ```
-$ PROJECT=${PROJECT_ID} INSTANCE=${INSTANCE_ID} DATABASE=${DATABASE_ID} CREDENTIAL=${CREDENTIAL} make test
+$ make fasttest
 ```
 
 ## TODO

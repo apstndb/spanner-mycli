@@ -48,14 +48,10 @@ var defaultClientOpts = []option.ClientOption{
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
-	projectId       string
-	instanceId      string
-	databaseId      string
 	client          *spanner.Client
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
-	directedRead    *sppb.DirectedReadOptions
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
 	systemVariables *systemVariables
@@ -69,12 +65,13 @@ type transactionContext struct {
 	roTxn         *spanner.ReadOnlyTransaction
 }
 
-func NewSession(projectId string, instanceId string, databaseId string, role string, directedRead *sppb.DirectedReadOptions, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
+func NewSession(sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	ctx := context.Background()
-	dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectId, instanceId, databaseId)
+	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
-	clientConfig.DatabaseRole = role
-	clientConfig.DirectedReadOptions = directedRead
+	clientConfig.DatabaseRole = sysVars.Role
+	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+
 	opts = append(opts, defaultClientOpts...)
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, opts...)
 	if err != nil {
@@ -87,14 +84,10 @@ func NewSession(projectId string, instanceId string, databaseId string, role str
 	}
 
 	session := &Session{
-		projectId:       projectId,
-		instanceId:      instanceId,
-		databaseId:      databaseId,
 		client:          client,
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
-		directedRead:    directedRead,
 		systemVariables: sysVars,
 	}
 	go session.startHeartbeat()
@@ -328,11 +321,11 @@ func (s *Session) Close() {
 }
 
 func (s *Session) DatabasePath() string {
-	return fmt.Sprintf("projects/%s/instances/%s/databases/%s", s.projectId, s.instanceId, s.databaseId)
+	return s.systemVariables.DatabasePath()
 }
 
 func (s *Session) InstancePath() string {
-	return fmt.Sprintf("projects/%s/instances/%s", s.projectId, s.instanceId)
+	return s.systemVariables.InstancePath()
 }
 
 func (s *Session) DatabaseExists() (bool, error) {
@@ -342,7 +335,8 @@ func (s *Session) DatabaseExists() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
-	iter := s.client.Single().QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriority()})
+	iter := s.client.Single().
+		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriority()})
 	defer iter.Stop()
 
 	_, err := iter.Next()

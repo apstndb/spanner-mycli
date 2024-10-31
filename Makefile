@@ -14,16 +14,15 @@ release: clean cross-compile package
 	@echo "released as draft"
 
 clean:
-	rm -f spanner-cli
+	rm -f spanner-mycli
 	rm -rf dist/
 	go clean -testcache
 
 run:
-	./spanner-cli -p ${PROJECT} -i ${INSTANCE} -d ${DATABASE}
+	./spanner-mycli -p ${PROJECT} -i ${INSTANCE} -d ${DATABASE}
 
 test:
-	@SPANNER_CLI_INTEGRATION_TEST_PROJECT_ID=${PROJECT} SPANNER_CLI_INTEGRATION_TEST_INSTANCE_ID=${INSTANCE} SPANNER_CLI_INTEGRATION_TEST_DATABASE_ID=${DATABASE} SPANNER_CLI_INTEGRATION_TEST_CREDENTIAL=${CREDENTIAL} go test -v ./...
+	go test -v ./...
 
-setup-emulator:
-	curl -s "${SPANNER_EMULATOR_HOST_REST}/v1/projects/${PROJECT}/instances" --data '{"instanceId": "'${INSTANCE}'"}'
-	curl -s "${SPANNER_EMULATOR_HOST_REST}/v1/projects/${PROJECT}/instances/${INSTANCE}/databases" --data '{"createStatement": "CREATE DATABASE `'${DATABASE}'`"}'
+fasttest:
+	go test --tags skip_slow_test -v ./...

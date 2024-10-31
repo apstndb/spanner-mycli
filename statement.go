@@ -397,7 +397,7 @@ type DropDatabaseStatement struct {
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
-		Database: fmt.Sprintf("projects/%s/instances/%s/databases/%s", session.projectId, session.instanceId, s.DatabaseId),
+		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
 		return nil, err
 	}
@@ -610,7 +610,7 @@ func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*R
 		return nil, errors.New(`"SHOW TABLES" can not be used in a read-write transaction`)
 	}
 
-	alias := fmt.Sprintf("Tables_in_%s", session.databaseId)
+	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
 	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
 	stmt.Params["schema"] = s.Schema
 
