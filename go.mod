@@ -7,7 +7,7 @@ toolchain go1.23.1
 require (
 	cloud.google.com/go v0.113.0
 	cloud.google.com/go/spanner v1.62.0
-	github.com/cloudspannerecosystem/memefish v0.0.0-20241029131948-98b8bf288447
+	github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/olekukonko/tablewriter v0.0.5
