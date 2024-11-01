@@ -93,18 +93,18 @@ func main() {
 	}
 
 	sysVars := systemVariables{
-		Project:             opts.ProjectId,
-		Instance:            opts.InstanceId,
-		Database:            opts.DatabaseId,
-		Verbose:             opts.Verbose,
-		Prompt:              lo.FromPtrOr(opts.Prompt, defaultPrompt),
-		HistoryFile:         lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
-		Role:                opts.Role,
-		Endpoint:            opts.Endpoint,
-		ProtoDescriptorFile: opts.ProtoDescriptorFile,
+		Project:     opts.ProjectId,
+		Instance:    opts.InstanceId,
+		Database:    opts.DatabaseId,
+		Verbose:     opts.Verbose,
+		Prompt:      lo.FromPtrOr(opts.Prompt, defaultPrompt),
+		HistoryFile: lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
+		Role:        opts.Role,
+		Endpoint:    opts.Endpoint,
 	}
 
-	if opts.ProtoDescriptorFile != "" {
+	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
+	if len(ss) > 0 {
 		if err := sysVars.Set("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(opts.ProtoDescriptorFile)); err != nil {
 			exitf("error on --proto-descriptor-file: %v\n", err)
 		}

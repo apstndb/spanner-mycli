@@ -142,6 +142,7 @@ var (
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
 	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
+	setAddRe          = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
 	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
@@ -232,6 +233,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case setRe.MatchString(trimmed):
 		matched := setRe.FindStringSubmatch(trimmed)
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+	case setAddRe.MatchString(trimmed):
+		matched := setAddRe.FindStringSubmatch(trimmed)
+		return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
 	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
 	default:
@@ -599,6 +603,18 @@ type SetStatement struct {
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
+		return nil, err
+	}
+	return &Result{KeepVariables: true}, nil
+}
+
+type SetAddStatement struct {
+	VarName string
+	Value   string
+}
+
+func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
