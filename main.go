@@ -104,8 +104,8 @@ func main() {
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
-	if len(ss) > 0 {
-		if err := sysVars.Set("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(opts.ProtoDescriptorFile)); err != nil {
+	for _, s := range ss {
+		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
 			exitf("error on --proto-descriptor-file: %v\n", err)
 		}
 	}
