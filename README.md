@@ -250,8 +250,8 @@ and `{}` for a mutually exclusive keyword.
 | Query | `SELECT ...;` | |
 | DML | `{INSERT\|UPDATE\|DELETE} ...;` | |
 | Partitioned DML | `PARTITIONED {UPDATE\|DELETE} ...;` | |
-| Show local proto descriptors | `SHOW LOCAL PROTO DESCRIPTORS;` | |
-| Show remote proto bundle | `SHOW PROTO BUNDLE;` | |
+| Show local proto descriptors | `SHOW LOCAL PROTO;` | |
+| Show remote proto bundle | `SHOW PROTO;` | |
 | Show Query Execution Plan | `EXPLAIN SELECT ...;` | |
 | Show DML Execution Plan | `EXPLAIN {INSERT\|UPDATE\|DELETE} ...;` | |
 | Show Query Execution Plan with Stats | `EXPLAIN ANALYZE SELECT ...;` | |
@@ -439,7 +439,7 @@ You can use `--proto-descriptor-file` option to specify proto descriptor file.
 ```
 $ ./spanner-mycli --proto-descriptor-file=order_descriptors.pb 
 Connected.
-> SHOW LOCAL PROTO DESCRIPTORS;
+> SHOW LOCAL PROTO;
 +--------------------------------+-------------------+--------------------+
 | full_name                      | package           | file               |
 +--------------------------------+-------------------+--------------------+
@@ -453,7 +453,7 @@ Connected.
 spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (7.92 sec)
 
-> SHOW PROTO BUNDLE;
+> SHOW REMOTE PROTO;
 +---------------------------------------+------------------------+
 | full_name                             | package                |
 +---------------------------------------+------------------------+
