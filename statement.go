@@ -131,8 +131,8 @@ var (
 	// Other
 	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
 	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalPDRe     = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO\s+DESCRIPTORS$`)
-	showProtoBundleRe = regexp.MustCompile(`(?is)^SHOW\s+PROTO\s+BUNDLE$`)
+	showLocalPDRe     = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showProtoBundleRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
 	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 	showCreateTableRe = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
 	showTablesRe      = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
