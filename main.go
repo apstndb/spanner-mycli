@@ -37,6 +37,7 @@ type globalOptions struct {
 	Spanner spannerOptions `group:"spanner"`
 }
 
+// We can't use `default` because spanner-mycli uses multiple flags.NewParser() to process config files and flags.
 type spannerOptions struct {
 	ProjectId           string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
 	InstanceId          string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
@@ -46,9 +47,9 @@ type spannerOptions struct {
 	Table               bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
 	Verbose             bool              `long:"verbose" short:"v" description:"Display verbose output."`
 	Credential          string            `long:"credential" description:"Use the specific credential file"`
-	Prompt              string            `long:"prompt" description:"Set the prompt to the specified format" default:"spanner%t> "`
+	Prompt              *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
 	LogMemefish         bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
-	HistoryFile         string            `long:"history" description:"Set the history file to the specified path" default:"/tmp/spanner_mycli_readline.tmp"`
+	HistoryFile         *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
 	Priority            string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role                string            `long:"role" description:"Use the specific database role"`
 	Endpoint            string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
@@ -57,6 +58,11 @@ type spannerOptions struct {
 	Set                 map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 }
+
+const (
+	defaultPrompt      = "spanner%t> "
+	defaultHistoryFile = "/tmp/spanner_mycli_readline.tmp"
+)
 
 var logMemefish bool
 
@@ -91,8 +97,8 @@ func main() {
 		Instance:            opts.InstanceId,
 		Database:            opts.DatabaseId,
 		Verbose:             opts.Verbose,
-		Prompt:              opts.Prompt,
-		HistoryFile:         opts.HistoryFile,
+		Prompt:              lo.FromPtrOr(opts.Prompt, defaultPrompt),
+		HistoryFile:         lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
 		Role:                opts.Role,
 		Endpoint:            opts.Endpoint,
 		ProtoDescriptorFile: opts.ProtoDescriptorFile,
