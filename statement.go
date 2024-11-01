@@ -278,15 +278,16 @@ func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	}
 
 	switch stmt.(type) {
-	// Only CREATE DATABASE needs special treatment
-	case *ast.CreateDatabase:
-		return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
-	case ast.DDL:
-		return &DdlStatement{Ddl: stmt.SQL()}, nil
 	case *ast.QueryStatement:
 		return &SelectStatement{Query: raw}, nil
 	case ast.DML:
 		return &DmlStatement{Dml: raw}, nil
+	// Currently, UpdateDdl doesn't permit comments, so we need to unparse DDLs.
+	// Only CREATE DATABASE needs special treatment in DDL.
+	case *ast.CreateDatabase:
+		return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
+	case ast.DDL:
+		return &DdlStatement{Ddl: stmt.SQL()}, nil
 	default:
 		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
 	}
