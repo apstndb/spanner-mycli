@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"spheric.cloud/xiter"
+
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
-
-	"spheric.cloud/xiter"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
