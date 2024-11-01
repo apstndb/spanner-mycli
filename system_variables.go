@@ -39,7 +39,7 @@ type systemVariables struct {
 	BuildStatementMode          parseMode
 
 	// it is internal variable and hidden from system variable statements
-	ProtoDescriptor *descriptorpb.FileDescriptorProto
+	ProtoDescriptor *descriptorpb.FileDescriptorSet
 }
 
 var errIgnored = errors.New("ignored")
@@ -335,12 +335,12 @@ var accessorMap = map[string]accessor{
 	},
 }
 
-func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorProto, error) {
+func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
 	}
-	var fds descriptorpb.FileDescriptorProto
+	var fds descriptorpb.FileDescriptorSet
 	err = proto.Unmarshal(b, &fds)
 	if err != nil {
 		return nil, fmt.Errorf("error on unmarshal proto descriptor-file %v: %w", filename, err)
