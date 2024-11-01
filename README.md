@@ -250,6 +250,8 @@ and `{}` for a mutually exclusive keyword.
 | Query | `SELECT ...;` | |
 | DML | `{INSERT\|UPDATE\|DELETE} ...;` | |
 | Partitioned DML | `PARTITIONED {UPDATE\|DELETE} ...;` | |
+| Show local proto descriptors | `SHOW LOCAL PROTO DESCRIPTORS;` | |
+| Show remote proto bundle | `SHOW PROTO BUNDLE;` | |
 | Show Query Execution Plan | `EXPLAIN SELECT ...;` | |
 | Show DML Execution Plan | `EXPLAIN {INSERT\|UPDATE\|DELETE} ...;` | |
 | Show Query Execution Plan with Stats | `EXPLAIN ANALYZE SELECT ...;` | |
@@ -437,8 +439,27 @@ You can use `--proto-descriptor-file` option to specify proto descriptor file.
 ```
 $ ./spanner-mycli --proto-descriptor-file=order_descriptors.pb 
 Connected.
+> SHOW LOCAL PROTO DESCRIPTORS;
++--------------------------------+-------------------+--------------------+
+| full_name                      | package           | file               |
++--------------------------------+-------------------+--------------------+
+| examples.shipping.Order        | examples.shipping | order_protos.proto |
+| examples.shipping.Address      | examples.shipping | order_protos.proto |
+| examples.shipping.Item         | examples.shipping | order_protos.proto |
+| examples.shipping.OrderHistory | examples.shipping | order_protos.proto |
++--------------------------------+-------------------+--------------------+
+4 rows in set (0.00 sec)
+
 spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (7.92 sec)
+
+> SHOW PROTO BUNDLE;
++---------------------------------------+------------------------+
+| full_name                             | package                |
++---------------------------------------+------------------------+
+| examples.shipping.Item                | examples.shipping      |
++---------------------------------------+------------------------+
+1 row in set (2.32 sec)
 
 spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (8.68 sec)
