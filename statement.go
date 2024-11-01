@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"log"
 	"maps"
 	"regexp"
@@ -27,6 +28,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
+
+	"spheric.cloud/xiter"
+
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/cloudspannerecosystem/memefish/ast"
 
@@ -99,22 +106,20 @@ var (
 	// DDL
 	createDatabaseRe = regexp.MustCompile(`(?is)^CREATE\s+DATABASE\s.+$`)
 	dropDatabaseRe   = regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`)
-	createRe         = regexp.MustCompile(`(?is)^CREATE\s.+$`)
-	dropRe           = regexp.MustCompile(`(?is)^DROP\s.+$`)
-	grantRe          = regexp.MustCompile(`(?is)^GRANT\s.+$`)
-	revokeRe         = regexp.MustCompile(`(?is)^REVOKE\s.+$`)
-	alterRe          = regexp.MustCompile(`(?is)^ALTER\s.+$`)
-	renameRe         = regexp.MustCompile(`(?is)^RENAME\s.+$`)
-	truncateTableRe  = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
-	analyzeRe        = regexp.MustCompile(`(?is)^ANALYZE$`)
+	ddlRe            = regexp.MustCompile(`(?is)^(CREATE|ALTER|DROP|GRANT|REVOKE|RENAME)\s.+|ANALYZE$`)
 
 	// DML
 	dmlRe = regexp.MustCompile(`(?is)^(INSERT|UPDATE|DELETE)\s+.+$`)
+
+	// Start spanner-mycli statements
 
 	// Partitioned DML
 	// In fact, INSERT is not supported in a Partitioned DML, but accept it for showing better error message.
 	// https://cloud.google.com/spanner/docs/dml-partitioned#features_that_arent_supported
 	pdmlRe = regexp.MustCompile(`(?is)^PARTITIONED\s+((?:INSERT|UPDATE|DELETE)\s+.+$)`)
+
+	// Truncate is a syntax sugar of PDML.
+	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
 
 	// Transaction
 	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`)
@@ -126,6 +131,8 @@ var (
 	// Other
 	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
 	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
+	showLocalPDRe     = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO\s+DESCRIPTORS$`)
+	showProtoBundleRe = regexp.MustCompile(`(?is)^SHOW\s+PROTO\s+BUNDLE$`)
 	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 	showCreateTableRe = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
 	showTablesRe      = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
@@ -164,6 +171,10 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case truncateTableRe.MatchString(trimmed):
 		matched := truncateTableRe.FindStringSubmatch(trimmed)
 		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
+	case showLocalPDRe.MatchString(trimmed):
+		return &ShowLocalPDStatement{}, nil
+	case showProtoBundleRe.MatchString(trimmed):
+		return &ShowProtoBundleStatement{}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
 	case showCreateTableRe.MatchString(trimmed):
@@ -300,23 +311,11 @@ func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error)
 		return &SelectStatement{Query: raw}, nil
 	case createDatabaseRe.MatchString(trimmed):
 		return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
-	case createRe.MatchString(trimmed):
+	case ddlRe.MatchString(trimmed):
 		return &DdlStatement{Ddl: trimmed}, nil
 	case dropDatabaseRe.MatchString(trimmed):
 		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
 		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
-	case dropRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case alterRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case renameRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case grantRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case revokeRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case analyzeRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
 	case dmlRe.MatchString(trimmed):
 		return &DmlStatement{Dml: raw}, nil
 	default:
@@ -603,6 +602,65 @@ func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, 
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
+}
+
+type ShowLocalPDStatement struct{}
+
+func (s *ShowLocalPDStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	fds := session.systemVariables.ProtoDescriptor
+
+	rows := slices.Collect(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
+
+	return &Result{
+		ColumnNames:   []string{"full_name", "package", "file"},
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		KeepVariables: true,
+	}, nil
+}
+
+func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
+	return xiter.Map(
+		xiter.Concat(
+			xiter.Map(xiter.Flatmap(slices.Values(fdp.GetMessageType()), flattenNestedType), (*descriptorpb.DescriptorProto).GetName),
+			xiter.Map(slices.Values(fdp.GetEnumType()), (*descriptorpb.EnumDescriptorProto).GetName),
+		), func(s string) Row {
+			pkg := fdp.GetPackage()
+			return Row{Columns: sliceOf(lo.Ternary(pkg != "", pkg+".", "")+s, fdp.GetPackage(), fdp.GetName())}
+		})
+}
+
+type ShowProtoBundleStatement struct{}
+
+func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var fds descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
+		return nil, err
+	}
+
+	rows := slices.Collect(xiter.Map(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
+		return Row{Columns: in.Columns[:2]}
+	}))
+
+	return &Result{
+		ColumnNames:   []string{"full_name", "package"},
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		KeepVariables: true,
+	}, nil
+}
+
+func flattenNestedType(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorpb.DescriptorProto] {
+	return xiter.Concat(xiter.Of(dp),
+		slices.Values(dp.GetNestedType()),
+	)
 }
 
 type ShowDatabasesStatement struct {
