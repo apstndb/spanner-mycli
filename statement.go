@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudspannerecosystem/memefish/ast"
+
 	"google.golang.org/protobuf/proto"
 
 	"cloud.google.com/go/spanner"
@@ -146,38 +148,22 @@ func BuildStatement(input string) (Statement, error) {
 	return BuildStatementWithComments(input, input)
 }
 
-func BuildStatementWithComments(stripped, raw string) (Statement, error) {
-	trimmed := strings.TrimSpace(stripped)
+var errStatementNotMatched = errors.New("statement not matched")
+
+func BuildCLIStatement(trimmed string) (Statement, error) {
 	switch {
 	case exitRe.MatchString(trimmed):
 		return &ExitStatement{}, nil
 	case useRe.MatchString(trimmed):
 		matched := useRe.FindStringSubmatch(trimmed)
 		return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
-	case selectRe.MatchString(trimmed):
-		return &SelectStatement{Query: raw}, nil
-	case createDatabaseRe.MatchString(trimmed):
-		return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
-	case createRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
+	// DROP DATABASE is not native Cloud Spanner statement
 	case dropDatabaseRe.MatchString(trimmed):
 		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
 		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
-	case dropRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case alterRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case renameRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case grantRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case revokeRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
 	case truncateTableRe.MatchString(trimmed):
 		matched := truncateTableRe.FindStringSubmatch(trimmed)
 		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
-	case analyzeRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
 	case showCreateTableRe.MatchString(trimmed):
@@ -216,8 +202,6 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		matched := showIndexRe.FindStringSubmatch(trimmed)
 		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
 		return &ShowIndexStatement{Schema: schema, Table: table}, nil
-	case dmlRe.MatchString(trimmed):
-		return &DmlStatement{Dml: raw}, nil
 	case pdmlRe.MatchString(trimmed):
 		matched := pdmlRe.FindStringSubmatch(trimmed)
 		return &PartitionedDmlStatement{Dml: matched[1]}, nil
@@ -239,9 +223,103 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
+	default:
+		return nil, errStatementNotMatched
+	}
+}
+
+func BuildStatementWithComments(stripped, raw string) (Statement, error) {
+	return BuildStatementWithCommentsWithMode(stripped, raw, buildModeDefault)
+}
+
+type buildStatementMode int
+
+const (
+	buildModeDefault buildStatementMode = iota
+	buildModeNoMemefish
+	buildModeMemefishOnly
+)
+
+func BuildStatementWithCommentsWithMode(stripped, raw string, mode buildStatementMode) (Statement, error) {
+	trimmed := strings.TrimSpace(stripped)
+	if trimmed == "" {
+		return nil, errors.New("empty statement")
 	}
 
-	return nil, errors.New("invalid statement")
+	switch stmt, err := BuildCLIStatement(trimmed); {
+	case err != nil && !errors.Is(err, errStatementNotMatched):
+		return nil, err
+	case stmt != nil:
+		return stmt, nil
+	default:
+		// no action
+	}
+
+	if mode != buildModeNoMemefish {
+		switch stmt, err := BuildNativeStatementMemefish(raw); {
+		case mode == buildModeMemefishOnly && err != nil:
+			return nil, fmt.Errorf("invalid statement: %w", err)
+		case errors.Is(err, errStatementNotMatched):
+			log.Println("ignore unknown statement, err: %w", err)
+		case err != nil:
+			log.Println("ignore memefish parse error, err: %w", err)
+		default:
+			return stmt, nil
+		}
+	}
+
+	return BuildNativeStatementFallback(trimmed, raw)
+}
+
+func BuildNativeStatementMemefish(raw string) (Statement, error) {
+	stmt, err := memefish.ParseStatement("", raw)
+	if err != nil {
+		return nil, err
+	}
+
+	switch stmt.(type) {
+	// Only CREATE DATABASE needs special treatment
+	case *ast.CreateDatabase:
+		return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
+	case ast.DDL:
+		return &DdlStatement{Ddl: stmt.SQL()}, nil
+	case *ast.QueryStatement:
+		return &SelectStatement{Query: raw}, nil
+	case ast.DML:
+		return &DmlStatement{Dml: raw}, nil
+	default:
+		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
+	}
+}
+
+func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error) {
+	switch {
+	case selectRe.MatchString(trimmed):
+		return &SelectStatement{Query: raw}, nil
+	case createDatabaseRe.MatchString(trimmed):
+		return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
+	case createRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case dropDatabaseRe.MatchString(trimmed):
+		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
+		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
+	case dropRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case alterRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case renameRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case grantRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case revokeRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case analyzeRe.MatchString(trimmed):
+		return &DdlStatement{Ddl: trimmed}, nil
+	case dmlRe.MatchString(trimmed):
+		return &DmlStatement{Dml: raw}, nil
+	default:
+		return nil, errors.New("invalid statement")
+	}
 }
 
 func unquoteIdentifier(input string) string {

@@ -84,7 +84,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER DATABASE statement",
 			input: "ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )",
-			want:  &DdlStatement{Ddl: "ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )"},
+			want:  &DdlStatement{Ddl: `ALTER DATABASE d1 SET OPTIONS (version_retention_period = "7d")`},
 		},
 		{
 			desc:  "CREATE TABLE statement",
@@ -154,7 +154,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER CHANGE STREAM SET OPTIONS statement",
 			input: "ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )",
-			want:  &DdlStatement{Ddl: "ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )"},
+			want:  &DdlStatement{Ddl: `ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS (retention_period = "36h")`},
 		},
 		{
 			desc:  "ALTER CHANGE STREAM DROP FOR ALL statement",
@@ -583,8 +583,8 @@ func TestBuildStatement(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
 			}
-			if !cmp.Equal(got, test.want) {
-				t.Errorf("BuildStatement(%q) = %v, but want = %v", test.input, got, test.want)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
 			}
 		})
 
