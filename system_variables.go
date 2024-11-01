@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -10,6 +11,9 @@ import (
 	"time"
 
 	"spheric.cloud/xiter"
+
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -31,6 +35,10 @@ type systemVariables struct {
 	Role                        string
 	Endpoint                    string
 	DirectedRead                *sppb.DirectedReadOptions
+	ProtoDescriptorFile         string
+
+	// it is internal variable and hidden from system variable statements
+	ProtoDescriptor *descriptorpb.FileDescriptorProto
 }
 
 var errIgnored = errors.New("ignored")
@@ -285,6 +293,36 @@ var accessorMap = map[string]accessor{
 			return singletonMap(name, this.Database), nil
 		},
 	},
+	"CLI_PROTO_DESCRIPTOR_FILE": {
+		Getter: stringGetter(func(sysVars *systemVariables) *string {
+			return &sysVars.ProtoDescriptorFile
+		}),
+		Setter: func(this *systemVariables, name, value string) error {
+			filename := unquoteString(value)
+
+			fds, err := readFileDescriptorProtoFromFile(filename)
+			if err != nil {
+				return err
+			}
+
+			this.ProtoDescriptorFile = filename
+			this.ProtoDescriptor = fds
+			return nil
+		},
+	},
+}
+
+func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorProto, error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
+	}
+	var fds descriptorpb.FileDescriptorProto
+	err = proto.Unmarshal(b, &fds)
+	if err != nil {
+		return nil, fmt.Errorf("error on unmarshal proto descriptor-file %v: %w", filename, err)
+	}
+	return &fds, nil
 }
 
 func stringGetter(f func(sysVars *systemVariables) *string) getter {

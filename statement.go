@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -425,15 +427,22 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Resu
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	logParseStatements(ddls)
-	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
-		Database:   session.DatabasePath(),
-		Statements: ddls,
-	})
+
+	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
 	if err != nil {
 		return nil, err
 	}
+
+	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
+		Database:         session.DatabasePath(),
+		Statements:       ddls,
+		ProtoDescriptors: b,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error on create op: %w", err)
+	}
 	if err := op.Wait(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error on wait: %w", err)
 	}
 
 	return &Result{IsMutation: true}, nil

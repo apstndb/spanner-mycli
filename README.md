@@ -278,18 +278,20 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 
 ### spanner-mycli original variables
 
-| Name             | READ/WRITE | Example                                        |
-|------------------|------------|------------------------------------------------|
-| CLI_PROJECT      | READ_ONLY  | `"myproject"`                                  |
-| CLI_INSTANCE     | READ_ONLY  | `"myinstance"`                                 |
-| CLI_DATABASE     | READ_ONLY  | `"mydb"`                                       |
-| CLI_DIRECT_READ  | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
-| CLI_ENDPOINT     | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT       | READ_WRITE | `"TABLE"`                                      |
-| CLI_HISTORY_FILE | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
-| CLI_PROMPT       | READ_WRITE | `"spanner%t> "`                                |
-| CLI_ROLE         | READ_ONLY  | `"spanner_info_reader"`                        |
-| CLI_VERBOSE      | READ_WRITE | `TRUE`                                         |
+| Name                      | READ/WRITE | Example                                        |
+|---------------------------|------------|------------------------------------------------|
+| CLI_PROJECT               | READ_ONLY  | `"myproject"`                                  |
+| CLI_INSTANCE              | READ_ONLY  | `"myinstance"`                                 |
+| CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
+| CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
+| CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
+| CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
+| CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
+| CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
+| CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
+| CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
+| CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
+
 ## Customize prompt
 
 You can customize the prompt by `--prompt` option or `CLI_PROMPT` system variable.  
@@ -419,6 +421,38 @@ Since read-only transaction doesn't support transaction tag, spanner-mycli adds 
 |                    |
 | CLOSE;             |
 +--------------------+
+```
+
+## Protocol Buffers support
+
+You can use `--proto-descriptor-file` option to specify proto descriptor file.
+
+```
+$ ./spanner-mycli --proto-descriptor-file=order_descriptors.pb 
+Connected.
+spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
+Query OK, 0 rows affected (7.92 sec)
+
+spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order.Item`);
+Query OK, 0 rows affected (8.68 sec)
+
+spanner> ALTER PROTO BUNDLE DELETE (`examples.shipping.Order.Item`);
+Query OK, 0 rows affected (9.55 sec)
+```
+
+You can also use `CLI_PROTO_DESCRIPTOR_FILE` system variable to update or read the current proto descriptor file setting.
+
+```
+spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "./other_descriptors.pb";
+Empty set (0.00 sec)
+
+spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
++---------------------------+
+| CLI_PROTO_DESCRIPTOR_FILE |
++---------------------------+
+| ./other_descriptors.pb    |
++---------------------------+
+Empty set (0.00 sec)
 ```
 
 ## Using with the Cloud Spanner Emulator
