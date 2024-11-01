@@ -24,10 +24,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
-
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
@@ -101,16 +99,9 @@ func main() {
 	}
 
 	if opts.ProtoDescriptorFile != "" {
-		b, err := os.ReadFile(opts.ProtoDescriptorFile)
-		if err != nil {
-			exitf("error on read --proto-descriptor-file=%v: %v\n", opts.ProtoDescriptorFile, err)
+		if err := sysVars.Set("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(opts.ProtoDescriptorFile)); err != nil {
+			exitf("error on --proto-descriptor-file: %v\n", err)
 		}
-		var fds descriptorpb.FileDescriptorProto
-		err = proto.Unmarshal(b, &fds)
-		if err != nil {
-			exitf("error on unmarshal --proto-descriptor-file=%v: %v\n", opts.ProtoDescriptorFile, err)
-		}
-		sysVars.ProtoDescriptor = &fds
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
