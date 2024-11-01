@@ -161,7 +161,7 @@ func (c *Cli) RunInteractive() int {
 			continue
 		}
 
-		stmt, err := BuildStatementWithComments(input.statementWithoutComments, input.statement)
+		stmt, err := BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
 		if err != nil {
 			c.PrintInteractiveError(err)
 			continue
@@ -274,7 +274,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 }
 
 func (c *Cli) RunBatch(input string) int {
-	cmds, err := buildCommands(input)
+	cmds, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return exitCodeError
@@ -546,7 +546,7 @@ func resultLine(result *Result, verbose bool) string {
 	return fmt.Sprintf("%s (%s)\n", set, result.Stats.ElapsedTime)
 }
 
-func buildCommands(input string) ([]*command, error) {
+func buildCommands(input string, mode parseMode) ([]*command, error) {
 	var cmds []*command
 	var pendingDdls []string
 
@@ -560,7 +560,7 @@ func buildCommands(input string) ([]*command, error) {
 			continue
 		}
 
-		stmt, err := BuildStatementWithComments(strings.TrimSpace(separated.statementWithoutComments), separated.statement)
+		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.statementWithoutComments), separated.statement, mode)
 		if err != nil {
 			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.statement, separated.statementWithoutComments)
 		}

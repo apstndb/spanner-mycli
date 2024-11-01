@@ -36,6 +36,7 @@ type systemVariables struct {
 	Endpoint                    string
 	DirectedRead                *sppb.DirectedReadOptions
 	ProtoDescriptorFile         string
+	BuildStatementMode          parseMode
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorProto
@@ -308,6 +309,28 @@ var accessorMap = map[string]accessor{
 			this.ProtoDescriptorFile = filename
 			this.ProtoDescriptor = fds
 			return nil
+		},
+	},
+	"CLI_PARSE_MODE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			if this.BuildStatementMode == parseModeUnspecified {
+				return nil, errIgnored
+			}
+			return singletonMap(name, string(this.BuildStatementMode)), nil
+		},
+		Setter: func(this *systemVariables, name, value string) error {
+			s := strings.ToUpper(unquoteString(value))
+			switch s {
+			case string(parseModeFallback),
+				string(parseMemefishOnly),
+				string(parseModeNoMemefish),
+				string(parseModeUnspecified):
+
+				this.BuildStatementMode = parseMode(s)
+				return nil
+			default:
+				return fmt.Errorf("invalid value: %v", s)
+			}
 		},
 	},
 }

@@ -94,7 +94,9 @@ func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func
 	}
 
 	return spannerContainer, func() {
-		tb.Log(spannerContainer.Terminate(ctx))
+		if err := spannerContainer.Terminate(ctx); err != nil {
+			tb.Log(err)
+		}
 	}
 }
 

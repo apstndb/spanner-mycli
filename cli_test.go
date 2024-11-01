@@ -29,23 +29,27 @@ import (
 
 func TestBuildCommands(t *testing.T) {
 	tests := []struct {
+		Desc        string
 		Input       string
 		Expected    []*command
 		ExpectError bool
 	}{
-		{Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
-		{Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
-		{Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
+		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
+		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
+		{Desc: "DDLs",
+			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []*command{{&BulkDdlStatement{[]string{
-				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
+				"CREATE TABLE t1 (pk INT64) PRIMARY KEY (pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
-				"CREATE INDEX i1 ON t1(col)",
+				// TODO: memefish issue, "CREATE INDEX i1 ON t1 (col)" is more standard
+				"CREATE INDEX i1 ON t1 (col)",
 				"DROP INDEX i1",
 				"DROP TABLE t1",
 			}}}},
 		},
-		{Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk);
-                CREATE TABLE t2(pk INT64) PRIMARY KEY(pk);
+		{Desc: "mixed statements",
+			Input: `CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);
+                CREATE TABLE t2 (pk INT64) PRIMARY KEY(pk);
                 SELECT * FROM t1;
                 DROP TABLE t1;
                 DROP TABLE t2;
@@ -54,8 +58,8 @@ func TestBuildCommands(t *testing.T) {
 				{
 					&BulkDdlStatement{
 						[]string{
-							"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
-							"CREATE TABLE t2(pk INT64) PRIMARY KEY(pk)",
+							"CREATE TABLE t1 (pk INT64) PRIMARY KEY (pk)",
+							"CREATE TABLE t2 (pk INT64) PRIMARY KEY (pk)",
 						},
 					},
 				},
@@ -63,7 +67,7 @@ func TestBuildCommands(t *testing.T) {
 				{&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}}},
 				{&SelectStatement{"SELECT 1"}},
 			}},
-		{
+		{Desc: "mixed statements with comments",
 			Input: `
 			CREATE TABLE t1(pk INT64 /* NOT NULL*/, col INT64) PRIMARY KEY(pk);
 			INSERT t1(pk/*, col*/) VALUES(1/*, 2*/);
@@ -73,7 +77,7 @@ func TestBuildCommands(t *testing.T) {
 			Expected: []*command{
 				{
 					&BulkDdlStatement{
-						[]string{"CREATE TABLE t1(pk INT64  , col INT64) PRIMARY KEY(pk)"},
+						[]string{"CREATE TABLE t1 (pk INT64, col INT64) PRIMARY KEY (pk)"},
 					},
 				},
 				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}},
@@ -82,15 +86,18 @@ func TestBuildCommands(t *testing.T) {
 				{&SelectStatement{"SELECT 0x1/**/A"}},
 			}},
 		{
+			Desc: "empty statement",
 			// spanner-cli don't permit empty statements.
 			Input:       `SELECT 1; /* comment */; SELECT 2`,
 			ExpectError: true,
 		},
 		{
+			Desc:        "empty statements",
 			Input:       `SELECT 1; /* comment 1 */; /* comment 2 */`,
 			ExpectError: true,
 		},
 		{
+			Desc: "comment after semicolon",
 			// A comment after the last semicolon is permitted.
 			Input: `SELECT 1; /* comment */`,
 			Expected: []*command{
@@ -99,17 +106,19 @@ func TestBuildCommands(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := buildCommands(test.Input)
-		if test.ExpectError && err == nil {
-			t.Errorf("expect error but not error, input: %v", test.Input)
-		}
-		if !test.ExpectError && err != nil {
-			t.Errorf("err: %v, input: %v", err, test.Input)
-		}
+		t.Run(test.Desc, func(t *testing.T) {
+			got, err := buildCommands(test.Input, parseModeFallback)
+			if test.ExpectError && err == nil {
+				t.Errorf("expect error but not error, input: %v", test.Input)
+			}
+			if !test.ExpectError && err != nil {
+				t.Errorf("err: %v, input: %v", err, test.Input)
+			}
 
-		if !cmp.Equal(got, test.Expected) {
-			t.Errorf("invalid result: %v", cmp.Diff(test.Expected, got))
-		}
+			if !cmp.Equal(got, test.Expected) {
+				t.Errorf("invalid result: %v", cmp.Diff(test.Expected, got))
+			}
+		})
 	}
 }
 
