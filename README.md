@@ -30,6 +30,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
 
+
 ## Install
 
 [Install Go](https://go.dev/doc/install) and run the following command.
@@ -291,6 +292,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
 | CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
 | CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
+| CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
 
 ## Customize prompt
 
@@ -453,6 +455,49 @@ spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
 | ./other_descriptors.pb    |
 +---------------------------+
 Empty set (0.00 sec)
+```
+
+## memefish integration
+
+spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
+
+* statement type detector
+* comment stripper
+* statement separator
+
+Statement type detector behavior can be controlled by `CLI_PARSE_MODE` system variable.
+
+| CLI_PARSE_MODE | Description                        |
+|----------------|------------------------------------|
+| FALLBACK       | Use memefish but fallback if error |
+| NO_MEMEFISH    | Don't use memefish                 |
+| MEMEFISH_ONLY  | Use memefish and don't fallback    |
+
+```
+spanner> SET CLI_PARSE_MODE = "MEMEFISH_ONLY";
+Empty set (0.00 sec)
+
+spanner> SELECT * FRM 1;
+ERROR: invalid statement: syntax error: :1:10: expected token: <eof>, but: <ident>
+
+  1:  SELECT * FRM 1
+               ^~~
+
+spanner> SET CLI_PARSE_MODE = "FALLBACK";
+Empty set (0.00 sec)
+
+spanner> SELECT * FRM 1;
+2024/11/02 00:22:57 ignore memefish parse error, err: syntax error: :1:10: expected token: <eof>, but: <ident>
+
+  1:  SELECT * FRM 1
+               ^~~
+
+ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
+spanner> SET CLI_PARSE_MODE = "NO_MEMEFISH";
+Empty set (0.00 sec)
+
+spanner> SELECT * FRM 1;
+ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
 ```
 
 ## Using with the Cloud Spanner Emulator
