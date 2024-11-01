@@ -229,18 +229,19 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
-	return BuildStatementWithCommentsWithMode(stripped, raw, buildModeDefault)
+	return BuildStatementWithCommentsWithMode(stripped, raw, parseModeFallback)
 }
 
-type buildStatementMode int
+type parseMode string
 
 const (
-	buildModeDefault buildStatementMode = iota
-	buildModeNoMemefish
-	buildModeMemefishOnly
+	parseModeUnspecified parseMode = ""
+	parseModeFallback    parseMode = "FALLBACK"
+	parseModeNoMemefish  parseMode = "NO_MEMEFISH"
+	parseMemefishOnly    parseMode = "MEMEFISH_ONLY"
 )
 
-func BuildStatementWithCommentsWithMode(stripped, raw string, mode buildStatementMode) (Statement, error) {
+func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
 	trimmed := strings.TrimSpace(stripped)
 	if trimmed == "" {
 		return nil, errors.New("empty statement")
@@ -255,14 +256,14 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode buildStatemen
 		// no action
 	}
 
-	if mode != buildModeNoMemefish {
+	if mode != parseModeNoMemefish && mode != parseModeUnspecified {
 		switch stmt, err := BuildNativeStatementMemefish(raw); {
-		case mode == buildModeMemefishOnly && err != nil:
+		case mode == parseMemefishOnly && err != nil:
 			return nil, fmt.Errorf("invalid statement: %w", err)
 		case errors.Is(err, errStatementNotMatched):
-			log.Println("ignore unknown statement, err: %w", err)
+			log.Println(fmt.Errorf("ignore unknown statement, err: %w", err))
 		case err != nil:
-			log.Println("ignore memefish parse error, err: %w", err)
+			log.Println(fmt.Errorf("ignore memefish parse error, err: %w", err))
 		default:
 			return stmt, nil
 		}

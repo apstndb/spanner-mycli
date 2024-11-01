@@ -107,7 +107,7 @@ func TestBuildCommands(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.Desc, func(t *testing.T) {
-			got, err := buildCommands(test.Input)
+			got, err := buildCommands(test.Input, parseModeFallback)
 			if test.ExpectError && err == nil {
 				t.Errorf("expect error but not error, input: %v", test.Input)
 			}
