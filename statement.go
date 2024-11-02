@@ -29,15 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protowire"
-
-	"google.golang.org/protobuf/reflect/protopath"
-	"google.golang.org/protobuf/reflect/protorange"
-
-	_ "google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
 
 	"github.com/samber/lo"
+	_ "google.golang.org/protobuf/reflect/protodesc"
 
 	"spheric.cloud/xiter"
 
@@ -671,8 +666,6 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	// fmt.Println(prototext.Format(&fds))
-
 	rows := slices.Collect(xiter.Map(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
 		return Row{Columns: in.Columns[:2]}
 	}))
@@ -694,33 +687,11 @@ func (dp *descriptorProtoWithPath) GetName() string {
 	return lo.Ternary(dp.Parent != "", dp.Parent+".", "") + dp.DescriptorProto.GetName()
 }
 
-var errPlaceholder = errors.New("placeholder found")
+// var errPlaceholder = errors.New("placeholder found")
 
 func flattenNestedType(parent *descriptorProtoWithPath) iter.Seq[*descriptorProtoWithPath] {
-	options := parent.DescriptorProto.GetOptions()
-
-	err := protorange.Range(options.ProtoReflect(), func(values protopath.Values) error {
-		for _, value := range values.Values {
-			m, ok := value.Interface().(protoreflect.Message)
-			if ok {
-				if n, _, _ := protowire.ConsumeField(slices.Clone(m.GetUnknown())); n == 14004 {
-					return errPlaceholder
-				}
-			}
-		}
-		return nil
-	})
-	if errors.Is(err, errPlaceholder) {
-		return xiter.Empty[*descriptorProtoWithPath]()
-	}
-	options.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-		// log.Println(parent.GetName(), fd, v)
-		return true
-	})
-	for _, op := range options.GetUninterpretedOption() {
-		_ = op
-	}
-	if options.ProtoReflect().Descriptor().Index() == 14004 {
+	p, ok := proto.GetExtension(parent.DescriptorProto.GetOptions(), zetasql.E_PlaceholderDescriptorProto_PlaceholderDescriptor).(*zetasql.PlaceholderDescriptorProto)
+	if ok && p != nil {
 		return xiter.Empty[*descriptorProtoWithPath]()
 	}
 
