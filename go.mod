@@ -7,6 +7,7 @@ toolchain go1.23.1
 require (
 	cloud.google.com/go v0.113.0
 	cloud.google.com/go/spanner v1.62.0
+	github.com/apstndb/lox v0.0.0-20230530141045-98c1efebcde8
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.6.1
@@ -89,7 +90,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.24.0 // indirect
 	go.opentelemetry.io/otel/trace v1.24.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
-	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0 // indirect
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/oauth2 v0.21.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect

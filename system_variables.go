@@ -35,7 +35,7 @@ type systemVariables struct {
 	Role                        string
 	Endpoint                    string
 	DirectedRead                *sppb.DirectedReadOptions
-	ProtoDescriptorFile         string
+	ProtoDescriptorFile         []string
 	BuildStatementMode          parseMode
 
 	// it is internal variable and hidden from system variable statements
@@ -46,11 +46,14 @@ var errIgnored = errors.New("ignored")
 
 type setter = func(this *systemVariables, name, value string) error
 
+type adder = func(this *systemVariables, name, value string) error
+
 type getter = func(this *systemVariables, name string) (map[string]string, error)
 
 type accessor struct {
 	Setter setter
 	Getter getter
+	Adder  adder
 }
 
 func (sv *systemVariables) InstancePath() string {
@@ -76,6 +79,19 @@ func (sv *systemVariables) Set(name string, value string) error {
 	}
 
 	return a.Setter(sv, upperName, value)
+}
+
+func (sv *systemVariables) Add(name string, value string) error {
+	upperName := strings.ToUpper(name)
+	a, ok := accessorMap[upperName]
+	if !ok {
+		return fmt.Errorf("unknown variable name: %v", name)
+	}
+	if a.Adder == nil {
+		return fmt.Errorf("adder unimplemented: %v", name)
+	}
+
+	return a.Adder(sv, upperName, value)
 }
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
@@ -161,6 +177,7 @@ var accessorMap = map[string]accessor{
 				return singletonMap(name, s), nil
 			}
 		},
+		nil,
 	},
 	"OPTIMIZER_VERSION": stringAccessor(func(sysVars *systemVariables) *string {
 		return &sysVars.OptimizerVersion
@@ -170,7 +187,7 @@ var accessorMap = map[string]accessor{
 	}),
 	"RETURN_COMMIT_STATS": {},
 	"RPC_PRIORITY": {
-		func(this *systemVariables, name, value string) error {
+		Setter: func(this *systemVariables, name, value string) error {
 			s := unquoteString(value)
 
 			p, err := parsePriority(s)
@@ -181,15 +198,14 @@ var accessorMap = map[string]accessor{
 			this.RPCPriority = p
 			return nil
 		},
-		func(this *systemVariables, name string) (map[string]string, error) {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
 		},
 	},
 	"STATEMENT_TAG":   {},
 	"TRANSACTION_TAG": {},
 	"READ_TIMESTAMP": {
-		nil,
-		func(this *systemVariables, name string) (map[string]string, error) {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.ReadTimestamp.IsZero() {
 				return nil, errIgnored
 			}
@@ -197,8 +213,7 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"COMMIT_TIMESTAMP": {
-		nil,
-		func(this *systemVariables, name string) (map[string]string, error) {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.CommitTimestamp.IsZero() {
 				return nil, errIgnored
 			}
@@ -207,8 +222,7 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"COMMIT_RESPONSE": {
-		nil,
-		func(this *systemVariables, name string) (map[string]string, error) {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.CommitResponse == nil {
 				return nil, errIgnored
 			}
@@ -220,7 +234,7 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"CLI_FORMAT": {
-		func(this *systemVariables, name, value string) error {
+		Setter: func(this *systemVariables, name, value string) error {
 			switch strings.ToUpper(unquoteString(value)) {
 			case "TABLE":
 				this.CLIFormat = DisplayModeTable
@@ -231,7 +245,7 @@ var accessorMap = map[string]accessor{
 			}
 			return nil
 		},
-		func(this *systemVariables, name string) (map[string]string, error) {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			var formatStr string
 			switch this.CLIFormat {
 			case DisplayModeTable:
@@ -295,10 +309,29 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"CLI_PROTO_DESCRIPTOR_FILE": {
-		Getter: stringGetter(func(sysVars *systemVariables) *string {
-			return &sysVars.ProtoDescriptorFile
-		}),
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, strings.Join(this.ProtoDescriptorFile, ",")), nil
+		},
 		Setter: func(this *systemVariables, name, value string) error {
+			filenames := strings.Split(unquoteString(value), ",")
+			if len(filenames) == 0 {
+				return nil
+			}
+
+			var fileDescriptorSet *descriptorpb.FileDescriptorSet
+			for _, filename := range filenames {
+				fds, err := readFileDescriptorProtoFromFile(filename)
+				if err != nil {
+					return err
+				}
+				fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
+			}
+
+			this.ProtoDescriptorFile = filenames
+			this.ProtoDescriptor = fileDescriptorSet
+			return nil
+		},
+		Adder: func(this *systemVariables, name, value string) error {
 			filename := unquoteString(value)
 
 			fds, err := readFileDescriptorProtoFromFile(filename)
@@ -306,8 +339,12 @@ var accessorMap = map[string]accessor{
 				return err
 			}
 
-			this.ProtoDescriptorFile = filename
-			this.ProtoDescriptor = fds
+			if !slices.Contains(this.ProtoDescriptorFile, filename) {
+				this.ProtoDescriptorFile = slices.Concat(this.ProtoDescriptorFile, sliceOf(filename))
+				this.ProtoDescriptor = &descriptorpb.FileDescriptorSet{File: slices.Concat(this.ProtoDescriptor.GetFile(), fds.GetFile())}
+			} else {
+				this.ProtoDescriptor = mergeFDS(this.ProtoDescriptor, fds)
+			}
 			return nil
 		},
 	},
@@ -333,6 +370,21 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
+}
+
+func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
+	result := slices.Clone(left.GetFile())
+	for _, fd := range right.GetFile() {
+		idx := slices.IndexFunc(result, func(descriptorProto *descriptorpb.FileDescriptorProto) bool {
+			return descriptorProto.GetPackage() == fd.GetPackage() && descriptorProto.GetName() == fd.GetName()
+		})
+		if idx != -1 {
+			result[idx] = fd
+		} else {
+			result = append(result, fd)
+		}
+	}
+	return &descriptorpb.FileDescriptorSet{File: result}
 }
 
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {

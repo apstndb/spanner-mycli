@@ -11,6 +11,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 ## Differences from original spanner-cli
 
 * Respects my minor use cases
+  * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -437,35 +438,80 @@ Since read-only transaction doesn't support transaction tag, spanner-mycli adds 
 You can use `--proto-descriptor-file` option to specify proto descriptor file.
 
 ```
-$ ./spanner-mycli --proto-descriptor-file=order_descriptors.pb 
+$ spanner-mycli --proto-descriptor-file=testdata/protos/order_descriptors.pb 
 Connected.
-> SHOW LOCAL PROTO;
-+--------------------------------+-------------------+--------------------+
-| full_name                      | package           | file               |
-+--------------------------------+-------------------+--------------------+
-| examples.shipping.Order        | examples.shipping | order_protos.proto |
-| examples.shipping.Address      | examples.shipping | order_protos.proto |
-| examples.shipping.Item         | examples.shipping | order_protos.proto |
-| examples.shipping.OrderHistory | examples.shipping | order_protos.proto |
-+--------------------------------+-------------------+--------------------+
+spanner> SHOW LOCAL PROTO;
++---------------------------------+-------------------+--------------------+
+| full_name                       | package           | file               |
++---------------------------------+-------------------+--------------------+
+| examples.shipping.Order         | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Address | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Item    | examples.shipping | order_protos.proto |
+| examples.shipping.OrderHistory  | examples.shipping | order_protos.proto |
++---------------------------------+-------------------+--------------------+
 4 rows in set (0.00 sec)
 
+spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/query_plan_descriptors.pb";
+Empty set (0.00 sec)
+
+spanner> SHOW LOCAL PROTO;
++----------------------------------------------------------------+-------------------+-----------------------------------------------+
+| full_name                                                      | package           | file                                          |
++----------------------------------------------------------------+-------------------+-----------------------------------------------+
+| examples.shipping.Order                                        | examples.shipping | order_protos.proto                            |
+| examples.shipping.Order.Address                                | examples.shipping | order_protos.proto                            |
+| examples.shipping.Order.Item                                   | examples.shipping | order_protos.proto                            |
+| examples.shipping.OrderHistory                                 | examples.shipping | order_protos.proto                            |
+| google.protobuf.Struct                                         | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.Struct.FieldsEntry                             | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.Value                                          | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.ListValue                                      | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.NullValue                                      | google.protobuf   | google/protobuf/struct.proto                  |
+| google.spanner.v1.PlanNode                                     | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.Kind                                | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ChildLink                           | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ShortRepresentation                 | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ShortRepresentation.SubqueriesEntry | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.QueryPlan                                    | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
++----------------------------------------------------------------+-------------------+-----------------------------------------------+
+15 rows in set (0.00 sec)
+
+spanner> CREATE PROTO BUNDLE (`examples.shipping.Order`);
+Query OK, 0 rows affected (6.34 sec)
+
+spanner> SHOW REMOTE PROTO;
++-------------------------+-------------------+
+| full_name               | package           |
++-------------------------+-------------------+
+| examples.shipping.Order | examples.shipping |
++-------------------------+-------------------+
+1 rows in set (0.94 sec)
+
 spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
-Query OK, 0 rows affected (7.92 sec)
+Query OK, 0 rows affected (9.25 sec)
 
-> SHOW REMOTE PROTO;
-+---------------------------------------+------------------------+
-| full_name                             | package                |
-+---------------------------------------+------------------------+
-| examples.shipping.Item                | examples.shipping      |
-+---------------------------------------+------------------------+
-1 row in set (2.32 sec)
+spanner> SHOW REMOTE PROTO;
++------------------------------+-------------------+
+| full_name                    | package           |
++------------------------------+-------------------+
+| examples.shipping.Order      | examples.shipping |
+| examples.shipping.Order.Item | examples.shipping |
++------------------------------+-------------------+
+2 rows in set (0.82 sec)
 
-spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order.Item`);
+spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order`);
 Query OK, 0 rows affected (8.68 sec)
 
 spanner> ALTER PROTO BUNDLE DELETE (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (9.55 sec)
+
+spanner> SHOW REMOTE PROTO;
++-------------------------+-------------------+
+| full_name               | package           |
++-------------------------+-------------------+
+| examples.shipping.Order | examples.shipping |
++-------------------------+-------------------+
+1 rows in set (0.79 sec)
 ```
 
 You can also use `CLI_PROTO_DESCRIPTOR_FILE` system variable to update or read the current proto descriptor file setting.

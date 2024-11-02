@@ -568,6 +568,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
 		},
 		{
+			desc:  "SET += statement",
+			input: `SET CLI_PROTO_DESCRIPTOR_FILE += "./message_descriptors.pb"`,
+			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
+		},
+		{
 			desc:  "SHOW VARIABLE statement",
 			input: `SHOW VARIABLE OPTIMIZER_VERSION`,
 			want:  &ShowVariableStatement{VarName: "OPTIMIZER_VERSION"},

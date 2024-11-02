@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"log"
 	"maps"
 	"regexp"
@@ -29,9 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
+	"golang.org/x/exp/constraints"
 
 	"spheric.cloud/xiter"
+
+	_ "google.golang.org/protobuf/reflect/protodesc"
 
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -131,8 +132,8 @@ var (
 	// Other
 	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
 	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalPDRe     = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showProtoBundleRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	showLocalProtoRe  = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showRemoteProtoRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
 	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 	showCreateTableRe = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
 	showTablesRe      = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
@@ -142,6 +143,7 @@ var (
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
 	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
+	setAddRe          = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
 	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
@@ -171,10 +173,10 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case truncateTableRe.MatchString(trimmed):
 		matched := truncateTableRe.FindStringSubmatch(trimmed)
 		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
-	case showLocalPDRe.MatchString(trimmed):
-		return &ShowLocalPDStatement{}, nil
-	case showProtoBundleRe.MatchString(trimmed):
-		return &ShowProtoBundleStatement{}, nil
+	case showLocalProtoRe.MatchString(trimmed):
+		return &ShowLocalProtoStatement{}, nil
+	case showRemoteProtoRe.MatchString(trimmed):
+		return &ShowRemoteProtoStatement{}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
 	case showCreateTableRe.MatchString(trimmed):
@@ -232,6 +234,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case setRe.MatchString(trimmed):
 		matched := setRe.FindStringSubmatch(trimmed)
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+	case setAddRe.MatchString(trimmed):
+		matched := setAddRe.FindStringSubmatch(trimmed)
+		return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
 	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
 	default:
@@ -551,6 +556,20 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 
 type ShowVariablesStatement struct{}
 
+func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
+	return func(lhs T, rhs T) int {
+		l, r := f(lhs), f(rhs)
+		switch {
+		case l < r:
+			return -1
+		case l > r:
+			return -1
+		default:
+			return 0
+		}
+	}
+}
+
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
 	for k, v := range accessorMap {
@@ -569,21 +588,9 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		}
 	}
 
-	var rows []Row
-	for k, v := range merged {
-		rows = append(rows, Row{sliceOf(k, v)})
-	}
-
-	slices.SortFunc(rows, func(a, b Row) int {
-		switch {
-		case a.Columns[0] == b.Columns[0]:
-			return 0
-		case a.Columns[0] < b.Columns[0]:
-			return -1
-		default:
-			return 1
-		}
-	})
+	rows := slices.SortedFunc(
+		xiter.MapLower(maps.All(merged), func(k, v string) Row { return Row{sliceOf(k, v)} }),
+		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
 	return &Result{
 		ColumnNames:   []string{"name", "value"},
@@ -604,9 +611,21 @@ func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	return &Result{KeepVariables: true}, nil
 }
 
-type ShowLocalPDStatement struct{}
+type SetAddStatement struct {
+	VarName string
+	Value   string
+}
 
-func (s *ShowLocalPDStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
+		return nil, err
+	}
+	return &Result{KeepVariables: true}, nil
+}
+
+type ShowLocalProtoStatement struct{}
+
+func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
 	rows := slices.Collect(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
@@ -619,20 +638,9 @@ func (s *ShowLocalPDStatement) Execute(ctx context.Context, session *Session) (*
 	}, nil
 }
 
-func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
-	return xiter.Map(
-		xiter.Concat(
-			xiter.Map(xiter.Flatmap(slices.Values(fdp.GetMessageType()), flattenNestedType), (*descriptorpb.DescriptorProto).GetName),
-			xiter.Map(slices.Values(fdp.GetEnumType()), (*descriptorpb.EnumDescriptorProto).GetName),
-		), func(s string) Row {
-			pkg := fdp.GetPackage()
-			return Row{Columns: sliceOf(lo.Ternary(pkg != "", pkg+".", "")+s, fdp.GetPackage(), fdp.GetName())}
-		})
-}
+type ShowRemoteProtoStatement struct{}
 
-type ShowProtoBundleStatement struct{}
-
-func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
@@ -655,12 +663,6 @@ func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session
 		AffectedRows:  len(rows),
 		KeepVariables: true,
 	}, nil
-}
-
-func flattenNestedType(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorpb.DescriptorProto] {
-	return xiter.Concat(xiter.Of(dp),
-		slices.Values(dp.GetNestedType()),
-	)
 }
 
 type ShowDatabasesStatement struct {
