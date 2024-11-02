@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"log"
 	"maps"
 	"regexp"
@@ -29,12 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
-
-	"github.com/samber/lo"
-	_ "google.golang.org/protobuf/reflect/protodesc"
+	"golang.org/x/exp/constraints"
 
 	"spheric.cloud/xiter"
+
+	_ "google.golang.org/protobuf/reflect/protodesc"
 
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -558,6 +556,20 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 
 type ShowVariablesStatement struct{}
 
+func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
+	return func(lhs T, rhs T) int {
+		l, r := f(lhs), f(rhs)
+		switch {
+		case l < r:
+			return -1
+		case l > r:
+			return -1
+		default:
+			return 0
+		}
+	}
+}
+
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
 	for k, v := range accessorMap {
@@ -576,21 +588,9 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		}
 	}
 
-	var rows []Row
-	for k, v := range merged {
-		rows = append(rows, Row{sliceOf(k, v)})
-	}
-
-	slices.SortFunc(rows, func(a, b Row) int {
-		switch {
-		case a.Columns[0] == b.Columns[0]:
-			return 0
-		case a.Columns[0] < b.Columns[0]:
-			return -1
-		default:
-			return 1
-		}
-	})
+	rows := slices.SortedFunc(
+		xiter.MapLower(maps.All(merged), func(k, v string) Row { return Row{sliceOf(k, v)} }),
+		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
 	return &Result{
 		ColumnNames:   []string{"name", "value"},
@@ -638,19 +638,6 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 	}, nil
 }
 
-func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
-	return xiter.Map(
-		xiter.Concat(
-			xiter.Map(xiter.Flatmap(slices.Values(fdp.GetMessageType()), func(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorProtoWithPath] {
-				return flattenNestedType(&descriptorProtoWithPath{dp, ""})
-			}), (*descriptorProtoWithPath).GetName),
-			xiter.Map(slices.Values(fdp.GetEnumType()), (*descriptorpb.EnumDescriptorProto).GetName),
-		), func(s string) Row {
-			pkg := fdp.GetPackage()
-			return Row{Columns: sliceOf(lo.Ternary(pkg != "", pkg+".", "")+s, fdp.GetPackage(), fdp.GetName())}
-		})
-}
-
 type ShowRemoteProtoStatement struct{}
 
 func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -676,33 +663,6 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		AffectedRows:  len(rows),
 		KeepVariables: true,
 	}, nil
-}
-
-type descriptorProtoWithPath struct {
-	DescriptorProto *descriptorpb.DescriptorProto
-	Parent          string
-}
-
-func (dp *descriptorProtoWithPath) GetName() string {
-	return lo.Ternary(dp.Parent != "", dp.Parent+".", "") + dp.DescriptorProto.GetName()
-}
-
-// var errPlaceholder = errors.New("placeholder found")
-
-func flattenNestedType(parent *descriptorProtoWithPath) iter.Seq[*descriptorProtoWithPath] {
-	p, ok := proto.GetExtension(parent.DescriptorProto.GetOptions(), zetasql.E_PlaceholderDescriptorProto_PlaceholderDescriptor).(*zetasql.PlaceholderDescriptorProto)
-	if ok && p != nil {
-		return xiter.Empty[*descriptorProtoWithPath]()
-	}
-
-	self := xiter.Of(parent)
-	children := xiter.Flatmap(slices.Values(parent.DescriptorProto.GetNestedType()), func(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorProtoWithPath] {
-		return flattenNestedType(&descriptorProtoWithPath{
-			DescriptorProto: dp,
-			Parent:          parent.GetName(),
-		})
-	})
-	return xiter.Concat(self, children)
 }
 
 type ShowDatabasesStatement struct {
