@@ -29,6 +29,14 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protowire"
+
+	"google.golang.org/protobuf/reflect/protopath"
+	"google.golang.org/protobuf/reflect/protorange"
+
+	_ "google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/samber/lo"
 
 	"spheric.cloud/xiter"
@@ -131,8 +139,8 @@ var (
 	// Other
 	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
 	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalPDRe     = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showProtoBundleRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	showLocalProtoRe  = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showRemoteProtoRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
 	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 	showCreateTableRe = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
 	showTablesRe      = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
@@ -172,10 +180,10 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case truncateTableRe.MatchString(trimmed):
 		matched := truncateTableRe.FindStringSubmatch(trimmed)
 		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
-	case showLocalPDRe.MatchString(trimmed):
-		return &ShowLocalPDStatement{}, nil
-	case showProtoBundleRe.MatchString(trimmed):
-		return &ShowProtoBundleStatement{}, nil
+	case showLocalProtoRe.MatchString(trimmed):
+		return &ShowLocalProtoStatement{}, nil
+	case showRemoteProtoRe.MatchString(trimmed):
+		return &ShowRemoteProtoStatement{}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
 	case showCreateTableRe.MatchString(trimmed):
@@ -620,9 +628,9 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 	return &Result{KeepVariables: true}, nil
 }
 
-type ShowLocalPDStatement struct{}
+type ShowLocalProtoStatement struct{}
 
-func (s *ShowLocalPDStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
 	rows := slices.Collect(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
@@ -638,7 +646,9 @@ func (s *ShowLocalPDStatement) Execute(ctx context.Context, session *Session) (*
 func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
 	return xiter.Map(
 		xiter.Concat(
-			xiter.Map(xiter.Flatmap(slices.Values(fdp.GetMessageType()), flattenNestedType), (*descriptorpb.DescriptorProto).GetName),
+			xiter.Map(xiter.Flatmap(slices.Values(fdp.GetMessageType()), func(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorProtoWithPath] {
+				return flattenNestedType(&descriptorProtoWithPath{dp, ""})
+			}), (*descriptorProtoWithPath).GetName),
 			xiter.Map(slices.Values(fdp.GetEnumType()), (*descriptorpb.EnumDescriptorProto).GetName),
 		), func(s string) Row {
 			pkg := fdp.GetPackage()
@@ -646,9 +656,9 @@ func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
 		})
 }
 
-type ShowProtoBundleStatement struct{}
+type ShowRemoteProtoStatement struct{}
 
-func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
@@ -660,6 +670,8 @@ func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session
 	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
 		return nil, err
 	}
+
+	// fmt.Println(prototext.Format(&fds))
 
 	rows := slices.Collect(xiter.Map(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
 		return Row{Columns: in.Columns[:2]}
@@ -673,10 +685,53 @@ func (s *ShowProtoBundleStatement) Execute(ctx context.Context, session *Session
 	}, nil
 }
 
-func flattenNestedType(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorpb.DescriptorProto] {
-	return xiter.Concat(xiter.Of(dp),
-		slices.Values(dp.GetNestedType()),
-	)
+type descriptorProtoWithPath struct {
+	DescriptorProto *descriptorpb.DescriptorProto
+	Parent          string
+}
+
+func (dp *descriptorProtoWithPath) GetName() string {
+	return lo.Ternary(dp.Parent != "", dp.Parent+".", "") + dp.DescriptorProto.GetName()
+}
+
+var errPlaceholder = errors.New("placeholder found")
+
+func flattenNestedType(parent *descriptorProtoWithPath) iter.Seq[*descriptorProtoWithPath] {
+	options := parent.DescriptorProto.GetOptions()
+
+	err := protorange.Range(options.ProtoReflect(), func(values protopath.Values) error {
+		for _, value := range values.Values {
+			m, ok := value.Interface().(protoreflect.Message)
+			if ok {
+				if n, _, _ := protowire.ConsumeField(slices.Clone(m.GetUnknown())); n == 14004 {
+					return errPlaceholder
+				}
+			}
+		}
+		return nil
+	})
+	if errors.Is(err, errPlaceholder) {
+		return xiter.Empty[*descriptorProtoWithPath]()
+	}
+	options.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		// log.Println(parent.GetName(), fd, v)
+		return true
+	})
+	for _, op := range options.GetUninterpretedOption() {
+		_ = op
+	}
+	if options.ProtoReflect().Descriptor().Index() == 14004 {
+		return xiter.Empty[*descriptorProtoWithPath]()
+	}
+
+	self := xiter.Of(parent)
+	children := xiter.Flatmap(slices.Values(parent.DescriptorProto.GetNestedType()), func(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorProtoWithPath] {
+		return flattenNestedType(&descriptorProtoWithPath{
+			DescriptorProto: dp,
+			Parent:          parent.GetName(),
+		})
+	})
+	return xiter.Concat(self, children)
 }
 
 type ShowDatabasesStatement struct {
