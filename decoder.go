@@ -24,6 +24,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spantype"
 )
 
 func DecodeRow(row *spanner.Row) ([]string, error) {
@@ -325,39 +326,14 @@ func nullJSONToString(v spanner.NullJSON) string {
 }
 
 func formatTypeSimple(typ *sppb.Type) string {
-	switch code := typ.GetCode(); code {
-	case sppb.TypeCode_ARRAY:
-		return fmt.Sprintf("ARRAY<%v>", formatTypeSimple(typ.GetArrayElementType()))
-	default:
-		if name, ok := sppb.TypeCode_name[int32(code)]; ok {
-			return name
-		} else {
-			return "UNKNOWN"
-		}
-	}
+	return spantype.FormatType(typ, spantype.FormatOption{
+		Struct: spantype.StructModeBase,
+		Proto:  spantype.ProtoEnumModeBase,
+		Enum:   spantype.ProtoEnumModeBase,
+		Array:  spantype.ArrayModeRecursive,
+	})
 }
 
 func formatTypeVerbose(typ *sppb.Type) string {
-	switch code := typ.GetCode(); code {
-	case sppb.TypeCode_ARRAY:
-		return fmt.Sprintf("ARRAY<%v>", formatTypeVerbose(typ.GetArrayElementType()))
-	case sppb.TypeCode_ENUM, sppb.TypeCode_PROTO:
-		return typ.GetProtoTypeFqn()
-	case sppb.TypeCode_STRUCT:
-		var structTypeStrs []string
-		for _, v := range typ.GetStructType().GetFields() {
-			if v.GetName() != "" {
-				structTypeStrs = append(structTypeStrs, fmt.Sprintf("%v %v", v.GetName(), formatTypeVerbose(v.GetType())))
-			} else {
-				structTypeStrs = append(structTypeStrs, fmt.Sprintf("%v", formatTypeVerbose(v.GetType())))
-			}
-		}
-		return fmt.Sprintf("STRUCT<%v>", strings.Join(structTypeStrs, ", "))
-	default:
-		if name, ok := sppb.TypeCode_name[int32(code)]; ok {
-			return name
-		} else {
-			return "UNKNOWN"
-		}
-	}
+	return spantype.FormatTypeVerbose(typ)
 }
