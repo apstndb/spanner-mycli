@@ -11,6 +11,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 ## Differences from original spanner-cli
 
 * Respects my minor use cases
+  * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
