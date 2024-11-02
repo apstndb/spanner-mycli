@@ -313,15 +313,22 @@ var accessorMap = map[string]accessor{
 			return singletonMap(name, strings.Join(this.ProtoDescriptorFile, ",")), nil
 		},
 		Setter: func(this *systemVariables, name, value string) error {
-			filename := unquoteString(value)
-
-			fds, err := readFileDescriptorProtoFromFile(filename)
-			if err != nil {
-				return err
+			filenames := strings.Split(unquoteString(value), ",")
+			if len(filenames) == 0 {
+				return nil
 			}
 
-			this.ProtoDescriptorFile = sliceOf(filename)
-			this.ProtoDescriptor = fds
+			var fileDescriptorSet *descriptorpb.FileDescriptorSet
+			for _, filename := range filenames {
+				fds, err := readFileDescriptorProtoFromFile(filename)
+				if err != nil {
+					return err
+				}
+				fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
+			}
+
+			this.ProtoDescriptorFile = filenames
+			this.ProtoDescriptor = fileDescriptorSet
 			return nil
 		},
 		Adder: func(this *systemVariables, name, value string) error {
@@ -371,7 +378,11 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 		idx := slices.IndexFunc(result, func(descriptorProto *descriptorpb.FileDescriptorProto) bool {
 			return descriptorProto.GetPackage() == fd.GetPackage() && descriptorProto.GetName() == fd.GetName()
 		})
-		result[idx] = fd
+		if idx != -1 {
+			result[idx] = fd
+		} else {
+			result = append(result, fd)
+		}
 	}
 	return &descriptorpb.FileDescriptorSet{File: result}
 }
