@@ -40,6 +40,7 @@ type systemVariables struct {
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
+	Insecure        bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -370,6 +371,7 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
+	"CLI_INSECURE": {},
 }
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {

@@ -583,6 +583,10 @@ $ export SPANNER_EMULATOR_HOST=localhost:9010
 $ $(gcloud emulators spanner env-init)
 
 $ spanner-mycli -p myproject -i myinstance -d mydb
+
+# Or use --endpoint with --insecure
+$ unset SPANNER_EMULATOR_HOST
+$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
 
 ## How to develop
