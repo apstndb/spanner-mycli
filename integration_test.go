@@ -121,7 +121,7 @@ func setupDatabase(
 
 	dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on new database admin client: %w", err)
 	}
 
 	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
@@ -130,17 +130,17 @@ func setupDatabase(
 		ExtraStatements: ddls,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on create database: %w", err)
 	}
 
 	_, err = createDatabaseOp.Wait(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on waiting create database: %w", err)
 	}
 
 	cli, err := spanner.NewClient(ctx, databasePath(projectID, instanceID, databaseID), opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on new client: %w", err)
 	}
 	defer cli.Close()
 
@@ -157,7 +157,10 @@ func setupDatabase(
 			return err
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("fail on batch update: %w", err)
+	}
+	return nil
 }
 
 func setupInstance(
@@ -169,7 +172,7 @@ func setupInstance(
 		ctx,
 		defaultClientOptions(spannerContainer)...)
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on new instance admin client: %w", err)
 	}
 	defer instanceClient.Close()
 
@@ -184,11 +187,14 @@ func setupInstance(
 		},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("fail on create instance: %w", err)
 	}
 
 	_, err = createInstance.Wait(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("fail on waiting create instance: %w", err)
+	}
+	return nil
 }
 
 func generateUniqueTableId() string {
