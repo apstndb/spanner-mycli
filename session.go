@@ -34,6 +34,7 @@ import (
 )
 
 var defaultClientConfig = spanner.ClientConfig{
+	DisableNativeMetrics: true,
 	SessionPoolConfig: spanner.SessionPoolConfig{
 		MinOpened: 1,
 		MaxOpened: 10, // FIXME: integration_test requires more than a single session
