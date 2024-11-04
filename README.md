@@ -33,7 +33,7 @@ You can control your Spanner databases with idiomatic SQL commands.
     * System variables expansion
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
-  * Use [`apstndb/spantype`](https://github.com/apstndb/spantype)
+  * Utilize [`apstndb/spantype`](https://github.com/apstndb/spantype) and [`apstndb/spanvalue`](https://github.com/apstndb/spanvalue)
 
 
 ## Install
