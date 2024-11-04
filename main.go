@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -157,7 +158,9 @@ func main() {
 		}
 	}
 
-	cli, err := NewCli(cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
+	ctx := context.Background()
+
+	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}
@@ -197,9 +200,11 @@ func main() {
 	}
 
 	exitCode := lo.TernaryF(interactive,
-		cli.RunInteractive,
 		func() int {
-			return cli.RunBatch(input)
+			return cli.RunInteractive(ctx)
+		},
+		func() int {
+			return cli.RunBatch(ctx, input)
 		})
 
 	os.Exit(exitCode)
