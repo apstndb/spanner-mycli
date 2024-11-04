@@ -60,8 +60,8 @@ type spannerOptions struct {
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure            bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
-	UseEmbeddedEmulator bool              `long:"use-embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
-	EmulatorImage       string            `long:"emulator-image" description:"container image for --use-embedded-emulator"`
+	EmbeddedEmulator    bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmulatorImage       string            `long:"emulator-image" description:"container image for --embedded-emulator"`
 	Help                bool              `long:"help" short:"h" hidden:"true"`
 }
 
@@ -116,7 +116,7 @@ func main() {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
 	}
 
-	if !opts.UseEmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
+	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
@@ -181,7 +181,7 @@ func main() {
 
 	ctx := context.Background()
 
-	if opts.UseEmbeddedEmulator {
+	if opts.EmbeddedEmulator {
 		container, teardown, err := newEmulator(ctx, opts)
 		if err != nil {
 			exitf("failed to start Cloud Spanner Emulator: %v\n", err)

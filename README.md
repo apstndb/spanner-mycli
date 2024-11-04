@@ -12,6 +12,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 * Respects my minor use cases
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
+  * Can use embedded emulator (`--embedded-emulator`)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -77,8 +78,8 @@ spanner:
       --set=                   Set system variables e.g. --set=name1=value1 --set=name2=value2
       --proto-descriptor-file= Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
-      --use-embedded-emulator  Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=        container image for --use-embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
+      --embedded-emulator      Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=        container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
 ```
 
 ### Authentication
@@ -595,7 +596,7 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --i
 spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
 
 ```
-$ spanner-mycli --use-embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
+$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
 > SET CLI_PROMPT="%p:%i:%d%n> ";
 Empty set (0.00 sec)
 
