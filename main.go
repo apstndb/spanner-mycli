@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -59,6 +60,13 @@ type spannerOptions struct {
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure            bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
+	EmbeddedEmulator    bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmulatorImage       string            `long:"emulator-image" description:"container image for --embedded-emulator"`
+	Help                bool              `long:"help" short:"h" hidden:"true"`
+}
+
+func addEmulatorImageOption(parser *flags.Parser) {
+	parser.Groups()[0].Find("spanner").FindOptionByLongName("emulator-image").DefaultMask = defaultEmulatorImage
 }
 
 const (
@@ -70,20 +78,34 @@ var logMemefish bool
 
 func main() {
 	var gopts globalOptions
+
 	// process config files at first
-	if err := readConfigFile(flags.NewParser(&gopts, flags.Default)); err != nil {
+	configFileParser := flags.NewParser(&gopts, flags.Default)
+	addEmulatorImageOption(configFileParser)
+
+	if err := readConfigFile(configFileParser); err != nil {
 		exitf("Invalid config file format\n")
 	}
 
 	// then, process environment variables and command line options
 	// use another parser to process environment variables with higher precedence than configuration files
-	flagParser := flags.NewParser(&gopts, flags.Default)
+	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	addEmulatorImageOption(flagParser)
+
+	// TODO: Workaround to avoid to display config value as default
+	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
+	addEmulatorImageOption(parserForHelp)
+
 	if _, err := flagParser.Parse(); flags.WroteHelp(err) {
 		// exit successfully
 		return
 	} else if err != nil {
-		flags.NewParser(&gopts, flags.Default).WriteHelp(os.Stderr)
+		parserForHelp.WriteHelp(os.Stderr)
 		exitf("Invalid options\n")
+	} else if gopts.Spanner.Help {
+		parserForHelp.WriteHelp(os.Stderr)
+		return
 	}
 
 	opts := gopts.Spanner
@@ -94,7 +116,7 @@ func main() {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
 	}
 
-	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
+	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
@@ -157,7 +179,27 @@ func main() {
 		}
 	}
 
-	cli, err := NewCli(cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
+	ctx := context.Background()
+
+	if opts.EmbeddedEmulator {
+		container, teardown, err := newEmulator(ctx, opts)
+		if err != nil {
+			exitf("failed to start Cloud Spanner Emulator: %v\n", err)
+		}
+		defer teardown()
+
+		sysVars.Endpoint = container.URI
+		sysVars.Insecure = true
+		sysVars.Project = "emulator-project"
+		sysVars.Instance = "emulator-instance"
+		sysVars.Database = "emulator-database"
+
+		if err := setUpEmptyInstanceAndDatabaseForEmulator(ctx, &sysVars); err != nil {
+			exitf("failed to setup instance and database in emulator: %v\n", err)
+		}
+	}
+
+	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
 		exitf("Failed to connect to Spanner: %v", err)
 	}
@@ -197,9 +239,11 @@ func main() {
 	}
 
 	exitCode := lo.TernaryF(interactive,
-		cli.RunInteractive,
 		func() int {
-			return cli.RunBatch(input)
+			return cli.RunInteractive(ctx)
+		},
+		func() int {
+			return cli.RunBatch(ctx, input)
 		})
 
 	os.Exit(exitCode)

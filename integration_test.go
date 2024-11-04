@@ -75,7 +75,7 @@ func TestMain(m *testing.M) {
 func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func()) {
 	tb.Helper()
 	ctx := context.Background()
-	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
+	spannerContainer, err := gcloud.RunSpanner(ctx, defaultEmulatorImage,
 		testcontainers.WithLogger(testcontainers.TestLogger(tb)))
 	if err != nil {
 		tb.Fatal(err)
@@ -198,13 +198,11 @@ func generateUniqueTableId() string {
 
 func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudContainer, dmls []string) (*Session, string, func()) {
 	options := defaultClientOptions(spannerContainer)
-	session, err := NewSession(
-		&systemVariables{
-			Project:     spannerContainer.Settings.ProjectID,
-			Instance:    testInstanceId,
-			Database:    testDatabaseId,
-			RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED},
-		options...)
+	session, err := NewSession(ctx, &systemVariables{
+		Project:     spannerContainer.Settings.ProjectID,
+		Instance:    testInstanceId,
+		Database:    testDatabaseId,
+		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
 	if err != nil {
 		t.Fatalf("failed to create test session: err=%s", err)
 	}

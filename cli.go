@@ -66,8 +66,8 @@ type command struct {
 	Stmt Statement
 }
 
-func NewCli(credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
-	session, err := createSession(credential, sysVars)
+func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func NewCli(credential []byte, inStream io.ReadCloser, outStream, errStream io.W
 	}, nil
 }
 
-func (c *Cli) RunInteractive() int {
+func (c *Cli) RunInteractive(ctx context.Context) int {
 	shell := readline.NewShell()
 
 	shell.Keymap.Register(map[string]func(){"force-end-of-file": func() {
@@ -177,7 +177,7 @@ func (c *Cli) RunInteractive() int {
 			newSystemVariables.Database = s.Database
 			newSystemVariables.Role = s.Role
 
-			newSession, err := createSession(c.Credential, &newSystemVariables)
+			newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
 			if err != nil {
 				c.PrintInteractiveError(err)
 				continue
@@ -218,7 +218,7 @@ func (c *Cli) RunInteractive() int {
 		}
 
 		// Execute the statement.
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(ctx)
 		go handleInterrupt(cancel)
 		stop := c.PrintProgressingMark()
 		t0 := time.Now()
@@ -273,14 +273,14 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 }
 
-func (c *Cli) RunBatch(input string) int {
+func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	cmds, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return exitCodeError
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
 	for _, cmd := range cmds {
@@ -375,7 +375,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 	})
 }
 
-func createSession(credential []byte, sysVars *systemVariables) (*Session, error) {
+func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
 	if credential != nil {
 		opts = append(opts, option.WithCredentialsJSON(credential))
@@ -383,7 +383,7 @@ func createSession(credential []byte, sysVars *systemVariables) (*Session, error
 	if sysVars.Endpoint != "" {
 		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
 	}
-	return NewSession(sysVars, opts...)
+	return NewSession(ctx, sysVars, opts...)
 }
 
 func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {
