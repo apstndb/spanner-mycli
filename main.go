@@ -60,7 +60,7 @@ type spannerOptions struct {
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure            bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
-	UseEmbeddedEmulator bool              `long:"use-embedded-emulator" description:"Use embedded Cloud Spanner Emulator. Implies --endpoint and --insecure."`
+	UseEmbeddedEmulator bool              `long:"use-embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
 	EmulatorImage       string            `long:"emulator-image" description:"container image for --use-embedded-emulator"`
 	Help                bool              `long:"help" short:"h" hidden:"true"`
 }
@@ -116,7 +116,7 @@ func main() {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
 	}
 
-	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
+	if !opts.UseEmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
@@ -190,6 +190,9 @@ func main() {
 
 		sysVars.Endpoint = container.URI
 		sysVars.Insecure = true
+		sysVars.Project = "emulator-project"
+		sysVars.Instance = "emulator-instance"
+		sysVars.Database = "emulator-database"
 
 		if err := setUpEmptyInstanceAndDatabaseForEmulator(ctx, &sysVars); err != nil {
 			exitf("failed to setup instance and database in emulator: %v\n", err)
