@@ -138,7 +138,7 @@ func setupDatabase(
 		return fmt.Errorf("fail on waiting create database: %w", err)
 	}
 
-	cli, err := spanner.NewClient(ctx, databasePath(projectID, instanceID, databaseID), opts...)
+	cli, err := spanner.NewClientWithConfig(ctx, databasePath(projectID, instanceID, databaseID), spanner.ClientConfig{DisableNativeMetrics: true}, opts...)
 	if err != nil {
 		return fmt.Errorf("fail on new client: %w", err)
 	}
