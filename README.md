@@ -12,6 +12,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 * Respects my minor use cases
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
+  * Can use embedded emulator (`--embedded-emulator`)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -56,12 +57,12 @@ docker build -t spanner-mycli .
 
 ```
 Usage:
-  spanner-mycli [OPTIONS]       spanner-mycli*  testdata/       tools/        
+  spanner-mycli [OPTIONS]
 
 spanner:
   -p, --project=               (required) GCP Project ID. [$SPANNER_PROJECT_ID]
   -i, --instance=              (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
-  -d, --database=              (required) Cloud Spanner Database ID. (default: apstndb-sampledb2) [$SPANNER_DATABASE_ID]
+  -d, --database=              (required) Cloud Spanner Database ID. [$SPANNER_DATABASE_ID]
   -e, --execute=               Execute SQL statement and quit. --sql is an alias.
   -f, --file=                  Execute SQL statement from file and quit.
   -t, --table                  Display output in table format for batch mode.
@@ -76,9 +77,9 @@ spanner:
       --directed-read=         Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
       --set=                   Set system variables e.g. --set=name1=value1 --set=name2=value2
       --proto-descriptor-file= Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
-
-Help Options:
-  -h, --help                   Show this help message
+      --insecure               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
+      --embedded-emulator      Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=        container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
 ```
 
 ### Authentication
@@ -588,6 +589,25 @@ $ spanner-mycli -p myproject -i myinstance -d mydb
 # Or use --endpoint with --insecure
 $ unset SPANNER_EMULATOR_HOST
 $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
+```
+
+### Embedded Cloud Spanner Emulator
+
+spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
+
+```
+$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
+> SET CLI_PROMPT="%p:%i:%d%n> ";
+Empty set (0.00 sec)
+
+emulator-project:emulator-instance:emulator-database
+> SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ("INFORMATION_SCHEMA", "SPANNER_SYS");
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
+| TABLE_CATALOG | TABLE_SCHEMA | TABLE_NAME | PARENT_TABLE_NAME | ON_DELETE_ACTION | TABLE_TYPE | SPANNER_STATE | INTERLEAVE_TYPE | ROW_DELETION_POLICY_EXPRESSION |
+| STRING        | STRING       | STRING     | STRING            | STRING           | STRING     | STRING        | STRING          | STRING                         |
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
+Empty set (8.763167ms)
 ```
 
 ## How to develop

@@ -70,8 +70,7 @@ type transactionContext struct {
 	roTxn         *spanner.ReadOnlyTransaction
 }
 
-func NewSession(sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
-	ctx := context.Background()
+func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Role
