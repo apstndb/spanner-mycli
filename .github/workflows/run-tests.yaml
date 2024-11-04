@@ -31,5 +31,3 @@ jobs:
       - run: go version
       - name: make test
         run: make test
-        env:
-          GOOGLE_API_GO_EXPERIMENTAL_DISABLE_NEW_AUTH_LIB: "true"
