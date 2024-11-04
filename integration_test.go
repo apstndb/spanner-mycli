@@ -75,7 +75,7 @@ func TestMain(m *testing.M) {
 func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func()) {
 	tb.Helper()
 	ctx := context.Background()
-	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
+	spannerContainer, err := gcloud.RunSpanner(ctx, defaultEmulatorImage,
 		testcontainers.WithLogger(testcontainers.TestLogger(tb)))
 	if err != nil {
 		tb.Fatal(err)
