@@ -302,6 +302,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
 | CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
 | CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
+| CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
 
 ## Customize prompt
 
@@ -583,6 +584,10 @@ $ export SPANNER_EMULATOR_HOST=localhost:9010
 $ $(gcloud emulators spanner env-init)
 
 $ spanner-mycli -p myproject -i myinstance -d mydb
+
+# Or use --endpoint with --insecure
+$ unset SPANNER_EMULATOR_HOST
+$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
 
 ## How to develop
