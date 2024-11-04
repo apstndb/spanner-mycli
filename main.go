@@ -57,6 +57,8 @@ type spannerOptions struct {
 	SQL                 string            `long:"sql" hidden:"true" description:"alias of --execute"`
 	Set                 map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
+	Insecure            bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
+	SkipTlsVerify       bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
 }
 
 const (
@@ -88,6 +90,10 @@ func main() {
 
 	logMemefish = opts.LogMemefish
 
+	if opts.Insecure && opts.SkipTlsVerify {
+		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
+	}
+
 	if opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "" {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
@@ -101,6 +107,7 @@ func main() {
 		HistoryFile: lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
 		Role:        opts.Role,
 		Endpoint:    opts.Endpoint,
+		Insecure:    opts.Insecure || opts.SkipTlsVerify,
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)

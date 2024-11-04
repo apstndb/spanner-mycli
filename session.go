@@ -25,6 +25,10 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/credentials/insecure"
+
+	"google.golang.org/grpc"
+
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -72,6 +76,10 @@ func NewSession(sysVars *systemVariables, opts ...option.ClientOption) (*Session
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Role
 	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+
+	if sysVars.Insecure {
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	}
 
 	opts = append(opts, defaultClientOpts...)
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, opts...)
