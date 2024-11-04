@@ -260,9 +260,7 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"CLI_VERBOSE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, strings.ToUpper(strconv.FormatBool(this.Verbose))), nil
-		},
+		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Verbose }),
 		Setter: func(this *systemVariables, name, value string) error {
 			b, err := strconv.ParseBool(value)
 			if err != nil {
@@ -371,7 +369,9 @@ var accessorMap = map[string]accessor{
 			}
 		},
 	},
-	"CLI_INSECURE": {},
+	"CLI_INSECURE": {
+		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
+	},
 }
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
@@ -406,6 +406,13 @@ func stringGetter(f func(sysVars *systemVariables) *string) getter {
 	return func(this *systemVariables, name string) (map[string]string, error) {
 		ref := f(this)
 		return singletonMap(name, *ref), nil
+	}
+}
+
+func boolGetter(f func(sysVars *systemVariables) *bool) getter {
+	return func(this *systemVariables, name string) (map[string]string, error) {
+		ref := f(this)
+		return singletonMap(name, strings.ToUpper(strconv.FormatBool(*ref))), nil
 	}
 }
 
