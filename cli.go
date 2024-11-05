@@ -715,15 +715,17 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		}
 
 		for _, row := range result.Rows {
-			wrappedRow := Row{
-				Columns: slices.Collect(hiter.Unify(
+			if len(result.ColumnTypes) > 0 {
+				wrappedColumns := slices.Collect(hiter.Unify(
 					func(header int, col string) string {
 						return WrapLines(header, col)
 					},
 					hiter.Pairs(slices.Values(adjustedWidths), slices.Values(row.Columns))),
-				),
+				)
+				table.Append(wrappedColumns)
+			} else {
+				table.Append(row.Columns)
 			}
-			table.Append(wrappedRow.Columns)
 		}
 
 		if forceTableRender || len(result.Rows) > 0 {
