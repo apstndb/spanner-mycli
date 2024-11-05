@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"spheric.cloud/xiter"
 
 	"google.golang.org/protobuf/proto"
@@ -41,6 +43,7 @@ type systemVariables struct {
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
 	Insecure        bool
+	Debug           bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -372,6 +375,10 @@ var accessorMap = map[string]accessor{
 	"CLI_INSECURE": {
 		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
 	},
+	"CLI_DEBUG": {
+		Getter: boolGetter(func(sysVars *systemVariables) *bool { return lo.Ternary(sysVars.Debug, lo.ToPtr(sysVars.Debug), nil) }),
+		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.Debug }),
+	},
 }
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
@@ -412,7 +419,25 @@ func stringGetter(f func(sysVars *systemVariables) *string) getter {
 func boolGetter(f func(sysVars *systemVariables) *bool) getter {
 	return func(this *systemVariables, name string) (map[string]string, error) {
 		ref := f(this)
+		if ref == nil {
+			return nil, errIgnored
+		}
+
 		return singletonMap(name, strings.ToUpper(strconv.FormatBool(*ref))), nil
+	}
+}
+
+func boolSetter(f func(sysVars *systemVariables) *bool) setter {
+	return func(this *systemVariables, name string, value string) error {
+		ref := f(this)
+
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+
+		*ref = b
+		return nil
 	}
 }
 
