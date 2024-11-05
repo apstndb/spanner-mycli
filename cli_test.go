@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -135,7 +136,7 @@ func TestPrintResult(t *testing.T) {
 			},
 			IsMutation: false,
 		}
-		printResult(out, result, DisplayModeTable, false, false)
+		printResult(false, math.MaxInt, out, result, DisplayModeTable, false, false)
 
 		expected := strings.TrimPrefix(`
 +-----+-----+
@@ -162,7 +163,7 @@ func TestPrintResult(t *testing.T) {
 			},
 			IsMutation: false,
 		}
-		printResult(out, result, DisplayModeVertical, false, false)
+		printResult(false, math.MaxInt, out, result, DisplayModeVertical, false, false)
 
 		expected := strings.TrimPrefix(`
 *************************** 1. row ***************************
@@ -189,7 +190,7 @@ bar: 4
 			},
 			IsMutation: false,
 		}
-		printResult(out, result, DisplayModeTab, false, false)
+		printResult(false, math.MaxInt, out, result, DisplayModeTab, false, false)
 
 		expected := "foo\tbar\n" +
 			"1\t2\n" +
