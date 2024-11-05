@@ -18,16 +18,28 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"log"
+	"math"
 	"os"
 	"os/signal"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
+	"github.com/apstndb/lox"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+
+	"github.com/chzyer/readline/runes"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/reeflective/readline/inputrc"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -250,7 +262,12 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.updateSystemVariables(result)
 		}
 
-		c.PrintResult(result, c.SystemVariables.CLIFormat, true)
+		size, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			size = math.MaxInt
+		}
+
+		c.PrintResult(size, result, c.SystemVariables.CLIFormat, true)
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
@@ -294,7 +311,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 			c.updateSystemVariables(result)
 		}
 
-		c.PrintResult(result, c.SystemVariables.CLIFormat, false)
+		c.PrintResult(math.MaxInt, result, c.SystemVariables.CLIFormat, false)
 	}
 
 	return exitCodeSuccess
@@ -320,8 +337,8 @@ func (c *Cli) PrintBatchError(err error) {
 	fmt.Fprintf(c.ErrStream, "ERROR: %s\n", err)
 }
 
-func (c *Cli) PrintResult(result *Result, mode DisplayMode, interactive bool) {
-	printResult(c.OutStream, result, mode, interactive, c.SystemVariables.Verbose)
+func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, interactive bool) {
+	printResult(c.SystemVariables.Debug, screenWidth, c.OutStream, result, mode, interactive, c.SystemVariables.Verbose)
 }
 
 func (c *Cli) PrintProgressingMark() func() {
@@ -419,7 +436,247 @@ func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, e
 
 }
 
-func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, verbose bool) {
+func splitLineWithWidth(s string, maxWidth int) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for line := range hiter.StringsSplitFunc(s, 0, hiter.StringsCutNewLine) {
+			lineRunes := []rune(line)
+			if maxWidth >= runes.WidthAll(lineRunes) {
+				if !yield(line) {
+					return
+				}
+				continue
+			}
+
+			var sb strings.Builder
+			currentWidth := 0
+			for _, r := range lineRunes {
+				runeWidth := runes.Width(r)
+				if currentWidth+runeWidth > maxWidth {
+					if !yield(sb.String()) {
+						return
+					}
+					sb.Reset()
+					currentWidth = 0
+				}
+
+				sb.WriteRune(r)
+				currentWidth += runeWidth
+			}
+
+			if sb.Len() > 0 {
+				yield(sb.String())
+			}
+		}
+	}
+}
+
+func WrapLines(width int, s string) string {
+	return strings.Join(
+		slices.Collect(
+			splitLineWithWidth(s, width),
+		),
+		"\n")
+}
+
+func maxWidth(s string) int {
+	return hiter.Max(xiter.Map(
+		func(in string) int {
+			return runes.WidthAll([]rune(in))
+		},
+		hiter.StringsSplitFunc(s, 0, hiter.StringsCutNewLine)))
+}
+
+func stringWidthAll(s string) int {
+	return runes.WidthAll([]rune(s))
+}
+func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] {
+	return xiter.Map(
+		func(in E) E {
+			return min(in, maxValue)
+		},
+		slices.Values(s),
+	)
+}
+func adjustToSum(limit int, vs []int) ([]int, int) {
+	sumVs := lo.Sum(vs)
+	remains := limit - sumVs
+	if remains >= 0 {
+		return vs, remains
+	}
+
+	// maxV := slices.Max(vs)
+	curVs := vs
+	for i := 1; ; i++ {
+		rev := lo.Reverse(slices.Sorted(slices.Values(lo.Uniq(vs))))
+		v, ok := hiter.Nth(i, slices.Values(rev))
+		if !ok {
+			break
+		}
+		curVs = slices.Collect(clipToMax(vs, v))
+		if lo.Sum(curVs) <= limit {
+			break
+		}
+	}
+	return curVs, limit - lo.Sum(curVs)
+}
+
+func maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int, WidthCount) {
+	current := -1
+	maxIdx := -1
+	var candidate WidthCount
+	for v := range seq {
+		current++
+		if ignoreMax >= v.Length-adjustWidths[current] && v.Count > candidate.Count {
+			candidate = v
+			maxIdx = current
+		}
+	}
+	return maxIdx, candidate
+}
+
+func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType_Field, rows []Row) []int {
+	// table overhead is:
+	// len(`|  |`) +
+	// len(` | `) * len(columns) - 1
+	overheadWidth := 4 + 3*(len(types)-1)
+
+	// don't mutate
+	remainsWidth := screenWidth - overheadWidth
+
+	if debug {
+		log.Printf("screenWitdh: %v, remainsWidth: %v", screenWidth, remainsWidth)
+	}
+
+	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
+		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
+	}
+
+	adjustWidths := adjustByName(types, remainsWidth)
+
+	if debug {
+		log.Println("adjustByName:", formatIntermediate(remainsWidth, adjustWidths))
+	}
+
+	var transposedRows [][]string
+	for columnIdx := range len(types) {
+		transposedRows = append(transposedRows, slices.Collect(
+			xiter.Concat(
+				hiter.Once(formatTypedHeaderColumn(types[columnIdx])),
+				xiter.Map(
+					func(in Row) string {
+						return lo.Must(lo.Nth(in.Columns, columnIdx))
+					},
+					slices.Values(rows),
+				))))
+	}
+
+	widthCounts := calculateWidthCounts(adjustWidths, transposedRows)
+	for {
+		if debug {
+			log.Println("widthCounts:", widthCounts)
+		}
+
+		firstCounts :=
+			xiter.Map(
+				func(in []WidthCount) WidthCount {
+					return lo.FirstOr(in, WidthCount{
+						Length: math.MinInt,
+						Count:  0,
+					})
+				},
+				slices.Values(widthCounts))
+
+		idx, target := maxIndex(remainsWidth-lo.Sum(adjustWidths), adjustWidths, firstCounts)
+		if idx < 0 {
+			break
+		}
+
+		widthCounts[idx] = widthCounts[idx][1:]
+		adjustWidths[idx] = target.Length
+
+		if debug {
+			log.Println("adjusting:", formatIntermediate(remainsWidth, adjustWidths))
+		}
+	}
+
+	if debug {
+		log.Println("semi final:", formatIntermediate(remainsWidth, adjustWidths))
+	}
+
+	longestWidths := lo.Map(widthCounts, func(item []WidthCount, index int) int {
+		return hiter.Max(xiter.Map(func(wc WidthCount) int { return wc.Length }, slices.Values(item)))
+	})
+
+	idx, _ := MaxByWithIdx(math.MinInt, hiter.Unify(func(first, second int) int {
+		return second - first
+	}, hiter.Pairs(slices.Values(adjustWidths), slices.Values(longestWidths))))
+
+	if idx != -1 {
+		adjustWidths[idx] += remainsWidth - lo.Sum(adjustWidths)
+	}
+
+	if debug {
+		log.Println("final:", formatIntermediate(remainsWidth, adjustWidths))
+	}
+
+	return adjustWidths
+}
+
+func MaxByWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
+	val := fallback
+	idx := -1
+	current := -1
+	for v := range seq {
+		current++
+		if val < v {
+			val = v
+			idx = current
+		}
+	}
+	return idx, val
+}
+
+func countLen(ss []string) iter.Seq[WidthCount] {
+	return xiter.Map(func(in lo.Entry[int, int]) WidthCount {
+		return WidthCount{
+			Length: in.Key,
+			Count:  in.Value,
+		}
+	}, slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, maxWidth))))
+}
+
+func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
+	var result [][]WidthCount
+	for columnNo := range len(currentWidths) {
+		currentWidth := currentWidths[columnNo]
+		columnValues := rows[columnNo]
+		largerWidthCounts := slices.Collect(
+			xiter.Filter(
+				func(v WidthCount) bool {
+					return v.Length > currentWidth
+				},
+				countLen(columnValues),
+			))
+		result = append(result, largerWidthCounts)
+	}
+	return result
+}
+
+type WidthCount struct{ Length, Count int }
+
+func adjustByName(types []*sppb.StructType_Field, availableWidth int) []int {
+	names := slices.Collect(xiter.Map(
+		(*sppb.StructType_Field).GetName,
+		slices.Values(types),
+	))
+	nameWidths := slices.Collect(xiter.Map(stringWidthAll, slices.Values(names)))
+
+	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
+
+	return adjustWidths
+}
+
+func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mode DisplayMode, interactive, verbose bool) {
 	if mode == DisplayModeTable {
 		table := tablewriter.NewWriter(out)
 		table.SetAutoFormatHeaders(false)
@@ -427,14 +684,16 @@ func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, v
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAutoWrapText(false)
 
+		adjustedWidths := calculateOptimalWidth(debug, screenWidth, result.ColumnTypes, result.Rows)
+
 		var forceTableRender bool
 		// This condition is true if statement is SelectStatement or DmlStatement
+
 		if verbose && len(result.ColumnTypes) > 0 {
 			forceTableRender = true
 			var headers []string
-			for _, field := range result.ColumnTypes {
-				typename := formatTypeSimple(field.GetType())
-				headers = append(headers, field.GetName()+"\n"+typename)
+			for i, field := range result.ColumnTypes {
+				headers = append(headers, WrapLines(adjustedWidths[i], formatTypedHeaderColumn(field)))
 			}
 			table.SetHeader(headers)
 		} else {
@@ -442,7 +701,17 @@ func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, v
 		}
 
 		for _, row := range result.Rows {
-			table.Append(row.Columns)
+			if len(result.ColumnTypes) > 0 {
+				wrappedColumns := slices.Collect(hiter.Unify(
+					func(header int, col string) string {
+						return WrapLines(header, col)
+					},
+					hiter.Pairs(slices.Values(adjustedWidths), slices.Values(row.Columns))),
+				)
+				table.Append(wrappedColumns)
+			} else {
+				table.Append(row.Columns)
+			}
 		}
 
 		if forceTableRender || len(result.Rows) > 0 {
@@ -484,6 +753,10 @@ func printResult(out io.Writer, result *Result, mode DisplayMode, interactive, v
 	} else if interactive {
 		fmt.Fprint(out, resultLine(result, verbose))
 	}
+}
+
+func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
+	return field.GetName() + "\n" + formatTypeSimple(field.GetType())
 }
 
 func resultLine(result *Result, verbose bool) string {

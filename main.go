@@ -63,6 +63,7 @@ type spannerOptions struct {
 	EmbeddedEmulator    bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
 	EmulatorImage       string            `long:"emulator-image" description:"container image for --embedded-emulator"`
 	Help                bool              `long:"help" short:"h" hidden:"true"`
+	Debug               bool              `long:"debug" hidden:"true"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -130,6 +131,7 @@ func main() {
 		Role:        opts.Role,
 		Endpoint:    opts.Endpoint,
 		Insecure:    opts.Insecure || opts.SkipTlsVerify,
+		Debug:       opts.Debug,
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
