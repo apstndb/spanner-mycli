@@ -36,8 +36,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/apstndb/lox"
-	"golang.org/x/exp/constraints"
-
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
 	"github.com/chzyer/readline/runes"
@@ -572,7 +570,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType
 				))))
 	}
 
-	widthCounts := calcurateWidthCounts(adjustWidths, transposedRows)
+	widthCounts := calculateWidthCounts(adjustWidths, transposedRows)
 	for {
 		if debug {
 			log.Println("widthCounts:", widthCounts)
@@ -638,12 +636,6 @@ func MaxByWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
 	return idx, val
 }
 
-func EntriesSortedByValue[K constraints.Ordered, V constraints.Ordered](m map[K]V) []lo.Entry[K, V] {
-	entries := lo.Entries(m)
-	lox.SortBy(entries, func(t lo.Entry[K, V]) V { return t.Value })
-	return entries
-}
-
 func countLen(ss []string) iter.Seq[WidthCount] {
 	return xiter.Map(func(in lo.Entry[int, int]) WidthCount {
 		return WidthCount{
@@ -653,13 +645,7 @@ func countLen(ss []string) iter.Seq[WidthCount] {
 	}, slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, maxWidth))))
 }
 
-func GreaterThan[T cmp.Ordered](v1 T) func(v2 T) bool {
-	return func(v2 T) bool {
-		return v2 > v1
-	}
-}
-
-func calcurateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
+func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
 	var result [][]WidthCount
 	for columnNo := range len(currentWidths) {
 		currentWidth := currentWidths[columnNo]
