@@ -228,14 +228,14 @@ Empty set ()
 					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
-+---------+------------+
-| English | Japanese   |
-| STRING  | STRING     |
-+---------+------------+
-| Hello W | こんにちは |
-| orld    |            |
-| Bye     | さようなら |
-+---------+------------+
++----------+------------+
+| English  | Japanese   |
+| STRING   | STRING     |
++----------+------------+
+| Hello Wo | こんにちは |
+| rld      |            |
+| Bye      | さようなら |
++----------+------------+
 Empty set ()
 `, "\n"),
 			},
@@ -245,7 +245,8 @@ Empty set ()
 				out := &bytes.Buffer{}
 				printResult(false, test.screenWidth, out, test.result, test.displayMode, false, test.verbose)
 
-				if diff := cmp.Diff(test.want, out.String()); diff != "" {
+				got := out.String()
+				if diff := cmp.Diff(test.want, got); diff != "" {
 					t.Errorf("result differ: %v", diff)
 				}
 			})
