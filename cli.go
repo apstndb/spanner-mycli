@@ -33,12 +33,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-runewidth"
+
 	"golang.org/x/term"
 
 	"github.com/apstndb/lox"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
-	"github.com/chzyer/readline/runes"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/reeflective/readline/inputrc"
 	"github.com/samber/lo"
@@ -436,59 +437,12 @@ func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, e
 
 }
 
-func splitLineWithWidth(s string, maxWidth int) iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for line := range hiter.StringsSplitFunc(s, 0, hiter.StringsCutNewLine) {
-			lineRunes := []rune(line)
-			if maxWidth >= runes.WidthAll(lineRunes) {
-				if !yield(line) {
-					return
-				}
-				continue
-			}
-
-			var sb strings.Builder
-			currentWidth := 0
-			for _, r := range lineRunes {
-				runeWidth := runes.Width(r)
-				if currentWidth+runeWidth > maxWidth {
-					if !yield(sb.String()) {
-						return
-					}
-					sb.Reset()
-					currentWidth = 0
-				}
-
-				sb.WriteRune(r)
-				currentWidth += runeWidth
-			}
-
-			if sb.Len() > 0 {
-				yield(sb.String())
-			}
-		}
-	}
-}
-
-func WrapLines(width int, s string) string {
-	return strings.Join(
-		slices.Collect(
-			splitLineWithWidth(s, width),
-		),
-		"\n")
-}
-
 func maxWidth(s string) int {
 	return hiter.Max(xiter.Map(
-		func(in string) int {
-			return runes.WidthAll([]rune(in))
-		},
+		runewidth.StringWidth,
 		hiter.StringsSplitFunc(s, 0, hiter.StringsCutNewLine)))
 }
 
-func stringWidthAll(s string) int {
-	return runes.WidthAll([]rune(s))
-}
 func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] {
 	return xiter.Map(
 		func(in E) E {
@@ -497,6 +451,7 @@ func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] 
 		slices.Values(s),
 	)
 }
+
 func adjustToSum(limit int, vs []int) ([]int, int) {
 	sumVs := lo.Sum(vs)
 	remains := limit - sumVs
@@ -504,7 +459,6 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 		return vs, remains
 	}
 
-	// maxV := slices.Max(vs)
 	curVs := vs
 	for i := 1; ; i++ {
 		rev := lo.Reverse(slices.Sorted(slices.Values(lo.Uniq(vs))))
@@ -520,18 +474,22 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 	return curVs, limit - lo.Sum(curVs)
 }
 
+var invalidWidthCount = WidthCount{
+	// impossible to fit any width
+	width: math.MaxInt,
+	// least significant
+	count: math.MinInt,
+}
+
 func maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int, WidthCount) {
-	current := -1
-	maxIdx := -1
-	var candidate WidthCount
-	for v := range seq {
-		current++
-		if ignoreMax >= v.Length-adjustWidths[current] && v.Count > candidate.Count {
-			candidate = v
-			maxIdx = current
-		}
-	}
-	return maxIdx, candidate
+	return MaxByWithIdx(
+		invalidWidthCount,
+		WidthCount.Count,
+		hiter.Unify(
+			func(adjustWidth int, wc WidthCount) WidthCount {
+				return lo.Ternary(wc.Length()-adjustWidth <= ignoreMax, wc, invalidWidthCount)
+			},
+			hiter.Pairs(slices.Values(adjustWidths), seq)))
 }
 
 func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType_Field, rows []Row) []int {
@@ -541,20 +499,20 @@ func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType
 	overheadWidth := 4 + 3*(len(types)-1)
 
 	// don't mutate
-	remainsWidth := screenWidth - overheadWidth
+	termWidthWithoutOverhead := screenWidth - overheadWidth
 
 	if debug {
-		log.Printf("screenWitdh: %v, remainsWidth: %v", screenWidth, remainsWidth)
+		log.Printf("screenWitdh: %v, remainsWidth: %v", screenWidth, termWidthWithoutOverhead)
 	}
 
 	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
 		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
 	}
 
-	adjustWidths := adjustByName(types, remainsWidth)
+	adjustedWidths := adjustByName(types, termWidthWithoutOverhead)
 
 	if debug {
-		log.Println("adjustByName:", formatIntermediate(remainsWidth, adjustWidths))
+		log.Println("adjustByName:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 	}
 
 	var transposedRows [][]string
@@ -570,7 +528,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType
 				))))
 	}
 
-	widthCounts := calculateWidthCounts(adjustWidths, transposedRows)
+	widthCounts := calculateWidthCounts(adjustedWidths, transposedRows)
 	for {
 		if debug {
 			log.Println("widthCounts:", widthCounts)
@@ -578,57 +536,62 @@ func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType
 
 		firstCounts :=
 			xiter.Map(
-				func(in []WidthCount) WidthCount {
-					return lo.FirstOr(in, WidthCount{
-						Length: math.MinInt,
-						Count:  0,
-					})
+				func(wcs []WidthCount) WidthCount {
+					return lo.FirstOr(wcs, invalidWidthCount)
 				},
 				slices.Values(widthCounts))
 
-		idx, target := maxIndex(remainsWidth-lo.Sum(adjustWidths), adjustWidths, firstCounts)
-		if idx < 0 {
+		// find the largest count idx within available width
+		idx, target := maxIndex(termWidthWithoutOverhead-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
+		if idx < 0 || target.Count() < 1 {
 			break
 		}
 
 		widthCounts[idx] = widthCounts[idx][1:]
-		adjustWidths[idx] = target.Length
+		adjustedWidths[idx] = target.Length()
 
 		if debug {
-			log.Println("adjusting:", formatIntermediate(remainsWidth, adjustWidths))
+			log.Println("adjusting:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 		}
 	}
 
 	if debug {
-		log.Println("semi final:", formatIntermediate(remainsWidth, adjustWidths))
+		log.Println("semi final:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 	}
 
+	// Add rest to the longest shortage column.
 	longestWidths := lo.Map(widthCounts, func(item []WidthCount, index int) int {
-		return hiter.Max(xiter.Map(func(wc WidthCount) int { return wc.Length }, slices.Values(item)))
+		return hiter.Max(xiter.Map(WidthCount.Length, slices.Values(item)))
 	})
 
-	idx, _ := MaxByWithIdx(math.MinInt, hiter.Unify(func(first, second int) int {
-		return second - first
-	}, hiter.Pairs(slices.Values(adjustWidths), slices.Values(longestWidths))))
+	idx, _ := MaxWithIdx(math.MinInt, hiter.Unify(
+		func(longestWidth, adjustedWidth int) int {
+			return longestWidth - adjustedWidth
+		},
+		hiter.Pairs(slices.Values(longestWidths), slices.Values(adjustedWidths))))
 
 	if idx != -1 {
-		adjustWidths[idx] += remainsWidth - lo.Sum(adjustWidths)
+		adjustedWidths[idx] += termWidthWithoutOverhead - lo.Sum(adjustedWidths)
 	}
 
 	if debug {
-		log.Println("final:", formatIntermediate(remainsWidth, adjustWidths))
+		log.Println("final:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 	}
 
-	return adjustWidths
+	return adjustedWidths
 }
 
-func MaxByWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
+func MaxWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
+	return MaxByWithIdx(fallback, lox.Identity, seq)
+}
+
+func MaxByWithIdx[O cmp.Ordered, E any](fallback E, f func(E) O, seq iter.Seq[E]) (int, E) {
 	val := fallback
 	idx := -1
 	current := -1
 	for v := range seq {
 		current++
-		if val < v {
+		if f(val) < f(v) {
 			val = v
 			idx = current
 		}
@@ -636,13 +599,15 @@ func MaxByWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
 	return idx, val
 }
 
-func countLen(ss []string) iter.Seq[WidthCount] {
-	return xiter.Map(func(in lo.Entry[int, int]) WidthCount {
-		return WidthCount{
-			Length: in.Key,
-			Count:  in.Value,
-		}
-	}, slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, maxWidth))))
+func countWidth(ss []string) iter.Seq[WidthCount] {
+	return xiter.Map(
+		func(e lo.Entry[int, int]) WidthCount {
+			return WidthCount{
+				width: e.Key,
+				count: e.Value,
+			}
+		},
+		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, maxWidth))))
 }
 
 func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
@@ -653,23 +618,26 @@ func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
 		largerWidthCounts := slices.Collect(
 			xiter.Filter(
 				func(v WidthCount) bool {
-					return v.Length > currentWidth
+					return v.Length() > currentWidth
 				},
-				countLen(columnValues),
+				countWidth(columnValues),
 			))
 		result = append(result, largerWidthCounts)
 	}
 	return result
 }
 
-type WidthCount struct{ Length, Count int }
+type WidthCount struct{ width, count int }
+
+func (wc WidthCount) Length() int { return wc.width }
+func (wc WidthCount) Count() int  { return wc.count }
 
 func adjustByName(types []*sppb.StructType_Field, availableWidth int) []int {
 	names := slices.Collect(xiter.Map(
 		(*sppb.StructType_Field).GetName,
 		slices.Values(types),
 	))
-	nameWidths := slices.Collect(xiter.Map(stringWidthAll, slices.Values(names)))
+	nameWidths := slices.Collect(xiter.Map(runewidth.StringWidth, slices.Values(names)))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
@@ -677,6 +645,11 @@ func adjustByName(types []*sppb.StructType_Field, availableWidth int) []int {
 }
 
 func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mode DisplayMode, interactive, verbose bool) {
+	// screenWidth <= means no limit.
+	if screenWidth <= 0 {
+		screenWidth = math.MaxInt
+	}
+
 	if mode == DisplayModeTable {
 		table := tablewriter.NewWriter(out)
 		table.SetAutoFormatHeaders(false)
@@ -684,17 +657,20 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAutoWrapText(false)
 
+		// It is not valid when ColumnType is not populated.
 		adjustedWidths := calculateOptimalWidth(debug, screenWidth, result.ColumnTypes, result.Rows)
 
-		var forceTableRender bool
 		// This condition is true if statement is SelectStatement or DmlStatement
-
+		var forceTableRender bool
 		if verbose && len(result.ColumnTypes) > 0 {
 			forceTableRender = true
-			var headers []string
-			for i, field := range result.ColumnTypes {
-				headers = append(headers, WrapLines(adjustedWidths[i], formatTypedHeaderColumn(field)))
-			}
+
+			headers := slices.Collect(hiter.Unify(
+				runewidth.Wrap,
+				hiter.Pairs(
+					xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)),
+					slices.Values(adjustedWidths))),
+			)
 			table.SetHeader(headers)
 		} else {
 			table.SetHeader(result.ColumnNames)
@@ -703,10 +679,8 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		for _, row := range result.Rows {
 			if len(result.ColumnTypes) > 0 {
 				wrappedColumns := slices.Collect(hiter.Unify(
-					func(header int, col string) string {
-						return WrapLines(header, col)
-					},
-					hiter.Pairs(slices.Values(adjustedWidths), slices.Values(row.Columns))),
+					runewidth.Wrap,
+					hiter.Pairs(slices.Values(row.Columns), slices.Values(adjustedWidths))),
 				)
 				table.Append(wrappedColumns)
 			} else {
