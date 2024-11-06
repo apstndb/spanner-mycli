@@ -127,29 +127,129 @@ func TestBuildCommands(t *testing.T) {
 
 func TestPrintResult(t *testing.T) {
 	t.Run("DisplayModeTable", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			ColumnNames: []string{"foo", "bar"},
-			Rows: []Row{
-				Row{[]string{"1", "2"}},
-				Row{[]string{"3", "4"}},
-			},
-			IsMutation: false,
-		}
-		printResult(false, math.MaxInt, out, result, DisplayModeTable, false, false)
-
-		expected := strings.TrimPrefix(`
+		tests := []struct {
+			desc        string
+			displayMode DisplayMode
+			result      *Result
+			screenWidth int
+			verbose     bool
+			want        string
+		}{
+			{
+				desc:        "DisplayModeTable: simple table",
+				displayMode: DisplayModeTable,
+				result: &Result{
+					ColumnNames: []string{"foo", "bar"},
+					Rows: []Row{
+						{[]string{"1", "2"}},
+						{[]string{"3", "4"}},
+					},
+					IsMutation: false,
+				},
+				want: strings.TrimPrefix(`
 +-----+-----+
 | foo | bar |
 +-----+-----+
 | 1   | 2   |
 | 3   | 4   |
 +-----+-----+
-`, "\n")
+`, "\n"),
+			},
+			{
+				desc:        "DisplayModeTable: most preceding column name",
+				displayMode: DisplayModeTable,
+				screenWidth: 20,
+				verbose:     true,
+				result: &Result{
+					ColumnTypes: []*sppb.StructType_Field{
+						{Name: "NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						{Name: "LONG_NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+					},
+					Rows: []Row{
+						{[]string{"1", "2"}},
+						{[]string{"3", "4"}},
+					},
+					IsMutation: false,
+				},
+				want: strings.TrimPrefix(`
++------+-----------+
+| NAME | LONG_NAME |
+| STRI | STRING    |
+| NG   |           |
++------+-----------+
+| 1    | 2         |
+| 3    | 4         |
++------+-----------+
+Empty set ()
+`, "\n"),
+			},
+			{
+				desc:        "DisplayModeTable: also respect column type",
+				displayMode: DisplayModeTable,
+				screenWidth: 19,
+				verbose:     true,
+				result: &Result{
+					ColumnTypes: []*sppb.StructType_Field{
+						{Name: "NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						{Name: "LONG_NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+					},
+					Rows: []Row{
+						{[]string{"1", "2"}},
+						{[]string{"3", "4"}},
+					},
+					IsMutation: false,
+				},
+				want: strings.TrimPrefix(`
++--------+--------+
+| NAME   | LONG_N |
+| STRING | AME    |
+|        | STRING |
++--------+--------+
+| 1      | 2      |
+| 3      | 4      |
++--------+--------+
+Empty set ()
+`, "\n"),
+			},
+			{
+				desc:        "DisplayModeTable: also respect column value",
+				displayMode: DisplayModeTable,
+				screenWidth: 25,
+				verbose:     true,
+				result: &Result{
+					ColumnTypes: []*sppb.StructType_Field{
+						{Name: "English", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						{Name: "Japanese", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+					},
+					Rows: []Row{
+						{[]string{"Hello World", "こんにちは"}},
+						{[]string{"Bye", "さようなら"}},
+					},
+					IsMutation: false,
+				},
+				want: strings.TrimPrefix(`
++----------+------------+
+| English  | Japanese   |
+| STRING   | STRING     |
++----------+------------+
+| Hello Wo | こんにちは |
+| rld      |            |
+| Bye      | さようなら |
++----------+------------+
+Empty set ()
+`, "\n"),
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.desc, func(t *testing.T) {
+				out := &bytes.Buffer{}
+				printResult(false, test.screenWidth, out, test.result, test.displayMode, false, test.verbose)
 
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
+				got := out.String()
+				if diff := cmp.Diff(test.want, got); diff != "" {
+					t.Errorf("result differ: %v", diff)
+				}
+			})
 		}
 	})
 

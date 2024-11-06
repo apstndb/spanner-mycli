@@ -10,10 +10,10 @@ require (
 	github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c
 	github.com/apstndb/spantype v0.2.0
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
-	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.6.1
+	github.com/mattn/go-runewidth v0.0.10
 	github.com/ngicks/go-iterator-helper v0.0.15
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
@@ -72,7 +72,6 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-runewidth v0.0.10 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/testcontainers/testcontainers-go"
+
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
@@ -17,8 +19,16 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 )
 
+type noopLogger struct{}
+
+// Printf implements testcontainers.Logging.
+func (n noopLogger) Printf(string, ...interface{}) {
+}
+
 func newEmulator(ctx context.Context, opts spannerOptions) (container *gcloud.GCloudContainer, teardown func(), err error) {
-	container, err = gcloud.RunSpanner(ctx, lo.CoalesceOrEmpty(opts.EmulatorImage, defaultEmulatorImage))
+	// Workaround to suppress log output with `-v`.
+	testcontainers.Logger = &noopLogger{}
+	container, err = gcloud.RunSpanner(ctx, lo.CoalesceOrEmpty(opts.EmulatorImage, defaultEmulatorImage), testcontainers.WithLogger(&noopLogger{}))
 	if err != nil {
 		return nil, nil, err
 	}
