@@ -33,6 +33,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hymkor/go-multiline-ny"
+	"github.com/nyaosorg/go-readline-ny/simplehistory"
+
+	"github.com/reeflective/readline"
+
 	"github.com/mattn/go-runewidth"
 
 	"golang.org/x/term"
@@ -41,14 +46,14 @@ import (
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/reeflective/readline/inputrc"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/olekukonko/tablewriter"
-	"github.com/reeflective/readline"
+
+	// "github.com/reeflective/readline"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 )
@@ -96,30 +101,17 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 }
 
 func (c *Cli) RunInteractive(ctx context.Context) int {
-	shell := readline.NewShell()
+	// shell := readline.NewShell()
+	var ed multiline.Editor
+	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
+		statements, err := separateInput(strings.Join(lines, "\n"))
+		if _, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
+			/*
+				shell.Prompt.Secondary(func() string {
+					return e.WaitingString + "->"
+				})
 
-	shell.Keymap.Register(map[string]func(){"force-end-of-file": func() {
-		switch shell.Line().Len() {
-		case 0:
-			shell.Display.AcceptLine()
-			shell.History.Accept(false, false, io.EOF)
-		default:
-			shell.Display.AcceptLine()
-			shell.History.Accept(false, false, nil)
-		}
-	}})
-
-	err := shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
-	if err != nil {
-		return c.ExitOnError(err)
-	}
-
-	shell.AcceptMultiline = func(line []rune) (accept bool) {
-		statements, err := separateInput(string(line))
-		if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
-			shell.Prompt.Secondary(func() string {
-				return e.WaitingString + "->"
-			})
+			*/
 			return false
 		}
 		if err != nil {
@@ -136,9 +128,51 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			return true
 		}
 		return false
-	}
+	})
 
-	shell.History.AddFromFile("history name", c.SystemVariables.HistoryFile)
+	/*
+		shell.Keymap.Register(map[string]func(){"force-end-of-file": func() {
+			switch shell.Line().Len() {
+			case 0:
+				shell.Display.AcceptLine()
+				shell.History.Accept(false, false, io.EOF)
+			default:
+				shell.Display.AcceptLine()
+				shell.History.Accept(false, false, nil)
+			}
+		}})
+
+		err := shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
+		if err != nil {
+			return c.ExitOnError(err)
+		}
+
+		shell.AcceptMultiline = func(line []rune) (accept bool) {
+			statements, err := separateInput(string(line))
+			if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
+				shell.Prompt.Secondary(func() string {
+					return e.WaitingString + "->"
+				})
+				return false
+			}
+			if err != nil {
+				return true
+			}
+			switch len(statements) {
+			case 0:
+				return false
+			case 1:
+				if statements[0].delim != delimiterUndefined {
+					return true
+				}
+			default:
+				return true
+			}
+			return false
+		}
+
+		shell.History.AddFromFile("history name", c.SystemVariables.HistoryFile)
+	*/
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -152,17 +186,27 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	for {
 		prompt := c.getInterpolatedPrompt()
-
-		shell.Prompt.Primary(func() string {
-			return prompt
+		ed.SetPrompt(func(w io.Writer, lnum int) (int, error) {
+			return io.WriteString(w, prompt)
 		})
 
-		// TODO: Currently not work
-		shell.Prompt.Secondary(func() string {
-			return "->"
-		})
+		history := simplehistory.New()
+		ed.SetHistory(history)
+		ed.SetHistoryCycling(true)
 
-		input, err := readInteractiveInput(shell, prompt)
+		/*
+			shell.Prompt.Primary(func() string {
+				return prompt
+			})
+
+			// TODO: Currently not work
+			shell.Prompt.Secondary(func() string {
+				return "->"
+			})
+
+		*/
+
+		input, err := readInteractiveInput(ctx, &ed, prompt)
 		if err == io.EOF {
 			return c.Exit()
 		}
@@ -404,14 +448,14 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	return NewSession(ctx, sysVars, opts...)
 }
 
-func readInteractiveInput(rl *readline.Shell, prompt string) (*inputStatement, error) {
+func readInteractiveInput(ctx context.Context, ed *multiline.Editor, prompt string) (*inputStatement, error) {
 	var input string
 	for {
-		line, err := rl.Readline()
+		lines, err := ed.Read(ctx)
 		if err != nil {
 			return nil, err
 		}
-		input += line + "\n"
+		input += strings.Join(lines, "\n") + "\n"
 
 		statements, err := separateInput(input)
 		if err != nil {
