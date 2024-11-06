@@ -211,6 +211,34 @@ Empty set ()
 Empty set ()
 `, "\n"),
 			},
+			{
+				desc:        "DisplayModeTable: also respect column value",
+				displayMode: DisplayModeTable,
+				screenWidth: 25,
+				verbose:     true,
+				result: &Result{
+					ColumnTypes: []*sppb.StructType_Field{
+						{Name: "English", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						{Name: "Japanese", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+					},
+					Rows: []Row{
+						{[]string{"Hello World", "こんにちは"}},
+						{[]string{"Bye", "さようなら"}},
+					},
+					IsMutation: false,
+				},
+				want: strings.TrimPrefix(`
++---------+------------+
+| English | Japanese   |
+| STRING  | STRING     |
++---------+------------+
+| Hello W | こんにちは |
+| orld    |            |
+| Bye     | さようなら |
++---------+------------+
+Empty set ()
+`, "\n"),
+			},
 		}
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
