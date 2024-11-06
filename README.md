@@ -231,47 +231,47 @@ and `{}` for a mutually exclusive keyword.
 * The syntax is case-insensitive.
 * `\G` delimiter is also supported for displaying results vertically.
 
-| Usage | Syntax | Note |
-| --- | --- | --- |
-| List databases | `SHOW DATABASES;` | |
-| Switch database | `USE <database> [ROLE <role>];` | The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about). |
-| Create database | `CREATE DATABSE <database>;` | |
-| Drop database | `DROP DATABASE <database>;` | |
-| List tables | `SHOW TABLES [<schema>];` | If schema is not provided, default schema is used |
-| Show table schema | `SHOW CREATE TABLE <table>;` | The table can be a FQN.|
-| Show columns | `SHOW COLUMNS FROM <table>;` | The table can be a FQN.|
-| Show indexes | `SHOW INDEX FROM <table>;` | The table can be a FQN.|
-| Create table | `CREATE TABLE ...;` | |
-| Change table schema | `ALTER TABLE ...;` | |
-| Delete table | `DROP TABLE ...;` | |
-| Truncate table | `TRUNCATE TABLE <table>;` | Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en). |
-| Create index | `CREATE INDEX ...;` | |
-| Delete index | `DROP INDEX ...;` | |
-| Create role | `CREATE ROLE ...;` | |
-| Drop role | `DROP ROLE ...;` | |
-| Grant | `GRANT ...;` | |
-| Revoke | `REVOKE ...;` | |
-| Query | `SELECT ...;` | |
-| DML | `{INSERT\|UPDATE\|DELETE} ...;` | |
-| Partitioned DML | `PARTITIONED {UPDATE\|DELETE} ...;` | |
-| Show local proto descriptors | `SHOW LOCAL PROTO;` | |
-| Show remote proto bundle | `SHOW PROTO;` | |
-| Show Query Execution Plan | `EXPLAIN SELECT ...;` | |
-| Show DML Execution Plan | `EXPLAIN {INSERT\|UPDATE\|DELETE} ...;` | |
-| Show Query Execution Plan with Stats | `EXPLAIN ANALYZE SELECT ...;` | |
-| Show DML Execution Plan with Stats | `EXPLAIN ANALYZE {INSERT\|UPDATE\|DELETE} ...;` | |
-| Show Query Result Shape | `DESCRIBE SELECT ...;` | |
-| Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;` | |
-| Start a new query optimizer statistics package construction | `ANALYZE;` | |
-| Start Read-Write Transaction | `BEGIN [RW] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
-| Commit Read-Write Transaction | `COMMIT;` | |
-| Rollback Read-Write Transaction | `ROLLBACK;` | |
+| Usage | Syntax                                                                                         | Note |
+| --- |------------------------------------------------------------------------------------------------| --- |
+| List databases | `SHOW DATABASES;`                                                                              | |
+| Switch database | `USE <database> [ROLE <role>];`                                                                | The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about). |
+| Create database | `CREATE DATABSE <database>;`                                                                   | |
+| Drop database | `DROP DATABASE <database>;`                                                                    | |
+| List tables | `SHOW TABLES [<schema>];`                                                                      | If schema is not provided, default schema is used |
+| Show table schema | `SHOW CREATE TABLE <table>;`                                                                   | The table can be a FQN.|
+| Show columns | `SHOW COLUMNS FROM <table>;`                                                                   | The table can be a FQN.|
+| Show indexes | `SHOW INDEX FROM <table>;`                                                                     | The table can be a FQN.|
+| Create table | `CREATE TABLE ...;`                                                                            | |
+| Change table schema | `ALTER TABLE ...;`                                                                             | |
+| Delete table | `DROP TABLE ...;`                                                                              | |
+| Truncate table | `TRUNCATE TABLE <table>;`                                                                      | Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en). |
+| Create index | `CREATE INDEX ...;`                                                                            | |
+| Delete index | `DROP INDEX ...;`                                                                              | |
+| Create role | `CREATE ROLE ...;`                                                                             | |
+| Drop role | `DROP ROLE ...;`                                                                               | |
+| Grant | `GRANT ...;`                                                                                   | |
+| Revoke | `REVOKE ...;`                                                                                  | |
+| Query | `SELECT ...;`                                                                                  | |
+| DML | `{INSERT\|UPDATE\|DELETE} ...;`                                                                | |
+| Partitioned DML | `PARTITIONED {UPDATE\|DELETE} ...;`                                                            | |
+| Show local proto descriptors | `SHOW LOCAL PROTO;`                                                                            | |
+| Show remote proto bundle | `SHOW REMOTE PROTO;`                                                                           | |
+| Show Query Execution Plan | `EXPLAIN SELECT ...;`                                                                          | |
+| Show DML Execution Plan | `EXPLAIN {INSERT\|UPDATE\|DELETE} ...;`                                                        | |
+| Show Query Execution Plan with Stats | `EXPLAIN ANALYZE SELECT ...;`                                                                  | |
+| Show DML Execution Plan with Stats | `EXPLAIN ANALYZE {INSERT\|UPDATE\|DELETE} ...;`                                                | |
+| Show Query Result Shape | `DESCRIBE SELECT ...;`                                                                         | |
+| Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;`                                       | |
+| Start a new query optimizer statistics package construction | `ANALYZE;`                                                                                     | |
+| Start Read-Write Transaction | `BEGIN [RW] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
+| Commit Read-Write Transaction | `COMMIT;`                                                                                      | |
+| Rollback Read-Write Transaction | `ROLLBACK;`                                                                                    | |
 | Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority. The tag you set is used as request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
-| End Read-Only Transaction | `CLOSE;` | |
-| Exit CLI | `EXIT;` | |
-| Show variable | `SHOW VARIABLE <name>;` | |
-| Set variable | `SET <name> = <value>;` | |
-| Show variables | `SHOW VARIABLES;` | |
+| End Read-Only Transaction | `CLOSE;`                                                                                       | |
+| Exit CLI | `EXIT;`                                                                                        | |
+| Show variable | `SHOW VARIABLE <name>;`                                                                        | |
+| Set variable | `SET <name> = <value>;`                                                                        | |
+| Show variables | `SHOW VARIABLES;`                                                                              | |
 
 ## System Variables
 
