@@ -13,13 +13,14 @@ require (
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071
 	github.com/google/go-cmp v0.6.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/mattn/go-runewidth v0.0.10
+	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.15
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
 	github.com/samber/lo v1.47.0
 	github.com/testcontainers/testcontainers-go v0.34.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0
+	github.com/vbauerster/mpb/v8 v8.8.3
 	github.com/xlab/treeprint v1.0.1-0.20200715141336-10e0bc383e01
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	golang.org/x/term v0.25.0
@@ -42,6 +43,8 @@ require (
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.5.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.24.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/VividCortex/ewma v1.2.0 // indirect
+	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
@@ -84,7 +87,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/rivo/uniseg v0.4.4 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.12 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
