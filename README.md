@@ -32,6 +32,7 @@ You can control your Spanner databases with idiomatic SQL commands.
     * Allow newlines in prompt using `%n`
     * System variables expansion
   * Autowrap and auto adjust column width to fit within terminal width.
+  * Progress bar of DDL execution.
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
   * Utilize [`apstndb/spantype`](https://github.com/apstndb/spantype) and [`apstndb/spanvalue`](https://github.com/apstndb/spanvalue)
