@@ -103,76 +103,9 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	// shell := readline.NewShell()
 	var ed multiline.Editor
-	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
-		statements, err := separateInput(strings.Join(lines, "\n"))
-		if _, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
-			/*
-				shell.Prompt.Secondary(func() string {
-					return e.WaitingString + "->"
-				})
-
-			*/
-			return false
-		}
-		if err != nil {
-			return true
-		}
-		switch len(statements) {
-		case 0:
-			return false
-		case 1:
-			if statements[0].delim != delimiterUndefined {
-				return true
-			}
-		default:
-			return true
-		}
-		return false
-	})
-
-	/*
-		shell.Keymap.Register(map[string]func(){"force-end-of-file": func() {
-			switch shell.Line().Len() {
-			case 0:
-				shell.Display.AcceptLine()
-				shell.History.Accept(false, false, io.EOF)
-			default:
-				shell.Display.AcceptLine()
-				shell.History.Accept(false, false, nil)
-			}
-		}})
-
-		err := shell.Config.Bind("emacs", inputrc.Unescape(`\C-D`), "force-end-of-file", false)
-		if err != nil {
-			return c.ExitOnError(err)
-		}
-
-		shell.AcceptMultiline = func(line []rune) (accept bool) {
-			statements, err := separateInput(string(line))
-			if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
-				shell.Prompt.Secondary(func() string {
-					return e.WaitingString + "->"
-				})
-				return false
-			}
-			if err != nil {
-				return true
-			}
-			switch len(statements) {
-			case 0:
-				return false
-			case 1:
-				if statements[0].delim != delimiterUndefined {
-					return true
-				}
-			default:
-				return true
-			}
-			return false
-		}
-
-		shell.History.AddFromFile("history name", c.SystemVariables.HistoryFile)
-	*/
+	history := simplehistory.New()
+	ed.SetHistory(history)
+	ed.SetHistoryCycling(true)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -186,25 +119,35 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	for {
 		prompt := c.getInterpolatedPrompt()
-		ed.SetPrompt(func(w io.Writer, lnum int) (int, error) {
-			return io.WriteString(w, prompt)
+
+		prompt2Template := "-> "
+
+		var prompt2 string
+		ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
+			statements, err := separateInput(strings.Join(lines, "\n"))
+
+			// Continue with waiting prompt if there is error with waiting status
+			if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
+				prompt2 = e.WaitingString + prompt2Template
+				return false
+			}
+
+			// reset prompt2
+			prompt2 = prompt2Template
+
+			// Submit if there is an error or completed statement.
+			return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
 		})
 
-		history := simplehistory.New()
-		ed.SetHistory(history)
-		ed.SetHistoryCycling(true)
+		ed.SetPrompt(func(w io.Writer, lnum int) (int, error) {
+			if lnum == 0 {
+				return io.WriteString(w, prompt)
+			}
 
-		/*
-			shell.Prompt.Primary(func() string {
-				return prompt
-			})
-
-			// TODO: Currently not work
-			shell.Prompt.Secondary(func() string {
-				return "->"
-			})
-
-		*/
+			lastLineOfPrompt := prompt[strings.LastIndexByte(prompt, '\n')+1:]
+			prompt2WithPad := strings.Repeat(" ", len(lastLineOfPrompt)-len(prompt2)) + prompt2
+			return io.WriteString(w, prompt2WithPad)
+		})
 
 		input, err := readInteractiveInput(ctx, &ed, prompt)
 		if err == io.EOF {
@@ -223,6 +166,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.PrintInteractiveError(err)
 			continue
 		}
+		history.Add(input.statement)
 
 		if _, ok := stmt.(*ExitStatement); ok {
 			return c.Exit()
