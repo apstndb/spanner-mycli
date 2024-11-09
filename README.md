@@ -354,6 +354,12 @@ The default prompt is `spanner%t> `.
 `%R` is substituted with padding to align the primary prompt.
 `%P` is substituted with the current waiting status.
 
+|Prompt|Meaning|
+|`  -`|Waiting for terminating multi-line query by `;`|
+|`'''`|Waiting for terminating multi-line single-quoted string literal by `'''`|
+|`"""`|Waiting for terminating multi-line double-quoted string literal by `"""`|
+|` /*`|Waiting for terminating multi-line comment by `*/`|
+
 ```
 spanner> SELECT """
     """> test
@@ -362,8 +368,8 @@ spanner> SELECT """
     '''> test
     '''> ''' AS s2,
       -> /*
-     */> 
-     */> */
+     /*> 
+     /*> */
       -> ;
 ```
 

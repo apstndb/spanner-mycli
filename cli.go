@@ -441,7 +441,8 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 				If(c.Session.InReadWriteTransaction(), "(rw txn)").
 				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
 				Else("")).
-			Case("%R", runewidth.FillLeft(lo.CoalesceOrEmpty(c.waitingStatus, "-"), 3)).
+			Case("%R", runewidth.FillLeft(
+				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)).
 			DefaultF(
 				func() string {
 					varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
