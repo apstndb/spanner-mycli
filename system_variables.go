@@ -33,6 +33,7 @@ type systemVariables struct {
 	Project, Instance, Database string
 	Verbose                     bool
 	Prompt                      string
+	Prompt2                     string
 	HistoryFile                 string
 	Role                        string
 	Endpoint                    string
@@ -294,7 +295,8 @@ var accessorMap = map[string]accessor{
 			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
 		),
 	},
-	"CLI_PROMPT": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	"CLI_PROMPT":  stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	"CLI_PROMPT2": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
 	"CLI_PROJECT": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			return singletonMap(name, this.Project), nil

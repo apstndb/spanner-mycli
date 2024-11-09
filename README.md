@@ -25,12 +25,13 @@ You can control your Spanner databases with idiomatic SQL commands.
     * `SHOW VARIABLE <name>` statement
     * `--set <name>=<value>` flag
 * Improved interactive experience
-  * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
-    * Native multi-line editing and histories
+  * Use [`hymkor/go-multiline-ny`](https://github.com/hymkor/go-multiline-ny) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
+    * Native multi-line editing
   * Improved prompt
     * Use `%` for prompt expansion, instead of `\` to avoid escaping
     * Allow newlines in prompt using `%n`
     * System variables expansion
+    * Prompt2 with margin and waiting status
   * Autowrap and auto adjust column width to fit within terminal width.
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
@@ -347,6 +348,26 @@ Query OK, 0 rows affected (0.08 sec)
 ```
 
 The default prompt is `spanner%t> `.
+
+### Prompt2
+
+`%R` is substituted with padding to align the primary prompt.
+`%P` is substituted with the current waiting status.
+
+```
+spanner> SELECT """
+    """> test
+    """> """ AS s,
+      -> '''
+    '''> test
+    '''> ''' AS s2,
+      -> /*
+     */> 
+     */> */
+      -> ;
+```
+
+The default prompt2 is `%R%P> `.
 
 ## Config file
 

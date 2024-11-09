@@ -49,6 +49,7 @@ type spannerOptions struct {
 	Verbose             bool              `long:"verbose" short:"v" description:"Display verbose output."`
 	Credential          string            `long:"credential" description:"Use the specific credential file"`
 	Prompt              *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
+	Prompt2             *string           `long:"prompt2" description:"Set the prompt2 to the specified format" default-mask:"%P%R> "`
 	LogMemefish         bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
 	HistoryFile         *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
 	Priority            string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
@@ -72,6 +73,7 @@ func addEmulatorImageOption(parser *flags.Parser) {
 
 const (
 	defaultPrompt      = "spanner%t> "
+	defaultPrompt2     = "%P%R> "
 	defaultHistoryFile = "/tmp/spanner_mycli_readline.tmp"
 )
 
@@ -127,6 +129,7 @@ func main() {
 		Database:    opts.DatabaseId,
 		Verbose:     opts.Verbose,
 		Prompt:      lo.FromPtrOr(opts.Prompt, defaultPrompt),
+		Prompt2:     lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
 		HistoryFile: lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
 		Role:        opts.Role,
 		Endpoint:    opts.Endpoint,

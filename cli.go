@@ -30,13 +30,15 @@ import (
 	"os/signal"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/hymkor/go-multiline-ny"
-	"github.com/nyaosorg/go-readline-ny/simplehistory"
+	"github.com/nyaosorg/go-readline-ny"
 
-	"github.com/reeflective/readline"
+	"github.com/hymkor/go-multiline-ny"
+	"github.com/nyaosorg/go-readline-ny/keys"
+	"github.com/nyaosorg/go-readline-ny/simplehistory"
 
 	"github.com/mattn/go-runewidth"
 
@@ -78,6 +80,7 @@ type Cli struct {
 	OutStream       io.Writer
 	ErrStream       io.Writer
 	SystemVariables *systemVariables
+	waitingStatus   string
 }
 
 type command struct {
@@ -100,10 +103,76 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	}, nil
 }
 
+type History interface {
+	readline.IHistory
+	Add(string)
+}
+type persistentHistory struct {
+	filename string
+	history  *simplehistory.Container
+}
+
+func (p *persistentHistory) Len() int {
+	return p.history.Len()
+}
+
+func (p *persistentHistory) At(i int) string {
+	return p.history.At(i)
+}
+
+func (p *persistentHistory) Add(s string) {
+	p.history.Add(s)
+	file, err := os.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}(file)
+	_, err = fmt.Fprintf(file, "%q\n", s)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func newPersistentHistory(filename string, h *simplehistory.Container) (History, error) {
+	b, err := os.ReadFile(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return &persistentHistory{filename: filename, history: h}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range strings.Split(string(b), "\n") {
+		if s == "" {
+			continue
+		}
+		unquoted, err := strconv.Unquote(s)
+		if err != nil {
+			return nil, err
+		}
+		h.Add(unquoted)
+	}
+	return &persistentHistory{filename: filename, history: h}, nil
+}
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	// shell := readline.NewShell()
 	var ed multiline.Editor
-	history := simplehistory.New()
+	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
+	if err != nil {
+		return c.ExitOnError(err)
+	}
+
+	err = ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
+	if err != nil {
+		return c.ExitOnError(err)
+	}
+
 	ed.SetHistory(history)
 	ed.SetHistoryCycling(true)
 
@@ -117,23 +186,23 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
 	}
 
+	c.waitingStatus = ""
+
 	for {
-		prompt := c.getInterpolatedPrompt()
+		prompt := c.getInterpolatedPrompt(c.SystemVariables.Prompt)
 
-		prompt2Template := "-> "
-
-		var prompt2 string
+		// var prompt2 string
 		ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
 			statements, err := separateInput(strings.Join(lines, "\n"))
 
 			// Continue with waiting prompt if there is error with waiting status
 			if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
-				prompt2 = e.WaitingString + prompt2Template
+				c.waitingStatus = e.WaitingString
 				return false
 			}
 
-			// reset prompt2
-			prompt2 = prompt2Template
+			// reset waitingStatus
+			c.waitingStatus = ""
 
 			// Submit if there is an error or completed statement.
 			return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
@@ -144,19 +213,23 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 				return io.WriteString(w, prompt)
 			}
 
-			lastLineOfPrompt := prompt[strings.LastIndexByte(prompt, '\n')+1:]
-			prompt2WithPad := strings.Repeat(" ", len(lastLineOfPrompt)-len(prompt2)) + prompt2
-			return io.WriteString(w, prompt2WithPad)
+			prompt2, found := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(prompt, "\n"))
+
+			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
+			prompt2WithLPad := lo.Ternary(found, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
+			return io.WriteString(w, prompt2WithLPad)
 		})
 
 		input, err := readInteractiveInput(ctx, &ed, prompt)
 		if err == io.EOF {
 			return c.Exit()
 		}
-		if errors.Is(err, readline.ErrInterrupt) {
-			return c.Exit()
-		}
 		if err != nil {
+			if input == nil {
+				return c.ExitOnError(err)
+			}
+
 			c.PrintInteractiveError(err)
 			continue
 		}
@@ -356,8 +429,8 @@ func (c *Cli) PrintProgressingMark() func() {
 var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
 var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
 
-func (c *Cli) getInterpolatedPrompt() string {
-	return promptRe.ReplaceAllStringFunc(c.SystemVariables.Prompt, func(s string) string {
+func (c *Cli) getInterpolatedPrompt(prompt string) string {
+	return promptRe.ReplaceAllStringFunc(prompt, func(s string) string {
 		return lo.Switch[string, string](s).
 			Case("%%", "%").
 			Case("%n", "\n").
@@ -368,6 +441,7 @@ func (c *Cli) getInterpolatedPrompt() string {
 				If(c.Session.InReadWriteTransaction(), "(rw txn)").
 				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
 				Else("")).
+			Case("%R", runewidth.FillLeft(lo.CoalesceOrEmpty(c.waitingStatus, "-"), 3)).
 			DefaultF(
 				func() string {
 					varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
@@ -393,36 +467,34 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 }
 
 func readInteractiveInput(ctx context.Context, ed *multiline.Editor, prompt string) (*inputStatement, error) {
-	var input string
-	for {
-		lines, err := ed.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-		input += strings.Join(lines, "\n") + "\n"
-
-		statements, err := separateInput(input)
-		if err != nil {
+	lines, err := ed.Read(ctx)
+	if err != nil {
+		if len(lines) == 0 {
 			return nil, err
 		}
 
-		switch len(statements) {
-		case 0:
-			// read next input
-		case 1:
-			return &statements[0], nil
-		default:
-			return nil, errors.New("sql queries are limited to single statements in interactive mode")
-		}
+		str := strings.Join(lines, "\n")
+		return &inputStatement{
+			statement:                str,
+			statementWithoutComments: str,
+			delim:                    "",
+		}, err
+	}
+	input := strings.Join(lines, "\n") + "\n"
 
-		// show prompt to urge next input
-		var margin string
-		if l := len(prompt); l >= 3 {
-			margin = strings.Repeat(" ", l-3)
-		}
-		_ = margin
+	statements, err := separateInput(input)
+	if err != nil {
+		return nil, err
 	}
 
+	switch len(statements) {
+	case 0:
+		return nil, errors.New("no input")
+	case 1:
+		return &statements[0], nil
+	default:
+		return nil, errors.New("sql queries are limited to single statements in interactive mode")
+	}
 }
 
 func maxWidth(s string) int {

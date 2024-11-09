@@ -12,11 +12,11 @@ require (
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071
 	github.com/google/go-cmp v0.6.0
-	github.com/hymkor/go-multiline-ny v0.16.1-0.20241106133903-1243ade4ecc0
+	github.com/hymkor/go-multiline-ny v0.16.2
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.15
-	github.com/nyaosorg/go-readline-ny v1.6.0
+	github.com/nyaosorg/go-readline-ny v1.6.1
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/reeflective/readline v1.0.15
 	github.com/samber/lo v1.47.0
@@ -24,7 +24,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0
 	github.com/xlab/treeprint v1.0.1-0.20200715141336-10e0bc383e01
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
-	golang.org/x/term v0.25.0
+	golang.org/x/term v0.26.0
 	google.golang.org/api v0.203.0
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.35.1
@@ -110,9 +110,9 @@ require (
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/sync v0.9.0 // indirect
+	golang.org/x/sys v0.27.0 // indirect
+	golang.org/x/text v0.20.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/genproto v0.0.0-20241015192408-796eee8c2d53 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241007155032-5fefd90f89a9 // indirect
