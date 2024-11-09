@@ -153,7 +153,7 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 		}
 		unquoted, err := strconv.Unquote(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("history file format error, maybe you should remove %v, err: %w", filename, err)
 		}
 		h.Add(unquoted)
 	}
