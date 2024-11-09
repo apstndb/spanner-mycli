@@ -28,6 +28,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
+	"github.com/mattn/go-runewidth"
+
+	"github.com/vbauerster/mpb/v8/decor"
+
 	"golang.org/x/exp/constraints"
 
 	"spheric.cloud/xiter"
@@ -46,6 +52,8 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
+
+	"github.com/vbauerster/mpb/v8"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -517,6 +525,14 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return nil, err
 	}
 
+	p := mpb.NewWithContext(ctx)
+	defer p.Shutdown()
+	var bars []*mpb.Bar
+	for _, ddl := range ddls {
+		bar := p.AddBar(int64(100), mpb.PrependDecorators(decor.Spinner(nil, decor.WCSyncSpaceR), decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR), decor.Percentage(decor.WCSyncSpace), decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)))
+		bars = append(bars, bar)
+	}
+
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:         session.DatabasePath(),
 		Statements:       ddls,
@@ -525,11 +541,31 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if err != nil {
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
-	if err := op.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("error on wait: %w", err)
-	}
 
-	return &Result{IsMutation: true}, nil
+	for {
+		time.Sleep(3 * time.Second)
+		err := op.Poll(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		metadata, err := op.Metadata()
+		if err != nil {
+			return nil, err
+		}
+
+		progresses := metadata.GetProgress()
+		for i, progress := range progresses {
+			bar := bars[i]
+			progressPercent := int64(progress.ProgressPercent)
+			bar.SetCurrent(progressPercent)
+		}
+
+		if op.Done() {
+			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
+			return &Result{IsMutation: true, Timestamp: lastCommitTS}, nil
+		}
+	}
 }
 
 type ShowVariableStatement struct {

@@ -241,6 +241,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		}
 		history.Add(input.statement)
 
+		var disableSpinner bool
 		if _, ok := stmt.(*ExitStatement); ok {
 			return c.Exit()
 		}
@@ -291,10 +292,20 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			}
 		}
 
+		if _, ok := stmt.(*DdlStatement); ok {
+			disableSpinner = true
+		}
+
+		if _, ok := stmt.(*BulkDdlStatement); ok {
+			disableSpinner = true
+		}
+
 		// Execute the statement.
 		ctx, cancel := context.WithCancel(ctx)
 		go handleInterrupt(cancel)
-		stop := c.PrintProgressingMark()
+		stop := lo.TernaryF(disableSpinner,
+			func() func() { return func() {} },
+			func() func() { return c.PrintProgressingMark() })
 		t0 := time.Now()
 		result, err := stmt.Execute(ctx, c.Session)
 		elapsed := time.Since(t0).Seconds()
