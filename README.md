@@ -25,12 +25,13 @@ You can control your Spanner databases with idiomatic SQL commands.
     * `SHOW VARIABLE <name>` statement
     * `--set <name>=<value>` flag
 * Improved interactive experience
-  * Use [`reeflective/readline`](https://github.com/reeflective/readline) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
-    * Native multi-line editing and histories
+  * Use [`hymkor/go-multiline-ny`](https://github.com/hymkor/go-multiline-ny) instead of [`chzyer/readline"`](https://github.com/chzyer/readline)
+    * Native multi-line editing
   * Improved prompt
     * Use `%` for prompt expansion, instead of `\` to avoid escaping
     * Allow newlines in prompt using `%n`
     * System variables expansion
+    * Prompt2 with margin and waiting status
   * Autowrap and auto adjust column width to fit within terminal width.
   * Progress bar of DDL execution.
 * Utilize other libraries
@@ -348,6 +349,33 @@ Query OK, 0 rows affected (0.08 sec)
 ```
 
 The default prompt is `spanner%t> `.
+
+### Prompt2
+
+`%P` is substituted with padding to align the primary prompt.
+`%R` is substituted with the current waiting status.
+
+| Prompt | Meaning                                                                  |
+|--------|--------------------------------------------------------------------------|
+| `  -`  | Waiting for terminating multi-line query by `;`                          |
+| `'''`  | Waiting for terminating multi-line single-quoted string literal by `'''` |
+| `"""`  | Waiting for terminating multi-line double-quoted string literal by `"""` |
+| ` /*`  | Waiting for terminating multi-line comment by `*/`                       |
+
+```
+spanner> SELECT """
+    """> test
+    """> """ AS s,
+      -> '''
+    '''> test
+    '''> ''' AS s2,
+      -> /*
+     /*> 
+     /*> */
+      -> ;
+```
+
+The default prompt2 is `%P%R> `.
 
 ## Config file
 
