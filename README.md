@@ -72,6 +72,7 @@ spanner:
   -v, --verbose                Display verbose output.
       --credential=            Use the specific credential file
       --prompt=                Set the prompt to the specified format (default: spanner%t> )
+      --prompt2=               Set the prompt2 to the specified format (default: %P%R> )
       --log-memefish           Emit SQL parse log using memefish
       --history=               Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
       --priority=              Set default request priority (HIGH|MEDIUM|LOW)
@@ -302,6 +303,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
 | CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
 | CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
+| CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
 | CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
 | CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
 | CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
@@ -352,8 +354,8 @@ The default prompt is `spanner%t> `.
 
 ### Prompt2
 
-`%P` is substituted with padding to align the primary prompt.
-`%R` is substituted with the current waiting status.
+* `%P` is substituted with padding to align the primary prompt.
+* `%R` is substituted with the current waiting status.
 
 | Prompt | Meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
