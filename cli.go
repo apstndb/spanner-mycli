@@ -225,11 +225,11 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		if err == io.EOF {
 			return c.Exit()
 		}
+		if errors.Is(err, readline.CtrlC) {
+			c.PrintInteractiveError(err)
+			continue
+		}
 		if err != nil {
-			if input == nil {
-				return c.ExitOnError(err)
-			}
-
 			c.PrintInteractiveError(err)
 			continue
 		}
