@@ -352,8 +352,8 @@ The default prompt is `spanner%t> `.
 
 ### Prompt2
 
-`%R` is substituted with padding to align the primary prompt.
-`%P` is substituted with the current waiting status.
+`%P` is substituted with padding to align the primary prompt.
+`%R` is substituted with the current waiting status.
 
 | Prompt | Meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
@@ -375,7 +375,7 @@ spanner> SELECT """
       -> ;
 ```
 
-The default prompt2 is `%R%P> `.
+The default prompt2 is `%P%R> `.
 
 ## Config file
 
