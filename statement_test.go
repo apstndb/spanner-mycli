@@ -67,6 +67,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &SelectStatement{Query: "@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT * FROM t1"},
 		},
 		{
+			desc:  "Parenthesized SELECT statement",
+			input: "(SELECT * FROM t1)",
+			want:  &SelectStatement{Query: "(SELECT * FROM t1)"},
+		},
+		{
 			desc:  "CREATE DATABASE statement",
 			input: "CREATE DATABASE d1",
 			want:  &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
