@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apstndb/spanner-mycli/stmtkind"
+	"github.com/apstndb/gsqlutils/stmtkind"
 
 	"github.com/samber/lo"
 

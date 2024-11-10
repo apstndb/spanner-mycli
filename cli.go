@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apstndb/spanner-mycli/internal"
+	"github.com/apstndb/gsqlutils"
 
 	"github.com/nyaosorg/go-readline-ny"
 
@@ -198,7 +198,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			statements, err := separateInput(strings.Join(lines, "\n"))
 
 			// Continue with waiting prompt if there is error with waiting status
-			if e, ok := lo.ErrorsAs[*internal.ErrLexerStatus](err); ok {
+			if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
 				c.waitingStatus = e.WaitingString
 				return false
 			}
