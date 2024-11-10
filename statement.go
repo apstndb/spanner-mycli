@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/spanner-mycli/stmtkind"
+
 	"github.com/samber/lo"
 
 	"github.com/mattn/go-runewidth"
@@ -109,23 +111,16 @@ type QueryStats struct {
 }
 
 var (
-	// SQL
-	selectRe = regexp.MustCompile(`(?is)^(?:WITH|CALL|@{.+|SELECT|GRAPH)\s.+$`)
-
-	// DDL
+	// DDL needing special treatment
 	createDatabaseRe = regexp.MustCompile(`(?is)^CREATE\s+DATABASE\s.+$`)
 	dropDatabaseRe   = regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`)
-	ddlRe            = regexp.MustCompile(`(?is)^(CREATE|ALTER|DROP|GRANT|REVOKE|RENAME)\s.+|ANALYZE$`)
-
-	// DML
-	dmlRe = regexp.MustCompile(`(?is)^(INSERT|UPDATE|DELETE)\s+.+$`)
 
 	// Start spanner-mycli statements
 
 	// Partitioned DML
 	// In fact, INSERT is not supported in a Partitioned DML, but accept it for showing better error message.
 	// https://cloud.google.com/spanner/docs/dml-partitioned#features_that_arent_supported
-	pdmlRe = regexp.MustCompile(`(?is)^PARTITIONED\s+((?:INSERT|UPDATE|DELETE)\s+.+$)`)
+	pdmlRe = regexp.MustCompile(`(?is)^PARTITIONED\s+(.*)$`)
 
 	// Truncate is a syntax sugar of PDML.
 	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
@@ -196,7 +191,7 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
 	case describeRe.MatchString(trimmed):
 		matched := describeRe.FindStringSubmatch(trimmed)
-		isDML := dmlRe.MatchString(matched[1])
+		isDML := stmtkind.IsDMLLexical(matched[1])
 		switch {
 		case isDML:
 			return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
@@ -206,7 +201,7 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case explainRe.MatchString(trimmed):
 		matched := explainRe.FindStringSubmatch(trimmed)
 		isAnalyze := matched[1] != ""
-		isDML := dmlRe.MatchString(matched[2])
+		isDML := stmtkind.IsDMLLexical(matched[2])
 		switch {
 		case isAnalyze && isDML:
 			return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
@@ -296,22 +291,32 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (S
 	return BuildNativeStatementFallback(trimmed, raw)
 }
 
+func instanceOf[T any](v any) bool {
+	_, ok := v.(T)
+	return ok
+}
+
 func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
 		return nil, err
 	}
 
-	switch stmt.(type) {
-	case *ast.QueryStatement:
-		return &SelectStatement{Query: raw}, nil
-	case ast.DML:
+	kind := stmtkind.DetectSemantic(stmt)
+	switch {
+	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
+	case kind.IsDML():
 		return &DmlStatement{Dml: raw}, nil
-	// Currently, UpdateDdl doesn't permit comments, so we need to unparse DDLs.
-	// Only CREATE DATABASE needs special treatment in DDL.
-	case *ast.CreateDatabase:
-		return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
-	case ast.DDL:
+	// All ExecuteSQL compatible statements can be executed with SelectStatement.
+	case kind.IsExecuteSQLCompatible():
+		return &SelectStatement{Query: raw}, nil
+	case kind.IsDDL():
+		// Currently, UpdateDdl doesn't permit comments, so we need to unparse DDLs.
+
+		// Only CREATE DATABASE needs special treatment in DDL.
+		if instanceOf[*ast.CreateDatabase](stmt) {
+			return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
+		}
 		return &DdlStatement{Ddl: stmt.SQL()}, nil
 	default:
 		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
@@ -319,18 +324,27 @@ func BuildNativeStatementMemefish(raw string) (Statement, error) {
 }
 
 func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error) {
+	kind, err := stmtkind.DetectLexical(raw)
+	if err != nil {
+		return nil, err
+	}
+
 	switch {
-	case selectRe.MatchString(trimmed):
-		return &SelectStatement{Query: raw}, nil
-	case createDatabaseRe.MatchString(trimmed):
-		return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
-	case ddlRe.MatchString(trimmed):
-		return &DdlStatement{Ddl: trimmed}, nil
-	case dropDatabaseRe.MatchString(trimmed):
-		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
-		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
-	case dmlRe.MatchString(trimmed):
+	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
+	case kind.IsDML():
 		return &DmlStatement{Dml: raw}, nil
+	// All ExecuteSQL compatible statements can be executed with SelectStatement.
+	case kind.IsExecuteSQLCompatible():
+		return &SelectStatement{Query: raw}, nil
+	case kind.IsDDL():
+		// Currently, UpdateDdl doesn't permit comments, so we need to use trimmed SQL tex.
+
+		// Only CREATE DATABASE needs special treatment in DDL.
+		if createDatabaseRe.MatchString(trimmed) {
+			return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
+		}
+
+		return &DdlStatement{Ddl: trimmed}, nil
 	default:
 		return nil, errors.New("invalid statement")
 	}
