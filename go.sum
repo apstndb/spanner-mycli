@@ -658,6 +658,8 @@ github.com/apache/arrow/go/v11 v11.0.0/go.mod h1:Eg5OsL5H+e299f7u5ssuXsuHQVEGC4x
 github.com/apache/arrow/go/v15 v15.0.2 h1:60IliRbiyTWCWjERBCkO1W4Qun9svcYoZrSLcyOsMLE=
 github.com/apache/arrow/go/v15 v15.0.2/go.mod h1:DGXsR3ajT524njufqf95822i+KTh+yea1jass9YXgjA=
 github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2FXSqgU=
+github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792 h1:RO8GbuBtnL26ajJX2VDBsKFAFfuQdyVcMB4n8WYwjNk=
+github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792/go.mod h1:iy/NytOejQT/jaXcRaYYHthvkTpgWNZxggLVEecd7C4=
 github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c h1:qY6RWLulQDcbGy18LT36m2IweZ5VI5tdwMuhtBwZGvI=
 github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/spantype v0.2.0 h1:yoV0riMXhLeT9z8D1zhvwIraOvIU0fDKwWrWgtmoNns=
@@ -683,8 +685,8 @@ github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWR
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
-github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071 h1:BHIA83AA8ct5TgPaLp+Ric2Q0s+2EwdasT3i/dMvXjw=
-github.com/cloudspannerecosystem/memefish v0.0.0-20241031032728-970586f04071/go.mod h1:iYAaNZfVIn4QYfUmXt+3EeHAok/kqpN/fp/8kgDHjx8=
+github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7 h1:vmS9Nvh7ij5EVnMwvkWsL84xzx5cGM3j/SJlM1zfVLE=
+github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7/go.mod h1:iYAaNZfVIn4QYfUmXt+3EeHAok/kqpN/fp/8kgDHjx8=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/cncf/udpa/go v0.0.0-20200629203442-efcf912fb354/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
 github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
