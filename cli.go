@@ -174,6 +174,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	type ac = readline.AnonymousCommand
 
+	// TODO: There is no multiline version of CmdISearchBackward.
 	err := ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
 	if err != nil {
 		return c.ExitOnError(err)
