@@ -34,8 +34,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apstndb/gsqlutils"
-
 	"github.com/nyaosorg/go-readline-ny"
 
 	"github.com/hymkor/go-multiline-ny"
@@ -46,6 +44,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
@@ -57,7 +56,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/olekukonko/tablewriter"
 
-	// "github.com/reeflective/readline"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 )
@@ -162,19 +160,35 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 	return &persistentHistory{filename: filename, history: h}, nil
 }
 
+func PS1PS2FuncToPromptFunc(ps1F func() string, ps2F func(ps1 string) string) func(w io.Writer, lnum int) (int, error) {
+	return func(w io.Writer, lnum int) (int, error) {
+		if lnum == 0 {
+			return io.WriteString(w, ps1F())
+		}
+		return io.WriteString(w, ps2F(ps1F()))
+	}
+}
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
-	// shell := readline.NewShell()
 	var ed multiline.Editor
+
+	type ac = readline.AnonymousCommand
+
+	// TODO: There is no multiline version of CmdISearchBackward.
+	err := ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
+	if err != nil {
+		return c.ExitOnError(err)
+	}
+
+	err = ed.BindKey(keys.Backspace, ac(ed.CmdBackwardDeleteChar))
+	if err != nil {
+		return c.ExitOnError(err)
+	}
+
 	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
 	if err != nil {
 		return c.ExitOnError(err)
 	}
-
-	err = ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
-	if err != nil {
-		return c.ExitOnError(err)
-	}
-
 	ed.SetHistory(history)
 	ed.SetHistoryCycling(true)
 
@@ -188,42 +202,39 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
 	}
 
+	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
+		statements, err := separateInput(strings.Join(lines, "\n"))
+
+		// Continue with waiting prompt if there is an error with waiting status
+		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
+			c.waitingStatus = e.WaitingString
+			return false
+		}
+
+		// reset waitingStatus
+		c.waitingStatus = ""
+
+		// Submit if there is an error or completed statement.
+		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+	})
+
+	ed.SetPrompt(PS1PS2FuncToPromptFunc(
+		func() string {
+			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
+		},
+		func(ps1 string) string {
+			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
+
+			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
+			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
+		}))
+
+	// ensure reset
 	c.waitingStatus = ""
 
 	for {
-		prompt := c.getInterpolatedPrompt(c.SystemVariables.Prompt)
-
-		// var prompt2 string
-		ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
-			statements, err := separateInput(strings.Join(lines, "\n"))
-
-			// Continue with waiting prompt if there is error with waiting status
-			if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
-				c.waitingStatus = e.WaitingString
-				return false
-			}
-
-			// reset waitingStatus
-			c.waitingStatus = ""
-
-			// Submit if there is an error or completed statement.
-			return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
-		})
-
-		ed.SetPrompt(func(w io.Writer, lnum int) (int, error) {
-			if lnum == 0 {
-				return io.WriteString(w, prompt)
-			}
-
-			prompt2, found := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
-			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(prompt, "\n"))
-
-			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
-			prompt2WithLPad := lo.Ternary(found, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
-			return io.WriteString(w, prompt2WithLPad)
-		})
-
-		input, err := readInteractiveInput(ctx, &ed, prompt)
+		input, err := readInteractiveInput(ctx, &ed)
 		if err == io.EOF {
 			return c.Exit()
 		}
@@ -241,7 +252,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.PrintInteractiveError(err)
 			continue
 		}
-		history.Add(input.statement)
+		history.Add(input.statement + ";")
 
 		var disableSpinner bool
 		if _, ok := stmt.(*ExitStatement); ok {
@@ -480,7 +491,7 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	return NewSession(ctx, sysVars, opts...)
 }
 
-func readInteractiveInput(ctx context.Context, ed *multiline.Editor, prompt string) (*inputStatement, error) {
+func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
 	lines, err := ed.Read(ctx)
 	if err != nil {
 		if len(lines) == 0 {
@@ -494,6 +505,7 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor, prompt stri
 			delim:                    "",
 		}, err
 	}
+
 	input := strings.Join(lines, "\n") + "\n"
 
 	statements, err := separateInput(input)
