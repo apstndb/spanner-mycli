@@ -19,6 +19,8 @@ package main
 import (
 	"slices"
 
+	"github.com/apstndb/gsqlutils"
+
 	"github.com/samber/lo"
 	"spheric.cloud/xiter"
 )
@@ -26,7 +28,6 @@ import (
 const (
 	delimiterUndefined  = ""
 	delimiterHorizontal = ";"
-	delimiterVertical   = `\G`
 )
 
 type inputStatement struct {
@@ -36,11 +37,11 @@ type inputStatement struct {
 }
 
 func separateInput(input string) ([]inputStatement, error) {
-	stmts, err := SeparateInputPreserveCommentsWithStatus("", input)
+	stmts, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", input)
 	return slices.Collect(xiter.Map(slices.Values(stmts), convertStatement)), err
 }
 
-func convertStatement(stmt RawStatement) inputStatement {
+func convertStatement(stmt gsqlutils.RawStatement) inputStatement {
 	stripped, err := stmt.StripComments()
 	strippedStmt := lo.Ternary(err != nil, stmt, stripped).Statement
 	return inputStatement{statement: stmt.Statement, statementWithoutComments: strippedStmt, delim: stmt.Terminator}

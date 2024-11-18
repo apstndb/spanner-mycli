@@ -67,6 +67,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &SelectStatement{Query: "@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT * FROM t1"},
 		},
 		{
+			desc:  "Parenthesized SELECT statement",
+			input: "(SELECT * FROM t1)",
+			want:  &SelectStatement{Query: "(SELECT * FROM t1)"},
+		},
+		{
 			desc:  "CREATE DATABASE statement",
 			input: "CREATE DATABASE d1",
 			want:  &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
@@ -207,9 +212,19 @@ func TestBuildStatement(t *testing.T) {
 			want:  &PartitionedDmlStatement{Dml: "UPDATE t1 SET name = hello WHERE id > 1"},
 		},
 		{
+			desc:  "PARTITIONED UPDATE statement with statement hint",
+			input: "PARTITIONED @{PDML_MAX_PARALLELISM=100} UPDATE t1 SET name = hello WHERE id > 1",
+			want:  &PartitionedDmlStatement{Dml: "@{PDML_MAX_PARALLELISM=100} UPDATE t1 SET name = hello WHERE id > 1"},
+		},
+		{
 			desc:  "PARTITIONED DELETE statement",
 			input: "PARTITIONED DELETE FROM t1 WHERE id > 1",
 			want:  &PartitionedDmlStatement{Dml: "DELETE FROM t1 WHERE id > 1"},
+		},
+		{
+			desc:  "PARTITIONED DELETE statement with statement hint",
+			input: "PARTITIONED @{PDML_MAX_PARALLELISM=100} DELETE FROM t1 WHERE id > 1",
+			want:  &PartitionedDmlStatement{Dml: "@{PDML_MAX_PARALLELISM=100} DELETE FROM t1 WHERE id > 1"},
 		},
 		{
 			desc:  "EXPLAIN INSERT statement",
@@ -609,7 +624,9 @@ func TestBuildStatement(t *testing.T) {
 			})
 		}
 	}
+}
 
+func TestBuildStatement_InvalidCase(t *testing.T) {
 	// invalid tests
 	for _, test := range []struct {
 		input string
@@ -618,10 +635,12 @@ func TestBuildStatement(t *testing.T) {
 		{"SELEC T FROM t1"},
 		{"BEGIN PRIORITY CRITICAL"},
 	} {
-		got, err := BuildStatement(test.input)
-		if err == nil {
-			t.Errorf("BuildStatement(%q) = %#v, but want error", got, test.input)
-		}
+		t.Run(test.input, func(t *testing.T) {
+			got, err := BuildStatement(test.input)
+			if err == nil {
+				t.Errorf("BuildStatement(%q) = %#v, but want error", test.input, got)
+			}
+		})
 	}
 }
 

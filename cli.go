@@ -44,6 +44,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
@@ -55,7 +56,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/olekukonko/tablewriter"
 
-	// "github.com/reeflective/readline"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 )
@@ -206,7 +206,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		statements, err := separateInput(strings.Join(lines, "\n"))
 
 		// Continue with waiting prompt if there is an error with waiting status
-		if e, ok := lo.ErrorsAs[*ErrLexerStatus](err); ok {
+		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
 			c.waitingStatus = e.WaitingString
 			return false
 		}
