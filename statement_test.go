@@ -605,7 +605,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "SET PARAM value statement",
 			input: `SET PARAM bytes_value = b"foo"`,
-			want:  &SetParamValueStatement{Name: "bytes_type", Value: `b"foo"`},
+			want:  &SetParamValueStatement{Name: "bytes_value", Value: `b"foo"`},
 		},
 		{
 			desc:  "SHOW PARAMS statement",
