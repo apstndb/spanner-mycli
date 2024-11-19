@@ -13,7 +13,7 @@ require (
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7
 	github.com/google/go-cmp v0.6.0
-	github.com/hymkor/go-multiline-ny v0.16.3
+	github.com/hymkor/go-multiline-ny v0.16.4
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.15

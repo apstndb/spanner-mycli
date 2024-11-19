@@ -896,6 +896,8 @@ github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ
 github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hymkor/go-multiline-ny v0.16.3 h1:BeoQo34J8zzNb+TWH9wxXlIxoSjamqHlJGIwBEBeqRY=
 github.com/hymkor/go-multiline-ny v0.16.3/go.mod h1:8f3QNpDDbhrl/1hdsXPh3vivRb6i/WaC6pzDhpVW/7o=
+github.com/hymkor/go-multiline-ny v0.16.4 h1:yanx/Wox8sGxk7ha0EGVlA+Sc4zPlZ1bt7kGFoyEEyg=
+github.com/hymkor/go-multiline-ny v0.16.4/go.mod h1:8f3QNpDDbhrl/1hdsXPh3vivRb6i/WaC6pzDhpVW/7o=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
