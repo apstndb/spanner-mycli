@@ -28,6 +28,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/lox"
+
+	"github.com/apstndb/go-spannulls"
+	"github.com/apstndb/memebridge"
+
 	"github.com/apstndb/gsqlutils/stmtkind"
 
 	"github.com/samber/lo"
@@ -145,8 +150,11 @@ var (
 	explainRe         = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setParamTypeRe    = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
+	setParamRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
 	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
 	setAddRe          = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
+	showParamsRe      = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
 	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
 )
 
@@ -234,12 +242,20 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case showVariableRe.MatchString(trimmed):
 		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
+	case setParamTypeRe.MatchString(trimmed):
+		matched := setParamTypeRe.FindStringSubmatch(trimmed)
+		return &SetParamTypeStatement{VarName: matched[1], Type: matched[2]}, nil
+	case setParamRe.MatchString(trimmed):
+		matched := setParamRe.FindStringSubmatch(trimmed)
+		return &SetParamStatement{VarName: matched[1], Value: matched[2]}, nil
 	case setRe.MatchString(trimmed):
 		matched := setRe.FindStringSubmatch(trimmed)
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 	case setAddRe.MatchString(trimmed):
 		matched := setAddRe.FindStringSubmatch(trimmed)
 		return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
+	case showParamsRe.MatchString(trimmed):
+		return &ShowParamsStatement{}, nil
 	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
 	default:
@@ -358,8 +374,51 @@ type SelectStatement struct {
 	Query string
 }
 
+func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+	for k, v := range paramsNodeMap {
+		switch v := v.(type) {
+		case ast.Type:
+			if !includeType {
+				continue
+			}
+
+			typ, err := memebridge.MemefishTypeToSpannerpbType(v)
+			if err != nil {
+				return nil, err
+			}
+			nullValue := spannulls.NullGenericColumnValueFromType(typ)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = nullValue
+		case ast.Expr:
+			expr, err := memebridge.MemefishExprToGCV(v)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = expr
+		}
+	}
+	return result, nil
+}
+
+func newStatement(sql string, params map[string]ast.Node, includeType bool) (spanner.Statement, error) {
+	genParams, err := generateParams(params, includeType)
+	if err != nil {
+		return spanner.Statement{}, err
+	}
+	return spanner.Statement{
+		SQL:    sql,
+		Params: genParams,
+	}, nil
+}
+
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.NewStatement(s.Query)
+	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 	defer iter.Stop()
@@ -604,6 +663,27 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}, nil
 }
 
+type ShowParamsStatement struct{}
+
+func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	strMap := make(map[string]string)
+	for k, v := range session.systemVariables.Params {
+		strMap[k] = v.SQL()
+	}
+
+	rows := slices.SortedFunc(
+		xiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
+			return Row{sliceOf(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())}
+		}),
+		ToSortFunc(func(r Row) string { return r.Columns[0] }))
+
+	return &Result{
+		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},
+		Rows:          rows,
+		KeepVariables: true,
+	}, nil
+}
+
 type ShowVariablesStatement struct{}
 
 func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
@@ -647,6 +727,34 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
+}
+
+type SetParamTypeStatement struct {
+	VarName string
+	Type    string
+}
+
+func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if expr, err := memefish.ParseType("", s.Type); err != nil {
+		return nil, err
+	} else {
+		session.systemVariables.Params[s.VarName] = expr
+		return &Result{KeepVariables: true}, nil
+	}
+}
+
+type SetParamStatement struct {
+	VarName string
+	Value   string
+}
+
+func (s *SetParamStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
+		return nil, err
+	} else {
+		session.systemVariables.Params[s.VarName] = expr
+		return &Result{KeepVariables: true}, nil
+	}
 }
 
 type SetStatement struct {
@@ -835,7 +943,12 @@ type ExplainStatement struct {
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, spanner.NewStatement(s.Explain), s.IsDML)
+	stmt, err := newStatement(s.Explain, session.systemVariables.Params, true)
+	if err != nil {
+		return nil, err
+	}
+
+	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
 	if err != nil {
 		return nil, err
 	}
@@ -867,7 +980,12 @@ type DescribeStatement struct {
 
 // Execute processes `DESCRIBE` statement for queries and DMLs.
 func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, spanner.NewStatement(s.Statement), s.IsDML)
+	stmt, err := newStatement(s.Statement, session.systemVariables.Params, true)
+	if err != nil {
+		return nil, err
+	}
+
+	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
 	if err != nil {
 		return nil, err
 	}
@@ -905,12 +1023,15 @@ type ExplainAnalyzeStatement struct {
 }
 
 func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.NewStatement(s.Query)
+	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
 	// consume iter
-	err := iter.Do(func(*spanner.Row) error {
+	err = iter.Do(func(*spanner.Row) error {
 		return nil
 	})
 	if err != nil {
@@ -1133,7 +1254,10 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.NewStatement(s.Dml)
+	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &Result{IsMutation: true}
 
@@ -1141,7 +1265,6 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	var columnNames []string
 	var numRows int64
 	var metadata *sppb.ResultSetMetadata
-	var err error
 	if session.InReadWriteTransaction() {
 		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
 		if err != nil {
@@ -1220,7 +1343,10 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.NewStatement(s.Dml)
+	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
 
 	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt)

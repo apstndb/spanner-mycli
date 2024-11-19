@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudspannerecosystem/memefish/ast"
+
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
@@ -135,6 +137,7 @@ func main() {
 		Endpoint:    opts.Endpoint,
 		Insecure:    opts.Insecure || opts.SkipTlsVerify,
 		Debug:       opts.Debug,
+		Params:      make(map[string]ast.Node),
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
