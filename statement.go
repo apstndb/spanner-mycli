@@ -693,7 +693,7 @@ func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
 		case l < r:
 			return -1
 		case l > r:
-			return -1
+			return 1
 		default:
 			return 0
 		}
