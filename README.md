@@ -630,7 +630,7 @@ Note: They are supported on the best effort basis, and type conversions are not 
 ```
 $ spanner-mycli \
                 --param='array_type=ARRAY<STRUCT<FirstName STRING, LastName STRING>>' \
-                --param='array_value=[STRUCT("John" AS FirstName, "Doe" AS LastName), ("Mary", "Sue")]'
+                --param='array_value=[STRUCT("Marc" AS FirstName, "Richards" AS LastName), ("Catalina", "Smith")]'
 
 ```
 
@@ -641,7 +641,7 @@ You can see defined query parameters using `SHOW PARAMS;` command.
 +-------------+------------+-------------------------------------------------------------------+
 | Param_Name  | Param_Kind | Param_Value                                                       |
 +-------------+------------+-------------------------------------------------------------------+
-| array_value | VALUE      | [STRUCT("John" AS FirstName, "Doe" AS LastName), ("Mary", "Sue")] |
+| array_value | VALUE      | [STRUCT("Marc" AS FirstName, "Richards" AS LastName), ("Catalina", "Smith")] |
 | array_type  | TYPE       | ARRAY<STRUCT<FirstName STRING, LastName STRING>>                  |
 +-------------+------------+-------------------------------------------------------------------+
 Empty set (0.00 sec)
@@ -649,13 +649,20 @@ Empty set (0.00 sec)
 
 You can use value query parameters in any statement.
 ```
-> SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_value);
+> SELECT * FROM Singers WHERE STRUCT(FirstName, LastName) IN UNNEST(@array_value);
++----------+-----------+----------+------------+------------+
+| SingerId | FirstName | LastName | SingerInfo | BirthDate  |
++----------+-----------+----------+------------+------------+
+| 2        | Catalina  | Smith    | NULL       | 1990-08-17 |
+| 1        | Marc      | Richards | NULL       | 1970-09-03 |
++----------+-----------+----------+------------+------------+
+2 rows in set (7.8 msecs)
 ```
 
 You can use type query parameters only in `EXPLAIN` or `DESCRIBE` without value.
 
 ```
-> EXPLAIN SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_type);
+> EXPLAIN SELECT * FROM Singers WHERE STRUCT(FirstName, LastName) IN UNNEST(@array_type);
 +-----+----------------------------------------------------------------------------------+
 | ID  | Query_Execution_Plan                                                             |
 +-----+----------------------------------------------------------------------------------+
@@ -677,8 +684,9 @@ You can use type query parameters only in `EXPLAIN` or `DESCRIBE` without value.
 Predicates(identified by ID):
  41: Residual Condition: (($FirstName = $batched_v8) AND ($LastName = $batched_v9))
 
+14 rows in set (0.18 sec)
 
-> DESCRIBE SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_type);
+> DESCRIBE SELECT * FROM Singers WHERE STRUCT(FirstName, LastName) IN UNNEST(@array_type);
 +-------------+-------------+
 | Column_Name | Column_Type |
 +-------------+-------------+
@@ -688,8 +696,9 @@ Predicates(identified by ID):
 | SingerInfo  | BYTES       |
 | BirthDate   | DATE        |
 +-------------+-------------+
-5 rows in set (0.18 sec)
+5 rows in set (0.17 sec)
 ```
+
 ### Interactive definition of query parameters using `SET` commands
 
 You can define type query parameters using `SET PARAM param_name type;` command.
@@ -721,8 +730,6 @@ Empty set (0.00 sec)
 +-------------+------------+-------------+
 Empty set (0.00 sec)
 ```
-
-
 
 ## Using with the Cloud Spanner Emulator
 
