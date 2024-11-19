@@ -649,7 +649,7 @@ You can use value query parameters in any statement.
 > SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_value);
 ```
 
-You can use type query parameters only in `EXPLAIN` or `DESCRIBE`.
+You can use type query parameters only in `EXPLAIN` or `DESCRIBE` without value.
 
 ```
 > EXPLAIN SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_type);
