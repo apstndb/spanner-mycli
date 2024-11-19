@@ -13,6 +13,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Respects my minor use cases
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
   * Can use embedded emulator (`--embedded-emulator`)
+  * Support query parameters
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -607,6 +608,116 @@ Empty set (0.00 sec)
 spanner> SELECT * FRM 1;
 ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
 ```
+
+## Parameter support
+
+Many Cloud Spanner clients don't support parameter.
+Without modifications, query which have parameters are impossible to execute and query whose parameter's types are `STRUCT` or `ARRAY` are impossible to show query plans.
+
+spanner-mycli solves this problem by supporting query parameters.
+
+You can define query parameters using command line option `--param` or `SET` commands.
+It supports type notation or literal value notation in GoogleSQL.
+
+Note: They are supported on the best effort basis, and type conversions are not supported.
+
+### Query parameters definition using `--param` option
+```
+$ spanner-mycli \
+                --param='array_type=ARRAY<STRUCT<FirstName STRING, LastName STRING>>' \
+                --param='array_value=[STRUCT("John" AS FirstName, "Doe" AS LastName), ("Mary", "Sue")]'
+
+```
+
+You can see defined query parameters using `SHOW PARAMS;` command.
+
+```
+> SHOW PARAMS;
++-------------+------------+-------------------------------------------------------------------+
+| Param_Name  | Param_Kind | Param_Value                                                       |
++-------------+------------+-------------------------------------------------------------------+
+| array_value | VALUE      | [STRUCT("John" AS FirstName, "Doe" AS LastName), ("Mary", "Sue")] |
+| array_type  | TYPE       | ARRAY<STRUCT<FirstName STRING, LastName STRING>>                  |
++-------------+------------+-------------------------------------------------------------------+
+Empty set (0.00 sec)
+```
+
+You can use value query parameters in any statement.
+```
+> SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_value);
+```
+
+You can use type query parameters only in `EXPLAIN` or `DESCRIBE`.
+
+```
+> EXPLAIN SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_type);
++-----+----------------------------------------------------------------------------------+
+| ID  | Query_Execution_Plan                                                             |
++-----+----------------------------------------------------------------------------------+
+|   0 | Distributed Cross Apply                                                          |
+|   1 | +- [Input] Create Batch                                                          |
+|   2 | |  +- Compute Struct                                                             |
+|   3 | |     +- Hash Aggregate                                                          |
+|   4 | |        +- Compute                                                              |
+|   5 | |           +- Array Unnest                                                      |
+|  10 | |              +- [Scalar] Array Subquery                                        |
+|  11 | |                 +- Array Unnest                                                |
+|  35 | +- [Map] Serialize Result                                                        |
+|  36 |    +- Cross Apply                                                                |
+|  37 |       +- [Input] Batch Scan (Batch: $v14, scan_method: Scalar)                   |
+|  40 |       +- [Map] Local Distributed Union                                           |
+| *41 |          +- Filter Scan (seekable_key_size: 0)                                   |
+|  42 |             +- Table Scan (Full scan: true, Table: Singers, scan_method: Scalar) |
++-----+----------------------------------------------------------------------------------+
+Predicates(identified by ID):
+ 41: Residual Condition: (($FirstName = $batched_v8) AND ($LastName = $batched_v9))
+
+
+> DESCRIBE SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@array_type);
++-------------+-------------+
+| Column_Name | Column_Type |
++-------------+-------------+
+| SingerId    | INT64       |
+| FirstName   | STRING      |
+| LastName    | STRING      |
+| SingerInfo  | BYTES       |
+| BirthDate   | DATE        |
++-------------+-------------+
+5 rows in set (0.18 sec)
+```
+### Interactive definition of query parameters using `SET` commands
+
+You can define type query parameters using `SET PARAM param_name type;` command.
+
+```
+> SET PARAM string_type STRING;
+Empty set (0.00 sec)
+
+> SHOW PARAMS;
++-------------+------------+-------------+
+| Param_Name  | Param_Kind | Param_Value |
++-------------+------------+-------------+
+| string_type | TYPE       | STRING      |
++-------------+------------+-------------+
+Empty set (0.00 sec)
+```
+
+You can define type query parameters using `SET PARAM param_name = value;` command.
+
+```
+> SET PARAM bytes_value = b"foo";
+Empty set (0.00 sec)
+
+> SHOW PARAMS;
++-------------+------------+-------------+
+| Param_Name  | Param_Kind | Param_Value |
++-------------+------------+-------------+
+| bytes_value | VALUE      | B"foo"      |
++-------------+------------+-------------+
+Empty set (0.00 sec)
+```
+
+
 
 ## Using with the Cloud Spanner Emulator
 
