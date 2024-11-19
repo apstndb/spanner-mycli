@@ -13,7 +13,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 * Respects my minor use cases
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
   * Can use embedded emulator (`--embedded-emulator`)
-  * Support query parameters
+  * Support [query parameters](#query-parameter-support)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -609,10 +609,12 @@ spanner> SELECT * FRM 1;
 ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
 ```
 
-## Parameter support
+## Query parameter support
 
-Many Cloud Spanner clients don't support parameter.
-Without modifications, query which have parameters are impossible to execute and query whose parameter's types are `STRUCT` or `ARRAY` are impossible to show query plans.
+Many Cloud Spanner clients don't support query parameters.
+
+If you do not modify the query, you will not be able to execute queries that contain query parameters,
+and you will not be able to view the query plan for queries with parameter types `STRUCT` or `ARRAY`.
 
 spanner-mycli solves this problem by supporting query parameters.
 
