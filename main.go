@@ -28,6 +28,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudspannerecosystem/memefish"
+
+	"github.com/cloudspannerecosystem/memefish/ast"
+
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
@@ -58,6 +62,7 @@ type spannerOptions struct {
 	DirectedRead        string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
 	SQL                 string            `long:"sql" hidden:"true" description:"alias of --execute"`
 	Set                 map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	Param               map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
 	ProtoDescriptorFile string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure            bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
@@ -123,6 +128,21 @@ func main() {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
 
+	params := make(map[string]ast.Node)
+	for k, v := range opts.Param {
+		if typ, err := memefish.ParseType("", v); err == nil {
+			params[k] = typ
+			continue
+		}
+
+		// ignore ParseType error
+		if expr, err := memefish.ParseExpr("", v); err != nil {
+			exitf("error on parsing --param=%v=%v, err: %v", k, v, err)
+		} else {
+			params[k] = expr
+		}
+	}
+
 	sysVars := systemVariables{
 		Project:     opts.ProjectId,
 		Instance:    opts.InstanceId,
@@ -135,6 +155,7 @@ func main() {
 		Endpoint:    opts.Endpoint,
 		Insecure:    opts.Insecure || opts.SkipTlsVerify,
 		Debug:       opts.Debug,
+		Params:      params,
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)

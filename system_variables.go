@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudspannerecosystem/memefish/ast"
+
 	"github.com/samber/lo"
 
 	"spheric.cloud/xiter"
@@ -45,6 +47,7 @@ type systemVariables struct {
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
 	Insecure        bool
 	Debug           bool
+	Params          map[string]ast.Node
 }
 
 var errIgnored = errors.New("ignored")

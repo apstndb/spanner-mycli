@@ -1,14 +1,14 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.23.1
-
-toolchain go1.23.2
+go 1.23.2
 
 require (
 	cloud.google.com/go v0.116.0
-	cloud.google.com/go/spanner v1.71.0
+	cloud.google.com/go/spanner v1.73.0
+	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
 	github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792
 	github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c
+	github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5
 	github.com/apstndb/spantype v0.2.0
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7

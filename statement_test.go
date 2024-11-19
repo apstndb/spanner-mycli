@@ -597,6 +597,21 @@ func TestBuildStatement(t *testing.T) {
 			input: `SHOW VARIABLES`,
 			want:  &ShowVariablesStatement{},
 		},
+		{
+			desc:  "SET PARAM type statement",
+			input: `SET PARAM string_type STRING`,
+			want:  &SetParamTypeStatement{Name: "string_type", Type: "STRING"},
+		},
+		{
+			desc:  "SET PARAM value statement",
+			input: `SET PARAM bytes_value = b"foo"`,
+			want:  &SetParamValueStatement{Name: "bytes_value", Value: `b"foo"`},
+		},
+		{
+			desc:  "SHOW PARAMS statement",
+			input: `SHOW PARAMS`,
+			want:  &ShowParamsStatement{},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
