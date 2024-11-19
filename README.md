@@ -277,6 +277,9 @@ and `{}` for a mutually exclusive keyword.
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
 | Set variable | `SET <name> = <value>;`                                                                        | |
 | Show variables | `SHOW VARIABLES;`                                                                              | |
+| Set type query parameter | `SET PARAM <name> <type>;`                                                                        | |
+| Set value query parameter | `SET PARAM <name> = <value>;`                                                                        | |
+| Show variables | `SHOW PARAMS;`                                                                              | |
 
 ## System Variables
 
