@@ -244,10 +244,10 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowVariableStatement{VarName: matched[1]}, nil
 	case setParamTypeRe.MatchString(trimmed):
 		matched := setParamTypeRe.FindStringSubmatch(trimmed)
-		return &SetParamTypeStatement{VarName: matched[1], Type: matched[2]}, nil
+		return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
 	case setParamRe.MatchString(trimmed):
 		matched := setParamRe.FindStringSubmatch(trimmed)
-		return &SetParamStatement{VarName: matched[1], Value: matched[2]}, nil
+		return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
 	case setRe.MatchString(trimmed):
 		matched := setRe.FindStringSubmatch(trimmed)
 		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
@@ -730,29 +730,29 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 }
 
 type SetParamTypeStatement struct {
-	VarName string
-	Type    string
+	Name string
+	Type string
 }
 
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseType("", s.Type); err != nil {
 		return nil, err
 	} else {
-		session.systemVariables.Params[s.VarName] = expr
+		session.systemVariables.Params[s.Name] = expr
 		return &Result{KeepVariables: true}, nil
 	}
 }
 
-type SetParamStatement struct {
-	VarName string
-	Value   string
+type SetParamValueStatement struct {
+	Name  string
+	Value string
 }
 
-func (s *SetParamStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
 		return nil, err
 	} else {
-		session.systemVariables.Params[s.VarName] = expr
+		session.systemVariables.Params[s.Name] = expr
 		return &Result{KeepVariables: true}, nil
 	}
 }
