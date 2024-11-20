@@ -112,7 +112,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 }
 
-func executeAnalyze(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
+func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
 		return nil, err
