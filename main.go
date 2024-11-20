@@ -70,6 +70,7 @@ type spannerOptions struct {
 	EmulatorImage       string            `long:"emulator-image" description:"container image for --embedded-emulator"`
 	Help                bool              `long:"help" short:"h" hidden:"true"`
 	Debug               bool              `long:"debug" hidden:"true"`
+	LogGrpc             bool              `long:"log-grpc" description:"Show gRPC logs"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -156,6 +157,7 @@ func main() {
 		Insecure:    opts.Insecure || opts.SkipTlsVerify,
 		Debug:       opts.Debug,
 		Params:      params,
+		LogGrpc:     opts.LogGrpc,
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)

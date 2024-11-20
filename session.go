@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+
 	"google.golang.org/grpc/credentials/insecure"
 
 	"google.golang.org/grpc"
@@ -32,6 +34,11 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
+
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
+	selector "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
+	"go.uber.org/zap"
 
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -70,6 +77,27 @@ type transactionContext struct {
 	roTxn         *spanner.ReadOnlyTransaction
 }
 
+func logGrpcClientOptions() []option.ClientOption {
+	zapDevelopmentConfig := zap.NewDevelopmentConfig()
+	zapDevelopmentConfig.DisableCaller = true
+	zapLogger, _ := zapDevelopmentConfig.Build(zap.Fields())
+
+	return []option.ClientOption{
+		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
+			selector.UnaryClientInterceptor(
+				logging.UnaryClientInterceptor(InterceptorLogger(zapLogger),
+					logging.WithLogOnEvents(logging.FinishCall, logging.PayloadSent, logging.PayloadReceived)),
+				selector.MatchFunc(func(ctx context.Context, callMeta interceptors.CallMeta) bool {
+					return true
+				})))),
+		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
+			selectlogging.StreamClientInterceptor(InterceptorLogger(zapLogger), selector.MatchFunc(func(ctx context.Context, callMeta interceptors.CallMeta) bool {
+				req, ok := callMeta.ReqOrNil.(*sppb.ExecuteSqlRequest)
+				return !ok || req.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat"
+			}), selectlogging.WithLogOnEvents(selectlogging.FinishCall, selectlogging.PayloadSent, selectlogging.PayloadReceived)),
+		))}
+}
+
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
@@ -78,6 +106,10 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 
 	if sysVars.Insecure {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	}
+
+	if sysVars.LogGrpc {
+		opts = append(opts, logGrpcClientOptions()...)
 	}
 
 	opts = append(opts, defaultClientOpts...)
@@ -410,7 +442,10 @@ func (s *Session) startHeartbeat() {
 func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority sppb.RequestOptions_Priority) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	iter := txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), spanner.QueryOptions{Priority: priority})
+	iter := txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), spanner.QueryOptions{
+		Priority:   priority,
+		RequestTag: "spanner_mycli_heartbeat",
+	})
 	defer iter.Stop()
 	_, err := iter.Next()
 	return err
