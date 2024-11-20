@@ -28,7 +28,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
-	rows, stats, count, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
+	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
@@ -49,7 +49,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
 		Rows:         rows,
 		ColumnTypes:  metadata.GetRowType().GetFields(),
-		AffectedRows: int(count),
+		AffectedRows: len(rows),
 		Stats:        queryStats,
 	}
 
@@ -151,7 +151,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
-	stats, count, _, plan, err := consumeRowIterDiscard(iter)
+	stats, _, _, plan, err := consumeRowIterDiscard(iter)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 	result := &Result{
 		ColumnNames:  explainAnalyzeColumnNames,
 		ForceVerbose: true,
-		AffectedRows: int(count),
+		AffectedRows: len(rows),
 		Stats:        queryStats,
 		Timestamp:    timestamp,
 		Rows:         rows,
