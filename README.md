@@ -14,6 +14,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
+  * gRPC logging(`--log-grpc`)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`)
@@ -82,10 +83,12 @@ spanner:
       --endpoint=              Set the Spanner API endpoint (host:port)
       --directed-read=         Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
       --set=                   Set system variables e.g. --set=name1=value1 --set=name2=value2
+      --param=                 Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
       --proto-descriptor-file= Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator      Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
       --emulator-image=        container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
+      --log-grpc               Show gRPC logs
 ```
 
 ### Authentication

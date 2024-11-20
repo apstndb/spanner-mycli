@@ -42,6 +42,7 @@ type systemVariables struct {
 	DirectedRead                *sppb.DirectedReadOptions
 	ProtoDescriptorFile         []string
 	BuildStatementMode          parseMode
+	LogGrpc                     bool
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -383,6 +384,11 @@ var accessorMap = map[string]accessor{
 	"CLI_DEBUG": {
 		Getter: boolGetter(func(sysVars *systemVariables) *bool { return lo.Ternary(sysVars.Debug, lo.ToPtr(sysVars.Debug), nil) }),
 		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.Debug }),
+	},
+	"CLI_LOG_GRPC": {
+		Getter: boolGetter(func(sysVars *systemVariables) *bool {
+			return lo.Ternary(sysVars.LogGrpc, &sysVars.LogGrpc, nil)
+		}),
 	},
 }
 
