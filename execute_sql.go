@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
+
+	"github.com/apstndb/lox"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -26,9 +27,8 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
-	defer iter.Stop()
 
-	rows, columnNames, err := parseQueryResult(iter)
+	rows, stats, count, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
@@ -39,24 +39,19 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		}
 		return nil, err
 	}
-	result := &Result{
-		ColumnNames: columnNames,
-		Rows:        rows,
-	}
-	result.ColumnTypes = iter.Metadata.GetRowType().GetFields()
 
-	queryStats, err := parseQueryStats(iter.QueryStats)
+	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, err
 	}
 
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
+	result := &Result{
+		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
+		Rows:         rows,
+		ColumnTypes:  metadata.GetRowType().GetFields(),
+		AffectedRows: int(count),
+		Stats:        queryStats,
 	}
-
-	result.AffectedRows = rowsReturned
-	result.Stats = queryStats
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	if roTxn != nil {
@@ -156,45 +151,37 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
-	// consume iter
-	err = iter.Do(func(*spanner.Row) error {
-		return nil
-	})
+	stats, count, _, plan, err := consumeRowIterDiscard(iter)
 	if err != nil {
 		return nil, err
 	}
 
-	queryStats, err := parseQueryStats(iter.QueryStats)
+	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, err
-	}
-
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
 	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
-	if iter.QueryPlan == nil {
+	if plan == nil {
 		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	rows, predicates, err := processPlanWithStats(iter.QueryPlan)
+	rows, predicates, err := processPlanWithStats(plan)
 	if err != nil {
 		return nil, err
 	}
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	var timestamp time.Time
-	if roTxn != nil {
-		timestamp, _ = roTxn.Timestamp()
-	}
+	timestamp := lox.IfOrEmptyF(roTxn != nil, func() time.Time {
+		ts, _ := roTxn.Timestamp()
+		return ts
+	})
 
 	result := &Result{
 		ColumnNames:  explainAnalyzeColumnNames,
 		ForceVerbose: true,
-		AffectedRows: rowsReturned,
+		AffectedRows: int(count),
 		Stats:        queryStats,
 		Timestamp:    timestamp,
 		Rows:         rows,
@@ -267,12 +254,8 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 
 	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *spannerpb.QueryPlan, *spannerpb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt)
-		defer iter.Stop()
-		err := iter.Do(func(r *spanner.Row) error { return nil })
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return iter.RowCount, iter.QueryPlan, iter.Metadata, nil
+		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
+		return count, plan, metadata, err
 	})
 	if err != nil {
 		return nil, err

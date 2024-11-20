@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+
 	"github.com/apstndb/lox"
 
 	"github.com/apstndb/go-spannulls"
@@ -40,7 +42,7 @@ import (
 
 	"golang.org/x/exp/constraints"
 
-	"spheric.cloud/xiter"
+	scxiter "spheric.cloud/xiter"
 
 	_ "google.golang.org/protobuf/reflect/protodesc"
 
@@ -54,7 +56,6 @@ import (
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
-	"google.golang.org/api/iterator"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -409,39 +410,12 @@ type SelectStatement struct {
 }
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	sql := s.Query
-	return executeSQL(ctx, session, sql)
+	return executeSQL(ctx, session, s.Query)
 }
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	var names []string
-	for _, field := range fields {
-		names = append(names, field.GetName())
-	}
-	return names
-}
-
-// parseQueryResult parses rows and columnNames from spanner.RowIterator.
-// A caller is responsible for calling iterator.Stop().
-func parseQueryResult(iter *spanner.RowIterator) ([]Row, []string, error) {
-	var rows []Row
-	for {
-		row, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-
-		columns, err := DecodeRow(row)
-		if err != nil {
-			return nil, nil, err
-		}
-		rows = append(rows, toRow(columns...))
-	}
-	return rows, extractColumnNames(iter.Metadata.GetRowType().GetFields()), nil
+	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
@@ -528,7 +502,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}
 	return &Result{
 		ColumnNames:   columnNames,
-		Rows:          []Row{{Columns: row}},
+		Rows:          sliceOf(toRow(row...)),
 		KeepVariables: true,
 	}, nil
 }
@@ -542,8 +516,8 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	rows := slices.SortedFunc(
-		xiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
-			return Row{sliceOf(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())}
+		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
+			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
 		}),
 		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
@@ -589,7 +563,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	}
 
 	rows := slices.SortedFunc(
-		xiter.MapLower(maps.All(merged), func(k, v string) Row { return Row{sliceOf(k, v)} }),
+		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
 		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
 	return &Result{
@@ -656,7 +630,7 @@ type ShowLocalProtoStatement struct{}
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
-	rows := slices.Collect(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
+	rows := slices.Collect(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
 
 	return &Result{
 		ColumnNames:   []string{"full_name", "package", "file"},
@@ -681,8 +655,8 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	rows := slices.Collect(xiter.Map(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
-		return Row{Columns: in.Columns[:2]}
+	rows := slices.Collect(scxiter.Map(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
+		return toRow(in.Columns[:2]...)
 	}))
 
 	return &Result{
@@ -774,25 +748,22 @@ type ShowTablesStatement struct {
 }
 
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmtName := "SHOW TABLES"
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
 	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
 	stmt.Params["schema"] = s.Schema
 
-	return executeInformationSchemaBasedStatement(ctx, session, stmtName, stmt, nil)
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW TABLES", stmt, nil)
 }
 
 func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
 	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
+		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
 	}
 
 	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
+	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
 	if err != nil {
 		return nil, err
 	}
@@ -802,7 +773,7 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 	}
 
 	return &Result{
-		ColumnNames:  columnNames,
+		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
@@ -1019,9 +990,7 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	sql := s.Dml
-
-	return executeDML(ctx, session, sql)
+	return executeDML(ctx, session, s.Dml)
 }
 
 type PartitionedDmlStatement struct {
@@ -1038,14 +1007,14 @@ func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session)
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
 	}
 
-	stmt := spanner.NewStatement(s.Dml)
 	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
 	defer cancel()
 
-	count, err := session.client.PartitionedUpdate(ctx, stmt)
+	count, err := session.client.PartitionedUpdate(ctx, spanner.NewStatement(s.Dml))
 	if err != nil {
 		return nil, err
 	}
+
 	return &Result{
 		IsMutation:       true,
 		AffectedRows:     int(count),
@@ -1095,6 +1064,7 @@ func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func
 			return 0, time.Time{}, nil, nil, err
 		}
 
+		// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
 		commit := CommitStatement{}
 		txnResult, err := commit.Execute(ctx, session)
 		if err != nil {

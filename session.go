@@ -225,9 +225,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
 	// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
 	opts := spanner.QueryOptions{Priority: priority}
-	if err := txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts).Do(func(r *spanner.Row) error {
-		return nil
-	}); err != nil {
+	if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
 		return time.Time{}, err
 	}
 
@@ -280,14 +278,38 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 	}
 	iter, _ := s.runQueryWithOptions(ctx, stmt, opts)
 
-	// Need to read rows from iterator to get the query plan.
-	err := iter.Do(func(r *spanner.Row) error {
+	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
+	return plan, metadata, err
+}
+
+// consumeRowIterDiscard calls iter.Stop().
+func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	return consumeRowIter(iter, func(*spanner.Row) error { return nil })
+}
+
+// consumeRowIter calls iter.Stop().
+func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	defer iter.Stop()
+	err = iter.Do(f)
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+
+	return iter.QueryStats, iter.RowCount, iter.Metadata, iter.QueryPlan, nil
+}
+
+func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	var results []T
+	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+		v, err := f(row)
+		if err != nil {
+			return err
+		}
+		results = append(results, v)
 		return nil
 	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return iter.QueryPlan, iter.Metadata, nil
+
+	return results, stats, count, metadata, plan, err
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
@@ -345,11 +367,17 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 		return nil, nil, rowCount, nil, err
 	}
 
-	rowIter := s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts)
-	defer rowIter.Stop()
-	result, columnNames, err := parseQueryResult(rowIter)
+	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
-	return result, columnNames, rowIter.RowCount, rowIter.Metadata, err
+	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
+}
+
+func spannerRowToRow(row *spanner.Row) (Row, error) {
+	columns, err := DecodeRow(row)
+	if err != nil {
+		return Row{}, err
+	}
+	return toRow(columns...), nil
 }
 
 func (s *Session) Close() {
