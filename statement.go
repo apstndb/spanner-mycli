@@ -365,8 +365,8 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {
+	result := make(map[string]any)
 	for k, v := range paramsNodeMap {
 		switch v := v.(type) {
 		case ast.Type:
@@ -419,7 +419,7 @@ func extractColumnNames(fields []*sppb.StructType_Field) []string {
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
-func parseQueryStats(stats map[string]interface{}) (QueryStats, error) {
+func parseQueryStats(stats map[string]any) (QueryStats, error) {
 	var queryStats QueryStats
 
 	b, err := json.Marshal(stats)
@@ -749,34 +749,12 @@ type ShowTablesStatement struct {
 
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
-	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
-	stmt.Params["schema"] = s.Schema
+	stmt := spanner.Statement{
+		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias),
+		Params: map[string]any{"schema": s.Schema},
+	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW TABLES", stmt, nil)
-}
-
-func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
-	}
-
-	iter, _ := session.RunQuery(ctx, stmt)
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rows) == 0 && emptyErrorF != nil {
-		return nil, emptyErrorF()
-	}
-
-	return &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
 }
 
 type ExplainStatement struct {
@@ -916,7 +894,7 @@ WHERE
   LOWER(C.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(C.TABLE_NAME) = LOWER(@table_name)
 ORDER BY
   C.ORDINAL_POSITION ASC`,
-		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
@@ -950,7 +928,7 @@ FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
   LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
@@ -1027,9 +1005,7 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	sql := s.Dml
-
-	return executeExplainAnalyzeDML(ctx, session, sql)
+	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
 // runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
@@ -1102,6 +1078,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
+
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
@@ -1116,10 +1093,12 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
+
+	result := &Result{IsMutation: true}
+
 	if !session.InReadWriteTransaction() {
 		return result, nil
 	}
@@ -1137,10 +1116,11 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
+
+	result := &Result{IsMutation: true}
 	if !session.InReadWriteTransaction() {
 		return result, nil
 	}
