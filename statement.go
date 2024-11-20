@@ -698,34 +698,27 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 type ShowDatabasesStatement struct {
 }
 
-func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{ColumnNames: []string{"Database"}}
+var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
+func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	dbIter := session.adminClient.ListDatabases(ctx, &adminpb.ListDatabasesRequest{
 		Parent: session.InstancePath(),
 	})
 
-	for {
-		database, err := dbIter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
+	var rows []Row
+	for database, err := range dbIter.All() {
 		if err != nil {
 			return nil, err
 		}
 
-		re := regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
-		matched := re.FindStringSubmatch(database.GetName())
-		dbname := matched[1]
-		resultRow := Row{
-			Columns: []string{dbname},
-		}
-		result.Rows = append(result.Rows, resultRow)
+		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
+		rows = append(rows, Row{Columns: sliceOf(matched[1])})
 	}
 
-	result.AffectedRows = len(result.Rows)
-
-	return result, nil
+	return &Result{ColumnNames: []string{"Database"},
+		Rows:         rows,
+		AffectedRows: len(rows),
+	}, nil
 }
 
 type ShowCreateTableStatement struct {
