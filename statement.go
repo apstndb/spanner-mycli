@@ -439,9 +439,7 @@ func parseQueryResult(iter *spanner.RowIterator) ([]Row, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		rows = append(rows, Row{
-			Columns: columns,
-		})
+		rows = append(rows, toRow(columns...))
 	}
 	return rows, extractColumnNames(iter.Metadata.GetRowType().GetFields()), nil
 }
@@ -712,7 +710,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		}
 
 		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
-		rows = append(rows, Row{Columns: sliceOf(matched[1])})
+		rows = append(rows, toRow(matched[1]))
 	}
 
 	return &Result{ColumnNames: []string{"Database"},
@@ -726,8 +724,8 @@ type ShowCreateTableStatement struct {
 	Table  string
 }
 
-func toRow(vs ...any) Row {
-	return Row{Columns: lo.Map(vs, func(v any, _ int) string { return fmt.Sprint(v) })}
+func toRow[T any](vs ...T) Row {
+	return Row{Columns: lo.Map(vs, func(v T, _ int) string { return fmt.Sprint(v) })}
 }
 
 func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -842,7 +840,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	var rows []Row
 	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, Row{Columns: []string{field.GetName(), formatTypeVerbose(field.GetType())}})
+		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
 	}
 
 	result := &Result{
@@ -905,9 +903,9 @@ func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicat
 			formattedID = fmt.Sprintf("%*d", widthOfNodeIDWithIndicator, row.ID)
 		}
 		if withStats {
-			rows = append(rows, Row{[]string{formattedID, row.Text, row.RowsTotal, row.Execution, row.LatencyTotal}})
+			rows = append(rows, toRow(formattedID, row.Text, row.RowsTotal, row.Execution, row.LatencyTotal))
 		} else {
-			rows = append(rows, Row{[]string{formattedID, row.Text}})
+			rows = append(rows, toRow(formattedID, row.Text))
 		}
 		for i, predicate := range row.Predicates {
 			var prefix string
