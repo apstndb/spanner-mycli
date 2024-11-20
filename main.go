@@ -71,6 +71,7 @@ type spannerOptions struct {
 	Help                bool              `long:"help" short:"h" hidden:"true"`
 	Debug               bool              `long:"debug" hidden:"true"`
 	LogGrpc             bool              `long:"log-grpc" description:"Show gRPC logs"`
+	QueryMode           string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -187,6 +188,12 @@ func main() {
 		sysVars.RPCPriority = priority
 	} else {
 		sysVars.RPCPriority = defaultPriority
+	}
+
+	if opts.QueryMode != "" {
+		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
+			exitf("invalid value of --query-mode: %v, err: %v\n", opts.QueryMode, err)
+		}
 	}
 
 	var directedRead *sppb.DirectedReadOptions

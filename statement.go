@@ -359,7 +359,20 @@ type SelectStatement struct {
 }
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeSQL(ctx, session, s.Query)
+	qm := session.systemVariables.QueryMode
+	if qm == nil {
+		return executeSQL(ctx, session, s.Query)
+	}
+	switch *qm {
+	case sppb.ExecuteSqlRequest_NORMAL:
+		return executeSQL(ctx, session, s.Query)
+	case sppb.ExecuteSqlRequest_PLAN:
+		return executeExplain(ctx, session, s.Query, false)
+	case sppb.ExecuteSqlRequest_PROFILE:
+		return executeExplainAnalyze(ctx, session, s.Query)
+	default:
+		return executeSQL(ctx, session, s.Query)
+	}
 }
 
 type CreateDatabaseStatement struct {
@@ -822,7 +835,20 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeDML(ctx, session, s.Dml)
+	qm := session.systemVariables.QueryMode
+	if qm == nil {
+		return executeDML(ctx, session, s.Dml)
+	}
+	switch *qm {
+	case sppb.ExecuteSqlRequest_NORMAL:
+		return executeDML(ctx, session, s.Dml)
+	case sppb.ExecuteSqlRequest_PLAN:
+		return executeExplain(ctx, session, s.Dml, true)
+	case sppb.ExecuteSqlRequest_PROFILE:
+		return executeExplainAnalyzeDML(ctx, session, s.Dml)
+	default:
+		return executeDML(ctx, session, s.Dml)
+	}
 }
 
 type PartitionedDmlStatement struct {
