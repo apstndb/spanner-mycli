@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -37,10 +38,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/mattn/go-runewidth"
-
-	"github.com/vbauerster/mpb/v8/decor"
-
 	"golang.org/x/exp/constraints"
 
 	"spheric.cloud/xiter"
@@ -58,9 +55,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
 	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-
-	"github.com/vbauerster/mpb/v8"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -106,13 +100,13 @@ type Row struct {
 // Some fields may not have a valid value depending on the environment.
 // For example, only ElapsedTime and RowsReturned has valid value for Cloud Spanner Emulator.
 type QueryStats struct {
-	ElapsedTime                string
-	CPUTime                    string
-	RowsReturned               string
-	RowsScanned                string
-	DeletedRowsScanned         string
-	OptimizerVersion           string
-	OptimizerStatisticsPackage string
+	ElapsedTime                string `json:"elapsed_time"`
+	CPUTime                    string `json:"cpu_time"`
+	RowsReturned               string `json:"rows_returned"`
+	RowsScanned                string `json:"rows_scanned"`
+	DeletedRowsScanned         string `json:"deleted_rows_scanned"`
+	OptimizerVersion           string `json:"optimizer_version"`
+	OptimizerStatisticsPackage string `json:"optimizer_statistics_package"`
 }
 
 var (
@@ -370,10 +364,6 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-type SelectStatement struct {
-	Query string
-}
-
 func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	for k, v := range paramsNodeMap {
@@ -414,47 +404,13 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 	}, nil
 }
 
+type SelectStatement struct {
+	Query string
+}
+
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); err != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-		}
-		return nil, err
-	}
-	result := &Result{
-		ColumnNames: columnNames,
-		Rows:        rows,
-	}
-	result.ColumnTypes = iter.Metadata.GetRowType().GetFields()
-
-	queryStats := parseQueryStats(iter.QueryStats)
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
-	}
-
-	result.AffectedRows = rowsReturned
-	result.Stats = queryStats
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	if roTxn != nil {
-		result.Timestamp, _ = roTxn.Timestamp()
-	}
-
-	return result, nil
+	sql := s.Query
+	return executeSQL(ctx, session, sql)
 }
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
@@ -491,52 +447,19 @@ func parseQueryResult(iter *spanner.RowIterator) ([]Row, []string, error) {
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
-func parseQueryStats(stats map[string]interface{}) QueryStats {
+func parseQueryStats(stats map[string]interface{}) (QueryStats, error) {
 	var queryStats QueryStats
 
-	if v, ok := stats["elapsed_time"]; ok {
-		if elapsed, ok := v.(string); ok {
-			queryStats.ElapsedTime = elapsed
-		}
+	b, err := json.Marshal(stats)
+	if err != nil {
+		return queryStats, err
 	}
 
-	if v, ok := stats["rows_returned"]; ok {
-		if returned, ok := v.(string); ok {
-			queryStats.RowsReturned = returned
-		}
+	err = json.Unmarshal(b, &queryStats)
+	if err != nil {
+		return queryStats, err
 	}
-
-	if v, ok := stats["rows_scanned"]; ok {
-		if scanned, ok := v.(string); ok {
-			queryStats.RowsScanned = scanned
-		}
-	}
-
-	if v, ok := stats["deleted_rows_scanned"]; ok {
-		if deletedRowsScanned, ok := v.(string); ok {
-			queryStats.DeletedRowsScanned = deletedRowsScanned
-		}
-	}
-
-	if v, ok := stats["cpu_time"]; ok {
-		if cpu, ok := v.(string); ok {
-			queryStats.CPUTime = cpu
-		}
-	}
-
-	if v, ok := stats["optimizer_version"]; ok {
-		if version, ok := v.(string); ok {
-			queryStats.OptimizerVersion = version
-		}
-	}
-
-	if v, ok := stats["optimizer_statistics_package"]; ok {
-		if pkg, ok := v.(string); ok {
-			queryStats.OptimizerStatisticsPackage = pkg
-		}
-	}
-
-	return queryStats
+	return queryStats, nil
 }
 
 type CreateDatabaseStatement struct {
@@ -588,57 +511,6 @@ type BulkDdlStatement struct {
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
-}
-
-func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
-	logParseStatements(ddls)
-
-	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
-	if err != nil {
-		return nil, err
-	}
-
-	p := mpb.NewWithContext(ctx)
-	defer p.Shutdown()
-	var bars []*mpb.Bar
-	for _, ddl := range ddls {
-		bar := p.AddBar(int64(100), mpb.PrependDecorators(decor.Spinner(nil, decor.WCSyncSpaceR), decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR), decor.Percentage(decor.WCSyncSpace), decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)))
-		bars = append(bars, bar)
-	}
-
-	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
-		Database:         session.DatabasePath(),
-		Statements:       ddls,
-		ProtoDescriptors: b,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error on create op: %w", err)
-	}
-
-	for {
-		time.Sleep(3 * time.Second)
-		err := op.Poll(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		metadata, err := op.Metadata()
-		if err != nil {
-			return nil, err
-		}
-
-		progresses := metadata.GetProgress()
-		for i, progress := range progresses {
-			bar := bars[i]
-			progressPercent := int64(progress.ProgressPercent)
-			bar.SetCurrent(progressPercent)
-		}
-
-		if op.Done() {
-			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-			return &Result{IsMutation: true, Timestamp: lastCommitTS}, nil
-		}
-	}
 }
 
 type ShowVariableStatement struct {
@@ -911,15 +783,20 @@ type ShowTablesStatement struct {
 }
 
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW TABLES" can not be used in a read-write transaction`)
-	}
-
+	stmtName := "SHOW TABLES"
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
 	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
 	stmt.Params["schema"] = s.Schema
+
+	return executeInformationSchemaBasedStatement(ctx, session, stmtName, stmt, nil)
+}
+
+func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
+	if session.InReadWriteTransaction() {
+		// INFORMATION_SCHEMA can not be used in read-write transaction.
+		// https://cloud.google.com/spanner/docs/information-schema
+		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
+	}
 
 	iter, _ := session.RunQuery(ctx, stmt)
 	defer iter.Stop()
@@ -927,6 +804,10 @@ func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*R
 	rows, columnNames, err := parseQueryResult(iter)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(rows) == 0 && emptyErrorF != nil {
+		return nil, emptyErrorF()
 	}
 
 	return &Result{
@@ -943,34 +824,10 @@ type ExplainStatement struct {
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Explain, session.systemVariables.Params, true)
-	if err != nil {
-		return nil, err
-	}
+	sql := s.Explain
+	isDML := s.IsDML
 
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
-	if err != nil {
-		return nil, err
-	}
-
-	if queryPlan == nil {
-		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithoutStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		ColumnNames:  explainColumnNames,
-		AffectedRows: len(rows),
-		Rows:         rows,
-		Timestamp:    timestamp,
-		Predicates:   predicates,
-	}
-
-	return result, nil
+	return executeAnalyze(ctx, session, sql, isDML)
 }
 
 type DescribeStatement struct {
@@ -1023,54 +880,9 @@ type ExplainAnalyzeStatement struct {
 }
 
 func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
+	sql := s.Query
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
-
-	// consume iter
-	err = iter.Do(func(*spanner.Row) error {
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	queryStats := parseQueryStats(iter.QueryStats)
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
-	}
-
-	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
-	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
-	if iter.QueryPlan == nil {
-		return nil, errors.New("EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithStats(iter.QueryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	var timestamp time.Time
-	if roTxn != nil {
-		timestamp, _ = roTxn.Timestamp()
-	}
-
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ForceVerbose: true,
-		AffectedRows: rowsReturned,
-		Stats:        queryStats,
-		Timestamp:    timestamp,
-		Rows:         rows,
-		Predicates:   predicates,
-	}
-	return result, nil
+	return executeExplainAnalyze(ctx, session, sql)
 }
 
 func processPlanWithStats(plan *sppb.QueryPlan) (rows []Row, predicates []string, err error) {
@@ -1123,12 +935,6 @@ type ShowColumnsStatement struct {
 }
 
 func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW COLUMNS" can not be used in a read-write transaction`)
-	}
-
 	stmt := spanner.Statement{SQL: `SELECT
   C.COLUMN_NAME as Field,
   C.SPANNER_TYPE as Type,
@@ -1150,22 +956,9 @@ ORDER BY
   C.ORDINAL_POSITION ASC`,
 		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
 
-	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	}
-
-	return &Result{
-		ColumnNames:  columnNames,
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
+		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
+	})
 }
 
 func extractSchemaAndTable(s string) (string, string) {
@@ -1182,12 +975,6 @@ type ShowIndexStatement struct {
 }
 
 func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW INDEX" can not be used in a read-write transaction`)
-	}
-
 	stmt := spanner.Statement{
 		SQL: `SELECT
   TABLE_NAME as Table,
@@ -1203,22 +990,9 @@ WHERE
   LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
 		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
 
-	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	}
-
-	return &Result{
-		ColumnNames:  columnNames,
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
+		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
+	})
 }
 
 type TruncateTableStatement struct {
@@ -1254,59 +1028,9 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
+	sql := s.Dml
 
-	result := &Result{IsMutation: true}
-
-	var rows []Row
-	var columnNames []string
-	var numRows int64
-	var metadata *sppb.ResultSetMetadata
-	if session.InReadWriteTransaction() {
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, fmt.Errorf("transaction was aborted: %v", err)
-		}
-	} else {
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err = begin.Execute(ctx, session); err != nil {
-			return nil, err
-		}
-
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// once error has happened, escape from implicit transaction
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, err
-		}
-
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return nil, err
-		}
-		result.Timestamp = txnResult.Timestamp
-		result.CommitStats = txnResult.CommitStats
-	}
-
-	result.ColumnTypes = metadata.GetRowType().GetFields()
-	result.Rows = rows
-	result.ColumnNames = columnNames
-	result.AffectedRows = int(numRows)
-
-	return result, nil
+	return executeDML(ctx, session, sql)
 }
 
 type PartitionedDmlStatement struct {
@@ -1343,40 +1067,9 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
+	sql := s.Dml
 
-	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt)
-		defer iter.Stop()
-		err := iter.Do(func(r *spanner.Row) error { return nil })
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return iter.RowCount, iter.QueryPlan, iter.Metadata, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rows, predicates, err := processPlanWithStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-	result := &Result{
-		IsMutation:       true,
-		ColumnNames:      explainAnalyzeColumnNames,
-		ForceVerbose:     true,
-		AffectedRows:     int(affectedRows),
-		AffectedRowsType: rowCountTypeExact,
-		Rows:             rows,
-		Predicates:       predicates,
-		Timestamp:        timestamp,
-	}
-
-	return result, nil
+	return executeExplainAnalyzeDML(ctx, session, sql)
 }
 
 // runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
