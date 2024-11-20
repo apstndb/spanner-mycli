@@ -37,7 +37,6 @@ import (
 	"github.com/nyaosorg/go-readline-ny"
 
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 
 	"github.com/mattn/go-runewidth"
@@ -174,12 +173,6 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	type ac = readline.AnonymousCommand
 	type _ = ac
-
-	// TODO: There is no multiline version of CmdISearchBackward.
-	err := ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
-	if err != nil {
-		return c.ExitOnError(err)
-	}
 
 	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
 	if err != nil {
