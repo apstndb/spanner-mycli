@@ -726,36 +726,36 @@ type ShowCreateTableStatement struct {
 	Table  string
 }
 
-func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{ColumnNames: []string{"Table", "Create Table"}}
+func toRow(vs ...any) Row {
+	return Row{Columns: lo.Map(vs, func(v any, _ int) string { return fmt.Sprint(v) })}
+}
 
+func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	var rows []Row
 	for _, stmt := range ddlResponse.Statements {
 		if isCreateTableDDL(stmt, s.Schema, s.Table) {
-			var fqn string
-			if s.Schema == "" {
-				fqn = s.Table
-			} else {
-				fqn = fmt.Sprintf("%s.%s", s.Schema, s.Table)
-			}
-
-			resultRow := Row{
-				Columns: []string{fqn, stmt},
-			}
-			result.Rows = append(result.Rows, resultRow)
+			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Table
+			rows = append(rows, toRow(fqn, stmt))
 			break
 		}
 	}
-	if len(result.Rows) == 0 {
+
+	if len(rows) == 0 {
 		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
 	}
 
-	result.AffectedRows = len(result.Rows)
+	result := &Result{
+		ColumnNames:  []string{"Table", "Create Table"},
+		Rows:         rows,
+		AffectedRows: len(rows),
+	}
 
 	return result, nil
 }
