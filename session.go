@@ -282,36 +282,6 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 	return plan, metadata, err
 }
 
-// consumeRowIterDiscard calls iter.Stop().
-func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	return consumeRowIter(iter, func(*spanner.Row) error { return nil })
-}
-
-// consumeRowIter calls iter.Stop().
-func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	defer iter.Stop()
-	err = iter.Do(f)
-	if err != nil {
-		return nil, 0, nil, nil, err
-	}
-
-	return iter.QueryStats, iter.RowCount, iter.Metadata, iter.QueryPlan, nil
-}
-
-func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	var results []T
-	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
-		v, err := f(row)
-		if err != nil {
-			return err
-		}
-		results = append(results, v)
-		return nil
-	})
-
-	return results, stats, count, metadata, plan, err
-}
-
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	logParseStatement(stmt.SQL)
 
@@ -370,14 +340,6 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
 	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
-}
-
-func spannerRowToRow(row *spanner.Row) (Row, error) {
-	columns, err := DecodeRow(row)
-	if err != nil {
-		return Row{}, err
-	}
-	return toRow(columns...), nil
 }
 
 func (s *Session) Close() {

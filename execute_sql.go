@@ -377,3 +377,41 @@ func parseQueryStats(stats map[string]any) (QueryStats, error) {
 	}
 	return queryStats, nil
 }
+
+// consumeRowIterDiscard calls iter.Stop().
+func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+	return consumeRowIter(iter, func(*spanner.Row) error { return nil })
+}
+
+// consumeRowIter calls iter.Stop().
+func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+	defer iter.Stop()
+	err = iter.Do(f)
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+
+	return iter.QueryStats, iter.RowCount, iter.Metadata, iter.QueryPlan, nil
+}
+
+func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+	var results []T
+	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+		v, err := f(row)
+		if err != nil {
+			return err
+		}
+		results = append(results, v)
+		return nil
+	})
+
+	return results, stats, count, metadata, plan, err
+}
+
+func spannerRowToRow(row *spanner.Row) (Row, error) {
+	columns, err := DecodeRow(row)
+	if err != nil {
+		return Row{}, err
+	}
+	return toRow(columns...), nil
+}
