@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -29,33 +28,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
-
-	"github.com/apstndb/lox"
-
-	"github.com/apstndb/go-spannulls"
-	"github.com/apstndb/memebridge"
-
-	"github.com/apstndb/gsqlutils/stmtkind"
-
-	"github.com/samber/lo"
-
-	"golang.org/x/exp/constraints"
-
-	scxiter "spheric.cloud/xiter"
-
-	_ "google.golang.org/protobuf/reflect/protodesc"
-
-	"google.golang.org/protobuf/types/descriptorpb"
-
-	"github.com/cloudspannerecosystem/memefish/ast"
-
-	"google.golang.org/protobuf/proto"
-
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
+	scxiter "spheric.cloud/xiter"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -302,11 +285,6 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (S
 	return BuildNativeStatementFallback(trimmed, raw)
 }
 
-func instanceOf[T any](v any) bool {
-	_, ok := v.(T)
-	return ok
-}
-
 func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
@@ -365,35 +343,6 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {
-	result := make(map[string]any)
-	for k, v := range paramsNodeMap {
-		switch v := v.(type) {
-		case ast.Type:
-			if !includeType {
-				continue
-			}
-
-			typ, err := memebridge.MemefishTypeToSpannerpbType(v)
-			if err != nil {
-				return nil, err
-			}
-			nullValue := spannulls.NullGenericColumnValueFromType(typ)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = nullValue
-		case ast.Expr:
-			expr, err := memebridge.MemefishExprToGCV(v)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = expr
-		}
-	}
-	return result, nil
-}
-
 func newStatement(sql string, params map[string]ast.Node, includeType bool) (spanner.Statement, error) {
 	genParams, err := generateParams(params, includeType)
 	if err != nil {
@@ -411,27 +360,6 @@ type SelectStatement struct {
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeSQL(ctx, session, s.Query)
-}
-
-// extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
-func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
-}
-
-// parseQueryStats parses spanner.RowIterator.QueryStats.
-func parseQueryStats(stats map[string]any) (QueryStats, error) {
-	var queryStats QueryStats
-
-	b, err := json.Marshal(stats)
-	if err != nil {
-		return queryStats, err
-	}
-
-	err = json.Unmarshal(b, &queryStats)
-	if err != nil {
-		return queryStats, err
-	}
-	return queryStats, nil
 }
 
 type CreateDatabaseStatement struct {
@@ -529,20 +457,6 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 }
 
 type ShowVariablesStatement struct{}
-
-func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
-	return func(lhs T, rhs T) int {
-		l, r := f(lhs), f(rhs)
-		switch {
-		case l < r:
-			return -1
-		case l > r:
-			return 1
-		default:
-			return 0
-		}
-	}
-}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
@@ -698,8 +612,8 @@ type ShowCreateTableStatement struct {
 	Table  string
 }
 
-func toRow[T any](vs ...T) Row {
-	return Row{Columns: lo.Map(vs, func(v T, _ int) string { return fmt.Sprint(v) })}
+func toRow(vs ...string) Row {
+	return Row{Columns: vs}
 }
 
 func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -797,19 +711,6 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	}
 
 	return result, nil
-}
-
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
-	if !isDML {
-		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return queryPlan, time.Time{}, metadata, err
-	}
-
-	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return 0, plan, metadata, err
-	})
-	return queryPlan, timestamp, metadata, err
 }
 
 type ExplainAnalyzeStatement struct {
@@ -959,48 +860,6 @@ type ExplainAnalyzeDmlStatement struct {
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeExplainAnalyzeDML(ctx, session, s.Dml)
-}
-
-// runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
-// It execute a function in the current RW transaction or an implicit RW transaction.
-func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-	if session.InReadWriteTransaction() {
-		affected, plan, metadata, err := f()
-		if err != nil {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return 0, time.Time{}, nil, nil, fmt.Errorf("transaction was aborted: %v", err)
-		}
-		return affected, time.Time{}, plan, metadata, nil
-	} else {
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err := begin.Execute(ctx, session); err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-
-		affected, plan, metadata, err := f()
-		if err != nil {
-			// once error has happened, escape from implicit transaction
-			rollback := &RollbackStatement{}
-			_, rollbackErr := rollback.Execute(ctx, session)
-			if rollbackErr != nil {
-				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return 0, time.Time{}, nil, nil, err
-		}
-
-		// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-		return affected, txnResult.Timestamp, plan, metadata, nil
-	}
 }
 
 type BeginRwStatement struct {
