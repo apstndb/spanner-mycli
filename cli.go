@@ -713,14 +713,6 @@ type WidthCount struct{ width, count int }
 func (wc WidthCount) Length() int { return wc.width }
 func (wc WidthCount) Count() int  { return wc.count }
 
-func adjustByName(types []*sppb.StructType_Field, availableWidth int) []int {
-	names := slices.Collect(xiter.Map(
-		(*sppb.StructType_Field).GetName,
-		slices.Values(types),
-	))
-	return adjustByHeader(names, availableWidth)
-}
-
 func adjustByHeader(headers []string, availableWidth int) []int {
 	nameWidths := slices.Collect(xiter.Map(runewidth.StringWidth, slices.Values(headers)))
 
