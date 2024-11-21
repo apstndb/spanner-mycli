@@ -821,6 +821,9 @@ func resultLine(result *Result, verbose bool) string {
 		timestamp = result.Timestamp.Format(time.RFC3339Nano)
 	}
 
+	// FIXME: Currently, ElapsedTime is not populated in batch mode.
+	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
+
 	if result.IsMutation {
 		var affectedRowsPrefix string
 		if result.AffectedRowsType == rowCountTypeLowerBound {
@@ -838,8 +841,8 @@ func resultLine(result *Result, verbose bool) string {
 				detail += fmt.Sprintf("mutation_count: %d\n", result.CommitStats.GetMutationCount())
 			}
 		}
-		return fmt.Sprintf("Query OK, %s%d rows affected (%s)\n%s",
-			affectedRowsPrefix, result.AffectedRows, result.Stats.ElapsedTime, detail)
+		return fmt.Sprintf("Query OK, %s%d rows affected%s\n%s",
+			affectedRowsPrefix, result.AffectedRows, elapsedTimePart, detail)
 	}
 
 	var set string
@@ -870,9 +873,9 @@ func resultLine(result *Result, verbose bool) string {
 		if result.Stats.OptimizerStatisticsPackage != "" {
 			detail += fmt.Sprintf("optimizer statistics: %s\n", result.Stats.OptimizerStatisticsPackage)
 		}
-		return fmt.Sprintf("%s (%s)\n%s", set, result.Stats.ElapsedTime, detail)
+		return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 	}
-	return fmt.Sprintf("%s (%s)\n", set, result.Stats.ElapsedTime)
+	return fmt.Sprintf("%s%s\n", set, elapsedTimePart)
 }
 
 func buildCommands(input string, mode parseMode) ([]*command, error) {

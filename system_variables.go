@@ -43,6 +43,7 @@ type systemVariables struct {
 	ProtoDescriptorFile         []string
 	BuildStatementMode          parseMode
 	LogGrpc                     bool
+	QueryMode                   *sppb.ExecuteSqlRequest_QueryMode
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -389,6 +390,23 @@ var accessorMap = map[string]accessor{
 		Getter: boolGetter(func(sysVars *systemVariables) *bool {
 			return lo.Ternary(sysVars.LogGrpc, &sysVars.LogGrpc, nil)
 		}),
+	},
+	"CLI_QUERY_MODE": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			if this.QueryMode == nil {
+				return nil, errIgnored
+			}
+			return singletonMap(name, this.QueryMode.String()), nil
+		},
+		Setter: func(this *systemVariables, name, value string) error {
+			s := unquoteString(value)
+			mode, ok := sppb.ExecuteSqlRequest_QueryMode_value[strings.ToUpper(s)]
+			if !ok {
+				return fmt.Errorf("invalid value: %v", s)
+			}
+			this.QueryMode = sppb.ExecuteSqlRequest_QueryMode(mode).Enum()
+			return nil
+		},
 	},
 }
 

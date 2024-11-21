@@ -28,39 +28,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apstndb/lox"
-
-	"github.com/apstndb/go-spannulls"
-	"github.com/apstndb/memebridge"
-
-	"github.com/apstndb/gsqlutils/stmtkind"
-
-	"github.com/samber/lo"
-
-	"github.com/mattn/go-runewidth"
-
-	"github.com/vbauerster/mpb/v8/decor"
-
-	"golang.org/x/exp/constraints"
-
-	"spheric.cloud/xiter"
-
-	_ "google.golang.org/protobuf/reflect/protodesc"
-
-	"google.golang.org/protobuf/types/descriptorpb"
-
-	"github.com/cloudspannerecosystem/memefish/ast"
-
-	"google.golang.org/protobuf/proto"
-
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
-	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-
-	"github.com/vbauerster/mpb/v8"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
+	scxiter "spheric.cloud/xiter"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -106,13 +84,13 @@ type Row struct {
 // Some fields may not have a valid value depending on the environment.
 // For example, only ElapsedTime and RowsReturned has valid value for Cloud Spanner Emulator.
 type QueryStats struct {
-	ElapsedTime                string
-	CPUTime                    string
-	RowsReturned               string
-	RowsScanned                string
-	DeletedRowsScanned         string
-	OptimizerVersion           string
-	OptimizerStatisticsPackage string
+	ElapsedTime                string `json:"elapsed_time"`
+	CPUTime                    string `json:"cpu_time"`
+	RowsReturned               string `json:"rows_returned"`
+	RowsScanned                string `json:"rows_scanned"`
+	DeletedRowsScanned         string `json:"deleted_rows_scanned"`
+	OptimizerVersion           string `json:"optimizer_version"`
+	OptimizerStatisticsPackage string `json:"optimizer_statistics_package"`
 }
 
 var (
@@ -307,11 +285,6 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (S
 	return BuildNativeStatementFallback(trimmed, raw)
 }
 
-func instanceOf[T any](v any) bool {
-	_, ok := v.(T)
-	return ok
-}
-
 func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
@@ -370,39 +343,6 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-type SelectStatement struct {
-	Query string
-}
-
-func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	for k, v := range paramsNodeMap {
-		switch v := v.(type) {
-		case ast.Type:
-			if !includeType {
-				continue
-			}
-
-			typ, err := memebridge.MemefishTypeToSpannerpbType(v)
-			if err != nil {
-				return nil, err
-			}
-			nullValue := spannulls.NullGenericColumnValueFromType(typ)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = nullValue
-		case ast.Expr:
-			expr, err := memebridge.MemefishExprToGCV(v)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = expr
-		}
-	}
-	return result, nil
-}
-
 func newStatement(sql string, params map[string]ast.Node, includeType bool) (spanner.Statement, error) {
 	genParams, err := generateParams(params, includeType)
 	if err != nil {
@@ -414,129 +354,25 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 	}, nil
 }
 
+type SelectStatement struct {
+	Query string
+}
+
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
+	qm := session.systemVariables.QueryMode
+	if qm == nil {
+		return executeSQL(ctx, session, s.Query)
 	}
-
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); err != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-		}
-		return nil, err
+	switch *qm {
+	case sppb.ExecuteSqlRequest_NORMAL:
+		return executeSQL(ctx, session, s.Query)
+	case sppb.ExecuteSqlRequest_PLAN:
+		return executeExplain(ctx, session, s.Query, false)
+	case sppb.ExecuteSqlRequest_PROFILE:
+		return executeExplainAnalyze(ctx, session, s.Query)
+	default:
+		return executeSQL(ctx, session, s.Query)
 	}
-	result := &Result{
-		ColumnNames: columnNames,
-		Rows:        rows,
-	}
-	result.ColumnTypes = iter.Metadata.GetRowType().GetFields()
-
-	queryStats := parseQueryStats(iter.QueryStats)
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
-	}
-
-	result.AffectedRows = rowsReturned
-	result.Stats = queryStats
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	if roTxn != nil {
-		result.Timestamp, _ = roTxn.Timestamp()
-	}
-
-	return result, nil
-}
-
-// extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
-func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	var names []string
-	for _, field := range fields {
-		names = append(names, field.GetName())
-	}
-	return names
-}
-
-// parseQueryResult parses rows and columnNames from spanner.RowIterator.
-// A caller is responsible for calling iterator.Stop().
-func parseQueryResult(iter *spanner.RowIterator) ([]Row, []string, error) {
-	var rows []Row
-	for {
-		row, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-
-		columns, err := DecodeRow(row)
-		if err != nil {
-			return nil, nil, err
-		}
-		rows = append(rows, Row{
-			Columns: columns,
-		})
-	}
-	return rows, extractColumnNames(iter.Metadata.GetRowType().GetFields()), nil
-}
-
-// parseQueryStats parses spanner.RowIterator.QueryStats.
-func parseQueryStats(stats map[string]interface{}) QueryStats {
-	var queryStats QueryStats
-
-	if v, ok := stats["elapsed_time"]; ok {
-		if elapsed, ok := v.(string); ok {
-			queryStats.ElapsedTime = elapsed
-		}
-	}
-
-	if v, ok := stats["rows_returned"]; ok {
-		if returned, ok := v.(string); ok {
-			queryStats.RowsReturned = returned
-		}
-	}
-
-	if v, ok := stats["rows_scanned"]; ok {
-		if scanned, ok := v.(string); ok {
-			queryStats.RowsScanned = scanned
-		}
-	}
-
-	if v, ok := stats["deleted_rows_scanned"]; ok {
-		if deletedRowsScanned, ok := v.(string); ok {
-			queryStats.DeletedRowsScanned = deletedRowsScanned
-		}
-	}
-
-	if v, ok := stats["cpu_time"]; ok {
-		if cpu, ok := v.(string); ok {
-			queryStats.CPUTime = cpu
-		}
-	}
-
-	if v, ok := stats["optimizer_version"]; ok {
-		if version, ok := v.(string); ok {
-			queryStats.OptimizerVersion = version
-		}
-	}
-
-	if v, ok := stats["optimizer_statistics_package"]; ok {
-		if pkg, ok := v.(string); ok {
-			queryStats.OptimizerStatisticsPackage = pkg
-		}
-	}
-
-	return queryStats
 }
 
 type CreateDatabaseStatement struct {
@@ -590,57 +426,6 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Resu
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
-func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
-	logParseStatements(ddls)
-
-	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
-	if err != nil {
-		return nil, err
-	}
-
-	p := mpb.NewWithContext(ctx)
-	defer p.Shutdown()
-	var bars []*mpb.Bar
-	for _, ddl := range ddls {
-		bar := p.AddBar(int64(100), mpb.PrependDecorators(decor.Spinner(nil, decor.WCSyncSpaceR), decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR), decor.Percentage(decor.WCSyncSpace), decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)))
-		bars = append(bars, bar)
-	}
-
-	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
-		Database:         session.DatabasePath(),
-		Statements:       ddls,
-		ProtoDescriptors: b,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error on create op: %w", err)
-	}
-
-	for {
-		time.Sleep(3 * time.Second)
-		err := op.Poll(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		metadata, err := op.Metadata()
-		if err != nil {
-			return nil, err
-		}
-
-		progresses := metadata.GetProgress()
-		for i, progress := range progresses {
-			bar := bars[i]
-			progressPercent := int64(progress.ProgressPercent)
-			bar.SetCurrent(progressPercent)
-		}
-
-		if op.Done() {
-			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-			return &Result{IsMutation: true, Timestamp: lastCommitTS}, nil
-		}
-	}
-}
-
 type ShowVariableStatement struct {
 	VarName string
 }
@@ -658,7 +443,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}
 	return &Result{
 		ColumnNames:   columnNames,
-		Rows:          []Row{{Columns: row}},
+		Rows:          sliceOf(toRow(row...)),
 		KeepVariables: true,
 	}, nil
 }
@@ -672,8 +457,8 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	rows := slices.SortedFunc(
-		xiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
-			return Row{sliceOf(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())}
+		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
+			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
 		}),
 		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
@@ -685,20 +470,6 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 }
 
 type ShowVariablesStatement struct{}
-
-func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
-	return func(lhs T, rhs T) int {
-		l, r := f(lhs), f(rhs)
-		switch {
-		case l < r:
-			return -1
-		case l > r:
-			return 1
-		default:
-			return 0
-		}
-	}
-}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
@@ -719,7 +490,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	}
 
 	rows := slices.SortedFunc(
-		xiter.MapLower(maps.All(merged), func(k, v string) Row { return Row{sliceOf(k, v)} }),
+		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
 		ToSortFunc(func(r Row) string { return r.Columns[0] }))
 
 	return &Result{
@@ -786,7 +557,7 @@ type ShowLocalProtoStatement struct{}
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
-	rows := slices.Collect(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
+	rows := slices.Collect(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
 
 	return &Result{
 		ColumnNames:   []string{"full_name", "package", "file"},
@@ -811,8 +582,8 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	rows := slices.Collect(xiter.Map(xiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
-		return Row{Columns: in.Columns[:2]}
+	rows := slices.Collect(scxiter.Map(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
+		return toRow(in.Columns[:2]...)
 	}))
 
 	return &Result{
@@ -826,34 +597,27 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 type ShowDatabasesStatement struct {
 }
 
-func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{ColumnNames: []string{"Database"}}
+var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
+func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	dbIter := session.adminClient.ListDatabases(ctx, &adminpb.ListDatabasesRequest{
 		Parent: session.InstancePath(),
 	})
 
-	for {
-		database, err := dbIter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
+	var rows []Row
+	for database, err := range dbIter.All() {
 		if err != nil {
 			return nil, err
 		}
 
-		re := regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
-		matched := re.FindStringSubmatch(database.GetName())
-		dbname := matched[1]
-		resultRow := Row{
-			Columns: []string{dbname},
-		}
-		result.Rows = append(result.Rows, resultRow)
+		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
+		rows = append(rows, toRow(matched[1]))
 	}
 
-	result.AffectedRows = len(result.Rows)
-
-	return result, nil
+	return &Result{ColumnNames: []string{"Database"},
+		Rows:         rows,
+		AffectedRows: len(rows),
+	}, nil
 }
 
 type ShowCreateTableStatement struct {
@@ -862,35 +626,31 @@ type ShowCreateTableStatement struct {
 }
 
 func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{ColumnNames: []string{"Table", "Create Table"}}
-
 	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	var rows []Row
 	for _, stmt := range ddlResponse.Statements {
 		if isCreateTableDDL(stmt, s.Schema, s.Table) {
-			var fqn string
-			if s.Schema == "" {
-				fqn = s.Table
-			} else {
-				fqn = fmt.Sprintf("%s.%s", s.Schema, s.Table)
-			}
-
-			resultRow := Row{
-				Columns: []string{fqn, stmt},
-			}
-			result.Rows = append(result.Rows, resultRow)
+			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Table
+			rows = append(rows, toRow(fqn, stmt))
 			break
 		}
 	}
-	if len(result.Rows) == 0 {
+
+	if len(rows) == 0 {
 		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
 	}
 
-	result.AffectedRows = len(result.Rows)
+	result := &Result{
+		ColumnNames:  []string{"Table", "Create Table"},
+		Rows:         rows,
+		AffectedRows: len(rows),
+	}
 
 	return result, nil
 }
@@ -911,29 +671,13 @@ type ShowTablesStatement struct {
 }
 
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW TABLES" can not be used in a read-write transaction`)
-	}
-
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
-	stmt := spanner.NewStatement(fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias))
-	stmt.Params["schema"] = s.Schema
-
-	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		return nil, err
+	stmt := spanner.Statement{
+		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias),
+		Params: map[string]any{"schema": s.Schema},
 	}
 
-	return &Result{
-		ColumnNames:  columnNames,
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW TABLES", stmt, nil)
 }
 
 type ExplainStatement struct {
@@ -943,34 +687,7 @@ type ExplainStatement struct {
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Explain, session.systemVariables.Params, true)
-	if err != nil {
-		return nil, err
-	}
-
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
-	if err != nil {
-		return nil, err
-	}
-
-	if queryPlan == nil {
-		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithoutStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		ColumnNames:  explainColumnNames,
-		AffectedRows: len(rows),
-		Rows:         rows,
-		Timestamp:    timestamp,
-		Predicates:   predicates,
-	}
-
-	return result, nil
+	return executeExplain(ctx, session, s.Explain, s.IsDML)
 }
 
 type DescribeStatement struct {
@@ -992,7 +709,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	var rows []Row
 	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, Row{Columns: []string{field.GetName(), formatTypeVerbose(field.GetType())}})
+		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
 	}
 
 	result := &Result{
@@ -1005,116 +722,14 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
-	if !isDML {
-		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return queryPlan, time.Time{}, metadata, err
-	}
-
-	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return 0, plan, metadata, err
-	})
-	return queryPlan, timestamp, metadata, err
-}
-
 type ExplainAnalyzeStatement struct {
 	Query string
 }
 
 func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Query, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
+	sql := s.Query
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
-
-	// consume iter
-	err = iter.Do(func(*spanner.Row) error {
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	queryStats := parseQueryStats(iter.QueryStats)
-	rowsReturned, err := strconv.Atoi(queryStats.RowsReturned)
-	if err != nil {
-		return nil, fmt.Errorf("rowsReturned is invalid: %v", err)
-	}
-
-	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
-	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
-	if iter.QueryPlan == nil {
-		return nil, errors.New("EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithStats(iter.QueryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	var timestamp time.Time
-	if roTxn != nil {
-		timestamp, _ = roTxn.Timestamp()
-	}
-
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ForceVerbose: true,
-		AffectedRows: rowsReturned,
-		Stats:        queryStats,
-		Timestamp:    timestamp,
-		Rows:         rows,
-		Predicates:   predicates,
-	}
-	return result, nil
-}
-
-func processPlanWithStats(plan *sppb.QueryPlan) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, true)
-}
-
-func processPlanWithoutStats(plan *sppb.QueryPlan) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, false)
-}
-
-func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicates []string, err error) {
-	planNodes := plan.GetPlanNodes()
-	maxWidthOfNodeID := len(fmt.Sprint(getMaxRelationalNodeID(plan)))
-	widthOfNodeIDWithIndicator := maxWidthOfNodeID + 1
-
-	tree := BuildQueryPlanTree(plan, 0)
-
-	treeRows, err := tree.RenderTreeWithStats(planNodes)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, row := range treeRows {
-		var formattedID string
-		if len(row.Predicates) > 0 {
-			formattedID = fmt.Sprintf("%*s", widthOfNodeIDWithIndicator, "*"+fmt.Sprint(row.ID))
-		} else {
-			formattedID = fmt.Sprintf("%*d", widthOfNodeIDWithIndicator, row.ID)
-		}
-		if withStats {
-			rows = append(rows, Row{[]string{formattedID, row.Text, row.RowsTotal, row.Execution, row.LatencyTotal}})
-		} else {
-			rows = append(rows, Row{[]string{formattedID, row.Text}})
-		}
-		for i, predicate := range row.Predicates {
-			var prefix string
-			if i == 0 {
-				prefix = fmt.Sprintf("%*d:", maxWidthOfNodeID, row.ID)
-			} else {
-				prefix = strings.Repeat(" ", maxWidthOfNodeID+1)
-			}
-			predicates = append(predicates, fmt.Sprintf("%s %s", prefix, predicate))
-		}
-	}
-	return rows, predicates, nil
+	return executeExplainAnalyze(ctx, session, sql)
 }
 
 type ShowColumnsStatement struct {
@@ -1123,12 +738,6 @@ type ShowColumnsStatement struct {
 }
 
 func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW COLUMNS" can not be used in a read-write transaction`)
-	}
-
 	stmt := spanner.Statement{SQL: `SELECT
   C.COLUMN_NAME as Field,
   C.SPANNER_TYPE as Type,
@@ -1148,24 +757,11 @@ WHERE
   LOWER(C.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(C.TABLE_NAME) = LOWER(@table_name)
 ORDER BY
   C.ORDINAL_POSITION ASC`,
-		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
 
-	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	}
-
-	return &Result{
-		ColumnNames:  columnNames,
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
+		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
+	})
 }
 
 func extractSchemaAndTable(s string) (string, string) {
@@ -1182,12 +778,6 @@ type ShowIndexStatement struct {
 }
 
 func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can not be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, errors.New(`"SHOW INDEX" can not be used in a read-write transaction`)
-	}
-
 	stmt := spanner.Statement{
 		SQL: `SELECT
   TABLE_NAME as Table,
@@ -1201,24 +791,11 @@ FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
   LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]interface{}{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
 
-	iter, _ := session.RunQuery(ctx, stmt)
-	defer iter.Stop()
-
-	rows, columnNames, err := parseQueryResult(iter)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	}
-
-	return &Result{
-		ColumnNames:  columnNames,
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
+		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
+	})
 }
 
 type TruncateTableStatement struct {
@@ -1254,59 +831,20 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
+	qm := session.systemVariables.QueryMode
+	if qm == nil {
+		return executeDML(ctx, session, s.Dml)
 	}
-
-	result := &Result{IsMutation: true}
-
-	var rows []Row
-	var columnNames []string
-	var numRows int64
-	var metadata *sppb.ResultSetMetadata
-	if session.InReadWriteTransaction() {
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, fmt.Errorf("transaction was aborted: %v", err)
-		}
-	} else {
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err = begin.Execute(ctx, session); err != nil {
-			return nil, err
-		}
-
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// once error has happened, escape from implicit transaction
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, err
-		}
-
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return nil, err
-		}
-		result.Timestamp = txnResult.Timestamp
-		result.CommitStats = txnResult.CommitStats
+	switch *qm {
+	case sppb.ExecuteSqlRequest_NORMAL:
+		return executeDML(ctx, session, s.Dml)
+	case sppb.ExecuteSqlRequest_PLAN:
+		return executeExplain(ctx, session, s.Dml, true)
+	case sppb.ExecuteSqlRequest_PROFILE:
+		return executeExplainAnalyzeDML(ctx, session, s.Dml)
+	default:
+		return executeDML(ctx, session, s.Dml)
 	}
-
-	result.ColumnTypes = metadata.GetRowType().GetFields()
-	result.Rows = rows
-	result.ColumnNames = columnNames
-	result.AffectedRows = int(numRows)
-
-	return result, nil
 }
 
 type PartitionedDmlStatement struct {
@@ -1323,14 +861,14 @@ func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session)
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
 	}
 
-	stmt := spanner.NewStatement(s.Dml)
 	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
 	defer cancel()
 
-	count, err := session.client.PartitionedUpdate(ctx, stmt)
+	count, err := session.client.PartitionedUpdate(ctx, spanner.NewStatement(s.Dml))
 	if err != nil {
 		return nil, err
 	}
+
 	return &Result{
 		IsMutation:       true,
 		AffectedRows:     int(count),
@@ -1343,81 +881,7 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Dml, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt)
-		defer iter.Stop()
-		err := iter.Do(func(r *spanner.Row) error { return nil })
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return iter.RowCount, iter.QueryPlan, iter.Metadata, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rows, predicates, err := processPlanWithStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-	result := &Result{
-		IsMutation:       true,
-		ColumnNames:      explainAnalyzeColumnNames,
-		ForceVerbose:     true,
-		AffectedRows:     int(affectedRows),
-		AffectedRowsType: rowCountTypeExact,
-		Rows:             rows,
-		Predicates:       predicates,
-		Timestamp:        timestamp,
-	}
-
-	return result, nil
-}
-
-// runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
-// It execute a function in the current RW transaction or an implicit RW transaction.
-func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-	if session.InReadWriteTransaction() {
-		affected, plan, metadata, err := f()
-		if err != nil {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return 0, time.Time{}, nil, nil, fmt.Errorf("transaction was aborted: %v", err)
-		}
-		return affected, time.Time{}, plan, metadata, nil
-	} else {
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err := begin.Execute(ctx, session); err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-
-		affected, plan, metadata, err := f()
-		if err != nil {
-			// once error has happened, escape from implicit transaction
-			rollback := &RollbackStatement{}
-			_, rollbackErr := rollback.Execute(ctx, session)
-			if rollbackErr != nil {
-				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return 0, time.Time{}, nil, nil, err
-		}
-
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-		return affected, txnResult.Timestamp, plan, metadata, nil
-	}
+	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
 type BeginRwStatement struct {
@@ -1448,6 +912,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
+
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
@@ -1462,10 +927,12 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
+
+	result := &Result{IsMutation: true}
+
 	if !session.InReadWriteTransaction() {
 		return result, nil
 	}
@@ -1483,10 +950,11 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
+
+	result := &Result{IsMutation: true}
 	if !session.InReadWriteTransaction() {
 		return result, nil
 	}
