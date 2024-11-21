@@ -151,6 +151,10 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		return errors.New("read-write transaction is already running")
 	}
 
+	if s.InReadOnlyTransaction() {
+		return errors.New("read-only transaction is already running")
+	}
+
 	// Use session's priority if transaction priority is not set.
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
 		priority = s.systemVariables.RPCPriority
@@ -292,7 +296,8 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	opts.Options.OptimizerVersion = s.systemVariables.OptimizerVersion
 	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
 
-	if s.InReadWriteTransaction() {
+	switch {
+	case s.InReadWriteTransaction():
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
@@ -300,17 +305,16 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		iter := s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
 		return iter, nil
-	}
-	if s.InReadOnlyTransaction() {
+	case s.InReadOnlyTransaction():
 		opts.RequestTag = s.tc.tag
 		return s.tc.roTxn.QueryWithOptions(ctx, stmt, opts), s.tc.roTxn
+	default:
+		txn := s.client.Single()
+		if s.systemVariables.ReadOnlyStaleness != nil {
+			txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
+		}
+		return txn.QueryWithOptions(ctx, stmt, opts), txn
 	}
-
-	txn := s.client.Single()
-	if s.systemVariables.ReadOnlyStaleness != nil {
-		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
-	}
-	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
 
 // RunUpdate executes a DML statement on the running read-write transaction.
@@ -331,6 +335,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 	// Workaround: Usually, we can execute DMLs using Query(ExecuteStreamingSql RPC),
 	// but spannertest doesn't support DMLs execution using ExecuteStreamingSql RPC.
 	// It enforces to use ExecuteSql RPC.
+	// TODO: Remove useUpdate flag
 	if useUpdate {
 		rowCount, err := s.tc.rwTxn.UpdateWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
@@ -470,4 +475,41 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 			},
 		},
 	}, nil
+}
+
+// RunInNewOrExistRwTx is a helper function for DML execution.
+// It executes a function in the current RW transaction or an implicit RW transaction.
+// If there is an error, the transaction will be rolled back.
+func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
+	f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+) (affected int64, commitResponse spanner.CommitResponse, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	var implicitRWTx bool
+	if !s.InReadWriteTransaction() {
+		// Start implicit transaction.
+		if err := s.BeginReadWriteTransaction(ctx, s.currentPriority(), ""); err != nil {
+			return 0, spanner.CommitResponse{}, nil, nil, err
+		}
+
+		implicitRWTx = true
+	}
+
+	affected, plan, metadata, err = f()
+	if err != nil {
+		// once error has happened, escape from the current transaction
+		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+		}
+		return 0, spanner.CommitResponse{}, nil, nil, fmt.Errorf("transaction was aborted: %w", err)
+	}
+
+	if !implicitRWTx {
+		return affected, spanner.CommitResponse{}, plan, metadata, nil
+	}
+
+	// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
+	resp, err := s.CommitReadWriteTransaction(ctx)
+	if err != nil {
+		return 0, spanner.CommitResponse{}, nil, nil, err
+	}
+	return affected, resp, plan, metadata, nil
 }

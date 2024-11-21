@@ -625,10 +625,6 @@ type ShowCreateTableStatement struct {
 	Table  string
 }
 
-func toRow(vs ...string) Row {
-	return Row{Columns: vs}
-}
-
 func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),

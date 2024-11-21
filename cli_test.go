@@ -180,7 +180,7 @@ func TestPrintResult(t *testing.T) {
 | 1    | 2         |
 | 3    | 4         |
 +------+-----------+
-Empty set ()
+Empty set
 `, "\n"),
 			},
 			{
@@ -208,7 +208,7 @@ Empty set ()
 | 1      | 2      |
 | 3      | 4      |
 +--------+--------+
-Empty set ()
+Empty set
 `, "\n"),
 			},
 			{
@@ -236,7 +236,7 @@ Empty set ()
 | rld      |            |
 | Bye      | さようなら |
 +----------+------------+
-Empty set ()
+Empty set
 `, "\n"),
 			},
 		}

@@ -14,7 +14,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/mattn/go-runewidth"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
@@ -200,54 +200,27 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	result := &Result{IsMutation: true}
-
 	var rows []Row
 	var columnNames []string
-	var numRows int64
-	var metadata *spannerpb.ResultSetMetadata
-	if session.InReadWriteTransaction() {
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, fmt.Errorf("transaction was aborted: %v", err)
-		}
-	} else {
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err = begin.Execute(ctx, session); err != nil {
-			return nil, err
-		}
-
-		rows, columnNames, numRows, metadata, err = session.RunUpdate(ctx, stmt, false)
-		if err != nil {
-			// once error has happened, escape from implicit transaction
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return nil, err
-		}
-
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return nil, err
-		}
-		result.Timestamp = txnResult.Timestamp
-		result.CommitStats = txnResult.CommitStats
+	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		rs, columns, num, meta, err := session.RunUpdate(ctx, stmt, false)
+		rows = rs
+		columnNames = columns
+		return num, nil, meta, err
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	result.ColumnTypes = metadata.GetRowType().GetFields()
-	result.Rows = rows
-	result.ColumnNames = columnNames
-	result.AffectedRows = int(numRows)
-
-	return result, nil
+	return &Result{
+		IsMutation:   true,
+		Timestamp:    commitResp.CommitTs,
+		CommitStats:  commitResp.CommitStats,
+		ColumnTypes:  metadata.GetRowType().GetFields(),
+		Rows:         rows,
+		ColumnNames:  columnNames,
+		AffectedRows: int(affected),
+	}, nil
 }
 
 func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -256,7 +229,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
-	affectedRows, timestamp, queryPlan, _, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *spannerpb.QueryPlan, *spannerpb.ResultSetMetadata, error) {
+	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt)
 		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
 		return count, plan, metadata, err
@@ -269,6 +242,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 	if err != nil {
 		return nil, err
 	}
+
 	result := &Result{
 		IsMutation:       true,
 		ColumnNames:      explainAnalyzeColumnNames,
@@ -277,7 +251,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		AffectedRowsType: rowCountTypeExact,
 		Rows:             rows,
 		Predicates:       predicates,
-		Timestamp:        timestamp,
+		Timestamp:        commitResp.CommitTs,
 	}
 
 	return result, nil
@@ -307,59 +281,22 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 	}, nil
 }
 
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *spannerpb.QueryPlan, commitTimestamp time.Time, metadata *spannerpb.ResultSetMetadata, err error) {
+func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
 	if !isDML {
 		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	_, timestamp, queryPlan, metadata, err := runInNewOrExistRwTxForExplain(ctx, session, func() (int64, *spannerpb.QueryPlan, *spannerpb.ResultSetMetadata, error) {
+	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return 0, plan, metadata, err
 	})
-	return queryPlan, timestamp, metadata, err
-}
-
-// runInNewOrExistRwTxForExplain is a helper function for runAnalyzeQuery and ExplainAnalyzeDmlStatement.
-// It execute a function in the current RW transaction or an implicit RW transaction.
-func runInNewOrExistRwTxForExplain(ctx context.Context, session *Session, f func() (affected int64, plan *spannerpb.QueryPlan, metadata *spannerpb.ResultSetMetadata, err error)) (affected int64, ts time.Time, plan *spannerpb.QueryPlan, metadata *spannerpb.ResultSetMetadata, err error) {
-	var implicitRWTx bool
-	if !session.InReadWriteTransaction() {
-		implicitRWTx = true
-		// Start implicit transaction.
-		begin := BeginRwStatement{}
-		if _, err := begin.Execute(ctx, session); err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-	}
-
-	affected, plan, metadata, err = f()
-	if err != nil {
-		// once error has happened, escape from implicit transaction
-		rollback := &RollbackStatement{}
-		if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-		}
-		return 0, time.Time{}, nil, nil, fmt.Errorf("transaction was aborted: %w", err)
-	}
-
-	var commitTimestamp time.Time
-	if implicitRWTx {
-		// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
-		commit := CommitStatement{}
-		txnResult, err := commit.Execute(ctx, session)
-		if err != nil {
-			return 0, time.Time{}, nil, nil, err
-		}
-		commitTimestamp = txnResult.Timestamp
-	}
-
-	return affected, commitTimestamp, plan, metadata, nil
+	return queryPlan, commitResp.CommitTs, metadata, err
 }
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
-func extractColumnNames(fields []*spannerpb.StructType_Field) []string {
-	return slices.Collect(xiter.Map((*spannerpb.StructType_Field).GetName, slices.Values(fields)))
+func extractColumnNames(fields []*sppb.StructType_Field) []string {
+	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
@@ -379,12 +316,12 @@ func parseQueryStats(stats map[string]any) (QueryStats, error) {
 }
 
 // consumeRowIterDiscard calls iter.Stop().
-func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	return consumeRowIter(iter, func(*spanner.Row) error { return nil })
 }
 
 // consumeRowIter calls iter.Stop().
-func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	defer iter.Stop()
 	err = iter.Do(f)
 	if err != nil {
@@ -394,7 +331,7 @@ func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (quer
 	return iter.QueryStats, iter.RowCount, iter.Metadata, iter.QueryPlan, nil
 }
 
-func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *spannerpb.ResultSetMetadata, queryPlan *spannerpb.QueryPlan, err error) {
+func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
 	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
 		v, err := f(row)
