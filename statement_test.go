@@ -578,6 +578,26 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainAnalyzeStatement{Query: `CALL cancel_query("1234567890123456789")`},
 		},
 		{
+			desc:  "PARTITION statement",
+			input: `PARTITION SELECT * FROM Singers`,
+			want:  &PartitionStatement{SQL: `SELECT * FROM Singers`},
+		},
+		{
+			desc:  "TRY PARTITIONED QUERY statement",
+			input: `TRY PARTITIONED QUERY SELECT * FROM Singers`,
+			want:  &TryPartitionedQueryStatement{SQL: `SELECT * FROM Singers`},
+		},
+		{
+			desc:  "RUN PARTITIONED QUERY statement",
+			input: `RUN PARTITIONED QUERY SELECT * FROM Singers`,
+			want:  &RunPartitionedQueryStatement{SQL: `SELECT * FROM Singers`},
+		},
+		{
+			desc:  "RUN PARTITION statement",
+			input: `RUN PARTITION '123456789'`,
+			want:  &RunPartitionStatement{Token: `123456789`},
+		},
+		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
