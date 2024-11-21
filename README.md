@@ -15,6 +15,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * gRPC logging(`--log-grpc`)
+  * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`, `--query-mode`)
