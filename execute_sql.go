@@ -91,7 +91,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	for {
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 		err := op.Poll(ctx)
 		if err != nil {
 			return nil, err
@@ -177,17 +177,12 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 	}
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	timestamp := lox.IfOrEmptyF(roTxn != nil, func() time.Time {
-		ts, _ := roTxn.Timestamp()
-		return ts
-	})
-
 	result := &Result{
 		ColumnNames:  explainAnalyzeColumnNames,
 		ForceVerbose: true,
 		AffectedRows: len(rows),
 		Stats:        queryStats,
-		Timestamp:    timestamp,
+		Timestamp:    lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) }),
 		Rows:         rows,
 		Predicates:   predicates,
 	}

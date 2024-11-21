@@ -489,7 +489,6 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		if err := s.BeginReadWriteTransaction(ctx, s.currentPriority(), ""); err != nil {
 			return 0, spanner.CommitResponse{}, nil, nil, err
 		}
-
 		implicitRWTx = true
 	}
 
