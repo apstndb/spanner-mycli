@@ -15,6 +15,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * gRPC logging(`--log-grpc`)
+  * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`, `--query-mode`)
@@ -277,6 +278,8 @@ and `{}` for a mutually exclusive keyword.
 | Rollback Read-Write Transaction | `ROLLBACK;`                                                                                    | |
 | Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority. The tag you set is used as request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
 | End Read-Only Transaction | `CLOSE;`                                                                                       | |
+| Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
+| Show partition tokens of partition query | `PARTITION <sql>` ||
 | Exit CLI | `EXIT;`                                                                                        | |
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
 | Set variable | `SET <name> = <value>;`                                                                        | |
@@ -734,6 +737,46 @@ Empty set (0.00 sec)
 | bytes_value | VALUE      | B"foo"      |
 +-------------+------------+-------------+
 Empty set (0.00 sec)
+```
+
+## Partition Queries
+
+spanner-mycli have some partition queries functionality.
+
+### Test root-partitionable
+
+You can test whether the query is root-partitionable using `TRY PARTITIONED QUERY` command.
+
+```
+spanner> TRY PARTITIONED QUERY SELECT * FROM Singers;
++--------------------+
+| Root_Partitionable |
++--------------------+
+| TRUE               |
++--------------------+
+1 rows in set (0.78 sec)
+
+spanner> TRY PARTITIONED QUERY SELECT * FROM Singers ORDER BY SingerId;
+ERROR: query can't be a partition query: rpc error: code = InvalidArgument desc = Query is not root partitionable since it does not have a DistributedUnion at the root. Please check the conditions for a query to be root-partitionable.
+error details: name = Help desc = Conditions for a query to be root-partitionable. url = https://cloud.google.com/spanner/docs/reads#read_data_in_parallel
+```
+
+### Show partition tokens.
+
+You can show partition tokens using `PARTITION` command.
+
+Note: spanner-mycli does not clean up batch read-only transactions, which may prevent resources from being freed until they time out.
+
+```
+spanner> PARTITION SELECT * FROM Singers;
++-------------------------------------------------------------------------------------------------+
+| Partition_Token                                                                                 |
++-------------------------------------------------------------------------------------------------+
+| QUw0MGxyRjJDZENocXc0TkZnR3NxVHN1QnFCMy1yWkxWZmlIdFhhc2U4T2lWOGJRVFhJRkgydU1URmZUb2dBLXVvZE1O... |
+| QUw0MGxyRzhPdmZUR04xclFQVTJKQXlVMEJjZFBUWTV3NUFsT2x0VGxTNHZWSExsejQweXNUWUFtUXd5ZjBzWEhmQ0Fa... |
+| QUw0MGxyR3paSk96WUNqdjFsQW9tc2UwOFFoNlA4SzhHUzNWQVltNzVlRHZxdjZpUmFVSFN2UmtBanozc0hEaE9Iem9x... |
++-------------------------------------------------------------------------------------------------+
+3 rows in set (0.65 sec)
 ```
 
 ## Using with the Cloud Spanner Emulator

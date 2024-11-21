@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -27,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -74,6 +77,7 @@ type Result struct {
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
 	ColumnTypes []*sppb.StructType_Field
+	ForceWrap   bool
 }
 
 type Row struct {
@@ -116,24 +120,28 @@ var (
 	closeRe    = regexp.MustCompile(`(?is)^CLOSE$`)
 
 	// Other
-	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
-	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalProtoRe  = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showRemoteProtoRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
-	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
-	showCreateTableRe = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
-	showTablesRe      = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
-	showColumnsRe     = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
-	showIndexRe       = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
-	explainRe         = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
-	describeRe        = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
-	showVariableRe    = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
-	setParamTypeRe    = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
-	setParamRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
-	setRe             = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
-	setAddRe          = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
-	showParamsRe      = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
-	showVariablesRe   = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
+	exitRe                = regexp.MustCompile(`(?is)^EXIT$`)
+	useRe                 = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
+	showLocalProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showRemoteProtoRe     = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	showDatabasesRe       = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
+	showCreateTableRe     = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
+	showTablesRe          = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
+	showColumnsRe         = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
+	showIndexRe           = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
+	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
+	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
+	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
+	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
+	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
+	setAddRe              = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
+	showParamsRe          = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
+	showVariablesRe       = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
+	partitionRe           = regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`)
+	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
+	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
+	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 )
 
 var (
@@ -236,6 +244,18 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowParamsStatement{}, nil
 	case showVariablesRe.MatchString(trimmed):
 		return &ShowVariablesStatement{}, nil
+	case partitionRe.MatchString(trimmed):
+		matched := partitionRe.FindStringSubmatch(trimmed)
+		return &PartitionStatement{SQL: matched[1]}, nil
+	case runPartitionedQueryRe.MatchString(trimmed):
+		matched := runPartitionedQueryRe.FindStringSubmatch(trimmed)
+		return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
+	case runPartitionRe.MatchString(trimmed):
+		matched := runPartitionRe.FindStringSubmatch(trimmed)
+		return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
+	case tryPartitionedQueryRe.MatchString(trimmed):
+		matched := tryPartitionedQueryRe.FindStringSubmatch(trimmed)
+		return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1058,6 +1078,100 @@ func (s *CloseStatement) Execute(ctx context.Context, session *Session) (*Result
 	}
 
 	return result, nil
+}
+
+type PartitionStatement struct{ SQL string }
+
+func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := slices.Collect(xiter.Map(
+		func(partition *spanner.Partition) Row {
+			return toRow(base64.StdEncoding.EncodeToString(partition.GetPartitionToken()))
+		},
+		slices.Values(partitions)))
+
+	ts, err := batchROTx.Timestamp()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		ColumnNames:  sliceOf("Partition_Token"),
+		Rows:         rows,
+		AffectedRows: len(rows),
+		Timestamp:    ts,
+		ForceWrap:    true,
+	}, nil
+}
+
+type TryPartitionedQueryStatement struct{ SQL string }
+
+func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
+	tb := lo.FromPtrOr(s.systemVariables.ReadOnlyStaleness, spanner.StrongRead())
+
+	batchROTx, err := s.client.BatchReadOnlyTransaction(ctx, tb)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{})
+	if err != nil {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+		return nil, nil, fmt.Errorf("query can't be a partition query: %w", err)
+	}
+	return partitions, batchROTx, nil
+}
+
+func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	_, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
+
+	ts, err := batchROTx.Timestamp()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		ColumnNames:  sliceOf("Root_Partitionable"),
+		Rows:         sliceOf(toRow("TRUE")),
+		AffectedRows: 1,
+		Timestamp:    ts,
+		ForceWrap:    true,
+	}, nil
+}
+
+type RunPartitionedQueryStatement struct{ SQL string }
+
+func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return nil, errors.New("unsupported statement")
+}
+
+type RunPartitionStatement struct{ Token string }
+
+func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return nil, errors.New("unsupported statement")
 }
 
 type NopStatement struct{}

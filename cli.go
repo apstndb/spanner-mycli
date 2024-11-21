@@ -574,11 +574,12 @@ func maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int,
 			hiter.Pairs(slices.Values(adjustWidths), seq)))
 }
 
-func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType_Field, rows []Row) []int {
+func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []Row) []int {
+
 	// table overhead is:
 	// len(`|  |`) +
 	// len(` | `) * len(columns) - 1
-	overheadWidth := 4 + 3*(len(types)-1)
+	overheadWidth := 4 + 3*(len(header)-1)
 
 	// don't mutate
 	termWidthWithoutOverhead := screenWidth - overheadWidth
@@ -591,23 +592,21 @@ func calculateOptimalWidth(debug bool, screenWidth int, types []*sppb.StructType
 		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
 	}
 
-	adjustedWidths := adjustByName(types, termWidthWithoutOverhead)
+	adjustedWidths := adjustByHeader(header, termWidthWithoutOverhead)
 
 	if debug {
 		log.Println("adjustByName:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 	}
 
 	var transposedRows [][]string
-	for columnIdx := range len(types) {
+	for columnIdx := range len(header) {
 		transposedRows = append(transposedRows, slices.Collect(
-			xiter.Concat(
-				hiter.Once(formatTypedHeaderColumn(types[columnIdx])),
-				xiter.Map(
-					func(in Row) string {
-						return lo.Must(lo.Nth(in.Columns, columnIdx))
-					},
-					slices.Values(rows),
-				))))
+			xiter.Map(
+				func(in Row) string {
+					return lo.Must(lo.Nth(in.Columns, columnIdx))
+				},
+				xiter.Concat(hiter.Once(toRow(header...)), slices.Values(rows)),
+			)))
 	}
 
 	widthCounts := calculateWidthCounts(adjustedWidths, transposedRows)
@@ -714,12 +713,8 @@ type WidthCount struct{ width, count int }
 func (wc WidthCount) Length() int { return wc.width }
 func (wc WidthCount) Count() int  { return wc.count }
 
-func adjustByName(types []*sppb.StructType_Field, availableWidth int) []int {
-	names := slices.Collect(xiter.Map(
-		(*sppb.StructType_Field).GetName,
-		slices.Values(types),
-	))
-	nameWidths := slices.Collect(xiter.Map(runewidth.StringWidth, slices.Values(names)))
+func adjustByHeader(headers []string, availableWidth int) []int {
+	nameWidths := slices.Collect(xiter.Map(runewidth.StringWidth, slices.Values(headers)))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
@@ -739,8 +734,17 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAutoWrapText(false)
 
-		// It is not valid when ColumnType is not populated.
-		adjustedWidths := calculateOptimalWidth(debug, screenWidth, result.ColumnTypes, result.Rows)
+		var adjustedWidths []int
+		if len(result.ColumnTypes) > 0 {
+			names := slices.Collect(xiter.Map(
+				(*sppb.StructType_Field).GetName,
+				slices.Values(result.ColumnTypes),
+			))
+			header := slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
+			adjustedWidths = calculateOptimalWidth(debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), result.Rows))
+		} else {
+			adjustedWidths = calculateOptimalWidth(debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), result.Rows))
+		}
 
 		// This condition is true if statement is SelectStatement or DmlStatement
 		var forceTableRender bool
@@ -759,15 +763,11 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		}
 
 		for _, row := range result.Rows {
-			if len(result.ColumnTypes) > 0 {
-				wrappedColumns := slices.Collect(hiter.Unify(
-					runewidth.Wrap,
-					hiter.Pairs(slices.Values(row.Columns), slices.Values(adjustedWidths))),
-				)
-				table.Append(wrappedColumns)
-			} else {
-				table.Append(row.Columns)
-			}
+			wrappedColumns := slices.Collect(hiter.Unify(
+				runewidth.Wrap,
+				hiter.Pairs(slices.Values(row.Columns), slices.Values(adjustedWidths))),
+			)
+			table.Append(wrappedColumns)
 		}
 
 		if forceTableRender || len(result.Rows) > 0 {
