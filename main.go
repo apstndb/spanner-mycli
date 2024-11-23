@@ -21,12 +21,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"cloud.google.com/go/spanner"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -72,6 +76,8 @@ type spannerOptions struct {
 	Debug               bool              `long:"debug" hidden:"true"`
 	LogGrpc             bool              `long:"log-grpc" description:"Show gRPC logs"`
 	QueryMode           string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
+	Strong              bool              `long:"strong" description:"Perform a strong query."`
+	ReadTimestamp       string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -126,6 +132,10 @@ func main() {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
 	}
 
+	if opts.Strong && opts.ReadTimestamp != "" {
+		exitf("invalid parameters: --strong and --read-timestamp are mutually exclusive\n")
+	}
+
 	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
 		exitf("Missing parameters: -p, -i, -d are required\n")
 	}
@@ -159,6 +169,19 @@ func main() {
 		Debug:       opts.Debug,
 		Params:      params,
 		LogGrpc:     opts.LogGrpc,
+	}
+
+	if opts.Strong {
+		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
+	}
+
+	log.Println(opts.ReadTimestamp)
+	if opts.ReadTimestamp != "" {
+		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
+		if err != nil {
+			exitf("error on parsing --read-timestamp=%v, err: %v\n", opts.ReadTimestamp, err)
+		}
+		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)

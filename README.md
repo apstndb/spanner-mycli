@@ -91,6 +91,8 @@ spanner:
       --emulator-image=                  container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
       --log-grpc                         Show gRPC logs
       --query-mode=[NORMAL|PLAN|PROFILE] Mode in which the query must be processed.
+      --strong                           Perform a strong query.
+      --read-timestamp=                  Perform a query at the given timestamp.
 ```
 
 ### Authentication
