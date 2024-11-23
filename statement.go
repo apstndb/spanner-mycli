@@ -29,6 +29,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ngicks/go-iterator-helper/hiter"
+
+	"github.com/apstndb/memebridge"
+
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
 	"cloud.google.com/go/spanner"
@@ -41,6 +45,7 @@ import (
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	scxiter "spheric.cloud/xiter"
 )
 
@@ -142,6 +147,7 @@ var (
 	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
 	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
+	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
 )
 
 var (
@@ -256,6 +262,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case tryPartitionedQueryRe.MatchString(trimmed):
 		matched := tryPartitionedQueryRe.FindStringSubmatch(trimmed)
 		return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
+	case mutateRe.MatchString(trimmed):
+		matched := mutateRe.FindStringSubmatch(trimmed)
+		return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1172,6 +1181,146 @@ type RunPartitionStatement struct{ Token string }
 
 func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return nil, errors.New("unsupported statement")
+}
+
+type MutateStatement struct {
+	Table     string
+	Operation string
+	Body      string
+}
+
+func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
+	if strings.ToUpper(strings.TrimSpace(s)) == "ALL" {
+		return sliceOf(spanner.Delete(table, spanner.KeySets(spanner.AllKeys()))), nil
+	}
+	expr, err := memefish.ParseExpr("", s)
+	if err != nil {
+		return nil, err
+	}
+	switch expr.(type) {
+	default:
+		return nil, fmt.Errorf("unsupported expr as KeySet", expr.SQL())
+	}
+}
+
+func typeValueToGCV(k *sppb.StructType_Field, v *structpb.Value) spanner.GenericColumnValue {
+	return spanner.GenericColumnValue{
+		Type:  k.GetType(),
+		Value: v,
+	}
+}
+
+func extractStructValuesUsingType(fields []*sppb.StructType_Field) func(v *structpb.Value) []spanner.GenericColumnValue {
+	return func(v *structpb.Value) []spanner.GenericColumnValue {
+		return extractStructValues(fields, v.GetListValue().GetValues())
+	}
+}
+
+func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spanner.GenericColumnValue, error) {
+	switch gcv.Type.GetCode() {
+	case sppb.TypeCode_STRUCT:
+		structTypefields := gcv.Type.GetStructType().GetFields()
+
+		// [values]
+		return extractColumnNames(structTypefields),
+			sliceOf(extractStructValues(structTypefields, gcv.Value.GetListValue().GetValues())),
+			nil
+	case sppb.TypeCode_ARRAY:
+		structTypeFields := gcv.Type.GetArrayElementType().GetStructType().GetFields()
+		return extractColumnNames(structTypeFields),
+			slices.Collect(xiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
+			nil
+	default:
+		// [[value]]
+		return nil, sliceOf(sliceOf(gcv)), nil
+	}
+}
+func parseLiterals(s string) ([]string, [][]spanner.GenericColumnValue, error) {
+	expr, err := memefish.ParseExpr("", s)
+	if err != nil {
+		return nil, nil, err
+	}
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		gcv, err := memebridge.MemefishExprToGCV(e.Expr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", e.SQL(), err)
+		}
+		return convertToColumnsValues(gcv)
+	case *ast.TypedStructLiteral, *ast.TupleStructLiteral, *ast.TypelessStructLiteral, *ast.ArrayLiteral:
+		gcv, err := memebridge.MemefishExprToGCV(e)
+		if err != nil {
+			return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", e.SQL(), err)
+		}
+		return convertToColumnsValues(gcv)
+	default:
+		return nil, nil, fmt.Errorf("unsupported expr as KeySet: %v", expr.SQL())
+	}
+}
+
+func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
+	return slices.Collect(hiter.Unify(
+		typeValueToGCV,
+		hiter.Pairs(slices.Values(structTypefields), slices.Values(structValues))))
+}
+
+func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
+	if op == "DELETE" {
+		return parseDeleteMutation(table, s)
+	}
+
+	columns, values, err := parseLiterals(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid write mutations: %w", err)
+	}
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("column names can't be inferenced")
+	}
+
+	// The common signature of Mutation functions
+	type mutationFunc func(string, []string, []any) *spanner.Mutation
+
+	var mutationF mutationFunc
+	switch strings.ToUpper(op) {
+	case "INSERT":
+		mutationF = spanner.Insert
+	case "UPDATE":
+		mutationF = spanner.Update
+	case "INSERT_OR_UPDATE":
+		mutationF = spanner.InsertOrUpdate
+	case "REPLACE":
+		mutationF = spanner.Replace
+	default:
+		return nil, fmt.Errorf("unsupported operation: %q", op)
+	}
+
+	var mutations []*spanner.Mutation
+	for _, v := range values {
+		mutations = append(mutations, mutationF(table, columns, lo.ToAnySlice(v)))
+	}
+	return mutations, nil
+}
+
+func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
+	if err != nil {
+		return nil, err
+	}
+	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		err = session.tc.rwTxn.BufferWrite(mutations)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		return 0, nil, nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		IsMutation:  true,
+		CommitStats: stats.CommitStats,
+		Timestamp:   stats.CommitTs,
+	}, nil
 }
 
 type NopStatement struct{}
