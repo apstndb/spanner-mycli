@@ -29,19 +29,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngicks/go-iterator-helper/hiter"
-
-	"github.com/apstndb/memebridge"
-
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
-
+	"cloud.google.com/go/civil"
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -1189,6 +1188,44 @@ type MutateStatement struct {
 	Body      string
 }
 
+func decode[T any](gcv spanner.GenericColumnValue) (T, error) {
+	var v T
+	err := gcv.Decode(&v)
+	return v, err
+}
+
+func gcvToKeyable(gcv spanner.GenericColumnValue) (any, error) {
+	// See spanner.Key.
+	if _, ok := gcv.Value.GetKind().(*structpb.Value_NullValue); ok {
+		return nil, nil
+	}
+
+	switch gcv.Type.GetCode() {
+	case sppb.TypeCode_INT64, sppb.TypeCode_ENUM:
+		return decode[int64](gcv)
+	case sppb.TypeCode_FLOAT64:
+		return decode[float64](gcv)
+	case sppb.TypeCode_FLOAT32:
+		return decode[float32](gcv)
+	case sppb.TypeCode_BOOL:
+		return decode[bool](gcv)
+	case sppb.TypeCode_BYTES:
+		return decode[[]byte](gcv)
+	case sppb.TypeCode_STRING:
+		return decode[string](gcv)
+	case sppb.TypeCode_TIMESTAMP:
+		return decode[time.Time](gcv)
+	case sppb.TypeCode_DATE:
+		return decode[civil.Date](gcv)
+	default:
+		s, err := spanvalue.FormatColumnLiteral(gcv)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unsupported value for key: %v", s)
+	}
+}
+
 func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 	if strings.ToUpper(strings.TrimSpace(s)) == "ALL" {
 		return sliceOf(spanner.Delete(table, spanner.KeySets(spanner.AllKeys()))), nil
@@ -1197,9 +1234,31 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch expr.(type) {
+	switch e := expr.(type) {
+	case *ast.CallExpr:
+		return nil, fmt.Errorf("CallExpr as a delete mutation is not yet supported: %v", e.SQL())
 	default:
-		return nil, fmt.Errorf("unsupported expr as KeySet", expr.SQL())
+		columns, valuesList, err := parseLiteralExpr(e)
+		if err != nil {
+			return nil, err
+		}
+		if len(columns) > 0 {
+			log.Printf("delete mutation ignores column names: %v", columns)
+		}
+
+		var mutations []spanner.Key
+		for _, values := range valuesList {
+			var anyValues []any
+			for _, value := range values {
+				keyable, err := gcvToKeyable(value)
+				if err != nil {
+					return nil, err
+				}
+				anyValues = append(anyValues, keyable)
+			}
+			mutations = append(mutations, anyValues)
+		}
+		return sliceOf(spanner.Delete(table, spanner.KeySetFromKeys(mutations...))), nil
 	}
 }
 
@@ -1226,6 +1285,14 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 			sliceOf(extractStructValues(structTypefields, gcv.Value.GetListValue().GetValues())),
 			nil
 	case sppb.TypeCode_ARRAY:
+		if gcv.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
+			return nil, slices.Collect(xiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
+				return sliceOf(spanner.GenericColumnValue{
+					Type:  gcv.Type.GetArrayElementType(),
+					Value: v,
+				})
+			}, slices.Values(gcv.Value.GetListValue().GetValues()))), nil
+		}
 		structTypeFields := gcv.Type.GetArrayElementType().GetStructType().GetFields()
 		return extractColumnNames(structTypeFields),
 			slices.Collect(xiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
@@ -1235,14 +1302,11 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 		return nil, sliceOf(sliceOf(gcv)), nil
 	}
 }
-func parseLiterals(s string) ([]string, [][]spanner.GenericColumnValue, error) {
-	expr, err := memefish.ParseExpr("", s)
-	if err != nil {
-		return nil, nil, err
-	}
+
+func parseLiteralExpr(expr ast.Expr) ([]string, [][]spanner.GenericColumnValue, error) {
 	switch e := expr.(type) {
 	case *ast.ParenExpr:
-		gcv, err := memebridge.MemefishExprToGCV(e.Expr)
+		gcv, err := memebridge.MemefishExprToGCV(e)
 		if err != nil {
 			return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", e.SQL(), err)
 		}
@@ -1254,8 +1318,16 @@ func parseLiterals(s string) ([]string, [][]spanner.GenericColumnValue, error) {
 		}
 		return convertToColumnsValues(gcv)
 	default:
-		return nil, nil, fmt.Errorf("unsupported expr as KeySet: %v", expr.SQL())
+		return nil, nil, fmt.Errorf("unsupported expr as literals: %v", expr.SQL())
 	}
+}
+
+func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, error) {
+	expr, err := memefish.ParseExpr("", s)
+	if err != nil {
+		return nil, nil, err
+	}
+	return parseLiteralExpr(expr)
 }
 
 func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
@@ -1269,7 +1341,7 @@ func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
 		return parseDeleteMutation(table, s)
 	}
 
-	columns, values, err := parseLiterals(s)
+	columns, values, err := parseLiteralString(s)
 	if err != nil {
 		return nil, fmt.Errorf("invalid write mutations: %w", err)
 	}

@@ -670,6 +670,8 @@ github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c h1:qY6RWLulQDcbGy18LT3
 github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5 h1:g/oT7Ma+julpql02U7TMNluxtKOZMnxyaZwqiTguwD4=
 github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5/go.mod h1:FaufbBYU/dQaQChu/b62igLoLJmT2Qj8lPEdbxRls2c=
+github.com/apstndb/memebridge v0.0.0-20241123172322-a745771fe5be h1:nkxHsdoFzh9mSoXMN7SA/9dsjnmqYCH3+V1GNLsOtaM=
+github.com/apstndb/memebridge v0.0.0-20241123172322-a745771fe5be/go.mod h1:FaufbBYU/dQaQChu/b62igLoLJmT2Qj8lPEdbxRls2c=
 github.com/apstndb/spantype v0.2.0 h1:yoV0riMXhLeT9z8D1zhvwIraOvIU0fDKwWrWgtmoNns=
 github.com/apstndb/spantype v0.2.0/go.mod h1:zn3qR4ebyy3HumRKRG0COMRSf4tmaR1HptQwe7/Xu7g=
 github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e h1:uWViNQM3/1RPtJcw6+4l3XHAm4uCWCWe0xVQvpXj8mM=
