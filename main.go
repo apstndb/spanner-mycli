@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"maps"
 	"os"
 	"os/user"
@@ -175,7 +174,6 @@ func main() {
 		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
 	}
 
-	log.Println(opts.ReadTimestamp)
 	if opts.ReadTimestamp != "" {
 		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
 		if err != nil {
