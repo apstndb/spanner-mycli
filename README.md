@@ -284,7 +284,7 @@ and `{}` for a mutually exclusive keyword.
 | End Read-Only Transaction | `CLOSE;`                                                                                       | |
 | Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
 | Show partition tokens of partition query | `PARTITION <sql>` ||
-| Perform write mutations | `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`||
+| Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||
 | Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
 | Exit CLI | `EXIT;`                                                                                        | |
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
