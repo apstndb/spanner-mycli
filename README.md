@@ -18,7 +18,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
-  * Support compatible flags (`--sql`, `--query-mode`)
+  * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`)
 * More `gcloud spanner databases ddl update` compatibilities
   * Support [`--proto-descriptor-file`](#protocol-buffers-support) flag
 * Generalized concepts to extend without a lot of original syntax
