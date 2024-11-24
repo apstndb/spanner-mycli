@@ -29,8 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
-
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -38,6 +36,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -142,6 +141,7 @@ var (
 	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
 	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
+	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
 )
 
 var (
@@ -256,6 +256,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case tryPartitionedQueryRe.MatchString(trimmed):
 		matched := tryPartitionedQueryRe.FindStringSubmatch(trimmed)
 		return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
+	case mutateRe.MatchString(trimmed):
+		matched := mutateRe.FindStringSubmatch(trimmed)
+		return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1172,6 +1175,34 @@ type RunPartitionStatement struct{ Token string }
 
 func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return nil, errors.New("unsupported statement")
+}
+
+type MutateStatement struct {
+	Table     string
+	Operation string
+	Body      string
+}
+
+func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
+	if err != nil {
+		return nil, err
+	}
+	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		err = session.tc.rwTxn.BufferWrite(mutations)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		return 0, nil, nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		IsMutation:  true,
+		CommitStats: stats.CommitStats,
+		Timestamp:   stats.CommitTs,
+	}, nil
 }
 
 type NopStatement struct{}
