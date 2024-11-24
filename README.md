@@ -14,8 +14,10 @@ You can control your Spanner databases with idiomatic SQL commands.
   * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
-  * gRPC logging(`--log-grpc`)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
+* Respects training and verification use-cases.
+  * gRPC logging(`--log-grpc`)
+  * Support mutations
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`)
@@ -282,6 +284,8 @@ and `{}` for a mutually exclusive keyword.
 | End Read-Only Transaction | `CLOSE;`                                                                                       | |
 | Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
 | Show partition tokens of partition query | `PARTITION <sql>` ||
+| Perform write mutations | `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`||
+| Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
 | Exit CLI | `EXIT;`                                                                                        | |
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
 | Set variable | `SET <name> = <value>;`                                                                        | |
@@ -620,6 +624,84 @@ Empty set (0.00 sec)
 
 spanner> SELECT * FRM 1;
 ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
+```
+
+## Mutations support
+
+spanner-mycli supports mutations.
+
+Mutations are buffered in read-write transaction, or immediately commit outside explicit transaction.
+
+### Write mutations
+
+```
+MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} {<struct_literal> | <array_of_struct_literal>};
+```
+
+### Delete mutations
+
+```
+MUTATE <table_fqn> DELETE ALL;
+MUTATE <table_fqn> DELETE {<tuple_struct_literal> | <array_of_tuple_struct_literal>};
+MUTATE <table_fqn> DELETE KEY_RANGE({start_closed | start_open} => <tuple_struct_literal>,
+                                    {end_closed | end_open} => <tuple_struct_literal>);
+```
+
+Note: In this context, parenthesized expression and some simple literals are treated as a single field struct literal.
+
+### Examples of mutations
+
+Example schema
+
+```
+CREATE TABLE MutationTest (PK INT64, Col INT64) PRIMARY KEY(PK);
+CREATE TABLE MutationTest2 (PK1 INT64, PK2 STRING(MAX), Col INT64) PRIMARY KEY(PK1, PK2);
+```
+
+#### Examples of Write mutations
+
+Insert a single row with key(`1`).
+
+```
+MUTATE MutationTest INSERT STRUCT(1 AS PK);
+```
+
+Insert or update four rows with keys(`1, "foo"`, `1, "n"`, `1, "m"`, `50, "foobar"`).
+
+```
+MUTATE MutationTest2 INSERT_OR_UPDATE [STRUCT(1 AS PK1, "foo" AS PK2, 0 AS Col), (1, "n", 1), (1, "m", 3), (50, "foobar", 4)];
+```
+
+#### Examples of Delete mutations
+
+Delete all rows in `MutationTest` table.
+
+```
+MUTATE MutationTest DELETE ALL;
+```
+
+Delete rows with PK (`1`) in `MutationTest` table.
+
+```
+MUTATE MutationTest DELETE (1);
+```
+
+Delete a single row with PK (`1, "foo"`) in `MutationTest2` table.
+
+```
+MUTATE MutationTest2 DELETE (1, "foo");
+```
+
+Delete two rows with PK (`1, "foo"`, `2, "bar"`) in `MutationTest2` table.
+
+```
+MUTATE MutationTest2 DELETE [(1, "foo"), (2, "bar")];
+```
+
+Delete rows between `1 <= PK < 50` in `MutationTest2` table
+
+```
+MUTATE MutationTest2 DELETE KEY_RANGE(start_closed => (1, "a"), end_open => (1, "n"));
 ```
 
 ## Query parameter support
