@@ -698,7 +698,7 @@ Delete two rows with PK (`1, "foo"`, `2, "bar"`) in `MutationTest2` table.
 MUTATE MutationTest2 DELETE [(1, "foo"), (2, "bar")];
 ```
 
-Delete rows between `1 <= PK < 50` in `MutationTest2` table
+Delete rows between `(1, "a") <= PK < (1, "n")` in `MutationTest2` table
 
 ```
 MUTATE MutationTest2 DELETE KEY_RANGE(start_closed => (1, "a"), end_open => (1, "n"));
