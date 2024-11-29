@@ -734,6 +734,10 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAutoWrapText(false)
 
+		if len(result.ColumnAlign) > 0 {
+			table.SetColumnAlignment(result.ColumnAlign)
+		}
+
 		var adjustedWidths []int
 		if len(result.ColumnTypes) > 0 {
 			names := slices.Collect(xiter.Map(
