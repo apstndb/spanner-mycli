@@ -508,6 +508,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
 | CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
 | CLI_QUERY_MODE            | READ_WRITE | `"PROFILE"`                                    |
+| CLI_LINT_PLAN             | READ_WRITE | `"TRUE"`                                       |
 
 ### Embedded Cloud Spanner Emulator
 
@@ -903,6 +904,35 @@ spanner> PARTITION SELECT * FROM Singers;
 +-------------------------------------------------------------------------------------------------+
 3 rows in set (0.65 sec)
 ```
+
+### Query plan linter (EARLY EXPERIMANTAL)
+
+`CLI_LINT_PLAN` system variable enables heuristic query plan linter in `EXPLAIN` and `EXPLAIN ANALYZE`.
+
+```
+spanner> SET CLI_LINT_PLAN = TRUE;
+Empty set (0.00 sec)
+
+spanner> EXPLAIN SELECT * FROM Singers WHERE FirstName LIKE "%Hoge%";
++----+----------------------------------------------------------------------------------+
+| ID | Query_Execution_Plan                                                             |
++----+----------------------------------------------------------------------------------+
+|  0 | Distributed Union (distribution_table: Singers, split_ranges_aligned: false)     |
+|  1 | +- Local Distributed Union                                                       |
+|  2 |    +- Serialize Result                                                           |
+| *3 |       +- Filter Scan (seekable_key_size: 0)                                      |
+|  4 |          +- Table Scan (Full scan: true, Table: Singers, scan_method: Automatic) |
++----+----------------------------------------------------------------------------------+
+Predicates(identified by ID):
+ 3: Residual Condition: ($FirstName LIKE '%Hoge%')
+
+Experimental Lint Result:
+ 3: Filter Scan (seekable_key_size: 0)
+     Residual Condition: Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition
+ 4: Table Scan (Full scan: true, Table: Singers, scan_method: Automatic)
+     Full scan=true: Potentially expensive execution full scan: Do you really want full scan?
+```
+
 
 ## How to develop
 
