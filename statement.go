@@ -27,9 +27,18 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
+	"github.com/ngicks/go-iterator-helper/hiter"
+
+	"github.com/k0kubun/pp/v3"
+
+	"github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
+	"github.com/mattn/go-runewidth"
 	"github.com/olekukonko/tablewriter"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -98,6 +107,19 @@ type QueryStats struct {
 	DeletedRowsScanned         string `json:"deleted_rows_scanned"`
 	OptimizerVersion           string `json:"optimizer_version"`
 	OptimizerStatisticsPackage string `json:"optimizer_statistics_package"`
+	RemoteServerCalls          string `json:"remote_server_calls"`
+	MemoryPeakUsageBytes       string `json:"memory_peak_usage_bytes"`
+	TotalMemoryPeakUsageByte   string `json:"total_memory_peak_usage_byte"`
+	QueryText                  string `json:"query_text"`
+	BytesReturned              string `json:"bytes_returned"`
+	RuntimeCreationTime        string `json:"runtime_creation_time"`
+	StatisticsLoadTime         string `json:"statistics_load_time"`
+	MemoryUsagePercentage      string `json:"memory_usage_percentage"`
+	FilesystemDelaySeconds     string `json:"filesystem_delay_seconds"`
+	LockingDelay               string `json:"locking_delay"`
+	QueryPlanCreationTime      string `json:"query_plan_creation_time"`
+
+	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
 var (
@@ -146,6 +168,7 @@ var (
 	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
 	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
+	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
 )
 
 var (
@@ -156,6 +179,8 @@ var (
 	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}
+
+	showQueryProfilesColumnNames = []string{"INTERVAL_END", "TEXT_FINGERPRINT", "LATENCY_SECONDS", "QUERY_PROFILE"}
 )
 
 func BuildStatement(input string) (Statement, error) {
@@ -267,6 +292,8 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case mutateRe.MatchString(trimmed):
 		matched := mutateRe.FindStringSubmatch(trimmed)
 		return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
+	case showQueryProfilesRe.MatchString(trimmed):
+		return &ShowQueryProfilesStatement{}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1211,6 +1238,122 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 		CommitStats: stats.CommitStats,
 		Timestamp:   stats.CommitTs,
 	}, nil
+}
+
+type ShowQueryProfilesStatement struct{}
+
+type queryProfiles struct {
+	RawQueryPlan jsontext.Value  `json:"queryPlan"`
+	QueryPlan    *sppb.QueryPlan `json:"-"`
+	QueryStats   QueryStats      `json:"queryStats"`
+	Fprint       string          `json:"fprint"`
+}
+
+type queryProfilesRow struct {
+	IntervalEnd     time.Time        `spanner:"INTERVAL_END"`
+	TextFingerprint int64            `spanner:"TEXT_FINGERPRINT"`
+	LatencySeconds  float64          `spanner:"LATENCY_SECONDS"`
+	RawQueryProfile spanner.NullJSON `spanner:"QUERY_PROFILE"`
+	QueryProfile    *queryProfiles   `spanner:"-"`
+}
+
+func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.InReadWriteTransaction() {
+		// INFORMATION_SCHEMA can't be used in read-write transaction.
+		// https://cloud.google.com/spanner/docs/information-schema
+		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
+	}
+
+	stmt := spanner.Statement{
+		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`,
+	}
+
+	iter, _ := session.RunQuery(ctx, stmt)
+
+	rows, _, _, _, _, err := consumeRowIterCollect(iter, func(row *spanner.Row) (*queryProfilesRow, error) {
+		var qpr queryProfilesRow
+		if err := row.ToStruct(&qpr); err != nil {
+			return nil, err
+		}
+		return &qpr, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var resultRows []Row
+	for _, row := range rows {
+		var profile queryProfiles
+		err := json.Unmarshal([]byte(row.RawQueryProfile.String()), &profile)
+		if err != nil {
+			return nil, err
+		}
+		row.QueryProfile = &profile
+
+		var queryPlan sppb.QueryPlan
+		err = protojson.Unmarshal(profile.RawQueryPlan, &queryPlan)
+		if err != nil {
+			return nil, err
+		}
+		profile.QueryPlan = &queryPlan
+
+		rows, predicates, err := processPlanWithStats(&queryPlan)
+		if err != nil {
+			return nil, err
+		}
+
+		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row.Columns[0]) }, slices.Values(rows))), 2)
+
+		pprinter := pp.New()
+		pprinter.SetColoringEnabled(false)
+
+		tree := strings.Join(slices.Collect(xiter.Map(
+			func(r Row) string {
+				return runewidth.FillLeft(r.Columns[0], maxIDLength) + " | " + r.Columns[1]
+			},
+			slices.Values(rows))), "\n")
+
+		resultRows = append(resultRows, toRow(runewidth.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
+			lox.IfOrEmpty(len(predicates) > 0, "\nPredicates:\n"+strings.Join(predicates, "\n"))+"\n"+
+			formatStats(row)))
+	}
+
+	return &Result{
+		ColumnNames:  sliceOf("Plan"),
+		Rows:         resultRows,
+		AffectedRows: len(resultRows),
+	}, nil
+}
+
+var (
+	t    = template.New("temp")
+	temp = lo.Must(t.Parse(
+		`
+interval_end:                 {{.IntervalEnd}}
+text_fingerprint:             {{.TextFingerprint}}
+{{with .QueryProfile.QueryStats -}}
+elapsed_time:                 {{.ElapsedTime}}
+cpu_time:                     {{.CPUTime}}
+rows_returned:                {{.RowsReturned}}
+deleted_rows_scanned:         {{.DeletedRowsScanned}}
+optimizer_version:            {{.OptimizerVersion}}
+optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
+{{end}}`))
+)
+
+func formatStats(stats *queryProfilesRow) string {
+	var sb strings.Builder
+	if stats == nil {
+		return ""
+	}
+
+	err := temp.Execute(&sb, stats)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+
+	return sb.String()
 }
 
 type NopStatement struct{}

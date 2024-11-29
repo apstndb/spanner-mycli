@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 
 	"github.com/apstndb/lox"
+	"github.com/go-json-experiment/json"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
