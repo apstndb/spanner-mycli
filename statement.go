@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olekukonko/tablewriter"
+
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -63,6 +65,7 @@ const (
 
 type Result struct {
 	ColumnNames      []string
+	ColumnAlign      []int // optional
 	Rows             []Row
 	Predicates       []string
 	AffectedRows     int
@@ -145,9 +148,13 @@ var (
 )
 
 var (
-	explainColumnNames        = []string{"ID", "Query_Execution_Plan"}
+	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
+	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
+
 	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan", "Rows_Returned", "Executions", "Total_Latency"}
-	describeColumnNames       = []string{"Column_Name", "Column_Type"}
+	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
+
+	describeColumnNames = []string{"Column_Name", "Column_Type"}
 )
 
 func BuildStatement(input string) (Statement, error) {

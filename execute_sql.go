@@ -138,6 +138,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 
 	result := &Result{
 		ColumnNames:  explainColumnNames,
+		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
 		Rows:         rows,
 		Timestamp:    timestamp,
@@ -179,6 +180,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	result := &Result{
 		ColumnNames:  explainAnalyzeColumnNames,
+		ColumnAlign:  explainAnalyzeColumnAlign,
 		ForceVerbose: true,
 		AffectedRows: len(rows),
 		Stats:        queryStats,
