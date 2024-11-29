@@ -70,7 +70,7 @@ func lintPlan(plan *sppb.QueryPlan) []string {
 		case planNode.GetDisplayName() == "Filter":
 			msgs = append(msgs, "Potentially expensive operator Filter can't utilize index: Maybe better to modify to use Filter Scan with Seek Condition?")
 		case planNode.GetDisplayName() == "Hash Join":
-			msgs = append(msgs, fmt.Sprintf("Potentially expensive operator Hash Join: Maybe better to modify to use Cross Apply or Merge Join?"))
+			msgs = append(msgs, "Potentially expensive operator Hash Join: Maybe better to modify to use Cross Apply or Merge Join?")
 		case strings.Contains(planNode.GetDisplayName(), "Minor Sort"):
 			msgs = append(msgs, fmt.Sprintf("Potentially expensive operator Minor Sort is cheaper than Sort but it may be not optimal: Maybe better to modify to use the same order with the index?: major: %v, minor: %v",
 				strings.Join(formatKeyElemForLinkType(qp, variableToExp, planNode, "MajorKey"), ", "),
