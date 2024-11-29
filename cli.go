@@ -808,6 +808,13 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		fmt.Fprintln(out)
 	}
 
+	if len(result.LintResults) > 0 {
+		fmt.Fprintln(out, "Experimental Lint Result:")
+		for _, s := range result.LintResults {
+			fmt.Fprintf(out, " %s\n", s)
+		}
+		fmt.Fprintln(out)
+	}
 	if verbose || result.ForceVerbose {
 		fmt.Fprint(out, resultLine(result, true))
 	} else if interactive {

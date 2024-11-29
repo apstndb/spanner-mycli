@@ -44,6 +44,7 @@ type systemVariables struct {
 	BuildStatementMode          parseMode
 	LogGrpc                     bool
 	QueryMode                   *sppb.ExecuteSqlRequest_QueryMode
+	LintPlan                    bool
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -390,6 +391,12 @@ var accessorMap = map[string]accessor{
 		Getter: boolGetter(func(sysVars *systemVariables) *bool {
 			return lo.Ternary(sysVars.LogGrpc, &sysVars.LogGrpc, nil)
 		}),
+	},
+	"CLI_LINT_PLAN": {
+		Getter: boolGetter(func(sysVars *systemVariables) *bool {
+			return lo.Ternary(sysVars.LintPlan, lo.ToPtr(sysVars.LintPlan), nil)
+		}),
+		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
 	},
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {

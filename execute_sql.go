@@ -143,6 +143,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		Rows:         rows,
 		Timestamp:    timestamp,
 		Predicates:   predicates,
+		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
 
 	return result, nil
@@ -187,6 +188,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		Timestamp:    lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) }),
 		Rows:         rows,
 		Predicates:   predicates,
+		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(plan) }),
 	}
 	return result, nil
 }
@@ -249,6 +251,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		Rows:             rows,
 		Predicates:       predicates,
 		Timestamp:        commitResp.CommitTs,
+		LintResults:      lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
 
 	return result, nil

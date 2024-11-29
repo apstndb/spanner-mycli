@@ -80,6 +80,7 @@ type Result struct {
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
 	ColumnTypes []*sppb.StructType_Field
 	ForceWrap   bool
+	LintResults []string
 }
 
 type Row struct {
