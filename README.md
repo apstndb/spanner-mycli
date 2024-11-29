@@ -294,40 +294,6 @@ and `{}` for a mutually exclusive keyword.
 | Set value query parameter | `SET PARAM <name> = <value>;`                                                                        | |
 | Show variables | `SHOW PARAMS;`                                                                              | |
 
-## System Variables
-
-### Spanner JDBC inspired variables
-
-They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
-
-| Name                         | Type       | Example                              |
-|------------------------------|------------|--------------------------------------|
-| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`     |
-| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                |
-| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                |
-| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                           |
-| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"` |
-| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"` |
-
-### spanner-mycli original variables
-
-| Name                      | READ/WRITE | Example                                        |
-|---------------------------|------------|------------------------------------------------|
-| CLI_PROJECT               | READ_ONLY  | `"myproject"`                                  |
-| CLI_INSTANCE              | READ_ONLY  | `"myinstance"`                                 |
-| CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
-| CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
-| CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
-| CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
-| CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
-| CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
-| CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
-| CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
-| CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
-| CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
-| CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
-| CLI_QUERY_MODE            | READ_WRITE | `"PROFILE"`                                    |
 
 ## Customize prompt
 
@@ -487,7 +453,82 @@ Since read-only transaction doesn't support transaction tag, spanner-mycli adds 
 +--------------------+
 ```
 
-## Protocol Buffers support
+
+## Using with the Cloud Spanner Emulator
+
+This tool supports the [Cloud Spanner Emulator](https://cloud.google.com/spanner/docs/emulator) via the [`SPANNER_EMULATOR_HOST` environment variable](https://cloud.google.com/spanner/docs/emulator#client-libraries).
+
+```sh
+$ export SPANNER_EMULATOR_HOST=localhost:9010
+# Or with gcloud env-init:
+$ $(gcloud emulators spanner env-init)
+
+$ spanner-mycli -p myproject -i myinstance -d mydb
+
+# Or use --endpoint with --insecure
+$ unset SPANNER_EMULATOR_HOST
+$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
+```
+
+## Notable features of spanner-mycli
+
+This section describes some notable features of spanner-mycli, they are not appeared in original spanner-cli.
+
+### System Variables
+
+#### Spanner JDBC inspired variables
+
+They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
+
+| Name                         | Type       | Example                              |
+|------------------------------|------------|--------------------------------------|
+| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`     |
+| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                |
+| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                |
+| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                           |
+| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"` |
+| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"` |
+
+#### spanner-mycli original variables
+
+| Name                      | READ/WRITE | Example                                        |
+|---------------------------|------------|------------------------------------------------|
+| CLI_PROJECT               | READ_ONLY  | `"myproject"`                                  |
+| CLI_INSTANCE              | READ_ONLY  | `"myinstance"`                                 |
+| CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
+| CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
+| CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
+| CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
+| CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
+| CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
+| CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
+| CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
+| CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
+| CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
+| CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
+| CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
+| CLI_QUERY_MODE            | READ_WRITE | `"PROFILE"`                                    |
+
+### Embedded Cloud Spanner Emulator
+
+spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
+
+```
+$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
+> SET CLI_PROMPT="%p:%i:%d%n> ";
+Empty set (0.00 sec)
+
+emulator-project:emulator-instance:emulator-database
+> SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ("INFORMATION_SCHEMA", "SPANNER_SYS");
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
+| TABLE_CATALOG | TABLE_SCHEMA | TABLE_NAME | PARENT_TABLE_NAME | ON_DELETE_ACTION | TABLE_TYPE | SPANNER_STATE | INTERLEAVE_TYPE | ROW_DELETION_POLICY_EXPRESSION |
+| STRING        | STRING       | STRING     | STRING            | STRING           | STRING     | STRING        | STRING          | STRING                         |
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
++---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
+Empty set (8.763167ms)
+```
+
+### Protocol Buffers support
 
 You can use `--proto-descriptor-file` option to specify proto descriptor file.
 
@@ -583,7 +624,7 @@ spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
 Empty set (0.00 sec)
 ```
 
-## memefish integration
+### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
 
@@ -626,19 +667,19 @@ spanner> SELECT * FRM 1;
 ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
 ```
 
-## Mutations support
+### Mutations support
 
 spanner-mycli supports mutations.
 
 Mutations are buffered in read-write transaction, or immediately commit outside explicit transaction.
 
-### Write mutations
+#### Write mutations
 
 ```
 MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} {<struct_literal> | <array_of_struct_literal>};
 ```
 
-### Delete mutations
+#### Delete mutations
 
 ```
 MUTATE <table_fqn> DELETE ALL;
@@ -649,7 +690,7 @@ MUTATE <table_fqn> DELETE KEY_RANGE({start_closed | start_open} => <tuple_struct
 
 Note: In this context, parenthesized expression and some simple literals are treated as a single field struct literal.
 
-### Examples of mutations
+#### Examples of mutations
 
 Example schema
 
@@ -658,7 +699,7 @@ CREATE TABLE MutationTest (PK INT64, Col INT64) PRIMARY KEY(PK);
 CREATE TABLE MutationTest2 (PK1 INT64, PK2 STRING(MAX), Col INT64) PRIMARY KEY(PK1, PK2);
 ```
 
-#### Examples of Write mutations
+##### Examples of Write mutations
 
 Insert a single row with key(`1`).
 
@@ -672,7 +713,7 @@ Insert or update four rows with keys(`1, "foo"`, `1, "n"`, `1, "m"`, `50, "fooba
 MUTATE MutationTest2 INSERT_OR_UPDATE [STRUCT(1 AS PK1, "foo" AS PK2, 0 AS Col), (1, "n", 1), (1, "m", 3), (50, "foobar", 4)];
 ```
 
-#### Examples of Delete mutations
+##### Examples of Delete mutations
 
 Delete all rows in `MutationTest` table.
 
@@ -698,13 +739,13 @@ Delete two rows with PK (`1, "foo"`, `2, "bar"`) in `MutationTest2` table.
 MUTATE MutationTest2 DELETE [(1, "foo"), (2, "bar")];
 ```
 
-Delete rows between `1 <= PK < 50` in `MutationTest2` table
+Delete rows between `(1, "a") <= PK < (1, "n")` in `MutationTest2` table
 
 ```
 MUTATE MutationTest2 DELETE KEY_RANGE(start_closed => (1, "a"), end_open => (1, "n"));
 ```
 
-## Query parameter support
+### Query parameter support
 
 Many Cloud Spanner clients don't support query parameters.
 
@@ -718,7 +759,7 @@ It supports type notation or literal value notation in GoogleSQL.
 
 Note: They are supported on the best effort basis, and type conversions are not supported.
 
-### Query parameters definition using `--param` option
+#### Query parameters definition using `--param` option
 ```
 $ spanner-mycli \
                 --param='array_type=ARRAY<STRUCT<FirstName STRING, LastName STRING>>' \
@@ -791,7 +832,7 @@ Predicates(identified by ID):
 5 rows in set (0.17 sec)
 ```
 
-### Interactive definition of query parameters using `SET` commands
+#### Interactive definition of query parameters using `SET` commands
 
 You can define type query parameters using `SET PARAM param_name type;` command.
 
@@ -823,11 +864,11 @@ Empty set (0.00 sec)
 Empty set (0.00 sec)
 ```
 
-## Partition Queries
+### Partition Queries
 
 spanner-mycli have some partition queries functionality.
 
-### Test root-partitionable
+#### Test root-partitionable
 
 You can test whether the query is root-partitionable using `TRY PARTITIONED QUERY` command.
 
@@ -845,7 +886,7 @@ ERROR: query can't be a partition query: rpc error: code = InvalidArgument desc 
 error details: name = Help desc = Conditions for a query to be root-partitionable. url = https://cloud.google.com/spanner/docs/reads#read_data_in_parallel
 ```
 
-### Show partition tokens.
+#### Show partition tokens.
 
 You can show partition tokens using `PARTITION` command.
 
@@ -861,41 +902,6 @@ spanner> PARTITION SELECT * FROM Singers;
 | QUw0MGxyR3paSk96WUNqdjFsQW9tc2UwOFFoNlA4SzhHUzNWQVltNzVlRHZxdjZpUmFVSFN2UmtBanozc0hEaE9Iem9x... |
 +-------------------------------------------------------------------------------------------------+
 3 rows in set (0.65 sec)
-```
-
-## Using with the Cloud Spanner Emulator
-
-This tool supports the [Cloud Spanner Emulator](https://cloud.google.com/spanner/docs/emulator) via the [`SPANNER_EMULATOR_HOST` environment variable](https://cloud.google.com/spanner/docs/emulator#client-libraries).
-
-```sh
-$ export SPANNER_EMULATOR_HOST=localhost:9010
-# Or with gcloud env-init:
-$ $(gcloud emulators spanner env-init)
-
-$ spanner-mycli -p myproject -i myinstance -d mydb
-
-# Or use --endpoint with --insecure
-$ unset SPANNER_EMULATOR_HOST
-$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
-```
-
-### Embedded Cloud Spanner Emulator
-
-spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
-
-```
-$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
-> SET CLI_PROMPT="%p:%i:%d%n> ";
-Empty set (0.00 sec)
-
-emulator-project:emulator-instance:emulator-database
-> SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ("INFORMATION_SCHEMA", "SPANNER_SYS");
-+---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
-| TABLE_CATALOG | TABLE_SCHEMA | TABLE_NAME | PARENT_TABLE_NAME | ON_DELETE_ACTION | TABLE_TYPE | SPANNER_STATE | INTERLEAVE_TYPE | ROW_DELETION_POLICY_EXPRESSION |
-| STRING        | STRING       | STRING     | STRING            | STRING           | STRING     | STRING        | STRING          | STRING                         |
-+---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
-+---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
-Empty set (8.763167ms)
 ```
 
 ## How to develop
