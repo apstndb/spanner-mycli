@@ -10,11 +10,11 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792
 	github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c
 	github.com/apstndb/memebridge v0.0.0-20241123172322-a745771fe5be
+	github.com/apstndb/spannerplanviz v0.3.2
 	github.com/apstndb/spantype v0.2.0
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7
 	github.com/google/go-cmp v0.6.0
-	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0
 	github.com/hymkor/go-multiline-ny v0.17.0
 	github.com/jessevdk/go-flags v1.6.1
@@ -26,7 +26,6 @@ require (
 	github.com/testcontainers/testcontainers-go v0.34.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0
 	github.com/vbauerster/mpb/v8 v8.8.3
-	github.com/xlab/treeprint v1.0.1-0.20200715141336-10e0bc383e01
 	go.uber.org/zap v1.18.1
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	golang.org/x/term v0.26.0
@@ -74,7 +73,6 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
@@ -103,6 +101,7 @@ require (
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/xlab/treeprint v1.1.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.29.0 // indirect

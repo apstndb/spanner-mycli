@@ -4,11 +4,14 @@ import (
 	"os"
 	"testing"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spannerplanviz/plantree"
+	"github.com/apstndb/spannerplanviz/queryplan"
+	"github.com/apstndb/spannerplanviz/stats"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
-
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 func mustNewStruct(m map[string]interface{}) *structpb.Struct {
@@ -23,48 +26,48 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 	for _, test := range []struct {
 		title string
 		file  string
-		want  []QueryPlanRow
+		want  []plantree.RowWithPredicates
 	}{
 		{
 			// Original Query:
 			// SELECT s.LastName FROM (SELECT s.LastName FROM Singers AS s WHERE s.FirstName LIKE 'A%' LIMIT 3) s WHERE s.LastName LIKE 'Rich%';
 			title: "With Filter Operator",
 			file:  "testdata/plans/filter.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					ID:   0,
-					Text: "Serialize Result",
+					ID:       0,
+					NodeText: "Serialize Result",
 				},
 				{
-					ID:         1,
-					Text:       "+- Filter",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Filter",
 					Predicates: []string{"Condition: STARTS_WITH($LastName, 'Rich')"},
 				},
 				{
-					ID:   2,
-					Text: "   +- Global Limit",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Global Limit",
 				},
 				{
-					ID:         3,
-					Text:       "      +- Distributed Union",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "Distributed Union",
 					Predicates: []string{"Split Range: STARTS_WITH($FirstName, 'A')"},
 				},
 				{
-					ID:   4,
-					Text: "         +- Local Limit",
+					ID:       4,
+					TreePart: "         +- ", NodeText: "Local Limit",
 				},
 				{
-					ID:   5,
-					Text: "            +- Local Distributed Union",
+					ID:       5,
+					TreePart: "            +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:         6,
-					Text:       "               +- FilterScan",
+					ID:       6,
+					TreePart: "               +- ", NodeText: "FilterScan",
 					Predicates: []string{"Seek Condition: STARTS_WITH($FirstName, 'A')"},
 				},
 				{
-					ID:   7,
-					Text: "                  +- Index Scan (Index: SingersByFirstLastName)",
+					ID:       7,
+					TreePart: "                  +- ", NodeText: "Index Scan (Index: SingersByFirstLastName)",
 				},
 			}},
 		{
@@ -76,35 +79,35 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			*/
 			title: "Hash Join",
 			file:  "testdata/plans/hash_join.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					ID:   0,
-					Text: "Distributed Union",
+					ID:       0,
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:   1,
-					Text: "+- Serialize Result",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Serialize Result",
 				},
 				{
-					ID:         2,
-					Text:       "   +- Hash Join (join_type: INNER)",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Hash Join (join_type: INNER)",
 					Predicates: []string{"Condition: (($SingerId = $SingerId_1) AND ($AlbumId = $AlbumId_1))"},
 				},
 				{
-					ID:   3,
-					Text: "      +- [Build] Local Distributed Union",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "[Build] Local Distributed Union",
 				},
 				{
-					ID:   4,
-					Text: "      |  +- Table Scan (Full scan: true, Table: Albums)",
+					ID:       4,
+					TreePart: "      |  +- ", NodeText: "Table Scan (Full scan: true, Table: Albums)",
 				},
 				{
-					ID:   8,
-					Text: "      +- [Probe] Local Distributed Union",
+					ID:       8,
+					TreePart: "      +- ", NodeText: "[Probe] Local Distributed Union",
 				},
 				{
-					ID:   9,
-					Text: "         +- Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
+					ID:       9,
+					TreePart: "         +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
 				},
 			}},
 		{
@@ -118,44 +121,44 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			*/
 			title: "Array Subqueries",
 			file:  "testdata/plans/array_subqueries.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					ID:   0,
-					Text: "Distributed Union",
+					ID:       0,
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:   1,
-					Text: "+- Local Distributed Union",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   2,
-					Text: "   +- Serialize Result",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Serialize Result",
 				},
 				{
-					ID:   3,
-					Text: "      +- Index Scan (Full scan: true, Index: AlbumsByAlbumTitle)",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: AlbumsByAlbumTitle)",
 				},
 				{
-					ID:   7,
-					Text: "      +- [Scalar] Array Subquery",
+					ID:       7,
+					TreePart: "      +- ", NodeText: "[Scalar] Array Subquery",
 				},
 				{
-					ID:         8,
-					Text:       "         +- Distributed Union",
+					ID:       8,
+					TreePart: "         +- ", NodeText: "Distributed Union",
 					Predicates: []string{"Split Range: ($SingerId_1 = $SingerId)"},
 				},
 				{
-					ID:   9,
-					Text: "            +- Local Distributed Union",
+					ID:       9,
+					TreePart: "            +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:         10,
-					Text:       "               +- FilterScan",
+					ID:       10,
+					TreePart: "               +- ", NodeText: "FilterScan",
 					Predicates: []string{"Seek Condition: ($SingerId_1 = $SingerId)"},
 				},
 				{
-					ID:   11,
-					Text: "                  +- Index Scan (Index: ConcertsBySingerId)",
+					ID:       11,
+					TreePart: "                  +- ", NodeText: "Index Scan (Index: ConcertsBySingerId)",
 				},
 			}},
 		{
@@ -171,52 +174,52 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			*/
 			title: "Scalar Subqueries",
 			file:  "testdata/plans/scalar_subqueries.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					Text: "Distributed Union",
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:   1,
-					Text: "+- Local Distributed Union",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   2,
-					Text: "   +- Serialize Result",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Serialize Result",
 				},
 				{
-					ID:   3,
-					Text: "      +- Index Scan (Full scan: true, Index: SingersByFirstLastName)",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SingersByFirstLastName)",
 				},
 				{
-					ID:   10,
-					Text: "      +- [Scalar] Scalar Subquery",
+					ID:       10,
+					TreePart: "      +- ", NodeText: "[Scalar] Scalar Subquery",
 				},
 				{
-					ID:   11,
-					Text: "         +- Global Stream Aggregate (scalar_aggregate: true)",
+					ID:       11,
+					TreePart: "         +- ", NodeText: "Global Stream Aggregate (scalar_aggregate: true)",
 				},
 				{
-					ID:   12,
-					Text: "            +- Distributed Union",
+					ID:       12,
+					TreePart: "            +- ", NodeText: "Distributed Union",
 				},
 				{
-					ID:   13,
-					Text: "               +- Local Stream Aggregate (scalar_aggregate: true)",
+					ID:       13,
+					TreePart: "               +- ", NodeText: "Local Stream Aggregate (scalar_aggregate: true)",
 				},
 				{
-					ID:   14,
-					Text: "                  +- Local Distributed Union",
+					ID:       14,
+					TreePart: "                  +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   15,
-					Text: "                     +- FilterScan",
+					ID:       15,
+					TreePart: "                     +- ", NodeText: "FilterScan",
 					Predicates: []string{
 						"Residual Condition: ($Duration > 300)",
 					},
 				},
 				{
-					ID:   16,
-					Text: "                        +- Table Scan (Full scan: true, Table: Songs)",
+					ID:       16,
+					TreePart: "                        +- ", NodeText: "Table Scan (Full scan: true, Table: Songs)",
 				},
 			}},
 		{
@@ -233,67 +236,67 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			*/
 			title: "Array Subquery with Compute Struct",
 			file:  "testdata/plans/array_subqueries_with_compute_struct.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					Text: "Distributed Union",
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:   1,
-					Text: "+- Local Distributed Union",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   2,
-					Text: "   +- Serialize Result",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Serialize Result",
 				},
 				{
-					ID:   3,
-					Text: "      +- Table Scan (Full scan: true, Table: Singers)",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "Table Scan (Full scan: true, Table: Singers)",
 				},
 				{
-					ID:   14,
-					Text: "      +- [Scalar] Array Subquery",
+					ID:       14,
+					TreePart: "      +- ", NodeText: "[Scalar] Array Subquery",
 				},
 				{
-					ID:   15,
-					Text: "         +- Local Distributed Union",
+					ID:       15,
+					TreePart: "         +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   16,
-					Text: "            +- Compute Struct",
+					ID:       16,
+					TreePart: "            +- ", NodeText: "Compute Struct",
 				},
 				{
-					ID:   17,
-					Text: "               +- FilterScan",
+					ID:       17,
+					TreePart: "               +- ", NodeText: "FilterScan",
 					Predicates: []string{
 						"Seek Condition: ($SingerId_1 = $SingerId)",
 					},
 				},
 				{
-					ID:   18,
-					Text: "               |  +- Table Scan (Table: Albums)",
+					ID:       18,
+					TreePart: "               |  +- ", NodeText: "Table Scan (Table: Albums)",
 				},
 				{
-					ID:   31,
-					Text: "               +- [Scalar] Array Subquery",
+					ID:       31,
+					TreePart: "               +- ", NodeText: "[Scalar] Array Subquery",
 				},
 				{
-					ID:   32,
-					Text: "                  +- Local Distributed Union",
+					ID:       32,
+					TreePart: "                  +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   33,
-					Text: "                     +- Compute Struct",
+					ID:       33,
+					TreePart: "                     +- ", NodeText: "Compute Struct",
 				},
 				{
-					ID:   34,
-					Text: "                        +- FilterScan",
+					ID:       34,
+					TreePart: "                        +- ", NodeText: "FilterScan",
 					Predicates: []string{
 						"Seek Condition: (($SingerId_2 = $SingerId_1) AND ($AlbumId_1 = $AlbumId))",
 					},
 				},
 				{
-					ID:   35,
-					Text: "                           +- Table Scan (Table: Songs)",
+					ID:       35,
+					TreePart: "                           +- ", NodeText: "Table Scan (Table: Songs)",
 				},
 			},
 		},
@@ -305,62 +308,62 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			*/
 			title: "Scalar Subquery with FilterScan",
 			file:  "testdata/plans/scalar_subquery_with_filter_scan.input.json",
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					Text: "Distributed Union",
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:   1,
-					Text: "+- Local Distributed Union",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   2,
-					Text: "   +- Serialize Result",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Serialize Result",
 				},
 				{
-					ID:   3,
-					Text: "      +- FilterScan",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "FilterScan",
 					Predicates: []string{
 						"Residual Condition: IF(($SongGenre = 'ROCKS'), true, $sv_1)",
 					},
 				},
 				{
-					ID:   4,
-					Text: "         +- Table Scan (Full scan: true, Table: Songs)",
+					ID:       4,
+					TreePart: "         +- ", NodeText: "Table Scan (Full scan: true, Table: Songs)",
 				},
 				{
-					ID:   16,
-					Text: "         +- [Scalar] Scalar Subquery",
+					ID:       16,
+					TreePart: "         +- ", NodeText: "[Scalar] Scalar Subquery",
 				},
 				{
-					ID:   17,
-					Text: "            +- Global Stream Aggregate (scalar_aggregate: true)",
+					ID:       17,
+					TreePart: "            +- ", NodeText: "Global Stream Aggregate (scalar_aggregate: true)",
 				},
 				{
-					ID:   18,
-					Text: "               +- Distributed Union",
+					ID:       18,
+					TreePart: "               +- ", NodeText: "Distributed Union",
 					Predicates: []string{
 						"Split Range: ($SingerId_1 = $SingerId)",
 					},
 				},
 				{
-					ID:   19,
-					Text: "                  +- Local Stream Aggregate (scalar_aggregate: true)",
+					ID:       19,
+					TreePart: "                  +- ", NodeText: "Local Stream Aggregate (scalar_aggregate: true)",
 				},
 				{
-					ID:   20,
-					Text: "                     +- Local Distributed Union",
+					ID:       20,
+					TreePart: "                     +- ", NodeText: "Local Distributed Union",
 				},
 				{
-					ID:   21,
-					Text: "                        +- FilterScan",
+					ID:       21,
+					TreePart: "                        +- ", NodeText: "FilterScan",
 					Predicates: []string{
 						"Seek Condition: ($SingerId_1 = $SingerId)",
 					},
 				},
 				{
-					ID:   22,
-					Text: "                           +- Index Scan (Index: ConcertsBySingerId)",
+					ID:       22,
+					TreePart: "                           +- ", NodeText: "Index Scan (Index: ConcertsBySingerId)",
 				},
 			},
 		},
@@ -375,23 +378,30 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tree := BuildQueryPlanTree(&plan, 0)
-			got, err := tree.RenderTreeWithStats(plan.GetPlanNodes())
+			got, err := plantree.ProcessPlan(queryplan.New(plan.GetPlanNodes()))
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
-			if !cmp.Equal(test.want, got) {
-				t.Errorf("node.RenderTreeWithStats() differ: %s", cmp.Diff(test.want, got))
+			if diff := cmp.Diff(test.want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+				t.Errorf("node.RenderTreeWithStats() differ: %s", diff)
 			}
 		})
 	}
+}
+
+func Total(s string) stats.ExecutionStatsValue {
+	return stats.ExecutionStatsValue{Total: s}
+}
+
+func TotalWithUnit(s, unit string) stats.ExecutionStatsValue {
+	return stats.ExecutionStatsValue{Total: s, Unit: unit}
 }
 
 func TestRenderTreeWithStats(t *testing.T) {
 	for _, test := range []struct {
 		title string
 		plan  *sppb.QueryPlan
-		want  []QueryPlanRow
+		want  []plantree.RowWithPredicates
 	}{
 		{
 			title: "Simple Query",
@@ -450,45 +460,52 @@ func TestRenderTreeWithStats(t *testing.T) {
 					},
 				},
 			},
-			want: []QueryPlanRow{
+			want: []plantree.RowWithPredicates{
 				{
-					ID:           0,
-					Text:         "Distributed Union",
-					RowsTotal:    "9",
-					Execution:    "1",
-					LatencyTotal: "1 msec",
+					ID: 0,
+					ExecutionStats: stats.ExecutionStats{
+						Rows:             stats.ExecutionStatsValue{Total: "9"},
+						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
+						Latency:          stats.ExecutionStatsValue{Total: "1", Unit: "msec"},
+					},
+					NodeText: "Distributed Union",
 				},
 				{
-					ID:           1,
-					Text:         "+- Local Distributed Union",
-					RowsTotal:    "9",
-					Execution:    "1",
-					LatencyTotal: "1 msec",
+					ID:       1,
+					TreePart: "+- ", NodeText: "Local Distributed Union",
+					ExecutionStats: stats.ExecutionStats{
+						Rows:             Total("9"),
+						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
+						Latency:          TotalWithUnit("1", "msec"),
+					},
 				},
 				{
-					ID:           2,
-					Text:         "   +- Serialize Result",
-					RowsTotal:    "9",
-					Execution:    "1",
-					LatencyTotal: "1 msec",
+					ID:       2,
+					TreePart: "   +- ", NodeText: "Serialize Result",
+					ExecutionStats: stats.ExecutionStats{
+						Rows:             Total("9"),
+						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
+						Latency:          TotalWithUnit("1", "msec"),
+					},
 				},
 				{
-					ID:           3,
-					Text:         "      +- Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
-					RowsTotal:    "9",
-					Execution:    "1",
-					LatencyTotal: "1 msec",
+					ID:       3,
+					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
+					ExecutionStats: stats.ExecutionStats{
+						Rows:             Total("9"),
+						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
+						Latency:          TotalWithUnit("1", "msec"),
+					},
 				},
 			}},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			tree := BuildQueryPlanTree(test.plan, 0)
-			got, err := tree.RenderTreeWithStats(test.plan.GetPlanNodes())
+			got, err := plantree.ProcessPlan(queryplan.New(test.plan.GetPlanNodes()))
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
-			if !cmp.Equal(test.want, got) {
-				t.Errorf("node.RenderTreeWithStats() differ: %s", cmp.Diff(test.want, got))
+			if diff := cmp.Diff(test.want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+				t.Errorf("node.RenderTreeWithStats() differ: %s", diff)
 			}
 		})
 	}
@@ -496,93 +513,67 @@ func TestRenderTreeWithStats(t *testing.T) {
 func TestNodeString(t *testing.T) {
 	for _, test := range []struct {
 		title string
-		node  *Node
+		node  *sppb.PlanNode
 		want  string
 	}{
 		{"Distributed Union with call_type=Local",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Distributed Union",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type":             "Local",
 					"subquery_cluster_node": "4",
 				}),
-			}}, "Local Distributed Union",
+			}, "Local Distributed Union",
 		},
 		{"Scan with scan_type=IndexScan and Full scan=true",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "IndexScan",
 					"scan_target": "SongsBySongName",
 					"Full scan":   "true",
 				}),
-			}}, "Index Scan (Full scan: true, Index: SongsBySongName)"},
+			}, "Index Scan (Full scan: true, Index: SongsBySongName)"},
 		{"Scan with scan_type=TableScan",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "TableScan",
 					"scan_target": "Songs",
 				}),
-			}}, "Table Scan (Table: Songs)"},
+			}, "Table Scan (Table: Songs)"},
 		{"Scan with scan_type=BatchScan",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "BatchScan",
 					"scan_target": "$v2",
 				}),
-			}}, "Batch Scan (Batch: $v2)"},
+			}, "Batch Scan (Batch: $v2)"},
 		{"Sort Limit with call_type=Local",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Local",
 				}),
-			}}, "Local Sort Limit"},
+			}, "Local Sort Limit"},
 		{"Sort Limit with call_type=Global",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Global",
 				}),
-			}}, "Global Sort Limit"},
+			}, "Global Sort Limit"},
 		{"Aggregate with iterator_type=Stream",
-			&Node{PlanNode: &sppb.PlanNode{
+			&sppb.PlanNode{
 				DisplayName: "Aggregate",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"iterator_type": "Stream",
 				}),
-			}}, "Stream Aggregate"},
+			}, "Stream Aggregate"},
 	} {
-		if got := test.node.String(); got != test.want {
+		if got := queryplan.NodeTitle(test.node); got != test.want {
 			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
-		}
-	}
-}
-
-func TestGetMaxRelationalNodeID(t *testing.T) {
-	for _, tt := range []struct {
-		desc  string
-		input *sppb.QueryPlan
-		want  int32
-	}{
-		{
-			desc: "pre-sorted order",
-			input: &sppb.QueryPlan{
-				PlanNodes: []*sppb.PlanNode{
-					{Index: 0, DisplayName: "Scalar Subquery", Kind: sppb.PlanNode_SCALAR},
-					{Index: 1, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
-					{Index: 2, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
-					{Index: 3, DisplayName: "Index Scan", Kind: sppb.PlanNode_RELATIONAL},
-					{Index: 4, DisplayName: "Constant", Kind: sppb.PlanNode_SCALAR}, // This is not visible
-				},
-			},
-			want: 3,
-		},
-	} {
-		if got := getMaxRelationalNodeID(tt.input); got != tt.want {
-			t.Errorf("getMaxRelationalNodeID(%s) = %d, but want = %d", tt.input, got, tt.want)
 		}
 	}
 }
