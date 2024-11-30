@@ -180,8 +180,6 @@ var (
 	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}
-
-	showQueryProfilesColumnNames = []string{"INTERVAL_END", "TEXT_FINGERPRINT", "LATENCY_SECONDS", "QUERY_PROFILE"}
 )
 
 func BuildStatement(input string) (Statement, error) {
