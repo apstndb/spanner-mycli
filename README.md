@@ -44,7 +44,6 @@ You can control your Spanner databases with idiomatic SQL commands.
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).
   * Utilize [`apstndb/spantype`](https://github.com/apstndb/spantype) and [`apstndb/spanvalue`](https://github.com/apstndb/spanvalue)
 
-
 ## Install
 
 [Install Go](https://go.dev/doc/install) and run the following command.
@@ -1032,6 +1031,17 @@ $ make fasttest
 ## TODO
 
 * Show secondary index by "SHOW CREATE TABLE"
+
+## Version policy
+
+This software will not have a stable release. In other words, v1.0.0 will never be released. It will be operated as a kind of [ZeroVer](https://0ver.org/).
+
+v0.X.Y will be operated as follows:
+
+- The initial release version is v0.1.0, forked from spanner-cli v0.10.6.
+- The patch version Y will be incremented for changes that include only bug fixes.
+- The minor version X will always be incremented when there are new features or changes related to compatibility.
+- As a general rule, unreleased updates to the main branch will be released within one week.
 
 ## Disclaimer
 
