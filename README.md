@@ -255,6 +255,8 @@ and `{}` for a mutually exclusive keyword.
 | Show table schema | `SHOW CREATE TABLE <table>;`                                                                   | The table can be a FQN.|
 | Show columns | `SHOW COLUMNS FROM <table>;`                                                                   | The table can be a FQN.|
 | Show indexes | `SHOW INDEX FROM <table>;`                                                                     | The table can be a FQN.|
+| Show sampled query plans | `SHOW QUERY PROFILES;` | EARLY EXPERIMENTAL|
+| Show single sampled query plan | `SHOW QUERY PROFILE <fingerprint>;` | EARLY EXPERIMENTAL|
 | Create table | `CREATE TABLE ...;`                                                                            | |
 | Change table schema | `ALTER TABLE ...;`                                                                             | |
 | Delete table | `DROP TABLE ...;`                                                                              | |
