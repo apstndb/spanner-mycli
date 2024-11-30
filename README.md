@@ -49,17 +49,13 @@ You can control your Spanner databases with idiomatic SQL commands.
 [Install Go](https://go.dev/doc/install) and run the following command.
 
 ```
-# For Go 1.16+
+# For Go 1.23+
 go install github.com/apstndb/spanner-mycli@latest
 ```
 
-Or you can build a docker image.
+Or you can use a container image.
 
-```
-git clone https://github.com/apstndb/spanner-mycli.git
-cd spanner-mycli
-docker build -t spanner-mycli .
-```
+https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 
 ## Usage
 
@@ -109,6 +105,9 @@ docker run -it \
   -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json \
   -v $HOME/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro \
   spanner-mycli --help
+$ docker run -it \
+    -v $HOME/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro \
+    ghcr.io/apstndb/spanner-mycli --help
 ```
 
 ## Example
