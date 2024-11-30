@@ -255,6 +255,8 @@ and `{}` for a mutually exclusive keyword.
 | Show table schema | `SHOW CREATE TABLE <table>;`                                                                   | The table can be a FQN.|
 | Show columns | `SHOW COLUMNS FROM <table>;`                                                                   | The table can be a FQN.|
 | Show indexes | `SHOW INDEX FROM <table>;`                                                                     | The table can be a FQN.|
+| Show sampled query plans | `SHOW QUERY PROFILES;` | EARLY EXPERIMENTAL|
+| Show single sampled query plan | `SHOW QUERY PROFILE <fingerprint>;` | EARLY EXPERIMENTAL|
 | Create table | `CREATE TABLE ...;`                                                                            | |
 | Change table schema | `ALTER TABLE ...;`                                                                             | |
 | Delete table | `DROP TABLE ...;`                                                                              | |
@@ -933,7 +935,84 @@ Experimental Lint Result:
      Full scan=true: Potentially expensive execution full scan: Do you really want full scan?
 ```
 
+### Show query profiles (EARLY EXPERIMENTAL)
 
+spanner-mycli can render undocumented underlying table of [sampled query plans](https://cloud.google.com/spanner/docs/query-execution-plans#sampled-plans).
+These features are early experimental state so it will be changed.
+
+#### Show query profiles(It will be very long outputs).
+
+```
+spanner> SHOW QUERY PROFILES;
++-----------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Plan                                                                                                                                                      |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------+
+| SELECT INTERVAL_END, QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR                                                                               |
+| ID | Plan                                                                                                                                                 |
+| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false)                                                              |
+|  1 | +- Local Distributed Union                                                                                                                           |
+|  2 |    +- Serialize Result                                                                                                                               |
+| *3 |       +- Filter Scan (seekable_key_size: 0)                                                                                                          |
+| *4 |          +- Table Scan (Table: _TopNQueryProfiles, scan_method: Scalar)                                                                              |
+| Predicates:                                                                                                                                               |
+| 0: Split Range: (($interval_seconds = <scrubbed>) AND ($source = <scrubbed>) AND ($call_type = <scrubbed>))                                               |
+| 3: Residual Condition: (($source = <scrubbed>) AND ($call_type = <scrubbed>))                                                                             |
+| 4: Seek Condition: ($interval_seconds = <scrubbed>)                                                                                                       |
+|                                                                                                                                                           |
+| interval_end:                 2024-11-29 16:00:00 +0000 UTC                                                                                               |
+| text_fingerprint:             1603015871075919821                                                                                                         |
+| elapsed_time:                 8.52 msecs                                                                                                                  |
+| cpu_time:                     7.48 msecs                                                                                                                  |
+| rows_returned:                24                                                                                                                          |
+| deleted_rows_scanned:         3                                                                                                                           |
+| optimizer_version:            7                                                                                                                           |
+| optimizer_statistics_package: auto_20241128_05_46_13UTC                                                                                                   |
+|                                                                                                                                                           |
+| SELECT @_p0_INT64                                                                                                                                         |
+| ID | Plan                                                                                                                                                 |
+|  0 | Serialize Result                                                                                                                                     |
+|  1 | +- Unit Relation                                                                                                                                     |
+|                                                                                                                                                           |
+| interval_end:                 2024-11-23 17:00:00 +0000 UTC                                                                                               |
+| text_fingerprint:             -773118905674708524                                                                                                         |
+| elapsed_time:                 2.25 msecs                                                                                                                  |
+| cpu_time:                     1.26 msecs                                                                                                                  |
+| rows_returned:                1                                                                                                                           |
+| deleted_rows_scanned:         0                                                                                                                           |
+| optimizer_version:            7                                                                                                                           |
+| optimizer_statistics_package: auto_20241122_05_36_46UTC                                                                                                   |
+|
+```
+
+Render a latest profile for a `TEXT_FINGERPRINT`. It is compatible with plan linter(`CLI_LINT_PLAN`).
+
+```
+spanner> SHOW QUERY PROFILE 1603015871075919821;
++----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
+| ID | Query_Execution_Plan                                                                    | Rows_Returned | Executions | Total_Latency |
++----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
+| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false) | 24            | 1          | 3.31 msecs    |
+|  1 | +- Local Distributed Union                                                              | 24            | 1          | 3.29 msecs    |
+|  2 |    +- Serialize Result                                                                  | 24            | 1          | 3.28 msecs    |
+| *3 |       +- Filter Scan (seekable_key_size: 0)                                             |               |            |               |
+| *4 |          +- Table Scan (Table: _TopNQueryProfiles, scan_method: Scalar)                 | 24            | 1          | 0.27 msecs    |
++----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
+Predicates(identified by ID):
+ 0: Split Range: (($interval_seconds = <scrubbed>) AND ($source = <scrubbed>) AND ($call_type = <scrubbed>))
+ 3: Residual Condition: (($source = <scrubbed>) AND ($call_type = <scrubbed>))
+ 4: Seek Condition: ($interval_seconds = <scrubbed>)
+
+Experimental Lint Result:
+ 3: Filter Scan (seekable_key_size: 0)
+     Residual Condition: Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition
+
+5 rows in set (8.52 msecs)
+cpu time:             7.48 msecs
+rows scanned:         24 rows
+deleted rows scanned: 3 rows
+optimizer version:    7
+optimizer statistics: auto_20241128_05_46_13UTC
+```
 ## How to develop
 
 Run unit tests.

@@ -57,11 +57,10 @@ func formatKeyElem(qp *queryplan.QueryPlan, variableToExp map[string]*sppb.PlanN
 }
 
 func lintPlan(plan *sppb.QueryPlan) []string {
-
-	var result []string
 	qp := queryplan.New(plan.GetPlanNodes())
 	variableToExp := buildVariableToNodeMap(qp)
 
+	var result []string
 	for _, planNode := range qp.PlanNodes() {
 		var msgs []string
 
@@ -88,6 +87,7 @@ func lintPlan(plan *sppb.QueryPlan) []string {
 			case childLink.GetType() == "Residual Condition":
 				msg = "Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition"
 			}
+
 			if msg != "" {
 				msgs = append(msgs, fmt.Sprintf("%v: %v", childLink.GetType(), msg))
 			}
