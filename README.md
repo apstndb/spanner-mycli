@@ -1,4 +1,4 @@
-spanner-mycli [![run-tests](https://github.com/apstndb/spanner-my-cli/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/cloudspannerecosystem/spanner-my-cli/actions/workflows/run-tests.yaml)
+spanner-mycli
 ===
 
 My personal fork of spanner-cli, interactive command line tool for Cloud Spanner.
@@ -1035,6 +1035,4 @@ $ make fasttest
 
 ## Disclaimer
 
-Do not use this tool for production databases as the tool is still alpha quality.
-
-Generally, this project don't accept feature requests, please contact the original [spanner-cli](https://github.com/cloudspannerecosystem/spanner-cli).
+Do not use this tool for production databases as the tool is experimental/alpha quality forever.
