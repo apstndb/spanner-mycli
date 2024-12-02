@@ -415,6 +415,11 @@ var accessorMap = map[string]accessor{
 			return nil
 		},
 	},
+	"CLI_VERSION": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, getVersion()), nil
+		},
+	},
 }
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
