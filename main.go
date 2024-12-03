@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +78,7 @@ type spannerOptions struct {
 	QueryMode           string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
 	Strong              bool              `long:"strong" description:"Perform a strong query."`
 	ReadTimestamp       string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
+	Version             bool              `long:"version" description:"Show version string."`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -90,6 +92,23 @@ const (
 )
 
 var logMemefish bool
+
+var (
+	// https://rhysd.hatenablog.com/entry/2021/06/27/222254
+	version     = ""
+	installFrom = "built from source"
+)
+
+func getVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "(unknown)"
+	}
+	return info.Main.Version
+}
 
 func main() {
 	var gopts globalOptions
@@ -120,6 +139,9 @@ func main() {
 		exitf("Invalid options\n")
 	} else if gopts.Spanner.Help {
 		parserForHelp.WriteHelp(os.Stderr)
+		return
+	} else if gopts.Spanner.Version {
+		fmt.Printf("%v\n%v\n", getVersion(), installFrom)
 		return
 	}
 
