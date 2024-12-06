@@ -1430,7 +1430,8 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	return &Result{
 		KeepVariables: true,
-		ColumnNames:   sliceOf("DDL"),
+		// intentionally empty column name to make TAB format valid DDL
+		ColumnNames: sliceOf(""),
 		Rows: sliceOf(toRow(hiter.StringsCollect(0, xiter.Map(
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
