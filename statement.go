@@ -170,6 +170,7 @@ var (
 	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
 	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
 	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
+	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
 )
 
 var (
@@ -300,6 +301,8 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 			return nil, err
 		}
 		return &ShowQueryProfileStatement{Fprint: fprint}, nil
+	case showDdlsRe.MatchString(trimmed):
+		return &ShowDdlsStatement{}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1413,6 +1416,25 @@ ORDER BY INTERVAL_END DESC`,
 		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(qpr.QueryProfile.QueryPlan) }),
 	}
 	return result, nil
+}
+
+type ShowDdlsStatement struct{}
+
+func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		KeepVariables: true,
+		ColumnNames:   sliceOf("DDL"),
+		Rows: sliceOf(toRow(hiter.StringsCollect(0, xiter.Map(
+			func(s string) string { return s + ";\n" },
+			slices.Values(resp.GetStatements()))))),
+	}, nil
 }
 
 type NopStatement struct{}

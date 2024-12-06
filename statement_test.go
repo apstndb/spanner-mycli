@@ -632,6 +632,11 @@ func TestBuildStatement(t *testing.T) {
 			input: `SHOW PARAMS`,
 			want:  &ShowParamsStatement{},
 		},
+		{
+			desc:  "SHOW DDLS statement",
+			input: `SHOW DDLS`,
+			want:  &ShowDdlsStatement{},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
