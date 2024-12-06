@@ -26,3 +26,6 @@ test:
 
 fasttest:
 	go test --tags skip_slow_test -v ./...
+
+lint:
+	golangci-lint run
