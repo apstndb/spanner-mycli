@@ -11,7 +11,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c
 	github.com/apstndb/memebridge v0.0.0-20241123172322-a745771fe5be
 	github.com/apstndb/spannerplanviz v0.3.2
-	github.com/apstndb/spantype v0.2.0
+	github.com/apstndb/spantype v0.3.0
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7
 	github.com/google/go-cmp v0.6.0

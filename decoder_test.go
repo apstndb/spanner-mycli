@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/typepb"
@@ -437,6 +439,33 @@ func TestDecodeRow(t *testing.T) {
 			}
 			if !equalStringSlice(got, test.want) {
 				t.Errorf("DecodeRow(%v) = %v, want = %v", test.values, got, test.want)
+			}
+		})
+	}
+}
+
+func TestFormatTypeVerbose(t *testing.T) {
+	tests := []struct {
+		desc     string
+		sppbType *sppb.Type
+		want     string
+	}{
+		{
+			desc:     "PROTO",
+			sppbType: &sppb.Type{Code: sppb.TypeCode_PROTO, ProtoTypeFqn: "example.ProtoType"},
+			want:     "PROTO<example.ProtoType>",
+		},
+		{
+			desc:     "ENUM",
+			sppbType: &sppb.Type{Code: sppb.TypeCode_ENUM, ProtoTypeFqn: "example.EnumType"},
+			want:     "ENUM<example.EnumType>",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			got := formatTypeVerbose(test.sppbType)
+			if diff := cmp.Diff(got, test.want); diff != "" {
+				t.Errorf("formatTypeVerbose(%v) mismatch (-got +want):\n%s", test.sppbType, diff)
 			}
 		})
 	}

@@ -31,6 +31,7 @@ func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
 	return spanvalue.FormatColumnSpannerCLICompatible(column)
 }
 
+// formatTypeSimple is format type for headers.
 func formatTypeSimple(typ *sppb.Type) string {
 	return spantype.FormatType(typ, spantype.FormatOption{
 		Struct: spantype.StructModeBase,
@@ -40,6 +41,7 @@ func formatTypeSimple(typ *sppb.Type) string {
 	})
 }
 
+// formatTypeVerbose is format type for DESCRIBE.
 func formatTypeVerbose(typ *sppb.Type) string {
-	return spantype.FormatTypeVerbose(typ)
+	return spantype.FormatTypeMoreVerbose(typ)
 }
