@@ -80,7 +80,7 @@ func TestRequestPriority(t *testing.T) {
 			}
 
 			// Read-Write Transaction.
-			if err := session.BeginReadWriteTransaction(ctx, test.transactionPriority, ""); err != nil {
+			if err := session.BeginReadWriteTransaction(ctx, test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
 			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
@@ -97,7 +97,7 @@ func TestRequestPriority(t *testing.T) {
 			}
 
 			// Read-Only Transaction.
-			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority, ""); err != nil {
+			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read only transaction: %v", err)
 			}
 			iter, _ = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"))

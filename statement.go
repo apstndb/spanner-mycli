@@ -138,8 +138,8 @@ var (
 	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
 
 	// Transaction
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?(?:\s+TAG\s+(.+))?$`)
+	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
 	commitRe   = regexp.MustCompile(`(?is)^COMMIT$`)
 	rollbackRe = regexp.MustCompile(`(?is)^ROLLBACK$`)
 	closeRe    = regexp.MustCompile(`(?is)^CLOSE$`)
@@ -544,6 +544,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		if v.Getter == nil {
 			continue
 		}
+
 		value, err := v.Getter(session.systemVariables, k)
 		if errors.Is(err, errIgnored) {
 			continue
@@ -953,7 +954,6 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 
 type BeginRwStatement struct {
 	Priority sppb.RequestOptions_Priority
-	Tag      string
 }
 
 func newBeginRwStatement(input string) (*BeginRwStatement, error) {
@@ -968,10 +968,6 @@ func newBeginRwStatement(input string) (*BeginRwStatement, error) {
 		stmt.Priority = priority
 	}
 
-	if matched[2] != "" {
-		stmt.Tag = matched[2]
-	}
-
 	return stmt, nil
 }
 
@@ -984,7 +980,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
 
-	if err := session.BeginReadWriteTransaction(ctx, s.Priority, s.Tag); err != nil {
+	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
 		return nil, err
 	}
 
@@ -1046,7 +1042,6 @@ type BeginRoStatement struct {
 	Staleness          time.Duration
 	Timestamp          time.Time
 	Priority           sppb.RequestOptions_Priority
-	Tag                string
 }
 
 func newBeginRoStatement(input string) (*BeginRoStatement, error) {
@@ -1078,10 +1073,6 @@ func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 		stmt.Priority = priority
 	}
 
-	if matched[3] != "" {
-		stmt.Tag = matched[3]
-	}
-
 	return stmt, nil
 }
 
@@ -1096,7 +1087,7 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 		}
 	}
 
-	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority, s.Tag)
+	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority)
 	if err != nil {
 		return nil, err
 	}

@@ -45,12 +45,17 @@ type systemVariables struct {
 	LogGrpc                     bool
 	QueryMode                   *sppb.ExecuteSqlRequest_QueryMode
 	LintPlan                    bool
+	TransactionTag              string
+	RequestTag                  string
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
 	Insecure        bool
 	Debug           bool
 	Params          map[string]ast.Node
+
+	// link to session
+	CurrentSession *Session
 }
 
 var errIgnored = errors.New("ignored")
@@ -213,8 +218,44 @@ var accessorMap = map[string]accessor{
 			return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
 		},
 	},
-	"STATEMENT_TAG":   {},
-	"TRANSACTION_TAG": {},
+	"TRANSACTION_TAG": {
+		Setter: func(this *systemVariables, name, value string) error {
+			if this.CurrentSession == nil {
+				return errors.New("invalid state: current session is not populated")
+			}
+
+			if this.CurrentSession.InReadOnlyTransaction() {
+				return errors.New("can't set transaction tag in read-only transaction")
+			}
+
+			if this.CurrentSession.InReadWriteTransaction() {
+				return errors.New("can't set transaction tag in read-write transaction")
+			}
+
+			this.TransactionTag = unquoteString(value)
+			return nil
+		},
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			if this.TransactionTag == "" {
+				return nil, errIgnored
+			}
+
+			return singletonMap(name, this.TransactionTag), nil
+		},
+	},
+	"STATEMENT_TAG": {
+		Setter: func(this *systemVariables, name, value string) error {
+			this.RequestTag = unquoteString(value)
+			return nil
+		},
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			if this.RequestTag == "" {
+				return nil, errIgnored
+			}
+
+			return singletonMap(name, this.RequestTag), nil
+		},
+	},
 	"READ_TIMESTAMP": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.ReadTimestamp.IsZero() {
@@ -453,6 +494,9 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 func stringGetter(f func(sysVars *systemVariables) *string) getter {
 	return func(this *systemVariables, name string) (map[string]string, error) {
 		ref := f(this)
+		if ref == nil {
+			return nil, errIgnored
+		}
 		return singletonMap(name, *ref), nil
 	}
 }
