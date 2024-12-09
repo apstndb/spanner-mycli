@@ -130,6 +130,7 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 		adminClient:     adminClient,
 		systemVariables: sysVars,
 	}
+	sysVars.CurrentSession = session
 	go session.startHeartbeat()
 
 	return session, nil
@@ -146,7 +147,7 @@ func (s *Session) InReadOnlyTransaction() bool {
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority, tag string) error {
+func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
@@ -160,11 +161,13 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		priority = s.systemVariables.RPCPriority
 	}
 
+	tag := s.systemVariables.TransactionTag
 	opts := spanner.TransactionOptions{
 		CommitOptions:  spanner.CommitOptions{ReturnCommitStats: true},
 		CommitPriority: priority,
 		TransactionTag: tag,
 	}
+
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
 	if err != nil {
 		return err
@@ -206,7 +209,7 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 }
 
 // BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
-func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority, tag string) (time.Time, error) {
+func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
 	if s.InReadOnlyTransaction() {
 		return time.Time{}, errors.New("read-only transaction is already running")
 	}
@@ -234,7 +237,6 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	}
 
 	s.tc = &transactionContext{
-		tag:      tag,
 		priority: priority,
 		roTxn:    txn,
 	}
@@ -295,18 +297,17 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 	opts.Options.OptimizerVersion = s.systemVariables.OptimizerVersion
 	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
+	opts.RequestTag = s.systemVariables.RequestTag
 
 	switch {
 	case s.InReadWriteTransaction():
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
-		opts.RequestTag = s.tc.tag
 		iter := s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
 		return iter, nil
 	case s.InReadOnlyTransaction():
-		opts.RequestTag = s.tc.tag
 		return s.tc.roTxn.QueryWithOptions(ctx, stmt, opts), s.tc.roTxn
 	default:
 		txn := s.client.Single()
@@ -329,7 +330,11 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 
 	opts := spanner.QueryOptions{
 		Priority:   s.currentPriority(),
-		RequestTag: s.tc.tag,
+		RequestTag: s.systemVariables.RequestTag,
+		Options: &sppb.ExecuteSqlRequest_QueryOptions{
+			OptimizerVersion:           s.systemVariables.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+		},
 	}
 
 	// Workaround: Usually, we can execute DMLs using Query(ExecuteStreamingSql RPC),
@@ -486,7 +491,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	var implicitRWTx bool
 	if !s.InReadWriteTransaction() {
 		// Start implicit transaction.
-		if err := s.BeginReadWriteTransaction(ctx, s.currentPriority(), ""); err != nil {
+		if err := s.BeginReadWriteTransaction(ctx, s.currentPriority()); err != nil {
 			return 0, spanner.CommitResponse{}, nil, nil, err
 		}
 		implicitRWTx = true

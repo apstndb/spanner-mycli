@@ -292,10 +292,10 @@ and `{}` for a mutually exclusive keyword.
 | Show Query Result Shape | `DESCRIBE SELECT ...;`                                                                         | |
 | Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;`                                       | |
 | Start a new query optimizer statistics package construction | `ANALYZE;`                                                                                     | |
-| Start Read-Write Transaction | `BEGIN [RW] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
+| Start Read-Write Transaction | `BEGIN [RW] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag.|
 | Commit Read-Write Transaction | `COMMIT;`                                                                                      | |
 | Rollback Read-Write Transaction | `ROLLBACK;`                                                                                    | |
-| Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}] [TAG <tag>];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority. The tag you set is used as request tag. See also [Transaction Tags and Request Tags](#transaction-tags-and-request-tags).|
+| Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
 | End Read-Only Transaction | `CLOSE;`                                                                                       | |
 | Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
 | Show partition tokens of partition query | `PARTITION <sql>` ||
@@ -431,44 +431,27 @@ Note that transaction-level priority takes precedence over command-level priorit
 
 ## Transaction Tags and Request Tags
 
-In a read-write transaction, you can add a tag following `BEGIN RW TAG <tag>`.
-spanner-mycli adds the tag set in `BEGIN RW TAG` as a transaction tag.
-The tag will also be used as request tags within the transaction.
+You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
 
 ```
-# Read-write transaction
-# transaction_tag = tx1
-+--------------------+
-| BEGIN RW TAG tx1;  |
-|                    |
-| SELECT val         |
-| FROM tab1      +-----request_tag = tx1
-| WHERE id = 1;      |
-|                    |
-| UPDATE tab1        |
-| SET val = 10   +-----request_tag = tx1
-| WHERE id = 1;      |
-|                    |
-| COMMIT;            |
-+--------------------+
++------------------------------+
+| SET TRANSACTION_TAG = "tx1"; |
+| BEGIN RW;                    |
+|                              |
+| SET STATEMENT_TAG = "req1";  |
+| SELECT val                   |
+| FROM tab1      +--------------transaction_tag = tx1, request_tag = req1
+| WHERE id = 1;                |
+|                              |
+| SET STATEMENT_TAG = "req2";  |
+|                              |
+| UPDATE tab1                  |
+| SET val = 10   +--------------transaction_tag = tx1, request_tag = req2
+| WHERE id = 1;                |
+|                              |
+| COMMIT;        +--------------transaction_tag = tx1
++------------------------------+
 ```
-
-In a read-only transaction, you can add a tag following `BEGIN RO TAG <tag>`.
-Since read-only transaction doesn't support transaction tag, spanner-mycli adds the tag set in `BEGIN RO TAG` as request tags.
-```
-# Read-only transaction
-# transaction_tag = N/A
-+--------------------+
-| BEGIN RO TAG tx2;  |
-|                    |
-| SELECT SUM(val)    |
-| FROM tab1      +-----request_tag = tx2
-| WHERE id = 1;      |
-|                    |
-| CLOSE;             |
-+--------------------+
-```
-
 
 ## Using with the Cloud Spanner Emulator
 
@@ -496,14 +479,16 @@ This section describes some notable features of spanner-mycli, they are not appe
 
 They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
 
-| Name                         | Type       | Example                              |
-|------------------------------|------------|--------------------------------------|
-| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`     |
-| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                |
-| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                |
-| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                           |
-| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"` |
-| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"` |
+| Name                         | Type       | Example                                             |
+|------------------------------|------------|-----------------------------------------------------|
+| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`                    |
+| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                               |
+| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                               |
+| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                                          |
+| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
+| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
+| TRANSACTION_TAG              | READ_WRITE | `"app=concert,env=dev,action=update"`               |
+| STATEMENT_TAG                | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
 
 #### spanner-mycli original variables
 
@@ -1042,6 +1027,20 @@ Or run test except integration tests.
 ```
 $ make fasttest
 ```
+
+## Incompatibilities from spanner-cli
+
+In principle, spanner-mycli accepts the same input as spanner-cli, but some compatibility is intentionally not maintained.
+
+- `BEGIN RW TAG <tag>` and `BEGIN RO TAG <tag>` are no longer supported.
+  - Use `SET TRANSACTION TAG = "<tag>"` and `SET STATEMENT_TAG = "<tag>"`.
+  - Rationale: spanner-cli are broken. https://github.com/cloudspannerecosystem/spanner-cli/issues/132
+- `\G` is no longer supported.
+  - Use `SET CLI_FORMAT = "VERTICAL"`.
+  - Rationale: `\G` is not compatible with [GoogleSQL lexical structure](https://cloud.google.com/spanner/docs/reference/standard-sql/lexical) and [memefish](https://github.com/cloudspannerecosystem/memefish).
+- `\` is no longer used for prompt expansions.
+  - Use `%` instead.
+  - Rationale: `\` is needed to be escaped in ini files of [jassevdk/go-flags](https://github.com/jessevdk/go-flags).
 
 ## TODO
 
