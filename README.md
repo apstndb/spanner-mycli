@@ -292,7 +292,8 @@ and `{}` for a mutually exclusive keyword.
 | Show Query Result Shape | `DESCRIBE SELECT ...;`                                                                         | |
 | Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;`                                       | |
 | Start a new query optimizer statistics package construction | `ANALYZE;`                                                                                     | |
-| Start Read-Write Transaction | `BEGIN [RW] [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag.|
+| Start Transaction | `BEGIN [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.|
+| Start Read-Write Transaction | `BEGIN RW [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority.|
 | Commit Read-Write Transaction<br/>or end Read-OnlyTransaction | `COMMIT [TRANSACTION];`                                                                                      | |
 | Rollback Read-Write Transaction<br/>or end Read-Only Transaction | `ROLLBACK [TRANSACTION];`                                                                                    | `CLOSE` is a synonym of `ROLLBACK`.|
 | Start Read-Only Transaction | `BEGIN RO [TRANSACTION] [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
@@ -484,6 +485,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 
 | Name                         | Type       | Example                                             |
 |------------------------------|------------|-----------------------------------------------------|
+| READONLY                     | READ_WRITE | `TRUE`                                              |
 | READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`                    |
 | OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                               |
 | OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                               |

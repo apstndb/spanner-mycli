@@ -138,8 +138,9 @@ var (
 	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
 
 	// Transaction
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRe    = regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
 	commitRe   = regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`)
 	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
@@ -251,6 +252,8 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return newBeginRwStatement(trimmed)
 	case beginRoRe.MatchString(trimmed):
 		return newBeginRoStatement(trimmed)
+	case beginRe.MatchString(trimmed):
+		return newBeginStatement(trimmed)
 	case commitRe.MatchString(trimmed):
 		return &CommitStatement{}, nil
 	case rollbackRe.MatchString(trimmed):
@@ -444,6 +447,10 @@ type CreateDatabaseStatement struct {
 }
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	op, err := session.adminClient.CreateDatabase(ctx, &adminpb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
@@ -463,6 +470,10 @@ type DropDatabaseStatement struct {
 }
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
 		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
@@ -479,6 +490,10 @@ type DdlStatement struct {
 }
 
 func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeDdlStatements(ctx, session, []string{s.Ddl})
 }
 
@@ -487,6 +502,10 @@ type BulkDdlStatement struct {
 }
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
@@ -868,6 +887,10 @@ type TruncateTableStatement struct {
 }
 
 func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-write transaction`)
@@ -896,6 +919,10 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	qm := session.systemVariables.QueryMode
 	if qm == nil {
 		return executeDML(ctx, session, s.Dml)
@@ -917,6 +944,10 @@ type PartitionedDmlStatement struct {
 }
 
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
@@ -946,6 +977,10 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
@@ -969,12 +1004,59 @@ func newBeginRwStatement(input string) (*BeginRwStatement, error) {
 }
 
 func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
 
 	if session.InReadOnlyTransaction() {
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
+	}
+
+	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
+		return nil, err
+	}
+
+	return &Result{IsMutation: true}, nil
+}
+
+type BeginStatement struct {
+	Priority sppb.RequestOptions_Priority
+}
+
+func newBeginStatement(input string) (*BeginStatement, error) {
+	matched := beginRe.FindStringSubmatch(input)
+	stmt := &BeginStatement{}
+
+	if matched[1] != "" {
+		priority, err := parsePriority(matched[1])
+		if err != nil {
+			return nil, err
+		}
+		stmt.Priority = priority
+	}
+
+	return stmt, nil
+}
+
+func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.InReadWriteTransaction() || session.InReadOnlyTransaction() {
+		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+	}
+
+	if session.systemVariables.ReadOnly {
+		ts, err := session.BeginReadOnlyTransaction(ctx, unspecified, 0, time.Time{}, s.Priority)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Result{
+			IsMutation: true,
+			Timestamp:  ts,
+		}, nil
 	}
 
 	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
@@ -1038,7 +1120,8 @@ func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Res
 type timestampBoundType int
 
 const (
-	strong timestampBoundType = iota
+	unspecified timestampBoundType = iota
+	strong
 	exactStaleness
 	readTimestamp
 )
@@ -1052,7 +1135,7 @@ type BeginRoStatement struct {
 
 func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 	stmt := &BeginRoStatement{
-		TimestampBoundType: strong,
+		TimestampBoundType: unspecified,
 	}
 
 	matched := beginRoRe.FindStringSubmatch(input)
@@ -1086,6 +1169,7 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
+
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
 		if _, err := (&RollbackStatement{}).Execute(ctx, session); err != nil {
@@ -1205,12 +1289,16 @@ type MutateStatement struct {
 }
 
 func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
 	if err != nil {
 		return nil, err
 	}
 	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		err = session.tc.rwTxn.BufferWrite(mutations)
+		err = session.tc.RWTxn().BufferWrite(mutations)
 		if err != nil {
 			return 0, nil, nil, err
 		}

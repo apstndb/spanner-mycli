@@ -69,12 +69,37 @@ type Session struct {
 	systemVariables *systemVariables
 }
 
+type transactionMode string
+
+const (
+	transactionModeUndetermined = "undetermined"
+	transactionModeReadOnly     = "read-only"
+	transactionModeReadWrite    = "read-write"
+)
+
 type transactionContext struct {
+	mode          transactionMode
 	tag           string
 	priority      sppb.RequestOptions_Priority
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
-	rwTxn         *spanner.ReadWriteStmtBasedTransaction
-	roTxn         *spanner.ReadOnlyTransaction
+
+	txn any
+	// rwTxn         *spanner.ReadWriteStmtBasedTransaction
+	// roTxn         *spanner.ReadOnlyTransaction
+}
+
+func (tc *transactionContext) RWTxn() *spanner.ReadWriteStmtBasedTransaction {
+	if tc.mode != transactionModeReadWrite {
+		panic(fmt.Sprintf("must be in read-write transaction, but: %v", tc.mode))
+	}
+	return tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+}
+
+func (tc *transactionContext) ROTxn() *spanner.ReadOnlyTransaction {
+	if tc.mode != transactionModeReadOnly {
+		panic(fmt.Sprintf("must be in read-only transaction, but: %v", tc.mode))
+	}
+	return tc.txn.(*spanner.ReadOnlyTransaction)
 }
 
 func logGrpcClientOptions() []option.ClientOption {
@@ -138,12 +163,12 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 
 // InReadWriteTransaction returns true if the session is running read-write transaction.
 func (s *Session) InReadWriteTransaction() bool {
-	return s.tc != nil && s.tc.rwTxn != nil
+	return s.tc != nil && s.tc.mode == transactionModeReadWrite
 }
 
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
 func (s *Session) InReadOnlyTransaction() bool {
-	return s.tc != nil && s.tc.roTxn != nil
+	return s.tc != nil && s.tc.mode == transactionModeReadOnly
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
@@ -173,9 +198,10 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		return err
 	}
 	s.tc = &transactionContext{
+		mode:     transactionModeReadWrite,
 		tag:      tag,
 		priority: priority,
-		rwTxn:    txn,
+		txn:      txn,
 	}
 	return nil
 }
@@ -189,7 +215,7 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
-	resp, err := s.tc.rwTxn.CommitWithReturnResp(ctx)
+	resp, err := s.tc.RWTxn().CommitWithReturnResp(ctx)
 	s.tc = nil
 	return resp, err
 }
@@ -203,7 +229,7 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
-	s.tc.rwTxn.Rollback(ctx)
+	s.tc.RWTxn().Rollback(ctx)
 	s.tc = nil
 	return nil
 }
@@ -214,15 +240,21 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		return time.Time{}, errors.New("read-only transaction is already running")
 	}
 
-	txn := s.client.ReadOnlyTransaction()
+	tb := spanner.StrongRead()
 	switch typ {
 	case strong:
-		txn = txn.WithTimestampBound(spanner.StrongRead())
+		tb = spanner.StrongRead()
 	case exactStaleness:
-		txn = txn.WithTimestampBound(spanner.ExactStaleness(staleness))
+		tb = spanner.ExactStaleness(staleness)
 	case readTimestamp:
-		txn = txn.WithTimestampBound(spanner.ReadTimestamp(timestamp))
+		tb = spanner.ReadTimestamp(timestamp)
+	default:
+		if s.systemVariables.ReadOnlyStaleness != nil {
+			tb = *s.systemVariables.ReadOnlyStaleness
+		}
 	}
+
+	txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
 	// Use session's priority if transaction priority is not set.
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
@@ -237,8 +269,9 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	}
 
 	s.tc = &transactionContext{
+		mode:     transactionModeReadOnly,
 		priority: priority,
-		roTxn:    txn,
+		txn:      txn,
 	}
 
 	return txn.Timestamp()
@@ -250,7 +283,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 		return errors.New("read-only transaction is not running")
 	}
 
-	s.tc.roTxn.Close()
+	s.tc.ROTxn().Close()
 	s.tc = nil
 	return nil
 }
@@ -307,11 +340,11 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
-		iter := s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts)
+		iter := s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
 		return iter, nil
 	case s.InReadOnlyTransaction():
-		return s.tc.roTxn.QueryWithOptions(ctx, stmt, opts), s.tc.roTxn
+		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
 		txn := s.client.Single()
 		if s.systemVariables.ReadOnlyStaleness != nil {
@@ -348,12 +381,12 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 	// It enforces to use ExecuteSql RPC.
 	// TODO: Remove useUpdate flag
 	if useUpdate {
-		rowCount, err := s.tc.rwTxn.UpdateWithOptions(ctx, stmt, opts)
+		rowCount, err := s.tc.RWTxn().UpdateWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
 		return nil, nil, rowCount, nil, err
 	}
 
-	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.rwTxn.QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
+	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
 	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
 }
@@ -435,8 +468,8 @@ func (s *Session) startHeartbeat() {
 		func() {
 			s.tcMutex.Lock()
 			defer s.tcMutex.Unlock()
-			if s.tc != nil && s.tc.rwTxn != nil && s.tc.sendHeartbeat {
-				err := heartbeat(s.tc.rwTxn, s.currentPriority())
+			if s.tc != nil && s.tc.mode == transactionModeReadWrite && s.tc.sendHeartbeat {
+				err := heartbeat(s.tc.RWTxn(), s.currentPriority())
 				if err != nil {
 					log.Printf("heartbeat error: %v", err)
 				}
@@ -522,4 +555,12 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		return 0, spanner.CommitResponse{}, nil, nil, err
 	}
 	return affected, resp, plan, metadata, nil
+}
+
+func (s *Session) failStatementIfReadOnly() error {
+	if s.systemVariables.ReadOnly {
+		return errors.New("can't execute this statement in READONLY mode")
+	}
+
+	return nil
 }

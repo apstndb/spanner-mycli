@@ -264,12 +264,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN statement",
 			input: "BEGIN",
-			want:  &BeginRwStatement{},
+			want:  &BeginStatement{},
 		},
 		{
 			desc:  "BEGIN TRANSACTION statement",
 			input: "BEGIN TRANSACTION",
-			want:  &BeginRwStatement{},
+			want:  &BeginStatement{},
 		},
 		{
 			desc:  "BEGIN RW statement",
@@ -279,7 +279,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN PRIORITY statement",
 			input: "BEGIN PRIORITY MEDIUM",
-			want: &BeginRwStatement{
+			want: &BeginStatement{
 				Priority: sppb.RequestOptions_PRIORITY_MEDIUM,
 			},
 		},
@@ -293,7 +293,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO statement",
 			input: "BEGIN RO",
-			want:  &BeginRoStatement{TimestampBoundType: strong},
+			want:  &BeginRoStatement{TimestampBoundType: unspecified},
 		},
 		{
 			desc:  "BEGIN RO staleness statement",
@@ -309,7 +309,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO PRIORITY statement",
 			input: "BEGIN RO PRIORITY LOW",
-			want:  &BeginRoStatement{TimestampBoundType: strong, Priority: sppb.RequestOptions_PRIORITY_LOW},
+			want:  &BeginRoStatement{TimestampBoundType: unspecified, Priority: sppb.RequestOptions_PRIORITY_LOW},
 		},
 		{
 			desc:  "BEGIN RO staleness with PRIORITY statement",
