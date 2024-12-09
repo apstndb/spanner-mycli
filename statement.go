@@ -138,11 +138,10 @@ var (
 	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
 
 	// Transaction
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	commitRe   = regexp.MustCompile(`(?is)^COMMIT$`)
-	rollbackRe = regexp.MustCompile(`(?is)^ROLLBACK$`)
-	closeRe    = regexp.MustCompile(`(?is)^CLOSE$`)
+	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	commitRe   = regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`)
+	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
 	// Other
 	exitRe                = regexp.MustCompile(`(?is)^EXIT$`)
@@ -256,8 +255,6 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &CommitStatement{}, nil
 	case rollbackRe.MatchString(trimmed):
 		return &RollbackStatement{}, nil
-	case closeRe.MatchString(trimmed):
-		return &CloseStatement{}, nil
 	case showVariableRe.MatchString(trimmed):
 		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
@@ -990,43 +987,52 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
-	}
-
 	result := &Result{IsMutation: true}
-
-	if !session.InReadWriteTransaction() {
+	switch {
+	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
 		return result, nil
-	}
+	case session.InReadOnlyTransaction():
+		if err := session.CloseReadOnlyTransaction(); err != nil {
+			return nil, err
+		}
 
-	resp, err := session.CommitReadWriteTransaction(ctx)
-	if err != nil {
-		return nil, err
-	}
+		return result, nil
+	case session.InReadWriteTransaction():
+		resp, err := session.CommitReadWriteTransaction(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	result.Timestamp = resp.CommitTs
-	result.CommitStats = resp.CommitStats
-	return result, nil
+		result.Timestamp = resp.CommitTs
+		result.CommitStats = resp.CommitStats
+		return result, nil
+	default:
+		return nil, errors.New("invalid state")
+	}
 }
 
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
-	}
-
 	result := &Result{IsMutation: true}
-	if !session.InReadWriteTransaction() {
+	switch {
+	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
 		return result, nil
-	}
+	case session.InReadOnlyTransaction():
+		if err := session.CloseReadOnlyTransaction(); err != nil {
+			return nil, err
+		}
 
-	if err := session.RollbackReadWriteTransaction(ctx); err != nil {
-		return nil, err
-	}
+		return result, nil
+	case session.InReadWriteTransaction():
+		if err := session.RollbackReadWriteTransaction(ctx); err != nil {
+			return nil, err
+		}
 
-	return result, nil
+		return result, nil
+	default:
+		return nil, errors.New("invalid state")
+	}
 }
 
 type timestampBoundType int
@@ -1082,7 +1088,7 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	}
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
-		if _, err := (&CloseStatement{}).Execute(ctx, session); err != nil {
+		if _, err := (&RollbackStatement{}).Execute(ctx, session); err != nil {
 			return nil, fmt.Errorf("error on close current transaction: %w", err)
 		}
 	}
@@ -1096,26 +1102,6 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 		IsMutation: true,
 		Timestamp:  ts,
 	}, nil
-}
-
-type CloseStatement struct{}
-
-func (s *CloseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		return nil, errors.New("You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
-	}
-
-	result := &Result{IsMutation: true}
-
-	if !session.InReadOnlyTransaction() {
-		return result, nil
-	}
-
-	if err := session.CloseReadOnlyTransaction(); err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }
 
 type PartitionStatement struct{ SQL string }
