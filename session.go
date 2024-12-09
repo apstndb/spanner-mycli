@@ -299,6 +299,9 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
 	opts.RequestTag = s.systemVariables.RequestTag
 
+	// Reset STATEMENT_TAG
+	s.systemVariables.RequestTag = ""
+
 	switch {
 	case s.InReadWriteTransaction():
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
@@ -336,6 +339,9 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
 		},
 	}
+
+	// Reset STATEMENT_TAG
+	s.systemVariables.RequestTag = ""
 
 	// Workaround: Usually, we can execute DMLs using Query(ExecuteStreamingSql RPC),
 	// but spannertest doesn't support DMLs execution using ExecuteStreamingSql RPC.
