@@ -523,3 +523,11 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	}
 	return affected, resp, plan, metadata, nil
 }
+
+func (s *Session) failStatementIfReadOnly() error {
+	if s.systemVariables.ReadOnly {
+		return errors.New("can't execute this statement in READONLY mode")
+	}
+
+	return nil
+}

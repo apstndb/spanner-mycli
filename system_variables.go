@@ -56,6 +56,7 @@ type systemVariables struct {
 
 	// link to session
 	CurrentSession *Session
+	ReadOnly       bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -144,6 +145,22 @@ func parseTimeString(s string) (time.Time, error) {
 }
 
 var accessorMap = map[string]accessor{
+	"READONLY": {
+		Setter: func(this *systemVariables, name, value string) error {
+			if this.CurrentSession != nil && (this.CurrentSession.InReadOnlyTransaction() || this.CurrentSession.InReadWriteTransaction()) {
+				return errors.New("can't change READONLY when there is a active transaction")
+			}
+
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return err
+			}
+
+			this.ReadOnly = b
+			return nil
+		},
+		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
+	},
 	"AUTOCOMMIT":              {},
 	"RETRY_ABORTS_INTERNALLY": {},
 	"AUTOCOMMIT_DML_MODE":     {},

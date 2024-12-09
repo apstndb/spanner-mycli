@@ -444,6 +444,10 @@ type CreateDatabaseStatement struct {
 }
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	op, err := session.adminClient.CreateDatabase(ctx, &adminpb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
@@ -463,6 +467,10 @@ type DropDatabaseStatement struct {
 }
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
 		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
@@ -479,6 +487,10 @@ type DdlStatement struct {
 }
 
 func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeDdlStatements(ctx, session, []string{s.Ddl})
 }
 
@@ -487,6 +499,10 @@ type BulkDdlStatement struct {
 }
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
@@ -868,6 +884,10 @@ type TruncateTableStatement struct {
 }
 
 func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-write transaction`)
@@ -896,6 +916,10 @@ type DmlStatement struct {
 }
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	qm := session.systemVariables.QueryMode
 	if qm == nil {
 		return executeDML(ctx, session, s.Dml)
@@ -917,6 +941,10 @@ type PartitionedDmlStatement struct {
 }
 
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
@@ -946,6 +974,10 @@ type ExplainAnalyzeDmlStatement struct {
 }
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
@@ -969,6 +1001,10 @@ func newBeginRwStatement(input string) (*BeginRwStatement, error) {
 }
 
 func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
@@ -1205,6 +1241,10 @@ type MutateStatement struct {
 }
 
 func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
+
 	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
 	if err != nil {
 		return nil, err
