@@ -293,7 +293,7 @@ and `{}` for a mutually exclusive keyword.
 | Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;`                                       | |
 | Start a new query optimizer statistics package construction | `ANALYZE;`                                                                                     | |
 | Start Transaction | `BEGIN [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.|
-| Start Read-Write Transaction | `BEGIN [RW] [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority.|
+| Start Read-Write Transaction | `BEGIN RW [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority.|
 | Commit Read-Write Transaction<br/>or end Read-OnlyTransaction | `COMMIT [TRANSACTION];`                                                                                      | |
 | Rollback Read-Write Transaction<br/>or end Read-Only Transaction | `ROLLBACK [TRANSACTION];`                                                                                    | `CLOSE` is a synonym of `ROLLBACK`.|
 | Start Read-Only Transaction | `BEGIN RO [TRANSACTION] [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
