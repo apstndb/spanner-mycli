@@ -292,11 +292,10 @@ and `{}` for a mutually exclusive keyword.
 | Show Query Result Shape | `DESCRIBE SELECT ...;`                                                                         | |
 | Show DML Result Shape | `DESCRIBE {INSERT\|UPDATE\|DELETE} ... THEN RETURN ...;`                                       | |
 | Start a new query optimizer statistics package construction | `ANALYZE;`                                                                                     | |
-| Start Read-Write Transaction | `BEGIN [RW] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag.|
-| Commit Read-Write Transaction | `COMMIT;`                                                                                      | |
-| Rollback Read-Write Transaction | `ROLLBACK;`                                                                                    | |
-| Start Read-Only Transaction | `BEGIN RO [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
-| End Read-Only Transaction | `CLOSE;`                                                                                       | |
+| Start Read-Write Transaction | `BEGIN [RW] [TRANSACTION] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                                       | See [Request Priority](#request-priority) for details on the priority. The tag you set is used as both transaction tag and request tag.|
+| Commit Read-Write Transaction<br/>or end Read-OnlyTransaction | `COMMIT [TRANSACTION];`                                                                                      | |
+| Rollback Read-Write Transaction<br/>or end Read-Only Transaction | `ROLLBACK [TRANSACTION];`                                                                                    | `CLOSE` is a synonym of `ROLLBACK`.|
+| Start Read-Only Transaction | `BEGIN RO [TRANSACTION] [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
 | Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
 | Show partition tokens of partition query | `PARTITION <sql>` ||
 | Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||

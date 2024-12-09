@@ -267,6 +267,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &BeginRwStatement{},
 		},
 		{
+			desc:  "BEGIN TRANSACTION statement",
+			input: "BEGIN TRANSACTION",
+			want:  &BeginRwStatement{},
+		},
+		{
 			desc:  "BEGIN RW statement",
 			input: "BEGIN RW",
 			want:  &BeginRwStatement{},
@@ -321,14 +326,29 @@ func TestBuildStatement(t *testing.T) {
 			want:  &CommitStatement{},
 		},
 		{
+			desc:  "COMMIT TRANSACTION statement",
+			input: "COMMIT TRANSACTION",
+			want:  &CommitStatement{},
+		},
+		{
 			desc:  "ROLLBACK statement",
 			input: "ROLLBACK",
 			want:  &RollbackStatement{},
 		},
 		{
+			desc:  "ROLLBACK TRANSACTION statement",
+			input: "ROLLBACK TRANSACTION",
+			want:  &RollbackStatement{},
+		},
+		{
 			desc:  "CLOSE statement",
 			input: "CLOSE",
-			want:  &CloseStatement{},
+			want:  &RollbackStatement{},
+		},
+		{
+			desc:  "CLOSE TRANSACTION statement",
+			input: "CLOSE TRANSACTION",
+			want:  &RollbackStatement{},
 		},
 		{
 			desc:  "EXIT statement",
