@@ -50,6 +50,9 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
 	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
+
+	// Use dot import to simplify tests
+	. "github.com/apstndb/spantype/testutil"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 	"spheric.cloud/xiter"
 )
@@ -203,6 +206,39 @@ func generateUniqueTableId() string {
 	return fmt.Sprintf("spanner_cli_test_%d_%d", time.Now().UnixNano(), count)
 }
 
+func setupSession(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudContainer, teardownDDLs []string) (*Session, func()) {
+	options := defaultClientOptions(spannerContainer)
+	session, err := NewSession(ctx, &systemVariables{
+		Project:     spannerContainer.Settings.ProjectID,
+		Instance:    testInstanceId,
+		Database:    testDatabaseId,
+		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	if err != nil {
+		t.Fatalf("failed to create test session: err=%s", err)
+	}
+
+	dbPath := databasePath(spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
+
+	tearDown := func() {
+		op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
+			Database:   dbPath,
+			Statements: teardownDDLs,
+		})
+		if err != nil {
+			t.Fatalf("failed to drop table: err=%s", err)
+		}
+		if err := op.Wait(ctx); err != nil {
+			t.Fatalf("failed to drop table: err=%s", err)
+		}
+	}
+	return session, tearDown
+}
+
+var testTableRowType = sliceOf(
+	NameCodeToStructTypeField("id", sppb.TypeCode_INT64),
+	NameCodeToStructTypeField("active", sppb.TypeCode_BOOL),
+)
+
 func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudContainer, dmls []string) (*Session, string, func()) {
 	options := defaultClientOptions(spannerContainer)
 	session, err := NewSession(ctx, &systemVariables{
@@ -265,17 +301,18 @@ func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudCon
 	return session, tableId, tearDown
 }
 
-func compareResult(t *testing.T, got *Result, expected *Result) {
+func compareResult[T any](t *testing.T, got T, expected T) {
 	t.Helper()
 	opts := []cmp.Option{
 		cmpopts.IgnoreFields(Result{}, "Stats"),
 		cmpopts.IgnoreFields(Result{}, "Timestamp"),
 		// Commit Stats is only provided by real instances
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
+		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	}
 	if !cmp.Equal(got, expected, opts...) {
-		t.Errorf("diff: %s", cmp.Diff(got, expected, opts...))
+		t.Errorf("diff(-got, +expected): %s", cmp.Diff(got, expected, opts...))
 	}
 }
 
@@ -308,11 +345,8 @@ func TestSelect(t *testing.T) {
 			Row{[]string{"2", "false"}},
 		},
 		AffectedRows: 2,
-		ColumnTypes: []*sppb.StructType_Field{
-			{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
-			{Name: "active", Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
-		},
-		IsMutation: false,
+		ColumnTypes:  testTableRowType,
+		IsMutation:   false,
 	})
 }
 
@@ -416,6 +450,198 @@ func TestSystemVariables(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestStatements(t *testing.T) {
+	spannerContainer, teardown := initialize(t)
+	defer teardown()
+
+	tests := []struct {
+		desc         string
+		stmt         []string
+		wantResults  []*Result
+		teardownDDLs []string
+	}{
+		{
+			desc: "begin, insert THEN RETURN, rollback, select",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)",
+				"BEGIN",
+				"INSERT INTO TestTable1 (id, active) VALUES (1, true), (2, false) THEN RETURN *",
+				"ROLLBACK",
+				"SELECT id, active FROM TestTable1 ORDER BY id ASC",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: true},
+				{
+					IsMutation: true, AffectedRows: 2,
+					Rows: sliceOf(
+						toRow("1", "true"),
+						toRow("2", "false"),
+					),
+					ColumnNames: sliceOf("id", "active"),
+					ColumnTypes: testTableRowType,
+				},
+				{IsMutation: true},
+				{
+					Rows:        []Row{},
+					ColumnNames: sliceOf("id", "active"),
+					ColumnTypes: testTableRowType,
+				},
+			},
+		},
+		{
+			desc: "begin, insert, commit, select",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)",
+				"BEGIN",
+				"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)",
+				"COMMIT",
+				"SELECT id, active FROM TestTable2 ORDER BY id ASC",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable2"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 2},
+				{IsMutation: true},
+				{
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+			},
+		},
+		{
+			desc: "read-only transactions",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)",
+				"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)",
+				"BEGIN RO",
+				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+				"ROLLBACK",
+				"BEGIN",
+				"SET TRANSACTION READ ONLY",
+				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+				"COMMIT",
+				"SET READONLY = TRUE",
+				"BEGIN",
+				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+				"COMMIT",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable3"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 2},
+				{IsMutation: true},
+				{
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+				{IsMutation: true},
+				{IsMutation: true},
+				{
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+				{KeepVariables: true},
+				{IsMutation: true},
+				{
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+			},
+		},
+		{
+			desc: "read-write transactions",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)",
+				"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)",
+				"BEGIN",
+				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+				"ROLLBACK",
+				"BEGIN",
+				"SET TRANSACTION READ WRITE",
+				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+				"ROLLBACK",
+				"BEGIN RW",
+				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+				"COMMIT",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable4"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 2},
+				{IsMutation: true},
+				{
+					IsMutation:   true,
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+				{IsMutation: true},
+				{IsMutation: true},
+				{
+					IsMutation:   true,
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+				{IsMutation: true},
+				{
+					IsMutation:   true,
+					AffectedRows: 2,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					ColumnNames:  sliceOf("id", "active"),
+					ColumnTypes:  testTableRowType,
+				},
+				{IsMutation: true},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+			defer cancel()
+
+			session, _, tearDown := setup(t, ctx, spannerContainer, []string{})
+			defer tearDown()
+
+			var gots []*Result
+			for i, s := range tt.stmt {
+				// begin
+				stmt, err := BuildStatement(s)
+				if err != nil {
+					t.Fatalf("invalid statement[%d]: error=%s", i, err)
+				}
+
+				result, err := stmt.Execute(ctx, session)
+				if err != nil {
+					t.Fatalf("unexpected error happened[%d]: %s", i, err)
+				}
+				gots = append(gots, result)
+			}
+			compareResult(t, gots, tt.wantResults)
+
+		})
+	}
 }
 
 func TestReadWriteTransaction(t *testing.T) {
@@ -726,10 +952,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 				Row{[]string{"1", "true"}},
 				Row{[]string{"2", "false"}},
 			},
-			ColumnTypes: []*sppb.StructType_Field{
-				{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
-				{Name: "active", Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
-			},
+			ColumnTypes:  testTableRowType,
 			AffectedRows: 2,
 			IsMutation:   false,
 		})
