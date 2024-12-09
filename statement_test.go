@@ -321,6 +321,16 @@ func TestBuildStatement(t *testing.T) {
 			},
 		},
 		{
+			desc:  "SET TRANSACTION READ ONLY statement",
+			input: "SET TRANSACTION READ ONLY",
+			want:  &SetTransactionStatement{IsReadOnly: true},
+		},
+		{
+			desc:  "SET TRANSACTION READ WRITE statement",
+			input: "SET TRANSACTION READ WRITE",
+			want:  &SetTransactionStatement{IsReadOnly: false},
+		},
+		{
 			desc:  "COMMIT statement",
 			input: "COMMIT",
 			want:  &CommitStatement{},

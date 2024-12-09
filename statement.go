@@ -163,7 +163,7 @@ var (
 	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
-	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
+	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`)
 	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
 	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
 	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
@@ -267,7 +267,11 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &RollbackStatement{}, nil
 	case setTransactionRe.MatchString(trimmed):
 		matched := setTransactionRe.FindStringSubmatch(trimmed)
-		return &SetTransactionStatement{IsReadOnly: matched[1] != ""}, nil
+		isReadOnly, err := parseTransaction(matched[1])
+		if err != nil {
+			return nil, err
+		}
+		return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
 	case showVariableRe.MatchString(trimmed):
 		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
@@ -316,6 +320,17 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	default:
 		return nil, errStatementNotMatched
 	}
+}
+
+var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$$`)
+
+func parseTransaction(s string) (isReadOnly bool, err error) {
+	if !transactionRe.MatchString(s) {
+		return false, fmt.Errorf(`must be "READ ONLY" or "READ WRITE", but: %q`, s)
+	}
+
+	submatch := transactionRe.FindStringSubmatch(s)
+	return submatch[1] != "", nil
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
