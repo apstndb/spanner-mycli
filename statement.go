@@ -138,8 +138,9 @@ var (
 	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
 
 	// Transaction
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN(?:\s+RW)?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+([^\s]+))?(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRe    = regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
+	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
 	commitRe   = regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`)
 	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
@@ -251,6 +252,8 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return newBeginRwStatement(trimmed)
 	case beginRoRe.MatchString(trimmed):
 		return newBeginRoStatement(trimmed)
+	case beginRe.MatchString(trimmed):
+		return newBeginStatement(trimmed)
 	case commitRe.MatchString(trimmed):
 		return &CommitStatement{}, nil
 	case rollbackRe.MatchString(trimmed):
@@ -1020,6 +1023,49 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 	return &Result{IsMutation: true}, nil
 }
 
+type BeginStatement struct {
+	Priority sppb.RequestOptions_Priority
+}
+
+func newBeginStatement(input string) (*BeginStatement, error) {
+	matched := beginRe.FindStringSubmatch(input)
+	stmt := &BeginStatement{}
+
+	if matched[1] != "" {
+		priority, err := parsePriority(matched[1])
+		if err != nil {
+			return nil, err
+		}
+		stmt.Priority = priority
+	}
+
+	return stmt, nil
+}
+
+func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.InReadWriteTransaction() || session.InReadOnlyTransaction() {
+		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
+	}
+
+	if session.systemVariables.ReadOnly {
+		ts, err := session.BeginReadOnlyTransaction(ctx, unspecified, 0, time.Time{}, s.Priority)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Result{
+			IsMutation: true,
+			Timestamp:  ts,
+		}, nil
+	}
+
+	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
+		return nil, err
+	}
+
+	return &Result{IsMutation: true}, nil
+}
+
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -1074,7 +1120,8 @@ func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Res
 type timestampBoundType int
 
 const (
-	strong timestampBoundType = iota
+	unspecified timestampBoundType = iota
+	strong
 	exactStaleness
 	readTimestamp
 )
@@ -1088,7 +1135,7 @@ type BeginRoStatement struct {
 
 func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 	stmt := &BeginRoStatement{
-		TimestampBoundType: strong,
+		TimestampBoundType: unspecified,
 	}
 
 	matched := beginRoRe.FindStringSubmatch(input)
@@ -1122,6 +1169,7 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
+
 	if session.InReadOnlyTransaction() {
 		// close current transaction implicitly
 		if _, err := (&RollbackStatement{}).Execute(ctx, session); err != nil {
@@ -1250,7 +1298,7 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		err = session.tc.rwTxn.BufferWrite(mutations)
+		err = session.tc.RWTxn().BufferWrite(mutations)
 		if err != nil {
 			return 0, nil, nil, err
 		}
