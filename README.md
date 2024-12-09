@@ -432,6 +432,7 @@ Note that transaction-level priority takes precedence over command-level priorit
 ## Transaction Tags and Request Tags
 
 You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
+Note: `STATEMENT_TAG` is effective only in the next query.
 
 ```
 +------------------------------+
@@ -442,6 +443,9 @@ You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request t
 | SELECT val                   |
 | FROM tab1      +--------------transaction_tag = tx1, request_tag = req1
 | WHERE id = 1;                |
+|                              |
+| SELECT *                     |
+| FROM tab1;     +--------------transaction_tag = tx1
 |                              |
 | SET STATEMENT_TAG = "req2";  |
 |                              |
