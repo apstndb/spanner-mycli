@@ -241,15 +241,7 @@ var accessorMap = map[string]accessor{
 				return errors.New("invalid state: current session is not populated")
 			}
 
-			if this.CurrentSession.InReadOnlyTransaction() {
-				return errors.New("can't set transaction tag in read-only transaction")
-			}
-
-			if this.CurrentSession.InReadWriteTransaction() {
-				return errors.New("can't set transaction tag in read-write transaction")
-			}
-
-			if this.CurrentSession.tc != nil {
+			if !this.CurrentSession.InPendingTransaction() {
 				return errors.New("there is no pending transaction")
 			}
 
@@ -257,7 +249,7 @@ var accessorMap = map[string]accessor{
 			return nil
 		},
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.CurrentSession == nil || this.CurrentSession.tc != nil || this.CurrentSession.tc.tag == "" {
+			if this.CurrentSession == nil || this.CurrentSession.tc == nil || this.CurrentSession.tc.tag == "" {
 				return singletonMap(name, ""), errIgnored
 			}
 

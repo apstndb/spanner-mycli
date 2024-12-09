@@ -163,6 +163,7 @@ var (
 	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
 	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
 	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
 	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
@@ -173,7 +174,7 @@ var (
 	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
 	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
+	mutateRe              = regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
 	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
 	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
 	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
@@ -264,6 +265,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &CommitStatement{}, nil
 	case rollbackRe.MatchString(trimmed):
 		return &RollbackStatement{}, nil
+	case setTransactionRe.MatchString(trimmed):
+		matched := setTransactionRe.FindStringSubmatch(trimmed)
+		return &SetTransactionStatement{IsReadOnly: matched[1] != ""}, nil
 	case showVariableRe.MatchString(trimmed):
 		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
@@ -1058,6 +1062,33 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 	}
 
 	return &Result{IsMutation: true}, nil
+}
+
+type SetTransactionStatement struct {
+	IsReadOnly bool
+}
+
+func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	result := &Result{IsMutation: true}
+	if !session.InPendingTransaction() {
+		// nop
+		return result, nil
+	}
+
+	if s.IsReadOnly {
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+		if err != nil {
+			return nil, err
+		}
+		result.Timestamp = ts
+		return result, nil
+	} else {
+		err := session.BeginReadWriteTransaction(ctx, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
 }
 
 type CommitStatement struct{}
