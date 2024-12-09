@@ -1091,14 +1091,14 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 	}
 
 	if s.IsReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
 		if err != nil {
 			return nil, err
 		}
 		result.Timestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+		err := session.BeginReadWriteTransaction(ctx, session.tc.priority)
 		if err != nil {
 			return nil, err
 		}
