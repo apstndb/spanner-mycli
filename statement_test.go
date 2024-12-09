@@ -293,7 +293,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO statement",
 			input: "BEGIN RO",
-			want:  &BeginRoStatement{TimestampBoundType: unspecified},
+			want:  &BeginRoStatement{TimestampBoundType: timestampBoundUnspecified},
 		},
 		{
 			desc:  "BEGIN RO staleness statement",
@@ -309,7 +309,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO PRIORITY statement",
 			input: "BEGIN RO PRIORITY LOW",
-			want:  &BeginRoStatement{TimestampBoundType: unspecified, Priority: sppb.RequestOptions_PRIORITY_LOW},
+			want:  &BeginRoStatement{TimestampBoundType: timestampBoundUnspecified, Priority: sppb.RequestOptions_PRIORITY_LOW},
 		},
 		{
 			desc:  "BEGIN RO staleness with PRIORITY statement",
@@ -319,6 +319,16 @@ func TestBuildStatement(t *testing.T) {
 				TimestampBoundType: exactStaleness,
 				Priority:           sppb.RequestOptions_PRIORITY_HIGH,
 			},
+		},
+		{
+			desc:  "SET TRANSACTION READ ONLY statement",
+			input: "SET TRANSACTION READ ONLY",
+			want:  &SetTransactionStatement{IsReadOnly: true},
+		},
+		{
+			desc:  "SET TRANSACTION READ WRITE statement",
+			input: "SET TRANSACTION READ WRITE",
+			want:  &SetTransactionStatement{IsReadOnly: false},
 		},
 		{
 			desc:  "COMMIT statement",

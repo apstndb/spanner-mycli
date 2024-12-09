@@ -72,9 +72,9 @@ type Session struct {
 type transactionMode string
 
 const (
-	transactionModeUndetermined = "undetermined"
-	transactionModeReadOnly     = "read-only"
-	transactionModeReadWrite    = "read-write"
+	transactionModePending   = "undetermined"
+	transactionModeReadOnly  = "read-only"
+	transactionModeReadWrite = "read-write"
 )
 
 type transactionContext struct {
@@ -100,6 +100,23 @@ func (tc *transactionContext) ROTxn() *spanner.ReadOnlyTransaction {
 		panic(fmt.Sprintf("must be in read-only transaction, but: %v", tc.mode))
 	}
 	return tc.txn.(*spanner.ReadOnlyTransaction)
+}
+
+var (
+	_ transaction = (*spanner.ReadOnlyTransaction)(nil)
+	_ transaction = (*spanner.ReadWriteTransaction)(nil)
+)
+
+func (tc *transactionContext) Txn() transaction {
+	if tc.mode != transactionModeReadOnly && tc.mode != transactionModeReadWrite {
+		panic(fmt.Sprintf("must be in transaction, but: %v", tc.mode))
+	}
+	return tc.txn.(transaction)
+}
+
+type transaction interface {
+	QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator
+	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
 }
 
 func logGrpcClientOptions() []option.ClientOption {
@@ -171,8 +188,19 @@ func (s *Session) InReadOnlyTransaction() bool {
 	return s.tc != nil && s.tc.mode == transactionModeReadOnly
 }
 
-// BeginReadWriteTransaction starts read-write transaction.
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
+// InPendingTransaction returns true if the session is running pending transaction.
+func (s *Session) InPendingTransaction() bool {
+	return s.tc != nil && s.tc.mode == transactionModePending
+}
+
+// InTransaction returns true if the session is running transaction.
+func (s *Session) InTransaction() bool {
+	return s.tc != nil
+}
+
+// BeginPendingTransaction starts pending transaction.
+// The actual start of the transaction is delayed until the first operation in the transaction is executed.
+func (s *Session) BeginPendingTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
@@ -186,7 +214,46 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		priority = s.systemVariables.RPCPriority
 	}
 
-	tag := s.systemVariables.TransactionTag
+	s.tc = &transactionContext{
+		mode:     transactionModePending,
+		priority: priority,
+	}
+	return nil
+}
+
+func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
+	var zeroTime time.Time
+	if s.tc == nil || s.tc.mode != transactionModePending {
+		return zeroTime, nil
+	}
+
+	if s.systemVariables.ReadOnly {
+		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.tc.priority)
+	}
+
+	return zeroTime, s.BeginReadWriteTransaction(ctx, s.tc.priority)
+}
+
+// BeginReadWriteTransaction starts read-write transaction.
+func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
+	if s.InReadWriteTransaction() {
+		return errors.New("read-write transaction is already running")
+	}
+
+	if s.InReadOnlyTransaction() {
+		return errors.New("read-only transaction is already running")
+	}
+
+	var tag string
+	if s.tc != nil && s.tc.mode == transactionModePending {
+		tag = s.tc.tag
+	}
+
+	// Use session's priority if transaction priority is not set.
+	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		priority = s.systemVariables.RPCPriority
+	}
+
 	opts := spanner.TransactionOptions{
 		CommitOptions:  spanner.CommitOptions{ReturnCommitStats: true},
 		CommitPriority: priority,
@@ -208,6 +275,11 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
 func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.CommitResponse, error) {
+	_, err := s.DetermineTransaction(ctx)
+	if err != nil {
+		return spanner.CommitResponse{}, err
+	}
+
 	if !s.InReadWriteTransaction() {
 		return spanner.CommitResponse{}, errors.New("read-write transaction is not running")
 	}
@@ -222,6 +294,11 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 
 // RollbackReadWriteTransaction rollbacks read-write transaction.
 func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
+	_, err := s.DetermineTransaction(ctx)
+	if err != nil {
+		return err
+	}
+
 	if !s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is not running")
 	}
@@ -288,6 +365,15 @@ func (s *Session) CloseReadOnlyTransaction() error {
 	return nil
 }
 
+func (s *Session) ClosePendingTransaction() error {
+	if !s.InPendingTransaction() {
+		return errors.New("pending transaction is not running")
+	}
+
+	s.tc = nil
+	return nil
+}
+
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
@@ -310,6 +396,11 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 
 // RunAnalyzeQuery analyzes a statement either on the running transaction or on the temporal read-only transaction.
 func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	_, err := s.DetermineTransaction(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	mode := sppb.ExecuteSqlRequest_PLAN
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
@@ -527,6 +618,11 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (affected int64, commitResponse spanner.CommitResponse, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	_, err = s.DetermineTransaction(ctx)
+	if err != nil {
+		return 0, spanner.CommitResponse{}, nil, nil, err
+	}
+
 	var implicitRWTx bool
 	if !s.InReadWriteTransaction() {
 		// Start implicit transaction.
@@ -563,4 +659,24 @@ func (s *Session) failStatementIfReadOnly() error {
 	}
 
 	return nil
+}
+
+// ExecuteStatement executes stmt.
+// If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
+func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result, error) {
+	if _, ok := stmt.(MutationStatement); ok {
+		result := &Result{IsMutation: true}
+		_, err := s.DetermineTransaction(ctx)
+		if err != nil {
+			return result, err
+		}
+
+		err = s.failStatementIfReadOnly()
+		if err != nil {
+			return result, err
+		}
+		return stmt.Execute(ctx, s)
+	}
+
+	return stmt.Execute(ctx, s)
 }

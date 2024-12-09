@@ -316,7 +316,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			func() func() { return func() {} },
 			func() func() { return c.PrintProgressingMark() })
 		t0 := time.Now()
-		result, err := stmt.Execute(ctx, c.Session)
+		result, err := c.Session.ExecuteStatement(ctx, stmt)
 		elapsed := time.Since(t0).Seconds()
 		stop()
 		if err != nil {
@@ -383,7 +383,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	go handleInterrupt(cancel)
 
 	for _, cmd := range cmds {
-		result, err := cmd.Stmt.Execute(ctx, c.Session)
+		result, err := c.Session.ExecuteStatement(ctx, cmd.Stmt)
 		if err != nil {
 			c.PrintBatchError(err)
 			return exitCodeError
@@ -460,6 +460,7 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 			Case("%t", lo.
 				If(c.Session.InReadWriteTransaction(), "(rw txn)").
 				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
+				ElseIf(c.Session.InPendingTransaction(), "(txn)").
 				Else("")).
 			Case("%R", runewidth.FillLeft(
 				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)).

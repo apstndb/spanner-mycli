@@ -62,6 +62,12 @@ type Statement interface {
 	Execute(ctx context.Context, session *Session) (*Result, error)
 }
 
+// MutationStatement is a marker interface for mutation statements.
+// Mutation statements are not permitted in a read-only transaction. It determines pending transactions.
+type MutationStatement interface {
+	isMutationStatement()
+}
+
 // rowCountType is type of modified rows count by DML.
 type rowCountType int
 
@@ -157,6 +163,7 @@ var (
 	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
 	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
 	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`)
 	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
 	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
 	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
@@ -167,7 +174,7 @@ var (
 	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
 	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
 	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	mutateRe              = regexp.MustCompile(`(?is)MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
+	mutateRe              = regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
 	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
 	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
 	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
@@ -258,6 +265,13 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &CommitStatement{}, nil
 	case rollbackRe.MatchString(trimmed):
 		return &RollbackStatement{}, nil
+	case setTransactionRe.MatchString(trimmed):
+		matched := setTransactionRe.FindStringSubmatch(trimmed)
+		isReadOnly, err := parseTransaction(matched[1])
+		if err != nil {
+			return nil, err
+		}
+		return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
 	case showVariableRe.MatchString(trimmed):
 		matched := showVariableRe.FindStringSubmatch(trimmed)
 		return &ShowVariableStatement{VarName: matched[1]}, nil
@@ -306,6 +320,17 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	default:
 		return nil, errStatementNotMatched
 	}
+}
+
+var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$$`)
+
+func parseTransaction(s string) (isReadOnly bool, err error) {
+	if !transactionRe.MatchString(s) {
+		return false, fmt.Errorf(`must be "READ ONLY" or "READ WRITE", but: %q`, s)
+	}
+
+	submatch := transactionRe.FindStringSubmatch(s)
+	return submatch[1] != "", nil
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
@@ -426,6 +451,11 @@ type SelectStatement struct {
 }
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	_, err := session.DetermineTransaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	qm := session.systemVariables.QueryMode
 	if qm == nil {
 		return executeSQL(ctx, session, s.Query)
@@ -446,11 +476,9 @@ type CreateDatabaseStatement struct {
 	CreateStatement string
 }
 
-func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (CreateDatabaseStatement) IsMutationStatement() {}
 
+func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	op, err := session.adminClient.CreateDatabase(ctx, &adminpb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
@@ -469,11 +497,9 @@ type DropDatabaseStatement struct {
 	DatabaseId string
 }
 
-func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (DropDatabaseStatement) isMutationStatement() {}
 
+func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &adminpb.DropDatabaseRequest{
 		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
 	}); err != nil {
@@ -489,11 +515,9 @@ type DdlStatement struct {
 	Ddl string
 }
 
-func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (DdlStatement) isMutationStatement() {}
 
+func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, []string{s.Ddl})
 }
 
@@ -501,11 +525,9 @@ type BulkDdlStatement struct {
 	Ddls []string
 }
 
-func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (BulkDdlStatement) IsMutationStatement() {}
 
+func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
@@ -886,11 +908,9 @@ type TruncateTableStatement struct {
 	Table string
 }
 
-func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (TruncateTableStatement) isMutationStatement() {}
 
+func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-write transaction`)
@@ -918,11 +938,9 @@ type DmlStatement struct {
 	Dml string
 }
 
-func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (DmlStatement) isMutationStatement() {}
 
+func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	qm := session.systemVariables.QueryMode
 	if qm == nil {
 		return executeDML(ctx, session, s.Dml)
@@ -943,11 +961,9 @@ type PartitionedDmlStatement struct {
 	Dml string
 }
 
-func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (PartitionedDmlStatement) isMutationStatement() {}
 
+func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
@@ -976,11 +992,9 @@ type ExplainAnalyzeDmlStatement struct {
 	Dml string
 }
 
-func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
 
+func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
@@ -1003,11 +1017,9 @@ func newBeginRwStatement(input string) (*BeginRwStatement, error) {
 	return stmt, nil
 }
 
-func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (BeginRwStatement) isMutationStatement() {}
 
+func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
@@ -1043,12 +1055,12 @@ func newBeginStatement(input string) (*BeginStatement, error) {
 }
 
 func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() || session.InReadOnlyTransaction() {
+	if session.InTransaction() {
 		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
 
 	if session.systemVariables.ReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, unspecified, 0, time.Time{}, s.Priority)
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.Priority)
 		if err != nil {
 			return nil, err
 		}
@@ -1059,11 +1071,39 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		}, nil
 	}
 
-	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
+	err := session.BeginPendingTransaction(ctx, s.Priority)
+	if err != nil {
 		return nil, err
 	}
 
 	return &Result{IsMutation: true}, nil
+}
+
+type SetTransactionStatement struct {
+	IsReadOnly bool
+}
+
+func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	result := &Result{IsMutation: true}
+	if !session.InPendingTransaction() {
+		// nop
+		return result, nil
+	}
+
+	if s.IsReadOnly {
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
+		if err != nil {
+			return nil, err
+		}
+		result.Timestamp = ts
+		return result, nil
+	} else {
+		err := session.BeginReadWriteTransaction(ctx, session.tc.priority)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
 }
 
 type CommitStatement struct{}
@@ -1071,6 +1111,12 @@ type CommitStatement struct{}
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
 	switch {
+	case session.InPendingTransaction():
+		if err := session.ClosePendingTransaction(); err != nil {
+			return nil, err
+		}
+
+		return result, nil
 	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
 		return result, nil
 	case session.InReadOnlyTransaction():
@@ -1098,6 +1144,12 @@ type RollbackStatement struct{}
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
 	switch {
+	case session.InPendingTransaction():
+		if err := session.ClosePendingTransaction(); err != nil {
+			return nil, err
+		}
+
+		return result, nil
 	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
 		return result, nil
 	case session.InReadOnlyTransaction():
@@ -1120,7 +1172,7 @@ func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Res
 type timestampBoundType int
 
 const (
-	unspecified timestampBoundType = iota
+	timestampBoundUnspecified timestampBoundType = iota
 	strong
 	exactStaleness
 	readTimestamp
@@ -1135,7 +1187,7 @@ type BeginRoStatement struct {
 
 func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 	stmt := &BeginRoStatement{
-		TimestampBoundType: unspecified,
+		TimestampBoundType: timestampBoundUnspecified,
 	}
 
 	matched := beginRoRe.FindStringSubmatch(input)
@@ -1288,11 +1340,9 @@ type MutateStatement struct {
 	Body      string
 }
 
-func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.failStatementIfReadOnly(); err != nil {
-		return nil, err
-	}
+func (MutateStatement) isMutationStatement() {}
 
+func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
 	if err != nil {
 		return nil, err
