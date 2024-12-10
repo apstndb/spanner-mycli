@@ -621,7 +621,7 @@ func TestStatements(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 			defer cancel()
 
-			session, _, tearDown := setup(t, ctx, spannerContainer, []string{})
+			session, tearDown := setupSession(t, ctx, spannerContainer, tt.teardownDDLs)
 			defer tearDown()
 
 			var gots []*Result
@@ -639,7 +639,6 @@ func TestStatements(t *testing.T) {
 				gots = append(gots, result)
 			}
 			compareResult(t, gots, tt.wantResults)
-
 		})
 	}
 }
