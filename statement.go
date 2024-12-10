@@ -86,11 +86,14 @@ type Result struct {
 	AffectedRows     int
 	AffectedRowsType rowCountType
 	Stats            QueryStats
-	IsMutation       bool
-	Timestamp        time.Time
-	ForceVerbose     bool
-	CommitStats      *sppb.CommitResponse_CommitStats
-	KeepVariables    bool
+
+	// Used for switch output("rows in set" / "rows affected")
+	IsMutation bool
+
+	Timestamp     time.Time
+	ForceVerbose  bool
+	CommitStats   *sppb.CommitResponse_CommitStats
+	KeepVariables bool
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
 	ColumnTypes []*sppb.StructType_Field
