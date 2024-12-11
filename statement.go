@@ -99,6 +99,7 @@ type Result struct {
 	ColumnTypes []*sppb.StructType_Field
 	ForceWrap   bool
 	LintResults []string
+	PreInput    string
 }
 
 type Row struct {
@@ -181,6 +182,7 @@ var (
 	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
 	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
 	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
+	geminiRe              = regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`)
 )
 
 var (
@@ -320,6 +322,9 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowQueryProfileStatement{Fprint: fprint}, nil
 	case showDdlsRe.MatchString(trimmed):
 		return &ShowDdlsStatement{}, nil
+	case geminiRe.MatchString(trimmed):
+		matched := geminiRe.FindStringSubmatch(trimmed)
+		return &GeminiStatement{Text: unquoteString(matched[1])}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -1554,6 +1559,24 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
 	}, nil
+}
+
+type GeminiStatement struct {
+	Text string
+}
+
+func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	sql, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, s.Text)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{PreInput: sql, Rows: sliceOf(toRow(sql)), ColumnNames: sliceOf("Answer")}, nil
 }
 
 type NopStatement struct{}

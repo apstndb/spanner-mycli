@@ -55,8 +55,9 @@ type systemVariables struct {
 	Params          map[string]ast.Node
 
 	// link to session
-	CurrentSession *Session
-	ReadOnly       bool
+	CurrentSession  *Session
+	ReadOnly        bool
+	VertexAIProject string
 }
 
 var errIgnored = errors.New("ignored")

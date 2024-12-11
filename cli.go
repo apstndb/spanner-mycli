@@ -231,6 +231,10 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	for {
 		input, err := readInteractiveInput(ctx, &ed)
+
+		// reset default
+		ed.SetDefault(nil)
+
 		if err == io.EOF {
 			return c.Exit()
 		}
@@ -353,6 +357,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
+
+		ed.SetDefault(strings.Split(result.PreInput, "\n"))
 	}
 }
 
