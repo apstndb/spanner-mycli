@@ -570,6 +570,11 @@ func TestBuildStatement(t *testing.T) {
 			input: `SHOW DDLS`,
 			want:  &ShowDdlsStatement{},
 		},
+		{
+			desc:  "GEMINI statement",
+			input: `GEMINI "Show all tables"`,
+			want:  &GeminiStatement{Text: "Show all tables"},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
