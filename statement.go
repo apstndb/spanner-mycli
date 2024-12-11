@@ -324,7 +324,7 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowDdlsStatement{}, nil
 	case geminiRe.MatchString(trimmed):
 		matched := geminiRe.FindStringSubmatch(trimmed)
-		return &GeminiStatement{Text: matched[1]}, nil
+		return &GeminiStatement{Text: unquoteString(matched[1])}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
