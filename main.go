@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"os"
 	"os/user"
@@ -78,6 +79,7 @@ type spannerOptions struct {
 	QueryMode           string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
 	Strong              bool              `long:"strong" description:"Perform a strong query."`
 	ReadTimestamp       string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
+	VertexAIProject     string            `long:"vertexai-project" description:"VertexAI project" ini-name:"vertexai_project"`
 	Version             bool              `long:"version" description:"Show version string."`
 }
 
@@ -108,6 +110,14 @@ func getVersion() string {
 		return "(unknown)"
 	}
 	return info.Main.Version
+}
+
+// Overwrite genkit/logger's init
+func init() {
+	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	}))
+	slog.SetDefault(h)
 }
 
 func main() {
@@ -177,19 +187,20 @@ func main() {
 	}
 
 	sysVars := systemVariables{
-		Project:     opts.ProjectId,
-		Instance:    opts.InstanceId,
-		Database:    opts.DatabaseId,
-		Verbose:     opts.Verbose,
-		Prompt:      lo.FromPtrOr(opts.Prompt, defaultPrompt),
-		Prompt2:     lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
-		HistoryFile: lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
-		Role:        opts.Role,
-		Endpoint:    opts.Endpoint,
-		Insecure:    opts.Insecure || opts.SkipTlsVerify,
-		Debug:       opts.Debug,
-		Params:      params,
-		LogGrpc:     opts.LogGrpc,
+		Project:         opts.ProjectId,
+		Instance:        opts.InstanceId,
+		Database:        opts.DatabaseId,
+		Verbose:         opts.Verbose,
+		Prompt:          lo.FromPtrOr(opts.Prompt, defaultPrompt),
+		Prompt2:         lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
+		HistoryFile:     lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
+		Role:            opts.Role,
+		Endpoint:        opts.Endpoint,
+		Insecure:        opts.Insecure || opts.SkipTlsVerify,
+		Debug:           opts.Debug,
+		Params:          params,
+		LogGrpc:         opts.LogGrpc,
+		VertexAIProject: opts.VertexAIProject,
 	}
 
 	if opts.Strong {
