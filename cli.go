@@ -822,6 +822,13 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		}
 		fmt.Fprintln(out)
 	}
+
+	if len(result.GeminiOutput) > 0 {
+		fmt.Fprintln(out, "Experimental Gemini Output:")
+		fmt.Fprintf(out, "%s\n", result.GeminiOutput)
+		fmt.Fprintln(out)
+	}
+
 	if verbose || result.ForceVerbose {
 		fmt.Fprint(out, resultLine(result, true))
 	} else if interactive {

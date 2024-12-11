@@ -96,10 +96,12 @@ type Result struct {
 	KeepVariables bool
 
 	// ColumnTypes will be printed in `--verbose` mode if it is not empty
-	ColumnTypes []*sppb.StructType_Field
-	ForceWrap   bool
-	LintResults []string
-	PreInput    string
+	ColumnTypes  []*sppb.StructType_Field
+	ForceWrap    bool
+	LintResults  []string
+	PreInput     string
+	QueryPlan    *sppb.QueryPlan
+	GeminiOutput string
 }
 
 type Row struct {
@@ -155,34 +157,36 @@ var (
 	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
 	// Other
-	exitRe                = regexp.MustCompile(`(?is)^EXIT$`)
-	useRe                 = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showRemoteProtoRe     = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
-	showDatabasesRe       = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
-	showCreateTableRe     = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
-	showTablesRe          = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
-	showColumnsRe         = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
-	showIndexRe           = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
-	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
-	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
-	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
-	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`)
-	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
-	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
-	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
-	setAddRe              = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
-	showParamsRe          = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
-	showVariablesRe       = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
-	partitionRe           = regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`)
-	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
-	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	mutateRe              = regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
-	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
-	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
-	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
-	geminiRe              = regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`)
+	exitRe                 = regexp.MustCompile(`(?is)^EXIT$`)
+	useRe                  = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
+	showLocalProtoRe       = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showRemoteProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	showDatabasesRe        = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
+	showCreateTableRe      = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
+	showTablesRe           = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
+	showColumnsRe          = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
+	showIndexRe            = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
+	explainRe              = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
+	describeRe             = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
+	showVariableRe         = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
+	setTransactionRe       = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`)
+	setParamTypeRe         = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
+	setParamRe             = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
+	setRe                  = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
+	setAddRe               = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
+	showParamsRe           = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
+	showVariablesRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
+	partitionRe            = regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`)
+	runPartitionedQueryRe  = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
+	runPartitionRe         = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
+	tryPartitionedQueryRe  = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
+	mutateRe               = regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
+	showQueryProfilesRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
+	showQueryProfileRe     = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
+	showDdlsRe             = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
+	geminiRe               = regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`)
+	geminiExplainRe        = regexp.MustCompile(`(?is)^GEMINI\s+EXPLAIN\s+(.*)$`)
+	geminiExplainAnalyzeRe = regexp.MustCompile(`(?is)^GEMINI\s+EXPLAIN\s+ANALYZE\s+(.*)$`)
 )
 
 var (
@@ -200,6 +204,40 @@ func BuildStatement(input string) (Statement, error) {
 }
 
 var errStatementNotMatched = errors.New("statement not matched")
+
+type GeminiExplainAnalyzeStatement struct {
+	SQL string
+}
+
+func (s *GeminiExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return executeExplainAnalyze(ctx, session, s.SQL)
+}
+
+type GeminiExplainStatement struct {
+	SQL string
+}
+
+func (s *GeminiExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	r, err := executeExplain(ctx, session, s.SQL, false)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	explain, err := geminiExplain(ctx, resp, session.systemVariables.VertexAIProject, s.SQL, r.QueryPlan)
+	if err != nil {
+		return nil, err
+	}
+	r.GeminiOutput = explain
+	return r, nil
+
+}
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
 	switch {
@@ -322,6 +360,12 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowQueryProfileStatement{Fprint: fprint}, nil
 	case showDdlsRe.MatchString(trimmed):
 		return &ShowDdlsStatement{}, nil
+	case geminiExplainAnalyzeRe.MatchString(trimmed):
+		matched := geminiExplainAnalyzeRe.FindStringSubmatch(trimmed)
+		return &GeminiExplainAnalyzeStatement{SQL: matched[1]}, nil
+	case geminiExplainRe.MatchString(trimmed):
+		matched := geminiExplainRe.FindStringSubmatch(trimmed)
+		return &GeminiExplainStatement{SQL: matched[1]}, nil
 	case geminiRe.MatchString(trimmed):
 		matched := geminiRe.FindStringSubmatch(trimmed)
 		return &GeminiStatement{Text: unquoteString(matched[1])}, nil

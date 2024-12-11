@@ -143,6 +143,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		Rows:         rows,
 		Timestamp:    timestamp,
 		Predicates:   predicates,
+		QueryPlan:    queryPlan,
 		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
 
