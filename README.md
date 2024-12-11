@@ -15,6 +15,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
+  * GenAI support(`GEMINI` statement).
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
@@ -942,6 +943,39 @@ Experimental Lint Result:
      Residual Condition: Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition
  4: Table Scan (Full scan: true, Table: Singers, scan_method: Automatic)
      Full scan=true: Potentially expensive execution full scan: Do you really want full scan?
+```
+
+### GenAI support
+
+You can use `GEMINI` statement by setting `vertexai_project` in config file.
+
+```:.spanner_mycli.cnf
+[spanner]
+vertexai_project = example-project
+```
+
+The generated query is automatically filled in the prompt.
+
+```
+spanner> GEMINI  "Show all table with table_schema concat by dot if table_schema is not empty string";
++--------------------------------------------+
+| Answer                                     |
++--------------------------------------------+
+| SELECT CASE                                |
+|     WHEN table_schema = '' THEN table_name |
+|     ELSE table_schema || '.' || table_name |
+|   END                                      |
+| FROM INFORMATION_SCHEMA.TABLES             |
+| WHERE table_type = 'BASE TABLE';           |
++--------------------------------------------+
+Empty set (2.73 sec)
+
+spanner> SELECT CASE
+             WHEN table_schema = '' THEN table_name
+             ELSE table_schema || '.' || table_name
+           END
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE table_type = 'BASE TABLE';
 ```
 
 ### Show query profiles (EARLY EXPERIMENTAL)
