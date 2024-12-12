@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apstndb/spantype/typector"
+
 	"cloud.google.com/go/civil"
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -14,8 +16,13 @@ import (
 
 func TestParseMutation(t *testing.T) {
 	int64GCV := spanner.GenericColumnValue{
-		Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+		Type:  typector.CodeToSimpleType(sppb.TypeCode_INT64),
 		Value: structpb.NewStringValue("1"),
+	}
+
+	commitTimestampGCV := spanner.GenericColumnValue{
+		Type:  typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP),
+		Value: structpb.NewStringValue("spanner.commit_timestamp()"),
 	}
 
 	tests := []struct {
@@ -41,6 +48,8 @@ func TestParseMutation(t *testing.T) {
 			sliceOf(spanner.Delete("t", spanner.KeyRange{Start: spanner.Key{int64(1)}, End: spanner.Key{int64(10)}, Kind: spanner.OpenOpen}))},
 		{"INSERT typeless struct", "INSERT", "t", "STRUCT(1 AS n)",
 			sliceOf(spanner.Insert("t", []string{"n"}, []any{int64GCV}))},
+		{"INSERT typeless struct with PENDING_COMMIT_TIMESTAMP()", "INSERT", "t", "STRUCT(PENDING_COMMIT_TIMESTAMP() AS CreatedAt)",
+			sliceOf(spanner.Insert("t", []string{"CreatedAt"}, []any{commitTimestampGCV}))},
 		{"UPDATE typed struct", "UPDATE", "t", "STRUCT<n INT64>(1)",
 			sliceOf(spanner.Update("t", []string{"n"}, []any{int64GCV}))},
 		{"INSERT_OR_UPDATE typed struct", "INSERT_OR_UPDATE", "t", "STRUCT<n INT64>(1)",
