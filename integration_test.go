@@ -23,13 +23,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
+	"github.com/apstndb/spanemuboost"
 
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
@@ -46,18 +45,13 @@ import (
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 
-	database "cloud.google.com/go/spanner/admin/database/apiv1"
-	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
-	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
-
 	// Use dot import to simplify tests
 	. "github.com/apstndb/spantype/typector"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
-	"spheric.cloud/xiter"
 )
 
 const (
+	testProjectId  = "fake-project"
 	testInstanceId = "fake-instance"
 	testDatabaseId = "fake-database"
 )
@@ -78,29 +72,18 @@ func TestMain(m *testing.M) {
 func initialize(tb testing.TB) (container *gcloud.GCloudContainer, teardown func()) {
 	tb.Helper()
 	ctx := context.Background()
-	spannerContainer, err := gcloud.RunSpanner(ctx, defaultEmulatorImage,
-		testcontainers.WithLogger(testcontainers.TestLogger(tb)))
+
+	spannerContainer, teardown, err := spanemuboost.NewEmulator(ctx,
+		spanemuboost.WithInstanceID(testInstanceId),
+		spanemuboost.WithDatabaseID(testDatabaseId),
+		spanemuboost.WithProjectID(testProjectId),
+	)
 	if err != nil {
 		tb.Fatal(err)
+		return nil, nil
 	}
 
-	err = setupInstance(ctx, spannerContainer, testInstanceId)
-	if err != nil {
-		testcontainers.CleanupContainer(tb, spannerContainer)
-		tb.Fatal(err)
-	}
-
-	err = setupDatabase(ctx, spannerContainer, testInstanceId, testDatabaseId, nil, nil)
-	if err != nil {
-		testcontainers.CleanupContainer(tb, spannerContainer)
-		tb.Fatal(err)
-	}
-
-	return spannerContainer, func() {
-		if err := spannerContainer.Terminate(ctx); err != nil {
-			tb.Log(err)
-		}
-	}
+	return spannerContainer, teardown
 }
 
 func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
@@ -110,95 +93,6 @@ func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.Cli
 		internaloption.SkipDialSettingsValidation(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
 	return opts
-}
-
-func setupDatabase(
-	ctx context.Context,
-	spannerContainer *gcloud.GCloudContainer,
-	instanceID, databaseID string,
-	ddls []string,
-	dmls []string,
-) error {
-	projectID := spannerContainer.Settings.ProjectID
-	opts := defaultClientOptions(spannerContainer)
-
-	dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
-	if err != nil {
-		return fmt.Errorf("failed on new database admin client: %w", err)
-	}
-
-	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
-		Parent:          instancePath(projectID, instanceID),
-		CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
-		ExtraStatements: ddls,
-	})
-	if err != nil {
-		return fmt.Errorf("failed on create database: %w", err)
-	}
-
-	_, err = createDatabaseOp.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed on waiting create database: %w", err)
-	}
-
-	if len(dmls) == 0 {
-		return nil
-	}
-
-	cli, err := spanner.NewClientWithConfig(ctx, databasePath(projectID, instanceID, databaseID), spanner.ClientConfig{DisableNativeMetrics: true}, opts...)
-	if err != nil {
-		return fmt.Errorf("failed on new client for DMLs: %w", err)
-	}
-	defer cli.Close()
-
-	_, err = cli.ReadWriteTransaction(
-		ctx,
-		func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			_, err := tx.BatchUpdate(
-				ctx,
-				slices.Collect(xiter.Map(slices.Values(dmls), spanner.NewStatement)),
-			)
-			return err
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed on batch update: %w", err)
-	}
-	return nil
-}
-
-func setupInstance(
-	ctx context.Context,
-	spannerContainer *gcloud.GCloudContainer,
-	instanceID string,
-) error {
-	instanceClient, err := instance.NewInstanceAdminClient(
-		ctx,
-		defaultClientOptions(spannerContainer)...)
-	if err != nil {
-		return fmt.Errorf("failed on new instance admin client: %w", err)
-	}
-	defer instanceClient.Close()
-
-	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     projectPath(spannerContainer.Settings.ProjectID),
-		InstanceId: instanceID,
-		Instance: &instancepb.Instance{
-			Name:            instancePath(spannerContainer.Settings.ProjectID, instanceID),
-			Config:          "regional-asia-northeast1",
-			DisplayName:     "fake",
-			ProcessingUnits: 100,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed on create instance: %w", err)
-	}
-
-	_, err = createInstance.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed on waiting create instance: %w", err)
-	}
-	return nil
 }
 
 func generateUniqueTableId() string {
@@ -220,6 +114,9 @@ func setupSession(t *testing.T, ctx context.Context, spannerContainer *gcloud.GC
 	dbPath := databasePath(spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
 
 	tearDown := func() {
+		if len(teardownDDLs) == 0 {
+			return
+		}
 		op, err := session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 			Database:   dbPath,
 			Statements: teardownDDLs,
@@ -231,6 +128,7 @@ func setupSession(t *testing.T, ctx context.Context, spannerContainer *gcloud.GC
 			t.Fatalf("failed to drop table: err=%s", err)
 		}
 	}
+
 	return session, tearDown
 }
 
@@ -240,15 +138,7 @@ var testTableRowType = sliceOf(
 )
 
 func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudContainer, dmls []string) (*Session, string, func()) {
-	options := defaultClientOptions(spannerContainer)
-	session, err := NewSession(ctx, &systemVariables{
-		Project:     spannerContainer.Settings.ProjectID,
-		Instance:    testInstanceId,
-		Database:    testDatabaseId,
-		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
-	if err != nil {
-		t.Fatalf("failed to create test session: err=%s", err)
-	}
+	session, teardown := setupSession(t, ctx, spannerContainer, nil)
 
 	dbPath := databasePath(spannerContainer.Settings.ProjectID, testInstanceId, testDatabaseId)
 
@@ -287,6 +177,8 @@ func setup(t *testing.T, ctx context.Context, spannerContainer *gcloud.GCloudCon
 	}
 
 	tearDown := func() {
+		teardown := teardown
+		defer teardown()
 		op, err = session.adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 			Database:   dbPath,
 			Statements: []string{fmt.Sprintf("DROP TABLE %s", tableId)},
