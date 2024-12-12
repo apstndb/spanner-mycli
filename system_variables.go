@@ -47,6 +47,7 @@ type systemVariables struct {
 	LintPlan                    bool
 	TransactionTag              string
 	RequestTag                  string
+	UsePager                    bool
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -58,6 +59,7 @@ type systemVariables struct {
 	CurrentSession  *Session
 	ReadOnly        bool
 	VertexAIProject string
+	AutoWrap        bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -453,6 +455,12 @@ var accessorMap = map[string]accessor{
 		}),
 		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
 	},
+	"CLI_USE_PAGER": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.UsePager
+	}),
+	"CLI_AUTOWRAP": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.AutoWrap
+	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.QueryMode == nil {
@@ -546,6 +554,13 @@ func stringSetter(f func(sysVars *systemVariables) *string) setter {
 		s := unquoteString(value)
 		*ref = s
 		return nil
+	}
+}
+
+func boolAccessor(f func(variables *systemVariables) *bool) accessor {
+	return accessor{
+		Setter: boolSetter(f),
+		Getter: boolGetter(f),
 	}
 }
 

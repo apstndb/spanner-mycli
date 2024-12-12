@@ -38,7 +38,8 @@ You can control your Spanner databases with idiomatic SQL commands.
     * Allow newlines in prompt using `%n`
     * System variables expansion
     * Prompt2 with margin and waiting status
-  * Autowrap and auto adjust column width to fit within terminal width.
+  * Autowrap and auto adjust column width to fit within terminal width when `CLI_AUTOWRAP = TRUE`).
+  * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
@@ -521,6 +522,8 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
 | CLI_QUERY_MODE            | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN             | READ_WRITE | `"TRUE"`                                       |
+| CLI_USE_PAGER             | READ_WRITE | `"TRUE"`                                       |
+| CLI_AUTOWRAP              | READ_WRITE | `"TRUE"`                                       |
 
 ### Embedded Cloud Spanner Emulator
 

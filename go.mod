@@ -20,6 +20,7 @@ require (
 	github.com/hymkor/go-multiline-ny v0.17.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.15
 	github.com/nyaosorg/go-readline-ny v1.6.2
