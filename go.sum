@@ -668,10 +668,6 @@ github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKR
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.0.0-20241212165435-0d019ccfde0a h1:kUx1T7uOj9+j9dk3IlhMWYPHxnbjR1ZO7nlDBPAj12g=
 github.com/apstndb/memebridge v0.0.0-20241212165435-0d019ccfde0a/go.mod h1:cnE5c3secrDTWIUV4SDHfm+xLpfOXbLKsQ/K0oX5kj0=
-github.com/apstndb/spanemuboost v0.0.0-20241212200553-6b58ef5e570d h1:RiKIbSsc+auaAz9eVBFyij1AZyjLsqkgo6aA+hls8sY=
-github.com/apstndb/spanemuboost v0.0.0-20241212200553-6b58ef5e570d/go.mod h1:vMlow1WxTPHaR7UeTNe+4rdfWE6dKkfIXXWx6KbK24E=
-github.com/apstndb/spanemuboost v0.0.0-20241212200726-a83ed16dab08 h1:n+cjTru/4u9Sg38hrMKlXsDJOqtb8nY+T0jjI736bgE=
-github.com/apstndb/spanemuboost v0.0.0-20241212200726-a83ed16dab08/go.mod h1:JtIpejiunpnBufWCwhEun+ayfd0JWnPp9kqbcNJkU+E=
 github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10 h1:Ea5al1Su3ZNw2HltOc1fjLADUp16jV9ns03D9Xvpep4=
 github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10/go.mod h1:JtIpejiunpnBufWCwhEun+ayfd0JWnPp9kqbcNJkU+E=
 github.com/apstndb/spannerplanviz v0.3.2 h1:AeTNTdE05+7T4HWPV1yjLSYCbr51ZugtR3KCkw5SAD0=

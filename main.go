@@ -18,6 +18,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spanemuboost"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -84,7 +86,7 @@ type spannerOptions struct {
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
-	parser.Groups()[0].Find("spanner").FindOptionByLongName("emulator-image").DefaultMask = defaultEmulatorImage
+	parser.Groups()[0].Find("spanner").FindOptionByLongName("emulator-image").DefaultMask = spanemuboost.DefaultEmulatorImage
 }
 
 const (
@@ -271,21 +273,24 @@ func main() {
 	ctx := context.Background()
 
 	if opts.EmbeddedEmulator {
-		container, teardown, err := newEmulator(ctx, opts)
+		sysVars.Project = "emulator-project"
+		sysVars.Instance = "emulator-instance"
+		sysVars.Database = "emulator-database"
+		sysVars.Insecure = true
+
+		container, teardown, err := spanemuboost.NewEmulator(ctx,
+			spanemuboost.WithProjectID(sysVars.Project),
+			spanemuboost.WithInstanceID(sysVars.Instance),
+			spanemuboost.WithDatabaseID(sysVars.Database),
+			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
+		)
 		if err != nil {
 			exitf("failed to start Cloud Spanner Emulator: %v\n", err)
 		}
 		defer teardown()
 
 		sysVars.Endpoint = container.URI
-		sysVars.Insecure = true
-		sysVars.Project = "emulator-project"
-		sysVars.Instance = "emulator-instance"
-		sysVars.Database = "emulator-database"
 
-		if err := setUpEmptyInstanceAndDatabaseForEmulator(ctx, &sysVars); err != nil {
-			exitf("failed to setup instance and database in emulator: %v\n", err)
-		}
 	}
 
 	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
