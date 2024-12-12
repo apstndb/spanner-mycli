@@ -52,7 +52,7 @@ import (
 	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 
 	// Use dot import to simplify tests
-	. "github.com/apstndb/spantype/testutil"
+	. "github.com/apstndb/spantype/typector"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 	"spheric.cloud/xiter"
 )
