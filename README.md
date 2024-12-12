@@ -382,6 +382,17 @@ spanner> SELECT """
 
 The default prompt2 is `%P%R> `.
 
+If you set only `%P` to `prompt2`, continuation prompt is only indentations.
+It is convenient because of copy-and-paste friendly.
+
+```
+spanner> SET CLI_PROMPT2 = "%P";
+Empty set (0.00 sec)
+
+spanner> SELECT """
+         test
+         """ AS s;
+```
 ## Config file
 
 This tool supports a configuration file called `spanner_mycli.cnf`, similar to `my.cnf`.  
@@ -724,6 +735,32 @@ Insert or update four rows with keys(`1, "foo"`, `1, "n"`, `1, "m"`, `50, "fooba
 
 ```
 MUTATE MutationTest2 INSERT_OR_UPDATE [STRUCT(1 AS PK1, "foo" AS PK2, 0 AS Col), (1, "n", 1), (1, "m", 3), (50, "foobar", 4)];
+```
+
+You can set commit timestamps using `PENDING_COMMIT_TIMESTAMP()`.
+```
+spanner> MUTATE Performances INSERT_OR_UPDATE STRUCT(
+                1 AS SingerId, 1 AS VenueId,
+                DATE "2024-12-25" AS EventDate,
+                PENDING_COMMIT_TIMESTAMP() AS LastUpdateTime);
+Query OK, 0 rows affected (1.18 sec)
+timestamp:      2024-12-13T02:40:46.253698+09:00
+mutation_count: 4
+
+spanner> SELECT * FROM Performances;
++----------+---------+------------+---------+-----------------------------+
+| SingerId | VenueId | EventDate  | Revenue | LastUpdateTime              |
+| INT64    | INT64   | DATE       | INT64   | TIMESTAMP                   |
++----------+---------+------------+---------+-----------------------------+
+| 1        | 1       | 2024-12-25 | NULL    | 2024-12-12T17:40:46.253698Z |
++----------+---------+------------+---------+-----------------------------+
+1 rows in set (14.89 msecs)
+timestamp:            2024-12-13T02:40:57.15133+09:00
+cpu time:             13.35 msecs
+rows scanned:         1 rows
+deleted rows scanned: 0 rows
+optimizer version:    7
+optimizer statistics: auto_20241212_12_01_00UTC
 ```
 
 ##### Examples of Delete mutations
