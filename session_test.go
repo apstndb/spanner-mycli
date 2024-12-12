@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apstndb/spanemuboost"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/spannertest"
-	"cloud.google.com/go/spanner/spansql"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -19,7 +18,24 @@ import (
 )
 
 func TestRequestPriority(t *testing.T) {
-	server := setupTestServer(t)
+	const (
+		project  = "project"
+		instance = "instance"
+		database = "database"
+	)
+
+	ctx := context.Background()
+
+	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
+		spanemuboost.WithProjectID(project),
+		spanemuboost.WithInstanceID(instance),
+		spanemuboost.WithDatabaseID(database),
+		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
+	)
+	if err != nil {
+		t.Fatalf("failed to start emulator: %v", err)
+	}
+	defer teardown()
 
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
@@ -28,8 +44,7 @@ func TestRequestPriority(t *testing.T) {
 		grpc.WithUnaryInterceptor(unaryInterceptor),
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
-	ctx := context.Background()
-	conn, err := grpc.NewClient(server.Addr, opts...)
+	conn, err := grpc.NewClient(emulator.URI, opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
@@ -69,9 +84,9 @@ func TestRequestPriority(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:     "project",
-				Instance:    "instance",
-				Database:    "database",
+				Project:     project,
+				Instance:    instance,
+				Database:    database,
 				RPCPriority: test.sessionPriority,
 				Role:        "role",
 			}, option.WithGRPCConn(conn))
@@ -197,21 +212,6 @@ func TestParseDirectedReadOption(t *testing.T) {
 			}
 		})
 	}
-}
-
-func setupTestServer(t *testing.T) *spannertest.Server {
-	server, err := spannertest.NewServer("localhost:0")
-	if err != nil {
-		t.Fatalf("failed to run test server: %v", err)
-	}
-	ddl, err := spansql.ParseDDL("", "CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")
-	if err != nil {
-		t.Fatalf("failed to parse DDL: %v", err)
-	}
-	if err := server.UpdateDDL(ddl); err != nil {
-		t.Fatalf("failed to update DDL: %v", err)
-	}
-	return server
 }
 
 // requestRecorder is a recorder to retain gRPC requests for spannertest.Server.
