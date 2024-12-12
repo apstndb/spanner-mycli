@@ -90,11 +90,16 @@ Remember all indexes already contains primary keys of their table so it is no ne
 			SystemInstruction: genai.Text(
 				`
 Answer must be a valid Spanner GoogleSQL syntax.
+You must understand the schema DDL of the database before you compose SQL.
 DisplayName in the answer text should indicate Index value in "$DisplayName (ID: $Index)" format ($DisplayName and $ID is a field value of PlanNode).
 You must see already created index in DDL to avoid to create the index with the same definition.
 
+You should never create a covering index with keys in the same order as the primary key. this is pointless and creates overhead.
+Without back-join, table scan with seek scan by primary keys are optimal and not bottleneck.
+
 "SELECT *" is not bottleneck unless it causes back-join.
-Back-join is JOINs to lookup base tables. They are always appeared in the query plan so there is no join in query plan, there is no back-join.
+Back-join is JOINs to lookup base tables. They are always appeared in the query plan so there is no join of index and its base table in query plan, there is no back-join.
+You should check index and base table relationship in the schema DDL.
 If there is no back-join, the index is already covering index so not needed to change.
 Primary keys of the table are always stored in all indexes, so they are no need to be covered in covering indexes.
 Remember all primary key columns of the table and parents are already included in indexes.
@@ -122,7 +127,7 @@ Here is the Spanner query.
 ` + fmt.Sprintf("```\n%v\n```", sql) + `
 Here is the query plan in protojson of spanner.v1.ResultSetStats.QueryPlan.
 ` + fmt.Sprintf("```\n%v\n```", protojson.Format(queryPlan)) + `
-Here is the table schema DDL of the database.
+Here is the schema DDL of the database.
 ` + fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
 Here is the Proto Descriptors.
 ` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds))).ToContent(),
