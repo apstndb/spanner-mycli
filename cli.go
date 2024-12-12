@@ -27,12 +27,15 @@ import (
 	"log"
 	"math"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kballard/go-shellquote"
 
 	"github.com/nyaosorg/go-readline-ny"
 
@@ -348,9 +351,12 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.updateSystemVariables(result)
 		}
 
-		size, _, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil {
-			size = math.MaxInt
+		size := math.MaxInt
+		if c.SystemVariables.AutoWrap {
+			size, _, err = term.GetSize(int(os.Stdout.Fd()))
+			if err != nil {
+				size = math.MaxInt
+			}
 		}
 
 		c.PrintResult(size, result, c.SystemVariables.CLIFormat, true)
@@ -426,7 +432,39 @@ func (c *Cli) PrintBatchError(err error) {
 }
 
 func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, interactive bool) {
-	printResult(c.SystemVariables.Debug, screenWidth, c.OutStream, result, mode, interactive, c.SystemVariables.Verbose)
+	ostream := c.OutStream
+	var cmd *exec.Cmd
+	if c.SystemVariables.UsePager {
+		pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
+
+		split, err := shellquote.Split(pagerpath)
+		if err != nil {
+			return
+		}
+		cmd = exec.CommandContext(context.Background(), split[0], split[1:]...)
+
+		pr, pw := io.Pipe()
+		ostream = pw
+		cmd.Stdin = pr
+		cmd.Stdout = c.OutStream
+
+		err = cmd.Start()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer func() {
+			err := pw.Close()
+			if err != nil {
+				log.Println(err)
+			}
+			err = cmd.Wait()
+			if err != nil {
+				log.Println(err)
+			}
+		}()
+	}
+	printResult(c.SystemVariables.Debug, screenWidth, ostream, result, mode, interactive, c.SystemVariables.Verbose)
 }
 
 func (c *Cli) PrintProgressingMark() func() {
