@@ -447,8 +447,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
-// useUpdate flag enforce to use Update function internally and disable `THEN RETURN` result printing.
-func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpdate bool) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
+func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
 	logParseStatement(stmt.SQL)
 
 	if !s.InReadWriteTransaction() {
@@ -466,16 +465,6 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, useUpda
 
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
-
-	// Workaround: Usually, we can execute DMLs using Query(ExecuteStreamingSql RPC),
-	// but spannertest doesn't support DMLs execution using ExecuteStreamingSql RPC.
-	// It enforces to use ExecuteSql RPC.
-	// TODO: Remove useUpdate flag
-	if useUpdate {
-		rowCount, err := s.tc.RWTxn().UpdateWithOptions(ctx, stmt, opts)
-		s.tc.sendHeartbeat = true
-		return nil, nil, rowCount, nil, err
-	}
 
 	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
