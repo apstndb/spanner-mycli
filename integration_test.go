@@ -815,9 +815,9 @@ func TestShowCreateTable(t *testing.T) {
 
 	compareResult(t, result, &Result{
 		ColumnNames: []string{"Table", "Create Table"},
-		Rows: []Row{
-			{[]string{"tbl", fmt.Sprintf("CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)")}},
-		},
+		Rows: sliceOf(
+			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
+		),
 		AffectedRows: 1,
 		IsMutation:   false,
 	})
