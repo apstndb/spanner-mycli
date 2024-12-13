@@ -85,7 +85,7 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 	ctx := context.Background()
 
 	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
-		spanemuboost.WithRandomDatabaseID(true),
+		spanemuboost.WithRandomDatabaseID(),
 		spanemuboost.EnableDatabaseAutoConfigOnly(),
 		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
 		spanemuboost.WithSetupDDLs(ddls),
