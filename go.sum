@@ -672,6 +672,10 @@ github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10 h1:Ea5al1Su3Z
 github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10/go.mod h1:JtIpejiunpnBufWCwhEun+ayfd0JWnPp9kqbcNJkU+E=
 github.com/apstndb/spanemuboost v0.0.0-20241212224516-c930dae5e547 h1:AMGzRKfgfJNjTdRKvNOmtBqzvNu7NjcpMLO3HdAvdVg=
 github.com/apstndb/spanemuboost v0.0.0-20241212224516-c930dae5e547/go.mod h1:JtIpejiunpnBufWCwhEun+ayfd0JWnPp9kqbcNJkU+E=
+github.com/apstndb/spanemuboost v0.0.0-20241212232326-bcfa9a934cf0 h1:GTpRSSkLvjBsQsgCdHeUzBqEFSb4NDbI5ypvXxq8oPo=
+github.com/apstndb/spanemuboost v0.0.0-20241212232326-bcfa9a934cf0/go.mod h1:ztuvIiI5a6p2dfNyKwnpuqwg7K0dwez2E4BU/NKFXHU=
+github.com/apstndb/spanemuboost v0.1.0 h1:NApvbBG5UBT+ebSMaEjcc9vjA/1Adn3E+9/NePpTwU8=
+github.com/apstndb/spanemuboost v0.1.0/go.mod h1:ztuvIiI5a6p2dfNyKwnpuqwg7K0dwez2E4BU/NKFXHU=
 github.com/apstndb/spannerplanviz v0.3.2 h1:AeTNTdE05+7T4HWPV1yjLSYCbr51ZugtR3KCkw5SAD0=
 github.com/apstndb/spannerplanviz v0.3.2/go.mod h1:/tY1Y1tLTp3Czj9BI2/M02W3P/wJgmKwuDS5zARLhvc=
 github.com/apstndb/spantype v0.3.4 h1:DJWbjfQyBLRiLWXe3RllAyCZaF1m6lvbIuui+esKNaU=

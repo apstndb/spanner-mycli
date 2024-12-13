@@ -238,7 +238,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		// reset default
 		ed.SetDefault(nil)
 
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return c.Exit()
 		}
 		if errors.Is(err, readline.CtrlC) {
@@ -282,7 +282,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			}
 			if !exists {
 				newSession.Close()
-				c.PrintInteractiveError(fmt.Errorf("ERROR: Unknown database %q\n", s.Database))
+				c.PrintInteractiveError(fmt.Errorf("unknown database %q\n", s.Database))
 				continue
 			}
 
@@ -686,7 +686,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []
 	}
 
 	// Add rest to the longest shortage column.
-	longestWidths := lo.Map(widthCounts, func(item []WidthCount, index int) int {
+	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
 		return hiter.Max(xiter.Map(WidthCount.Length, slices.Values(item)))
 	})
 
@@ -772,17 +772,16 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		screenWidth = math.MaxInt
 	}
 
-	if mode == DisplayModeTable {
+	switch {
+	case mode == DisplayModeTable:
 		table := tablewriter.NewWriter(out)
 		table.SetAutoFormatHeaders(false)
 		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAutoWrapText(false)
-
 		if len(result.ColumnAlign) > 0 {
 			table.SetColumnAlignment(result.ColumnAlign)
 		}
-
 		var adjustedWidths []int
 		if len(result.ColumnTypes) > 0 {
 			names := slices.Collect(xiter.Map(
@@ -794,8 +793,6 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		} else {
 			adjustedWidths = calculateOptimalWidth(debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), result.Rows))
 		}
-
-		// This condition is true if statement is SelectStatement or DmlStatement
 		var forceTableRender bool
 		if verbose && len(result.ColumnTypes) > 0 {
 			forceTableRender = true
@@ -810,7 +807,6 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		} else {
 			table.SetHeader(result.ColumnNames)
 		}
-
 		for _, row := range result.Rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
 				runewidth.Wrap,
@@ -818,25 +814,24 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 			)
 			table.Append(wrappedColumns)
 		}
-
 		if forceTableRender || len(result.Rows) > 0 {
 			table.Render()
 		}
-	} else if mode == DisplayModeVertical {
+	case mode == DisplayModeVertical:
 		maxLen := 0
 		for _, columnName := range result.ColumnNames {
 			if len(columnName) > maxLen {
 				maxLen = len(columnName)
 			}
 		}
-		format := fmt.Sprintf("%%%ds: %%s\n", maxLen) // for align right
+		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row.Columns {
 				fmt.Fprintf(out, format, result.ColumnNames[j], column)
 			}
 		}
-	} else if mode == DisplayModeTab {
+	case mode == DisplayModeTab:
 		if len(result.ColumnNames) > 0 {
 			fmt.Fprintln(out, strings.Join(result.ColumnNames, "\t"))
 			for _, row := range result.Rows {
