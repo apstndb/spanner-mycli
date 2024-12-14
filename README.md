@@ -671,6 +671,25 @@ spanner> SHOW LOCAL PROTO;
 
 This feature is powered by [bufbuild/protocompile](https://github.com/bufbuild/protocompile).
 
+(EXPERIMENTAL) `.pb` and `.proto` files can be loaded from URL.
+
+```
+spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "https://github.com/apstndb/spanner-mycli/raw/refs/heads/main/testdata/protos/order_descriptors.pb";
+Empty set (0.68 sec)
+
+[gcpug-public-spanner:merpay-sponsored-instance:apstndb-sampledb3]
+spanner> SHOW LOCAL PROTO;
++---------------------------------+-------------------+--------------------+
+| full_name                       | package           | file               |
++---------------------------------+-------------------+--------------------+
+| examples.shipping.Order         | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Address | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Item    | examples.shipping | order_protos.proto |
+| examples.shipping.OrderHistory  | examples.shipping | order_protos.proto |
++---------------------------------+-------------------+--------------------+
+4 rows in set (0.00 sec)
+```
+
 ### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
