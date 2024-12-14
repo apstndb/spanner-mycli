@@ -550,10 +550,26 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 		}, nil
 	}
 
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
+	var b []byte
+	var err error
+	if httpOrHTTPSRe.MatchString(filename) {
+		resp, err := http.Get(filename)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		b, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		b, err = os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
+		}
 	}
+
 	var fds descriptorpb.FileDescriptorSet
 	err = proto.Unmarshal(b, &fds)
 	if err != nil {
