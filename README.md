@@ -651,6 +651,26 @@ spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
 Empty set (0.00 sec)
 ```
 
+(EXPERIMENTAL) It also supports non-compiled `.proto` file.
+
+```
+spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_protos.proto";
+Empty set (0.00 sec)
+
+spanner> SHOW LOCAL PROTO;
++---------------------------------+-------------------+------------------------------------+
+| full_name                       | package           | file                               |
++---------------------------------+-------------------+------------------------------------+
+| examples.shipping.Order         | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.Order.Address | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.Order.Item    | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.OrderHistory  | examples.shipping | testdata/protos/order_protos.proto |
++---------------------------------+-------------------+------------------------------------+
+4 rows in set (0.00 sec)
+```
+
+This feature is powered by [bufbuild/protocompile](https://github.com/bufbuild/protocompile).
+
 ### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
