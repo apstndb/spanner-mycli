@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"google.golang.org/protobuf/reflect/protodesc"
 
 	"github.com/samber/lo"
 
@@ -501,6 +505,21 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 }
 
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
+	if filepath.Ext(filename) == ".proto" {
+		compiler := protocompile.Compiler{
+			Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{}),
+		}
+
+		files, err := compiler.Compile(context.Background(), filename)
+		if err != nil {
+			return nil, err
+		}
+
+		return &descriptorpb.FileDescriptorSet{
+			File: sliceOf(protodesc.ToFileDescriptorProto(files.FindFileByPath(filename))),
+		}, nil
+	}
+
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
