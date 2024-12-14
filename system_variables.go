@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +18,7 @@ import (
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"github.com/samber/lo"
 
@@ -504,10 +508,36 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 	return &descriptorpb.FileDescriptorSet{File: result}
 }
 
+var httpResolver = protocompile.ResolverFunc(httpResolveFunc)
+
+var httpOrHTTPSRe = regexp.MustCompile("^https?://")
+
+func httpResolveFunc(path string) (protocompile.SearchResult, error) {
+	if !httpOrHTTPSRe.MatchString(path) {
+		return protocompile.SearchResult{}, protoregistry.NotFound
+	}
+
+	resp, err := http.Get(path)
+	if err != nil {
+		return protocompile.SearchResult{}, err
+	}
+	defer resp.Body.Close()
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return protocompile.SearchResult{}, err
+	}
+
+	return protocompile.SearchResult{Source: &buf}, nil
+}
+
+var resolver = protocompile.CompositeResolver{&protocompile.SourceResolver{}, httpResolver}
+
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
 	if filepath.Ext(filename) == ".proto" {
 		compiler := protocompile.Compiler{
-			Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{}),
+			Resolver: protocompile.WithStandardImports(resolver),
 		}
 
 		files, err := compiler.Compile(context.Background(), filename)
