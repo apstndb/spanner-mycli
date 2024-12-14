@@ -563,62 +563,62 @@ You can use `--proto-descriptor-file` option to specify proto descriptor file.
 $ spanner-mycli --proto-descriptor-file=testdata/protos/order_descriptors.pb 
 Connected.
 spanner> SHOW LOCAL PROTO;
-+---------------------------------+-------------------+--------------------+
-| full_name                       | package           | file               |
-+---------------------------------+-------------------+--------------------+
-| examples.shipping.Order         | examples.shipping | order_protos.proto |
-| examples.shipping.Order.Address | examples.shipping | order_protos.proto |
-| examples.shipping.Order.Item    | examples.shipping | order_protos.proto |
-| examples.shipping.OrderHistory  | examples.shipping | order_protos.proto |
-+---------------------------------+-------------------+--------------------+
++---------------------------------+-------+-------------------+--------------------+
+| full_name                       | kind  | package           | file               |
++---------------------------------+-------+-------------------+--------------------+
+| examples.shipping.Order         | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Address | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Item    | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.OrderHistory  | PROTO | examples.shipping | order_protos.proto |
++---------------------------------+-------+-------------------+--------------------+
 4 rows in set (0.00 sec)
 
 spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/query_plan_descriptors.pb";
 Empty set (0.00 sec)
 
 spanner> SHOW LOCAL PROTO;
-+----------------------------------------------------------------+-------------------+-----------------------------------------------+
-| full_name                                                      | package           | file                                          |
-+----------------------------------------------------------------+-------------------+-----------------------------------------------+
-| examples.shipping.Order                                        | examples.shipping | order_protos.proto                            |
-| examples.shipping.Order.Address                                | examples.shipping | order_protos.proto                            |
-| examples.shipping.Order.Item                                   | examples.shipping | order_protos.proto                            |
-| examples.shipping.OrderHistory                                 | examples.shipping | order_protos.proto                            |
-| google.protobuf.Struct                                         | google.protobuf   | google/protobuf/struct.proto                  |
-| google.protobuf.Struct.FieldsEntry                             | google.protobuf   | google/protobuf/struct.proto                  |
-| google.protobuf.Value                                          | google.protobuf   | google/protobuf/struct.proto                  |
-| google.protobuf.ListValue                                      | google.protobuf   | google/protobuf/struct.proto                  |
-| google.protobuf.NullValue                                      | google.protobuf   | google/protobuf/struct.proto                  |
-| google.spanner.v1.PlanNode                                     | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-| google.spanner.v1.PlanNode.Kind                                | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-| google.spanner.v1.PlanNode.ChildLink                           | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-| google.spanner.v1.PlanNode.ShortRepresentation                 | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-| google.spanner.v1.PlanNode.ShortRepresentation.SubqueriesEntry | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-| google.spanner.v1.QueryPlan                                    | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
-+----------------------------------------------------------------+-------------------+-----------------------------------------------+
++----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
+| full_name                                                      | kind  | package           | file                                          |
++----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
+| examples.shipping.Order                                        | PROTO | examples.shipping | order_protos.proto                            |
+| examples.shipping.Order.Address                                | PROTO | examples.shipping | order_protos.proto                            |
+| examples.shipping.Order.Item                                   | PROTO | examples.shipping | order_protos.proto                            |
+| examples.shipping.OrderHistory                                 | PROTO | examples.shipping | order_protos.proto                            |
+| google.protobuf.Struct                                         | PROTO | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.Struct.FieldsEntry                             | PROTO | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.Value                                          | PROTO | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.ListValue                                      | PROTO | google.protobuf   | google/protobuf/struct.proto                  |
+| google.protobuf.NullValue                                      | ENUM  | google.protobuf   | google/protobuf/struct.proto                  |
+| google.spanner.v1.PlanNode                                     | PROTO | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ChildLink                           | PROTO | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ShortRepresentation                 | PROTO | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.ShortRepresentation.SubqueriesEntry | PROTO | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.PlanNode.Kind                                | ENUM  | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
+| google.spanner.v1.QueryPlan                                    | PROTO | google.spanner.v1 | googleapis/google/spanner/v1/query_plan.proto |
++----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
 15 rows in set (0.00 sec)
 
 spanner> CREATE PROTO BUNDLE (`examples.shipping.Order`);
 Query OK, 0 rows affected (6.34 sec)
 
 spanner> SHOW REMOTE PROTO;
-+-------------------------+-------------------+
-| full_name               | package           |
-+-------------------------+-------------------+
-| examples.shipping.Order | examples.shipping |
-+-------------------------+-------------------+
++-------------------------+-------+-------------------+
+| full_name               | kind  | package           |
++-------------------------+-------+-------------------+
+| examples.shipping.Order | PROTO | examples.shipping |
++-------------------------+-------+-------------------+
 1 rows in set (0.94 sec)
 
 spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (9.25 sec)
 
 spanner> SHOW REMOTE PROTO;
-+------------------------------+-------------------+
-| full_name                    | package           |
-+------------------------------+-------------------+
-| examples.shipping.Order      | examples.shipping |
-| examples.shipping.Order.Item | examples.shipping |
-+------------------------------+-------------------+
++------------------------------+-------+-------------------+
+| full_name                    | kind  | package           |
++------------------------------+-------+-------------------+
+| examples.shipping.Order      | PROTO | examples.shipping |
+| examples.shipping.Order.Item | PROTO | examples.shipping |
++------------------------------+-------+-------------------+
 2 rows in set (0.82 sec)
 
 spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order`);
@@ -658,14 +658,14 @@ spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_protos.proto";
 Empty set (0.00 sec)
 
 spanner> SHOW LOCAL PROTO;
-+---------------------------------+-------------------+------------------------------------+
-| full_name                       | package           | file                               |
-+---------------------------------+-------------------+------------------------------------+
-| examples.shipping.Order         | examples.shipping | testdata/protos/order_protos.proto |
-| examples.shipping.Order.Address | examples.shipping | testdata/protos/order_protos.proto |
-| examples.shipping.Order.Item    | examples.shipping | testdata/protos/order_protos.proto |
-| examples.shipping.OrderHistory  | examples.shipping | testdata/protos/order_protos.proto |
-+---------------------------------+-------------------+------------------------------------+
++---------------------------------+-------+-------------------+------------------------------------+
+| full_name                       | kind  | package           | file                               |
++---------------------------------+-------+-------------------+------------------------------------+
+| examples.shipping.Order         | PROTO | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.Order.Address | PROTO | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.Order.Item    | PROTO | examples.shipping | testdata/protos/order_protos.proto |
+| examples.shipping.OrderHistory  | PROTO | examples.shipping | testdata/protos/order_protos.proto |
++---------------------------------+-------+-------------------+------------------------------------+
 4 rows in set (0.00 sec)
 ```
 
@@ -679,14 +679,14 @@ Empty set (0.68 sec)
 
 [gcpug-public-spanner:merpay-sponsored-instance:apstndb-sampledb3]
 spanner> SHOW LOCAL PROTO;
-+---------------------------------+-------------------+--------------------+
-| full_name                       | package           | file               |
-+---------------------------------+-------------------+--------------------+
-| examples.shipping.Order         | examples.shipping | order_protos.proto |
-| examples.shipping.Order.Address | examples.shipping | order_protos.proto |
-| examples.shipping.Order.Item    | examples.shipping | order_protos.proto |
-| examples.shipping.OrderHistory  | examples.shipping | order_protos.proto |
-+---------------------------------+-------------------+--------------------+
++---------------------------------+-------+-------------------+--------------------+
+| full_name                       | kind  | package           | file               |
++---------------------------------+-------+-------------------+--------------------+
+| examples.shipping.Order         | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Address | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.Order.Item    | PROTO | examples.shipping | order_protos.proto |
+| examples.shipping.OrderHistory  | PROTO | examples.shipping | order_protos.proto |
++---------------------------------+-------+-------------------+--------------------+
 4 rows in set (0.00 sec)
 ```
 
