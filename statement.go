@@ -671,10 +671,17 @@ type ShowLocalProtoStatement struct{}
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
-	rows := slices.Collect(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows))
+	rows := slices.Collect(
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+			func(info *descriptorInfo) Row {
+				return toRow(info.FullName, info.Kind, info.Package, info.FileName)
+			},
+		),
+	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "package", "file"},
+		ColumnNames:   []string{"full_name", "kind", "package", "file"},
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
@@ -696,12 +703,17 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	rows := slices.Collect(scxiter.Map(scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToRows), func(in Row) Row {
-		return toRow(in.Columns[:2]...)
-	}))
+	rows := slices.Collect(
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+			func(info *descriptorInfo) Row {
+				return toRow(info.FullName, info.Kind, info.Package)
+			},
+		),
+	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "package"},
+		ColumnNames:   []string{"full_name", "kind", "package"},
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
