@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -327,10 +328,7 @@ func TestDecodeColumn(t *testing.T) {
 		{
 			desc: "proto",
 			value: spanner.GenericColumnValue{
-				Type: &sppb.Type{
-					Code:         sppb.TypeCode_PROTO,
-					ProtoTypeFqn: "examples.spanner.music.SingerInfo",
-				},
+				Type:  typector.FQNToProtoType("examples.spanner.music.SingerInfo"),
 				Value: structpb.NewStringValue("YWJjZA=="),
 			},
 			want: "YWJjZA==",
@@ -338,10 +336,7 @@ func TestDecodeColumn(t *testing.T) {
 		{
 			desc: "null proto",
 			value: spanner.GenericColumnValue{
-				Type: &sppb.Type{
-					Code:         sppb.TypeCode_PROTO,
-					ProtoTypeFqn: "examples.spanner.music.SingerInfo",
-				},
+				Type:  typector.FQNToProtoType("examples.spanner.music.SingerInfo"),
 				Value: structpb.NewNullValue(),
 			},
 			want: "NULL",
@@ -349,13 +344,7 @@ func TestDecodeColumn(t *testing.T) {
 		{
 			desc: "array proto",
 			value: spanner.GenericColumnValue{
-				Type: &sppb.Type{
-					Code: sppb.TypeCode_ARRAY,
-					ArrayElementType: &sppb.Type{
-						Code:         sppb.TypeCode_PROTO,
-						ProtoTypeFqn: "examples.spanner.music.SingerInfo",
-					},
-				},
+				Type: typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
 				Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
 					structpb.NewStringValue("YWJjZA=="),
 					structpb.NewStringValue("ZWZnaA=="),
@@ -366,13 +355,7 @@ func TestDecodeColumn(t *testing.T) {
 		{
 			desc: "null array proto",
 			value: spanner.GenericColumnValue{
-				Type: &sppb.Type{
-					Code: sppb.TypeCode_ARRAY,
-					ArrayElementType: &sppb.Type{
-						Code:         sppb.TypeCode_PROTO,
-						ProtoTypeFqn: "examples.spanner.music.SingerInfo",
-					},
-				},
+				Type:  typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
 				Value: structpb.NewNullValue(),
 			},
 			want: "NULL",
@@ -452,12 +435,12 @@ func TestFormatTypeVerbose(t *testing.T) {
 	}{
 		{
 			desc:     "PROTO",
-			sppbType: &sppb.Type{Code: sppb.TypeCode_PROTO, ProtoTypeFqn: "example.ProtoType"},
+			sppbType: typector.FQNToProtoType("example.ProtoType"),
 			want:     "PROTO<example.ProtoType>",
 		},
 		{
 			desc:     "ENUM",
-			sppbType: &sppb.Type{Code: sppb.TypeCode_ENUM, ProtoTypeFqn: "example.EnumType"},
+			sppbType: typector.FQNToEnumType("example.EnumType"),
 			want:     "ENUM<example.EnumType>",
 		},
 	}

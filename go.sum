@@ -674,6 +674,8 @@ github.com/apstndb/spannerplanviz v0.3.2 h1:AeTNTdE05+7T4HWPV1yjLSYCbr51ZugtR3KC
 github.com/apstndb/spannerplanviz v0.3.2/go.mod h1:/tY1Y1tLTp3Czj9BI2/M02W3P/wJgmKwuDS5zARLhvc=
 github.com/apstndb/spantype v0.3.4 h1:DJWbjfQyBLRiLWXe3RllAyCZaF1m6lvbIuui+esKNaU=
 github.com/apstndb/spantype v0.3.4/go.mod h1:zn3qR4ebyy3HumRKRG0COMRSf4tmaR1HptQwe7/Xu7g=
+github.com/apstndb/spantype v0.3.5 h1:W+At9KQYKPIZzpDmobOwOyH8G1tetdakLzXb2o7PgFw=
+github.com/apstndb/spantype v0.3.5/go.mod h1:y0EmWJfRVoJEaZZfJS6j2Y9xXPyXoQwtngibq9A3RT8=
 github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e h1:uWViNQM3/1RPtJcw6+4l3XHAm4uCWCWe0xVQvpXj8mM=
 github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e/go.mod h1:NV6r4opNnDtM+cU6IjbMyAtNbV/oIX8X9xknIGJ1B8k=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=

@@ -51,9 +51,9 @@ type testTableSchema struct {
 	Active bool  `spanner:"active"`
 }
 
-var testTableRowType = sliceOf(
-	typector.NameCodeToStructTypeField("id", sppb.TypeCode_INT64),
-	typector.NameCodeToStructTypeField("active", sppb.TypeCode_BOOL),
+var testTableRowType = typector.MustNameCodeSlicesToStructTypeFields(
+	sliceOf("id", "active"),
+	sliceOf(sppb.TypeCode_INT64, sppb.TypeCode_BOOL),
 )
 
 const testTableDDL = `

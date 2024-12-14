@@ -25,6 +25,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -161,14 +162,14 @@ func TestPrintResult(t *testing.T) {
 				screenWidth: 20,
 				verbose:     true,
 				result: &Result{
-					ColumnTypes: []*sppb.StructType_Field{
-						{Name: "NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-						{Name: "LONG_NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-					},
-					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
-					},
+					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+						sliceOf("NAME", "LONG_NAME"),
+						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
+					),
+					Rows: sliceOf(
+						toRow("1", "2"),
+						toRow("3", "4"),
+					),
 					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
@@ -189,14 +190,14 @@ Empty set
 				screenWidth: 19,
 				verbose:     true,
 				result: &Result{
-					ColumnTypes: []*sppb.StructType_Field{
-						{Name: "NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-						{Name: "LONG_NAME", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-					},
-					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
-					},
+					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+						sliceOf("NAME", "LONG_NAME"),
+						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
+					),
+					Rows: sliceOf(
+						toRow("1", "2"),
+						toRow("3", "4"),
+					),
 					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
@@ -217,14 +218,14 @@ Empty set
 				screenWidth: 25,
 				verbose:     true,
 				result: &Result{
-					ColumnTypes: []*sppb.StructType_Field{
-						{Name: "English", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-						{Name: "Japanese", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-					},
-					Rows: []Row{
-						{[]string{"Hello World", "こんにちは"}},
-						{[]string{"Bye", "さようなら"}},
-					},
+					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+						sliceOf("English", "Japanese"),
+						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
+					),
+					Rows: sliceOf(
+						toRow("Hello World", "こんにちは"),
+						toRow("Bye", "さようなら"),
+					),
 					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
@@ -256,11 +257,11 @@ Empty set
 	t.Run("DisplayModeVertical", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			ColumnNames: []string{"foo", "bar"},
-			Rows: []Row{
-				Row{[]string{"1", "2"}},
-				Row{[]string{"3", "4"}},
-			},
+			ColumnNames: sliceOf("foo", "bar"),
+			Rows: sliceOf(
+				toRow("1", "2"),
+				toRow("3", "4"),
+			),
 			IsMutation: false,
 		}
 		printResult(false, math.MaxInt, out, result, DisplayModeVertical, false, false)
@@ -283,11 +284,11 @@ bar: 4
 	t.Run("DisplayModeTab", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			ColumnNames: []string{"foo", "bar"},
-			Rows: []Row{
-				Row{[]string{"1", "2"}},
-				Row{[]string{"3", "4"}},
-			},
+			ColumnNames: sliceOf("foo", "bar"),
+			Rows: sliceOf(
+				toRow("1", "2"),
+				toRow("3", "4"),
+			),
 			IsMutation: false,
 		}
 		printResult(false, math.MaxInt, out, result, DisplayModeTab, false, false)
