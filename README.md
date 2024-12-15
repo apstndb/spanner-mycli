@@ -628,11 +628,11 @@ spanner> ALTER PROTO BUNDLE DELETE (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (9.55 sec)
 
 spanner> SHOW REMOTE PROTO;
-+-------------------------+-------------------+
-| full_name               | package           |
-+-------------------------+-------------------+
-| examples.shipping.Order | examples.shipping |
-+-------------------------+-------------------+
++-------------------------+-------+-------------------+
+| full_name               | kind  | package           |
++-------------------------+-------+-------------------+
+| examples.shipping.Order | PROTO | examples.shipping |
++-------------------------+-------+-------------------+
 1 rows in set (0.79 sec)
 ```
 
