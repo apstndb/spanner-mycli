@@ -272,6 +272,50 @@ func TestStatements(t *testing.T) {
 		teardownDDLs []string
 	}{
 		{
+			desc: "SHOW LOCAL PROTO with pb file",
+			stmt: sliceOf(
+				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
+				`SHOW LOCAL PROTO`,
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
+			wantResults: []*Result{
+				{KeepVariables: true},
+				{
+					ColumnNames: sliceOf("full_name", "kind", "package", "file"),
+					Rows: sliceOf(
+						toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
+						toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
+						toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping", "order_protos.proto"),
+						toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping", "order_protos.proto"),
+					),
+					AffectedRows:  4,
+					KeepVariables: true,
+				},
+			},
+		},
+		{
+			desc: "SHOW LOCAL PROTO with proto file",
+			stmt: sliceOf(
+				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`,
+				`SHOW LOCAL PROTO`,
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
+			wantResults: []*Result{
+				{KeepVariables: true},
+				{
+					ColumnNames: sliceOf("full_name", "kind", "package", "file"),
+					Rows: sliceOf(
+						toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
+						toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
+						toRow("examples.spanner.music.Genre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
+						toRow("examples.spanner.music.CustomGenre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
+					),
+					AffectedRows:  4,
+					KeepVariables: true,
+				},
+			},
+		},
+		{
 			desc: "begin, insert THEN RETURN, rollback, select",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)",

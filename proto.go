@@ -2,105 +2,104 @@ package main
 
 import (
 	"iter"
-	"slices"
+	"log/slog"
 
-	"github.com/apstndb/lox"
-	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
+	"github.com/bufbuild/protocompile/walk"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"spheric.cloud/xiter"
-)
+	scxiter "spheric.cloud/xiter"
 
-type hasName interface {
-	GetName() string
-}
+	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
+)
 
 func ToAny[T any](v T) any {
 	return v
 }
 
 func ToAnySeq[T any](seq iter.Seq[T]) iter.Seq[any] {
-	return xiter.Map(seq, ToAny)
+	return scxiter.Map(seq, ToAny)
 }
 
 func ToMaybeInterface[T, I any](v T) iter.Seq[I] {
 	if i, ok := any(v).(I); ok {
-		return xiter.Of(i)
+		return scxiter.Of(i)
 	}
-	return xiter.Empty[I]()
+	return scxiter.Empty[I]()
 }
 
 func ToInterfaceSeq[T, I any](seq iter.Seq[T]) iter.Seq[I] {
-	return xiter.Flatmap(seq, ToMaybeInterface[T, I])
+	return scxiter.Flatmap(seq, ToMaybeInterface[T, I])
 }
 
-func enumerateNamesInFDP(fdp *descriptorpb.FileDescriptorProto) iter.Seq[hasName] {
-	return xiter.Concat(
-		xiter.Flatmap(
-			xiter.Filter(
-				xiter.Flatmap(
-					xiter.Map(
-						slices.Values(fdp.GetMessageType()),
-						dpToDPWithPath("")),
-					flattenWithNestedType),
-				lox.Not(hasPlaceholderDescriptorProto)),
-			flattenWithEnumTypes),
-		ToInterfaceSeq[*descriptorpb.EnumDescriptorProto, hasName](slices.Values(fdp.GetEnumType())))
+type descriptorInfo struct {
+	FullName string
+	Kind     string
+	Package  string
+	FileName string
 }
 
-func dpToDPWithPath(parentPath string) func(*descriptorpb.DescriptorProto) *descriptorProtoWithPath {
-	return func(dp *descriptorpb.DescriptorProto) *descriptorProtoWithPath {
-		return &descriptorProtoWithPath{dp, parentPath}
+func fdpToSeq(fdp *descriptorpb.FileDescriptorProto) iter.Seq2[string, proto.Message] {
+	return func(yield func(string, proto.Message) bool) {
+		var stopped bool
+		err := walk.DescriptorProtosWithPath(fdp, func(name protoreflect.FullName, path protoreflect.SourcePath, message proto.Message) error {
+			if stopped {
+				return nil
+			}
+
+			if !yield(string(name), message) {
+				stopped = true
+			}
+
+			return nil
+		})
+		if err != nil {
+			slog.Warn("error ignored", slog.Any("err", err))
+		}
 	}
 }
 
-func fdpToRows(fdp *descriptorpb.FileDescriptorProto) iter.Seq[Row] {
-	pkg := fdp.GetPackage()
-	return xiter.Map(enumerateNamesInFDP(fdp), func(v hasName) Row {
-		return Row{Columns: sliceOf(lox.IfOrEmpty(pkg != "", pkg+".")+v.GetName(), pkg, fdp.GetName())}
-	})
+func fdpToInfo(fdp *descriptorpb.FileDescriptorProto) iter.Seq[*descriptorInfo] {
+	return scxiter.MapLower(
+		scxiter.FilterValue(
+			fdpToSeq(fdp),
+			isValidDescriptorProto,
+		),
+		func(name string, message proto.Message) *descriptorInfo {
+			return &descriptorInfo{FullName: name, Kind: toKind(message), Package: fdp.GetPackage(), FileName: fdp.GetName()}
+		},
+	)
 }
 
-type descriptorProtoWithPath struct {
-	DescriptorProto *descriptorpb.DescriptorProto
-	Parent          string
+func toKind(message proto.Message) string {
+	var kind string
+	switch message.(type) {
+	case *descriptorpb.DescriptorProto:
+		kind = "PROTO"
+	case *descriptorpb.EnumDescriptorProto:
+		kind = "ENUM"
+	default:
+		kind = "INVALID"
+	}
+	return kind
 }
 
-func (dp *descriptorProtoWithPath) GetName() string {
-	return lox.IfOrEmpty(dp.Parent != "", dp.Parent+".") + dp.DescriptorProto.GetName()
+func hasPlaceholderDescriptorProto(descriptor *descriptorpb.DescriptorProto) bool {
+	p, ok := proto.GetExtension(descriptor.GetOptions(),
+		zetasql.E_PlaceholderDescriptorProto_PlaceholderDescriptor).(*zetasql.PlaceholderDescriptorProto)
+	if !ok {
+		return false
+	}
+	return p.GetIsPlaceholder()
 }
 
-type hasNameWithParent struct {
-	Value  hasName
-	Parent string
-}
-
-func (h *hasNameWithParent) GetName() string {
-	return lox.IfOrEmpty(h.Parent != "", h.Parent+".") + h.Value.GetName()
-}
-
-func flattenWithEnumTypes(parent *descriptorProtoWithPath) iter.Seq[hasName] {
-	return xiter.Concat(
-		xiter.Of(hasName(parent)),
-		xiter.Map(
-			slices.Values(parent.DescriptorProto.GetEnumType()),
-			func(dp *descriptorpb.EnumDescriptorProto) hasName {
-				return &hasNameWithParent{Value: hasName(dp), Parent: parent.GetName()}
-			}))
-}
-
-func flattenWithNestedType(parent *descriptorProtoWithPath) iter.Seq[*descriptorProtoWithPath] {
-	return xiter.Concat(
-		xiter.Of(parent),
-		xiter.Flatmap(
-			slices.Values(parent.DescriptorProto.GetNestedType()),
-			func(dp *descriptorpb.DescriptorProto) iter.Seq[*descriptorProtoWithPath] {
-				return flattenWithNestedType(&descriptorProtoWithPath{dp, parent.GetName()})
-			}))
-}
-
-func hasPlaceholderDescriptorProto(parent *descriptorProtoWithPath) bool {
-	op := parent.DescriptorProto.GetOptions()
-	return proto.GetExtension(op, zetasql.E_PlaceholderDescriptorProto_PlaceholderDescriptor).(*zetasql.PlaceholderDescriptorProto).
-		GetIsPlaceholder()
+func isValidDescriptorProto(message proto.Message) bool {
+	switch message := message.(type) {
+	case *descriptorpb.DescriptorProto:
+		return !hasPlaceholderDescriptorProto(message)
+	case *descriptorpb.EnumDescriptorProto:
+		return true
+	default:
+		return false
+	}
 }
