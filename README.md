@@ -744,7 +744,7 @@ Query OK, 0 rows affected (8.27 sec)
 
 ##### `SYNC PROTO BUNDLE DELETE`
 
-`SYNC PROTO BUNDLE DELETE (<full_name>, ...)` executes `PROTO BUNDLE DELETE` only existing types.
+`SYNC PROTO BUNDLE DELETE (<full_name>, ...)` executes `PROTO BUNDLE DELETE` only existing types(`DELETE IF EXISTS` semantics).
 ```
 spanner> SHOW REMOTE PROTO;
 +--------------------------------+-------+-------------------+
