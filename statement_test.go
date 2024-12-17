@@ -17,12 +17,16 @@
 package main
 
 import (
+	_ "embed"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
@@ -531,6 +535,26 @@ func TestBuildStatement(t *testing.T) {
 			want:  &RunPartitionStatement{Token: `123456789`},
 		},
 		{
+			desc:  "SHOW LOCAL PROTO statement",
+			input: `SHOW LOCAL PROTO`,
+			want:  &ShowLocalProtoStatement{},
+		},
+		{
+			desc:  "SHOW REMOTE PROTO statement",
+			input: `SHOW REMOTE PROTO`,
+			want:  &ShowRemoteProtoStatement{},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE UPSERT statement",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.ProtoType, examples.`EscapedType`, `examples.EscapedPath`)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE DELETE statement",
+			input: "SYNC PROTO BUNDLE DELETE (examples.ProtoType, examples.`EscapedType`, `examples.EscapedPath`)",
+			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
+		},
+		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
@@ -754,5 +778,88 @@ func TestExtractSchemaAndTable(t *testing.T) {
 				t.Errorf("extractSchemaAndTable(%q) = (%v, %v), but want (%v, %v)", tt.input, schema, table, tt.schema, tt.table)
 			}
 		})
+	}
+}
+
+//go:embed testdata/protos/order_descriptors.pb
+var orderDescriptorsContent []byte
+
+var orderFds = lo.Must(decodeMessage[descriptorpb.FileDescriptorSet, *descriptorpb.FileDescriptorSet](orderDescriptorsContent))
+
+func decodeMessage[T any, PT interface {
+	*T
+	proto.Message
+}](b []byte) (PT, error) {
+	var result T
+	var pt PT = &result
+
+	err := proto.Unmarshal(b, pt)
+	return pt, err
+}
+
+func TestComposeProtoBundleDDLs(t *testing.T) {
+	for _, tt := range []struct {
+		desc        string
+		fds         *descriptorpb.FileDescriptorSet
+		upsertPaths []string
+		deletePaths []string
+		want        []string
+	}{
+		{
+			desc:        "non-empty fds and empty input",
+			fds:         orderFds,
+			upsertPaths: nil,
+			deletePaths: nil,
+			want:        nil,
+		},
+		{
+			desc:        "nil fds and empty input",
+			fds:         nil,
+			upsertPaths: nil,
+			deletePaths: nil,
+			want:        nil,
+		},
+		{
+			desc: "empty fds and empty input",
+			fds:  &descriptorpb.FileDescriptorSet{},
+			want: nil,
+		},
+		{
+			desc:        "UPSERT existing type",
+			fds:         orderFds,
+			upsertPaths: sliceOf("examples.shipping.Order"),
+			want:        sliceOf("ALTER PROTO BUNDLE UPDATE (examples.shipping.`Order`)"),
+		},
+		{
+			desc:        "UPSERT non-existing type",
+			fds:         orderFds,
+			upsertPaths: sliceOf("examples.UnknownType"),
+			want:        sliceOf("ALTER PROTO BUNDLE INSERT (examples.UnknownType)"),
+		},
+		{
+			desc:        "DELETE existing type",
+			fds:         orderFds,
+			deletePaths: sliceOf("examples.shipping.Order"),
+			want:        sliceOf("ALTER PROTO BUNDLE DELETE (examples.shipping.`Order`)"),
+		},
+		{
+			desc:        "DELETE non-existing type",
+			fds:         orderFds,
+			deletePaths: sliceOf("examples.UnknownType"),
+			want:        nil,
+		},
+		// TODO: Support mixed SYNC PROTO BUNDLE in parseSyncProtoBundle
+		{
+			desc:        "Mixed UPSERT, DELETE",
+			fds:         orderFds,
+			upsertPaths: sliceOf("examples.shipping.Order", "examples.UnknownType"),
+			deletePaths: sliceOf("examples.shipping.OrderHistory"),
+			want:        sliceOf("ALTER PROTO BUNDLE INSERT (examples.UnknownType) UPDATE (examples.shipping.`Order`) DELETE (examples.shipping.OrderHistory)"),
+		},
+	} {
+		got := composeProtoBundleDDLs(tt.fds, tt.upsertPaths, tt.deletePaths)
+		if diff := cmp.Diff(tt.want, got); diff != "" {
+			t.Errorf("composeProtoBundleDDLs() mismatch (-want +got):\n%s", diff)
+		}
 	}
 }

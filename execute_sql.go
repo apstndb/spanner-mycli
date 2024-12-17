@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/lox"
 	"github.com/go-json-experiment/json"
@@ -68,6 +69,15 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	logParseStatements(ddls)
 
+	if len(ddls) == 0 {
+		result := &Result{IsMutation: true}
+		if session.systemVariables.EchoExecutedDDL {
+			result.ColumnNames = sliceOf("executed")
+			result.Rows = ddlsToRows(ddls)
+		}
+		return result, nil
+	}
+
 	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
 	if err != nil {
 		return nil, err
@@ -111,9 +121,21 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 		if op.Done() {
 			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-			return &Result{IsMutation: true, Timestamp: lastCommitTS}, nil
+			result := &Result{IsMutation: true, Timestamp: lastCommitTS}
+			if session.systemVariables.EchoExecutedDDL {
+				result.ColumnNames = sliceOf("executed")
+				result.Rows = ddlsToRows(ddls)
+			}
+			return result, nil
 		}
 	}
+}
+
+func ddlsToRows(ddls []string) []Row {
+	return slices.Collect(scxiter.Map(slices.Values(ddls),
+		func(in string) Row {
+			return toRow(in + ";")
+		}))
 }
 
 func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {

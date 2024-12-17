@@ -22,7 +22,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"os"
 	"os/user"
@@ -116,10 +115,12 @@ func getVersion() string {
 
 // Overwrite genkit/logger's init
 func init() {
-	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	}))
-	slog.SetDefault(h)
+	/*
+		h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelWarn,
+		}))
+		slog.SetDefault(h)
+	*/
 }
 
 func main() {

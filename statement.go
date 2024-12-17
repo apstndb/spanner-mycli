@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"iter"
 	"log"
 	"maps"
 	"regexp"
@@ -30,6 +31,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/ngicks/go-iterator-helper/hiter"
 
 	"github.com/k0kubun/pp/v3"
@@ -155,6 +157,7 @@ var (
 	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
 	// Other
+	syncProtoBundleRe     = regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(.*))?$`)
 	exitRe                = regexp.MustCompile(`(?is)^EXIT$`)
 	useRe                 = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
 	showLocalProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
@@ -201,8 +204,139 @@ func BuildStatement(input string) (Statement, error) {
 
 var errStatementNotMatched = errors.New("statement not matched")
 
+type SyncProtoStatement struct {
+	UpsertPaths []string
+	DeletePaths []string
+}
+
+func fdsToInfoSeq(fds *descriptorpb.FileDescriptorSet) iter.Seq[*descriptorInfo] {
+	return scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
+}
+
+func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	_, fds, err := session.GetDatabaseSchema(ctx)
+	if err != nil {
+		return nil, err
+
+	}
+
+	return executeDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
+}
+
+func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
+	fullNameSetFds := maps.Collect(
+		scxiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
+			return info.FullName, struct{}{}
+		}),
+	)
+
+	upsertExists, upsertNotExists := splitExistence(fullNameSetFds, upsertPaths)
+	deleteExists, _ := splitExistence(fullNameSetFds, deletePaths)
+
+	ddl := lo.Ternary(len(fds.GetFile()) == 0,
+		lox.IfOrEmpty[ast.DDL](len(upsertNotExists) > 0,
+			&ast.CreateProtoBundle{
+				Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertNotExists)},
+			}),
+		lo.If[ast.DDL](len(upsertNotExists) == 0 && len(upsertExists) == 0 && len(deleteExists) == len(fullNameSetFds),
+			&ast.DropProtoBundle{}).
+			ElseIf(len(upsertNotExists) > 0 || len(upsertExists) > 0 || len(deleteExists) > 0,
+				&ast.AlterProtoBundle{
+					Insert: lox.IfOrEmpty(len(upsertNotExists) > 0,
+						&ast.AlterProtoBundleInsert{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertNotExists)}}),
+					Update: lox.IfOrEmpty(len(upsertExists) > 0,
+						&ast.AlterProtoBundleUpdate{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertExists)}}),
+					Delete: lox.IfOrEmpty(len(deleteExists) > 0,
+						&ast.AlterProtoBundleDelete{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(deleteExists)}}),
+				}).
+			Else(nil),
+	)
+
+	if ddl == nil {
+		return nil
+	}
+
+	return sliceOf(ddl.SQL())
+}
+
+func hasKey[K comparable, V any, M map[K]V](m M) func(key K) bool {
+	return func(key K) bool {
+		_, ok := m[key]
+		return ok
+	}
+}
+func splitExistence(fullNameSet map[string]struct{}, paths []string) ([]string, []string) {
+	grouped := lo.GroupBy(paths, hasKey(fullNameSet))
+	return grouped[true], grouped[false]
+}
+
+func parsePaths(p *memefish.Parser) ([]string, error) {
+	expr, err := p.ParseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		name, err := exprToFullName(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		return sliceOf(name), nil
+	case *ast.TupleStructLiteral:
+		names, err := scxiter.TryCollect(scxiter.MapErr(
+			slices.Values(e.Values),
+			exprToFullName))
+		if err != nil {
+			return nil, err
+		}
+
+		return names, err
+	default:
+		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
+	}
+}
+
+func parseSyncProtoBundle(s string) (Statement, error) {
+	p := &memefish.Parser{Lexer: &memefish.Lexer{
+		File: &token.File{
+			Buffer: s,
+		},
+	}}
+	err := p.NextToken()
+	if err != nil {
+		return nil, err
+	}
+
+	var upsertPaths, deletePaths []string
+loop:
+	for {
+		switch {
+		case p.Token.Kind == token.TokenEOF:
+			break loop
+		case p.Token.IsKeywordLike("UPSERT"):
+			paths, err := parsePaths(p)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parsePaths: %w", err)
+			}
+			upsertPaths = append(upsertPaths, paths...)
+		case p.Token.IsKeywordLike("DELETE"):
+			paths, err := parsePaths(p)
+			if err != nil {
+				return nil, err
+			}
+			deletePaths = append(deletePaths, paths...)
+		default:
+			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
+		}
+	}
+	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
+}
+
 func BuildCLIStatement(trimmed string) (Statement, error) {
 	switch {
+	case syncProtoBundleRe.MatchString(trimmed):
+		return parseSyncProtoBundle(syncProtoBundleRe.FindStringSubmatch(trimmed)[1])
 	case exitRe.MatchString(trimmed):
 		return &ExitStatement{}, nil
 	case useRe.MatchString(trimmed):
