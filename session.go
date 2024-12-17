@@ -25,7 +25,10 @@ import (
 	"sync"
 	"time"
 
+	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -469,6 +472,23 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row,
 	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
 	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
+}
+
+func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
+	resp, err := s.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: s.DatabasePath(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var fds descriptorpb.FileDescriptorSet
+	err = proto.Unmarshal(resp.GetProtoDescriptors(), &fds)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp.GetStatements(), &fds, nil
 }
 
 func (s *Session) Close() {

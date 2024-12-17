@@ -68,6 +68,7 @@ type systemVariables struct {
 	ReadOnly        bool
 	VertexAIProject string
 	AutoWrap        bool
+	EchoExecutedDDL bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -342,6 +343,17 @@ var accessorMap = map[string]accessor{
 				return err
 			}
 			this.Verbose = b
+			return nil
+		},
+	},
+	"CLI_ECHO_EXECUTED_DDL": {
+		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.EchoExecutedDDL }),
+		Setter: func(this *systemVariables, name, value string) error {
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return err
+			}
+			this.EchoExecutedDDL = b
 			return nil
 		},
 	},

@@ -11,7 +11,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 ## Differences from original spanner-cli
 
 * Respects my minor use cases
-  * `SHOW LOCAL PROTO` and `SHOW REMOTE PROTO` statement
+  * Protocol Buffere support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
@@ -285,6 +285,7 @@ and `{}` for a mutually exclusive keyword.
 | Query | `SELECT ...;`                                                                                  | |
 | DML | `{INSERT\|UPDATE\|DELETE} ...;`                                                                | |
 | Partitioned DML | `PARTITIONED {UPDATE\|DELETE} ...;`                                                            | |
+| Manipulate PROTO BUNDLE | `SYNC PROTO BUNDLE [{UPSERT\|DELETE} (<type> ...)];`                                                                            | |
 | Show local proto descriptors | `SHOW LOCAL PROTO;`                                                                            | |
 | Show remote proto bundle | `SHOW REMOTE PROTO;`                                                                           | |
 | Show Query Execution Plan | `EXPLAIN SELECT ...;`                                                                          | |
@@ -688,6 +689,104 @@ spanner> SHOW LOCAL PROTO;
 | examples.shipping.OrderHistory  | PROTO | examples.shipping | order_protos.proto |
 +---------------------------------+-------+-------------------+--------------------+
 4 rows in set (0.00 sec)
+```
+
+#### `SYNC PROTO BUNDLE` statement
+
+
+Note: `SET CLI_ECHO_EXECUTED_DDL = TRUE` enables echo back of actual executed DDLs.
+
+```
+spanner> SET CLI_ECHO_EXECUTED_DDL = TRUE;
+Empty set (0.00 sec)
+```
+
+##### `SYNC PROTO BUNDLE UPSERT`
+
+`SYNC PROTO BUNDLE UPSERT (FullName, ...)` simplifies use of `CREATE PROTO BUNDLE` and `ALTER PROTO BUNDLE {INSERT|UPDATE}`.
+
+`SYNC PROTO BUNDLE` executes `ALTER PROTO BUNDLE INSERT` or `ALTER PROTO BUNDLE UPDATE` in `UPSERT` semantics.
+
+```
+spanner> SHOW REMOTE PROTO;
++-------------------------+-------+-------------------+
+| full_name               | kind  | package           |
++-------------------------+-------+-------------------+
+| examples.shipping.Order | PROTO | examples.shipping |
++-------------------------+-------+-------------------+
+1 rows in set (0.87 sec)
+
+spanner> SYNC PROTO BUNDLE UPSERT (`examples.shipping.Order`, examples.shipping.OrderHistory);
++------------------------------------------------------------------------------------------------+
+| executed                                                                                       |
++------------------------------------------------------------------------------------------------+
+| ALTER PROTO BUNDLE INSERT (examples.shipping.OrderHistory) UPDATE (examples.shipping.`Order`); |
++------------------------------------------------------------------------------------------------+
+Query OK, 0 rows affected (8.57 sec)
+
+```
+
+If `SYNC PROTO BUNDLE UPSERT` is executed on empty proto bundle,
+`CREATE PROTO BUNDLE` will be executed instead of `ALTER PROTO BUNDLE`.
+
+```
+spanner> SHOW REMOTE PROTO;
+Empty set (0.89 sec)
+
+spanner> SYNC PROTO BUNDLE UPSERT (`examples.shipping.Order`);
++--------------------------------------------------+
+| executed                                         |
++--------------------------------------------------+
+| CREATE PROTO BUNDLE (examples.shipping.`Order`); |
++--------------------------------------------------+
+Query OK, 0 rows affected (8.27 sec)
+```
+
+##### `SYNC PROTO BUNDLE DELETE`
+
+`SYNC PROTO BUNDLE DELETE (<full_name>, ...)` executes `PROTO BUNDLE DELETE` only existing types(`DELETE IF EXISTS` semantics).
+```
+spanner> SHOW REMOTE PROTO;
++--------------------------------+-------+-------------------+
+| full_name                      | kind  | package           |
++--------------------------------+-------+-------------------+
+| examples.shipping.Order        | PROTO | examples.shipping |
+| examples.shipping.OrderHistory | PROTO | examples.shipping |
++--------------------------------+-------+-------------------+
+2 rows in set (0.87 sec)
+
+spanner> SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`, examples.UnknownType);
++--------------------------------------------------------+
+| executed                                               |
++--------------------------------------------------------+
+| ALTER PROTO BUNDLE DELETE (examples.shipping.`Order`); |
++--------------------------------------------------------+
+Query OK, 0 rows affected (8.86 sec)
+
+spanner> SYNC PROTO BUNDLE DELETE (examples.UnknownType);
+Query OK, 0 rows affected (0.79 sec)
+```
+
+If `SYNC PROTO BUNDLE DELETE` will delete the last Protocol Buffers type in the proto bundle,
+`DROP PROTO BUNDLE` will be executed instead of `ALTER PROTO BUNDLE`.
+
+```
+spanner> SHOW REMOTE PROTO;
+
++-------------------------+-------+-------------------+
+| full_name               | kind  | package           |
++-------------------------+-------+-------------------+
+| examples.shipping.Order | PROTO | examples.shipping |
++-------------------------+-------+-------------------+
+1 rows in set (0.87 sec)
+
+spanner> SYNC PROTO BUNDLE DELETE (`examples.shipping.OrderHistory`);
++--------------------+
+| executed           |
++--------------------+
+| DROP PROTO BUNDLE; |
++--------------------+
+Query OK, 0 rows affected (8.24 sec)
 ```
 
 ### memefish integration

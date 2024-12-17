@@ -1,12 +1,12 @@
 package main
 
 import (
+	_ "embed"
 	"testing"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 func TestParseDirectedReadOption(t *testing.T) {
