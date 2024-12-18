@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/apstndb/spantype/typector"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/google/go-cmp/cmp"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -326,20 +327,14 @@ func TestDecodeColumn(t *testing.T) {
 		// PROTO
 		// This table tests uses spanner.GenericColumnValue because of non-stability
 		{
-			desc: "proto",
-			value: spanner.GenericColumnValue{
-				Type:  typector.FQNToProtoType("examples.spanner.music.SingerInfo"),
-				Value: structpb.NewStringValue("YWJjZA=="),
-			},
-			want: "YWJjZA==",
+			desc:  "proto",
+			value: gcvctor.ProtoValue("examples.spanner.music.SingerInfo", []byte("abcd")),
+			want:  "YWJjZA==",
 		},
 		{
-			desc: "null proto",
-			value: spanner.GenericColumnValue{
-				Type:  typector.FQNToProtoType("examples.spanner.music.SingerInfo"),
-				Value: structpb.NewNullValue(),
-			},
-			want: "NULL",
+			desc:  "null proto",
+			value: gcvctor.TypedNull(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
+			want:  "NULL",
 		},
 		{
 			desc: "array proto",
@@ -353,12 +348,9 @@ func TestDecodeColumn(t *testing.T) {
 			want: "[YWJjZA==, ZWZnaA==]",
 		},
 		{
-			desc: "null array proto",
-			value: spanner.GenericColumnValue{
-				Type:  typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
-				Value: structpb.NewNullValue(),
-			},
-			want: "NULL",
+			desc:  "null array proto",
+			value: gcvctor.TypedNull(typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo"))),
+			want:  "NULL",
 		},
 
 		// ENUM

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/apstndb/go-spannulls"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -19,7 +19,7 @@ func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[st
 			if err != nil {
 				return nil, err
 			}
-			nullValue := spannulls.NullGenericColumnValueFromType(typ)
+			nullValue := gcvctor.TypedNull(typ)
 			if err != nil {
 				return nil, err
 			}

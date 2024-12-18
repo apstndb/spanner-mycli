@@ -6,14 +6,14 @@ require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/spanner v1.73.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120063810-bef293cba65d
-	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
 	github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
-	github.com/apstndb/memebridge v0.0.0-20241212165435-0d019ccfde0a
+	github.com/apstndb/memebridge v0.1.0
 	github.com/apstndb/spanemuboost v0.2.4
 	github.com/apstndb/spannerplanviz v0.3.2
-	github.com/apstndb/spantype v0.3.5
-	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
+	github.com/apstndb/spantype v0.3.6
+	github.com/apstndb/spanvalue v0.1.2
+	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241203074241-66dfc61aa2dd
 	github.com/go-json-experiment/json v0.0.0-20241127185351-9802db03f36a
 	github.com/google/go-cmp v0.6.0
@@ -35,7 +35,7 @@ require (
 	google.golang.org/api v0.211.0
 	google.golang.org/genai v0.0.0-20241211000158-7800f8e750d6
 	google.golang.org/grpc v1.68.1
-	google.golang.org/protobuf v1.35.2
+	google.golang.org/protobuf v1.36.0
 	spheric.cloud/xiter v0.0.0-20240904151420-c999f37a46b2
 )
 
@@ -55,7 +55,6 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/bufbuild/protocompile v0.14.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -121,7 +120,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.30.0 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/net v0.32.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
