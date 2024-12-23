@@ -61,7 +61,7 @@ func gcvToKeyable(gcv spanner.GenericColumnValue) (any, error) {
 }
 
 func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
-	if !char.EqualFold(e.Func.Name, "KEY_RANGE") {
+	if len(e.Func.Idents) != 1 || !char.EqualFold(e.Func.Idents[0].Name, "KEY_RANGE") {
 		return spanner.KeyRange{}, fmt.Errorf("func name is not KEY_RANGE: %v", e.SQL())
 	}
 	if len(e.Args) > 0 {

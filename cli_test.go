@@ -41,10 +41,9 @@ func TestBuildCommands(t *testing.T) {
 		{Desc: "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []*command{{&BulkDdlStatement{[]string{
-				"CREATE TABLE t1 (pk INT64) PRIMARY KEY (pk)",
+				"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
-				// TODO: memefish issue, "CREATE INDEX i1 ON t1 (col)" is more standard
-				"CREATE INDEX i1 ON t1 (col)",
+				"CREATE INDEX i1 ON t1(col)",
 				"DROP INDEX i1",
 				"DROP TABLE t1",
 			}}}},
@@ -60,8 +59,8 @@ func TestBuildCommands(t *testing.T) {
 				{
 					&BulkDdlStatement{
 						[]string{
-							"CREATE TABLE t1 (pk INT64) PRIMARY KEY (pk)",
-							"CREATE TABLE t2 (pk INT64) PRIMARY KEY (pk)",
+							"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
+							"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
 						},
 					},
 				},
@@ -79,7 +78,7 @@ func TestBuildCommands(t *testing.T) {
 			Expected: []*command{
 				{
 					&BulkDdlStatement{
-						[]string{"CREATE TABLE t1 (pk INT64, col INT64) PRIMARY KEY (pk)"},
+						[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
 					},
 				},
 				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}},

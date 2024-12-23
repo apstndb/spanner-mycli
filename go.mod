@@ -8,13 +8,13 @@ require (
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120063810-bef293cba65d
 	github.com/apstndb/gsqlutils v0.0.0-20241110011021-695697146792
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
-	github.com/apstndb/memebridge v0.1.0
+	github.com/apstndb/memebridge v0.2.0
 	github.com/apstndb/spanemuboost v0.2.5
 	github.com/apstndb/spannerplanviz v0.3.2
 	github.com/apstndb/spantype v0.3.6
 	github.com/apstndb/spanvalue v0.1.2
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.0.0-20241203074241-66dfc61aa2dd
+	github.com/cloudspannerecosystem/memefish v0.1.0
 	github.com/go-json-experiment/json v0.0.0-20241127185351-9802db03f36a
 	github.com/google/go-cmp v0.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0

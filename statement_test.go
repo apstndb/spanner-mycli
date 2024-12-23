@@ -98,7 +98,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "CREATE TABLE statement",
 			input: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)",
-			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)"},
+			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (\n  id INT64 NOT NULL\n) PRIMARY KEY (id)"},
 		},
 		{
 			desc:  "RENAME TABLE statement",
@@ -118,7 +118,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "CREATE INDEX statement",
 			input: "CREATE INDEX idx_name ON t1 (name DESC)",
-			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1 (name DESC)"},
+			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1(name DESC)"},
 		},
 		{
 			desc:  "DROP INDEX statement",
