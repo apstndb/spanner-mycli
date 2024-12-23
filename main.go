@@ -81,6 +81,7 @@ type spannerOptions struct {
 	Strong              bool              `long:"strong" description:"Perform a strong query."`
 	ReadTimestamp       string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
 	VertexAIProject     string            `long:"vertexai-project" description:"VertexAI project" ini-name:"vertexai_project"`
+	DatabaseDialect     string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL"`
 	Version             bool              `long:"version" description:"Show version string."`
 }
 
@@ -218,6 +219,12 @@ func main() {
 		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
 
+	if opts.DatabaseDialect != "" {
+		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
+			exitf("invalid value of --database-dialect: %v, err: %v\n", opts.DatabaseDialect, err)
+		}
+	}
+
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
 		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
@@ -284,6 +291,7 @@ func main() {
 			spanemuboost.WithInstanceID(sysVars.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Database),
 			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
+			spanemuboost.WithDatabaseDialect(sysVars.DatabaseDialect),
 		)
 		if err != nil {
 			exitf("failed to start Cloud Spanner Emulator: %v\n", err)
