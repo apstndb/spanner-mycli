@@ -666,6 +666,8 @@ github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKR
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.1.0 h1:gGDIKh9WaFFzO7UtkzB9Vu6cV64UIgFnVS/HDDRJxtE=
 github.com/apstndb/memebridge v0.1.0/go.mod h1:sRAu5TFkcFaF2FGIoS9BgyDiulG7L20KaHMgXm/7X4U=
+github.com/apstndb/memebridge v0.2.0 h1:C/6Zqw7Tu0Ts07UayuYkP3RHiaXalGHEd+gMBfYi/yI=
+github.com/apstndb/memebridge v0.2.0/go.mod h1:9fuQQ+JWcP3pSOWlf8645jCxFJ7NSbRK65WQERF7u/0=
 github.com/apstndb/spanemuboost v0.2.5 h1:QGlmijFZ2GqbwQ2TCE2y/QDRvpVHd8kxBp5b4wyLKII=
 github.com/apstndb/spanemuboost v0.2.5/go.mod h1:ztuvIiI5a6p2dfNyKwnpuqwg7K0dwez2E4BU/NKFXHU=
 github.com/apstndb/spannerplanviz v0.3.2 h1:AeTNTdE05+7T4HWPV1yjLSYCbr51ZugtR3KCkw5SAD0=
@@ -699,6 +701,8 @@ github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMn
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cloudspannerecosystem/memefish v0.0.0-20241203074241-66dfc61aa2dd h1:CYg8aAFxk8pOKA7bJFQ5HffpKLkQmLPaMpfMkjTWNys=
 github.com/cloudspannerecosystem/memefish v0.0.0-20241203074241-66dfc61aa2dd/go.mod h1:iYAaNZfVIn4QYfUmXt+3EeHAok/kqpN/fp/8kgDHjx8=
+github.com/cloudspannerecosystem/memefish v0.1.0 h1:Wty1FYo+auUBylTvhQDD59L5h6+hDkBPjB0sEwF5tG4=
+github.com/cloudspannerecosystem/memefish v0.1.0/go.mod h1:rrHSb7mQfV8Xl47cvnE1dYJ8+zpvog49Yma0j4YCDnc=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/cncf/udpa/go v0.0.0-20200629203442-efcf912fb354/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
 github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
