@@ -536,6 +536,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_LINT_PLAN             | READ_WRITE | `"TRUE"`                                       |
 | CLI_USE_PAGER             | READ_WRITE | `"TRUE"`                                       |
 | CLI_AUTOWRAP              | READ_WRITE | `"TRUE"`                                       |
+| CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
 
 ### Embedded Cloud Spanner Emulator
 

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -56,6 +57,7 @@ type systemVariables struct {
 	TransactionTag              string
 	RequestTag                  string
 	UsePager                    bool
+	DatabaseDialect             databasepb.DatabaseDialect
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -343,6 +345,19 @@ var accessorMap = map[string]accessor{
 				return err
 			}
 			this.Verbose = b
+			return nil
+		},
+	},
+	"CLI_DATABASE_DIALECT": {
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.DatabaseDialect.String()), nil
+		},
+		Setter: func(this *systemVariables, name, value string) error {
+			n, ok := databasepb.DatabaseDialect_value[strings.ToUpper(unquoteString(value))]
+			if !ok {
+				return fmt.Errorf("invalid value: %v", value)
+			}
+			this.DatabaseDialect = databasepb.DatabaseDialect(n)
 			return nil
 		},
 	},
