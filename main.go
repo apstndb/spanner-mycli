@@ -343,6 +343,7 @@ func main() {
 
 	exitCode := lo.TernaryF(interactive,
 		func() int {
+			sysVars.EnableProgressBar = true
 			return cli.RunInteractive(ctx)
 		},
 		func() int {

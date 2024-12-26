@@ -83,12 +83,31 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return nil, err
 	}
 
-	p := mpb.NewWithContext(ctx)
-	defer p.Shutdown()
+	var p *mpb.Progress
 	var bars []*mpb.Bar
-	for _, ddl := range ddls {
-		bar := p.AddBar(int64(100), mpb.PrependDecorators(decor.Spinner(nil, decor.WCSyncSpaceR), decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR), decor.Percentage(decor.WCSyncSpace), decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)))
-		bars = append(bars, bar)
+	teardown := func() {
+		for _, bar := range bars {
+			bar.Abort(true)
+		}
+		if p != nil {
+			p.Wait()
+		}
+	}
+	if session.systemVariables.EnableProgressBar {
+		p = mpb.NewWithContext(ctx)
+		// defer p.Shutdown()
+		for _, ddl := range ddls {
+			bar := p.AddBar(int64(100),
+				mpb.PrependDecorators(
+					decor.Spinner(nil, decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR),
+					decor.Percentage(decor.WCSyncSpace),
+					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+				mpb.BarRemoveOnComplete(),
+			)
+			bar.EnableTriggerComplete()
+			bars = append(bars, bar)
+		}
 	}
 
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &databasepb.UpdateDatabaseDdlRequest{
@@ -104,19 +123,26 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		time.Sleep(5 * time.Second)
 		err := op.Poll(ctx)
 		if err != nil {
+			teardown()
 			return nil, err
 		}
 
 		metadata, err := op.Metadata()
 		if err != nil {
+			teardown()
 			return nil, err
 		}
 
-		progresses := metadata.GetProgress()
-		for i, progress := range progresses {
-			bar := bars[i]
-			progressPercent := int64(progress.ProgressPercent)
-			bar.SetCurrent(progressPercent)
+		if bars != nil {
+			progresses := metadata.GetProgress()
+			for i, progress := range progresses {
+				bar := bars[i]
+				if bar.Completed() {
+					continue
+				}
+				progressPercent := int64(progress.ProgressPercent)
+				bar.SetCurrent(progressPercent)
+			}
 		}
 
 		if op.Done() {
@@ -126,6 +152,11 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 				result.ColumnNames = sliceOf("executed")
 				result.Rows = ddlsToRows(ddls)
 			}
+
+			if p != nil {
+				p.Wait()
+			}
+
 			return result, nil
 		}
 	}

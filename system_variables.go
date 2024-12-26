@@ -66,11 +66,15 @@ type systemVariables struct {
 	Params          map[string]ast.Node
 
 	// link to session
-	CurrentSession  *Session
+	CurrentSession *Session
+
 	ReadOnly        bool
 	VertexAIProject string
 	AutoWrap        bool
 	EchoExecutedDDL bool
+
+	// TODO: Expose as CLI_*
+	EnableProgressBar bool
 }
 
 var errIgnored = errors.New("ignored")
