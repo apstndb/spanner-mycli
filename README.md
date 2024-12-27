@@ -81,32 +81,36 @@ Usage:
   spanner-mycli [OPTIONS]
 
 spanner:
-  -p, --project=                         (required) GCP Project ID. [$SPANNER_PROJECT_ID]
-  -i, --instance=                        (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
-  -d, --database=                        (required) Cloud Spanner Database ID. [$SPANNER_DATABASE_ID]
-  -e, --execute=                         Execute SQL statement and quit. --sql is an alias.
-  -f, --file=                            Execute SQL statement from file and quit.
-  -t, --table                            Display output in table format for batch mode.
-  -v, --verbose                          Display verbose output.
-      --credential=                      Use the specific credential file
-      --prompt=                          Set the prompt to the specified format (default: spanner%t> )
-      --prompt2=                         Set the prompt2 to the specified format (default: %P%R> )
-      --log-memefish                     Emit SQL parse log using memefish
-      --history=                         Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
-      --priority=                        Set default request priority (HIGH|MEDIUM|LOW)
-      --role=                            Use the specific database role
-      --endpoint=                        Set the Spanner API endpoint (host:port)
-      --directed-read=                   Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
-      --set=                             Set system variables e.g. --set=name1=value1 --set=name2=value2
-      --param=                           Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
-      --proto-descriptor-file=           Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
-      --insecure                         Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
-      --embedded-emulator                Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=                  container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.25)
-      --log-grpc                         Show gRPC logs
-      --query-mode=[NORMAL|PLAN|PROFILE] Mode in which the query must be processed.
-      --strong                           Perform a strong query.
-      --read-timestamp=                  Perform a query at the given timestamp.
+  -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
+  -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
+  -d, --database=                                         (required) Cloud Spanner Database ID. [$SPANNER_DATABASE_ID]
+  -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
+  -f, --file=                                             Execute SQL statement from file and quit.
+  -t, --table                                             Display output in table format for batch mode.
+  -v, --verbose                                           Display verbose output.
+      --credential=                                       Use the specific credential file
+      --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
+      --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
+      --log-memefish                                      Emit SQL parse log using memefish
+      --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
+      --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
+      --role=                                             Use the specific database role
+      --endpoint=                                         Set the Spanner API endpoint (host:port)
+      --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
+      --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
+      --param=                                            Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
+      --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
+      --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
+      --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.28)
+      --log-grpc                                          Show gRPC logs
+      --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
+      --strong                                            Perform a strong query.
+      --read-timestamp=                                   Perform a query at the given timestamp.
+      --vertexai-project=                                 VertexAI project
+      --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
+      --impersonate-service-account=                      Impersonate service account email
+      --version                                           Show version string.
 ```
 
 ### Authentication

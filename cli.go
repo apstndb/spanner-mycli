@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/adcplus"
 	"github.com/kballard/go-shellquote"
 
 	"github.com/nyaosorg/go-readline-ny"
@@ -47,6 +48,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
@@ -527,12 +529,22 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 
 func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
 	var opts []option.ClientOption
-	if credential != nil {
-		opts = append(opts, option.WithCredentialsJSON(credential))
-	}
 	if sysVars.Endpoint != "" {
 		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
 	}
+
+	if sysVars.EnableADCPlus {
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(source))
+	} else {
+		if len(credential) > 0 {
+			opts = append(opts, option.WithCredentialsJSON(credential))
+		}
+	}
+
 	return NewSession(ctx, sysVars, opts...)
 }
 
