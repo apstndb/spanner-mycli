@@ -74,7 +74,9 @@ type systemVariables struct {
 	EchoExecutedDDL bool
 
 	// TODO: Expose as CLI_*
-	EnableProgressBar bool
+	EnableProgressBar         bool
+	ImpersonateServiceAccount string
+	EnableADCPlus             bool
 }
 
 var errIgnored = errors.New("ignored")
