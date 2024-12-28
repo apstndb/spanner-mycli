@@ -70,6 +70,8 @@ type Session struct {
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
 	systemVariables *systemVariables
+
+	currentBatch Statement
 }
 
 type transactionMode string

@@ -309,16 +309,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 				continue
 			}
 		}
-
-		if _, ok := stmt.(*DdlStatement); ok {
-			disableSpinner = true
-		}
-
-		if _, ok := stmt.(*SyncProtoStatement); ok {
-			disableSpinner = true
-		}
-
-		if _, ok := stmt.(*BulkDdlStatement); ok {
+		switch stmt.(type) {
+		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement:
 			disableSpinner = true
 		}
 

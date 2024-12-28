@@ -186,6 +186,10 @@ var (
 	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
 	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
 	geminiRe              = regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`)
+
+	startBatchRe = regexp.MustCompile(`(?is)^START\s+BATCH\s+(DDL|DML)$`)
+	runBatchRe   = regexp.MustCompile(`(?is)^RUN\s+BATCH$`)
+	abortBatchRe = regexp.MustCompile(`(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`)
 )
 
 var (
@@ -220,7 +224,7 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 
 	}
 
-	return executeDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
+	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
 }
 
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
@@ -459,6 +463,13 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 	case geminiRe.MatchString(trimmed):
 		matched := geminiRe.FindStringSubmatch(trimmed)
 		return &GeminiStatement{Text: unquoteString(matched[1])}, nil
+	case startBatchRe.MatchString(trimmed):
+		matched := startBatchRe.FindStringSubmatch(trimmed)
+		return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(matched[1]) == "DDL", batchModeDDL, batchModeDML)}, nil
+	case runBatchRe.MatchString(trimmed):
+		return &RunBatchStatement{}, nil
+	case abortBatchRe.MatchString(trimmed):
+		return &AbortBatchStatement{}, nil
 	default:
 		return nil, errStatementNotMatched
 	}
@@ -660,7 +671,7 @@ type DdlStatement struct {
 func (DdlStatement) isMutationStatement() {}
 
 func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeDdlStatements(ctx, session, []string{s.Ddl})
+	return bufferOrExecuteDdlStatements(ctx, session, []string{s.Ddl})
 }
 
 type BulkDdlStatement struct {
@@ -671,6 +682,68 @@ func (BulkDdlStatement) IsMutationStatement() {}
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
+}
+
+type BatchDMLStatement struct {
+	DMLs []string
+}
+
+func (BatchDMLStatement) IsMutationStatement() {}
+
+func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return nil, errors.New("unimplemented")
+}
+
+type batchMode int
+
+const (
+	batchModeDDL batchMode = iota + 1
+	batchModeDML
+)
+
+type StartBatchStatement struct {
+	Mode batchMode
+}
+
+func (s *StartBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.currentBatch != nil {
+		return nil, fmt.Errorf("already in batch, you should execute ABORT BATCH")
+	}
+
+	switch s.Mode {
+	case batchModeDDL:
+		session.currentBatch = &BulkDdlStatement{}
+	case batchModeDML:
+		session.currentBatch = &BatchDMLStatement{}
+	default:
+		return nil, fmt.Errorf("unknown batchMode: %v", s.Mode)
+	}
+
+	return &Result{KeepVariables: true}, nil
+}
+
+type AbortBatchStatement struct{}
+
+func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	session.currentBatch = nil
+	return &Result{KeepVariables: true}, nil
+}
+
+type RunBatchStatement struct{}
+
+func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.currentBatch == nil {
+		return nil, errors.New("no active batch")
+	}
+
+	batch := session.currentBatch
+	session.currentBatch = nil
+
+	result, err := session.ExecuteStatement(ctx, batch)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 type ShowVariableStatement struct {

@@ -599,6 +599,31 @@ func TestBuildStatement(t *testing.T) {
 			input: `GEMINI "Show all tables"`,
 			want:  &GeminiStatement{Text: "Show all tables"},
 		},
+		{
+			desc:  "START BATCH DDL statement",
+			input: `START BATCH DDL`,
+			want:  &StartBatchStatement{Mode: batchModeDDL},
+		},
+		{
+			desc:  "START BATCH DML statement",
+			input: `START BATCH DML`,
+			want:  &StartBatchStatement{Mode: batchModeDML},
+		},
+		{
+			desc:  "ABORT BATCH statement",
+			input: `ABORT BATCH`,
+			want:  &AbortBatchStatement{},
+		},
+		{
+			desc:  "ABORT BATCH statement",
+			input: `ABORT BATCH TRANSACTION`,
+			want:  &AbortBatchStatement{},
+		},
+		{
+			desc:  "RUN BATCH statement",
+			input: `RUN BATCH`,
+			want:  &RunBatchStatement{},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
