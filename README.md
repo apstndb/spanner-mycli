@@ -16,6 +16,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
   * GenAI support(`GEMINI` statement).
+  * Interactive DDL batching
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
@@ -309,6 +310,9 @@ and `{}` for a mutually exclusive keyword.
 | Show partition tokens of partition query | `PARTITION <sql>` ||
 | Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||
 | Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
+| Start batch | `START BATCH DDL`||
+| Run active batch| `RUN BATCH`||
+| Abort active batch | `ABORT BATCH [TRANSACTION]`||
 | Exit CLI | `EXIT;`                                                                                        | |
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
 | Set variable | `SET <name> = <value>;`                                                                        | |
@@ -541,6 +545,41 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_USE_PAGER             | READ_WRITE | `"TRUE"`                                       |
 | CLI_AUTOWRAP              | READ_WRITE | `"TRUE"`                                       |
 | CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
+
+### Batch statements
+
+You can batch DDL statements.
+
+Note: `SET CLI_ECHO_EXECUTED_DDL = TRUE` enables echo back of actual executed DDLs.
+
+```
+spanner> START BATCH DDL;
+Empty set (0.00 sec)
+
+spanner> DROP INDEX IF EXISTS BatchExampleByCol;
+Query OK, 0 rows affected (0.00 sec) (1 DDL in batch)
+
+spanner> DROP TABLE IF EXISTS BatchExample;
+Query OK, 0 rows affected (0.00 sec) (2 DDLs in batch)
+
+spanner> CREATE TABLE BatchExample (PK INT64 PRIMARY KEY, Col INT64);
+Query OK, 0 rows affected (0.00 sec) (3 DDLs in batch)
+
+spanner> CREATE INDEX BatchExampleByCol ON BatchExample(Col);
+Query OK, 0 rows affected (0.00 sec) (4 DDLs in batch)
+
+spanner> RUN BATCH;
++--------------------------------------------------------------+
+| executed                                                     |
++--------------------------------------------------------------+
+| DROP INDEX IF EXISTS BatchExampleByCol;                      |
+| DROP TABLE IF EXISTS BatchExample;                           |
+| CREATE TABLE BatchExample (PK INT64 PRIMARY KEY, Col INT64); |
+| CREATE INDEX BatchExampleByCol ON BatchExample(Col);         |
++--------------------------------------------------------------+
+Query OK, 0 rows affected (8.40 sec)
+timestamp:      2024-12-28T14:39:44.766959Z
+```
 
 ### Embedded Cloud Spanner Emulator
 

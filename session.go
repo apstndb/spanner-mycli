@@ -70,6 +70,8 @@ type Session struct {
 	tc              *transactionContext
 	tcMutex         sync.Mutex // Guard a critical section for transaction.
 	systemVariables *systemVariables
+
+	currentBatch Statement
 }
 
 type transactionMode string
@@ -670,9 +672,31 @@ func (s *Session) failStatementIfReadOnly() error {
 	return nil
 }
 
+func extractBatchInfo(stmt Statement) *BatchInfo {
+	switch s := stmt.(type) {
+	case *BulkDdlStatement:
+		return &BatchInfo{
+			Mode: batchModeDDL,
+			Size: len(s.Ddls),
+		}
+	case *BatchDMLStatement:
+		return &BatchInfo{
+			Mode: batchModeDML,
+			Size: len(s.DMLs),
+		}
+	default:
+		return nil
+	}
+}
+
 // ExecuteStatement executes stmt.
 // If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
-func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result, error) {
+func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result *Result, err error) {
+	defer func() {
+		if result != nil {
+			result.BatchInfo = extractBatchInfo(s.currentBatch)
+		}
+	}()
 	if _, ok := stmt.(MutationStatement); ok {
 		result := &Result{IsMutation: true}
 		_, err := s.DetermineTransaction(ctx)

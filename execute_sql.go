@@ -66,6 +66,18 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	return result, nil
 }
 
+func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
+	switch b := session.currentBatch.(type) {
+	case *BatchDMLStatement:
+		return nil, errors.New("there is active batch DML")
+	case *BulkDdlStatement:
+		b.Ddls = append(b.Ddls, ddls...)
+		return &Result{IsMutation: true}, nil
+	default:
+		return executeDdlStatements(ctx, session, ddls)
+	}
+}
+
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	logParseStatements(ddls)
 
