@@ -883,6 +883,17 @@ func resultLine(result *Result, verbose bool) string {
 	// FIXME: Currently, ElapsedTime is not populated in batch mode.
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 
+	var batchInfo string
+	switch {
+	case result.BatchInfo == nil:
+		break
+	default:
+		batchInfo = fmt.Sprintf(" (%d %s%s in batch)", result.BatchInfo.Size,
+			lo.Ternary(result.BatchInfo.Mode == batchModeDDL, "DDL", "DML"),
+			lox.IfOrEmpty(result.BatchInfo.Size > 1, "s"),
+		)
+	}
+
 	if result.IsMutation {
 		var affectedRowsPrefix string
 		if result.AffectedRowsType == rowCountTypeLowerBound {
@@ -900,15 +911,15 @@ func resultLine(result *Result, verbose bool) string {
 				detail += fmt.Sprintf("mutation_count: %d\n", result.CommitStats.GetMutationCount())
 			}
 		}
-		return fmt.Sprintf("Query OK, %s%d rows affected%s\n%s",
-			affectedRowsPrefix, result.AffectedRows, elapsedTimePart, detail)
+		return fmt.Sprintf("Query OK, %s%d rows affected%s%s\n%s",
+			affectedRowsPrefix, result.AffectedRows, elapsedTimePart, batchInfo, detail)
 	}
 
 	var set string
 	if result.AffectedRows == 0 {
 		set = "Empty set"
 	} else {
-		set = fmt.Sprintf("%d rows in set", result.AffectedRows)
+		set = fmt.Sprintf("%d rows in set%s", result.AffectedRows, batchInfo)
 	}
 
 	if verbose {

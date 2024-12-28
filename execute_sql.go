@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
@@ -73,10 +72,7 @@ func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []
 		return nil, errors.New("there is active batch DML")
 	case *BulkDdlStatement:
 		b.Ddls = append(b.Ddls, ddls...)
-		return &Result{
-			ColumnNames: sliceOf("type", "count"),
-			Rows:        sliceOf(toRow("DDL", strconv.Itoa(len(b.Ddls)))),
-		}, nil
+		return &Result{IsMutation: true}, nil
 	default:
 		return executeDdlStatements(ctx, session, ddls)
 	}

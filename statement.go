@@ -80,6 +80,11 @@ const (
 	rowCountTypeLowerBound
 )
 
+type BatchInfo struct {
+	Mode batchMode
+	Size int
+}
+
 type Result struct {
 	ColumnNames      []string
 	ColumnAlign      []int // optional
@@ -102,6 +107,8 @@ type Result struct {
 	ForceWrap   bool
 	LintResults []string
 	PreInput    string
+
+	BatchInfo *BatchInfo
 }
 
 type Row struct {
