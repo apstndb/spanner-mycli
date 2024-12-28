@@ -310,6 +310,9 @@ and `{}` for a mutually exclusive keyword.
 | Show partition tokens of partition query | `PARTITION <sql>` ||
 | Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||
 | Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
+| Start batch | `START BATCH DDL`||
+| Run active batch| `RUN BATCH`||
+| Abort active batch | `ABORT BATCH [TRANSACTION]`||
 | Exit CLI | `EXIT;`                                                                                        | |
 | Show variable | `SHOW VARIABLE <name>;`                                                                        | |
 | Set variable | `SET <name> = <value>;`                                                                        | |
