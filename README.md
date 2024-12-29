@@ -557,7 +557,7 @@ You can issue [a batch DDL statements](https://cloud.google.com/spanner/docs/sch
 - `RUN BATCH` runs the batch.
 - or `ABORT BATCH` aborts the batch.
 
-Note: `SET CLI_ECHO_EXECUTED_DDL = TRUE` enables echo back of actual executed DDLs.
+Note: `SET CLI_ECHO_EXECUTED_DDL = TRUE` enables echo back of actual executed DDLs. It is useful to observe multiple schema versions in batch DDL.
 
 ```
 spanner> START BATCH DDL;
@@ -572,20 +572,25 @@ Query OK, 0 rows affected (0.00 sec) (2 DDLs in batch)
 spanner> CREATE TABLE BatchExample (PK INT64 PRIMARY KEY, Col INT64);
 Query OK, 0 rows affected (0.00 sec) (3 DDLs in batch)
 
-spanner> CREATE INDEX BatchExampleByCol ON BatchExample(Col);
+spanner> CREATE INDEX ExistingTableByCol ON ExistingTable(Col);
 Query OK, 0 rows affected (0.00 sec) (4 DDLs in batch)
 
+spanner> CREATE INDEX BatchExampleByCol ON BatchExample(Col);
+Query OK, 0 rows affected (0.00 sec) (5 DDLs in batch)
+
 spanner> RUN BATCH;
-+--------------------------------------------------------------+
-| executed                                                     |
-+--------------------------------------------------------------+
-| DROP INDEX IF EXISTS BatchExampleByCol;                      |
-| DROP TABLE IF EXISTS BatchExample;                           |
-| CREATE TABLE BatchExample (PK INT64 PRIMARY KEY, Col INT64); |
-| CREATE INDEX BatchExampleByCol ON BatchExample(Col);         |
-+--------------------------------------------------------------+
-Query OK, 0 rows affected (8.40 sec)
-timestamp:      2024-12-28T14:39:44.766959Z
++--------------------------------------------------------------+-----------------------------+
+| Executed                                                     | Commit Timestamp            |
++--------------------------------------------------------------+-----------------------------+
+| DROP INDEX IF EXISTS BatchExampleByCol;                      | 2024-12-29T09:09:00.404097Z |
+| DROP TABLE IF EXISTS BatchExample;                           | 2024-12-29T09:09:00.404097Z |
+| CREATE TABLE BatchExample (PK INT64 PRIMARY KEY, Col INT64); | 2024-12-29T09:09:00.404097Z |
+| CREATE INDEX ExistingTableByCol ON ExistingTable(Col);       | 2024-12-29T09:09:18.278025Z |
+| CREATE INDEX BatchExampleByCol ON BatchExample(Col);         | 2024-12-29T09:09:41.061034Z |
++--------------------------------------------------------------+-----------------------------+
+Query OK, 0 rows affected (51.00 sec)
+timestamp:      2024-12-29T09:09:41.061034Z
+
 
 # or abort using ABORT BATCH.
 ```
