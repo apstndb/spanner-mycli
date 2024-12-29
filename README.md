@@ -310,7 +310,8 @@ and `{}` for a mutually exclusive keyword.
 | Show partition tokens of partition query | `PARTITION <sql>` ||
 | Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||
 | Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
-| Start batch | `START BATCH DDL`||
+| Start DDL batching | `START BATCH DDL`||
+| Start DML batching | `START BATCH DML`||
 | Run active batch| `RUN BATCH`||
 | Abort active batch | `ABORT BATCH [TRANSACTION]`||
 | Exit CLI | `EXIT;`                                                                                        | |
@@ -548,7 +549,13 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 
 ### Batch statements
 
-You can batch DDL statements.
+#### DDL batching
+
+You can issue [a batch DDL statements](https://cloud.google.com/spanner/docs/schema-updates#order_of_execution_of_statements_in_batches).
+
+- `START BATCH DDL` starts DDL batching. Consecutive DDL statements are batched.
+- `RUN BATCH` runs the batch.
+- or `ABORT BATCH` aborts the batch.
 
 Note: `SET CLI_ECHO_EXECUTED_DDL = TRUE` enables echo back of actual executed DDLs.
 
@@ -579,6 +586,44 @@ spanner> RUN BATCH;
 +--------------------------------------------------------------+
 Query OK, 0 rows affected (8.40 sec)
 timestamp:      2024-12-28T14:39:44.766959Z
+
+# or abort using ABORT BATCH.
+```
+
+#### DML 
+
+You can use [batch DML](https://cloud.google.com/spanner/docs/dml-best-practices#batch-dml).
+
+- `START BATCH DML` starts DML batching. Consecutive DML statements are batched.
+- `RUN BATCH` runs the batch.
+- or `ABORT BATCH` aborts the batch.
+
+```
+spanner> START BATCH DML;
+Empty set (0.00 sec)
+
+spanner> DELETE FROM BatchExample WHERE TRUE;
+Query OK, 0 rows affected (0.00 sec) (1 DML in batch)
+
+spanner> INSERT INTO BatchExample (PK, Col) VALUES(1, 2);
+Query OK, 0 rows affected (0.00 sec) (2 DMLs in batch)
+
+spanner> UPDATE BatchExample SET Col = Col + 1 WHERE TRUE;
+Query OK, 0 rows affected (0.00 sec) (3 DMLs in batch)
+
+spanner> RUN BATCH;
++--------------------------------------------------+------+
+| DML                                              | Rows |
++--------------------------------------------------+------+
+| DELETE FROM BatchExample WHERE TRUE              | 1    |
+| INSERT INTO BatchExample (PK, Col) VALUES(1, 2)  | 1    |
+| UPDATE BatchExample SET Col = Col + 1 WHERE TRUE | 1    |
++--------------------------------------------------+------+
+Query OK, at most 3 rows affected (0.59 sec)
+timestamp:      2024-12-29T17:25:48.616395+09:00
+mutation_count: 9
+
+# or abort using ABORT BATCH.
 ```
 
 ### Embedded Cloud Spanner Emulator
