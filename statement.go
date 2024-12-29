@@ -78,6 +78,8 @@ const (
 	rowCountTypeExact rowCountType = iota
 	// rowCountTypeLowerBound is lower bound type for Partitioned DML result.
 	rowCountTypeLowerBound
+	// rowCountTypeLowerBound is upper bound type for batch DML result.
+	rowCountTypeUpperBound
 )
 
 type BatchInfo struct {
@@ -698,7 +700,7 @@ type BatchDMLStatement struct {
 func (BatchDMLStatement) IsMutationStatement() {}
 
 func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return nil, errors.New("unimplemented")
+	return executeBatchDML(ctx, session, s.DMLs)
 }
 
 type batchMode int
@@ -1175,19 +1177,13 @@ type DmlStatement struct {
 func (DmlStatement) isMutationStatement() {}
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	qm := session.systemVariables.QueryMode
-	if qm == nil {
-		return executeDML(ctx, session, s.Dml)
-	}
-	switch *qm {
-	case sppb.ExecuteSqlRequest_NORMAL:
-		return executeDML(ctx, session, s.Dml)
+	switch lo.FromPtr(session.systemVariables.QueryMode) {
 	case sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Dml, true)
 	case sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyzeDML(ctx, session, s.Dml)
 	default:
-		return executeDML(ctx, session, s.Dml)
+		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}
 }
 

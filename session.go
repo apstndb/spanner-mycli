@@ -459,14 +459,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row,
 		return nil, nil, 0, nil, errors.New("read-write transaction is not running")
 	}
 
-	opts := spanner.QueryOptions{
-		Priority:   s.currentPriority(),
-		RequestTag: s.systemVariables.RequestTag,
-		Options: &sppb.ExecuteSqlRequest_QueryOptions{
-			OptimizerVersion:           s.systemVariables.OptimizerVersion,
-			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
-		},
-	}
+	opts := s.queryOptions(nil)
 
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
@@ -474,6 +467,18 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row,
 	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
 	s.tc.sendHeartbeat = true
 	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
+}
+
+func (s *Session) queryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
+	return spanner.QueryOptions{
+		Mode:       mode,
+		Priority:   s.currentPriority(),
+		RequestTag: s.systemVariables.RequestTag,
+		Options: &sppb.ExecuteSqlRequest_QueryOptions{
+			OptimizerVersion:           s.systemVariables.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+		},
+	}
 }
 
 func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {

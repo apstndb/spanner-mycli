@@ -896,10 +896,14 @@ func resultLine(result *Result, verbose bool) string {
 
 	if result.IsMutation {
 		var affectedRowsPrefix string
-		if result.AffectedRowsType == rowCountTypeLowerBound {
+		switch result.AffectedRowsType {
+		case rowCountTypeLowerBound:
 			// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
 			// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
 			affectedRowsPrefix = "at least "
+		case rowCountTypeUpperBound:
+			// For batch DML, same rows can be processed by statements.
+			affectedRowsPrefix = "at most "
 		}
 
 		var detail string
