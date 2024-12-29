@@ -10,6 +10,7 @@ import (
 
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/lox"
@@ -84,12 +85,10 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	logParseStatements(ddls)
 
 	if len(ddls) == 0 {
-		result := &Result{IsMutation: true}
-		if session.systemVariables.EchoExecutedDDL {
-			result.ColumnNames = sliceOf("executed")
-			result.Rows = ddlsToRows(ddls)
-		}
-		return result, nil
+		return &Result{
+			IsMutation:  true,
+			ColumnNames: lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp")),
+		}, nil
 	}
 
 	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
@@ -163,8 +162,12 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
 			result := &Result{IsMutation: true, Timestamp: lastCommitTS}
 			if session.systemVariables.EchoExecutedDDL {
-				result.ColumnNames = sliceOf("executed")
-				result.Rows = ddlsToRows(ddls)
+				result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
+				result.Rows = slices.Collect(hiter.Unify(
+					func(k string, v *timestamppb.Timestamp) Row { return toRow(k+";", v.AsTime().Format(time.RFC3339Nano)) },
+					hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
+				),
+				)
 			}
 
 			if p != nil {
