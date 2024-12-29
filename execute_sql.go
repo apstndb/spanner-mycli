@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	scxiter "spheric.cloud/xiter"
 
@@ -256,6 +258,51 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(plan) }),
 	}
 	return result, nil
+}
+
+func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	switch b := session.currentBatch.(type) {
+	case *BatchDMLStatement:
+		b.DMLs = append(b.DMLs, sql)
+		return &Result{IsMutation: true}, nil
+	case *BulkDdlStatement:
+		return nil, errors.New("there is active batch DDL")
+	default:
+		return executeDML(ctx, session, sql)
+	}
+}
+
+func executeBatchDML(ctx context.Context, session *Session, dmls []string) (*Result, error) {
+	stmts, err := scxiter.TryCollect(scxiter.MapErr(slices.Values(dmls), func(stmt string) (spanner.Statement, error) {
+		return newStatement(stmt, session.systemVariables.Params, false)
+	}))
+	if err != nil {
+		return nil, err
+	}
+
+	var affectedRowSlice []int64
+	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, stmts, spanner.QueryOptions{})
+		return lo.Sum(affectedRowSlice), nil, nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		IsMutation:  true,
+		Timestamp:   commitResp.CommitTs,
+		CommitStats: commitResp.CommitStats,
+		ColumnTypes: metadata.GetRowType().GetFields(),
+		Rows: slices.Collect(hiter.Unify(
+			func(s string, n int64) Row {
+				return toRow(s, strconv.FormatInt(n, 10))
+			},
+			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
+		ColumnNames:      sliceOf("DML", "Rows"),
+		AffectedRows:     int(affected),
+		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
+	}, nil
 }
 
 func executeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
