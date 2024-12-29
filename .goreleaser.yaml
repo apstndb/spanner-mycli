@@ -42,9 +42,6 @@ archives:
 release:
   draft: true
   prerelease: auto
+
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
+  use: github-native
