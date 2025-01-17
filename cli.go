@@ -37,7 +37,6 @@ import (
 
 	"github.com/apstndb/adcplus"
 	"github.com/kballard/go-shellquote"
-
 	"github.com/nyaosorg/go-readline-ny"
 
 	"github.com/hymkor/go-multiline-ny"
@@ -417,16 +416,30 @@ func (c *Cli) Exit() int {
 
 func (c *Cli) ExitOnError(err error) int {
 	c.Session.Close()
-	fmt.Fprintf(c.ErrStream, "ERROR: %s\n", err)
+	printError(c.ErrStream, err)
 	return exitCodeError
 }
 
 func (c *Cli) PrintInteractiveError(err error) {
-	fmt.Fprintf(c.OutStream, "ERROR: %s\n", err)
+	printError(c.OutStream, err)
+}
+
+func printError(w io.Writer, err error) {
+	if code := spanner.ErrCode(err); code != codes.Unknown {
+		desc := spanner.ErrDesc(err)
+		unquoted, err := strconv.Unquote(`"` + desc + `"`)
+		if err != nil {
+			fmt.Fprintf(w, "ERROR: code=%q, desc: %v\n", code, desc)
+		} else {
+			fmt.Fprintf(w, "ERROR: code=%q, desc: %v\n", code, unquoted)
+		}
+	} else {
+		fmt.Fprintf(w, "ERROR: %s\n", err)
+	}
 }
 
 func (c *Cli) PrintBatchError(err error) {
-	fmt.Fprintf(c.ErrStream, "ERROR: %s\n", err)
+	printError(c.ErrStream, err)
 }
 
 func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, interactive bool) {
