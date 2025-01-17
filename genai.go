@@ -33,12 +33,10 @@ func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlRespons
 	}
 
 	response, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash-exp",
-		genai.PartSlice{
-			genai.Text(s),
-		},
+		genai.Text(s),
 		&genai.GenerateContentConfig{
-			SystemInstruction: genai.Text(
-				`
+			SystemInstruction: &genai.Content{
+				Parts: []*genai.Part{{Text: `
 Answer in valid Spanner GoogleSQL syntax or valid Spanner Graph GQL syntax.
 GoogleSQL syntax is not PostgreSQL syntax.
 The output must be valid.
@@ -48,7 +46,10 @@ Here is the DDL.
 ` +
 					fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
 Here is the Proto Descriptors.
-` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds))).ToContent(),
+` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds)),
+				},
+				},
+			},
 		})
 	if err != nil {
 		return "", err

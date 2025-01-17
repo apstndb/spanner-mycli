@@ -33,6 +33,7 @@ import (
 
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 
 	"github.com/k0kubun/pp/v3"
 
@@ -1777,7 +1778,7 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
 		ColumnNames: sliceOf(""),
-		Rows: sliceOf(toRow(hiter.StringsCollect(0, xiter.Map(
+		Rows: sliceOf(toRow(stringsiter.Collect(xiter.Map(
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
 	}, nil

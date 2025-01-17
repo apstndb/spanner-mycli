@@ -37,6 +37,7 @@ import (
 
 	"github.com/apstndb/adcplus"
 	"github.com/kballard/go-shellquote"
+	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/nyaosorg/go-readline-ny"
 
 	"github.com/hymkor/go-multiline-ny"
@@ -593,7 +594,7 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 func maxWidth(s string) int {
 	return hiter.Max(xiter.Map(
 		runewidth.StringWidth,
-		hiter.StringsSplitFunc(s, 0, hiter.StringsCutNewLine)))
+		stringsiter.SplitFunc(s, 0, stringsiter.CutNewLine)))
 }
 
 func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] {
