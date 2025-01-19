@@ -68,10 +68,11 @@ type systemVariables struct {
 	// link to session
 	CurrentSession *Session
 
-	ReadOnly        bool
-	VertexAIProject string
-	AutoWrap        bool
-	EchoExecutedDDL bool
+	ReadOnly         bool
+	VertexAIProject  string
+	AutoWrap         bool
+	EchoExecutedDDL  bool
+	DisableHighlight bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -501,6 +502,9 @@ var accessorMap = map[string]accessor{
 	}),
 	"CLI_AUTOWRAP": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.AutoWrap
+	}),
+	"CLI_DISABLE_HIGHLIGHT": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.DisableHighlight
 	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {

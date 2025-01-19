@@ -36,12 +36,13 @@ import (
 	"time"
 
 	"github.com/apstndb/adcplus"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/kballard/go-shellquote"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/nyaosorg/go-readline-ny"
+	"github.com/nyaosorg/go-readline-ny/keys"
 
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 
 	"github.com/mattn/go-runewidth"
@@ -174,14 +175,77 @@ func PS1PS2FuncToPromptFunc(ps1F func() string, ps2F func(ps1 string) string) fu
 	}
 }
 
+type highligher interface {
+	FindAllStringIndex(string, int) [][]int
+}
+
+type highligherFunc func(string, int) [][]int
+
+func (f highligherFunc) FindAllStringIndex(s string, i int) [][]int {
+	return f(s, i)
+}
+
+func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
+	return func(s string, i int) [][]int {
+		var results [][]int
+		for tok, err := range gsqlutils.NewLexerSeq("", s) {
+			if err != nil {
+				break
+			}
+			for _, idx := range f(tok) {
+				results = append(results, idx)
+			}
+		}
+		return results
+	}
+}
+
+func tokenHighlighter(pred func(tok token.Token) bool) highligherFunc {
+	return lexerHighlighter(func(tok token.Token) [][]int {
+		if pred(tok) {
+			return [][]int{{int(tok.Pos), int(tok.End)}}
+		}
+		return nil
+	})
+}
+
+func kindHighlighter(kinds ...token.TokenKind) highligherFunc {
+	return tokenHighlighter(func(tok token.Token) bool {
+		return slices.Contains(kinds, tok.Kind)
+	})
+}
+
+var alnumRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
-	var ed multiline.Editor
+	ed := &multiline.Editor{}
+
+	if !c.SystemVariables.DisableHighlight {
+		ed.LineEditor = readline.Editor{
+			Highlight: []readline.Highlight{
+				{Pattern: lexerHighlighter(func(tok token.Token) [][]int {
+					var result [][]int
+					for _, comment := range tok.Comments {
+						result = append(result, []int{int(comment.Pos), int(comment.End)})
+					}
+					return result
+				}), Sequence: "\x1B[37;49;2m"},
+				{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
+				{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
+				{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
+				{Pattern: tokenHighlighter(func(tok token.Token) bool {
+					return alnumRe.MatchString(string(tok.Kind))
+				}), Sequence: "\x1B[33;49;22m"},
+			},
+			ResetColor:   "\x1B[0m",
+			DefaultColor: "\x1B[39;49;1m",
+		}
+	}
 
 	type ac = readline.AnonymousCommand
 	type _ = ac
 
-	// TODO: There is no multiline version of CmdISearchBackward.
-	err := ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
+	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {
 		return c.ExitOnError(err)
 	}
@@ -235,7 +299,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 	c.waitingStatus = ""
 
 	for {
-		input, err := readInteractiveInput(ctx, &ed)
+		input, err := readInteractiveInput(ctx, ed)
 
 		// reset default
 		ed.SetDefault(nil)
