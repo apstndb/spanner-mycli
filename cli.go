@@ -192,6 +192,7 @@ func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
 			if err != nil {
 				break
 			}
+
 			for _, idx := range f(tok) {
 				results = append(results, idx)
 			}
@@ -202,16 +203,21 @@ func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
 
 func tokenHighlighter(pred func(tok token.Token) bool) highligherFunc {
 	return lexerHighlighter(func(tok token.Token) [][]int {
-		if pred(tok) {
-			return [][]int{{int(tok.Pos), int(tok.End)}}
-		}
-		return nil
+		return lox.IfOrEmpty(pred(tok), sliceOf(sliceOf(int(tok.Pos), int(tok.End))))
 	})
 }
 
 func kindHighlighter(kinds ...token.TokenKind) highligherFunc {
 	return tokenHighlighter(func(tok token.Token) bool {
 		return slices.Contains(kinds, tok.Kind)
+	})
+}
+
+func commentHighlighter() highligherFunc {
+	return lexerHighlighter(func(tok token.Token) [][]int {
+		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
+			return sliceOf(int(comment.Pos), int(comment.End))
+		}, slices.Values(tok.Comments)))
 	})
 }
 
@@ -222,14 +228,9 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 	if !c.SystemVariables.DisableHighlight {
 		ed.LineEditor = readline.Editor{
+			// TODO: abstract escape sequence
 			Highlight: []readline.Highlight{
-				{Pattern: lexerHighlighter(func(tok token.Token) [][]int {
-					var result [][]int
-					for _, comment := range tok.Comments {
-						result = append(result, []int{int(comment.Pos), int(comment.End)})
-					}
-					return result
-				}), Sequence: "\x1B[37;49;2m"},
+				{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
 				{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
 				{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
 				{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
