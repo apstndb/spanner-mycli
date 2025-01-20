@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/apstndb/adcplus"
+	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/kballard/go-shellquote"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
@@ -185,20 +186,33 @@ func (f highligherFunc) FindAllStringIndex(s string, i int) [][]int {
 	return f(s, i)
 }
 
-func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
+func lexerHighlighterWithError(f func(tok token.Token) [][]int, errf func(me *memefish.Error) bool) highligherFunc {
 	return func(s string, i int) [][]int {
 		var results [][]int
 		for tok, err := range gsqlutils.NewLexerSeq("", s) {
 			if err != nil {
+				if me, ok := lo.ErrorsAs[*memefish.Error](err); ok && errf != nil && errf(me) {
+					results = append(results, sliceOf(int(me.Position.Pos), int(me.Position.End)))
+				}
 				break
 			}
 
-			for _, idx := range f(tok) {
-				results = append(results, idx)
+			if f != nil {
+				for _, idx := range f(tok) {
+					results = append(results, idx)
+				}
 			}
 		}
 		return results
 	}
+}
+
+func errorHighlighter(f func(*memefish.Error) bool) highligherFunc {
+	return lexerHighlighterWithError(nil, f)
+}
+
+func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
+	return lexerHighlighterWithError(f, nil)
 }
 
 func tokenHighlighter(pred func(tok token.Token) bool) highligherFunc {
@@ -213,11 +227,17 @@ func kindHighlighter(kinds ...token.TokenKind) highligherFunc {
 	})
 }
 
+const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
+const errMessageUnclosedStringLiteral = `unclosed string literal`
+const errMessageUnclosedComment = `unclosed comment`
+
 func commentHighlighter() highligherFunc {
-	return lexerHighlighter(func(tok token.Token) [][]int {
+	return lexerHighlighterWithError(func(tok token.Token) [][]int {
 		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
 			return sliceOf(int(comment.Pos), int(comment.End))
 		}, slices.Values(tok.Comments)))
+	}, func(me *memefish.Error) bool {
+		return me.Message == errMessageUnclosedComment
 	})
 }
 
@@ -230,16 +250,34 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		ed.LineEditor = readline.Editor{
 			// TODO: abstract escape sequence
 			Highlight: []readline.Highlight{
+				// Note: multiline comments break highlight because of restriction of go-multiline-ny
 				{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
+
+				// string literals(including string-based literals like timestamp literals) and byte literals
 				{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
+
+				// unclosed string literals
+				// Note: multiline literals break highlight because of restriction of go-multiline-ny
+				{Pattern: errorHighlighter(func(me *memefish.Error) bool {
+					return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
+				}), Sequence: "\x1B[32;49;22m"},
+
+				// numbers
 				{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
+
+				// params
 				{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
+
+				// keywords
 				{Pattern: tokenHighlighter(func(tok token.Token) bool {
 					return alnumRe.MatchString(string(tok.Kind))
 				}), Sequence: "\x1B[33;49;22m"},
+
+				// idents
+				{Pattern: kindHighlighter(token.TokenIdent), Sequence: "\x1B[1m"},
 			},
 			ResetColor:   "\x1B[0m",
-			DefaultColor: "\x1B[39;49;1m",
+			DefaultColor: "\x1B[39;49;0m",
 		}
 	}
 

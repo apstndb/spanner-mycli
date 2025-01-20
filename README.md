@@ -42,6 +42,8 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Autowrap and auto adjust column width to fit within terminal width when `CLI_AUTOWRAP = TRUE`).
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
+  * Syntax highlight
+    * Note: Currently, highlighting is single line basis. See https://github.com/hymkor/go-multiline-ny/issues/6. 
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).
