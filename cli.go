@@ -243,43 +243,45 @@ func commentHighlighter() highligherFunc {
 
 var alnumRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 
+func setLineEditor(ed *readline.Editor, enableHighlight bool) {
+	if enableHighlight {
+		ed.Highlight = []readline.Highlight{
+			// Note: multiline comments break highlight because of restriction of go-multiline-ny
+			{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
+
+			// string literals(including string-based literals like timestamp literals) and byte literals
+			{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
+
+			// unclosed string literals
+			// Note: multiline literals break highlight because of restriction of go-multiline-ny
+			{Pattern: errorHighlighter(func(me *memefish.Error) bool {
+				return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
+			}), Sequence: "\x1B[32;49;22m"},
+
+			// numbers
+			{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
+
+			// params
+			{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
+
+			// keywords
+			{Pattern: tokenHighlighter(func(tok token.Token) bool {
+				return alnumRe.MatchString(string(tok.Kind))
+			}), Sequence: "\x1B[33;49;22m"},
+
+			// idents
+			{Pattern: kindHighlighter(token.TokenIdent), Sequence: "\x1B[1m"},
+		}
+		ed.ResetColor = "\x1B[0m"
+		ed.DefaultColor = "\x1B[39;49;0m"
+	} else {
+		ed.Highlight = nil
+		ed.DefaultColor = ""
+		ed.ResetColor = ""
+	}
+}
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	ed := &multiline.Editor{}
-
-	if !c.SystemVariables.DisableHighlight {
-		ed.LineEditor = readline.Editor{
-			// TODO: abstract escape sequence
-			Highlight: []readline.Highlight{
-				// Note: multiline comments break highlight because of restriction of go-multiline-ny
-				{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
-
-				// string literals(including string-based literals like timestamp literals) and byte literals
-				{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
-
-				// unclosed string literals
-				// Note: multiline literals break highlight because of restriction of go-multiline-ny
-				{Pattern: errorHighlighter(func(me *memefish.Error) bool {
-					return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
-				}), Sequence: "\x1B[32;49;22m"},
-
-				// numbers
-				{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
-
-				// params
-				{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
-
-				// keywords
-				{Pattern: tokenHighlighter(func(tok token.Token) bool {
-					return alnumRe.MatchString(string(tok.Kind))
-				}), Sequence: "\x1B[33;49;22m"},
-
-				// idents
-				{Pattern: kindHighlighter(token.TokenIdent), Sequence: "\x1B[1m"},
-			},
-			ResetColor:   "\x1B[0m",
-			DefaultColor: "\x1B[39;49;0m",
-		}
-	}
 
 	type ac = readline.AnonymousCommand
 	type _ = ac
@@ -338,6 +340,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 	c.waitingStatus = ""
 
 	for {
+		setLineEditor(&ed.LineEditor, c.SystemVariables.EnableHighlight)
 		input, err := readInteractiveInput(ctx, ed)
 
 		// reset default
