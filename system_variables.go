@@ -72,6 +72,7 @@ type systemVariables struct {
 	VertexAIProject string
 	AutoWrap        bool
 	EchoExecutedDDL bool
+	EnableHighlight bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -501,6 +502,9 @@ var accessorMap = map[string]accessor{
 	}),
 	"CLI_AUTOWRAP": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.AutoWrap
+	}),
+	"CLI_ENABLE_HIGHLIGHT": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.EnableHighlight
 	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {

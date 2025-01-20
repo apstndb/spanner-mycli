@@ -36,12 +36,14 @@ import (
 	"time"
 
 	"github.com/apstndb/adcplus"
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/kballard/go-shellquote"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/nyaosorg/go-readline-ny"
+	"github.com/nyaosorg/go-readline-ny/keys"
 
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 
 	"github.com/mattn/go-runewidth"
@@ -174,14 +176,117 @@ func PS1PS2FuncToPromptFunc(ps1F func() string, ps2F func(ps1 string) string) fu
 	}
 }
 
+type highlighter interface {
+	FindAllStringIndex(string, int) [][]int
+}
+
+var _ highlighter = highlighterFunc(nil)
+
+type highlighterFunc func(string, int) [][]int
+
+func (f highlighterFunc) FindAllStringIndex(s string, i int) [][]int {
+	return f(s, i)
+}
+
+func lexerHighlighterWithError(f func(tok token.Token) [][]int, errf func(me *memefish.Error) bool) highlighterFunc {
+	return func(s string, i int) [][]int {
+		var results [][]int
+		for tok, err := range gsqlutils.NewLexerSeq("", s) {
+			if err != nil {
+				if me, ok := lo.ErrorsAs[*memefish.Error](err); ok && errf != nil && errf(me) {
+					results = append(results, sliceOf(int(me.Position.Pos), int(me.Position.End)))
+				}
+				break
+			}
+
+			if f != nil {
+				results = append(results, f(tok)...)
+			}
+		}
+		return results
+	}
+}
+
+func errorHighlighter(f func(*memefish.Error) bool) highlighterFunc {
+	return lexerHighlighterWithError(nil, f)
+}
+
+func lexerHighlighter(f func(tok token.Token) [][]int) highlighterFunc {
+	return lexerHighlighterWithError(f, nil)
+}
+
+func tokenHighlighter(pred func(tok token.Token) bool) highlighterFunc {
+	return lexerHighlighter(func(tok token.Token) [][]int {
+		return lox.IfOrEmpty(pred(tok), sliceOf(sliceOf(int(tok.Pos), int(tok.End))))
+	})
+}
+
+func kindHighlighter(kinds ...token.TokenKind) highlighterFunc {
+	return tokenHighlighter(func(tok token.Token) bool {
+		return slices.Contains(kinds, tok.Kind)
+	})
+}
+
+const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
+const errMessageUnclosedStringLiteral = `unclosed string literal`
+const errMessageUnclosedComment = `unclosed comment`
+
+func commentHighlighter() highlighterFunc {
+	return lexerHighlighterWithError(func(tok token.Token) [][]int {
+		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
+			return sliceOf(int(comment.Pos), int(comment.End))
+		}, slices.Values(tok.Comments)))
+	}, func(me *memefish.Error) bool {
+		return me.Message == errMessageUnclosedComment
+	})
+}
+
+var alnumRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
+
+func setLineEditor(ed *readline.Editor, enableHighlight bool) {
+	if enableHighlight {
+		ed.Highlight = []readline.Highlight{
+			// Note: multiline comments break highlight because of restriction of go-multiline-ny
+			{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
+
+			// string literals(including string-based literals like timestamp literals) and byte literals
+			{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
+
+			// unclosed string literals
+			// Note: multiline literals break highlight because of restriction of go-multiline-ny
+			{Pattern: errorHighlighter(func(me *memefish.Error) bool {
+				return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
+			}), Sequence: "\x1B[32;49;22m"},
+
+			// numbers
+			{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
+
+			// params
+			{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
+
+			// keywords
+			{Pattern: tokenHighlighter(func(tok token.Token) bool {
+				return alnumRe.MatchString(string(tok.Kind))
+			}), Sequence: "\x1B[33;49;22m"},
+
+			// idents
+			{Pattern: kindHighlighter(token.TokenIdent), Sequence: "\x1B[1m"},
+		}
+		ed.ResetColor = "\x1B[0m"
+		ed.DefaultColor = "\x1B[39;49;0m"
+	} else {
+		ed.Highlight = nil
+		ed.DefaultColor = ""
+		ed.ResetColor = ""
+	}
+}
 func (c *Cli) RunInteractive(ctx context.Context) int {
-	var ed multiline.Editor
+	ed := &multiline.Editor{}
 
 	type ac = readline.AnonymousCommand
 	type _ = ac
 
-	// TODO: There is no multiline version of CmdISearchBackward.
-	err := ed.BindKey(keys.CtrlR, readline.CmdISearchBackward)
+	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {
 		return c.ExitOnError(err)
 	}
@@ -235,7 +340,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 	c.waitingStatus = ""
 
 	for {
-		input, err := readInteractiveInput(ctx, &ed)
+		setLineEditor(&ed.LineEditor, c.SystemVariables.EnableHighlight)
+		input, err := readInteractiveInput(ctx, ed)
 
 		// reset default
 		ed.SetDefault(nil)
