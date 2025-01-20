@@ -176,17 +176,19 @@ func PS1PS2FuncToPromptFunc(ps1F func() string, ps2F func(ps1 string) string) fu
 	}
 }
 
-type highligher interface {
+type highlighter interface {
 	FindAllStringIndex(string, int) [][]int
 }
 
-type highligherFunc func(string, int) [][]int
+var _ highlighter = highlighterFunc(nil)
 
-func (f highligherFunc) FindAllStringIndex(s string, i int) [][]int {
+type highlighterFunc func(string, int) [][]int
+
+func (f highlighterFunc) FindAllStringIndex(s string, i int) [][]int {
 	return f(s, i)
 }
 
-func lexerHighlighterWithError(f func(tok token.Token) [][]int, errf func(me *memefish.Error) bool) highligherFunc {
+func lexerHighlighterWithError(f func(tok token.Token) [][]int, errf func(me *memefish.Error) bool) highlighterFunc {
 	return func(s string, i int) [][]int {
 		var results [][]int
 		for tok, err := range gsqlutils.NewLexerSeq("", s) {
@@ -198,30 +200,28 @@ func lexerHighlighterWithError(f func(tok token.Token) [][]int, errf func(me *me
 			}
 
 			if f != nil {
-				for _, idx := range f(tok) {
-					results = append(results, idx)
-				}
+				results = append(results, f(tok)...)
 			}
 		}
 		return results
 	}
 }
 
-func errorHighlighter(f func(*memefish.Error) bool) highligherFunc {
+func errorHighlighter(f func(*memefish.Error) bool) highlighterFunc {
 	return lexerHighlighterWithError(nil, f)
 }
 
-func lexerHighlighter(f func(tok token.Token) [][]int) highligherFunc {
+func lexerHighlighter(f func(tok token.Token) [][]int) highlighterFunc {
 	return lexerHighlighterWithError(f, nil)
 }
 
-func tokenHighlighter(pred func(tok token.Token) bool) highligherFunc {
+func tokenHighlighter(pred func(tok token.Token) bool) highlighterFunc {
 	return lexerHighlighter(func(tok token.Token) [][]int {
 		return lox.IfOrEmpty(pred(tok), sliceOf(sliceOf(int(tok.Pos), int(tok.End))))
 	})
 }
 
-func kindHighlighter(kinds ...token.TokenKind) highligherFunc {
+func kindHighlighter(kinds ...token.TokenKind) highlighterFunc {
 	return tokenHighlighter(func(tok token.Token) bool {
 		return slices.Contains(kinds, tok.Kind)
 	})
@@ -231,7 +231,7 @@ const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted stri
 const errMessageUnclosedStringLiteral = `unclosed string literal`
 const errMessageUnclosedComment = `unclosed comment`
 
-func commentHighlighter() highligherFunc {
+func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
 		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
 			return sliceOf(int(comment.Pos), int(comment.End))
