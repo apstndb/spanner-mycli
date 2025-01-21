@@ -139,8 +139,8 @@ func formatEnum(types protoEnumResolver) func(formatter spanvalue.Formatter, val
 func formatTypeSimple(typ *sppb.Type) string {
 	return spantype.FormatType(typ, spantype.FormatOption{
 		Struct: spantype.StructModeBase,
-		Proto:  spantype.ProtoEnumModeBase,
-		Enum:   spantype.ProtoEnumModeBase,
+		Proto:  spantype.ProtoEnumModeLeafWithKind,
+		Enum:   spantype.ProtoEnumModeLeafWithKind,
 		Array:  spantype.ArrayModeRecursive,
 	})
 }
