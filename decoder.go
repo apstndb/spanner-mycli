@@ -17,9 +17,10 @@
 package main
 
 import (
+	"cmp"
 	"encoding/base64"
 	"errors"
-	"fmt"
+	"strconv"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -42,14 +43,10 @@ func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
 	return spanvalue.FormatColumnSpannerCLICompatible(column)
 }
 
-func formatConfig(fds *descriptorpb.FileDescriptorSet) (*spanvalue.FormatConfig, error) {
-	var files *protoregistry.Files
-	if fds != nil {
-		var err error
-		files, err = protodesc.NewFiles(fds)
-		if err != nil {
-			return nil, err
-		}
+func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet) (*spanvalue.FormatConfig, error) {
+	types, err := dynamicTypesByFDS(fds)
+	if err != nil {
+		return nil, err
 	}
 
 	return &spanvalue.FormatConfig{
@@ -60,53 +57,82 @@ func formatConfig(fds *descriptorpb.FileDescriptorSet) (*spanvalue.FormatConfig,
 			FormatStructParen: spanvalue.FormatBracketStruct,
 		},
 		FormatComplexPlugins: []spanvalue.FormatComplexFunc{
-			func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-				if value.Type.GetCode() == sppb.TypeCode_PROTO {
-					desc, err := files.FindDescriptorByName(protoreflect.FullName(value.Type.GetProtoTypeFqn()))
-					switch {
-					case errors.Is(err, protoregistry.NotFound):
-						return "", spanvalue.ErrFallthrough
-					case err != nil:
-						return "", err
-					default:
-						md, ok := desc.(protoreflect.MessageDescriptor)
-						if !ok {
-							return "", fmt.Errorf("protoFqn %v corresponds not a message descriptor: %T", value.Type.GetProtoTypeFqn(), desc)
-						}
-
-						message := dynamicpb.NewMessage(md)
-						b, err := base64.StdEncoding.DecodeString(value.Value.GetStringValue())
-						if err != nil {
-							return "", err
-						}
-
-						if err = proto.Unmarshal(b, message); err != nil {
-							return "", err
-						}
-						return prototext.MarshalOptions{Multiline: false}.Format(message), nil
-					}
-				}
-				return "", spanvalue.ErrFallthrough
-			},
+			formatProto(types),
+			formatEnum(types),
 		},
 		FormatNullable: spanvalue.FormatNullableSpannerCLICompatible,
 	}, nil
 }
 
-func DecodeRowExperimental(row *spanner.Row, fds *descriptorpb.FileDescriptorSet) ([]string, error) {
-	config, err := formatConfig(fds)
+func dynamicTypesByFDS(fds *descriptorpb.FileDescriptorSet) (*dynamicpb.Types, error) {
+	if fds == nil {
+		return dynamicpb.NewTypes(nil), nil
+	}
+
+	files, err := protodesc.NewFiles(fds)
 	if err != nil {
 		return nil, err
 	}
-	return config.FormatRow(row)
+
+	return dynamicpb.NewTypes(files), nil
 }
 
-func DecodeColumnExperimental(column spanner.GenericColumnValue, fds *descriptorpb.FileDescriptorSet) (string, error) {
-	config, err := formatConfig(fds)
-	if err != nil {
-		return "", err
+type protoEnumResolver interface {
+	protoregistry.MessageTypeResolver
+	FindEnumByName(protoreflect.FullName) (protoreflect.EnumType, error)
+}
+
+var _ protoEnumResolver = (*dynamicpb.Types)(nil)
+var _ protoEnumResolver = (*protoregistry.Types)(nil)
+
+func formatProto(types protoEnumResolver) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
+	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
+		if value.Type.GetCode() != sppb.TypeCode_PROTO {
+			return "", spanvalue.ErrFallthrough
+		}
+
+		messageType, err := types.FindMessageByName(protoreflect.FullName(value.Type.GetProtoTypeFqn()))
+		if errors.Is(err, protoregistry.NotFound) {
+			return "", spanvalue.ErrFallthrough
+		} else if err != nil {
+			return "", err
+		}
+
+		b, err := base64.StdEncoding.DecodeString(value.Value.GetStringValue())
+		if err != nil {
+			return "", err
+		}
+
+		m := messageType.New()
+		if err = proto.Unmarshal(b, m.Interface()); err != nil {
+			return "", err
+		}
+		return prototext.MarshalOptions{Multiline: false}.Format(m.Interface()), nil
 	}
-	return config.FormatToplevelColumn(column)
+}
+
+func formatEnum(types protoEnumResolver) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
+	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
+		if value.Type.GetCode() != sppb.TypeCode_ENUM {
+			return "", spanvalue.ErrFallthrough
+		}
+
+		enumType, err := types.FindEnumByName(protoreflect.FullName(value.Type.GetProtoTypeFqn()))
+		if errors.Is(err, protoregistry.NotFound) {
+			return "", spanvalue.ErrFallthrough
+		} else if err != nil {
+			return "", err
+		}
+
+		n, err := strconv.ParseInt(value.Value.GetStringValue(), 10, 64)
+		if err != nil {
+			return "", err
+		}
+
+		return cmp.Or(
+			string(enumType.Descriptor().Values().ByNumber(protoreflect.EnumNumber(n)).Name()),
+			value.Value.GetStringValue()), nil
+	}
 }
 
 // formatTypeSimple is format type for headers.

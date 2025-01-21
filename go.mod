@@ -12,7 +12,7 @@ require (
 	github.com/apstndb/memebridge v0.2.0
 	github.com/apstndb/spanemuboost v0.2.5
 	github.com/apstndb/spannerplanviz v0.3.2
-	github.com/apstndb/spantype v0.3.6
+	github.com/apstndb/spantype v0.3.7
 	github.com/apstndb/spanvalue v0.1.4
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.3.1
