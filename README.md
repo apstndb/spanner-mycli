@@ -886,6 +886,47 @@ spanner> SYNC PROTO BUNDLE DELETE (`examples.shipping.OrderHistory`);
 Query OK, 0 rows affected (8.24 sec)
 ```
 
+### `PROTO`/`ENUM` value formatting
+
+Loaded proto descriptors are used for formatting `PROTO` and `ENUM` column values.
+
+```
+spanner> SELECT p, p.*
+         FROM (
+           SELECT AS VALUE NEW examples.spanner.music.SingerInfo{singer_id: 1, birth_date: "1970-01-01", nationality: "Japan", genre: "POP"}
+         ) AS p;
++----------------------------------+-----------+------------+-------------+-------+
+| p                                | singer_id | birth_date | nationality | genre |
++----------------------------------+-----------+------------+-------------+-------+
+| CAESCjE5NzAtMDEtMDEaBUphcGFuIAA= | 1         | 1970-01-01 | Japan       | 0     |
++----------------------------------+-----------+------------+-------------+-------+
+1 rows in set (2.22 msecs)
+
+spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto";
+Empty set (0.00 sec)
+
+spanner> SHOW LOCAL PROTO;
++-----------------------------------------+-------+------------------------+------------------------------+
+| full_name                               | kind  | package                | file                         |
++-----------------------------------------+-------+------------------------+------------------------------+
+| examples.spanner.music.SingerInfo       | PROTO | examples.spanner.music | testdata/protos/singer.proto |
+| examples.spanner.music.CustomSingerInfo | PROTO | examples.spanner.music | testdata/protos/singer.proto |
+| examples.spanner.music.Genre            | ENUM  | examples.spanner.music | testdata/protos/singer.proto |
+| examples.spanner.music.CustomGenre      | ENUM  | examples.spanner.music | testdata/protos/singer.proto |
++-----------------------------------------+-------+------------------------+------------------------------+
+4 rows in set (0.00 sec)
+
+spanner> SELECT p, p.*
+         FROM (
+           SELECT AS VALUE NEW examples.spanner.music.SingerInfo{singer_id: 1, birth_date: "1970-01-01", nationality: "Japan", genre: "POP"}
+         ) AS p;
++-------------------------------------------------------------------+-----------+------------+-------------+-------+
+| p                                                                 | singer_id | birth_date | nationality | genre |
++-------------------------------------------------------------------+-----------+------------+-------------+-------+
+| singer_id:1 birth_date:"1970-01-01" nationality:"Japan" genre:POP | 1         | 1970-01-01 | Japan       | POP   |
++-------------------------------------------------------------------+-----------+------------+-------------+-------+
+1 rows in set (1.43 msecs)
+```
 ### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:

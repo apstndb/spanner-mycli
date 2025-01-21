@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -28,6 +29,11 @@ import (
 )
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor)
+	if err != nil {
+		return nil, err
+	}
+
 	params := session.systemVariables.Params
 	stmt, err := newStatement(sql, params, false)
 	if err != nil {
@@ -36,7 +42,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
-	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
+	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
@@ -372,8 +378,14 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
 	}
 
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor)
+	if err != nil {
+		return nil, err
+	}
+
 	iter, _ := session.RunQuery(ctx, stmt)
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
+
+	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
 	if err != nil {
 		return nil, err
 	}
@@ -453,10 +465,12 @@ func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row
 	return results, stats, count, metadata, plan, err
 }
 
-func spannerRowToRow(row *spanner.Row) (Row, error) {
-	columns, err := DecodeRow(row)
-	if err != nil {
-		return Row{}, err
+func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, error) {
+	return func(row *spanner.Row) (Row, error) {
+		columns, err := fc.FormatRow(row)
+		if err != nil {
+			return Row{}, err
+		}
+		return toRow(columns...), nil
 	}
-	return toRow(columns...), nil
 }
