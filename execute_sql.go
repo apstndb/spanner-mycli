@@ -10,6 +10,7 @@ import (
 
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	scxiter "spheric.cloud/xiter"
 
@@ -36,7 +37,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
 
-	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
+	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRowWithFDS(session.systemVariables.ProtoDescriptor))
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
@@ -373,7 +374,7 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 	}
 
 	iter, _ := session.RunQuery(ctx, stmt)
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow)
+	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRowWithFDS(session.systemVariables.ProtoDescriptor))
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +454,15 @@ func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row
 	return results, stats, count, metadata, plan, err
 }
 
+func spannerRowToRowWithFDS(fds *descriptorpb.FileDescriptorSet) func(row *spanner.Row) (Row, error) {
+	return func(row *spanner.Row) (Row, error) {
+		columns, err := DecodeRowExperimental(row, fds)
+		if err != nil {
+			return Row{}, err
+		}
+		return toRow(columns...), nil
+	}
+}
 func spannerRowToRow(row *spanner.Row) (Row, error) {
 	columns, err := DecodeRow(row)
 	if err != nil {

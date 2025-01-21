@@ -464,7 +464,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row,
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow)
+	rows, _, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRowWithFDS(s.systemVariables.ProtoDescriptor))
 	s.tc.sendHeartbeat = true
 	return rows, extractColumnNames(metadata.GetRowType().GetFields()), count, metadata, err
 }
