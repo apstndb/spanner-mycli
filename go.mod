@@ -16,16 +16,17 @@ require (
 	github.com/apstndb/spanvalue v0.1.4
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.3.1
+	github.com/fatih/color v1.18.0
 	github.com/go-json-experiment/json v0.0.0-20250116043007-0640c115aea5
 	github.com/google/go-cmp v0.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
-	github.com/hymkor/go-multiline-ny v0.18.4
+	github.com/hymkor/go-multiline-ny v0.19.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.18
-	github.com/nyaosorg/go-readline-ny v1.7.1
+	github.com/nyaosorg/go-readline-ny v1.7.2
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/lo v1.47.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0

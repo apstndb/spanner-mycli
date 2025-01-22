@@ -38,6 +38,7 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/fatih/color"
 	"github.com/kballard/go-shellquote"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/nyaosorg/go-readline-ny"
@@ -243,48 +244,55 @@ func commentHighlighter() highlighterFunc {
 
 var alnumRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 
-func setLineEditor(ed *readline.Editor, enableHighlight bool) {
-	if enableHighlight {
-		ed.Highlight = []readline.Highlight{
-			// Note: multiline comments break highlight because of restriction of go-multiline-ny
-			{Pattern: commentHighlighter(), Sequence: "\x1B[37;49;2m"},
+func colorToSequence(attr ...color.Attribute) string {
+	var sb strings.Builder
+	color.New(attr...).SetWriter(&sb)
+	return sb.String()
+}
 
-			// string literals(including string-based literals like timestamp literals) and byte literals
-			{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: "\x1B[32;49;22m"},
+var defaultHighlights = []readline.Highlight{
+	// Note: multiline comments break highlight because of restriction of go-multiline-ny
+	{Pattern: commentHighlighter(), Sequence: colorToSequence(color.FgWhite, color.Faint)},
 
-			// unclosed string literals
-			// Note: multiline literals break highlight because of restriction of go-multiline-ny
-			{Pattern: errorHighlighter(func(me *memefish.Error) bool {
-				return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
-			}), Sequence: "\x1B[32;49;22m"},
+	// string literals(including string-based literals like timestamp literals) and byte literals
+	{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: colorToSequence(color.FgGreen, color.Bold)},
 
-			// numbers
-			{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: "\x1B[34;49;22m"},
+	// unclosed string literals
+	// Note: multiline literals break highlight because of restriction of go-multiline-ny
+	{Pattern: errorHighlighter(func(me *memefish.Error) bool {
+		return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
+	}), Sequence: colorToSequence(color.FgHiGreen, color.Bold)},
 
-			// params
-			{Pattern: kindHighlighter(token.TokenParam), Sequence: "\x1B[35;49;22m"},
+	// numbers
+	{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: colorToSequence(color.FgHiBlue, color.Bold)},
 
-			// keywords
-			{Pattern: tokenHighlighter(func(tok token.Token) bool {
-				return alnumRe.MatchString(string(tok.Kind))
-			}), Sequence: "\x1B[33;49;22m"},
+	// params
+	{Pattern: kindHighlighter(token.TokenParam), Sequence: colorToSequence(color.FgMagenta, color.Bold)},
 
-			// idents
-			{Pattern: kindHighlighter(token.TokenIdent), Sequence: "\x1B[1m"},
-		}
-		ed.ResetColor = "\x1B[0m"
-		ed.DefaultColor = "\x1B[39;49;0m"
-	} else {
+	// keywords
+	{Pattern: tokenHighlighter(func(tok token.Token) bool {
+		return alnumRe.MatchString(string(tok.Kind))
+	}), Sequence: colorToSequence(color.FgHiYellow, color.Bold)},
+
+	// idents
+	{Pattern: kindHighlighter(token.TokenIdent), Sequence: colorToSequence(color.FgHiWhite)},
+}
+
+func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
+	if color.NoColor || !enableHighlight {
 		ed.Highlight = nil
 		ed.DefaultColor = ""
 		ed.ResetColor = ""
+		return
 	}
+
+	ed.Highlight = defaultHighlights
+	ed.ResetColor = colorToSequence(color.Reset)
+	ed.DefaultColor = colorToSequence(color.Reset)
 }
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	ed := &multiline.Editor{}
-
-	type ac = readline.AnonymousCommand
-	type _ = ac
 
 	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {
@@ -340,7 +348,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 	c.waitingStatus = ""
 
 	for {
-		setLineEditor(&ed.LineEditor, c.SystemVariables.EnableHighlight)
+		setLineEditor(ed, c.SystemVariables.EnableHighlight)
 		input, err := readInteractiveInput(ctx, ed)
 
 		// reset default
