@@ -43,7 +43,6 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
-    * Note: Currently, highlighting is single line basis. See https://github.com/hymkor/go-multiline-ny/issues/6. 
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).
