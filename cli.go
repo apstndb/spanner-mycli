@@ -533,7 +533,7 @@ func (c *Cli) PrintInteractiveError(err error) {
 
 func printError(w io.Writer, err error) {
 	if code := spanner.ErrCode(err); code != codes.Unknown {
-		before, _, found := strings.Cut(err.Error(), " spanner:")
+		before, _, found := strings.Cut(err.Error(), "spanner:")
 		if !found {
 			fmt.Fprintf(w, "ERROR: %s\n", err)
 			return
@@ -541,9 +541,9 @@ func printError(w io.Writer, err error) {
 
 		desc := spanner.ErrDesc(err)
 		if unquoted, err := strconv.Unquote(`"` + desc + `"`); err != nil {
-			fmt.Fprintf(w, "ERROR: %v spanner: code=%q, desc: %v\n", before, code, desc)
+			fmt.Fprintf(w, "ERROR: %vspanner: code=%q, desc: %v\n", before, code, desc)
 		} else {
-			fmt.Fprintf(w, "ERROR: %v spanner: code=%q, desc: %v\n", before, code, unquoted)
+			fmt.Fprintf(w, "ERROR: %vspanner: code=%q, desc: %v\n", before, code, unquoted)
 		}
 	} else {
 		fmt.Fprintf(w, "ERROR: %s\n", err)
