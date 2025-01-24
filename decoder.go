@@ -20,6 +20,8 @@ import (
 	"cmp"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"log"
 	"strconv"
 
 	"cloud.google.com/go/spanner"
@@ -69,9 +71,10 @@ func dynamicTypesByFDS(fds *descriptorpb.FileDescriptorSet) (*dynamicpb.Types, e
 		return dynamicpb.NewTypes(nil), nil
 	}
 
-	files, err := protodesc.NewFiles(fds)
+	files, err := protodesc.FileOptions{AllowUnresolvable: true}.NewFiles(fds)
 	if err != nil {
-		return nil, err
+		log.Printf("error on protodesc.NewFiles(), fallback without pretty printing: %v", err)
+		files = nil
 	}
 
 	return dynamicpb.NewTypes(files), nil
@@ -95,7 +98,7 @@ func formatProto(types protoEnumResolver) func(formatter spanvalue.Formatter, va
 		if errors.Is(err, protoregistry.NotFound) {
 			return "", spanvalue.ErrFallthrough
 		} else if err != nil {
-			return "", err
+			return "", fmt.Errorf("error on FindMessageByName: %w", err)
 		}
 
 		b, err := base64.StdEncoding.DecodeString(value.Value.GetStringValue())
@@ -105,7 +108,7 @@ func formatProto(types protoEnumResolver) func(formatter spanvalue.Formatter, va
 
 		m := messageType.New()
 		if err = proto.Unmarshal(b, m.Interface()); err != nil {
-			return "", err
+			return "", fmt.Errorf("error on proto.Unmarshal: %w", err)
 		}
 		return prototext.MarshalOptions{Multiline: false}.Format(m.Interface()), nil
 	}

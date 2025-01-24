@@ -17,6 +17,8 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/bufbuild/protocompile"
+	"github.com/bufbuild/protocompile/linker"
+	"github.com/bufbuild/protocompile/wellknownimports"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -574,7 +576,7 @@ var resolver = protocompile.CompositeResolver{&protocompile.SourceResolver{}, ht
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
 	if filepath.Ext(filename) == ".proto" {
 		compiler := protocompile.Compiler{
-			Resolver: protocompile.WithStandardImports(resolver),
+			Resolver: wellknownimports.WithStandardImports(resolver),
 		}
 
 		files, err := compiler.Compile(context.Background(), filename)
@@ -583,7 +585,10 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 		}
 
 		return &descriptorpb.FileDescriptorSet{
-			File: sliceOf(protodesc.ToFileDescriptorProto(files.FindFileByPath(filename))),
+			File: slices.Collect(xiter.Map(slices.Values(files),
+				func(in linker.File) *descriptorpb.FileDescriptorProto {
+					return protodesc.ToFileDescriptorProto(in)
+				})),
 		}, nil
 	}
 

@@ -172,6 +172,7 @@ var (
 	useRe                 = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
 	showLocalProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
 	showRemoteProtoRe     = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	loadRemoteProtoRe     = regexp.MustCompile(`(?is)^LOAD\s+REMOTE\s+PROTO$`)
 	showDatabasesRe       = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 	showCreateTableRe     = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
 	showTablesRe          = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
@@ -367,6 +368,8 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowLocalProtoStatement{}, nil
 	case showRemoteProtoRe.MatchString(trimmed):
 		return &ShowRemoteProtoStatement{}, nil
+	case loadRemoteProtoRe.MatchString(trimmed):
+		return &LoadRemoteProtoStatement{}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
 	case showCreateTableRe.MatchString(trimmed):
@@ -919,6 +922,41 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
 		return nil, err
 	}
+
+	rows := slices.Collect(
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+			func(info *descriptorInfo) Row {
+				return toRow(info.FullName, info.Kind, info.Package)
+			},
+		),
+	)
+
+	return &Result{
+		ColumnNames:   []string{"full_name", "kind", "package"},
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		KeepVariables: true,
+	}, nil
+}
+
+type LoadRemoteProtoStatement struct{}
+
+func (s *LoadRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var fds descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
+		return nil, err
+	}
+
+	session.systemVariables.ProtoDescriptor = &fds
+	session.systemVariables.ProtoDescriptorFile = []string{"<remote>"}
 
 	rows := slices.Collect(
 		scxiter.Map(
