@@ -36,8 +36,8 @@ require (
 	golang.org/x/term v0.28.0
 	google.golang.org/api v0.217.0
 	google.golang.org/genai v0.0.1
-	google.golang.org/grpc v1.69.4
-	google.golang.org/protobuf v1.36.3
+	google.golang.org/grpc v1.70.0
+	google.golang.org/protobuf v1.36.4
 	spheric.cloud/xiter v0.0.0-20250113160306-a1a2c1108100
 )
 
