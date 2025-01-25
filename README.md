@@ -548,6 +548,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_AUTOWRAP              | READ_WRITE | `"TRUE"`                                       |
 | CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
+| CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
 
 ### Batch statements
 
@@ -885,7 +886,7 @@ spanner> SYNC PROTO BUNDLE DELETE (`examples.shipping.OrderHistory`);
 Query OK, 0 rows affected (8.24 sec)
 ```
 
-### `PROTO`/`ENUM` value formatting
+#### `PROTO`/`ENUM` value formatting
 
 Loaded proto descriptors are used for formatting `PROTO` and `ENUM` column values.
 
@@ -894,12 +895,13 @@ spanner> SELECT p, p.*
          FROM (
            SELECT AS VALUE NEW examples.spanner.music.SingerInfo{singer_id: 1, birth_date: "1970-01-01", nationality: "Japan", genre: "POP"}
          ) AS p;
-+----------------------------------+-----------+------------+-------------+-------+
-| p                                | singer_id | birth_date | nationality | genre |
-+----------------------------------+-----------+------------+-------------+-------+
-| CAESCjE5NzAtMDEtMDEaBUphcGFuIAA= | 1         | 1970-01-01 | Japan       | 0     |
-+----------------------------------+-----------+------------+-------------+-------+
-1 rows in set (2.22 msecs)
++----------------------------------+-----------+------------+-------------+-------------+
+| p                                | singer_id | birth_date | nationality | genre       |
+| PROTO<SingerInfo>                | INT64     | STRING     | STRING      | ENUM<Genre> |
++----------------------------------+-----------+------------+-------------+-------------+
+| CAESCjE5NzAtMDEtMDEaBUphcGFuIAA= | 1         | 1970-01-01 | Japan       | 0           |
++----------------------------------+-----------+------------+-------------+-------------+
+1 rows in set (0.33 msecs)
 
 spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto";
 Empty set (0.00 sec)
@@ -919,12 +921,35 @@ spanner> SELECT p, p.*
          FROM (
            SELECT AS VALUE NEW examples.spanner.music.SingerInfo{singer_id: 1, birth_date: "1970-01-01", nationality: "Japan", genre: "POP"}
          ) AS p;
-+-------------------------------------------------------------------+-----------+------------+-------------+-------+
-| p                                                                 | singer_id | birth_date | nationality | genre |
-+-------------------------------------------------------------------+-----------+------------+-------------+-------+
-| singer_id:1 birth_date:"1970-01-01" nationality:"Japan" genre:POP | 1         | 1970-01-01 | Japan       | POP   |
-+-------------------------------------------------------------------+-----------+------------+-------------+-------+
-1 rows in set (1.43 msecs)
++-------------------------------------------------------------------+-----------+------------+-------------+-------------+
+| p                                                                 | singer_id | birth_date | nationality | genre       |
+| PROTO<SingerInfo>                                                 | INT64     | STRING     | STRING      | ENUM<Genre> |
++-------------------------------------------------------------------+-----------+------------+-------------+-------------+
+| singer_id:1 birth_date:"1970-01-01" nationality:"Japan" genre:POP | 1         | 1970-01-01 | Japan       | POP         |
++-------------------------------------------------------------------+-----------+------------+-------------+-------------+
+1 rows in set (0.87 msecs)
+```
+
+You can enable multiline format.
+
+```
+spanner> SET CLI_PROTOTEXT_MULTILINE=TRUE;
+Empty set (0.00 sec)
+
+spanner> SELECT p, p.*
+         FROM (
+           SELECT AS VALUE NEW examples.spanner.music.SingerInfo{singer_id: 1, birth_date: "1970-01-01", nationality: "Japan", genre: "POP"}
+         ) AS p;
++--------------------------+-----------+------------+-------------+-------------+
+| p                        | singer_id | birth_date | nationality | genre       |
+| PROTO<SingerInfo>        | INT64     | STRING     | STRING      | ENUM<Genre> |
++--------------------------+-----------+------------+-------------+-------------+
+| singer_id: 1             | 1         | 1970-01-01 | Japan       | POP         |
+| birth_date: "1970-01-01" |           |            |             |             |
+| nationality: "Japan"     |           |            |             |             |
+| genre: POP               |           |            |             |             |
++--------------------------+-----------+------------+-------------+-------------+
+1 rows in set (3.37 msecs)
 ```
 ### memefish integration
 
