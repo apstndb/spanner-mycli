@@ -29,7 +29,7 @@ import (
 )
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor)
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
 	}
 
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor)
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}

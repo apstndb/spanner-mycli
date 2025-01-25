@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strconv"
+	"strings"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -43,7 +44,7 @@ func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
 	return spanvalue.FormatColumnSpannerCLICompatible(column)
 }
 
-func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet) (*spanvalue.FormatConfig, error) {
+func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
 	types, err := dynamicTypesByFDS(fds)
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet) (*spanvalue.Form
 			FormatStructParen: spanvalue.FormatBracketStruct,
 		},
 		FormatComplexPlugins: []spanvalue.FormatComplexFunc{
-			formatProto(types),
+			formatProto(types, multiline),
 			formatEnum(types),
 		},
 		FormatNullable: spanvalue.FormatNullableSpannerCLICompatible,
@@ -85,7 +86,7 @@ type protoEnumResolver interface {
 var _ protoEnumResolver = (*dynamicpb.Types)(nil)
 var _ protoEnumResolver = (*protoregistry.Types)(nil)
 
-func formatProto(types protoEnumResolver) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
+func formatProto(types protoEnumResolver, multiline bool) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
 	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
 		if value.Type.GetCode() != sppb.TypeCode_PROTO {
 			return "", spanvalue.ErrFallthrough
@@ -107,7 +108,7 @@ func formatProto(types protoEnumResolver) func(formatter spanvalue.Formatter, va
 		if err = proto.Unmarshal(b, m.Interface()); err != nil {
 			return "", err
 		}
-		return prototext.MarshalOptions{Multiline: false}.Format(m.Interface()), nil
+		return strings.TrimSpace(prototext.MarshalOptions{Multiline: multiline}.Format(m.Interface())), nil
 	}
 }
 

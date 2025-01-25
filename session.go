@@ -453,7 +453,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
-	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor)
+	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, nil, 0, nil, err
 	}

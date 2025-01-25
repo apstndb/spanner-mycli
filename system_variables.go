@@ -78,6 +78,7 @@ type systemVariables struct {
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
+	MultilineProtoText        bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -505,6 +506,9 @@ var accessorMap = map[string]accessor{
 	}),
 	"CLI_ENABLE_HIGHLIGHT": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.EnableHighlight
+	}),
+	"CLI_PROTOTEXT_MULTILINE": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.MultilineProtoText
 	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {

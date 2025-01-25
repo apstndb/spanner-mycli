@@ -21,9 +21,18 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner/testdata/protos"
 	"github.com/apstndb/spantype/typector"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/google/go-cmp/cmp"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -82,9 +91,12 @@ type jsonMessage struct {
 
 func TestDecodeColumn(t *testing.T) {
 	tests := []struct {
-		desc  string
-		value interface{}
-		want  string
+		desc        string
+		value       interface{}
+		fds         *descriptorpb.FileDescriptorSet
+		multiline   bool
+		want        string
+		wantMessage proto.Message
 	}{
 		// non-nullable
 		{
@@ -378,12 +390,98 @@ func TestDecodeColumn(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := DecodeColumn(createColumnValue(t, test.value))
+			got, err := lo.Must(formatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
 			if err != nil {
 				t.Error(err)
 			}
-			if got != test.want {
-				t.Errorf("DecodeColumn(%v) = %v, want = %v", test.value, got, test.want)
+			if test.wantMessage != nil {
+				nm := dynamicpb.NewMessageType(test.wantMessage.ProtoReflect().Descriptor()).New()
+				err := prototext.Unmarshal([]byte(got), nm.Interface())
+				if err != nil {
+					t.Error(err)
+				}
+				if diff := cmp.Diff(nm.Interface(), test.wantMessage, protocmp.Transform()); diff != "" {
+					t.Errorf("formatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
+				}
+			} else {
+				if got != test.want {
+					t.Errorf("DecodeColumn(%v) = %v, want = %v", test.value, got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestDecodeColumnRoundTripEnum(t *testing.T) {
+	tests := []struct {
+		desc  string
+		value interface{}
+		fds   *descriptorpb.FileDescriptorSet
+		want  interface {
+			Type() protoreflect.EnumType
+			Number() protoreflect.EnumNumber
+		}
+	}{
+		{
+			desc:  "proto with FileDescriptorProto",
+			value: gcvctor.EnumValue("examples.spanner.music.Genre", int64(protos.Genre_POP)),
+			fds:   &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(protos.File_singer_proto)}},
+			want:  protos.Genre_POP.Enum(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			got, err := lo.Must(formatConfigWithProto(test.fds, false)).FormatToplevelColumn(createColumnValue(t, test.value))
+			if err != nil {
+				t.Error(err)
+			}
+
+			gotEnumValue := test.want.Type().Descriptor().Values().ByName(protoreflect.Name(got))
+			gotNumber := gotEnumValue.Number()
+			if gotNumber != test.want.Number() {
+				t.Errorf("formatConfigWithProto(%v): %v(%v), want: %v(%v)", test.value, gotEnumValue.Name(), gotNumber, test.want, test.want.Number())
+			}
+		})
+	}
+}
+
+func TestDecodeColumnRoundTripProto(t *testing.T) {
+	tests := []struct {
+		desc      string
+		value     interface{}
+		fds       *descriptorpb.FileDescriptorSet
+		multiline bool
+		want      proto.Message
+	}{
+		{
+			desc:  "proto with FileDescriptorProto",
+			value: gcvctor.ProtoValue("examples.spanner.music.SingerInfo", lo.Must(proto.Marshal(&protos.SingerInfo{SingerId: proto.Int64(1), Genre: protos.Genre_POP.Enum()}))),
+			fds:   &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(protos.File_singer_proto)}},
+			want:  &protos.SingerInfo{SingerId: proto.Int64(1), Genre: protos.Genre_POP.Enum()},
+		},
+		{
+			desc:      "proto with FileDescriptorProto",
+			value:     gcvctor.ProtoValue("examples.spanner.music.SingerInfo", lo.Must(proto.Marshal(&protos.SingerInfo{SingerId: proto.Int64(1), Genre: protos.Genre_POP.Enum()}))),
+			fds:       &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(protos.File_singer_proto)}},
+			multiline: true,
+			want:      &protos.SingerInfo{SingerId: proto.Int64(1), Genre: protos.Genre_POP.Enum()},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			got, err := lo.Must(formatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
+			if err != nil {
+				t.Error(err)
+			}
+
+			nm := dynamicpb.NewMessageType(test.want.ProtoReflect().Descriptor()).New()
+			if err := prototext.Unmarshal([]byte(got), nm.Interface()); err != nil {
+				t.Error(err)
+			}
+			if diff := cmp.Diff(nm.Interface(), test.want, protocmp.Transform()); diff != "" {
+				t.Errorf("formatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
 			}
 		})
 	}
