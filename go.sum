@@ -2794,6 +2794,8 @@ github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/hymkor/go-multiline-ny v0.19.0 h1:ta9D0ru8RkcryityylxjNLzE7Zz2VSt/Zq8qYUTiZrY=
 github.com/hymkor/go-multiline-ny v0.19.0/go.mod h1:F+BC4rwSyjXyMD/vadcpuWlR30w1cEFMjbu0DGtdt/I=
+github.com/hymkor/go-multiline-ny v0.19.2 h1:BgMoEVv6wjqgXalY4yvLtRve7ssYeBi/7tItDlzKzTg=
+github.com/hymkor/go-multiline-ny v0.19.2/go.mod h1:aE32iSRn9AA3gVDieItUqTVMEbUKe8s0vENbMQap/JM=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/iancoleman/strcase v0.3.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
@@ -2885,6 +2887,8 @@ github.com/ngicks/go-iterator-helper v0.0.18 h1:a9a3ndHDyYSsI9bLTV4LOUA9cg6NpwPy
 github.com/ngicks/go-iterator-helper v0.0.18/go.mod h1:g++KxWVGEkOnIhXVvpNNOdn7ON57aOpfu80ccBvPVHI=
 github.com/nyaosorg/go-readline-ny v1.7.2 h1:qRAVduAukv0bXGFEImlSUmTlVVGWISiWzIAwwPY26u8=
 github.com/nyaosorg/go-readline-ny v1.7.2/go.mod h1:54AzdC//M5EzTWRdvUHv2ChuYgp58mRrStTlpxiCmT0=
+github.com/nyaosorg/go-readline-ny v1.7.3 h1:lAcNaI/zvufQ2LN4B/pGDCSgCnVrmkY/2Dna0ql6GWM=
+github.com/nyaosorg/go-readline-ny v1.7.3/go.mod h1:54AzdC//M5EzTWRdvUHv2ChuYgp58mRrStTlpxiCmT0=
 github.com/olekukonko/tablewriter v0.0.5 h1:P2Ga83D34wi1o9J6Wh1mRuqd4mF/x/lgBS7N7AbDhec=
 github.com/olekukonko/tablewriter v0.0.5/go.mod h1:hPp6KlRPjbx+hW8ykQs1w3UBbZlj6HuIJcUGPhkA7kY=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
