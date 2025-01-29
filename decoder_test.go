@@ -336,6 +336,14 @@ func TestDecodeColumn(t *testing.T) {
 			want:  "NULL",
 		},
 
+		// UUID
+		// TODO: Use NullUUID when available. See https://github.com/googleapis/google-cloud-go/pull/11345.
+		{
+			desc:  "UUID",
+			value: gcvctor.StringBasedValue(sppb.TypeCode_UUID, "bd667006-c4a7-49de-814f-e2a2ec65abca"),
+			want:  "bd667006-c4a7-49de-814f-e2a2ec65abca",
+		},
+
 		// PROTO
 		// This table tests uses spanner.GenericColumnValue because of non-stability
 		{
