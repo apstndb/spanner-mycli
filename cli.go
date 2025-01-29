@@ -1022,15 +1022,20 @@ func resultLine(result *Result, verbose bool) string {
 	}
 
 	if result.IsMutation {
-		var affectedRowsPrefix string
-		switch result.AffectedRowsType {
-		case rowCountTypeLowerBound:
-			// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
-			// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
-			affectedRowsPrefix = "at least "
-		case rowCountTypeUpperBound:
-			// For batch DML, same rows can be processed by statements.
-			affectedRowsPrefix = "at most "
+		var affectedRowsPart string
+		// If it is a valid mutation, 0 affected row is not printed to avoid confusion.
+		if result.AffectedRows > 0 || result.CommitStats.GetMutationCount() == 0 {
+			var affectedRowsPrefix string
+			switch result.AffectedRowsType {
+			case rowCountTypeLowerBound:
+				// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
+				// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
+				affectedRowsPrefix = "at least "
+			case rowCountTypeUpperBound:
+				// For batch DML, same rows can be processed by statements.
+				affectedRowsPrefix = "at most "
+			}
+			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
 		}
 
 		var detail string
@@ -1042,8 +1047,7 @@ func resultLine(result *Result, verbose bool) string {
 				detail += fmt.Sprintf("mutation_count: %d\n", result.CommitStats.GetMutationCount())
 			}
 		}
-		return fmt.Sprintf("Query OK, %s%d rows affected%s%s\n%s",
-			affectedRowsPrefix, result.AffectedRows, elapsedTimePart, batchInfo, detail)
+		return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
 	}
 
 	var set string
