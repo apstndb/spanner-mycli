@@ -138,7 +138,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
-	for {
+	for !op.Done() {
 		time.Sleep(5 * time.Second)
 		err := op.Poll(ctx)
 		if err != nil {
@@ -163,26 +163,39 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 				bar.SetCurrent(progressPercent)
 			}
 		}
-
-		if op.Done() {
-			lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-			result := &Result{IsMutation: true, Timestamp: lastCommitTS}
-			if session.systemVariables.EchoExecutedDDL {
-				result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
-				result.Rows = slices.Collect(hiter.Unify(
-					func(k string, v *timestamppb.Timestamp) Row { return toRow(k+";", v.AsTime().Format(time.RFC3339Nano)) },
-					hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
-				),
-				)
-			}
-
-			if p != nil {
-				p.Wait()
-			}
-
-			return result, nil
-		}
 	}
+
+	metadata, err := op.Metadata()
+	if err != nil {
+		teardown()
+		return nil, err
+	}
+
+	if p != nil {
+		// force bars are completed even if in emulator
+		for _, bar := range bars {
+			if bar.Completed() {
+				continue
+			}
+			bar.SetCurrent(100)
+		}
+
+		p.Wait()
+	}
+
+	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
+	result := &Result{IsMutation: true, Timestamp: lastCommitTS}
+	if session.systemVariables.EchoExecutedDDL {
+		result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
+		result.Rows = slices.Collect(hiter.Unify(
+			func(k string, v *timestamppb.Timestamp) Row { return toRow(k+";", v.AsTime().Format(time.RFC3339Nano)) },
+			hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
+		),
+		)
+	}
+
+	return result, nil
+
 }
 
 func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
