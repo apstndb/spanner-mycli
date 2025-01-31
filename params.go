@@ -19,11 +19,7 @@ func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[st
 			if err != nil {
 				return nil, err
 			}
-			nullValue := gcvctor.TypedNull(typ)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = nullValue
+			result[k] = gcvctor.TypedNull(typ)
 		case ast.Expr:
 			expr, err := memebridge.MemefishExprToGCV(v)
 			if err != nil {
