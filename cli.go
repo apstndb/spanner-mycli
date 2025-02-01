@@ -591,7 +591,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, int
 			}
 		}()
 	}
-	printResult(c.SystemVariables.Debug, screenWidth, ostream, result, mode, interactive, c.SystemVariables.Verbose)
+	printResult(c.SystemVariables.Debug, screenWidth, ostream, result, mode, interactive, c.SystemVariables.Verbose, c.SystemVariables.MarkdownCodeblock)
 }
 
 func (c *Cli) PrintProgressingMark() func() {
@@ -903,7 +903,11 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	return adjustWidths
 }
 
-func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mode DisplayMode, interactive, verbose bool) {
+func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mode DisplayMode, interactive, verbose, markdownCodeblock bool) {
+	if markdownCodeblock {
+		fmt.Fprintln(out, "```sql")
+	}
+
 	// screenWidth <= means no limit.
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt
@@ -1014,6 +1018,11 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 	if mode == DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
+
+	if markdownCodeblock {
+		fmt.Fprintln(out, "```")
+	}
+
 }
 
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {

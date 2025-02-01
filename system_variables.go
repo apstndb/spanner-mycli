@@ -58,6 +58,7 @@ type systemVariables struct {
 	RequestTag                  string
 	UsePager                    bool
 	DatabaseDialect             databasepb.DatabaseDialect
+	MarkdownCodeblock           bool
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -513,6 +514,9 @@ var accessorMap = map[string]accessor{
 	}),
 	"CLI_PROTOTEXT_MULTILINE": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.MultilineProtoText
+	}),
+	"CLI_MARKDOWN_CODEBLOCK": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.MarkdownCodeblock
 	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
