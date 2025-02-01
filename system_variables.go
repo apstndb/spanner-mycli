@@ -325,6 +325,10 @@ var accessorMap = map[string]accessor{
 			switch strings.ToUpper(unquoteString(value)) {
 			case "TABLE":
 				this.CLIFormat = DisplayModeTable
+			case "TABLE_COMMENT":
+				this.CLIFormat = DisplayModeTableComment
+			case "TABLE_DETAIL_COMMENT":
+				this.CLIFormat = DisplayModeTableDetailComment
 			case "VERTICAL":
 				this.CLIFormat = DisplayModeVertical
 			case "TAB":

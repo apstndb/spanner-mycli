@@ -72,6 +72,8 @@ type DisplayMode int
 
 const (
 	DisplayModeTable DisplayMode = iota
+	DisplayModeTableComment
+	DisplayModeTableDetailComment
 	DisplayModeVertical
 	DisplayModeTab
 )
@@ -907,9 +909,10 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		screenWidth = math.MaxInt
 	}
 
-	switch {
-	case mode == DisplayModeTable:
-		table := tablewriter.NewWriter(out)
+	switch mode {
+	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
+		var tableBuf strings.Builder
+		table := tablewriter.NewWriter(&tableBuf)
 		table.SetAutoFormatHeaders(false)
 		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
@@ -952,7 +955,20 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		if forceTableRender || len(result.Rows) > 0 {
 			table.Render()
 		}
-	case mode == DisplayModeVertical:
+
+		s := strings.TrimSpace(tableBuf.String())
+		if mode == DisplayModeTableComment || mode == DisplayModeTableDetailComment {
+			topLeftRe := regexp.MustCompile(`^\+-`)
+			s = topLeftRe.ReplaceAllLiteralString(s, "/*")
+		}
+
+		if mode == DisplayModeTableComment {
+			bottomRightRe := regexp.MustCompile(`-\+$`)
+			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
+		}
+
+		fmt.Fprintln(out, s)
+	case DisplayModeVertical:
 		maxLen := 0
 		for _, columnName := range result.ColumnNames {
 			if len(columnName) > maxLen {
@@ -966,7 +982,7 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 				fmt.Fprintf(out, format, result.ColumnNames[j], column)
 			}
 		}
-	case mode == DisplayModeTab:
+	case DisplayModeTab:
 		if len(result.ColumnNames) > 0 {
 			fmt.Fprintln(out, strings.Join(result.ColumnNames, "\t"))
 			for _, row := range result.Rows {
@@ -994,6 +1010,9 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		fmt.Fprint(out, resultLine(result, true))
 	} else if interactive {
 		fmt.Fprint(out, resultLine(result, verbose))
+	}
+	if mode == DisplayModeTableDetailComment {
+		fmt.Fprintln(out, "*/")
 	}
 }
 
