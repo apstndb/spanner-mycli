@@ -128,16 +128,17 @@ func TestBuildCommands(t *testing.T) {
 func TestPrintResult(t *testing.T) {
 	t.Run("DisplayModeTable", func(t *testing.T) {
 		tests := []struct {
+			sysVars     *systemVariables
 			desc        string
-			displayMode DisplayMode
 			result      *Result
 			screenWidth int
-			verbose     bool
 			want        string
 		}{
 			{
-				desc:        "DisplayModeTable: simple table",
-				displayMode: DisplayModeTable,
+				desc: "DisplayModeTable: simple table",
+				sysVars: &systemVariables{
+					CLIFormat: DisplayModeTable,
+				},
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
@@ -156,10 +157,12 @@ func TestPrintResult(t *testing.T) {
 `, "\n"),
 			},
 			{
-				desc:        "DisplayModeTable: most preceding column name",
-				displayMode: DisplayModeTable,
+				desc: "DisplayModeTable: most preceding column name",
+				sysVars: &systemVariables{
+					CLIFormat: DisplayModeTable,
+					Verbose:   true,
+				},
 				screenWidth: 20,
-				verbose:     true,
 				result: &Result{
 					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
@@ -184,10 +187,12 @@ Empty set
 `, "\n"),
 			},
 			{
-				desc:        "DisplayModeTable: also respect column type",
-				displayMode: DisplayModeTable,
+				desc: "DisplayModeTable: also respect column type",
+				sysVars: &systemVariables{
+					CLIFormat: DisplayModeTable,
+					Verbose:   true,
+				},
 				screenWidth: 19,
-				verbose:     true,
 				result: &Result{
 					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
@@ -212,10 +217,12 @@ Empty set
 `, "\n"),
 			},
 			{
-				desc:        "DisplayModeTable: also respect column value",
-				displayMode: DisplayModeTable,
+				desc: "DisplayModeTable: also respect column value",
+				sysVars: &systemVariables{
+					CLIFormat: DisplayModeTable,
+					Verbose:   true,
+				},
 				screenWidth: 25,
-				verbose:     true,
 				result: &Result{
 					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("English", "Japanese"),
@@ -243,7 +250,7 @@ Empty set
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
 				out := &bytes.Buffer{}
-				printResult(false, test.screenWidth, out, test.result, test.displayMode, false, test.verbose)
+				printResult(test.sysVars, test.screenWidth, out, test.result, false, "")
 
 				got := out.String()
 				if diff := cmp.Diff(test.want, got); diff != "" {
@@ -263,7 +270,7 @@ Empty set
 			),
 			IsMutation: false,
 		}
-		printResult(false, math.MaxInt, out, result, DisplayModeVertical, false, false)
+		printResult(&systemVariables{CLIFormat: DisplayModeVertical}, math.MaxInt, out, result, false, "")
 
 		expected := strings.TrimPrefix(`
 *************************** 1. row ***************************
@@ -290,7 +297,7 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		printResult(false, math.MaxInt, out, result, DisplayModeTab, false, false)
+		printResult(&systemVariables{CLIFormat: DisplayModeTab}, math.MaxInt, out, result, false, "")
 
 		expected := "foo\tbar\n" +
 			"1\t2\n" +

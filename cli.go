@@ -473,7 +473,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			}
 		}
 
-		c.PrintResult(size, result, c.SystemVariables.CLIFormat, true)
+		c.PrintResult(size, result, true, input.statement)
 
 		fmt.Fprintf(c.OutStream, "\n")
 		cancel()
@@ -519,7 +519,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 			c.updateSystemVariables(result)
 		}
 
-		c.PrintResult(math.MaxInt, result, c.SystemVariables.CLIFormat, false)
+		c.PrintResult(math.MaxInt, result, false, "")
 	}
 
 	return exitCodeSuccess
@@ -558,7 +558,7 @@ func (c *Cli) PrintBatchError(err error) {
 	printError(c.ErrStream, err)
 }
 
-func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, interactive bool) {
+func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string) {
 	ostream := c.OutStream
 	var cmd *exec.Cmd
 	if c.SystemVariables.UsePager {
@@ -591,7 +591,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, mode DisplayMode, int
 			}
 		}()
 	}
-	printResult(c.SystemVariables.Debug, screenWidth, ostream, result, mode, interactive, c.SystemVariables.Verbose, c.SystemVariables.MarkdownCodeblock)
+	printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
 }
 
 func (c *Cli) PrintProgressingMark() func() {
@@ -903,9 +903,15 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	return adjustWidths
 }
 
-func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mode DisplayMode, interactive, verbose, markdownCodeblock bool) {
-	if markdownCodeblock {
+func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
+	mode := sysVars.CLIFormat
+
+	if sysVars.MarkdownCodeblock {
 		fmt.Fprintln(out, "```sql")
+	}
+
+	if sysVars.EchoInput && input != "" {
+		fmt.Fprintln(out, input)
 	}
 
 	// screenWidth <= means no limit.
@@ -931,12 +937,12 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 				slices.Values(result.ColumnTypes),
 			))
 			header := slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-			adjustedWidths = calculateOptimalWidth(debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), result.Rows))
+			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), result.Rows))
 		} else {
-			adjustedWidths = calculateOptimalWidth(debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), result.Rows))
+			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), result.Rows))
 		}
 		var forceTableRender bool
-		if verbose && len(result.ColumnTypes) > 0 {
+		if sysVars.Verbose && len(result.ColumnTypes) > 0 {
 			forceTableRender = true
 
 			headers := slices.Collect(hiter.Unify(
@@ -1010,19 +1016,18 @@ func printResult(debug bool, screenWidth int, out io.Writer, result *Result, mod
 		}
 		fmt.Fprintln(out)
 	}
-	if verbose || result.ForceVerbose {
+	if sysVars.Verbose || result.ForceVerbose {
 		fmt.Fprint(out, resultLine(result, true))
 	} else if interactive {
-		fmt.Fprint(out, resultLine(result, verbose))
+		fmt.Fprint(out, resultLine(result, sysVars.Verbose))
 	}
 	if mode == DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
 
-	if markdownCodeblock {
+	if sysVars.MarkdownCodeblock {
 		fmt.Fprintln(out, "```")
 	}
-
 }
 
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {

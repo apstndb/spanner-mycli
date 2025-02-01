@@ -74,6 +74,7 @@ type systemVariables struct {
 	AutoWrap        bool
 	EchoExecutedDDL bool
 	EnableHighlight bool
+	EchoInput       bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -388,6 +389,7 @@ var accessorMap = map[string]accessor{
 	"CLI_ROLE": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
 	},
+	"CLI_ECHO_INPUT": boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
 	"CLI_ENDPOINT": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
 	},
