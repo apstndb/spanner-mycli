@@ -1396,6 +1396,42 @@ deleted rows scanned: 3 rows
 optimizer version:    7
 optimizer statistics: auto_20241128_05_46_13UTC
 ```
+
+### Markdown output
+
+spanner-mycli can emit input and output in Markdown.
+
+TODO: More description
+
+````
+$ spanner-mycli -v --set 'CLI_FORMAT=TABLE_DETAIL_COMMENT' --set 'CLI_MARKDOWN_CODEBLOCK=TRUE' --set 'CLI_ECHO_INPUT=TRUE'
+
+spanner> GRAPH FinGraph
+      -> MATCH (n:Account)
+      -> RETURN LABELS(n) AS labels, PROPERTY_NAMES(n) AS props, n.id;
+```sql
+GRAPH FinGraph
+MATCH (n:Account)
+RETURN LABELS(n) AS labels, PROPERTY_NAMES(n) AS props, n.id
+/*--------------+------------------------------------------+-------+
+| labels        | props                                    | id    |
+| ARRAY<STRING> | ARRAY<STRING>                            | INT64 |
++---------------+------------------------------------------+-------+
+| [Account]     | [create_time, id, is_blocked, nick_name] | 7     |
+| [Account]     | [create_time, id, is_blocked, nick_name] | 16    |
+| [Account]     | [create_time, id, is_blocked, nick_name] | 20    |
++---------------+------------------------------------------+-------+
+3 rows in set (6.47 msecs)
+timestamp:            2025-02-02T10:22:04.867235+09:00
+cpu time:             4.66 msecs
+rows scanned:         3 rows
+deleted rows scanned: 0 rows
+optimizer version:    7
+optimizer statistics: auto_20250201_06_22_44UTC
+*/
+```
+````
+
 ## How to develop
 
 Run unit tests.

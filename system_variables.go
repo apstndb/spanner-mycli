@@ -58,6 +58,7 @@ type systemVariables struct {
 	RequestTag                  string
 	UsePager                    bool
 	DatabaseDialect             databasepb.DatabaseDialect
+	MarkdownCodeblock           bool
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -73,6 +74,7 @@ type systemVariables struct {
 	AutoWrap        bool
 	EchoExecutedDDL bool
 	EnableHighlight bool
+	EchoInput       bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -325,6 +327,10 @@ var accessorMap = map[string]accessor{
 			switch strings.ToUpper(unquoteString(value)) {
 			case "TABLE":
 				this.CLIFormat = DisplayModeTable
+			case "TABLE_COMMENT":
+				this.CLIFormat = DisplayModeTableComment
+			case "TABLE_DETAIL_COMMENT":
+				this.CLIFormat = DisplayModeTableDetailComment
 			case "VERTICAL":
 				this.CLIFormat = DisplayModeVertical
 			case "TAB":
@@ -383,6 +389,7 @@ var accessorMap = map[string]accessor{
 	"CLI_ROLE": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
 	},
+	"CLI_ECHO_INPUT": boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
 	"CLI_ENDPOINT": {
 		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
 	},
@@ -509,6 +516,9 @@ var accessorMap = map[string]accessor{
 	}),
 	"CLI_PROTOTEXT_MULTILINE": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.MultilineProtoText
+	}),
+	"CLI_MARKDOWN_CODEBLOCK": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.MarkdownCodeblock
 	}),
 	"CLI_QUERY_MODE": {
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
