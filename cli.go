@@ -903,6 +903,11 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	return adjustWidths
 }
 
+var (
+	topLeftRe     = regexp.MustCompile(`^\+`)
+	bottomRightRe = regexp.MustCompile(`\+$`)
+)
+
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
 	mode := sysVars.CLIFormat
 
@@ -911,7 +916,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	}
 
 	if sysVars.EchoInput && input != "" {
-		fmt.Fprintln(out, input)
+		fmt.Fprintln(out, input+";")
 	}
 
 	// screenWidth <= means no limit.
@@ -968,12 +973,11 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 		s := strings.TrimSpace(tableBuf.String())
 		if mode == DisplayModeTableComment || mode == DisplayModeTableDetailComment {
-			topLeftRe := regexp.MustCompile(`^\+-`)
+			s = strings.ReplaceAll(s, "\n", "\n ")
 			s = topLeftRe.ReplaceAllLiteralString(s, "/*")
 		}
 
 		if mode == DisplayModeTableComment {
-			bottomRightRe := regexp.MustCompile(`-\+$`)
 			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
 		}
 
