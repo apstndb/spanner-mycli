@@ -20,20 +20,20 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20250116043007-0640c115aea5
 	github.com/google/go-cmp v0.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
-	github.com/hymkor/go-multiline-ny v0.19.2
+	github.com/hymkor/go-multiline-ny v0.20.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.18
-	github.com/nyaosorg/go-readline-ny v1.7.3
+	github.com/nyaosorg/go-readline-ny v1.7.4
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/lo v1.47.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0
 	github.com/vbauerster/mpb/v8 v8.9.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
-	golang.org/x/term v0.28.0
+	golang.org/x/term v0.29.0
 	google.golang.org/api v0.218.0
 	google.golang.org/genai v0.0.1
 	google.golang.org/grpc v1.70.0
@@ -126,9 +126,9 @@ require (
 	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/genproto v0.0.0-20250122153221-138b5a5a4fd4 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250124145028-65684f501c47 // indirect
