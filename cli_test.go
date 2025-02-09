@@ -171,12 +171,12 @@ func TestPrintResult(t *testing.T) {
 					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
-/*----+-----+
-| foo | bar |
-+-----+-----+
-| 1   | 2   |
-| 3   | 4   |
-+-----+----*/
+/*-----+-----+
+ | foo | bar |
+ +-----+-----+
+ | 1   | 2   |
+ | 3   | 4   |
+ +-----+-----*/
 `, "\n"),
 			},
 			{
@@ -198,13 +198,13 @@ func TestPrintResult(t *testing.T) {
 				},
 				want: "```sql" + `
 SELECT foo, bar
-FROM input
-/*----+-----+
-| foo | bar |
-+-----+-----+
-| 1   | 2   |
-| 3   | 4   |
-+-----+-----+
+FROM input;
+/*-----+-----+
+ | foo | bar |
+ +-----+-----+
+ | 1   | 2   |
+ | 3   | 4   |
+ +-----+-----+
 Empty set
 */
 ` + "```\n",
