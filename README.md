@@ -1412,22 +1412,22 @@ spanner> GRAPH FinGraph
 ```sql
 GRAPH FinGraph
 MATCH (n:Account)
-RETURN LABELS(n) AS labels, PROPERTY_NAMES(n) AS props, n.id
-/*--------------+------------------------------------------+-------+
-| labels        | props                                    | id    |
-| ARRAY<STRING> | ARRAY<STRING>                            | INT64 |
-+---------------+------------------------------------------+-------+
-| [Account]     | [create_time, id, is_blocked, nick_name] | 7     |
-| [Account]     | [create_time, id, is_blocked, nick_name] | 16    |
-| [Account]     | [create_time, id, is_blocked, nick_name] | 20    |
-+---------------+------------------------------------------+-------+
-3 rows in set (6.47 msecs)
-timestamp:            2025-02-02T10:22:04.867235+09:00
-cpu time:             4.66 msecs
+RETURN LABELS(n) AS labels, PROPERTY_NAMES(n) AS props, n.id;
+/*---------------+------------------------------------------+-------+
+ | labels        | props                                    | id    |
+ | ARRAY<STRING> | ARRAY<STRING>                            | INT64 |
+ +---------------+------------------------------------------+-------+
+ | [Account]     | [create_time, id, is_blocked, nick_name] | 7     |
+ | [Account]     | [create_time, id, is_blocked, nick_name] | 16    |
+ | [Account]     | [create_time, id, is_blocked, nick_name] | 20    |
+ +---------------+------------------------------------------+-------+
+3 rows in set (6.26 msecs)
+timestamp:            2025-02-09T23:28:26.088524+09:00
+cpu time:             4.45 msecs
 rows scanned:         3 rows
 deleted rows scanned: 0 rows
 optimizer version:    7
-optimizer statistics: auto_20250201_06_22_44UTC
+optimizer statistics: auto_20250207_09_19_31UTC
 */
 ```
 ````
