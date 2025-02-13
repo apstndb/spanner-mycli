@@ -39,6 +39,10 @@ func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlRespons
 
 	var parts []*genai.Part
 	err = fs.WalkDir(docs, "official_docs", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if d.IsDir() {
 			return nil
 		}
