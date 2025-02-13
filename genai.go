@@ -61,14 +61,12 @@ func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlRespons
 		return "", err
 	}
 
-	var contents []*genai.Content
-	contents = append(contents, genai.Text(s)[0])
+	contents := []*genai.Content{{Parts: sliceOf(genai.NewPartFromText(s))}}
 	if len(parts) > 0 {
 		contents = append(contents, &genai.Content{Parts: parts})
 	}
 
 	response, err := client.Models.GenerateContent(ctx, model,
-		// response, err := client.Models.GenerateContent(ctx, "gemini-2.0-pro-exp-02-05",
 		contents,
 		&genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
@@ -83,7 +81,7 @@ NULL_FILTERED indexes can be dropped using DROP INDEX statement, not DROP NULL_F
 Here is the DDL.
 ` +
 					fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
-Here is the Proto Descriptors.
+Here is the prototext of File Proto Descriptors.
 ` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds)),
 				},
 				},
