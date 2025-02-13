@@ -81,6 +81,7 @@ type spannerOptions struct {
 	Strong                    bool              `long:"strong" description:"Perform a strong query."`
 	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
 	VertexAIProject           string            `long:"vertexai-project" description:"VertexAI project" ini-name:"vertexai_project"`
+	VertexAIModel             *string           `long:"vertexai-model" description:"VertexAI project" ini-name:"vertexai_model" default-mask:"gemini-2.0-flash"`
 	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL"`
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email"`
 	Version                   bool              `long:"version" description:"Show version string."`
@@ -91,9 +92,10 @@ func addEmulatorImageOption(parser *flags.Parser) {
 }
 
 const (
-	defaultPrompt      = "spanner%t> "
-	defaultPrompt2     = "%P%R> "
-	defaultHistoryFile = "/tmp/spanner_mycli_readline.tmp"
+	defaultPrompt        = "spanner%t> "
+	defaultPrompt2       = "%P%R> "
+	defaultHistoryFile   = "/tmp/spanner_mycli_readline.tmp"
+	defaultVertexAIModel = "gemini-2.0-flash"
 )
 
 var logMemefish bool
@@ -207,6 +209,7 @@ func main() {
 		LogGrpc:                   opts.LogGrpc,
 		ImpersonateServiceAccount: opts.ImpersonateServiceAccount,
 		VertexAIProject:           opts.VertexAIProject,
+		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
 		EnableADCPlus:             true,
 	}
 
