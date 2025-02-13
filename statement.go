@@ -1795,7 +1795,7 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	sql, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, s.Text)
+	sql, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
 	if err != nil {
 		return nil, err
 	}

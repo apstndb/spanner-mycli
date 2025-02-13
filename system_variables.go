@@ -71,6 +71,7 @@ type systemVariables struct {
 
 	ReadOnly        bool
 	VertexAIProject string
+	VertexAIModel   string
 	AutoWrap        bool
 	EchoExecutedDDL bool
 	EnableHighlight bool
@@ -408,6 +409,12 @@ var accessorMap = map[string]accessor{
 			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
 		),
 	},
+	"CLI_VERTEXAI_MODEL": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.VertexAIModel
+	}),
+	"CLI_VERTEXAI_PROJECT": stringAccessor(func(sysVars *systemVariables) *string {
+		return &sysVars.VertexAIProject
+	}),
 	"CLI_PROMPT":  stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
 	"CLI_PROMPT2": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
 	"CLI_PROJECT": {
