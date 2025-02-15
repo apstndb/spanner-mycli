@@ -2461,8 +2461,8 @@ github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2
 github.com/apache/thrift v0.17.0/go.mod h1:OLxhMRJxomX+1I/KUw03qoV3mMz16BwaKI+d4fPBx7Q=
 github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c h1:YDz0azy3d3QpwAf65m7y7EHn0G8dGG07ukYrIJK3pPQ=
 github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c/go.mod h1:6rE+3Wp06EaBJAUacxlXON90ZbvaFhNkg/4QCyxAepY=
-github.com/apstndb/genaischema v0.0.0-20250215031708-980ab5e55d05 h1:6V4Skkv2X5u7weYK3w7fMq7BbpkgPDw4+GGDfc50Vo0=
-github.com/apstndb/genaischema v0.0.0-20250215031708-980ab5e55d05/go.mod h1:6bMrDnK0MIsqT/TxxW5mcS3c3hMOb2LYHDWQ2Xs7lKM=
+github.com/apstndb/genaischema v0.0.0-20250215053854-efaa0198d2b4 h1:NTPSU6ZyQL6dHfHC90rj+stA13Dv2lMNXeq9iMZ7+jo=
+github.com/apstndb/genaischema v0.0.0-20250215053854-efaa0198d2b4/go.mod h1:6bMrDnK0MIsqT/TxxW5mcS3c3hMOb2LYHDWQ2Xs7lKM=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc h1:djtqIk9U2GWAbL2WgpBM/RffNyilUar+War1YWjqI4U=
