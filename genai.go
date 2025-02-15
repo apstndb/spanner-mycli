@@ -30,7 +30,7 @@ type output struct {
 }
 
 type statement struct {
-	Text                string `json:"text" description:"Query body, must be terminated by semicolon" required:"true"`
+	Text                string `json:"text" description:"Query text. It should be formatted and indented. It must be terminated by semicolon" required:"true"`
 	FixedText           string `json:"fixedText" description:"text or fixed text if needed" required:"true"`
 	Reason              string `json:"reason" description:"Reason of selection" required:"true"`
 	SyntaxDescription   string `json:"syntaxDescription" description:"A long description of text in syntax, detailed and strictly" required:"true"`

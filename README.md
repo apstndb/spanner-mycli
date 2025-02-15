@@ -1297,25 +1297,19 @@ vertexai_project = example-project
 The generated query is automatically filled in the prompt.
 
 ```
-spanner> GEMINI  "Show all table with table_schema concat by dot if table_schema is not empty string";
-+--------------------------------------------+
-| Answer                                     |
-+--------------------------------------------+
-| SELECT CASE                                |
-|     WHEN table_schema = '' THEN table_name |
-|     ELSE table_schema || '.' || table_name |
-|   END                                      |
-| FROM INFORMATION_SCHEMA.TABLES             |
-| WHERE table_type = 'BASE TABLE';           |
-+--------------------------------------------+
-Empty set (2.73 sec)
+spanner> GEMINI "Generate query to show all table with table_schema concat by dot if table_schema is not empty string.";
++---------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Column              | Value                                                                                                                                                                        |
++---------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| text                | SELECT IF(table_schema != '', CONCAT(table_schema, '.', table_name), table_name) AS table_name_with_schema FROM INFORMATION_SCHEMA.TABLES;                                   |
+| semanticDescription | This query retrieves all tables and their schemas, concatenating the schema name with the table name if a schema exists, effectively listing all tables with their schema na |
+|                     | mes when applicable.                                                                                                                                                         |
+| syntaxDescription   | The query selects from the INFORMATION_SCHEMA.TABLES view. It uses IF() to check if table_schema is not empty, and if so, concatenates table_schema and table_name with a do |
+|                     | t ('.'). Otherwise, it just returns the table_name. The result is aliased as table_name_with_schema.                                                                         |
++---------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+Empty set (5.72 sec)
 
-spanner> SELECT CASE
-             WHEN table_schema = '' THEN table_name
-             ELSE table_schema || '.' || table_name
-           END
-         FROM INFORMATION_SCHEMA.TABLES
-         WHERE table_type = 'BASE TABLE';
+spanner> SELECT IF(table_schema != '', CONCAT(table_schema, '.', table_name), table_name) AS table_name_with_schema FROM INFORMATION_SCHEMA.TABLES;
 ```
 
 ### Show query profiles (EARLY EXPERIMENTAL)
