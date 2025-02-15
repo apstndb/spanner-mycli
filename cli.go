@@ -716,6 +716,21 @@ func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] 
 	)
 }
 
+func asc[T cmp.Ordered](left, right T) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func desc[T cmp.Ordered](left, right T) int {
+	return asc(right, left)
+}
+
 func adjustToSum(limit int, vs []int) ([]int, int) {
 	sumVs := lo.Sum(vs)
 	remains := limit - sumVs
@@ -725,7 +740,7 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 
 	curVs := vs
 	for i := 1; ; i++ {
-		rev := lo.Reverse(slices.Sorted(slices.Values(lo.Uniq(vs))))
+		rev := slices.SortedFunc(slices.Values(lo.Uniq(vs)), desc)
 		v, ok := hiter.Nth(i, slices.Values(rev))
 		if !ok {
 			break

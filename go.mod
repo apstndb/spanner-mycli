@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go v0.118.0
 	cloud.google.com/go/spanner v1.74.0
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
+	github.com/apstndb/genaischema v0.0.0-20250215053854-efaa0198d2b4
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
@@ -28,7 +29,7 @@ require (
 	github.com/ngicks/go-iterator-helper v0.0.18
 	github.com/nyaosorg/go-readline-ny v1.8.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/samber/lo v1.47.0
+	github.com/samber/lo v1.49.1
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0
 	github.com/vbauerster/mpb/v8 v8.9.1
 	go.uber.org/zap v1.27.0
@@ -105,6 +106,8 @@ require (
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/swaggest/jsonschema-go v0.3.73 // indirect
+	github.com/swaggest/refl v1.3.0 // indirect
 	github.com/testcontainers/testcontainers-go v0.35.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect

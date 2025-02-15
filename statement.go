@@ -1799,7 +1799,10 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	return &Result{PreInput: sql, Rows: sliceOf(toRow(sql)), ColumnNames: sliceOf("Answer")}, nil
+	return &Result{PreInput: sql.Statement.Text, Rows: sliceOf(toRow("text", sql.Statement.Text),
+		toRow("semanticDescription", sql.Statement.SemanticDescription),
+		toRow("syntaxDescription", sql.Statement.SyntaxDescription)),
+		ColumnNames: sliceOf("Column", "Value")}, nil
 }
 
 type NopStatement struct{}
