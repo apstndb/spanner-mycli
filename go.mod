@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.118.0
 	cloud.google.com/go/spanner v1.74.0
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
-	github.com/apstndb/genaischema v0.0.0-20250215053854-efaa0198d2b4
+	github.com/apstndb/genaischema v0.0.0-20250216040834-325e667a2ba7
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82

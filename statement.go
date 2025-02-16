@@ -1795,13 +1795,21 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	sql, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
+
+	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
 	if err != nil {
 		return nil, err
 	}
-	return &Result{PreInput: sql.Statement.Text, Rows: sliceOf(toRow("text", sql.Statement.Text),
-		toRow("semanticDescription", sql.Statement.SemanticDescription),
-		toRow("syntaxDescription", sql.Statement.SyntaxDescription)),
+
+	return &Result{PreInput: composed.Statement.Text,
+		Rows: slices.Concat(
+			lo.Ternary(composed.ErrorDescription != "",
+				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
+				nil),
+			sliceOf(
+				toRow("text", composed.Statement.Text),
+				toRow("semanticDescription", composed.Statement.SemanticDescription),
+				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
 		ColumnNames: sliceOf("Column", "Value")}, nil
 }
 

@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/go-json-experiment/json"
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -27,6 +25,7 @@ var docs embed.FS
 type output struct {
 	CandidateStatements []*statement `json:"candidateStatements" description:"Candidate statements" minItems:"1" maxItems:"5" required:"true"`
 	Statement           *statement   `json:"statement" description:"Final result, select from candidateStatements" required:"true"`
+	ErrorDescription    string       `json:"errorDescription" description:"Description of error. Available only if input contains error message"`
 }
 
 type statement struct {
@@ -37,13 +36,33 @@ type statement struct {
 	SemanticDescription string `json:"semanticDescription" description:"Description of text in semantics. Must describe how the request is achieved" required:"true"`
 }
 
-var outputSchema = lo.Must(genaischema.GenerateForType[output]())
+func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([][]byte, error) {
+	var files [][]byte
+	err := fs.WalkDir(fsys, root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !pred(path, d) {
+			return nil
+		}
+		b, err := docs.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		files = append(files, b)
+		return nil
+	})
+	return files, err
+}
 
 func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, model, s string) (*output, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		Project:  project,
-		Location: "us-central1",
-		Backend:  genai.BackendVertexAI,
+		Project:     project,
+		Location:    "us-central1",
+		Backend:     genai.BackendVertexAI,
+		HTTPOptions: genai.HTTPOptions{APIVersion: "v1"},
 	})
 	if err != nil {
 		return nil, err
@@ -55,47 +74,21 @@ func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlRespons
 		return nil, err
 	}
 
-	var parts []*genai.Part
-	err = fs.WalkDir(docs, "official_docs", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(path, "README.md") {
-			return nil
-		}
-
-		b, err := docs.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		parts = append(parts, &genai.Part{InlineData: &genai.Blob{
-			Data:     b,
-			MIMEType: "text/markdown",
-		}})
-		return nil
+	fileContents, err := readFiles(docs, "official_docs", func(path string, d fs.DirEntry) bool {
+		return !d.IsDir() && strings.HasSuffix(path, ".md") && !strings.HasSuffix(path, "README.md")
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	contents := []*genai.Content{{Parts: sliceOf(genai.NewPartFromText(s))}}
-	if len(parts) > 0 {
-		contents = append(contents, &genai.Content{Parts: parts})
+	parts := sliceOf(genai.NewPartFromText(s))
+	for _, content := range fileContents {
+		parts = append(parts, genai.NewPartFromBytes(content, "text/markdown"))
 	}
 
-	response, err := client.Models.GenerateContent(ctx, model,
-		contents,
-		&genai.GenerateContentConfig{
-			ResponseMIMEType: "application/json",
-			ResponseSchema:   outputSchema,
-			SystemInstruction: &genai.Content{
-				Parts: []*genai.Part{{Text: `
+	systemPrompt := `
 Answer in valid Spanner GoogleSQL syntax or valid Spanner Graph GQL syntax.
+Prefer SQL query rather than GQL query unless GQL is explicitly requested.
 GoogleSQL syntax is not PostgreSQL syntax.
 Remember GQL requires output column names.
 Remember GQL is neither of GraphQL nor other graph query languages like Cypher.
@@ -105,23 +98,15 @@ The output must be terminated with terminating semicolon.
 NULL_FILTERED indexes can be dropped using DROP INDEX statement, not DROP NULL_FILTERED INDEX statement.
 Here is the DDL.
 ` +
-					fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
+		fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
 Here is the prototext of File Proto Descriptors.
-` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds)),
-				},
-				},
+` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds))
+
+	return genaischema.GenerateObjectContent[*output](ctx, client, model,
+		[]*genai.Content{{Parts: parts}},
+		&genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Parts: sliceOf(genai.NewPartFromText(systemPrompt)),
 			},
 		})
-	if err != nil {
-		return nil, err
-	}
-
-	// pp.Print(response)
-
-	var result output
-	err = json.Unmarshal([]byte(response.Candidates[0].Content.Parts[0].Text), &result)
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
 }
