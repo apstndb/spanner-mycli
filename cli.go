@@ -550,8 +550,13 @@ func printError(w io.Writer, err error) {
 	}
 
 	desc := spanner.ErrDesc(err)
-	unquoted, err := strconv.Unquote(`"` + desc + `"`)
-	fmt.Fprintf(w, "ERROR: %vspanner: code=%q, desc: %v\n", before, code, lo.Ternary(err != nil, desc, unquoted))
+
+	unescaped := strings.NewReplacer(`\"`, `"`,
+		`\'`, `'`,
+		`\\`, `\`,
+		`\n`, "\n").Replace(desc)
+
+	fmt.Fprintf(w, "ERROR: %vspanner: code=%q, desc: %v\n", before, code, unescaped)
 }
 
 func (c *Cli) PrintBatchError(err error) {
