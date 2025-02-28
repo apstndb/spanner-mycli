@@ -2798,8 +2798,8 @@ github.com/hamba/avro/v2 v2.17.2/go.mod h1:Q9YK+qxAhtVrNqOhwlZTATLgLA8qxG2vtvkhK
 github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/hymkor/go-multiline-ny v0.20.1 h1:/qs6RRdRCVaE92ZjFosjmH+keUNvYCKiPpa5XI6mtDc=
-github.com/hymkor/go-multiline-ny v0.20.1/go.mod h1:D0FO9Dy3ydoWN11xSTrMtnPfEwxvzhMDfiGvx+D2A6o=
+github.com/hymkor/go-multiline-ny v0.20.2 h1:mhTVP8qIs+KqiivIfun+A0qk2cEK95nMNbjDeR0ZWLc=
+github.com/hymkor/go-multiline-ny v0.20.2/go.mod h1:D0FO9Dy3ydoWN11xSTrMtnPfEwxvzhMDfiGvx+D2A6o=
 github.com/iancoleman/orderedmap v0.3.0 h1:5cbR2grmZR/DiVt+VJopEhtVs9YGInGIxAoMJn+Ichc=
 github.com/iancoleman/orderedmap v0.3.0/go.mod h1:XuLcCUkdL5owUCQeF2Ue9uuw1EptkJDkXXS7VoV7XGE=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
