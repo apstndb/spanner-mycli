@@ -21,7 +21,7 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20250116043007-0640c115aea5
 	github.com/google/go-cmp v0.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
-	github.com/hymkor/go-multiline-ny v0.20.1
+	github.com/hymkor/go-multiline-ny v0.20.2
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
