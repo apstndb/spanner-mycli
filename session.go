@@ -27,6 +27,7 @@ import (
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -722,4 +723,21 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	}
 
 	return stmt.Execute(ctx, s)
+}
+
+func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
+	tb := lo.FromPtrOr(s.systemVariables.ReadOnlyStaleness, spanner.StrongRead())
+
+	batchROTx, err := s.client.BatchReadOnlyTransaction(ctx, tb)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{})
+	if err != nil {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+		return nil, nil, fmt.Errorf("query can't be a partition query: %w", err)
+	}
+	return partitions, batchROTx, nil
 }

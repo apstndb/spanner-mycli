@@ -32,16 +32,9 @@ import (
 	"time"
 
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/k0kubun/pp/v3"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-
-	"github.com/k0kubun/pp/v3"
-
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
-	"github.com/mattn/go-runewidth"
-	"github.com/olekukonko/tablewriter"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -50,8 +43,13 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
+	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/olekukonko/tablewriter"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	scxiter "spheric.cloud/xiter"
@@ -111,7 +109,8 @@ type Result struct {
 	LintResults []string
 	PreInput    string
 
-	BatchInfo *BatchInfo
+	BatchInfo      *BatchInfo
+	PartitionCount int
 }
 
 type Row struct {
@@ -1506,23 +1505,6 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 
 type TryPartitionedQueryStatement struct{ SQL string }
 
-func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
-	tb := lo.FromPtrOr(s.systemVariables.ReadOnlyStaleness, spanner.StrongRead())
-
-	batchROTx, err := s.client.BatchReadOnlyTransaction(ctx, tb)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{})
-	if err != nil {
-		batchROTx.Cleanup(ctx)
-		batchROTx.Close()
-		return nil, nil, fmt.Errorf("query can't be a partition query: %w", err)
-	}
-	return partitions, batchROTx, nil
-}
-
 func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
 	if err != nil {
@@ -1556,7 +1538,49 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 type RunPartitionedQueryStatement struct{ SQL string }
 
 func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return nil, errors.New("unsupported statement")
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
+
+	var allRows []Row
+	var rowType *sppb.StructType
+	for _, partition := range partitions {
+		iter := batchROTx.Execute(ctx, partition)
+		rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+		if err != nil {
+			return nil, err
+		}
+		allRows = append(allRows, rows...)
+
+		if len(md.GetRowType().GetFields()) > 0 {
+			rowType = md.GetRowType()
+		}
+	}
+
+	result := &Result{
+		ColumnNames:    extractColumnNames(rowType.GetFields()),
+		Rows:           allRows,
+		ColumnTypes:    rowType.GetFields(),
+		AffectedRows:   len(allRows),
+		PartitionCount: len(partitions),
+	}
+	return result, nil
 }
 
 type RunPartitionStatement struct{ Token string }
