@@ -308,6 +308,7 @@ and `{}` for a mutually exclusive keyword.
 | Rollback Read-Write Transaction<br/>or end Read-Only Transaction | `ROLLBACK [TRANSACTION];`                                                                                    | `CLOSE` is a synonym of `ROLLBACK`.|
 | Start Read-Only Transaction | `BEGIN RO [TRANSACTION] [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.|
 | Test root-partitionable | `TRY PARTITIONED QUERY <sql>` ||
+| Run partitioned query | `RUN PARTITIONED QUERY <sql>` ||
 | Show partition tokens of partition query | `PARTITION <sql>` ||
 | Perform write mutations | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...`||
 | Perform delete mutations | `MUTATE <table_fqn> DELETE ...`||
@@ -1238,6 +1239,27 @@ spanner> TRY PARTITIONED QUERY SELECT * FROM Singers ORDER BY SingerId;
 ERROR: query can't be a partition query: rpc error: code = InvalidArgument desc = Query is not root partitionable since it does not have a DistributedUnion at the root. Please check the conditions for a query to be root-partitionable.
 error details: name = Help desc = Conditions for a query to be root-partitionable. url = https://cloud.google.com/spanner/docs/reads#read_data_in_parallel
 ```
+
+#### Run partitioned query (EXPERIMENTAL)
+
+You can execute partitioned query using `RUN PARTITIONED QUERY` command.
+
+
+```
+spanner> RUN PARTITIONED QUERY SELECT * FROM Singers;
++----------+-----------+----------+------------+------------+
+| SingerId | FirstName | LastName | SingerInfo | BirthDate  |
++----------+-----------+----------+------------+------------+
+| 1        | Marc      | Richards | NULL       | 1970-09-03 |
+| 2        | Catalina  | Smith    | NULL       | 1990-08-17 |
+| 3        | Alice     | Trentor  | NULL       | 1991-10-02 |
+| 4        | Lea       | Martin   | NULL       | 1991-11-09 |
+| 5        | David     | Lomond   | NULL       | 1977-01-29 |
++----------+-----------+----------+------------+------------+
+5 rows in set from 3 partitions (1.40 sec)
+```
+
+Note: Any stats are not available.
 
 #### Show partition tokens.
 
