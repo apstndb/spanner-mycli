@@ -1107,11 +1107,13 @@ func resultLine(result *Result, verbose bool) string {
 		return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
 	}
 
+	partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
+
 	var set string
 	if result.AffectedRows == 0 {
 		set = "Empty set"
 	} else {
-		set = fmt.Sprintf("%d rows in set%s", result.AffectedRows, batchInfo)
+		set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
 	}
 
 	if verbose {
