@@ -1,18 +1,6 @@
 build:
 	go build
 
-cross-compile:
-	gox -os="linux" -arch="386 amd64 arm arm64" -output="dist/{{.Dir}}_{{.OS}}_{{.Arch}}/{{.Dir}}"
-	gox -os="darwin" -arch="386 amd64" -output="dist/{{.Dir}}_{{.OS}}_{{.Arch}}/{{.Dir}}"
-	gox -os="windows" -arch="386 amd64" -output="dist/{{.Dir}}_{{.OS}}_{{.Arch}}/{{.Dir}}"
-
-package:
-	goxc
-
-release: clean cross-compile package
-	ghr -draft -token ${GITHUB_TOKEN} ${VERSION} dist/snapshot/
-	@echo "released as draft"
-
 clean:
 	rm -f spanner-mycli
 	rm -rf dist/
