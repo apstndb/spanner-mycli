@@ -733,7 +733,10 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 		return nil, nil, err
 	}
 
-	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{})
+	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{
+		DataBoostEnabled: s.systemVariables.DataBoostEnabled,
+		Priority:         s.systemVariables.RPCPriority,
+	})
 	if err != nil {
 		batchROTx.Cleanup(ctx)
 		batchROTx.Close()
