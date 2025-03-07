@@ -82,6 +82,7 @@ type systemVariables struct {
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
 	MultilineProtoText        bool
+	DataBoostEnabled          bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -244,6 +245,9 @@ var accessorMap = map[string]accessor{
 		return &sysVars.OptimizerStatisticsPackage
 	}),
 	"RETURN_COMMIT_STATS": {},
+	"DATA_BOOST_ENABLED": boolAccessor(func(sysVars *systemVariables) *bool {
+		return &sysVars.DataBoostEnabled
+	}),
 	"RPC_PRIORITY": {
 		Setter: func(this *systemVariables, name, value string) error {
 			s := unquoteString(value)
@@ -687,7 +691,7 @@ func boolAccessor(f func(variables *systemVariables) *bool) accessor {
 	}
 }
 
-func stringAccessor(f func(variables *systemVariables) *string) accessor {
+func stringAccessor(f func(sysVars *systemVariables) *string) accessor {
 	return accessor{
 		Setter: stringSetter(f),
 		Getter: stringGetter(f),
