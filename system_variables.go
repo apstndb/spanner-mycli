@@ -69,20 +69,21 @@ type systemVariables struct {
 	// link to session
 	CurrentSession *Session
 
-	ReadOnly        bool
-	VertexAIProject string
-	VertexAIModel   string
-	AutoWrap        bool
-	EchoExecutedDDL bool
-	EnableHighlight bool
-	EchoInput       bool
+	ReadOnly                    bool
+	VertexAIProject             string
+	VertexAIModel               string
+	AutoWrap                    bool
+	EchoExecutedDDL             bool
+	EnableHighlight             bool
+	EchoInput                   bool
+	MultilineProtoText          bool
+	DataBoostEnabled            bool
+	DefaultTransactionIsolation sppb.TransactionOptions_IsolationLevel
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
-	MultilineProtoText        bool
-	DataBoostEnabled          bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -191,6 +192,19 @@ var accessorMap = map[string]accessor{
 	"RETRY_ABORTS_INTERNALLY": {},
 	"AUTOCOMMIT_DML_MODE":     {},
 	"STATEMENT_TIMEOUT":       {},
+	"DEFAULT_TRANSACTION_ISOLATION": {
+		Setter: func(this *systemVariables, name, value string) error {
+			v := strings.ToUpper(unquoteString(value))
+			isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
+			if ok {
+				this.DefaultTransactionIsolation = sppb.TransactionOptions_IsolationLevel(isolation)
+			}
+			return nil
+		},
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name, this.DefaultTransactionIsolation.String()), nil
+		},
+	},
 	"READ_ONLY_STALENESS": {
 		func(this *systemVariables, name, value string) error {
 			staleness, err := parseTimestampBound(unquoteString(value))

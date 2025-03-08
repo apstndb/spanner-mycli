@@ -264,6 +264,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		CommitOptions:  spanner.CommitOptions{ReturnCommitStats: true},
 		CommitPriority: priority,
 		TransactionTag: tag,
+		IsolationLevel: s.systemVariables.DefaultTransactionIsolation,
 	}
 
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
