@@ -382,11 +382,12 @@ func (s *Session) ClosePendingTransaction() error {
 
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
-func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := spanner.QueryOptions{
-		Mode:     &mode,
-		Priority: s.currentPriority(),
+		Mode:          &mode,
+		Priority:      s.currentPriority(),
+		LastStatement: implicit,
 	}
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -453,7 +454,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
-func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
+func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, []string, int64, *sppb.ResultSetMetadata, error) {
 	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, nil, 0, nil, err
@@ -466,6 +467,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement) ([]Row,
 	}
 
 	opts := s.queryOptions(nil)
+	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
@@ -638,7 +640,7 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 // It executes a function in the current RW transaction or an implicit RW transaction.
 // If there is an error, the transaction will be rolled back.
 func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
-	f func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+	f func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (affected int64, commitResponse spanner.CommitResponse, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 	_, err = s.DetermineTransaction(ctx)
 	if err != nil {
@@ -654,7 +656,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		implicitRWTx = true
 	}
 
-	affected, plan, metadata, err = f()
+	affected, plan, metadata, err = f(implicitRWTx)
 	if err != nil {
 		// once error has happened, escape from the current transaction
 		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {

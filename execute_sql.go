@@ -40,7 +40,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
+	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
 	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
 	if err != nil {
@@ -237,7 +237,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		return nil, err
 	}
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt)
+	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
 	stats, _, _, plan, err := consumeRowIterDiscard(iter)
 	if err != nil {
@@ -296,8 +296,8 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []string) (*Res
 	}
 
 	var affectedRowSlice []int64
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, stmts, spanner.QueryOptions{})
+	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, stmts, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {
@@ -328,8 +328,8 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 	var rows []Row
 	var columnNames []string
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, columns, num, meta, err := session.RunUpdate(ctx, stmt)
+	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		rs, columns, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
 		rows = rs
 		columnNames = columns
 		return num, nil, meta, err
@@ -355,8 +355,8 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
-	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt)
+	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
 		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
 		return count, plan, metadata, err
 	})
@@ -420,7 +420,7 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func() (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return 0, plan, metadata, err
 	})

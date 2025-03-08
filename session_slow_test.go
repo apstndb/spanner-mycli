@@ -104,7 +104,7 @@ func TestRequestPriority(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
-			if _, _, _, _, err := session.RunUpdate(ctx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1")); err != nil {
+			if _, _, _, _, err := session.RunUpdate(ctx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), true); err != nil {
 				t.Fatalf("failed to run update: %v", err)
 			}
 			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {
@@ -115,7 +115,7 @@ func TestRequestPriority(t *testing.T) {
 			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read only transaction: %v", err)
 			}
-			iter, _ = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			iter, _ = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false)
 			if err := iter.Do(func(r *spanner.Row) error {
 				return nil
 			}); err != nil {
