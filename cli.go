@@ -387,6 +387,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			return c.Exit(true)
 		}
 
+		// DropDatabaseStatement requires confirmation in interactive mode.
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
 			if c.SystemVariables.Database == s.DatabaseId {
 				c.PrintInteractiveError(
