@@ -634,6 +634,63 @@ func TestBuildStatement(t *testing.T) {
 			input: `RUN BATCH`,
 			want:  &RunBatchStatement{},
 		},
+		{
+			desc:  "SHOW QUERY PROFILES statement",
+			input: `SHOW QUERY PROFILES`,
+			want:  &ShowQueryProfilesStatement{},
+		},
+		{
+			desc:  "SHOW QUERY PROFILE statement",
+			input: `SHOW QUERY PROFILE 123456789`,
+			want: &ShowQueryProfileStatement{
+				Fprint: 123456789,
+			},
+		},
+		{
+			desc:  "MUTATE INSERT statement",
+			input: `MUTATE MutationTest INSERT STRUCT(1 AS PK)`,
+			want: &MutateStatement{
+				Table:     "MutationTest",
+				Operation: "INSERT",
+				Body:      "STRUCT(1 AS PK)",
+			},
+		},
+		{
+			desc:  "MUTATE UPDATE statement",
+			input: `MUTATE MutationTest UPDATE STRUCT(1 AS PK)`,
+			want: &MutateStatement{
+				Table:     "MutationTest",
+				Operation: "UPDATE",
+				Body:      "STRUCT(1 AS PK)",
+			},
+		},
+		{
+			desc:  "MUTATE REPLACE statement",
+			input: `MUTATE MutationTest REPLACE STRUCT(1 AS PK)`,
+			want: &MutateStatement{
+				Table:     "MutationTest",
+				Operation: "REPLACE",
+				Body:      "STRUCT(1 AS PK)",
+			},
+		},
+		{
+			desc:  "MUTATE INSERT_OR_UPDATE statement",
+			input: `MUTATE MutationTest INSERT_OR_UPDATE STRUCT(1 AS PK)`,
+			want: &MutateStatement{
+				Table:     "MutationTest",
+				Operation: "INSERT_OR_UPDATE",
+				Body:      "STRUCT(1 AS PK)",
+			},
+		},
+		{
+			desc:  "MUTATE DELETE statement",
+			input: `MUTATE MutationTest DELETE ALL`,
+			want: &MutateStatement{
+				Table:     "MutationTest",
+				Operation: "DELETE",
+				Body:      "ALL",
+			},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
