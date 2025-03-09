@@ -383,39 +383,6 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		history.Add(input.statement + ";")
 
-		if s, ok := stmt.(*UseStatement); ok {
-			newSystemVariables := *c.SystemVariables
-
-			newSystemVariables.Database = s.Database
-			newSystemVariables.Role = s.Role
-
-			newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
-			if err != nil {
-				c.PrintInteractiveError(err)
-				continue
-			}
-
-			exists, err := newSession.DatabaseExists()
-			if err != nil {
-				newSession.Close()
-				c.PrintInteractiveError(err)
-				continue
-			}
-			if !exists {
-				newSession.Close()
-				c.PrintInteractiveError(fmt.Errorf("unknown database %q\n", s.Database))
-				continue
-			}
-
-			c.Session.Close()
-			c.Session = newSession
-
-			c.SystemVariables = &newSystemVariables
-
-			fmt.Fprintf(c.OutStream, "Database changed")
-			continue
-		}
-
 		if _, ok := stmt.(*ExitStatement); ok {
 			return c.Exit(true)
 		}
@@ -433,7 +400,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			}
 		}
 
-		preInput, err := c.executeStatements(ctx, []Statement{stmt}, true, input.statement)
+		preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
 		if err != nil {
 			continue
 		}
@@ -468,9 +435,16 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	_, err = c.executeStatements(ctx, stmts, false, input)
-	if err != nil {
-		return exitCodeError
+	for _, stmt := range stmts {
+		if _, ok := stmt.(*ExitStatement); ok {
+			c.Exit(false)
+			return exitCodeSuccess
+		}
+
+		_, err = c.executeStatement(ctx, stmt, false, input)
+		if err != nil {
+			return exitCodeError
+		}
 	}
 
 	return exitCodeSuccess
@@ -1167,80 +1141,120 @@ func confirm(out io.Writer, msg string) bool {
 	}
 }
 
-func (c *Cli) executeStatements(ctx context.Context, cmds []Statement, interactive bool, input string) (string, error) {
+func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string) (string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	var lastPreInput string
-	for _, cmd := range cmds {
-		var disableSpinner bool
-		switch cmd.(type) {
-		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
-			disableSpinner = true
-		}
+	var disableSpinner bool
+	switch stmt.(type) {
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
+		disableSpinner = true
+	}
 
-		if _, ok := cmd.(*ExitStatement); ok {
-			c.Exit(interactive)
-			return "", nil
-		}
+	if _, ok := stmt.(*ExitStatement); ok {
+		c.Exit(interactive)
+		return "", nil
+	}
 
-		t0 := time.Now()
-		stop := func() {}
-		if interactive && !disableSpinner {
-			stop = c.PrintProgressingMark()
-		}
+	if s, ok := stmt.(*UseStatement); ok {
+		err := func() error {
+			newSystemVariables := *c.SystemVariables
 
-		result, err := c.Session.ExecuteStatement(ctx, cmd)
+			newSystemVariables.Database = s.Database
+			newSystemVariables.Role = s.Role
 
-		stop()
-		elapsed := time.Since(t0).Seconds()
-
-		if err != nil {
-			if spanner.ErrCode(err) == codes.Aborted {
-				// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
-				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
-				// the Cloud Spanner's session with new one to revert the lock priority of the session.
-				innerErr := c.Session.RecreateClient()
-				if innerErr != nil {
-					err = errors.Join(err, innerErr)
-				}
+			newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
+			if err != nil {
+				return err
 			}
+
+			exists, err := newSession.DatabaseExists()
+			if err != nil {
+				newSession.Close()
+				return err
+			}
+
+			if !exists {
+				newSession.Close()
+				return fmt.Errorf("unknown database %q", s.Database)
+			}
+
+			c.Session.Close()
+			c.Session = newSession
+
+			c.SystemVariables = &newSystemVariables
+
+			if interactive {
+				fmt.Fprintf(c.OutStream, "Database changed")
+			}
+
+			return nil
+		}()
+		if err != nil {
 			if interactive {
 				c.PrintInteractiveError(err)
+				return "", nil
 			} else {
-				c.PrintBatchError(err)
-			}
-			return "", err
-		}
-
-		// only SELECT statement has the elapsed time measured by the server
-		if result.Stats.ElapsedTime == "" {
-			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
-		}
-
-		if !result.KeepVariables {
-			c.updateSystemVariables(result)
-		}
-
-		size := math.MaxInt
-		if c.SystemVariables.AutoWrap {
-			sz, _, err := term.GetSize(int(os.Stdout.Fd()))
-			if err != nil {
-				size = math.MaxInt
-			} else {
-				size = sz
+				return "", err
 			}
 		}
-
-		c.PrintResult(size, result, interactive, input)
-
-		if interactive {
-			fmt.Fprintf(c.OutStream, "\n")
-		}
-
-		lastPreInput = result.PreInput
 	}
-	return lastPreInput, nil
+
+	t0 := time.Now()
+	stop := func() {}
+	if interactive && !disableSpinner {
+		stop = c.PrintProgressingMark()
+	}
+
+	result, err := c.Session.ExecuteStatement(ctx, stmt)
+
+	stop()
+	elapsed := time.Since(t0).Seconds()
+
+	if err != nil {
+		if spanner.ErrCode(err) == codes.Aborted {
+			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
+			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
+			// the Cloud Spanner's session with new one to revert the lock priority of the session.
+			innerErr := c.Session.RecreateClient()
+			if innerErr != nil {
+				err = errors.Join(err, innerErr)
+			}
+		}
+		if interactive {
+			c.PrintInteractiveError(err)
+		} else {
+			c.PrintBatchError(err)
+		}
+		return "", err
+	}
+
+	// only SELECT statement has the elapsed time measured by the server
+	if result.Stats.ElapsedTime == "" {
+		result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
+	}
+
+	if !result.KeepVariables {
+		c.updateSystemVariables(result)
+	}
+
+	size := math.MaxInt
+	if c.SystemVariables.AutoWrap {
+		sz, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			size = math.MaxInt
+		} else {
+			size = sz
+		}
+	}
+
+	c.PrintResult(size, result, interactive, input)
+
+	if interactive {
+		fmt.Fprintf(c.OutStream, "\n")
+	}
+
+	return result.PreInput, nil
 }
 
 func handleInterrupt(cancel context.CancelFunc) {
