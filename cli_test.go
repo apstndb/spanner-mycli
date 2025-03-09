@@ -584,7 +584,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-// populate empty value for session and sysVars if not set to avoid nil pointer dereference
+			// populate empty value for session and sysVars if not set to avoid nil pointer dereference
 			if tt.session == nil {
 				tt.session = &Session{}
 			}

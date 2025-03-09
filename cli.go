@@ -625,31 +625,44 @@ func (c *Cli) PrintProgressingMark() func() {
 var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
 var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
 
+// getInterpolatedPrompt returns the prompt string with the values of system variables interpolated.
 func (c *Cli) getInterpolatedPrompt(prompt string) string {
+	sysVars := c.Session.systemVariables
 	return promptRe.ReplaceAllStringFunc(prompt, func(s string) string {
-		return lo.Switch[string, string](s).
-			Case("%%", "%").
-			Case("%n", "\n").
-			Case("%p", c.SystemVariables.Project).
-			Case("%i", c.SystemVariables.Instance).
-			Case("%d", c.SystemVariables.Database).
-			Case("%t", lo.
-				If(c.Session.InReadWriteTransaction(), "(rw txn)").
-				ElseIf(c.Session.InReadOnlyTransaction(), "(ro txn)").
-				ElseIf(c.Session.InPendingTransaction(), "(txn)").
-				Else("")).
-			Case("%R", runewidth.FillLeft(
-				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)).
-			DefaultF(
-				func() string {
-					varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
-					value, err := c.SystemVariables.Get(varName)
-					if err != nil {
-						return fmt.Sprintf("INVALID_VAR{%v}", varName)
-					}
-					return value[varName]
-				},
-			)
+		switch s {
+		case "%%":
+			return "%"
+		case "%n":
+			return "\n"
+		case "%p":
+			return sysVars.Project
+		case "%i":
+			return sysVars.Instance
+		case "%d":
+			return sysVars.Database
+		case "%t":
+			switch {
+			case c.Session.InReadWriteTransaction():
+				return "(rw txn)"
+			case c.Session.InReadOnlyTransaction():
+				return "(ro txn)"
+			case c.Session.InPendingTransaction():
+				return "(txn)"
+			default:
+				return ""
+			}
+		case "%R":
+			return runewidth.FillLeft(
+				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)
+		default:
+			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
+			value, err := sysVars.Get(varName)
+			if err != nil {
+				// Return error pattern to be interpolated.
+				return fmt.Sprintf("INVALID_VAR{%v}", varName)
+			}
+			return value[varName]
+		}
 	})
 }
 
