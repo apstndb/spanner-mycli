@@ -78,9 +78,10 @@ type Session struct {
 type transactionMode string
 
 const (
-	transactionModePending   = "undetermined"
-	transactionModeReadOnly  = "read-only"
-	transactionModeReadWrite = "read-write"
+	transactionModeUndetermined = ""
+	transactionModePending      = "pending"
+	transactionModeReadOnly     = "read-only"
+	transactionModeReadWrite    = "read-write"
 )
 
 type transactionContext struct {
@@ -182,6 +183,13 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	go session.startHeartbeat()
 
 	return session, nil
+}
+
+func (s *Session) TransactionMode() transactionMode {
+	if s.tc == nil {
+		return transactionModeUndetermined
+	}
+	return s.tc.mode
 }
 
 // InReadWriteTransaction returns true if the session is running read-write transaction.
@@ -677,9 +685,11 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	return affected, resp, plan, metadata, nil
 }
 
+var errReadOnly = errors.New("can't execute this statement in READONLY mode")
+
 func (s *Session) failStatementIfReadOnly() error {
 	if s.systemVariables.ReadOnly {
-		return errors.New("can't execute this statement in READONLY mode")
+		return errReadOnly
 	}
 
 	return nil
