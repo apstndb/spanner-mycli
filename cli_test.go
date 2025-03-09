@@ -499,3 +499,111 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		})
 	}
 }
+
+func TestCli_getInterpolatedPrompt(t *testing.T) {
+	tests := []struct {
+		desc   string
+		prompt string
+
+		// sysVars are used to referenced from Session and Cli.
+		sysVars *systemVariables
+
+		// session.systemVariables are not needed to be populated because it is populated by sysVars.
+		session *Session
+
+		waitingStatus string
+		want          string
+	}{
+		{
+			desc:   "basic variable substitution",
+			prompt: "Project: %p, Instance: %i, Database: %d",
+			sysVars: &systemVariables{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "test-database",
+			},
+			want: "Project: test-project, Instance: test-instance, Database: test-database",
+		},
+		{
+			desc:    "transaction status - read-write",
+			prompt:  "%t> ",
+			sysVars: &systemVariables{},
+			session: &Session{
+				tc: &transactionContext{mode: transactionModeReadWrite},
+			},
+			want: "(rw txn)> ",
+		},
+		{
+			desc:   "transaction status - read-only",
+			prompt: "%t> ",
+			session: &Session{
+				tc: &transactionContext{mode: transactionModeReadOnly},
+			},
+			want: "(ro txn)> ",
+		},
+		{
+			desc:   "transaction status - none",
+			prompt: "%t> ",
+			want:   "> ",
+		},
+		{
+			desc:   "waiting status",
+			prompt: "%R> ",
+			want:   "  -> ",
+		},
+		{
+			desc:          "waiting status - with multiline comment",
+			prompt:        "%R> ",
+			waitingStatus: "*/",
+			want:          " /*> ",
+		},
+		{
+			desc:   "custom system variable",
+			prompt: "Format: %{CLI_FORMAT}",
+			sysVars: &systemVariables{
+				CLIFormat: DisplayModeTable,
+			},
+			want: "Format: TABLE",
+		},
+		{
+			desc:   "invalid variable",
+			prompt: "Invalid: %{INVALID_VAR}",
+			want:   "Invalid: INVALID_VAR{INVALID_VAR}",
+		},
+		{
+			desc:   "escaped percent sign",
+			prompt: "Percent: %%",
+			want:   "Percent: %",
+		},
+		{
+			desc:   "newline",
+			prompt: "Newline: %n",
+			want:   "Newline: \n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			// populate empty value for session and sysVars if not set
+			if tt.session == nil {
+				tt.session = &Session{}
+			}
+
+			if tt.sysVars == nil {
+				tt.sysVars = &systemVariables{}
+			}
+
+			tt.session.systemVariables = tt.sysVars
+			cli := &Cli{
+				Session:         tt.session,
+				SystemVariables: tt.sysVars,
+				waitingStatus:   tt.waitingStatus,
+			}
+
+			got := cli.getInterpolatedPrompt(tt.prompt)
+			if got != tt.want {
+				t.Errorf("getInterpolatedPrompt() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
