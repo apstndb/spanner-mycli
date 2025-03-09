@@ -143,6 +143,13 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
+type clientStatementHandler struct {
+	Pattern         string
+	CompiledPattern *regexp.Regexp
+	HandleSubmatch  func(matched []string) (Statement, error)
+	// TODO: HandleNamedGroups func(input string, groups map[string]string) (Statement, error)
+}
+
 var (
 	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
 	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
@@ -174,14 +181,7 @@ var (
 		"PROPERTY GRAPH",
 	})))
 
-	clientStatementMap = []*struct {
-		Pattern         string
-		CompiledPattern *regexp.Regexp
-		StatementParser func(groups map[string]string) (Statement, error)
-		HandleSubmatch  func(matched []string) (Statement, error)
-		// TODO: HandleNamedGroups func(groups map[string]string) (Statement, error)
-	}{
-		// Migrate from BuildCLIStatement
+	clientStatementHandlers = []*clientStatementHandler{
 		{
 			Pattern: `(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`,
 			HandleSubmatch: func(matched []string) (Statement, error) {
@@ -489,7 +489,7 @@ var (
 )
 
 func init() {
-	for _, clientStatement := range clientStatementMap {
+	for _, clientStatement := range clientStatementHandlers {
 		clientStatement.CompiledPattern = regexp.MustCompile(clientStatement.Pattern)
 	}
 }
@@ -630,7 +630,7 @@ loop:
 }
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
-	for _, cs := range clientStatementMap {
+	for _, cs := range clientStatementHandlers {
 		if cs.CompiledPattern.MatchString(trimmed) {
 			matches := cs.CompiledPattern.FindStringSubmatch(trimmed)
 			stmt, err := cs.HandleSubmatch(matches)
