@@ -186,22 +186,18 @@ func TestSession_DatabaseExists(t *testing.T) {
 	}
 	defer teardown()
 
-	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	opts := []option.ClientOption{
+		option.WithEndpoint(emulator.URI),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 	}
 
 	t.Run("database exists", func(t *testing.T) {
-		conn, err := grpc.NewClient(emulator.URI, opts...)
-		if err != nil {
-			t.Fatalf("failed to dial: %v", err)
-		}
-
 		sysVars := &systemVariables{
 			Project:  "test-project",
 			Instance: "test-instance",
 			Database: "test-database",
 		}
-		s, err := NewSession(context.Background(), sysVars, option.WithGRPCConn(conn))
+		s, err := NewSession(context.Background(), sysVars, opts...)
 		if err != nil {
 			t.Fatalf("NewSession failed: %v", err)
 		}
@@ -217,16 +213,12 @@ func TestSession_DatabaseExists(t *testing.T) {
 	})
 
 	t.Run("database does not exist", func(t *testing.T) {
-		conn, err := grpc.NewClient(emulator.URI, opts...)
-		if err != nil {
-			t.Fatalf("failed to dial: %v", err)
-		}
 		sysVars := &systemVariables{
 			Project:  "test-project",
 			Instance: "test-instance",
 			Database: "nonexistent-db",
 		}
-		s, err := NewSession(context.Background(), sysVars, option.WithGRPCConn(conn))
+		s, err := NewSession(context.Background(), sysVars, opts...)
 		if err != nil {
 			t.Fatalf("NewSession failed: %v", err)
 		}
@@ -240,4 +232,71 @@ func TestSession_DatabaseExists(t *testing.T) {
 			t.Errorf("DatabaseExists should return false, got true")
 		}
 	})
+}
+
+func TestSession_startHeartbeat(t *testing.T) {
+	emulator, teardown, err := spanemuboost.NewEmulator(context.Background(),
+		spanemuboost.WithProjectID("test-project"),
+		spanemuboost.WithInstanceID("test-instance"),
+		spanemuboost.WithDatabaseID("test-database"),
+	)
+	if err != nil {
+		t.Fatalf("failed to start emulator: %v", err)
+	}
+	defer teardown()
+
+	session := createTestSession(t, emulator.URI)
+	session.tc = &transactionContext{mode: transactionModeReadWrite, sendHeartbeat: true}
+
+	// startHeartbeat runs in a goroutine, so we need to wait for it to execute.
+	time.Sleep(10 * time.Millisecond)
+
+	// stop the heartbeat
+	session.Close()
+}
+
+func createTestSession(t *testing.T, endpoint string) *Session {
+	ctx := context.Background()
+	sysVars := &systemVariables{
+		Project:  "test-project",
+		Instance: "test-instance",
+		Database: "test-database",
+	}
+
+	opts := []option.ClientOption{
+		option.WithEndpoint(endpoint),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+	}
+
+	session, err := NewSession(ctx, sysVars, opts...)
+	if err != nil {
+		t.Fatalf("Failed to create test session: %v", err)
+	}
+	return session
+}
+
+func TestSession_queryOptions(t *testing.T) {
+	emulator, teardown, err := spanemuboost.NewEmulator(context.Background(),
+		spanemuboost.WithProjectID("test-project"),
+		spanemuboost.WithInstanceID("test-instance"),
+		spanemuboost.WithDatabaseID("test-database"),
+	)
+	if err != nil {
+		t.Fatalf("failed to start emulator: %v", err)
+	}
+	defer teardown()
+
+	session := createTestSession(t, emulator.URI)
+	mode := sppb.ExecuteSqlRequest_PROFILE
+	opts := session.queryOptions(&mode)
+
+	if opts.Priority != session.systemVariables.RPCPriority {
+		t.Errorf("Expected priority to be %v, but got %v", session.systemVariables.RPCPriority, opts.Priority)
+	}
+	if opts.Options.OptimizerVersion != session.systemVariables.OptimizerVersion {
+		t.Errorf("Expected OptimizerVersion to be %v, but got %v", session.systemVariables.OptimizerVersion, opts.Options.OptimizerVersion)
+	}
+	if opts.Options.OptimizerStatisticsPackage != session.systemVariables.OptimizerStatisticsPackage {
+		t.Errorf("Expected OptimizerStatisticsPackage to be %v, but got %v", session.systemVariables.OptimizerStatisticsPackage, opts.Options.OptimizerStatisticsPackage)
+	}
 }
