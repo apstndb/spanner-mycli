@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html/template"
 	"iter"
 	"log"
 	"maps"
@@ -28,29 +29,28 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
-
-	"github.com/cloudspannerecosystem/memefish/token"
-	"github.com/k0kubun/pp/v3"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/k0kubun/pp/v3"
+	"github.com/mattn/go-runewidth"
+	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
-	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/samber/lo"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	scxiter "spheric.cloud/xiter"
 )
@@ -144,34 +144,16 @@ type QueryStats struct {
 }
 
 var (
+	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
+	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
+
+	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan", "Rows_Returned", "Executions", "Total_Latency"}
+	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
+
+	describeColumnNames = []string{"Column_Name", "Column_Type"}
+
 	// DDL needing special treatment
 	createDatabaseRe = regexp.MustCompile(`(?is)^CREATE\s+DATABASE\s.+$`)
-	dropDatabaseRe   = regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`)
-
-	// Start spanner-mycli statements
-
-	// Partitioned DML
-	// In fact, INSERT is not supported in a Partitioned DML, but accept it for showing better error message.
-	// https://cloud.google.com/spanner/docs/dml-partitioned#features_that_arent_supported
-	pdmlRe = regexp.MustCompile(`(?is)^PARTITIONED\s+(.*)$`)
-
-	// Truncate is a syntax sugar of PDML.
-	truncateTableRe = regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`)
-
-	// Transaction
-	beginRe    = regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	beginRwRe  = regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	beginRoRe  = regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`)
-	commitRe   = regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`)
-	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
-
-	// Other
-	syncProtoBundleRe = regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(.*))?$`)
-	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
-	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalProtoRe  = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showRemoteProtoRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
-	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
 
 	schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
 		return strings.ReplaceAll(s, " ", `\s+`)
@@ -192,45 +174,290 @@ var (
 		"PROPERTY GRAPH",
 	})))
 
-	showCreateRe = regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr))
-
-	showTablesRe          = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
-	showColumnsRe         = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
-	showIndexRe           = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
-	explainRe             = regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`)
-	describeRe            = regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`)
-	showVariableRe        = regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`)
-	setTransactionRe      = regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`)
-	setParamTypeRe        = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`)
-	setParamRe            = regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`)
-	setRe                 = regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`)
-	setAddRe              = regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`)
-	showParamsRe          = regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`)
-	showVariablesRe       = regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`)
-	partitionRe           = regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`)
-	runPartitionedQueryRe = regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	runPartitionRe        = regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`)
-	tryPartitionedQueryRe = regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`)
-	mutateRe              = regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`)
-	showQueryProfilesRe   = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`)
-	showQueryProfileRe    = regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`)
-	showDdlsRe            = regexp.MustCompile(`(?is)^SHOW\s+DDLS$`)
-	geminiRe              = regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`)
-
-	startBatchRe = regexp.MustCompile(`(?is)^START\s+BATCH\s+(DDL|DML)$`)
-	runBatchRe   = regexp.MustCompile(`(?is)^RUN\s+BATCH$`)
-	abortBatchRe = regexp.MustCompile(`(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`)
+	clientStatementMap = []*struct {
+		Pattern         string
+		CompiledPattern *regexp.Regexp
+		StatementParser func(groups map[string]string) (Statement, error)
+		HandleSubmatch  func(matched []string) (Statement, error)
+		// TODO: HandleNamedGroups func(groups map[string]string) (Statement, error)
+	}{
+		// Migrate from BuildCLIStatement
+		{
+			Pattern: `(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return parseSyncProtoBundle(matched[1])
+			},
+		},
+		{
+			Pattern: `(?is)^EXIT$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ExitStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
+			},
+		},
+		{
+			// DROP DATABASE is not native Cloud Spanner statement
+			Pattern: `(?is)^DROP\s+DATABASE\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^TRUNCATE\s+TABLE\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+LOCAL\s+PROTO$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowLocalProtoStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+REMOTE\s+PROTO$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowRemoteProtoStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+DATABASES$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowDatabasesStatement{}, nil
+			},
+		},
+		{
+			Pattern: fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr),
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
+				schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
+				return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+TABLES(?:\s+(.+))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^DESCRIBE\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				isDML := stmtkind.IsDMLLexical(matched[1])
+				switch {
+				case isDML:
+					return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
+				default:
+					return &DescribeStatement{Statement: matched[1]}, nil
+				}
+			},
+		},
+		{
+			Pattern: `(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				isAnalyze := matched[1] != ""
+				isDML := stmtkind.IsDMLLexical(matched[2])
+				switch {
+				case isAnalyze && isDML:
+					return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
+				case isAnalyze:
+					return &ExplainAnalyzeStatement{Query: matched[2]}, nil
+				default:
+					return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
+				}
+			},
+		},
+		{
+			Pattern: `(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+				return &ShowColumnsStatement{Schema: schema, Table: table}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+				return &ShowIndexStatement{Schema: schema, Table: table}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^PARTITIONED\s+(.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &PartitionedDmlStatement{Dml: matched[1]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return newBeginRwStatement(matched[0])
+			},
+		},
+		{
+			Pattern: `(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return newBeginRoStatement(matched[0])
+			},
+		},
+		{
+			Pattern: `(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return newBeginStatement(matched[0])
+			},
+		},
+		{
+			Pattern: `(?is)^COMMIT(?:\s+TRANSACTION)?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &CommitStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &RollbackStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SET\s+TRANSACTION\s+(.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				isReadOnly, err := parseTransaction(matched[1])
+				if err != nil {
+					return nil, err
+				}
+				return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+VARIABLE\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowVariableStatement{VarName: matched[1]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+PARAMS$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowParamsStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+VARIABLES$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowVariablesStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^PARTITION\s(\S.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &PartitionStatement{SQL: matched[1]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+QUERY\s+PROFILES$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowQueryProfilesStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
+				if err != nil {
+					return nil, err
+				}
+				return &ShowQueryProfileStatement{Fprint: fprint}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^SHOW\s+DDLS$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &ShowDdlsStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^GEMINI\s+(.*)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &GeminiStatement{Text: unquoteString(matched[1])}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^START\s+BATCH\s+(DDL|DML)$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(matched[1]) == "DDL", batchModeDDL, batchModeDML)}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^RUN\s+BATCH$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &RunBatchStatement{}, nil
+			},
+		},
+		{
+			Pattern: `(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`,
+			HandleSubmatch: func(matched []string) (Statement, error) {
+				return &AbortBatchStatement{}, nil
+			},
+		},
+	}
 )
 
-var (
-	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
-	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
-
-	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan", "Rows_Returned", "Executions", "Total_Latency"}
-	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
-
-	describeColumnNames = []string{"Column_Name", "Column_Type"}
-)
+func init() {
+	for _, clientStatement := range clientStatementMap {
+		clientStatement.CompiledPattern = regexp.MustCompile(clientStatement.Pattern)
+	}
+}
 
 func BuildStatement(input string) (Statement, error) {
 	return BuildStatementWithComments(input, input)
@@ -368,141 +595,18 @@ loop:
 }
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
-	switch {
-	case syncProtoBundleRe.MatchString(trimmed):
-		return parseSyncProtoBundle(syncProtoBundleRe.FindStringSubmatch(trimmed)[1])
-	case exitRe.MatchString(trimmed):
-		return &ExitStatement{}, nil
-	case useRe.MatchString(trimmed):
-		matched := useRe.FindStringSubmatch(trimmed)
-		return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
-	// DROP DATABASE is not native Cloud Spanner statement
-	case dropDatabaseRe.MatchString(trimmed):
-		matched := dropDatabaseRe.FindStringSubmatch(trimmed)
-		return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
-	case truncateTableRe.MatchString(trimmed):
-		matched := truncateTableRe.FindStringSubmatch(trimmed)
-		return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
-	case showLocalProtoRe.MatchString(trimmed):
-		return &ShowLocalProtoStatement{}, nil
-	case showRemoteProtoRe.MatchString(trimmed):
-		return &ShowRemoteProtoStatement{}, nil
-	case showDatabasesRe.MatchString(trimmed):
-		return &ShowDatabasesStatement{}, nil
-	case showCreateRe.MatchString(trimmed):
-		matched := showCreateRe.FindStringSubmatch(trimmed)
-		schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
-		return &ShowCreateStatement{ObjectType: strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " ")), Schema: schema, Name: name}, nil
-	case showTablesRe.MatchString(trimmed):
-		matched := showTablesRe.FindStringSubmatch(trimmed)
-		return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
-	case describeRe.MatchString(trimmed):
-		matched := describeRe.FindStringSubmatch(trimmed)
-		isDML := stmtkind.IsDMLLexical(matched[1])
-		switch {
-		case isDML:
-			return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
-		default:
-			return &DescribeStatement{Statement: matched[1]}, nil
+	for _, cs := range clientStatementMap {
+		if cs.CompiledPattern.MatchString(trimmed) {
+			matches := cs.CompiledPattern.FindStringSubmatch(trimmed)
+			stmt, err := cs.HandleSubmatch(matches)
+			if err != nil {
+				return nil, err
+			}
+			return stmt, nil
 		}
-	case explainRe.MatchString(trimmed):
-		matched := explainRe.FindStringSubmatch(trimmed)
-		isAnalyze := matched[1] != ""
-		isDML := stmtkind.IsDMLLexical(matched[2])
-		switch {
-		case isAnalyze && isDML:
-			return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
-		case isAnalyze:
-			return &ExplainAnalyzeStatement{Query: matched[2]}, nil
-		default:
-			return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
-		}
-	case showColumnsRe.MatchString(trimmed):
-		matched := showColumnsRe.FindStringSubmatch(trimmed)
-		schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
-		return &ShowColumnsStatement{Schema: schema, Table: table}, nil
-	case showIndexRe.MatchString(trimmed):
-		matched := showIndexRe.FindStringSubmatch(trimmed)
-		schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
-		return &ShowIndexStatement{Schema: schema, Table: table}, nil
-	case pdmlRe.MatchString(trimmed):
-		matched := pdmlRe.FindStringSubmatch(trimmed)
-		return &PartitionedDmlStatement{Dml: matched[1]}, nil
-	case beginRwRe.MatchString(trimmed):
-		return newBeginRwStatement(trimmed)
-	case beginRoRe.MatchString(trimmed):
-		return newBeginRoStatement(trimmed)
-	case beginRe.MatchString(trimmed):
-		return newBeginStatement(trimmed)
-	case commitRe.MatchString(trimmed):
-		return &CommitStatement{}, nil
-	case rollbackRe.MatchString(trimmed):
-		return &RollbackStatement{}, nil
-	case setTransactionRe.MatchString(trimmed):
-		matched := setTransactionRe.FindStringSubmatch(trimmed)
-		isReadOnly, err := parseTransaction(matched[1])
-		if err != nil {
-			return nil, err
-		}
-		return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
-	case showVariableRe.MatchString(trimmed):
-		matched := showVariableRe.FindStringSubmatch(trimmed)
-		return &ShowVariableStatement{VarName: matched[1]}, nil
-	case setParamTypeRe.MatchString(trimmed):
-		matched := setParamTypeRe.FindStringSubmatch(trimmed)
-		return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
-	case setParamRe.MatchString(trimmed):
-		matched := setParamRe.FindStringSubmatch(trimmed)
-		return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
-	case setRe.MatchString(trimmed):
-		matched := setRe.FindStringSubmatch(trimmed)
-		return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
-	case setAddRe.MatchString(trimmed):
-		matched := setAddRe.FindStringSubmatch(trimmed)
-		return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
-	case showParamsRe.MatchString(trimmed):
-		return &ShowParamsStatement{}, nil
-	case showVariablesRe.MatchString(trimmed):
-		return &ShowVariablesStatement{}, nil
-	case partitionRe.MatchString(trimmed):
-		matched := partitionRe.FindStringSubmatch(trimmed)
-		return &PartitionStatement{SQL: matched[1]}, nil
-	case runPartitionedQueryRe.MatchString(trimmed):
-		matched := runPartitionedQueryRe.FindStringSubmatch(trimmed)
-		return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
-	case runPartitionRe.MatchString(trimmed):
-		matched := runPartitionRe.FindStringSubmatch(trimmed)
-		return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
-	case tryPartitionedQueryRe.MatchString(trimmed):
-		matched := tryPartitionedQueryRe.FindStringSubmatch(trimmed)
-		return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
-	case mutateRe.MatchString(trimmed):
-		matched := mutateRe.FindStringSubmatch(trimmed)
-		return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
-	case showQueryProfilesRe.MatchString(trimmed):
-		return &ShowQueryProfilesStatement{}, nil
-	case showQueryProfileRe.MatchString(trimmed):
-		matched := showQueryProfileRe.FindStringSubmatch(trimmed)
-		fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		return &ShowQueryProfileStatement{Fprint: fprint}, nil
-	case showDdlsRe.MatchString(trimmed):
-		return &ShowDdlsStatement{}, nil
-	case geminiRe.MatchString(trimmed):
-		matched := geminiRe.FindStringSubmatch(trimmed)
-		return &GeminiStatement{Text: unquoteString(matched[1])}, nil
-	case startBatchRe.MatchString(trimmed):
-		matched := startBatchRe.FindStringSubmatch(trimmed)
-		return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(matched[1]) == "DDL", batchModeDDL, batchModeDML)}, nil
-	case runBatchRe.MatchString(trimmed):
-		return &RunBatchStatement{}, nil
-	case abortBatchRe.MatchString(trimmed):
-		return &AbortBatchStatement{}, nil
-	default:
-		return nil, errStatementNotMatched
 	}
+
+	return nil, errStatementNotMatched
 }
 
 var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$$`)
@@ -1261,7 +1365,7 @@ type BeginRwStatement struct {
 }
 
 func newBeginRwStatement(input string) (*BeginRwStatement, error) {
-	matched := beginRwRe.FindStringSubmatch(input)
+	matched := regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
 	stmt := &BeginRwStatement{}
 
 	if matched[1] != "" {
@@ -1298,7 +1402,7 @@ type BeginStatement struct {
 }
 
 func newBeginStatement(input string) (*BeginStatement, error) {
-	matched := beginRe.FindStringSubmatch(input)
+	matched := regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
 	stmt := &BeginStatement{}
 
 	if matched[1] != "" {
@@ -1448,7 +1552,7 @@ func newBeginRoStatement(input string) (*BeginRoStatement, error) {
 		TimestampBoundType: timestampBoundUnspecified,
 	}
 
-	matched := beginRoRe.FindStringSubmatch(input)
+	matched := regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
 	if matched[1] != "" {
 		if t, err := time.Parse(time.RFC3339Nano, matched[1]); err == nil {
 			stmt = &BeginRoStatement{
