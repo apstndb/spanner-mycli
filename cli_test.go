@@ -37,6 +37,7 @@ func TestBuildCommands(t *testing.T) {
 		ExpectError bool
 	}{
 		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []Statement{&SelectStatement{"SELECT * FROM t1"}}},
+		{Desc: "EXIT", Input: `EXIT;`, Expected: []Statement{&ExitStatement{}}},
 		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []Statement{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}},
 		{Desc: "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,

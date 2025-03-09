@@ -91,9 +91,10 @@ type Cli struct {
 	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
+	interactive     bool
 }
 
-func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
@@ -363,7 +364,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		ed.SetDefault(nil)
 
 		if errors.Is(err, io.EOF) {
-			return c.Exit()
+			return c.Exit(true)
 		}
 		if errors.Is(err, readline.CtrlC) {
 			c.PrintInteractiveError(err)
@@ -381,10 +382,6 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		}
 
 		history.Add(input.statement + ";")
-
-		if _, ok := stmt.(*ExitStatement); ok {
-			return c.Exit()
-		}
 
 		if s, ok := stmt.(*UseStatement); ok {
 			newSystemVariables := *c.SystemVariables
@@ -417,6 +414,10 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 			fmt.Fprintf(c.OutStream, "Database changed")
 			continue
+		}
+
+		if _, ok := stmt.(*ExitStatement); ok {
+			return c.Exit(true)
 		}
 
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
@@ -475,9 +476,11 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	return exitCodeSuccess
 }
 
-func (c *Cli) Exit() int {
+func (c *Cli) Exit(interactive bool) int {
 	c.Session.Close()
-	fmt.Fprintln(c.OutStream, "Bye")
+	if interactive {
+		fmt.Fprintln(c.OutStream, "Bye")
+	}
 	return exitCodeSuccess
 }
 
@@ -1172,8 +1175,13 @@ func (c *Cli) executeStatements(ctx context.Context, cmds []Statement, interacti
 	for _, cmd := range cmds {
 		var disableSpinner bool
 		switch cmd.(type) {
-		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement:
+		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
 			disableSpinner = true
+		}
+
+		if _, ok := cmd.(*ExitStatement); ok {
+			c.Exit(interactive)
+			return "", nil
 		}
 
 		t0 := time.Now()
