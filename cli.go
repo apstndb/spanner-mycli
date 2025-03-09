@@ -1105,6 +1105,8 @@ func resultLine(result *Result, verbose bool) string {
 	return fmt.Sprintf("%s%s\n", set, elapsedTimePart)
 }
 
+// buildCommands parses the input and builds a list of commands for batch execution.
+// It can compose BulkDdlStatement from consecutive DDL statements.
 func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
