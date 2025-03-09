@@ -35,6 +35,8 @@ import (
 	"github.com/k0kubun/pp/v3"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -166,13 +168,34 @@ var (
 	rollbackRe = regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`)
 
 	// Other
-	syncProtoBundleRe     = regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(.*))?$`)
-	exitRe                = regexp.MustCompile(`(?is)^EXIT$`)
-	useRe                 = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
-	showLocalProtoRe      = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
-	showRemoteProtoRe     = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
-	showDatabasesRe       = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
-	showCreateTableRe     = regexp.MustCompile(`(?is)^SHOW\s+CREATE\s+TABLE\s+(.+)$`)
+	syncProtoBundleRe = regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(.*))?$`)
+	exitRe            = regexp.MustCompile(`(?is)^EXIT$`)
+	useRe             = regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`)
+	showLocalProtoRe  = regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`)
+	showRemoteProtoRe = regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`)
+	showDatabasesRe   = regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`)
+
+	schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
+		return strings.ReplaceAll(s, " ", `\s+`)
+	}, slices.Values([]string{
+		"SCHEMA",
+		"DATABASE",
+		"PLACEMENT",
+		"PROTO BUNDLE",
+		"TABLE",
+		"INDEX",
+		"SEARCH INDEX",
+		"VIEW",
+		"CHANGE STREAM",
+		"ROLE",
+		"SEQUENCE",
+		"MODEL",
+		"VECTOR INDEX",
+		"PROPERTY GRAPH",
+	})))
+
+	showCreateRe = regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr))
+
 	showTablesRe          = regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`)
 	showColumnsRe         = regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`)
 	showIndexRe           = regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`)
@@ -368,10 +391,10 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		return &ShowRemoteProtoStatement{}, nil
 	case showDatabasesRe.MatchString(trimmed):
 		return &ShowDatabasesStatement{}, nil
-	case showCreateTableRe.MatchString(trimmed):
-		matched := showCreateTableRe.FindStringSubmatch(trimmed)
-		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
-		return &ShowCreateTableStatement{Schema: schema, Table: table}, nil
+	case showCreateRe.MatchString(trimmed):
+		matched := showCreateRe.FindStringSubmatch(trimmed)
+		schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
+		return &ShowCreateStatement{ObjectType: strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " ")), Schema: schema, Name: name}, nil
 	case showTablesRe.MatchString(trimmed):
 		matched := showTablesRe.FindStringSubmatch(trimmed)
 		return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
@@ -398,11 +421,11 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 		}
 	case showColumnsRe.MatchString(trimmed):
 		matched := showColumnsRe.FindStringSubmatch(trimmed)
-		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
+		schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 		return &ShowColumnsStatement{Schema: schema, Table: table}, nil
 	case showIndexRe.MatchString(trimmed):
 		matched := showIndexRe.FindStringSubmatch(trimmed)
-		schema, table := extractSchemaAndTable(unquoteIdentifier(matched[1]))
+		schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 		return &ShowIndexStatement{Schema: schema, Table: table}, nil
 	case pdmlRe.MatchString(trimmed):
 		matched := pdmlRe.FindStringSubmatch(trimmed)
@@ -962,12 +985,13 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-type ShowCreateTableStatement struct {
-	Schema string
-	Table  string
+type ShowCreateStatement struct {
+	ObjectType string
+	Schema     string
+	Name       string
 }
 
-func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
@@ -977,19 +1001,21 @@ func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session
 
 	var rows []Row
 	for _, stmt := range ddlResponse.Statements {
-		if isCreateTableDDL(stmt, s.Schema, s.Table) {
-			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Table
+		if isCreateDDL(stmt, s.ObjectType, s.Schema, s.Name) {
+			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Name
 			rows = append(rows, toRow(fqn, stmt))
 			break
 		}
 	}
 
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
+		return nil, fmt.Errorf("%s %q doesn't exist in schema %q", s.ObjectType, s.Name, s.Schema)
 	}
 
+	objectTypeTitle := cases.Title(language.English).String(s.ObjectType)
+
 	result := &Result{
-		ColumnNames:  []string{"Table", "Create Table"},
+		ColumnNames:  []string{objectTypeTitle, "Create " + objectTypeTitle},
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}
@@ -997,14 +1023,20 @@ func (s *ShowCreateTableStatement) Execute(ctx context.Context, session *Session
 	return result, nil
 }
 
-func isCreateTableDDL(ddl string, schema string, table string) bool {
+func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
+	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
 	table = regexp.QuoteMeta(table)
-	var re string
-	if schema == "" {
-		re = fmt.Sprintf("(?i)^CREATE TABLE (%s|`%s`)\\s*\\(", table, table)
-	} else {
-		re = fmt.Sprintf("(?i)^CREATE TABLE (%s|`%s`)\\.(%s|`%s`)\\s*\\(", schema, schema, table, table)
+
+	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
+
+	if schema != "" {
+		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
+		re += `\.`
 	}
+
+	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
+	re += `(?:\s+[^.]|$)`
+
 	return regexp.MustCompile(re).MatchString(ddl)
 }
 
@@ -1106,12 +1138,12 @@ ORDER BY
 	})
 }
 
-func extractSchemaAndTable(s string) (string, string) {
-	schema, table, found := strings.Cut(s, ".")
+func extractSchemaAndName(s string) (string, string) {
+	schema, name, found := strings.Cut(s, ".")
 	if !found {
 		return "", unquoteIdentifier(s)
 	}
-	return unquoteIdentifier(schema), unquoteIdentifier(table)
+	return unquoteIdentifier(schema), unquoteIdentifier(name)
 }
 
 type ShowIndexStatement struct {

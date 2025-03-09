@@ -397,17 +397,27 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "SHOW CREATE TABLE statement",
 			input: "SHOW CREATE TABLE t1",
-			want:  &ShowCreateTableStatement{Table: "t1"},
+			want:  &ShowCreateStatement{ObjectType: "TABLE", Name: "t1"},
 		},
 		{
 			desc:  "SHOW CREATE TABLE statement with a named schema",
 			input: "SHOW CREATE TABLE sch1.t1",
-			want:  &ShowCreateTableStatement{Schema: "sch1", Table: "t1"},
+			want:  &ShowCreateStatement{ObjectType: "TABLE", Schema: "sch1", Name: "t1"},
 		},
 		{
 			desc:  "SHOW CREATE TABLE statement with quoted identifier",
 			input: "SHOW CREATE TABLE `TABLE`",
-			want:  &ShowCreateTableStatement{Table: "TABLE"},
+			want:  &ShowCreateStatement{ObjectType: "TABLE", Name: "TABLE"},
+		},
+		{
+			desc:  "SHOW CREATE INDEX statement",
+			input: "SHOW CREATE INDEX t1ByCol ",
+			want:  &ShowCreateStatement{ObjectType: "INDEX", Name: "t1ByCol"},
+		},
+		{
+			desc:  "SHOW CREATE INDEX statement with a named schema",
+			input: "SHOW CREATE INDEX sch1.t1ByCol",
+			want:  &ShowCreateStatement{ObjectType: "INDEX", Schema: "sch1", Name: "t1ByCol"},
 		},
 		{
 			desc:  "SHOW TABLES statement",
@@ -671,54 +681,61 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 	}
 }
 
-func TestIsCreateTableDDL(t *testing.T) {
+func TestIsCreateDDL(t *testing.T) {
 	for _, tt := range []struct {
-		desc   string
-		ddl    string
-		schema string
-		table  string
-		want   bool
+		desc       string
+		ddl        string
+		objectType string
+		schema     string
+		table      string
+		want       bool
 	}{
 		{
-			desc:  "exact match",
-			ddl:   "CREATE TABLE t1 (\n",
-			table: "t1",
-			want:  true,
+			desc:       "exact match",
+			ddl:        "CREATE TABLE t1 (\n",
+			objectType: "TABLE",
+			table:      "t1",
+			want:       true,
 		},
 		{
-			desc:  "given table is prefix of DDL's table",
-			ddl:   "CREATE TABLE t12 (\n",
-			table: "t1",
-			want:  false,
+			desc:       "given table is prefix of DDL's table",
+			ddl:        "CREATE TABLE t12 (\n",
+			objectType: "TABLE",
+			table:      "t1",
+			want:       false,
 		},
 		{
-			desc:  "DDL's table is prefix of given table",
-			ddl:   "CREATE TABLE t1 (\n",
-			table: "t12",
-			want:  false,
+			desc:       "DDL's table is prefix of given table",
+			ddl:        "CREATE TABLE t1 (\n",
+			objectType: "TABLE",
+			table:      "t12",
+			want:       false,
 		},
 		{
-			desc:  "given table has reserved word",
-			ddl:   "CREATE TABLE `create` (\n",
-			table: "create",
-			want:  true,
+			desc:       "given table has reserved word",
+			ddl:        "CREATE TABLE `create` (\n",
+			objectType: "TABLE",
+			table:      "create",
+			want:       true,
 		},
 		{
-			desc:  "given table is regular expression",
-			ddl:   "CREATE TABLE t1 (\n",
-			table: `..`,
-			want:  false,
+			desc:       "given table is regular expression",
+			ddl:        "CREATE TABLE t1 (\n",
+			objectType: "TABLE",
+			table:      `..`,
+			want:       false,
 		},
 		{
-			desc:  "given table is invalid regular expression",
-			ddl:   "CREATE TABLE t1 (\n",
-			table: `[\]`,
-			want:  false,
+			desc:       "given table is invalid regular expression",
+			ddl:        "CREATE TABLE t1 (\n",
+			objectType: "TABLE",
+			table:      `[\]`,
+			want:       false,
 		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
-			if got := isCreateTableDDL(tt.ddl, tt.schema, tt.table); got != tt.want {
-				t.Errorf("isCreateTableDDL(%q, %q) = %v, but want %v", tt.ddl, tt.table, got, tt.want)
+			if got := isCreateDDL(tt.ddl, tt.objectType, tt.schema, tt.table); got != tt.want {
+				t.Errorf("isCreateDDL(%q, %q, %q) = %v, but want %v", tt.ddl, tt.objectType, tt.table, got, tt.want)
 			}
 		})
 	}
@@ -799,8 +816,8 @@ func TestExtractSchemaAndTable(t *testing.T) {
 		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
-			if schema, table := extractSchemaAndTable(tt.input); schema != tt.schema || table != tt.table {
-				t.Errorf("extractSchemaAndTable(%q) = (%v, %v), but want (%v, %v)", tt.input, schema, table, tt.schema, tt.table)
+			if schema, table := extractSchemaAndName(tt.input); schema != tt.schema || table != tt.table {
+				t.Errorf("extractSchemaAndName(%q) = (%v, %v), but want (%v, %v)", tt.input, schema, table, tt.schema, tt.table)
 			}
 		})
 	}
