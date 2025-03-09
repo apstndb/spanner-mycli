@@ -295,19 +295,54 @@ var (
 		{
 			Pattern: `(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
 			HandleSubmatch: func(matched []string) (Statement, error) {
-				return newBeginRwStatement(matched[0])
+				priority, err := parsePriority(matched[1])
+				if err != nil {
+					return nil, err
+				}
+
+				return &BeginRwStatement{Priority: priority}, nil
 			},
 		},
 		{
 			Pattern: `(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
 			HandleSubmatch: func(matched []string) (Statement, error) {
-				return newBeginRoStatement(matched[0])
+				stmt := &BeginRoStatement{
+					TimestampBoundType: timestampBoundUnspecified,
+				}
+
+				if matched[1] != "" {
+					if t, err := time.Parse(time.RFC3339Nano, matched[1]); err == nil {
+						stmt = &BeginRoStatement{
+							TimestampBoundType: readTimestamp,
+							Timestamp:          t,
+						}
+					}
+					if i, err := strconv.Atoi(matched[1]); err == nil {
+						stmt = &BeginRoStatement{
+							TimestampBoundType: exactStaleness,
+							Staleness:          time.Duration(i) * time.Second,
+						}
+					}
+				}
+
+				priority, err := parsePriority(matched[2])
+				if err != nil {
+					return nil, err
+				}
+				stmt.Priority = priority
+
+				return stmt, nil
 			},
 		},
 		{
 			Pattern: `(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
 			HandleSubmatch: func(matched []string) (Statement, error) {
-				return newBeginStatement(matched[0])
+				priority, err := parsePriority(matched[1])
+				if err != nil {
+					return nil, err
+				}
+
+				return &BeginStatement{Priority: priority}, nil
 			},
 		},
 		{
@@ -1364,21 +1399,6 @@ type BeginRwStatement struct {
 	Priority sppb.RequestOptions_Priority
 }
 
-func newBeginRwStatement(input string) (*BeginRwStatement, error) {
-	matched := regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
-	stmt := &BeginRwStatement{}
-
-	if matched[1] != "" {
-		priority, err := parsePriority(matched[1])
-		if err != nil {
-			return nil, err
-		}
-		stmt.Priority = priority
-	}
-
-	return stmt, nil
-}
-
 func (BeginRwStatement) isMutationStatement() {}
 
 func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -1399,21 +1419,6 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 
 type BeginStatement struct {
 	Priority sppb.RequestOptions_Priority
-}
-
-func newBeginStatement(input string) (*BeginStatement, error) {
-	matched := regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
-	stmt := &BeginStatement{}
-
-	if matched[1] != "" {
-		priority, err := parsePriority(matched[1])
-		if err != nil {
-			return nil, err
-		}
-		stmt.Priority = priority
-	}
-
-	return stmt, nil
 }
 
 func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -1545,38 +1550,6 @@ type BeginRoStatement struct {
 	Staleness          time.Duration
 	Timestamp          time.Time
 	Priority           sppb.RequestOptions_Priority
-}
-
-func newBeginRoStatement(input string) (*BeginRoStatement, error) {
-	stmt := &BeginRoStatement{
-		TimestampBoundType: timestampBoundUnspecified,
-	}
-
-	matched := regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`).FindStringSubmatch(input)
-	if matched[1] != "" {
-		if t, err := time.Parse(time.RFC3339Nano, matched[1]); err == nil {
-			stmt = &BeginRoStatement{
-				TimestampBoundType: readTimestamp,
-				Timestamp:          t,
-			}
-		}
-		if i, err := strconv.Atoi(matched[1]); err == nil {
-			stmt = &BeginRoStatement{
-				TimestampBoundType: exactStaleness,
-				Staleness:          time.Duration(i) * time.Second,
-			}
-		}
-	}
-
-	if matched[2] != "" {
-		priority, err := parsePriority(matched[2])
-		if err != nil {
-			return nil, err
-		}
-		stmt.Priority = priority
-	}
-
-	return stmt, nil
 }
 
 func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -1987,6 +1960,10 @@ type UseStatement struct {
 }
 
 func parsePriority(priority string) (sppb.RequestOptions_Priority, error) {
+	if priority == "" {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, nil
+	}
+
 	upper := strings.ToUpper(priority)
 
 	var value string
