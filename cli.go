@@ -364,7 +364,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		ed.SetDefault(nil)
 
 		if errors.Is(err, io.EOF) {
-			return c.Exit(true)
+			fmt.Fprintln(c.OutStream, "Bye")
+			return c.handleExit()
 		}
 		if errors.Is(err, readline.CtrlC) {
 			c.PrintInteractiveError(err)
@@ -384,7 +385,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		history.Add(input.statement + ";")
 
 		if _, ok := stmt.(*ExitStatement); ok {
-			return c.Exit(true)
+			fmt.Fprintln(c.OutStream, "Bye")
+			return c.handleExit()
 		}
 
 		// DropDatabaseStatement requires confirmation in interactive mode.
@@ -439,8 +441,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 
 	for _, stmt := range stmts {
 		if _, ok := stmt.(*ExitStatement); ok {
-			c.Exit(false)
-			return exitCodeSuccess
+			return c.handleExit()
 		}
 
 		_, err = c.executeStatement(ctx, stmt, false, input)
@@ -453,11 +454,9 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	return exitCodeSuccess
 }
 
-func (c *Cli) Exit(interactive bool) int {
+// handleExit processes EXIT statement.
+func (c *Cli) handleExit() int {
 	c.Session.Close()
-	if interactive {
-		fmt.Fprintln(c.OutStream, "Bye")
-	}
 	return exitCodeSuccess
 }
 
