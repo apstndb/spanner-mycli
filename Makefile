@@ -18,7 +18,7 @@ test-verbose:
 fasttest:
 	go test --tags skip_slow_test ./...
 
-fasttest-verbos:
+fasttest-verbose:
 	go test --tags skip_slow_test -v ./...
 
 lint:
