@@ -403,6 +403,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
 		if err != nil {
+			c.PrintInteractiveError(err)
 			continue
 		}
 
@@ -444,6 +445,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 
 		_, err = c.executeStatement(ctx, stmt, false, input)
 		if err != nil {
+			c.PrintBatchError(err)
 			return exitCodeError
 		}
 	}
@@ -1192,12 +1194,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			return nil
 		}()
 		if err != nil {
-			if interactive {
-				c.PrintInteractiveError(err)
-				return "", nil
-			} else {
-				return "", err
-			}
+			return "", err
 		}
 	}
 
@@ -1221,11 +1218,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			if innerErr != nil {
 				err = errors.Join(err, innerErr)
 			}
-		}
-		if interactive {
-			c.PrintInteractiveError(err)
-		} else {
-			c.PrintBatchError(err)
 		}
 		return "", err
 	}
