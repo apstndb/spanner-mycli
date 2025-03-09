@@ -836,7 +836,7 @@ func TestShowCreateTable(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("Table", "Create Table"),
+		ColumnNames: sliceOf("Name", "DDL"),
 		Rows: sliceOf(
 			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
 		),
