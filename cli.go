@@ -93,10 +93,6 @@ type Cli struct {
 	waitingStatus   string
 }
 
-type command struct {
-	Stmt Statement
-}
-
 func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
@@ -293,6 +289,18 @@ func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
 	ed.DefaultColor = colorToSequence(color.Reset)
 }
 
+func (c *Cli) setupHistory(ed *multiline.Editor) (History, error) {
+	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
+	if err != nil {
+		return nil, err
+	}
+
+	ed.SetHistory(history)
+	ed.SetHistoryCycling(true)
+
+	return history, nil
+}
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	ed := &multiline.Editor{}
 
@@ -301,12 +309,10 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		return c.ExitOnError(err)
 	}
 
-	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
+	history, err := c.setupHistory(ed)
 	if err != nil {
 		return c.ExitOnError(err)
 	}
-	ed.SetHistory(history)
-	ed.SetHistoryCycling(true)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -373,9 +379,9 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.PrintInteractiveError(err)
 			continue
 		}
+
 		history.Add(input.statement + ";")
 
-		var disableSpinner bool
 		if _, ok := stmt.(*ExitStatement); ok {
 			return c.Exit()
 		}
@@ -425,60 +431,13 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 				continue
 			}
 		}
-		switch stmt.(type) {
-		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement:
-			disableSpinner = true
-		}
 
-		// Execute the statement.
-		ctx, cancel := context.WithCancel(ctx)
-		go handleInterrupt(cancel)
-		stop := lo.TernaryF(disableSpinner,
-			func() func() { return func() {} },
-			func() func() { return c.PrintProgressingMark() })
-		t0 := time.Now()
-		result, err := c.Session.ExecuteStatement(ctx, stmt)
-		elapsed := time.Since(t0).Seconds()
-		stop()
+		preInput, err := c.executeStatements(ctx, []Statement{stmt}, true, input.statement)
 		if err != nil {
-			if spanner.ErrCode(err) == codes.Aborted {
-				// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
-				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
-				// the Cloud Spanner's session with new one to revert the lock priority of the session.
-				// See: https://cloud.google.com/spanner/docs/reference/rest/v1/TransactionOptions#retrying-aborted-transactions
-				innerErr := c.Session.RecreateClient()
-				if innerErr != nil {
-					err = errors.Join(err, innerErr)
-				}
-			}
-			c.PrintInteractiveError(err)
-			cancel()
 			continue
 		}
 
-		// only SELECT statement has the elapsed time measured by the server
-		if result.Stats.ElapsedTime == "" {
-			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
-		}
-
-		if !result.KeepVariables {
-			c.updateSystemVariables(result)
-		}
-
-		size := math.MaxInt
-		if c.SystemVariables.AutoWrap {
-			size, _, err = term.GetSize(int(os.Stdout.Fd()))
-			if err != nil {
-				size = math.MaxInt
-			}
-		}
-
-		c.PrintResult(size, result, true, input.statement)
-
-		fmt.Fprintf(c.OutStream, "\n")
-		cancel()
-
-		ed.SetDefault(strings.Split(result.PreInput, "\n"))
+		ed.SetDefault(strings.Split(preInput, "\n"))
 	}
 }
 
@@ -499,7 +458,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 }
 
 func (c *Cli) RunBatch(ctx context.Context, input string) int {
-	cmds, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
+	stmts, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return exitCodeError
@@ -508,18 +467,9 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	for _, cmd := range cmds {
-		result, err := c.Session.ExecuteStatement(ctx, cmd.Stmt)
-		if err != nil {
-			c.PrintBatchError(err)
-			return exitCodeError
-		}
-
-		if !result.KeepVariables {
-			c.updateSystemVariables(result)
-		}
-
-		c.PrintResult(math.MaxInt, result, false, "")
+	_, err = c.executeStatements(ctx, stmts, false, input)
+	if err != nil {
+		return exitCodeError
 	}
 
 	return exitCodeSuccess
@@ -1155,8 +1105,8 @@ func resultLine(result *Result, verbose bool) string {
 	return fmt.Sprintf("%s%s\n", set, elapsedTimePart)
 }
 
-func buildCommands(input string, mode parseMode) ([]*command, error) {
-	var cmds []*command
+func buildCommands(input string, mode parseMode) ([]Statement, error) {
+	var cmds []Statement
 	var pendingDdls []string
 
 	stmts, err := separateInput(input)
@@ -1180,16 +1130,16 @@ func buildCommands(input string, mode parseMode) ([]*command, error) {
 
 		// Flush pending DDLs
 		if len(pendingDdls) > 0 {
-			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
+			cmds = append(cmds, &BulkDdlStatement{pendingDdls})
 			pendingDdls = nil
 		}
 
-		cmds = append(cmds, &command{stmt})
+		cmds = append(cmds, stmt)
 	}
 
 	// Flush pending DDLs
 	if len(pendingDdls) > 0 {
-		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
+		cmds = append(cmds, &BulkDdlStatement{pendingDdls})
 	}
 
 	return cmds, nil
@@ -1210,6 +1160,77 @@ func confirm(out io.Writer, msg string) bool {
 			fmt.Fprint(out, "Please answer yes or no: ")
 		}
 	}
+}
+
+func (c *Cli) executeStatements(ctx context.Context, cmds []Statement, interactive bool, input string) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	go handleInterrupt(cancel)
+
+	var lastPreInput string
+	for _, cmd := range cmds {
+		var disableSpinner bool
+		switch cmd.(type) {
+		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement:
+			disableSpinner = true
+		}
+
+		t0 := time.Now()
+		stop := func() {}
+		if interactive && !disableSpinner {
+			stop = c.PrintProgressingMark()
+		}
+
+		result, err := c.Session.ExecuteStatement(ctx, cmd)
+
+		stop()
+		elapsed := time.Since(t0).Seconds()
+
+		if err != nil {
+			if spanner.ErrCode(err) == codes.Aborted {
+				// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
+				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
+				// the Cloud Spanner's session with new one to revert the lock priority of the session.
+				innerErr := c.Session.RecreateClient()
+				if innerErr != nil {
+					err = errors.Join(err, innerErr)
+				}
+			}
+			if interactive {
+				c.PrintInteractiveError(err)
+			} else {
+				c.PrintBatchError(err)
+			}
+			return "", err
+		}
+
+		// only SELECT statement has the elapsed time measured by the server
+		if result.Stats.ElapsedTime == "" {
+			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
+		}
+
+		if !result.KeepVariables {
+			c.updateSystemVariables(result)
+		}
+
+		size := math.MaxInt
+		if c.SystemVariables.AutoWrap {
+			sz, _, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil {
+				size = math.MaxInt
+			} else {
+				size = sz
+			}
+		}
+
+		c.PrintResult(size, result, interactive, input)
+
+		if interactive {
+			fmt.Fprintf(c.OutStream, "\n")
+		}
+
+		lastPreInput = result.PreInput
+	}
+	return lastPreInput, nil
 }
 
 func handleInterrupt(cancel context.CancelFunc) {
