@@ -627,11 +627,7 @@ var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
 
 // getInterpolatedPrompt returns the prompt string with the values of system variables interpolated.
 func (c *Cli) getInterpolatedPrompt(prompt string) string {
-	return interpolatePrompt(c.Session, c.waitingStatus, prompt)
-}
-
-func interpolatePrompt(session *Session, waitingStatus, prompt string) string {
-	sysVars := session.systemVariables
+	sysVars := c.Session.systemVariables
 	return promptRe.ReplaceAllStringFunc(prompt, func(s string) string {
 		switch s {
 		case "%%":
@@ -646,18 +642,18 @@ func interpolatePrompt(session *Session, waitingStatus, prompt string) string {
 			return sysVars.Database
 		case "%t":
 			switch {
-			case session.InReadWriteTransaction():
+			case c.Session.InReadWriteTransaction():
 				return "(rw txn)"
-			case session.InReadOnlyTransaction():
+			case c.Session.InReadOnlyTransaction():
 				return "(ro txn)"
-			case session.InPendingTransaction():
+			case c.Session.InPendingTransaction():
 				return "(txn)"
 			default:
 				return ""
 			}
 		case "%R":
 			return runewidth.FillLeft(
-				lo.CoalesceOrEmpty(strings.ReplaceAll(waitingStatus, "*/", "/*"), "-"), 3)
+				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)
 		default:
 			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
 			value, err := sysVars.Get(varName)
