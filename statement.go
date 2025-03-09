@@ -35,8 +35,6 @@ import (
 	"github.com/k0kubun/pp/v3"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -1012,10 +1010,8 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 		return nil, fmt.Errorf("%s %q doesn't exist in schema %q", s.ObjectType, s.Name, s.Schema)
 	}
 
-	objectTypeTitle := cases.Title(language.English).String(s.ObjectType)
-
 	result := &Result{
-		ColumnNames:  []string{objectTypeTitle, "Create " + objectTypeTitle},
+		ColumnNames:  []string{"Name", "DDL"},
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}
