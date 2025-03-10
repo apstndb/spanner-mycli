@@ -1147,12 +1147,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	disableSpinner := interactive
-	switch stmt.(type) {
-	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
-		disableSpinner = true
-	}
-
 	if s, ok := stmt.(*UseStatement); ok {
 		err := c.handleUse(ctx, s, interactive)
 		if err != nil {
@@ -1164,7 +1158,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 
 	t0 := time.Now()
 	stop := func() {}
-	if !disableSpinner {
+	switch stmt.(type) {
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
+		break
+	default:
 		stop = c.PrintProgressingMark()
 	}
 
