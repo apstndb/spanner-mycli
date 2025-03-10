@@ -1953,6 +1953,7 @@ type ExitStatement struct {
 	NopStatement
 }
 
+// Implementation of UseStatement is in cli.go because it needs to replace Session pointer in Cli.
 type UseStatement struct {
 	Database string
 	Role     string

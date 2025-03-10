@@ -93,11 +93,7 @@ type Cli struct {
 	waitingStatus   string
 }
 
-type command struct {
-	Stmt Statement
-}
-
-func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
@@ -293,6 +289,18 @@ func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
 	ed.DefaultColor = colorToSequence(color.Reset)
 }
 
+func (c *Cli) setupHistory(ed *multiline.Editor) (History, error) {
+	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
+	if err != nil {
+		return nil, err
+	}
+
+	ed.SetHistory(history)
+	ed.SetHistoryCycling(true)
+
+	return history, nil
+}
+
 func (c *Cli) RunInteractive(ctx context.Context) int {
 	ed := &multiline.Editor{}
 
@@ -301,12 +309,10 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		return c.ExitOnError(err)
 	}
 
-	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
+	history, err := c.setupHistory(ed)
 	if err != nil {
 		return c.ExitOnError(err)
 	}
-	ed.SetHistory(history)
-	ed.SetHistoryCycling(true)
 
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
@@ -357,7 +363,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		ed.SetDefault(nil)
 
 		if errors.Is(err, io.EOF) {
-			return c.Exit()
+			fmt.Fprintln(c.OutStream, "Bye")
+			return c.handleExit()
 		}
 		if errors.Is(err, readline.CtrlC) {
 			c.PrintInteractiveError(err)
@@ -373,46 +380,15 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			c.PrintInteractiveError(err)
 			continue
 		}
+
 		history.Add(input.statement + ";")
 
-		var disableSpinner bool
 		if _, ok := stmt.(*ExitStatement); ok {
-			return c.Exit()
+			fmt.Fprintln(c.OutStream, "Bye")
+			return c.handleExit()
 		}
 
-		if s, ok := stmt.(*UseStatement); ok {
-			newSystemVariables := *c.SystemVariables
-
-			newSystemVariables.Database = s.Database
-			newSystemVariables.Role = s.Role
-
-			newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
-			if err != nil {
-				c.PrintInteractiveError(err)
-				continue
-			}
-
-			exists, err := newSession.DatabaseExists()
-			if err != nil {
-				newSession.Close()
-				c.PrintInteractiveError(err)
-				continue
-			}
-			if !exists {
-				newSession.Close()
-				c.PrintInteractiveError(fmt.Errorf("unknown database %q\n", s.Database))
-				continue
-			}
-
-			c.Session.Close()
-			c.Session = newSession
-
-			c.SystemVariables = &newSystemVariables
-
-			fmt.Fprintf(c.OutStream, "Database changed")
-			continue
-		}
-
+		// DropDatabaseStatement requires confirmation in interactive mode.
 		if s, ok := stmt.(*DropDatabaseStatement); ok {
 			if c.SystemVariables.Database == s.DatabaseId {
 				c.PrintInteractiveError(
@@ -425,60 +401,14 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 				continue
 			}
 		}
-		switch stmt.(type) {
-		case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement:
-			disableSpinner = true
-		}
 
-		// Execute the statement.
-		ctx, cancel := context.WithCancel(ctx)
-		go handleInterrupt(cancel)
-		stop := lo.TernaryF(disableSpinner,
-			func() func() { return func() {} },
-			func() func() { return c.PrintProgressingMark() })
-		t0 := time.Now()
-		result, err := c.Session.ExecuteStatement(ctx, stmt)
-		elapsed := time.Since(t0).Seconds()
-		stop()
+		preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
 		if err != nil {
-			if spanner.ErrCode(err) == codes.Aborted {
-				// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
-				// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
-				// the Cloud Spanner's session with new one to revert the lock priority of the session.
-				// See: https://cloud.google.com/spanner/docs/reference/rest/v1/TransactionOptions#retrying-aborted-transactions
-				innerErr := c.Session.RecreateClient()
-				if innerErr != nil {
-					err = errors.Join(err, innerErr)
-				}
-			}
 			c.PrintInteractiveError(err)
-			cancel()
 			continue
 		}
 
-		// only SELECT statement has the elapsed time measured by the server
-		if result.Stats.ElapsedTime == "" {
-			result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
-		}
-
-		if !result.KeepVariables {
-			c.updateSystemVariables(result)
-		}
-
-		size := math.MaxInt
-		if c.SystemVariables.AutoWrap {
-			size, _, err = term.GetSize(int(os.Stdout.Fd()))
-			if err != nil {
-				size = math.MaxInt
-			}
-		}
-
-		c.PrintResult(size, result, true, input.statement)
-
-		fmt.Fprintf(c.OutStream, "\n")
-		cancel()
-
-		ed.SetDefault(strings.Split(result.PreInput, "\n"))
+		ed.SetDefault(strings.Split(preInput, "\n"))
 	}
 }
 
@@ -499,7 +429,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 }
 
 func (c *Cli) RunBatch(ctx context.Context, input string) int {
-	cmds, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
+	stmts, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return exitCodeError
@@ -508,26 +438,24 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	for _, cmd := range cmds {
-		result, err := c.Session.ExecuteStatement(ctx, cmd.Stmt)
+	for _, stmt := range stmts {
+		if _, ok := stmt.(*ExitStatement); ok {
+			return c.handleExit()
+		}
+
+		_, err = c.executeStatement(ctx, stmt, false, input)
 		if err != nil {
 			c.PrintBatchError(err)
 			return exitCodeError
 		}
-
-		if !result.KeepVariables {
-			c.updateSystemVariables(result)
-		}
-
-		c.PrintResult(math.MaxInt, result, false, "")
 	}
 
 	return exitCodeSuccess
 }
 
-func (c *Cli) Exit() int {
+// handleExit processes EXIT statement.
+func (c *Cli) handleExit() int {
 	c.Session.Close()
-	fmt.Fprintln(c.OutStream, "Bye")
 	return exitCodeSuccess
 }
 
@@ -1155,8 +1083,10 @@ func resultLine(result *Result, verbose bool) string {
 	return fmt.Sprintf("%s%s\n", set, elapsedTimePart)
 }
 
-func buildCommands(input string, mode parseMode) ([]*command, error) {
-	var cmds []*command
+// buildCommands parses the input and builds a list of commands for batch execution.
+// It can compose BulkDdlStatement from consecutive DDL statements.
+func buildCommands(input string, mode parseMode) ([]Statement, error) {
+	var cmds []Statement
 	var pendingDdls []string
 
 	stmts, err := separateInput(input)
@@ -1180,16 +1110,16 @@ func buildCommands(input string, mode parseMode) ([]*command, error) {
 
 		// Flush pending DDLs
 		if len(pendingDdls) > 0 {
-			cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
+			cmds = append(cmds, &BulkDdlStatement{pendingDdls})
 			pendingDdls = nil
 		}
 
-		cmds = append(cmds, &command{stmt})
+		cmds = append(cmds, stmt)
 	}
 
 	// Flush pending DDLs
 	if len(pendingDdls) > 0 {
-		cmds = append(cmds, &command{&BulkDdlStatement{pendingDdls}})
+		cmds = append(cmds, &BulkDdlStatement{pendingDdls})
 	}
 
 	return cmds, nil
@@ -1210,6 +1140,104 @@ func confirm(out io.Writer, msg string) bool {
 			fmt.Fprint(out, "Please answer yes or no: ")
 		}
 	}
+}
+
+func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	go handleInterrupt(cancel)
+
+	if s, ok := stmt.(*UseStatement); ok {
+		err := c.handleUse(ctx, s, interactive)
+		if err != nil {
+			return "", err
+		}
+
+		fmt.Fprintf(c.OutStream, "Database changed")
+	}
+
+	t0 := time.Now()
+	stop := func() {}
+	switch stmt.(type) {
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
+		break
+	default:
+		stop = c.PrintProgressingMark()
+	}
+
+	result, err := c.Session.ExecuteStatement(ctx, stmt)
+
+	stop()
+	elapsed := time.Since(t0).Seconds()
+
+	if err != nil {
+		if spanner.ErrCode(err) == codes.Aborted {
+			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
+			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
+			// the Cloud Spanner's session with new one to revert the lock priority of the session.
+			innerErr := c.Session.RecreateClient()
+			if innerErr != nil {
+				err = errors.Join(err, innerErr)
+			}
+		}
+		return "", err
+	}
+
+	// only SELECT statement has the elapsed time measured by the server
+	if result.Stats.ElapsedTime == "" {
+		result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
+	}
+
+	if !result.KeepVariables {
+		c.updateSystemVariables(result)
+	}
+
+	size := math.MaxInt
+	if c.SystemVariables.AutoWrap {
+		sz, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			size = math.MaxInt
+		} else {
+			size = sz
+		}
+	}
+
+	c.PrintResult(size, result, interactive, input)
+
+	if interactive {
+		fmt.Fprintf(c.OutStream, "\n")
+	}
+
+	return result.PreInput, nil
+}
+
+func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) error {
+	newSystemVariables := *c.SystemVariables
+
+	newSystemVariables.Database = s.Database
+	newSystemVariables.Role = s.Role
+
+	newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
+	if err != nil {
+		return err
+	}
+
+	exists, err := newSession.DatabaseExists()
+	if err != nil {
+		newSession.Close()
+		return err
+	}
+
+	if !exists {
+		newSession.Close()
+		return fmt.Errorf("unknown database %q", s.Database)
+	}
+
+	c.Session.Close()
+	c.Session = newSession
+
+	c.SystemVariables = &newSystemVariables
+
+	return nil
 }
 
 func handleInterrupt(cancel context.CancelFunc) {

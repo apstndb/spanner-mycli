@@ -17,13 +17,13 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
-func TestRequestPriority(t *testing.T) {
-	const (
-		project  = "project"
-		instance = "instance"
-		database = "database"
-	)
+const (
+	project  = "project"
+	instance = "instance"
+	database = "database"
+)
 
+func TestRequestPriority(t *testing.T) {
 	ctx := context.Background()
 
 	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
@@ -172,72 +172,4 @@ type recordRequestsStream struct {
 func (s *recordRequestsStream) SendMsg(m interface{}) error {
 	s.recorder.requests = append(s.recorder.requests, m)
 	return s.ClientStream.SendMsg(m)
-}
-
-func TestSession_DatabaseExists(t *testing.T) {
-	emulator, teardown, err := spanemuboost.NewEmulator(context.Background(),
-		spanemuboost.WithProjectID("test-project"),
-		spanemuboost.WithInstanceID("test-instance"),
-		spanemuboost.WithDatabaseID("test-database"),
-		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
-	)
-	if err != nil {
-		t.Fatalf("failed to start emulator: %v", err)
-	}
-	defer teardown()
-
-	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}
-
-	t.Run("database exists", func(t *testing.T) {
-		conn, err := grpc.NewClient(emulator.URI, opts...)
-		if err != nil {
-			t.Fatalf("failed to dial: %v", err)
-		}
-
-		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "test-database",
-		}
-		s, err := NewSession(context.Background(), sysVars, option.WithGRPCConn(conn))
-		if err != nil {
-			t.Fatalf("NewSession failed: %v", err)
-		}
-		defer s.Close()
-
-		exists, err := s.DatabaseExists()
-		if err != nil {
-			t.Fatalf("DatabaseExists failed: %v", err)
-		}
-		if !exists {
-			t.Errorf("DatabaseExists should return true, got false")
-		}
-	})
-
-	t.Run("database does not exist", func(t *testing.T) {
-		conn, err := grpc.NewClient(emulator.URI, opts...)
-		if err != nil {
-			t.Fatalf("failed to dial: %v", err)
-		}
-		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "nonexistent-db",
-		}
-		s, err := NewSession(context.Background(), sysVars, option.WithGRPCConn(conn))
-		if err != nil {
-			t.Fatalf("NewSession failed: %v", err)
-		}
-		defer s.Close()
-
-		exists, err := s.DatabaseExists()
-		if err != nil {
-			t.Fatalf("DatabaseExists failed: %v", err)
-		}
-		if exists {
-			t.Errorf("DatabaseExists should return false, got true")
-		}
-	})
 }

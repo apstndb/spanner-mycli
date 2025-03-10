@@ -33,20 +33,21 @@ func TestBuildCommands(t *testing.T) {
 	tests := []struct {
 		Desc        string
 		Input       string
-		Expected    []*command
+		Expected    []Statement
 		ExpectError bool
 	}{
-		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
-		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
+		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []Statement{&SelectStatement{"SELECT * FROM t1"}}},
+		{Desc: "EXIT", Input: `EXIT;`, Expected: []Statement{&ExitStatement{}}},
+		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []Statement{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}},
 		{Desc: "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
-			Expected: []*command{{&BulkDdlStatement{[]string{
+			Expected: []Statement{&BulkDdlStatement{[]string{
 				"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
 				"CREATE INDEX i1 ON t1(col)",
 				"DROP INDEX i1",
 				"DROP TABLE t1",
-			}}}},
+			}}},
 		},
 		{Desc: "mixed statements",
 			Input: `CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);
@@ -55,18 +56,16 @@ func TestBuildCommands(t *testing.T) {
                 DROP TABLE t1;
                 DROP TABLE t2;
                 SELECT 1;`,
-			Expected: []*command{
-				{
-					&BulkDdlStatement{
-						[]string{
-							"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
-							"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
-						},
+			Expected: []Statement{
+				&BulkDdlStatement{
+					[]string{
+						"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
+						"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
 					},
 				},
-				{&SelectStatement{"SELECT * FROM t1"}},
-				{&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}}},
-				{&SelectStatement{"SELECT 1"}},
+				&SelectStatement{"SELECT * FROM t1"},
+				&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}},
+				&SelectStatement{"SELECT 1"},
 			}},
 		{Desc: "mixed statements with comments",
 			Input: `
@@ -75,16 +74,14 @@ func TestBuildCommands(t *testing.T) {
 			UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE;
 			DELETE t1 WHERE TRUE /* AND pk = 1 */;
 			SELECT 0x1/**/A`,
-			Expected: []*command{
-				{
-					&BulkDdlStatement{
-						[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
-					},
+			Expected: []Statement{
+				&BulkDdlStatement{
+					[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
 				},
-				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}},
-				{&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"}},
-				{&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"}},
-				{&SelectStatement{"SELECT 0x1/**/A"}},
+				&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"},
+				&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"},
+				&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"},
+				&SelectStatement{"SELECT 0x1/**/A"},
 			}},
 		{
 			Desc: "empty statement",
@@ -101,8 +98,8 @@ func TestBuildCommands(t *testing.T) {
 			Desc: "comment after semicolon",
 			// A comment after the last semicolon is permitted.
 			Input: `SELECT 1; /* comment */`,
-			Expected: []*command{
-				{&SelectStatement{"SELECT 1"}},
+			Expected: []Statement{
+				&SelectStatement{"SELECT 1"},
 			}},
 	}
 

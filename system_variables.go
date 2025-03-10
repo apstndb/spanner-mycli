@@ -158,10 +158,6 @@ func unquoteString(s string) string {
 	return strings.Trim(s, `"'`)
 }
 
-func sliceOf[V any](vs ...V) []V {
-	return vs
-}
-
 func singletonMap[K comparable, V any](k K, v V) map[K]V {
 	return map[K]V{k: v}
 }

@@ -392,20 +392,15 @@ func (s *Session) ClosePendingTransaction() error {
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	mode := sppb.ExecuteSqlRequest_PROFILE
-	opts := spanner.QueryOptions{
-		Mode:          &mode,
-		Priority:      s.currentPriority(),
-		LastStatement: implicit,
-	}
+	opts := s.buildQueryOptions(&mode)
+	opts.LastStatement = implicit
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
 
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
-	opts := spanner.QueryOptions{
-		Priority: s.currentPriority(),
-	}
+	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
 
@@ -572,6 +567,19 @@ func (s *Session) currentPriority() sppb.RequestOptions_Priority {
 		return s.tc.priority
 	}
 	return s.systemVariables.RPCPriority
+}
+
+func (s *Session) buildQueryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
+	opts := spanner.QueryOptions{
+		Mode:       mode,
+		Priority:   s.currentPriority(),
+		RequestTag: s.systemVariables.RequestTag,
+		Options: &sppb.ExecuteSqlRequest_QueryOptions{
+			OptimizerVersion:           s.systemVariables.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+		},
+	}
+	return opts
 }
 
 // startHeartbeat starts heartbeat for read-write transaction.
