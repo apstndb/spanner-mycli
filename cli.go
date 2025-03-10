@@ -91,7 +91,6 @@ type Cli struct {
 	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
-	interactive     bool
 }
 
 func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
