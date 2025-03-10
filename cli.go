@@ -1154,42 +1154,12 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	}
 
 	if s, ok := stmt.(*UseStatement); ok {
-		err := func() error {
-			newSystemVariables := *c.SystemVariables
-
-			newSystemVariables.Database = s.Database
-			newSystemVariables.Role = s.Role
-
-			newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
-			if err != nil {
-				return err
-			}
-
-			exists, err := newSession.DatabaseExists()
-			if err != nil {
-				newSession.Close()
-				return err
-			}
-
-			if !exists {
-				newSession.Close()
-				return fmt.Errorf("unknown database %q", s.Database)
-			}
-
-			c.Session.Close()
-			c.Session = newSession
-
-			c.SystemVariables = &newSystemVariables
-
-			if interactive {
-				fmt.Fprintf(c.OutStream, "Database changed")
-			}
-
-			return nil
-		}()
+		err := c.handleUse(ctx, s, interactive)
 		if err != nil {
 			return "", err
 		}
+
+		fmt.Fprintf(c.OutStream, "Database changed")
 	}
 
 	t0 := time.Now()
@@ -1242,6 +1212,36 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	}
 
 	return result.PreInput, nil
+}
+
+func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) error {
+	newSystemVariables := *c.SystemVariables
+
+	newSystemVariables.Database = s.Database
+	newSystemVariables.Role = s.Role
+
+	newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
+	if err != nil {
+		return err
+	}
+
+	exists, err := newSession.DatabaseExists()
+	if err != nil {
+		newSession.Close()
+		return err
+	}
+
+	if !exists {
+		newSession.Close()
+		return fmt.Errorf("unknown database %q", s.Database)
+	}
+
+	c.Session.Close()
+	c.Session = newSession
+
+	c.SystemVariables = &newSystemVariables
+
+	return nil
 }
 
 func handleInterrupt(cancel context.CancelFunc) {
