@@ -105,14 +105,15 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 	var p *mpb.Progress
 	var bars []*mpb.Bar
-	teardown := func() {
+	defer func() {
 		for _, bar := range bars {
 			bar.Abort(true)
 		}
 		if p != nil {
 			p.Wait()
 		}
-	}
+	}()
+
 	if session.systemVariables.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
 		// defer p.Shutdown()
@@ -136,7 +137,6 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		ProtoDescriptors: b,
 	})
 	if err != nil {
-		teardown()
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
@@ -144,13 +144,11 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		time.Sleep(5 * time.Second)
 		err := op.Poll(ctx)
 		if err != nil {
-			teardown()
 			return nil, err
 		}
 
 		metadata, err := op.Metadata()
 		if err != nil {
-			teardown()
 			return nil, err
 		}
 
@@ -169,7 +167,6 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 	metadata, err := op.Metadata()
 	if err != nil {
-		teardown()
 		return nil, err
 	}
 
