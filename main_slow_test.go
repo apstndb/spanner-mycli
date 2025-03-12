@@ -1,3 +1,5 @@
+//go:build !skip_slow_test
+
 package main
 
 import (
