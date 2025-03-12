@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/apstndb/spanvalue"
@@ -119,7 +120,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(strings.ReplaceAll(ddl, "\n", " "), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
@@ -135,6 +136,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		ProtoDescriptors: b,
 	})
 	if err != nil {
+		teardown()
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
