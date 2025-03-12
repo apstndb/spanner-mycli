@@ -128,27 +128,9 @@ func init() {
 }
 
 func main() {
-	var gopts globalOptions
+	gopts, parserForHelp, err := parseFlags()
 
-	// process config files at first
-	configFileParser := flags.NewParser(&gopts, flags.Default)
-	addEmulatorImageOption(configFileParser)
-
-	if err := readConfigFile(configFileParser); err != nil {
-		exitf("Invalid config file format\n")
-	}
-
-	// then, process environment variables and command line options
-	// use another parser to process environment variables with higher precedence than configuration files
-	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
-	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
-	addEmulatorImageOption(flagParser)
-
-	// TODO: Workaround to avoid to display config value as default
-	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
-	addEmulatorImageOption(parserForHelp)
-
-	if _, err := flagParser.Parse(); flags.WroteHelp(err) {
+	if flags.WroteHelp(err) {
 		// exit successfully
 		return
 	} else if err != nil {
@@ -162,8 +144,11 @@ func main() {
 		return
 	}
 
-	opts := gopts.Spanner
+	exitCode := run(context.Background(), &gopts.Spanner)
+	os.Exit(exitCode)
+}
 
+func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	logMemefish = opts.LogMemefish
 
 	if opts.Insecure && opts.SkipTlsVerify {
@@ -284,8 +269,6 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
-
 	if opts.EmbeddedEmulator {
 		sysVars.Project = "emulator-project"
 		sysVars.Instance = "emulator-instance"
@@ -347,7 +330,7 @@ func main() {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
 
-	exitCode := lo.TernaryF(interactive,
+	exitCode = lo.TernaryF(interactive,
 		func() int {
 			sysVars.EnableProgressBar = true
 			return cli.RunInteractive(ctx)
@@ -356,12 +339,36 @@ func main() {
 			return cli.RunBatch(ctx, input)
 		})
 
-	os.Exit(exitCode)
+	return exitCode
+}
+
+func parseFlags() (globalOptions, *flags.Parser, error) {
+	var gopts globalOptions
+
+	// process config files at first
+	configFileParser := flags.NewParser(&gopts, flags.Default)
+	addEmulatorImageOption(configFileParser)
+
+	if err := readConfigFile(configFileParser); err != nil {
+		exitf("Invalid config file format\n")
+	}
+
+	// then, process environment variables and command line options
+	// use another parser to process environment variables with higher precedence than configuration files
+	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	addEmulatorImageOption(flagParser)
+
+	// TODO: Workaround to avoid to display config value as default
+	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
+	addEmulatorImageOption(parserForHelp)
+	_, err := flagParser.Parse()
+	return gopts, parserForHelp, err
 }
 
 func exitf(format string, a ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, a...)
-	os.Exit(1)
+	os.Exit(exitCodeError)
 }
 
 const cnfFileName = ".spanner_mycli.cnf"
