@@ -61,10 +61,11 @@ type systemVariables struct {
 	MarkdownCodeblock           bool
 
 	// it is internal variable and hidden from system variable statements
-	ProtoDescriptor *descriptorpb.FileDescriptorSet
-	Insecure        bool
-	Debug           bool
-	Params          map[string]ast.Node
+	ProtoDescriptor       *descriptorpb.FileDescriptorSet
+	Insecure              bool
+	WithoutAuthentication bool
+	Debug                 bool
+	Params                map[string]ast.Node
 
 	// link to session
 	CurrentSession *Session
