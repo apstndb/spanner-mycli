@@ -305,7 +305,7 @@ func main() {
 		defer teardown()
 
 		sysVars.Endpoint = container.URI
-
+		sysVars.WithoutAuthentication = true
 	}
 
 	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)

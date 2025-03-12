@@ -600,16 +600,17 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
 	}
 
-	if sysVars.EnableADCPlus {
+	switch {
+	case sysVars.WithoutAuthentication:
+		opts = append(opts, option.WithoutAuthentication())
+	case sysVars.EnableADCPlus:
 		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, option.WithTokenSource(source))
-	} else {
-		if len(credential) > 0 {
-			opts = append(opts, option.WithCredentialsJSON(credential))
-		}
+	case len(credential) > 0:
+		opts = append(opts, option.WithCredentialsJSON(credential))
 	}
 
 	return NewSession(ctx, sysVars, opts...)
