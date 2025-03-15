@@ -154,7 +154,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	logMemefish = opts.LogMemefish
 
 	if opts.StatementHelp {
-		fmt.Print(renderClientStatementHelp(clientSideStatementDefinitions))
+		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
 		return exitCodeSuccess
 	}
 
@@ -350,7 +350,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 }
 
 // renderClientStatementHelp generates a table of client-side statement help.
-func renderClientStatementHelp(stmts []*clientSideStatementDefinition) string {
+func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 	var sb strings.Builder
 
 	table := tablewriter.NewWriter(&sb)
@@ -359,9 +359,9 @@ func renderClientStatementHelp(stmts []*clientSideStatementDefinition) string {
 	table.SetCenterSeparator("|")
 	table.SetAutoFormatHeaders(false)
 	table.SetAutoWrapText(false)
-	for _, stmt := range clientSideStatementDefinitions {
+	for _, stmt := range clientSideStatementDefs {
 		for _, desc := range stmt.Descriptions {
-			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", "\\|").Replace(desc.Syntax) + "`", desc.Note})
+			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
 		}
 	}
 	table.Render()

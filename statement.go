@@ -148,7 +148,7 @@ type clientSideStatementDescription struct {
 	Note   string
 }
 
-type clientSideStatementDefinition struct {
+type clientSideStatementDef struct {
 	Descriptions   []clientSideStatementDescription
 	Pattern        *regexp.Regexp
 	HandleSubmatch func(matched []string) (Statement, error)
@@ -323,7 +323,7 @@ loop:
 }
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
-	for _, cs := range clientSideStatementDefinitions {
+	for _, cs := range clientSideStatementDefs {
 		if cs.Pattern.MatchString(trimmed) {
 			matches := cs.Pattern.FindStringSubmatch(trimmed)
 			stmt, err := cs.HandleSubmatch(matches)
@@ -1657,7 +1657,7 @@ type HelpStatement struct{}
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var rows []Row
-	for _, stmt := range clientSideStatementDefinitions {
+	for _, stmt := range clientSideStatementDefs {
 		for _, desc := range stmt.Descriptions {
 			rows = append(rows, toRow(desc.Usage, desc.Syntax+";"))
 		}

@@ -11,7 +11,7 @@ import (
 	"github.com/samber/lo"
 )
 
-var clientSideStatementDefinitions = []*clientSideStatementDefinition{
+var clientSideStatementDefs = []*clientSideStatementDef{
 	// Database
 	{
 		Descriptions: []clientSideStatementDescription{
