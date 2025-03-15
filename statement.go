@@ -144,9 +144,8 @@ type QueryStats struct {
 }
 
 type clientStatementHandler struct {
-	Pattern         string
-	CompiledPattern *regexp.Regexp
-	HandleSubmatch  func(matched []string) (Statement, error)
+	Pattern        *regexp.Regexp
+	HandleSubmatch func(matched []string) (Statement, error)
 	// TODO: HandleNamedGroups func(input string, groups map[string]string) (Statement, error)
 }
 
@@ -183,56 +182,56 @@ var (
 
 	clientStatementHandlers = []*clientStatementHandler{
 		{
-			Pattern: `(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`,
+			Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return parseSyncProtoBundle(matched[1])
 			},
 		},
 		{
-			Pattern: `(?is)^EXIT$`,
+			Pattern: regexp.MustCompile(`(?is)^EXIT$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ExitStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`,
+			Pattern: regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
 			},
 		},
 		{
 			// DROP DATABASE is not native Cloud Spanner statement
-			Pattern: `(?is)^DROP\s+DATABASE\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^TRUNCATE\s+TABLE\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+LOCAL\s+PROTO$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowLocalProtoStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+REMOTE\s+PROTO$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowRemoteProtoStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+DATABASES$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowDatabasesStatement{}, nil
 			},
 		},
 		{
-			Pattern: fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr),
+			Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
 				schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
@@ -240,13 +239,13 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+TABLES(?:\s+(.+))?$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^DESCRIBE\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				isDML := stmtkind.IsDMLLexical(matched[1])
 				switch {
@@ -258,7 +257,7 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				isAnalyze := matched[1] != ""
 				isDML := stmtkind.IsDMLLexical(matched[2])
@@ -273,27 +272,27 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 				return &ShowColumnsStatement{Schema: schema, Table: table}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 				return &ShowIndexStatement{Schema: schema, Table: table}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^PARTITIONED\s+(.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^PARTITIONED\s+(.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &PartitionedDmlStatement{Dml: matched[1]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				priority, err := parsePriority(matched[1])
 				if err != nil {
@@ -304,7 +303,7 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				stmt := &BeginRoStatement{
 					TimestampBoundType: timestampBoundUnspecified,
@@ -335,7 +334,7 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`,
+			Pattern: regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				priority, err := parsePriority(matched[1])
 				if err != nil {
@@ -346,19 +345,19 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^COMMIT(?:\s+TRANSACTION)?$`,
+			Pattern: regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &CommitStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`,
+			Pattern: regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &RollbackStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SET\s+TRANSACTION\s+(.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				isReadOnly, err := parseTransaction(matched[1])
 				if err != nil {
@@ -368,85 +367,85 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+VARIABLE\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowVariableStatement{VarName: matched[1]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+PARAMS$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowParamsStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+VARIABLES$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowVariablesStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^PARTITION\s(\S.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &PartitionStatement{SQL: matched[1]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`,
+			Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`,
+			Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+QUERY\s+PROFILES$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowQueryProfilesStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
 				if err != nil {
@@ -456,43 +455,37 @@ var (
 			},
 		},
 		{
-			Pattern: `(?is)^SHOW\s+DDLS$`,
+			Pattern: regexp.MustCompile(`(?is)^SHOW\s+DDLS$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &ShowDdlsStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^GEMINI\s+(.*)$`,
+			Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &GeminiStatement{Text: unquoteString(matched[1])}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^START\s+BATCH\s+(DDL|DML)$`,
+			Pattern: regexp.MustCompile(`(?is)^START\s+BATCH\s+(DDL|DML)$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(matched[1]) == "DDL", batchModeDDL, batchModeDML)}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^RUN\s+BATCH$`,
+			Pattern: regexp.MustCompile(`(?is)^RUN\s+BATCH$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &RunBatchStatement{}, nil
 			},
 		},
 		{
-			Pattern: `(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`,
+			Pattern: regexp.MustCompile(`(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`),
 			HandleSubmatch: func(matched []string) (Statement, error) {
 				return &AbortBatchStatement{}, nil
 			},
 		},
 	}
 )
-
-func init() {
-	for _, clientStatement := range clientStatementHandlers {
-		clientStatement.CompiledPattern = regexp.MustCompile(clientStatement.Pattern)
-	}
-}
 
 func BuildStatement(input string) (Statement, error) {
 	return BuildStatementWithComments(input, input)
@@ -631,8 +624,8 @@ loop:
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
 	for _, cs := range clientStatementHandlers {
-		if cs.CompiledPattern.MatchString(trimmed) {
-			matches := cs.CompiledPattern.FindStringSubmatch(trimmed)
+		if cs.Pattern.MatchString(trimmed) {
+			matches := cs.Pattern.FindStringSubmatch(trimmed)
 			stmt, err := cs.HandleSubmatch(matches)
 			if err != nil {
 				return nil, err
