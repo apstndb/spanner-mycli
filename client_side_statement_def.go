@@ -11,10 +11,10 @@ import (
 	"github.com/samber/lo"
 )
 
-var clientStatementHandlers = []*clientStatementHandler{
+var clientSideStatementDefinitions = []*clientSideStatementDefinition{
 	// Database
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Switch database`,
 				Syntax: `USE <database> [ROLE <role>]`,
@@ -28,7 +28,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	{
 		// DROP DATABASE is not native Cloud Spanner statement
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Drop database`,
 				Syntax: `DROP DATABASE <database>`,
@@ -41,7 +41,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `List databases`,
 				Syntax: `SHOW DATABASES`,
@@ -55,7 +55,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Schema
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show DDL of the schema object`,
 				Syntax: `SHOW CREATE <type> <fqn>`,
@@ -70,7 +70,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `List tables`,
 				Syntax: `SHOW TABLES [<schema>]`,
@@ -83,7 +83,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show columns`,
 				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
@@ -97,7 +97,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
@@ -111,7 +111,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `SHOW DDLs`,
 				Syntax: `SHOW DDLS`,
@@ -125,7 +125,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Protocol Buffers
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show local proto descriptors`,
 				Syntax: `SHOW LOCAL PROTO`,
@@ -138,7 +138,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show remote proto bundle`,
 				Syntax: `SHOW REMOTE PROTO`,
@@ -151,7 +151,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Manipulate PROTO BUNDLE`,
 				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]`,
@@ -164,7 +164,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Truncate table`,
 				Syntax: `TRUNCATE TABLE <table>`,
@@ -177,7 +177,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show result shape`,
 				Syntax: `DESCRIBE <sql>`,
@@ -196,7 +196,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show query execution plan with stats`,
 				Syntax: `EXPLAIN ANALYZE <sql>`,
@@ -220,7 +220,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 
 	// Partitioned DML
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Partitioned DML`,
 				Syntax: `PARTITIONED {UPDATE|DELETE} ...`,
@@ -235,7 +235,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 
 	// Partitioned Query
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show partition tokens of partition query`,
 				Syntax: `PARTITION <sql>`,
@@ -248,7 +248,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Run partitioned query`,
 				Syntax: `RUN PARTITIONED QUERY <sql>`,
@@ -262,14 +262,14 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	{
 		// unimplemented
-		Descriptions: []clientStatementDescription{},
+		Descriptions: []clientSideStatementDescription{},
 		Pattern:      regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Test root-partitionable`,
 				Syntax: `TRY PARTITIONED QUERY <sql>`,
@@ -283,7 +283,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Transaction
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start R/W transaction`,
 				Syntax: `BEGIN RW [TRANSACTION] [PRIORITY {HIGH|MEDIUM|LOW}]`,
@@ -301,7 +301,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start R/O transaction`,
 				Syntax: `BEGIN RO [TRANSACTION] [{<seconds>|<RFC3339-formatted time>}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
@@ -339,7 +339,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start transaction`,
 				Syntax: `BEGIN [TRANSACTION] [PRIORITY {HIGH|MEDIUM|LOW}]`,
@@ -357,7 +357,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Commit R/W transaction or end R/O Transaction`,
 				Syntax: `COMMIT [TRANSACTION]`,
@@ -370,7 +370,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Rollback R/W transaction or end R/O transaction",
 				Syntax: `ROLLBACK [TRANSACTION]`,
@@ -383,7 +383,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Set transaction mode`,
 				Syntax: `SET TRANSACTION {READ ONLY|READ WRITE}`,
@@ -401,7 +401,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Batching
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start DDL batching`,
 				Syntax: `START BATCH DDL`,
@@ -419,7 +419,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Run active batch`,
 				Syntax: `RUN BATCH`,
@@ -432,7 +432,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Abort active batch`,
 				Syntax: `ABORT BATCH [TRANSACTION]`,
@@ -446,7 +446,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// System Variable
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Set variable`,
 				Syntax: `SET <name> = <value>`,
@@ -459,7 +459,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Add value to variable`,
 				Syntax: `SET <name> += <value>`,
@@ -472,7 +472,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show variables`,
 				Syntax: `SHOW VARIABLES`,
@@ -485,7 +485,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show variable`,
 				Syntax: `SHOW VARIABLE <name>`,
@@ -499,7 +499,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Query Parameter
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Set type query parameter`,
 				Syntax: `SET PARAM <name> <type>`,
@@ -512,7 +512,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Set value query parameter`,
 				Syntax: `SET PARAM <name> = <value>`,
@@ -525,7 +525,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show query parameters`,
 				Syntax: `SHOW PARAMS`,
@@ -539,7 +539,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Mutation
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Perform write mutations`,
 				Syntax: `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`,
@@ -558,7 +558,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// Query Profiles
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show sampled query plans`,
 				Syntax: `SHOW QUERY PROFILES`,
@@ -571,7 +571,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show the single sampled query plan`,
 				Syntax: `SHOW QUERY PROFILE <fingerprint>`,
@@ -589,7 +589,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// LLM
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Compose query using LLM`,
 				Syntax: `GEMINI "<prompt>"`,
@@ -604,7 +604,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 	},
 	// CLI control
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show help`,
 				Syntax: `HELP`,
@@ -617,7 +617,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 		},
 	},
 	{
-		Descriptions: []clientStatementDescription{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Exit CLI`,
 				Syntax: `EXIT`,

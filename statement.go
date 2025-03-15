@@ -142,14 +142,14 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
-type clientStatementDescription struct {
+type clientSideStatementDescription struct {
 	Usage  string
 	Syntax string
 	Note   string
 }
 
-type clientStatementHandler struct {
-	Descriptions   []clientStatementDescription
+type clientSideStatementDefinition struct {
+	Descriptions   []clientSideStatementDescription
 	Pattern        *regexp.Regexp
 	HandleSubmatch func(matched []string) (Statement, error)
 	// TODO: HandleNamedGroups func(input string, groups map[string]string) (Statement, error)
@@ -323,7 +323,7 @@ loop:
 }
 
 func BuildCLIStatement(trimmed string) (Statement, error) {
-	for _, cs := range clientStatementHandlers {
+	for _, cs := range clientSideStatementDefinitions {
 		if cs.Pattern.MatchString(trimmed) {
 			matches := cs.Pattern.FindStringSubmatch(trimmed)
 			stmt, err := cs.HandleSubmatch(matches)
@@ -1657,7 +1657,7 @@ type HelpStatement struct{}
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var rows []Row
-	for _, stmt := range clientStatementHandlers {
+	for _, stmt := range clientSideStatementDefinitions {
 		for _, desc := range stmt.Descriptions {
 			rows = append(rows, toRow(desc.Usage, desc.Syntax+";"))
 		}
