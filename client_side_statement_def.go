@@ -45,7 +45,6 @@ var clientSideStatementDefinitions = []*clientSideStatementDefinition{
 			{
 				Usage:  `List databases`,
 				Syntax: `SHOW DATABASES`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`),
@@ -179,28 +178,12 @@ var clientSideStatementDefinitions = []*clientSideStatementDefinition{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
-				Usage:  `Show result shape`,
-				Syntax: `DESCRIBE <sql>`,
-				Note:   ``,
+				Usage:  `Show execution plan without execution`,
+				Syntax: `EXPLAIN <sql>`,
 			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isDML := stmtkind.IsDMLLexical(matched[1])
-			switch {
-			case isDML:
-				return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
-			default:
-				return &DescribeStatement{Statement: matched[1]}, nil
-			}
-		},
-	},
-	{
-		Descriptions: []clientSideStatementDescription{
 			{
-				Usage:  `Show query execution plan with stats`,
+				Usage:  `Execute query and show execution plan with profile`,
 				Syntax: `EXPLAIN ANALYZE <sql>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`),
@@ -214,6 +197,25 @@ var clientSideStatementDefinitions = []*clientSideStatementDefinition{
 				return &ExplainAnalyzeStatement{Query: matched[2]}, nil
 			default:
 				return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
+			}
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show result shape without execution`,
+				Syntax: `DESCRIBE <sql>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			isDML := stmtkind.IsDMLLexical(matched[1])
+			switch {
+			case isDML:
+				return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
+			default:
+				return &DescribeStatement{Statement: matched[1]}, nil
 			}
 		},
 	},
