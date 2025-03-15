@@ -349,6 +349,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	return exitCode
 }
 
+// renderClientStatementHelp generates a table of client-side statement help.
 func renderClientStatementHelp(stmts []*clientSideStatementDefinition) string {
 	var sb strings.Builder
 
@@ -360,7 +361,7 @@ func renderClientStatementHelp(stmts []*clientSideStatementDefinition) string {
 	table.SetAutoWrapText(false)
 	for _, stmt := range clientSideStatementDefinitions {
 		for _, desc := range stmt.Descriptions {
-			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
+			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", "\\|").Replace(desc.Syntax) + "`", desc.Note})
 		}
 	}
 	table.Render()
