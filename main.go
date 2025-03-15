@@ -33,6 +33,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
+	"github.com/olekukonko/tablewriter"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -85,6 +86,7 @@ type spannerOptions struct {
 	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL"`
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email"`
 	Version                   bool              `long:"version" description:"Show version string."`
+	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -150,6 +152,11 @@ func main() {
 
 func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	logMemefish = opts.LogMemefish
+
+	if opts.StatementHelp {
+		fmt.Print(renderClientStatementHelp(clientSideStatementDefinitions))
+		return exitCodeSuccess
+	}
 
 	if opts.Insecure && opts.SkipTlsVerify {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
@@ -340,6 +347,25 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		})
 
 	return exitCode
+}
+
+func renderClientStatementHelp(stmts []*clientSideStatementDefinition) string {
+	var sb strings.Builder
+
+	table := tablewriter.NewWriter(&sb)
+	table.SetHeader([]string{"Usage", "Syntax", "Note"})
+	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+	table.SetCenterSeparator("|")
+	table.SetAutoFormatHeaders(false)
+	table.SetAutoWrapText(false)
+	for _, stmt := range clientSideStatementDefinitions {
+		for _, desc := range stmt.Descriptions {
+			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
+		}
+	}
+	table.Render()
+
+	return sb.String()
 }
 
 func parseFlags() (globalOptions, *flags.Parser, error) {
