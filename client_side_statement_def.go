@@ -12,32 +12,7 @@ import (
 )
 
 var clientStatementHandlers = []*clientStatementHandler{
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Manipulate PROTO BUNDLE`,
-				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return parseSyncProtoBundle(matched[1])
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Exit CLI`,
-				Syntax: `EXIT`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ExitStatement{}, nil
-		},
-	},
+	// Database
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -68,16 +43,87 @@ var clientStatementHandlers = []*clientStatementHandler{
 	{
 		Descriptions: []clientStatementDescription{
 			{
-				Usage:  `Truncate table`,
-				Syntax: `TRUNCATE TABLE <table>`,
-				Note:   `Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en).`,
+				Usage:  `List databases`,
+				Syntax: `SHOW DATABASES`,
+				Note:   ``,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
+			return &ShowDatabasesStatement{}, nil
 		},
 	},
+	// Schema
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show DDL of the schema object`,
+				Syntax: `SHOW CREATE <type> <fqn>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
+			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
+			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `List tables`,
+				Syntax: `SHOW TABLES [<schema>]`,
+				Note:   `If schema is not provided, the default schema is used`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show columns`,
+				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+			return &ShowColumnsStatement{Schema: schema, Table: table}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show indexes`,
+				Syntax: `SHOW INDEX FROM <table_fqn>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+			return &ShowIndexStatement{Schema: schema, Table: table}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `SHOW DDLs`,
+				Syntax: `SHOW DDLS`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DDLS$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowDdlsStatement{}, nil
+		},
+	},
+	// Protocol Buffers
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -107,42 +153,27 @@ var clientStatementHandlers = []*clientStatementHandler{
 	{
 		Descriptions: []clientStatementDescription{
 			{
-				Usage:  `List databases`,
-				Syntax: `SHOW DATABASES`,
+				Usage:  `Manipulate PROTO BUNDLE`,
+				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]`,
 				Note:   ``,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`),
+		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowDatabasesStatement{}, nil
+			return parseSyncProtoBundle(matched[1])
 		},
 	},
 	{
 		Descriptions: []clientStatementDescription{
 			{
-				Usage:  `Show DDL of the schema object`,
-				Syntax: `SHOW CREATE <type> <fqn>`,
-				Note:   ``,
+				Usage:  `Truncate table`,
+				Syntax: `TRUNCATE TABLE <table>`,
+				Note:   `Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en).`,
 			},
 		},
-		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
+		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
-			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
-			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `List tables`,
-				Syntax: `SHOW TABLES [<schema>]`,
-				Note:   `If schema is not provided, the default schema is used`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
+			return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
 		},
 	},
 	{
@@ -186,34 +217,8 @@ var clientStatementHandlers = []*clientStatementHandler{
 			}
 		},
 	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show columns`,
-				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
-			return &ShowColumnsStatement{Schema: schema, Table: table}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show indexes`,
-				Syntax: `SHOW INDEX FROM <table_fqn>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
-			return &ShowIndexStatement{Schema: schema, Table: table}, nil
-		},
-	},
+
+	// Partitioned DML
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -227,6 +232,56 @@ var clientStatementHandlers = []*clientStatementHandler{
 			return &PartitionedDmlStatement{Dml: matched[1]}, nil
 		},
 	},
+
+	// Partitioned Query
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show partition tokens of partition query`,
+				Syntax: `PARTITION <sql>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &PartitionStatement{SQL: matched[1]}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Run partitioned query`,
+				Syntax: `RUN PARTITIONED QUERY <sql>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
+		},
+	},
+	{
+		// unimplemented
+		Descriptions: []clientStatementDescription{},
+		Pattern:      regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Test root-partitionable`,
+				Syntax: `TRY PARTITIONED QUERY <sql>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
+		},
+	},
+	// Transaction
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -344,219 +399,7 @@ var clientStatementHandlers = []*clientStatementHandler{
 			return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
 		},
 	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show variable`,
-				Syntax: `SHOW VARIABLE <name>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowVariableStatement{VarName: matched[1]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Set type query parameter`,
-				Syntax: `SET PARAM <name> <type>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Set value query parameter`,
-				Syntax: `SET PARAM <name> = <value>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Set variable`,
-				Syntax: `SET <name> = <value>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Add value to variable`,
-				Syntax: `SET <name> += <value>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show query parameters`,
-				Syntax: `SHOW PARAMS`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowParamsStatement{}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show variables`,
-				Syntax: `SHOW VARIABLES`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowVariablesStatement{}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show partition tokens of partition query`,
-				Syntax: `PARTITION <sql>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &PartitionStatement{SQL: matched[1]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Run partitioned query`,
-				Syntax: `RUN PARTITIONED QUERY <sql>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
-		},
-	},
-	{
-		// unimplemented
-		Descriptions: []clientStatementDescription{},
-		Pattern:      regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Test root-partitionable`,
-				Syntax: `TRY PARTITIONED QUERY <sql>`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Perform write mutations`,
-				Syntax: `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`,
-				Note:   ``,
-			},
-			{
-				Usage:  `Perform delete mutations`,
-				Syntax: `MUTATE <table_fqn> DELETE ...`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show sampled query plans`,
-				Syntax: `SHOW QUERY PROFILES`,
-				Note:   `EARLY EXPERIMENTAL`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowQueryProfilesStatement{}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Show the single sampled query plan`,
-				Syntax: `SHOW QUERY PROFILE <fingerprint>`,
-				Note:   `EARLY EXPERIMENTAL`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			return &ShowQueryProfileStatement{Fprint: fprint}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `SHOW DDLs`,
-				Syntax: `SHOW DDLS`,
-				Note:   ``,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DDLS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowDdlsStatement{}, nil
-		},
-	},
-	{
-		Descriptions: []clientStatementDescription{
-			{
-				Usage:  `Compose query using LLM`,
-				Syntax: `GEMINI "<prompt>"`,
-				Note:   ``,
-			},
-		},
-
-		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &GeminiStatement{Text: unquoteString(matched[1])}, nil
-		},
-	},
+	// Batching
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -601,6 +444,165 @@ var clientStatementHandlers = []*clientStatementHandler{
 			return &AbortBatchStatement{}, nil
 		},
 	},
+	// System Variable
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Set variable`,
+				Syntax: `SET <name> = <value>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Add value to variable`,
+				Syntax: `SET <name> += <value>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show variables`,
+				Syntax: `SHOW VARIABLES`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowVariablesStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show variable`,
+				Syntax: `SHOW VARIABLE <name>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowVariableStatement{VarName: matched[1]}, nil
+		},
+	},
+	// Query Parameter
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Set type query parameter`,
+				Syntax: `SET PARAM <name> <type>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Set value query parameter`,
+				Syntax: `SET PARAM <name> = <value>`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show query parameters`,
+				Syntax: `SHOW PARAMS`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowParamsStatement{}, nil
+		},
+	},
+	// Mutation
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Perform write mutations`,
+				Syntax: `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`,
+				Note:   ``,
+			},
+			{
+				Usage:  `Perform delete mutations`,
+				Syntax: `MUTATE <table_fqn> DELETE ...`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
+		},
+	},
+	// Query Profiles
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show sampled query plans`,
+				Syntax: `SHOW QUERY PROFILES`,
+				Note:   `EARLY EXPERIMENTAL`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowQueryProfilesStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Show the single sampled query plan`,
+				Syntax: `SHOW QUERY PROFILE <fingerprint>`,
+				Note:   `EARLY EXPERIMENTAL`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			return &ShowQueryProfileStatement{Fprint: fprint}, nil
+		},
+	},
+	// LLM
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Compose query using LLM`,
+				Syntax: `GEMINI "<prompt>"`,
+				Note:   ``,
+			},
+		},
+
+		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &GeminiStatement{Text: unquoteString(matched[1])}, nil
+		},
+	},
+	// CLI control
 	{
 		Descriptions: []clientStatementDescription{
 			{
@@ -612,6 +614,19 @@ var clientStatementHandlers = []*clientStatementHandler{
 		Pattern: regexp.MustCompile(`(?is)^HELP$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &HelpStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientStatementDescription{
+			{
+				Usage:  `Exit CLI`,
+				Syntax: `EXIT`,
+				Note:   ``,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ExitStatement{}, nil
 		},
 	},
 }
