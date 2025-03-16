@@ -23,8 +23,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type ShowQueryProfilesStatement struct{}
-
 type queryProfiles struct {
 	RawQueryPlan jsontext.Value  `json:"queryPlan"`
 	QueryPlan    *sppb.QueryPlan `json:"-"`
@@ -40,28 +38,23 @@ type queryProfilesRow struct {
 	QueryProfile    *queryProfiles   `spanner:"-"`
 }
 
-func toQpr(row *spanner.Row) (*queryProfilesRow, error) {
-	var qpr queryProfilesRow
-	if err := row.ToStruct(&qpr); err != nil {
-		return nil, err
-	}
+var (
+	t    = template.New("temp")
+	temp = lo.Must(t.Parse(
+		`
+interval_end:                 {{.IntervalEnd}}
+text_fingerprint:             {{.TextFingerprint}}
+{{with .QueryProfile.QueryStats -}}
+elapsed_time:                 {{.ElapsedTime}}
+cpu_time:                     {{.CPUTime}}
+rows_returned:                {{.RowsReturned}}
+deleted_rows_scanned:         {{.DeletedRowsScanned}}
+optimizer_version:            {{.OptimizerVersion}}
+optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
+{{end}}`))
+)
 
-	var profile queryProfiles
-	err := json.Unmarshal([]byte(qpr.RawQueryProfile.String()), &profile)
-	if err != nil {
-		return nil, err
-	}
-	qpr.QueryProfile = &profile
-
-	var queryPlan sppb.QueryPlan
-	err = protojson.Unmarshal(profile.RawQueryPlan, &queryPlan)
-	if err != nil {
-		return nil, err
-	}
-	profile.QueryPlan = &queryPlan
-
-	return &qpr, nil
-}
+type ShowQueryProfilesStatement struct{}
 
 func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
@@ -160,23 +153,6 @@ ORDER BY INTERVAL_END DESC`,
 	}
 	return result, nil
 }
-
-var (
-	t    = template.New("temp")
-	temp = lo.Must(t.Parse(
-		`
-interval_end:                 {{.IntervalEnd}}
-text_fingerprint:             {{.TextFingerprint}}
-{{with .QueryProfile.QueryStats -}}
-elapsed_time:                 {{.ElapsedTime}}
-cpu_time:                     {{.CPUTime}}
-rows_returned:                {{.RowsReturned}}
-deleted_rows_scanned:         {{.DeletedRowsScanned}}
-optimizer_version:            {{.OptimizerVersion}}
-optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
-{{end}}`))
-)
-
 func formatStats(stats *queryProfilesRow) string {
 	var sb strings.Builder
 	if stats == nil {
@@ -190,4 +166,27 @@ func formatStats(stats *queryProfilesRow) string {
 	}
 
 	return sb.String()
+}
+
+func toQpr(row *spanner.Row) (*queryProfilesRow, error) {
+	var qpr queryProfilesRow
+	if err := row.ToStruct(&qpr); err != nil {
+		return nil, err
+	}
+
+	var profile queryProfiles
+	err := json.Unmarshal([]byte(qpr.RawQueryProfile.String()), &profile)
+	if err != nil {
+		return nil, err
+	}
+	qpr.QueryProfile = &profile
+
+	var queryPlan sppb.QueryPlan
+	err = protojson.Unmarshal(profile.RawQueryPlan, &queryPlan)
+	if err != nil {
+		return nil, err
+	}
+	profile.QueryPlan = &queryPlan
+
+	return &qpr, nil
 }

@@ -21,9 +21,6 @@ import (
 	"github.com/apstndb/genaischema"
 )
 
-//go:embed official_docs/*
-var docs embed.FS
-
 type output struct {
 	CandidateStatements []*statement `json:"candidateStatements" description:"Candidate statements" minItems:"1" maxItems:"5" required:"true"`
 	Statement           *statement   `json:"statement" description:"Final result, select from candidateStatements" required:"true"`
@@ -37,6 +34,9 @@ type statement struct {
 	SyntaxDescription   string `json:"syntaxDescription" description:"A long description of text in syntax, detailed and strictly" required:"true"`
 	SemanticDescription string `json:"semanticDescription" description:"Description of text in semantics. Must describe how the request is achieved" required:"true"`
 }
+
+//go:embed official_docs/*
+var docs embed.FS
 
 type GeminiStatement struct {
 	Text string

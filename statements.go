@@ -29,7 +29,7 @@ import (
 	"github.com/samber/lo"
 )
 
-var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$$`)
+var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
 
 // Order and sections should be matched in client_side_statement_def.go
 
@@ -111,7 +111,7 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 
 // Database
 
-// Implementation of UseStatement is in cli.go because it needs to replace Session pointer in Cli.
+// UseStatement is actually implemented in cli.go because it needs to replace Session pointer in Cli.
 type UseStatement struct {
 	Database string
 	Role     string
@@ -136,8 +136,7 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 	}, nil
 }
 
-type ShowDatabasesStatement struct {
-}
+type ShowDatabasesStatement struct{}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
@@ -239,6 +238,13 @@ func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session)
 
 // Batching
 
+type batchMode int
+
+const (
+	batchModeDDL batchMode = iota + 1
+	batchModeDML
+)
+
 type BulkDdlStatement struct {
 	Ddls []string
 }
@@ -258,13 +264,6 @@ func (BatchDMLStatement) IsMutationStatement() {}
 func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeBatchDML(ctx, session, s.DMLs)
 }
-
-type batchMode int
-
-const (
-	batchModeDDL batchMode = iota + 1
-	batchModeDML
-)
 
 type StartBatchStatement struct {
 	Mode batchMode
