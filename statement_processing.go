@@ -91,9 +91,7 @@ type Result struct {
 	PartitionCount int
 }
 
-type Row struct {
-	Columns []string
-}
+type Row []string
 
 // QueryStats contains query statistics.
 // Some fields may not have a valid value depending on the environment.

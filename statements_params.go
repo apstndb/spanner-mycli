@@ -24,7 +24,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
 			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
 		}),
-		ToSortFunc(func(r Row) string { return r.Columns[0] }))
+		ToSortFunc(func(r Row) string { return r[0] }))
 
 	return &Result{
 		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},

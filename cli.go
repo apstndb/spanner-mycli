@@ -747,7 +747,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []
 		transposedRows = append(transposedRows, slices.Collect(
 			xiter.Map(
 				func(in Row) string {
-					return lo.Must(lo.Nth(in.Columns, columnIdx))
+					return lo.Must(lo.Nth(in, columnIdx))
 				},
 				xiter.Concat(hiter.Once(toRow(header...)), slices.Values(rows)),
 			)))
@@ -925,7 +925,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		for _, row := range result.Rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
 				runewidth.Wrap,
-				hiter.Pairs(slices.Values(row.Columns), slices.Values(adjustedWidths))),
+				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
 			table.Append(wrappedColumns)
 		}
@@ -954,7 +954,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
-			for j, column := range row.Columns {
+			for j, column := range row {
 				fmt.Fprintf(out, format, result.ColumnNames[j], column)
 			}
 		}
@@ -962,7 +962,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		if len(result.ColumnNames) > 0 {
 			fmt.Fprintln(out, strings.Join(result.ColumnNames, "\t"))
 			for _, row := range result.Rows {
-				fmt.Fprintln(out, strings.Join(row.Columns, "\t"))
+				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}
 		}
 	}
