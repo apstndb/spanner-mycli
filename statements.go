@@ -138,6 +138,32 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 	}, nil
 }
 
+type ShowDatabasesStatement struct {
+}
+
+var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
+
+func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	dbIter := session.adminClient.ListDatabases(ctx, &databasepb.ListDatabasesRequest{
+		Parent: session.InstancePath(),
+	})
+
+	var rows []Row
+	for database, err := range dbIter.All() {
+		if err != nil {
+			return nil, err
+		}
+
+		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
+		rows = append(rows, toRow(matched[1]))
+	}
+
+	return &Result{ColumnNames: []string{"Database"},
+		Rows:         rows,
+		AffectedRows: len(rows),
+	}, nil
+}
+
 // Schema
 
 type ShowCreateStatement struct {
@@ -174,23 +200,6 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	return result, nil
-}
-
-func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
-	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
-	table = regexp.QuoteMeta(table)
-
-	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
-
-	if schema != "" {
-		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
-		re += `\.`
-	}
-
-	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
-	re += `(?:\s+[^.]|$)`
-
-	return regexp.MustCompile(re).MatchString(ddl)
 }
 
 type ShowTablesStatement struct {
@@ -237,14 +246,6 @@ ORDER BY
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
 	})
-}
-
-func extractSchemaAndName(s string) (string, string) {
-	schema, name, found := strings.Cut(s, ".")
-	if !found {
-		return "", unquoteIdentifier(s)
-	}
-	return unquoteIdentifier(schema), unquoteIdentifier(name)
 }
 
 type ShowIndexStatement struct {
@@ -1169,32 +1170,6 @@ func (s *NopStatement) Execute(ctx context.Context, session *Session) (*Result, 
 
 // end of statements
 
-type ShowDatabasesStatement struct {
-}
-
-var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
-
-func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	dbIter := session.adminClient.ListDatabases(ctx, &databasepb.ListDatabasesRequest{
-		Parent: session.InstancePath(),
-	})
-
-	var rows []Row
-	for database, err := range dbIter.All() {
-		if err != nil {
-			return nil, err
-		}
-
-		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
-		rows = append(rows, toRow(matched[1]))
-	}
-
-	return &Result{ColumnNames: []string{"Database"},
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
-}
-
 var (
 	t    = template.New("temp")
 	temp = lo.Must(t.Parse(
@@ -1237,4 +1212,29 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 		SQL:    sql,
 		Params: genParams,
 	}, nil
+}
+
+func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
+	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
+	table = regexp.QuoteMeta(table)
+
+	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
+
+	if schema != "" {
+		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
+		re += `\.`
+	}
+
+	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
+	re += `(?:\s+[^.]|$)`
+
+	return regexp.MustCompile(re).MatchString(ddl)
+}
+
+func extractSchemaAndName(s string) (string, string) {
+	schema, name, found := strings.Cut(s, ".")
+	if !found {
+		return "", unquoteIdentifier(s)
+	}
+	return unquoteIdentifier(schema), unquoteIdentifier(name)
 }
