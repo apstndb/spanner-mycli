@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,8 +18,10 @@ import (
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
 	"github.com/hymkor/go-multiline-ny"
+	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/nyaosorg/go-readline-ny"
+	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 	"github.com/samber/lo"
 )
@@ -80,6 +83,50 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 		h.Add(unquoted)
 	}
 	return &persistentHistory{filename: filename, history: h}, nil
+}
+
+func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
+	ed := &multiline.Editor{}
+
+	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	history, err := setupHistory(ed, c.SystemVariables.HistoryFile)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
+		statements, err := separateInput(strings.Join(lines, "\n"))
+
+		// Continue with waiting prompt if there is an error with waiting status
+		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
+			c.waitingStatus = e.WaitingString
+			return false
+		}
+
+		// reset waitingStatus
+		c.waitingStatus = ""
+
+		// Submit if there is an error or completed statement.
+		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+	})
+
+	ed.SetPrompt(PS1PS2FuncToPromptFunc(
+		func() string {
+			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
+		},
+		func(ps1 string) string {
+			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
+
+			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
+			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
+		}))
+
+	return ed, history, nil
 }
 
 func PS1PS2FuncToPromptFunc(ps1F func() string, ps2F func(ps1 string) string) func(w io.Writer, lnum int) (int, error) {
@@ -205,4 +252,52 @@ func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
 	ed.Highlight = defaultHighlights
 	ed.ResetColor = colorToSequence(color.Reset)
 	ed.DefaultColor = colorToSequence(color.Reset)
+}
+
+func setupHistory(ed *multiline.Editor, historyFileName string) (History, error) {
+	history, err := newPersistentHistory(historyFileName, simplehistory.New())
+	if err != nil {
+		return nil, err
+	}
+
+	ed.SetHistory(history)
+	ed.SetHistoryCycling(true)
+
+	return history, nil
+}
+
+func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	lines, err := ed.Read(ctx)
+	if err != nil {
+		if len(lines) == 0 {
+			return nil, err
+		}
+
+		str := strings.Join(lines, "\n")
+		return &inputStatement{
+			statement:                str,
+			statementWithoutComments: str,
+			delim:                    "",
+		}, err
+	}
+
+	input := strings.Join(lines, "\n") + "\n"
+
+	statements, err := separateInput(input)
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(statements) {
+	case 0:
+		return nil, errors.New("no input")
+	case 1:
+		return &statements[0], nil
+	default:
+		return nil, errors.New("sql queries are limited to single statements in interactive mode")
+	}
+}
+
+func isInterrupted(err error) bool {
+	return errors.Is(err, readline.CtrlC)
 }

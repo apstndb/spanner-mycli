@@ -33,16 +33,9 @@ import (
 	"time"
 
 	"github.com/kballard/go-shellquote"
-	"github.com/nyaosorg/go-readline-ny"
-	"github.com/nyaosorg/go-readline-ny/keys"
-	"github.com/nyaosorg/go-readline-ny/simplehistory"
-
-	"github.com/hymkor/go-multiline-ny"
 	"github.com/mattn/go-runewidth"
-
 	"golang.org/x/term"
 
-	"github.com/apstndb/gsqlutils"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -82,88 +75,40 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	}, nil
 }
 
-func (c *Cli) setupHistory(ed *multiline.Editor) (History, error) {
-	history, err := newPersistentHistory(c.SystemVariables.HistoryFile, simplehistory.New())
-	if err != nil {
-		return nil, err
-	}
-
-	ed.SetHistory(history)
-	ed.SetHistoryCycling(true)
-
-	return history, nil
-}
-
 func (c *Cli) RunInteractive(ctx context.Context) int {
-	ed := &multiline.Editor{}
-
-	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
-	if err != nil {
-		return c.ExitOnError(err)
-	}
-
-	history, err := c.setupHistory(ed)
-	if err != nil {
-		return c.ExitOnError(err)
-	}
-
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
 		return c.ExitOnError(err)
 	}
+
 	if exists {
 		fmt.Fprintf(c.OutStream, "Connected.\n")
 	} else {
 		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
 	}
 
-	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
-		statements, err := separateInput(strings.Join(lines, "\n"))
-
-		// Continue with waiting prompt if there is an error with waiting status
-		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
-			c.waitingStatus = e.WaitingString
-			return false
-		}
-
-		// reset waitingStatus
-		c.waitingStatus = ""
-
-		// Submit if there is an error or completed statement.
-		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
-	})
-
-	ed.SetPrompt(PS1PS2FuncToPromptFunc(
-		func() string {
-			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
-		},
-		func(ps1 string) string {
-			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
-
-			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
-			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
-			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
-		}))
+	ed, history, err := initializeMultilineEditor(c)
+	if err != nil {
+		return c.ExitOnError(err)
+	}
 
 	// ensure reset
 	c.waitingStatus = ""
 
 	for {
+		// Reset everytime to reflect system variable
 		setLineEditor(ed, c.SystemVariables.EnableHighlight)
+
 		input, err := readInteractiveInput(ctx, ed)
 
-		// reset default
+		// reset for next input before continue
 		ed.SetDefault(nil)
 
-		if errors.Is(err, io.EOF) {
+		switch {
+		case errors.Is(err, io.EOF):
 			fmt.Fprintln(c.OutStream, "Bye")
 			return c.handleExit()
-		}
-		if errors.Is(err, readline.CtrlC) {
-			c.PrintInteractiveError(err)
-			continue
-		}
-		if err != nil {
+		case isInterrupted(err), err != nil:
 			c.PrintInteractiveError(err)
 			continue
 		}
@@ -175,6 +120,8 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		}
 
 		history.Add(input.statement + ";")
+
+		// Some statements are needed to be handled.
 
 		if _, ok := stmt.(*ExitStatement); ok {
 			fmt.Fprintln(c.OutStream, "Bye")
@@ -385,38 +332,6 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 			return value[varName]
 		}
 	})
-}
-
-func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
-	lines, err := ed.Read(ctx)
-	if err != nil {
-		if len(lines) == 0 {
-			return nil, err
-		}
-
-		str := strings.Join(lines, "\n")
-		return &inputStatement{
-			statement:                str,
-			statementWithoutComments: str,
-			delim:                    "",
-		}, err
-	}
-
-	input := strings.Join(lines, "\n") + "\n"
-
-	statements, err := separateInput(input)
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(statements) {
-	case 0:
-		return nil, errors.New("no input")
-	case 1:
-		return &statements[0], nil
-	default:
-		return nil, errors.New("sql queries are limited to single statements in interactive mode")
-	}
 }
 
 func confirm(out io.Writer, msg string) bool {
