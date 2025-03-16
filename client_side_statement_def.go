@@ -25,10 +25,16 @@ type clientSideStatementDescription struct {
 }
 
 type clientSideStatementDef struct {
-	Descriptions   []clientSideStatementDescription
-	Pattern        *regexp.Regexp
+	// Descriptions represents human-readable descriptions.
+	// It can be multiple because some clientSideStatementDef represents multiple statements in single pattern.
+	Descriptions []clientSideStatementDescription
+
+	// Pattern is a compiled regular expression for the statement.
+	// It must be matched on the whole statement without semicolon, and case-insensitive.
+	Pattern *regexp.Regexp
+
+	// HandleSubmatch holds a handler which converts the result of (*regexp.Regexp).FindStringSubmatch() to Statement.
 	HandleSubmatch func(matched []string) (Statement, error)
-	// TODO: HandleNamedGroups func(input string, groups map[string]string) (Statement, error)
 }
 
 var clientSideStatementDefs = []*clientSideStatementDef{
