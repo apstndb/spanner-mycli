@@ -731,3 +731,14 @@ func parsePaths(p *memefish.Parser) ([]string, error) {
 		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
 	}
 }
+
+func exprToFullName(expr ast.Expr) (string, error) {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name, nil
+	case *ast.Path:
+		return scxiter.Join(xiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
+	default:
+		return "", fmt.Errorf("must be ident or path, but: %T", expr)
+	}
+}
