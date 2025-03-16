@@ -26,6 +26,8 @@ import (
 	"time"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/adcplus"
+	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -763,4 +765,26 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 		return nil, nil, fmt.Errorf("query can't be a partition query: %w", err)
 	}
 	return partitions, batchROTx, nil
+}
+
+func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
+	var opts []option.ClientOption
+	if sysVars.Endpoint != "" {
+		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
+	}
+
+	switch {
+	case sysVars.WithoutAuthentication:
+		opts = append(opts, option.WithoutAuthentication())
+	case sysVars.EnableADCPlus:
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(source))
+	case len(credential) > 0:
+		opts = append(opts, option.WithCredentialsJSON(credential))
+	}
+
+	return NewSession(ctx, sysVars, opts...)
 }

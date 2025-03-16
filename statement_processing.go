@@ -272,3 +272,45 @@ func logParseStatements(stmts []string) {
 		logParseStatement(stmt)
 	}
 }
+
+// buildCommands parses the input and builds a list of commands for batch execution.
+// It can compose BulkDdlStatement from consecutive DDL statements.
+func buildCommands(input string, mode parseMode) ([]Statement, error) {
+	var cmds []Statement
+	var pendingDdls []string
+
+	stmts, err := separateInput(input)
+	if err != nil {
+		return nil, err
+	}
+	for _, separated := range stmts {
+		// Ignore the last empty statement
+		if separated.delim == delimiterUndefined && separated.statementWithoutComments == "" {
+			continue
+		}
+
+		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.statementWithoutComments), separated.statement, mode)
+		if err != nil {
+			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.statement, separated.statementWithoutComments)
+		}
+		if ddl, ok := stmt.(*DdlStatement); ok {
+			pendingDdls = append(pendingDdls, ddl.Ddl)
+			continue
+		}
+
+		// Flush pending DDLs
+		if len(pendingDdls) > 0 {
+			cmds = append(cmds, &BulkDdlStatement{pendingDdls})
+			pendingDdls = nil
+		}
+
+		cmds = append(cmds, stmt)
+	}
+
+	// Flush pending DDLs
+	if len(pendingDdls) > 0 {
+		cmds = append(cmds, &BulkDdlStatement{pendingDdls})
+	}
+
+	return cmds, nil
+}
