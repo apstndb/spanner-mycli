@@ -29,7 +29,8 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
-	"github.com/cloudspannerecosystem/memefish"
+	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -404,56 +405,7 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 	return &Result{KeepVariables: true}, nil
 }
 
-// Query Parameter
-
-type ShowParamsStatement struct{}
-
-func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	strMap := make(map[string]string)
-	for k, v := range session.systemVariables.Params {
-		strMap[k] = v.SQL()
-	}
-
-	rows := slices.SortedFunc(
-		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
-			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
-		}),
-		ToSortFunc(func(r Row) string { return r.Columns[0] }))
-
-	return &Result{
-		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},
-		Rows:          rows,
-		KeepVariables: true,
-	}, nil
-}
-
-type SetParamTypeStatement struct {
-	Name string
-	Type string
-}
-
-func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseType("", s.Type); err != nil {
-		return nil, err
-	} else {
-		session.systemVariables.Params[s.Name] = expr
-		return &Result{KeepVariables: true}, nil
-	}
-}
-
-type SetParamValueStatement struct {
-	Name  string
-	Value string
-}
-
-func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
-		return nil, err
-	} else {
-		session.systemVariables.Params[s.Name] = expr
-		return &Result{KeepVariables: true}, nil
-	}
-}
+// Query Parameter related statements are defined in statements_params.go
 
 // Mutation related statements are defined in statements_mutations.go
 
@@ -698,4 +650,29 @@ func extractSchemaAndName(s string) (string, string) {
 		return "", unquoteIdentifier(s)
 	}
 	return unquoteIdentifier(schema), unquoteIdentifier(name)
+}
+
+func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {
+	result := make(map[string]any)
+	for k, v := range paramsNodeMap {
+		switch v := v.(type) {
+		case ast.Type:
+			if !includeType {
+				continue
+			}
+
+			typ, err := memebridge.MemefishTypeToSpannerpbType(v)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = gcvctor.TypedNull(typ)
+		case ast.Expr:
+			expr, err := memebridge.MemefishExprToGCV(v)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = expr
+		}
+	}
+	return result, nil
 }
