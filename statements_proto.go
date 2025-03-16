@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -213,4 +215,17 @@ func isValidDescriptorProto(message proto.Message) bool {
 	default:
 		return false
 	}
+}
+
+func toNamedType(fullName string) *ast.NamedType {
+	return &ast.NamedType{Path: slices.Collect(xiter.Map(
+		func(s string) *ast.Ident {
+			return &ast.Ident{Name: s}
+		},
+		slices.Values(strings.Split(fullName, ".")))),
+	}
+}
+
+func toNamedTypes(fullNames []string) []*ast.NamedType {
+	return slices.Collect(xiter.Map(toNamedType, slices.Values(fullNames)))
 }
