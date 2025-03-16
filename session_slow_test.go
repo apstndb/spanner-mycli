@@ -24,7 +24,7 @@ const (
 )
 
 func TestRequestPriority(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
 		spanemuboost.WithProjectID(project),
