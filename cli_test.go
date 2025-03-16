@@ -140,8 +140,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
@@ -162,8 +162,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
@@ -188,8 +188,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
