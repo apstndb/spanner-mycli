@@ -15,7 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"spheric.cloud/xiter"
+	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
 )
@@ -44,7 +44,7 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
 	fullNameSetFds := maps.Collect(
-		xiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
+		scxiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
 			return info.FullName, struct{}{}
 		}),
 	)
@@ -84,8 +84,8 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 	fds := session.systemVariables.ProtoDescriptor
 
 	rows := slices.Collect(
-		xiter.Map(
-			xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package, info.FileName)
 			},
@@ -116,8 +116,8 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	}
 
 	rows := slices.Collect(
-		xiter.Map(
-			xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package)
 			},
@@ -135,7 +135,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 // Helper functions
 
 func fdsToInfoSeq(fds *descriptorpb.FileDescriptorSet) iter.Seq[*descriptorInfo] {
-	return xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
+	return scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
 }
 
 func splitExistence(fullNameSet map[string]struct{}, paths []string) ([]string, []string) {
@@ -171,8 +171,8 @@ func fdpToSeq(fdp *descriptorpb.FileDescriptorProto) iter.Seq2[string, proto.Mes
 }
 
 func fdpToInfo(fdp *descriptorpb.FileDescriptorProto) iter.Seq[*descriptorInfo] {
-	return xiter.MapLower(
-		xiter.FilterValue(
+	return scxiter.MapLower(
+		scxiter.FilterValue(
 			fdpToSeq(fdp),
 			isValidDescriptorProto,
 		),

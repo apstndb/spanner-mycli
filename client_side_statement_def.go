@@ -15,7 +15,7 @@ import (
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
-	xiter2 "spheric.cloud/xiter"
+	scxiter "spheric.cloud/xiter"
 )
 
 // clientSideStatementDescription is a human-readable part of clientSideStatementDef.
@@ -719,7 +719,7 @@ func parsePaths(p *memefish.Parser) ([]string, error) {
 		}
 		return sliceOf(name), nil
 	case *ast.TupleStructLiteral:
-		names, err := xiter2.TryCollect(xiter2.MapErr(
+		names, err := scxiter.TryCollect(scxiter.MapErr(
 			slices.Values(e.Values),
 			exprToFullName))
 		if err != nil {

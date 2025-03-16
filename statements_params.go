@@ -9,7 +9,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
-	"spheric.cloud/xiter"
+	scxiter "spheric.cloud/xiter"
 )
 
 type ShowParamsStatement struct{}
@@ -21,7 +21,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	rows := slices.SortedFunc(
-		xiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
+		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
 			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
 		}),
 		ToSortFunc(func(r Row) string { return r.Columns[0] }))
