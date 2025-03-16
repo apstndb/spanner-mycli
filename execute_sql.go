@@ -200,83 +200,6 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 }
 
-func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, true)
-	if err != nil {
-		return nil, err
-	}
-
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, stmt, isDML)
-	if err != nil {
-		return nil, err
-	}
-
-	if queryPlan == nil {
-		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithoutStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		ColumnNames:  explainColumnNames,
-		ColumnAlign:  explainColumnAlign,
-		AffectedRows: len(rows),
-		Rows:         rows,
-		Timestamp:    timestamp,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
-	}
-
-	return result, nil
-}
-
-func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
-
-	stats, _, _, plan, err := consumeRowIterDiscard(iter)
-	if err != nil {
-		return nil, err
-	}
-
-	queryStats, err := parseQueryStats(stats)
-	if err != nil {
-		return nil, err
-	}
-
-	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
-	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
-	if plan == nil {
-		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithStats(plan)
-	if err != nil {
-		return nil, err
-	}
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
-		ForceVerbose: true,
-		AffectedRows: len(rows),
-		Stats:        queryStats,
-		Timestamp:    lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) }),
-		Rows:         rows,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(plan) }),
-	}
-	return result, nil
-}
-
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
@@ -349,41 +272,6 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		ColumnNames:  columnNames,
 		AffectedRows: int(affected),
 	}, nil
-}
-
-func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
-		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
-		return count, plan, metadata, err
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rows, predicates, err := processPlanWithStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		IsMutation:       true,
-		ColumnNames:      explainAnalyzeColumnNames,
-		ForceVerbose:     true,
-		AffectedRows:     int(affectedRows),
-		AffectedRowsType: rowCountTypeExact,
-		Rows:             rows,
-		Predicates:       predicates,
-		Timestamp:        commitResp.CommitTs,
-		LintResults:      lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
-	}
-
-	return result, nil
 }
 
 func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {

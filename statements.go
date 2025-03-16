@@ -341,37 +341,7 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-// EXPLAIN & EXPLAIN ANALYZE
-
-type ExplainStatement struct {
-	Explain string
-	IsDML   bool
-}
-
-// Execute processes `EXPLAIN` statement for queries and DMLs.
-func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplain(ctx, session, s.Explain, s.IsDML)
-}
-
-type ExplainAnalyzeStatement struct {
-	Query string
-}
-
-func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	sql := s.Query
-
-	return executeExplainAnalyze(ctx, session, sql)
-}
-
-type ExplainAnalyzeDmlStatement struct {
-	Dml string
-}
-
-func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
-
-func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplainAnalyzeDML(ctx, session, s.Dml)
-}
+// EXPLAIN & EXPLAIN ANALYZE related statements are defined in statements_explain.go
 
 // DESCRIBE
 
