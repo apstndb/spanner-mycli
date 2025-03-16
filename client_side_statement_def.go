@@ -9,9 +9,13 @@ import (
 	"time"
 
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
+	scxiter "spheric.cloud/xiter"
 )
 
 // clientSideStatementDescription is a human-readable part of clientSideStatementDef.
@@ -663,4 +667,67 @@ func parseTransaction(s string) (isReadOnly bool, err error) {
 
 	submatch := transactionRe.FindStringSubmatch(s)
 	return submatch[1] != "", nil
+}
+
+func parseSyncProtoBundle(s string) (Statement, error) {
+	p := &memefish.Parser{Lexer: &memefish.Lexer{
+		File: &token.File{
+			Buffer: s,
+		},
+	}}
+	err := p.NextToken()
+	if err != nil {
+		return nil, err
+	}
+
+	var upsertPaths, deletePaths []string
+loop:
+	for {
+		switch {
+		case p.Token.Kind == token.TokenEOF:
+			break loop
+		case p.Token.IsKeywordLike("UPSERT"):
+			paths, err := parsePaths(p)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parsePaths: %w", err)
+			}
+			upsertPaths = append(upsertPaths, paths...)
+		case p.Token.IsKeywordLike("DELETE"):
+			paths, err := parsePaths(p)
+			if err != nil {
+				return nil, err
+			}
+			deletePaths = append(deletePaths, paths...)
+		default:
+			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
+		}
+	}
+	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
+}
+
+func parsePaths(p *memefish.Parser) ([]string, error) {
+	expr, err := p.ParseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		name, err := exprToFullName(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		return sliceOf(name), nil
+	case *ast.TupleStructLiteral:
+		names, err := scxiter.TryCollect(scxiter.MapErr(
+			slices.Values(e.Values),
+			exprToFullName))
+		if err != nil {
+			return nil, err
+		}
+
+		return names, err
+	default:
+		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
+	}
 }

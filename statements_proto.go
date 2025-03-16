@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"log/slog"
 	"maps"
@@ -11,17 +10,22 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"spheric.cloud/xiter"
+	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
 )
+
+type descriptorInfo struct {
+	FullName string
+	Kind     string
+	Package  string
+	FileName string
+}
 
 type SyncProtoStatement struct {
 	UpsertPaths []string
@@ -40,7 +44,7 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
 	fullNameSetFds := maps.Collect(
-		xiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
+		scxiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
 			return info.FullName, struct{}{}
 		}),
 	)
@@ -74,50 +78,14 @@ func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, de
 	return sliceOf(ddl.SQL())
 }
 
-func parseSyncProtoBundle(s string) (Statement, error) {
-	p := &memefish.Parser{Lexer: &memefish.Lexer{
-		File: &token.File{
-			Buffer: s,
-		},
-	}}
-	err := p.NextToken()
-	if err != nil {
-		return nil, err
-	}
-
-	var upsertPaths, deletePaths []string
-loop:
-	for {
-		switch {
-		case p.Token.Kind == token.TokenEOF:
-			break loop
-		case p.Token.IsKeywordLike("UPSERT"):
-			paths, err := parsePaths(p)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parsePaths: %w", err)
-			}
-			upsertPaths = append(upsertPaths, paths...)
-		case p.Token.IsKeywordLike("DELETE"):
-			paths, err := parsePaths(p)
-			if err != nil {
-				return nil, err
-			}
-			deletePaths = append(deletePaths, paths...)
-		default:
-			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
-		}
-	}
-	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
-}
-
 type ShowLocalProtoStatement struct{}
 
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.ProtoDescriptor
 
 	rows := slices.Collect(
-		xiter.Map(
-			xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package, info.FileName)
 			},
@@ -148,8 +116,8 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	}
 
 	rows := slices.Collect(
-		xiter.Map(
-			xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		scxiter.Map(
+			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package)
 			},
@@ -167,7 +135,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 // Helper functions
 
 func fdsToInfoSeq(fds *descriptorpb.FileDescriptorSet) iter.Seq[*descriptorInfo] {
-	return xiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
+	return scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
 }
 
 func splitExistence(fullNameSet map[string]struct{}, paths []string) ([]string, []string) {
@@ -175,64 +143,11 @@ func splitExistence(fullNameSet map[string]struct{}, paths []string) ([]string, 
 	return grouped[true], grouped[false]
 }
 
-func parsePaths(p *memefish.Parser) ([]string, error) {
-	expr, err := p.ParseExpr()
-	if err != nil {
-		return nil, err
-	}
-
-	switch e := expr.(type) {
-	case *ast.ParenExpr:
-		name, err := exprToFullName(e.Expr)
-		if err != nil {
-			return nil, err
-		}
-		return sliceOf(name), nil
-	case *ast.TupleStructLiteral:
-		names, err := xiter.TryCollect(xiter.MapErr(
-			slices.Values(e.Values),
-			exprToFullName))
-		if err != nil {
-			return nil, err
-		}
-
-		return names, err
-	default:
-		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
-	}
-}
-
 func hasKey[K comparable, V any, M map[K]V](m M) func(key K) bool {
 	return func(key K) bool {
 		_, ok := m[key]
 		return ok
 	}
-}
-
-func ToAny[T any](v T) any {
-	return v
-}
-
-func ToAnySeq[T any](seq iter.Seq[T]) iter.Seq[any] {
-	return xiter.Map(seq, ToAny)
-}
-
-func ToMaybeInterface[T, I any](v T) iter.Seq[I] {
-	if i, ok := any(v).(I); ok {
-		return xiter.Of(i)
-	}
-	return xiter.Empty[I]()
-}
-
-func ToInterfaceSeq[T, I any](seq iter.Seq[T]) iter.Seq[I] {
-	return xiter.Flatmap(seq, ToMaybeInterface[T, I])
-}
-
-type descriptorInfo struct {
-	FullName string
-	Kind     string
-	Package  string
-	FileName string
 }
 
 func fdpToSeq(fdp *descriptorpb.FileDescriptorProto) iter.Seq2[string, proto.Message] {
@@ -256,8 +171,8 @@ func fdpToSeq(fdp *descriptorpb.FileDescriptorProto) iter.Seq2[string, proto.Mes
 }
 
 func fdpToInfo(fdp *descriptorpb.FileDescriptorProto) iter.Seq[*descriptorInfo] {
-	return xiter.MapLower(
-		xiter.FilterValue(
+	return scxiter.MapLower(
+		scxiter.FilterValue(
 			fdpToSeq(fdp),
 			isValidDescriptorProto,
 		),

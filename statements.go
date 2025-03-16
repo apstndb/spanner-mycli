@@ -15,36 +15,21 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"html/template"
-	"log"
-	"maps"
 	"regexp"
-	"slices"
 	"strings"
-	"time"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/lox"
-	"github.com/cloudspannerecosystem/memefish"
+	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
-	"github.com/k0kubun/pp/v3"
-	"github.com/mattn/go-runewidth"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
-	"google.golang.org/protobuf/encoding/protojson"
-	scxiter "spheric.cloud/xiter"
 )
 
-var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$$`)
+var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
 
 // Order and sections should be matched in client_side_statement_def.go
 
@@ -126,7 +111,7 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 
 // Database
 
-// Implementation of UseStatement is in cli.go because it needs to replace Session pointer in Cli.
+// UseStatement is actually implemented in cli.go because it needs to replace Session pointer in Cli.
 type UseStatement struct {
 	Database string
 	Role     string
@@ -151,8 +136,7 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 	}, nil
 }
 
-type ShowDatabasesStatement struct {
-}
+type ShowDatabasesStatement struct{}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
@@ -177,135 +161,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-// Schema
-
-type ShowCreateStatement struct {
-	ObjectType string
-	Schema     string
-	Name       string
-}
-
-func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var rows []Row
-	for _, stmt := range ddlResponse.Statements {
-		if isCreateDDL(stmt, s.ObjectType, s.Schema, s.Name) {
-			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Name
-			rows = append(rows, toRow(fqn, stmt))
-			break
-		}
-	}
-
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("%s %q doesn't exist in schema %q", s.ObjectType, s.Name, s.Schema)
-	}
-
-	result := &Result{
-		ColumnNames:  []string{"Name", "DDL"},
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}
-
-	return result, nil
-}
-
-type ShowTablesStatement struct {
-	Schema string
-}
-
-func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
-	stmt := spanner.Statement{
-		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias),
-		Params: map[string]any{"schema": s.Schema},
-	}
-
-	return executeInformationSchemaBasedStatement(ctx, session, "SHOW TABLES", stmt, nil)
-}
-
-type ShowColumnsStatement struct {
-	Schema string
-	Table  string
-}
-
-func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.Statement{SQL: `SELECT
-  C.COLUMN_NAME as Field,
-  C.SPANNER_TYPE as Type,
-  C.IS_NULLABLE as ` + "`NULL`" + `,
-  I.INDEX_TYPE as Key,
-  IC.COLUMN_ORDERING as Key_Order,
-  CONCAT(CO.OPTION_NAME, "=", CO.OPTION_VALUE) as Options
-FROM
-  INFORMATION_SCHEMA.COLUMNS C
-LEFT JOIN
-  INFORMATION_SCHEMA.INDEX_COLUMNS IC USING(TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME)
-LEFT JOIN
-  INFORMATION_SCHEMA.INDEXES I USING(TABLE_SCHEMA, TABLE_NAME, INDEX_NAME)
-LEFT JOIN
-  INFORMATION_SCHEMA.COLUMN_OPTIONS CO USING(TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME)
-WHERE
-  LOWER(C.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(C.TABLE_NAME) = LOWER(@table_name)
-ORDER BY
-  C.ORDINAL_POSITION ASC`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
-
-	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
-		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	})
-}
-
-type ShowIndexStatement struct {
-	Schema string
-	Table  string
-}
-
-func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.Statement{
-		SQL: `SELECT
-  TABLE_NAME as Table,
-  PARENT_TABLE_NAME as Parent_table,
-  INDEX_NAME as Index_name,
-  INDEX_TYPE as Index_type,
-  IS_UNIQUE as Is_unique,
-  IS_NULL_FILTERED as Is_null_filtered,
-  INDEX_STATE as Index_state
-FROM
-  INFORMATION_SCHEMA.INDEXES I
-WHERE
-  LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
-
-	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
-		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	})
-}
-
-type ShowDdlsStatement struct{}
-
-func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		KeepVariables: true,
-		// intentionally empty column name to make TAB format valid DDL
-		ColumnNames: sliceOf(""),
-		Rows: sliceOf(toRow(stringsiter.Collect(xiter.Map(
-			func(s string) string { return s + ";\n" },
-			slices.Values(resp.GetStatements()))))),
-	}, nil
-}
+// Schema related statements are defined in statements_schema.go
 
 // Protocol Buffers related statements are defined in statements_proto.go
 
@@ -341,71 +197,7 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-// EXPLAIN & EXPLAIN ANALYZE
-
-type ExplainStatement struct {
-	Explain string
-	IsDML   bool
-}
-
-// Execute processes `EXPLAIN` statement for queries and DMLs.
-func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplain(ctx, session, s.Explain, s.IsDML)
-}
-
-type ExplainAnalyzeStatement struct {
-	Query string
-}
-
-func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	sql := s.Query
-
-	return executeExplainAnalyze(ctx, session, sql)
-}
-
-type ExplainAnalyzeDmlStatement struct {
-	Dml string
-}
-
-func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
-
-func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplainAnalyzeDML(ctx, session, s.Dml)
-}
-
-// DESCRIBE
-
-type DescribeStatement struct {
-	Statement string
-	IsDML     bool
-}
-
-// Execute processes `DESCRIBE` statement for queries and DMLs.
-func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Statement, session.systemVariables.Params, true)
-	if err != nil {
-		return nil, err
-	}
-
-	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
-	if err != nil {
-		return nil, err
-	}
-
-	var rows []Row
-	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
-	}
-
-	result := &Result{
-		AffectedRows: len(rows),
-		ColumnNames:  describeColumnNames,
-		Timestamp:    timestamp,
-		Rows:         rows,
-	}
-
-	return result, nil
-}
+// EXPLAIN, EXPLAIN ANALYZE and DESCRIBE related statements are defined in statements_explain.go
 
 // Partitioned DML
 
@@ -440,310 +232,18 @@ func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session)
 	}, nil
 }
 
-// Partitioned Query
+// Partitioned Query related statements are defined in statements_partitioned_query.go
 
-type PartitionStatement struct{ SQL string }
-
-func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
-	if err != nil {
-		return nil, err
-	}
-
-	rows := slices.Collect(xiter.Map(
-		func(partition *spanner.Partition) Row {
-			return toRow(base64.StdEncoding.EncodeToString(partition.GetPartitionToken()))
-		},
-		slices.Values(partitions)))
-
-	ts, err := batchROTx.Timestamp()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		ColumnNames:  sliceOf("Partition_Token"),
-		Rows:         rows,
-		AffectedRows: len(rows),
-		Timestamp:    ts,
-		ForceWrap:    true,
-	}, nil
-}
-
-type TryPartitionedQueryStatement struct{ SQL string }
-
-func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	_, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		batchROTx.Cleanup(ctx)
-		batchROTx.Close()
-	}()
-
-	ts, err := batchROTx.Timestamp()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		ColumnNames:  sliceOf("Root_Partitionable"),
-		Rows:         sliceOf(toRow("TRUE")),
-		AffectedRows: 1,
-		Timestamp:    ts,
-		ForceWrap:    true,
-	}, nil
-}
-
-type RunPartitionedQueryStatement struct{ SQL string }
-
-func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
-	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		batchROTx.Cleanup(ctx)
-		batchROTx.Close()
-	}()
-
-	var allRows []Row
-	var rowType *sppb.StructType
-	for _, partition := range partitions {
-		iter := batchROTx.Execute(ctx, partition)
-		rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-		if err != nil {
-			return nil, err
-		}
-		allRows = append(allRows, rows...)
-
-		if len(md.GetRowType().GetFields()) > 0 {
-			rowType = md.GetRowType()
-		}
-	}
-
-	result := &Result{
-		ColumnNames:    extractColumnNames(rowType.GetFields()),
-		Rows:           allRows,
-		ColumnTypes:    rowType.GetFields(),
-		AffectedRows:   len(allRows),
-		PartitionCount: len(partitions),
-	}
-	return result, nil
-}
-
-type RunPartitionStatement struct{ Token string }
-
-func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return nil, errors.New("unsupported statement")
-}
-
-// Transaction
-
-type BeginRwStatement struct {
-	Priority sppb.RequestOptions_Priority
-}
-
-func (BeginRwStatement) isMutationStatement() {}
-
-func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
-	}
-
-	if session.InReadOnlyTransaction() {
-		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
-	}
-
-	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
-		return nil, err
-	}
-
-	return &Result{IsMutation: true}, nil
-}
-
-type BeginStatement struct {
-	Priority sppb.RequestOptions_Priority
-}
-
-func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InTransaction() {
-		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
-	}
-
-	if session.systemVariables.ReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.Priority)
-		if err != nil {
-			return nil, err
-		}
-
-		return &Result{
-			IsMutation: true,
-			Timestamp:  ts,
-		}, nil
-	}
-
-	err := session.BeginPendingTransaction(ctx, s.Priority)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{IsMutation: true}, nil
-}
-
-type SetTransactionStatement struct {
-	IsReadOnly bool
-}
-
-func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	if !session.InPendingTransaction() {
-		// nop
-		return result, nil
-	}
-
-	if s.IsReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
-		if err != nil {
-			return nil, err
-		}
-		result.Timestamp = ts
-		return result, nil
-	} else {
-		err := session.BeginReadWriteTransaction(ctx, session.tc.priority)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-}
-
-type CommitStatement struct{}
-
-func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	switch {
-	case session.InPendingTransaction():
-		if err := session.ClosePendingTransaction(); err != nil {
-			return nil, err
-		}
-
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
-		if err := session.CloseReadOnlyTransaction(); err != nil {
-			return nil, err
-		}
-
-		return result, nil
-	case session.InReadWriteTransaction():
-		resp, err := session.CommitReadWriteTransaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		result.Timestamp = resp.CommitTs
-		result.CommitStats = resp.CommitStats
-		return result, nil
-	default:
-		return nil, errors.New("invalid state")
-	}
-}
-
-type RollbackStatement struct{}
-
-func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	switch {
-	case session.InPendingTransaction():
-		if err := session.ClosePendingTransaction(); err != nil {
-			return nil, err
-		}
-
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
-		if err := session.CloseReadOnlyTransaction(); err != nil {
-			return nil, err
-		}
-
-		return result, nil
-	case session.InReadWriteTransaction():
-		if err := session.RollbackReadWriteTransaction(ctx); err != nil {
-			return nil, err
-		}
-
-		return result, nil
-	default:
-		return nil, errors.New("invalid state")
-	}
-}
-
-type timestampBoundType int
-
-const (
-	timestampBoundUnspecified timestampBoundType = iota
-	strong
-	exactStaleness
-	readTimestamp
-)
-
-type BeginRoStatement struct {
-	TimestampBoundType timestampBoundType
-	Staleness          time.Duration
-	Timestamp          time.Time
-	Priority           sppb.RequestOptions_Priority
-}
-
-func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
-	}
-
-	if session.InReadOnlyTransaction() {
-		// close current transaction implicitly
-		if _, err := (&RollbackStatement{}).Execute(ctx, session); err != nil {
-			return nil, fmt.Errorf("error on close current transaction: %w", err)
-		}
-	}
-
-	ts, err := session.BeginReadOnlyTransaction(ctx, s.TimestampBoundType, s.Staleness, s.Timestamp, s.Priority)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		IsMutation: true,
-		Timestamp:  ts,
-	}, nil
-}
+// Transaction related statements are defined in statements_transaction.go
 
 // Batching
+
+type batchMode int
+
+const (
+	batchModeDDL batchMode = iota + 1
+	batchModeDML
+)
 
 type BulkDdlStatement struct {
 	Ddls []string
@@ -764,13 +264,6 @@ func (BatchDMLStatement) IsMutationStatement() {}
 func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeBatchDML(ctx, session, s.DMLs)
 }
-
-type batchMode int
-
-const (
-	batchModeDDL batchMode = iota + 1
-	batchModeDML
-)
 
 type StartBatchStatement struct {
 	Mode batchMode
@@ -817,339 +310,15 @@ func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-// System Variable
+// System Variable related statements are defined in statements_system_variable.go
 
-type ShowVariableStatement struct {
-	VarName string
-}
+// Query Parameter related statements are defined in statements_params.go
 
-func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	value, err := session.systemVariables.Get(s.VarName)
-	if err != nil {
-		return nil, err
-	}
+// Mutation related statements are defined in statements_mutations.go
 
-	columnNames := slices.Sorted(maps.Keys(value))
-	var row []string
-	for n := range slices.Values(columnNames) {
-		row = append(row, value[n])
-	}
-	return &Result{
-		ColumnNames:   columnNames,
-		Rows:          sliceOf(toRow(row...)),
-		KeepVariables: true,
-	}, nil
-}
+// Query Profiles related statements are defined in statements_query_profile
 
-type ShowVariablesStatement struct{}
-
-func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	merged := make(map[string]string)
-	for k, v := range accessorMap {
-		if v.Getter == nil {
-			continue
-		}
-
-		value, err := v.Getter(session.systemVariables, k)
-		if errors.Is(err, errIgnored) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range value {
-			merged[k] = v
-		}
-	}
-
-	rows := slices.SortedFunc(
-		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
-		ToSortFunc(func(r Row) string { return r.Columns[0] }))
-
-	return &Result{
-		ColumnNames:   []string{"name", "value"},
-		Rows:          rows,
-		KeepVariables: true,
-	}, nil
-}
-
-type SetStatement struct {
-	VarName string
-	Value   string
-}
-
-func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
-		return nil, err
-	}
-	return &Result{KeepVariables: true}, nil
-}
-
-type SetAddStatement struct {
-	VarName string
-	Value   string
-}
-
-func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
-		return nil, err
-	}
-	return &Result{KeepVariables: true}, nil
-}
-
-// Query Parameter
-
-type ShowParamsStatement struct{}
-
-func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	strMap := make(map[string]string)
-	for k, v := range session.systemVariables.Params {
-		strMap[k] = v.SQL()
-	}
-
-	rows := slices.SortedFunc(
-		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
-			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
-		}),
-		ToSortFunc(func(r Row) string { return r.Columns[0] }))
-
-	return &Result{
-		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},
-		Rows:          rows,
-		KeepVariables: true,
-	}, nil
-}
-
-type SetParamTypeStatement struct {
-	Name string
-	Type string
-}
-
-func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseType("", s.Type); err != nil {
-		return nil, err
-	} else {
-		session.systemVariables.Params[s.Name] = expr
-		return &Result{KeepVariables: true}, nil
-	}
-}
-
-type SetParamValueStatement struct {
-	Name  string
-	Value string
-}
-
-func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
-		return nil, err
-	} else {
-		session.systemVariables.Params[s.Name] = expr
-		return &Result{KeepVariables: true}, nil
-	}
-}
-
-// Mutation
-
-type MutateStatement struct {
-	Table     string
-	Operation string
-	Body      string
-}
-
-func (MutateStatement) isMutationStatement() {}
-
-func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
-	if err != nil {
-		return nil, err
-	}
-	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		err = session.tc.RWTxn().BufferWrite(mutations)
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return 0, nil, nil, err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &Result{
-		IsMutation:  true,
-		CommitStats: stats.CommitStats,
-		Timestamp:   stats.CommitTs,
-	}, nil
-}
-
-// Query Profiles
-
-type ShowQueryProfilesStatement struct{}
-
-type queryProfiles struct {
-	RawQueryPlan jsontext.Value  `json:"queryPlan"`
-	QueryPlan    *sppb.QueryPlan `json:"-"`
-	QueryStats   QueryStats      `json:"queryStats"`
-	Fprint       string          `json:"fprint"`
-}
-
-type queryProfilesRow struct {
-	IntervalEnd     time.Time        `spanner:"INTERVAL_END"`
-	TextFingerprint int64            `spanner:"TEXT_FINGERPRINT"`
-	LatencySeconds  float64          `spanner:"LATENCY_SECONDS"`
-	RawQueryProfile spanner.NullJSON `spanner:"QUERY_PROFILE"`
-	QueryProfile    *queryProfiles   `spanner:"-"`
-}
-
-func toQpr(row *spanner.Row) (*queryProfilesRow, error) {
-	var qpr queryProfilesRow
-	if err := row.ToStruct(&qpr); err != nil {
-		return nil, err
-	}
-
-	var profile queryProfiles
-	err := json.Unmarshal([]byte(qpr.RawQueryProfile.String()), &profile)
-	if err != nil {
-		return nil, err
-	}
-	qpr.QueryProfile = &profile
-
-	var queryPlan sppb.QueryPlan
-	err = protojson.Unmarshal(profile.RawQueryPlan, &queryPlan)
-	if err != nil {
-		return nil, err
-	}
-	profile.QueryPlan = &queryPlan
-
-	return &qpr, nil
-}
-
-func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
-	}
-
-	stmt := spanner.Statement{
-		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`,
-	}
-
-	iter, _ := session.RunQuery(ctx, stmt)
-
-	rows, _, _, _, _, err := consumeRowIterCollect(iter, toQpr)
-	if err != nil {
-		return nil, err
-	}
-
-	var resultRows []Row
-	for _, row := range rows {
-		rows, predicates, err := processPlanWithStats(row.QueryProfile.QueryPlan)
-		if err != nil {
-			return nil, err
-		}
-
-		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row.Columns[0]) }, slices.Values(rows))), 2)
-
-		pprinter := pp.New()
-		pprinter.SetColoringEnabled(false)
-
-		tree := strings.Join(slices.Collect(xiter.Map(
-			func(r Row) string {
-				return runewidth.FillLeft(r.Columns[0], maxIDLength) + " | " + r.Columns[1]
-			},
-			slices.Values(rows))), "\n")
-
-		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+runewidth.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
-			lox.IfOrEmpty(len(predicates) > 0, "\nPredicates:\n"+strings.Join(predicates, "\n"))+"\n"+
-			formatStats(row)))
-	}
-
-	return &Result{
-		ColumnNames:  sliceOf("Plan"),
-		Rows:         resultRows,
-		AffectedRows: len(resultRows),
-	}, nil
-}
-
-type ShowQueryProfileStatement struct {
-	Fprint int64
-}
-
-func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
-	}
-
-	stmt := spanner.Statement{
-		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE
-FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR
-WHERE TEXT_FINGERPRINT = @fprint
-ORDER BY INTERVAL_END DESC`,
-		Params: map[string]interface{}{"fprint": s.Fprint},
-	}
-
-	iter, _ := session.RunQuery(ctx, stmt)
-
-	qprs, _, _, _, _, err := consumeRowIterCollect(iter, toQpr)
-	if err != nil {
-		return nil, err
-	}
-
-	qpr, ok := lo.First(qprs)
-	if !ok {
-		return nil, errors.New("empty result")
-	}
-
-	rows, predicates, err := processPlanWithStats(qpr.QueryProfile.QueryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
-		ForceVerbose: true,
-		AffectedRows: len(rows),
-		Stats:        qpr.QueryProfile.QueryStats,
-		Rows:         rows,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(qpr.QueryProfile.QueryPlan) }),
-	}
-	return result, nil
-}
-
-// LLM
-
-type GeminiStatement struct {
-	Text string
-}
-
-func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{PreInput: composed.Statement.Text,
-		Rows: slices.Concat(
-			lo.Ternary(composed.ErrorDescription != "",
-				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
-				nil),
-			sliceOf(
-				toRow("text", composed.Statement.Text),
-				toRow("semanticDescription", composed.Statement.SemanticDescription),
-				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
-		ColumnNames: sliceOf("Column", "Value")}, nil
-}
+// LLM related statements are defined in statements_llm.go
 
 // CLI control
 
@@ -1183,37 +352,6 @@ func (s *NopStatement) Execute(ctx context.Context, session *Session) (*Result, 
 
 // end of statements
 
-var (
-	t    = template.New("temp")
-	temp = lo.Must(t.Parse(
-		`
-interval_end:                 {{.IntervalEnd}}
-text_fingerprint:             {{.TextFingerprint}}
-{{with .QueryProfile.QueryStats -}}
-elapsed_time:                 {{.ElapsedTime}}
-cpu_time:                     {{.CPUTime}}
-rows_returned:                {{.RowsReturned}}
-deleted_rows_scanned:         {{.DeletedRowsScanned}}
-optimizer_version:            {{.OptimizerVersion}}
-optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
-{{end}}`))
-)
-
-func formatStats(stats *queryProfilesRow) string {
-	var sb strings.Builder
-	if stats == nil {
-		return ""
-	}
-
-	err := temp.Execute(&sb, stats)
-	if err != nil {
-		log.Println(err)
-		return ""
-	}
-
-	return sb.String()
-}
-
 // Helper function for statements.go.
 
 func newStatement(sql string, params map[string]ast.Node, includeType bool) (spanner.Statement, error) {
@@ -1227,27 +365,35 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 	}, nil
 }
 
-func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
-	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
-	table = regexp.QuoteMeta(table)
-
-	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
-
-	if schema != "" {
-		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
-		re += `\.`
-	}
-
-	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
-	re += `(?:\s+[^.]|$)`
-
-	return regexp.MustCompile(re).MatchString(ddl)
-}
-
 func extractSchemaAndName(s string) (string, string) {
 	schema, name, found := strings.Cut(s, ".")
 	if !found {
 		return "", unquoteIdentifier(s)
 	}
 	return unquoteIdentifier(schema), unquoteIdentifier(name)
+}
+
+func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {
+	result := make(map[string]any)
+	for k, v := range paramsNodeMap {
+		switch v := v.(type) {
+		case ast.Type:
+			if !includeType {
+				continue
+			}
+
+			typ, err := memebridge.MemefishTypeToSpannerpbType(v)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = gcvctor.TypedNull(typ)
+		case ast.Expr:
+			expr, err := memebridge.MemefishExprToGCV(v)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = expr
+		}
+	}
+	return result, nil
 }
