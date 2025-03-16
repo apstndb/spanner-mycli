@@ -211,41 +211,7 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-// EXPLAIN & EXPLAIN ANALYZE related statements are defined in statements_explain.go
-
-// DESCRIBE
-
-type DescribeStatement struct {
-	Statement string
-	IsDML     bool
-}
-
-// Execute processes `DESCRIBE` statement for queries and DMLs.
-func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt, err := newStatement(s.Statement, session.systemVariables.Params, true)
-	if err != nil {
-		return nil, err
-	}
-
-	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
-	if err != nil {
-		return nil, err
-	}
-
-	var rows []Row
-	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
-	}
-
-	result := &Result{
-		AffectedRows: len(rows),
-		ColumnNames:  describeColumnNames,
-		Timestamp:    timestamp,
-		Rows:         rows,
-	}
-
-	return result, nil
-}
+// EXPLAIN, EXPLAIN ANALYZE and DESCRIBE related statements are defined in statements_explain.go
 
 // Partitioned DML
 

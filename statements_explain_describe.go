@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spannerplanviz/plantree"
@@ -56,6 +57,37 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 	return executeExplainAnalyzeDML(ctx, session, s.Dml)
 }
 
+type DescribeStatement struct {
+	Statement string
+	IsDML     bool
+}
+
+// Execute processes `DESCRIBE` statement for queries and DMLs.
+func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	stmt, err := newStatement(s.Statement, session.systemVariables.Params, true)
+	if err != nil {
+		return nil, err
+	}
+
+	_, timestamp, metadata, err := runAnalyzeQuery(ctx, session, stmt, s.IsDML)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []Row
+	for _, field := range metadata.GetRowType().GetFields() {
+		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
+	}
+
+	result := &Result{
+		AffectedRows: len(rows),
+		ColumnNames:  describeColumnNames,
+		Timestamp:    timestamp,
+		Rows:         rows,
+	}
+
+	return result, nil
+}
 func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
@@ -208,4 +240,17 @@ func processPlanImpl(plan *sppb.QueryPlan, withStats bool) (rows []Row, predicat
 	}
 
 	return rows, predicates, nil
+}
+
+func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
+	if !isDML {
+		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
+		return queryPlan, time.Time{}, metadata, err
+	}
+
+	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
+		return 0, plan, metadata, err
+	})
+	return queryPlan, commitResp.CommitTs, metadata, err
 }

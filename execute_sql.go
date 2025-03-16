@@ -274,19 +274,6 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}, nil
 }
 
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
-	if !isDML {
-		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return queryPlan, time.Time{}, metadata, err
-	}
-
-	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return 0, plan, metadata, err
-	})
-	return queryPlan, commitResp.CommitTs, metadata, err
-}
-
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
 	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
