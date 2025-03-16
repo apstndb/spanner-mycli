@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
+	"strings"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -170,4 +172,21 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
+}
+
+func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
+	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
+	table = regexp.QuoteMeta(table)
+
+	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
+
+	if schema != "" {
+		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
+		re += `\.`
+	}
+
+	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
+	re += `(?:\s+[^.]|$)`
+
+	return regexp.MustCompile(re).MatchString(ddl)
 }

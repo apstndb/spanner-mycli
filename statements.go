@@ -366,23 +366,6 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 	}, nil
 }
 
-func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
-	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
-	table = regexp.QuoteMeta(table)
-
-	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
-
-	if schema != "" {
-		re += fmt.Sprintf("(%[1]s|`%[1]s`)", schema)
-		re += `\.`
-	}
-
-	re += fmt.Sprintf("(%[1]s|`%[1]s`)", table)
-	re += `(?:\s+[^.]|$)`
-
-	return regexp.MustCompile(re).MatchString(ddl)
-}
-
 func extractSchemaAndName(s string) (string, string) {
 	schema, name, found := strings.Cut(s, ".")
 	if !found {
