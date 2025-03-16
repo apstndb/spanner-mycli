@@ -11,6 +11,32 @@ import (
 	"github.com/samber/lo"
 )
 
+// clientSideStatementDescription is a human-readable part of clientSideStatementDef.
+type clientSideStatementDescription struct {
+	// Usage is a purpose of the statement.
+	Usage string
+
+	// Syntax is human-readable statement syntax.
+	// In the following syntax, we use `<>` for a placeholder, `[]` for an optional keyword, and `{A|B|...}` for a mutually exclusive keyword.
+	Syntax string
+
+	// Note is additional information to be printed by --statement-hint, only for README.md.
+	Note string
+}
+
+type clientSideStatementDef struct {
+	// Descriptions represents human-readable descriptions.
+	// It can be multiple because some clientSideStatementDef represents multiple statements in single pattern.
+	Descriptions []clientSideStatementDescription
+
+	// Pattern is a compiled regular expression for the statement.
+	// It must be matched on the whole statement without semicolon, and case-insensitive.
+	Pattern *regexp.Regexp
+
+	// HandleSubmatch holds a handler which converts the result of (*regexp.Regexp).FindStringSubmatch() to Statement.
+	HandleSubmatch func(matched []string) (Statement, error)
+}
+
 var clientSideStatementDefs = []*clientSideStatementDef{
 	// Database
 	{
@@ -32,7 +58,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Drop database`,
 				Syntax: `DROP DATABASE <database>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`),
@@ -58,7 +83,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show DDL of the schema object`,
 				Syntax: `SHOW CREATE <type> <fqn>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
@@ -86,7 +110,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show columns`,
 				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`),
@@ -100,7 +123,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`),
@@ -114,7 +136,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `SHOW DDLs`,
 				Syntax: `SHOW DDLS`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DDLS$`),
@@ -128,7 +149,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show local proto descriptors`,
 				Syntax: `SHOW LOCAL PROTO`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`),
@@ -141,7 +161,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show remote proto bundle`,
 				Syntax: `SHOW REMOTE PROTO`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`),
@@ -154,7 +173,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Manipulate PROTO BUNDLE`,
 				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
@@ -162,6 +180,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return parseSyncProtoBundle(matched[1])
 		},
 	},
+	// TRUNCATE TABLE
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
@@ -175,6 +194,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
 		},
 	},
+	// EXPLAIN & EXPLAIN ANALYZE
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
@@ -200,12 +220,12 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 		},
 	},
+	// DESCRIBE
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show result shape without execution`,
 				Syntax: `DESCRIBE <sql>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`),
@@ -226,7 +246,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Partitioned DML`,
 				Syntax: `PARTITIONED {UPDATE|DELETE} ...`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^PARTITIONED\s+(.*)$`),
@@ -241,7 +260,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show partition tokens of partition query`,
 				Syntax: `PARTITION <sql>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`),
@@ -254,7 +272,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Run partitioned query`,
 				Syntax: `RUN PARTITIONED QUERY <sql>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`),
@@ -275,7 +292,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Test root-partitionable`,
 				Syntax: `TRY PARTITIONED QUERY <sql>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`),
@@ -363,7 +379,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Commit R/W transaction or end R/O Transaction`,
 				Syntax: `COMMIT [TRANSACTION]`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`),
@@ -407,12 +422,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Start DDL batching`,
 				Syntax: `START BATCH DDL`,
-				Note:   ``,
 			},
 			{
 				Usage:  `Start DML batching`,
 				Syntax: `START BATCH DML`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^START\s+BATCH\s+(DDL|DML)$`),
@@ -425,7 +438,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Run active batch`,
 				Syntax: `RUN BATCH`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^RUN\s+BATCH$`),
@@ -438,7 +450,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Abort active batch`,
 				Syntax: `ABORT BATCH [TRANSACTION]`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`),
@@ -452,7 +463,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set variable`,
 				Syntax: `SET <name> = <value>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`),
@@ -465,7 +475,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Add value to variable`,
 				Syntax: `SET <name> += <value>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`),
@@ -478,7 +487,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show variables`,
 				Syntax: `SHOW VARIABLES`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`),
@@ -491,7 +499,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show variable`,
 				Syntax: `SHOW VARIABLE <name>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`),
@@ -505,7 +512,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set type query parameter`,
 				Syntax: `SET PARAM <name> <type>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`),
@@ -518,7 +524,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set value query parameter`,
 				Syntax: `SET PARAM <name> = <value>`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`),
@@ -531,7 +536,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show query parameters`,
 				Syntax: `SHOW PARAMS`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
@@ -545,12 +549,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Perform write mutations`,
 				Syntax: `MUTATE <table_fqn> {INSERT|UPDATE|REPLACE|INSERT_OR_UPDATE} ...`,
-				Note:   ``,
 			},
 			{
 				Usage:  `Perform delete mutations`,
 				Syntax: `MUTATE <table_fqn> DELETE ...`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`),
@@ -595,7 +597,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Compose query using LLM`,
 				Syntax: `GEMINI "<prompt>"`,
-				Note:   ``,
 			},
 		},
 
@@ -610,7 +611,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show help`,
 				Syntax: `HELP`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^HELP$`),
@@ -623,7 +623,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Exit CLI`,
 				Syntax: `EXIT`,
-				Note:   ``,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^EXIT$`),

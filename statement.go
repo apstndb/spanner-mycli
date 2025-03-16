@@ -142,19 +142,6 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
-type clientSideStatementDescription struct {
-	Usage  string
-	Syntax string
-	Note   string
-}
-
-type clientSideStatementDef struct {
-	Descriptions   []clientSideStatementDescription
-	Pattern        *regexp.Regexp
-	HandleSubmatch func(matched []string) (Statement, error)
-	// TODO: HandleNamedGroups func(input string, groups map[string]string) (Statement, error)
-}
-
 var (
 	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
 	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
