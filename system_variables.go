@@ -70,21 +70,23 @@ type systemVariables struct {
 	// link to session
 	CurrentSession *Session
 
-	ReadOnly        bool
-	VertexAIProject string
-	VertexAIModel   string
-	AutoWrap        bool
-	EchoExecutedDDL bool
-	EnableHighlight bool
-	EchoInput       bool
-	AutoBatchDML    bool
+	AutoBatchDML bool
+
+	ReadOnly                    bool
+	VertexAIProject             string
+	VertexAIModel               string
+	AutoWrap                    bool
+	EchoExecutedDDL             bool
+	EnableHighlight             bool
+	EchoInput                   bool
+	DataBoostEnabled            bool
+	ExcludeTxnFromChangeStreams bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
 	MultilineProtoText        bool
-	DataBoostEnabled          bool
 }
 
 var errIgnored = errors.New("ignored")
@@ -189,6 +191,9 @@ var accessorMap = map[string]accessor{
 	"RETRY_ABORTS_INTERNALLY": {},
 	"AUTOCOMMIT_DML_MODE":     {},
 	"STATEMENT_TIMEOUT":       {},
+	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.ExcludeTxnFromChangeStreams
+	}),
 	"READ_ONLY_STALENESS": {
 		func(this *systemVariables, name, value string) error {
 			staleness, err := parseTimestampBound(unquoteString(value))

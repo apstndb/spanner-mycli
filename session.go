@@ -93,6 +93,7 @@ type transactionContext struct {
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
 
 	txn any
+
 	// rwTxn         *spanner.ReadWriteStmtBasedTransaction
 	// roTxn         *spanner.ReadOnlyTransaction
 }
@@ -271,9 +272,10 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 	}
 
 	opts := spanner.TransactionOptions{
-		CommitOptions:  spanner.CommitOptions{ReturnCommitStats: true},
-		CommitPriority: priority,
-		TransactionTag: tag,
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true},
+		CommitPriority:              priority,
+		TransactionTag:              tag,
+		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
 	}
 
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
