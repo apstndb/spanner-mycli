@@ -5,8 +5,10 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -34,6 +36,35 @@ type statement struct {
 	Reason              string `json:"reason" description:"Reason of selection" required:"true"`
 	SyntaxDescription   string `json:"syntaxDescription" description:"A long description of text in syntax, detailed and strictly" required:"true"`
 	SemanticDescription string `json:"semanticDescription" description:"Description of text in semantics. Must describe how the request is achieved" required:"true"`
+}
+
+type GeminiStatement struct {
+	Text string
+}
+
+func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: session.DatabasePath(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{PreInput: composed.Statement.Text,
+		Rows: slices.Concat(
+			lo.Ternary(composed.ErrorDescription != "",
+				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
+				nil),
+			sliceOf(
+				toRow("text", composed.Statement.Text),
+				toRow("semanticDescription", composed.Statement.SemanticDescription),
+				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
+		ColumnNames: sliceOf("Column", "Value")}, nil
 }
 
 func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([][]byte, error) {

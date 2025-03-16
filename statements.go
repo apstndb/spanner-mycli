@@ -1090,36 +1090,7 @@ ORDER BY INTERVAL_END DESC`,
 	return result, nil
 }
 
-// LLM
-
-type GeminiStatement struct {
-	Text string
-}
-
-func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{PreInput: composed.Statement.Text,
-		Rows: slices.Concat(
-			lo.Ternary(composed.ErrorDescription != "",
-				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
-				nil),
-			sliceOf(
-				toRow("text", composed.Statement.Text),
-				toRow("semanticDescription", composed.Statement.SemanticDescription),
-				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
-		ColumnNames: sliceOf("Column", "Value")}, nil
-}
+// LLM related statements are defined in statements_llm.go
 
 // CLI control
 
