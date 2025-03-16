@@ -747,7 +747,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []
 		transposedRows = append(transposedRows, slices.Collect(
 			xiter.Map(
 				func(in Row) string {
-					return lo.Must(lo.Nth(in, columnIdx))
+					return lo.Must(lo.Nth(in, columnIdx)) // columnIdx represents the index of the column in the row
 				},
 				xiter.Concat(hiter.Once(toRow(header...)), slices.Values(rows)),
 			)))
@@ -954,7 +954,8 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
-			for j, column := range row {
+			for j, column := range row { // j represents the index of the column in the row
+
 				fmt.Fprintf(out, format, result.ColumnNames[j], column)
 			}
 		}

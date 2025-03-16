@@ -81,14 +81,14 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 			return nil, err
 		}
 
-		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row[0]) }, slices.Values(rows))), 2)
+		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row[0]) /* ID */ }, slices.Values(rows))), 2)
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)
 
 		tree := strings.Join(slices.Collect(xiter.Map(
 			func(r Row) string {
-				return runewidth.FillLeft(r[0], maxIDLength) + " | " + r[1]
+				return runewidth.FillLeft(r[0] /* ID */, maxIDLength) + " | " + r[1] /* Plan */
 			},
 			slices.Values(rows))), "\n")
 

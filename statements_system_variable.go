@@ -54,7 +54,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	rows := slices.SortedFunc(
 		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
-		ToSortFunc(func(r Row) string { return r[0] }))
+		ToSortFunc(func(r Row) string { return r[0] /* name */ }))
 
 	return &Result{
 		ColumnNames:   []string{"name", "value"},
