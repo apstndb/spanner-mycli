@@ -3,11 +3,14 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 )
 
@@ -36,6 +39,25 @@ type clientSideStatementDef struct {
 	// HandleSubmatch holds a handler which converts the result of (*regexp.Regexp).FindStringSubmatch() to Statement.
 	HandleSubmatch func(matched []string) (Statement, error)
 }
+
+var schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
+	return strings.ReplaceAll(s, " ", `\s+`)
+}, slices.Values([]string{
+	"SCHEMA",
+	"DATABASE",
+	"PLACEMENT",
+	"PROTO BUNDLE",
+	"TABLE",
+	"INDEX",
+	"SEARCH INDEX",
+	"VIEW",
+	"CHANGE STREAM",
+	"ROLE",
+	"SEQUENCE",
+	"MODEL",
+	"VECTOR INDEX",
+	"PROPERTY GRAPH",
+})))
 
 var clientSideStatementDefs = []*clientSideStatementDef{
 	// Database
@@ -630,4 +652,15 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ExitStatement{}, nil
 		},
 	},
+}
+
+// Helper functions for HandleSubmatch implementations
+
+func parseTransaction(s string) (isReadOnly bool, err error) {
+	if !transactionRe.MatchString(s) {
+		return false, fmt.Errorf(`must be "READ ONLY" or "READ WRITE", but: %q`, s)
+	}
+
+	submatch := transactionRe.FindStringSubmatch(s)
+	return submatch[1] != "", nil
 }

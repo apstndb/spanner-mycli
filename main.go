@@ -444,3 +444,26 @@ func readStdin() (string, error) {
 		return "", nil
 	}
 }
+
+// Functions used by multiple files. e.g. system variable, command line flags, client side statements.
+
+func parsePriority(priority string) (sppb.RequestOptions_Priority, error) {
+	if priority == "" {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, nil
+	}
+
+	upper := strings.ToUpper(priority)
+
+	var value string
+	if !strings.HasPrefix(upper, "PRIORITY_") {
+		value = "PRIORITY_" + upper
+	} else {
+		value = upper
+	}
+
+	p, ok := sppb.RequestOptions_Priority_value[value]
+	if !ok {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, fmt.Errorf("invalid priority: %q", value)
+	}
+	return sppb.RequestOptions_Priority(p), nil
+}
