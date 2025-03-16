@@ -274,36 +274,6 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}, nil
 }
 
-func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
-	}
-
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
-	iter, _ := session.RunQuery(ctx, stmt)
-
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rows) == 0 && emptyErrorF != nil {
-		return nil, emptyErrorF()
-	}
-
-	return &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
-}
-
 func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
 	if !isDML {
 		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
