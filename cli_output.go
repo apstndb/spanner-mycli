@@ -22,6 +22,16 @@ import (
 	"github.com/samber/lo"
 )
 
+type DisplayMode int
+
+const (
+	DisplayModeTable DisplayMode = iota
+	DisplayModeTableComment
+	DisplayModeTableDetailComment
+	DisplayModeVertical
+	DisplayModeTab
+)
+
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
 	mode := sysVars.CLIFormat
 

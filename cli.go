@@ -51,16 +51,6 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-type DisplayMode int
-
-const (
-	DisplayModeTable DisplayMode = iota
-	DisplayModeTableComment
-	DisplayModeTableDetailComment
-	DisplayModeVertical
-	DisplayModeTab
-)
-
 const (
 	exitCodeSuccess = 0
 	exitCodeError   = 1
