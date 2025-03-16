@@ -948,37 +948,7 @@ func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) 
 	}
 }
 
-// Mutation
-
-type MutateStatement struct {
-	Table     string
-	Operation string
-	Body      string
-}
-
-func (MutateStatement) isMutationStatement() {}
-
-func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
-	if err != nil {
-		return nil, err
-	}
-	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		err = session.tc.RWTxn().BufferWrite(mutations)
-		if err != nil {
-			return 0, nil, nil, err
-		}
-		return 0, nil, nil, err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &Result{
-		IsMutation:  true,
-		CommitStats: stats.CommitStats,
-		Timestamp:   stats.CommitTs,
-	}, nil
-}
+// Mutation related statements are defined in statements_mutations.go
 
 // Query Profiles
 
