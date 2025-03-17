@@ -211,7 +211,7 @@ var accessorMap = map[string]accessor{
 
 			duration, err := time.ParseDuration(unquoteString(value))
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to parse duration %s: %w", value, err)
 			}
 
 			this.MaxCommitDelay = &duration
