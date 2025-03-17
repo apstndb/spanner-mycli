@@ -219,7 +219,7 @@ var accessorMap = map[string]accessor{
 		},
 		Getter: func(this *systemVariables, name string) (map[string]string, error) {
 			if this.MaxCommitDelay == nil {
-				return nil, errIgnored
+				return singletonMap(name, "NULL"), errIgnored
 			}
 
 			return singletonMap(name, this.MaxCommitDelay.String()), nil
