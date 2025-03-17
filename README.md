@@ -258,7 +258,7 @@ Please note that directed read options do not apply to queries within a read-wri
 > 
 > Please refer to [the Spanner documentation](https://cloud.google.com/spanner/docs/instance-configurations#available-configurations-multi-region) to verify the valid configurations.
 
-## Client Statement Syntax
+## Client-Side Statement Syntax
 
 spanner-mycli supports all Spanner GoogleSQL and Spanner Graph statements, as well as several client-side statements.
 
@@ -1252,7 +1252,26 @@ spanner> RUN PARTITIONED QUERY SELECT * FROM Singers;
 5 rows in set from 3 partitions (1.40 sec)
 ```
 
-Note: Any stats are not available.
+Or you can use `SET AUTO_PARTITION_MODE`.
+```
+spanner> SET AUTO_PARTITION_MODE = TRUE;
+
+Empty set (0.00 sec)
+
+spanner> SELECT * FROM Singers;
++----------+-----------+----------+------------+------------+
+| SingerId | FirstName | LastName | SingerInfo | BirthDate  |
++----------+-----------+----------+------------+------------+
+| 1        | Marc      | Richards | NULL       | 1970-09-03 |
+| 2        | Catalina  | Smith    | NULL       | 1990-08-17 |
+| 3        | Alice     | Trentor  | NULL       | 1991-10-02 |
+| 4        | Lea       | Martin   | NULL       | 1991-11-09 |
+| 5        | David     | Lomond   | NULL       | 1977-01-29 |
++----------+-----------+----------+------------+------------+
+5 rows in set from 3 partitions (1.40 sec)
+```
+
+Note: Any stats are not available in partitioned query.
 
 #### Show partition tokens.
 

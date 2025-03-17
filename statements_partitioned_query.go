@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"cloud.google.com/go/spanner"
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 )
 
@@ -79,49 +78,7 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 type RunPartitionedQueryStatement struct{ SQL string }
 
 func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
-	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		batchROTx.Cleanup(ctx)
-		batchROTx.Close()
-	}()
-
-	var allRows []Row
-	var rowType *sppb.StructType
-	for _, partition := range partitions {
-		iter := batchROTx.Execute(ctx, partition)
-		rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-		if err != nil {
-			return nil, err
-		}
-		allRows = append(allRows, rows...)
-
-		if len(md.GetRowType().GetFields()) > 0 {
-			rowType = md.GetRowType()
-		}
-	}
-
-	result := &Result{
-		ColumnNames:    extractColumnNames(rowType.GetFields()),
-		Rows:           allRows,
-		ColumnTypes:    rowType.GetFields(),
-		AffectedRows:   len(allRows),
-		PartitionCount: len(partitions),
-	}
-	return result, nil
+	return runPartitionedQuery(ctx, session, s.SQL)
 }
 
 type RunPartitionStatement struct{ Token string }

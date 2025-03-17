@@ -339,3 +339,49 @@ func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, er
 		return toRow(columns...), nil
 	}
 }
+
+func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
+
+	var allRows []Row
+	var rowType *sppb.StructType
+	for _, partition := range partitions {
+		iter := batchROTx.Execute(ctx, partition)
+		rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+		if err != nil {
+			return nil, err
+		}
+		allRows = append(allRows, rows...)
+
+		if len(md.GetRowType().GetFields()) > 0 {
+			rowType = md.GetRowType()
+		}
+	}
+
+	result := &Result{
+		ColumnNames:    extractColumnNames(rowType.GetFields()),
+		Rows:           allRows,
+		ColumnTypes:    rowType.GetFields(),
+		AffectedRows:   len(allRows),
+		PartitionCount: len(partitions),
+	}
+	return result, nil
+}

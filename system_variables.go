@@ -34,13 +34,14 @@ import (
 
 type systemVariables struct {
 	// java-spanner compatible
+	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
 	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
 	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
 	ReadTimestamp               time.Time                    // READ_TIMESTAMP
 	OptimizerVersion            string                       // OPTIMIZER_VERSION
 	OptimizerStatisticsPackage  string                       // OPTIMIZER_STATISTICS_PACKAGE
 	CommitResponse              *sppb.CommitResponse         // COMMIT_RESPONSE
-	CommitTimestamp             time.Time                    // COMMIT_TIMESTAP
+	CommitTimestamp             time.Time                    // COMMIT_TIMESTAMP
 	TransactionTag              string                       // TRANSACTION_TAG
 	RequestTag                  string                       // STATEMENT_TAG
 	ReadOnly                    bool                         // READONLY
@@ -196,6 +197,9 @@ var accessorMap = map[string]accessor{
 		},
 		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
 	},
+	"AUTO_PARTITION_MODE": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.AutoPartitionMode
+	}),
 	"AUTOCOMMIT":              {},
 	"RETRY_ABORTS_INTERNALLY": {},
 	"AUTOCOMMIT_DML_MODE":     {},
