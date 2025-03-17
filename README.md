@@ -517,6 +517,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | DATA_BOOST_ENABLED              | READ_WRITE | `TRUE`                                              |
 | AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
 | EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
+| MAX_COMMIT_DELAY                | READ_WRITE | `500ms`                                             |
 
 #### spanner-mycli original variables
 
