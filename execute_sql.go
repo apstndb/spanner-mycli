@@ -385,3 +385,24 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	}
 	return result, nil
 }
+
+func executePDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
+	defer cancel()
+
+	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		IsMutation:       true,
+		AffectedRows:     int(count),
+		AffectedRowsType: rowCountTypeLowerBound,
+	}, nil
+}

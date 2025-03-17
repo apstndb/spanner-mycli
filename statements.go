@@ -181,18 +181,7 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-only transaction`)
 	}
 
-	stmt := spanner.NewStatement(fmt.Sprintf("DELETE FROM `%s` WHERE true", s.Table))
-	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
-	defer cancel()
-
-	count, err := session.client.PartitionedUpdate(ctx, stmt)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{
-		IsMutation:   true,
-		AffectedRows: int(count),
-	}, nil
+	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM `%s` WHERE true", s.Table))
 }
 
 // EXPLAIN, EXPLAIN ANALYZE and DESCRIBE related statements are defined in statements_explain.go
@@ -215,19 +204,7 @@ func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session)
 		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
-	defer cancel()
-
-	count, err := session.client.PartitionedUpdate(ctx, spanner.NewStatement(s.Dml))
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		IsMutation:       true,
-		AffectedRows:     int(count),
-		AffectedRowsType: rowCountTypeLowerBound,
-	}, nil
+	return executePDML(ctx, session, s.Dml)
 }
 
 // Partitioned Query related statements are defined in statements_partitioned_query.go
