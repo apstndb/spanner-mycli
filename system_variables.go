@@ -33,60 +33,69 @@ import (
 )
 
 type systemVariables struct {
-	RPCPriority                 sppb.RequestOptions_Priority
-	ReadOnlyStaleness           *spanner.TimestampBound
-	ReadTimestamp               time.Time
-	OptimizerVersion            string
-	OptimizerStatisticsPackage  string
-	CommitResponse              *sppb.CommitResponse
-	CommitTimestamp             time.Time
-	CLIFormat                   DisplayMode
-	Project, Instance, Database string
-	Verbose                     bool
-	Prompt                      string
-	Prompt2                     string
-	HistoryFile                 string
-	Role                        string
-	Endpoint                    string
-	DirectedRead                *sppb.DirectedReadOptions
-	ProtoDescriptorFile         []string
-	BuildStatementMode          parseMode
-	LogGrpc                     bool
-	QueryMode                   *sppb.ExecuteSqlRequest_QueryMode
-	LintPlan                    bool
-	TransactionTag              string
-	RequestTag                  string
-	UsePager                    bool
-	DatabaseDialect             databasepb.DatabaseDialect
-	MarkdownCodeblock           bool
+	// java-spanner compatible
+	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
+	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
+	ReadTimestamp               time.Time                    // READ_TIMESTAMP
+	OptimizerVersion            string                       // OPTIMIZER_VERSION
+	OptimizerStatisticsPackage  string                       // OPTIMIZER_STATISTICS_PACKAGE
+	CommitResponse              *sppb.CommitResponse         // COMMIT_RESPONSE
+	CommitTimestamp             time.Time                    // COMMIT_TIMESTAP
+	TransactionTag              string                       // TRANSACTION_TAG
+	RequestTag                  string                       // STATEMENT_TAG
+	ReadOnly                    bool                         // READONLY
+	DataBoostEnabled            bool                         // DATA_BOOST_ENABLED
+	AutoBatchDML                bool                         // AUTO_BATCH_DML
+	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
+
+	// CLI_* variables
+
+	CLIFormat   DisplayMode // CLI_FORMAT
+	Project     string      // CLI_PROJECT
+	Instance    string      // CLI_INSTANCE
+	Database    string      // CLI_DATABASE
+	Verbose     bool        // CLI_VERBOSE
+	Prompt      string      // CLI_PROMPT
+	Prompt2     string      // CLI_PROMPT2
+	HistoryFile string      // CLI_HISTORY_FILE
+
+	DirectedRead *sppb.DirectedReadOptions // CLI_DIRECT_READ
+
+	ProtoDescriptorFile []string  // CLI_PROTO_DESCRIPTOR_FILE
+	BuildStatementMode  parseMode // CLI_PARSE_MODE
+	Insecure            bool      // CLI_INSECURE
+	Debug               bool      // CLI_DEBUG
+	LogGrpc             bool      // CLI_LOG_GRPC
+	LintPlan            bool      // CLI_LINT_PLAN
+	UsePager            bool      // CLI_USE_PAGER
+	AutoWrap            bool      // CLI_AUTOWRAP
+	EnableHighlight     bool      // CLI_ENABLE_HIGHLIGHT
+	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
+
+	QueryMode *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
+
+	VertexAIProject string                     // CLI_VERTEXAI_PROJECT
+	VertexAIModel   string                     // CLI_VERTEXAI_MODEL
+	DatabaseDialect databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
+	EchoExecutedDDL bool                       // CLI_ECHO_EXECUTED_DDL
+	Role            string                     // CLI_ROLE
+	EchoInput       bool                       // CLI_ECHO_INPUT
+	Endpoint        string                     // CLI_ENDPOINT
 
 	// it is internal variable and hidden from system variable statements
-	ProtoDescriptor       *descriptorpb.FileDescriptorSet
-	Insecure              bool
+	ProtoDescriptor *descriptorpb.FileDescriptorSet
+
 	WithoutAuthentication bool
-	Debug                 bool
 	Params                map[string]ast.Node
 
 	// link to session
 	CurrentSession *Session
 
-	AutoBatchDML bool
-
-	ReadOnly                    bool
-	VertexAIProject             string
-	VertexAIModel               string
-	AutoWrap                    bool
-	EchoExecutedDDL             bool
-	EnableHighlight             bool
-	EchoInput                   bool
-	DataBoostEnabled            bool
-	ExcludeTxnFromChangeStreams bool
-
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
-	MultilineProtoText        bool
 }
 
 var errIgnored = errors.New("ignored")
