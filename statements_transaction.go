@@ -123,6 +123,14 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 
 		return result, nil
 	case session.InReadWriteTransaction():
+		if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
+			var err error
+			result, err = runBatch(ctx, session)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		resp, err := session.CommitReadWriteTransaction(ctx)
 		if err != nil {
 			return nil, err

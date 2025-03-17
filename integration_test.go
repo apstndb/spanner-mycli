@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/apstndb/spanemuboost"
-
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -467,6 +466,33 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true},
 			},
 		},
+		{
+			desc: "AUTO_BATCH_DML",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
+				"SET AUTO_BATCH_DML = TRUE",
+				"INSERT INTO TestTable6 (id, active) VALUES (1, true)",
+				"BEGIN",
+				"INSERT INTO TestTable6 (id, active) VALUES (2, false)",
+				"COMMIT",
+				"SELECT * FROM TestTable6 ORDER BY id",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable6"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: false, KeepVariables: true},
+				{IsMutation: true, AffectedRows: 1},
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2, false)", "1"})},
+				{
+					AffectedRows: 2,
+					ColumnNames:  []string{"id", "active"},
+					ColumnTypes:  testTableRowType,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -487,7 +513,7 @@ func TestStatements(t *testing.T) {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
 
-				result, err := stmt.Execute(ctx, session)
+				result, err := session.ExecuteStatement(ctx, stmt)
 				if err != nil {
 					t.Fatalf("unexpected error happened[%d]: %s", i, err)
 				}

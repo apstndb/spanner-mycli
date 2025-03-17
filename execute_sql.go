@@ -201,6 +201,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 }
 
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
 		b.DMLs = append(b.DMLs, sql)
@@ -208,6 +209,10 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
+		if session.InReadWriteTransaction() && session.systemVariables.AutoBatchDML {
+			session.currentBatch = &BatchDMLStatement{DMLs: []string{sql}}
+			return &Result{IsMutation: true}, nil
+		}
 		return executeDML(ctx, session, sql)
 	}
 }

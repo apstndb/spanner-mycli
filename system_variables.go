@@ -77,6 +77,7 @@ type systemVariables struct {
 	EchoExecutedDDL bool
 	EnableHighlight bool
 	EchoInput       bool
+	AutoBatchDML    bool
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -242,6 +243,9 @@ var accessorMap = map[string]accessor{
 		return &sysVars.OptimizerStatisticsPackage
 	}),
 	"RETURN_COMMIT_STATS": {},
+	"AUTO_BATCH_DML": boolAccessor(func(variables *systemVariables) *bool {
+		return &variables.AutoBatchDML
+	}),
 	"DATA_BOOST_ENABLED": boolAccessor(func(sysVars *systemVariables) *bool {
 		return &sysVars.DataBoostEnabled
 	}),

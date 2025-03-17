@@ -515,6 +515,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | TRANSACTION_TAG              | READ_WRITE | `"app=concert,env=dev,action=update"`               |
 | STATEMENT_TAG                | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
 | DATA_BOOST_ENABLED           | READ_WRITE | `TRUE`                                              |
+| AUTO_BATCH_DML               | READ_WRITE | `TRUE`                                              |
 
 #### spanner-mycli original variables
 

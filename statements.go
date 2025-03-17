@@ -296,6 +296,10 @@ func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*R
 type RunBatchStatement struct{}
 
 func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return runBatch(ctx, session)
+}
+
+func runBatch(ctx context.Context, session *Session) (*Result, error) {
 	if session.currentBatch == nil {
 		return nil, errors.New("no active batch")
 	}
