@@ -503,19 +503,20 @@ This section describes some notable features of spanner-mycli, they are not appe
 
 They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
 
-| Name                         | Type       | Example                                             |
-|------------------------------|------------|-----------------------------------------------------|
-| READONLY                     | READ_WRITE | `TRUE`                                              |
-| READ_ONLY_STALENESS          | READ_WRITE | `"analyze_20241017_15_59_17UTC"`                    |
-| OPTIMIZER_VERSION            | READ_WRITE | `"7"`                                               |
-| OPTIMIZER_STATISTICS_PACKAGE | READ_WRITE | `"7"`                                               |
-| RPC_PRIORITY                 | READ_WRITE | `"MEDIUM"`                                          |
-| READ_TIMESTAMP               | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
-| COMMIT_RESPONSE              | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
-| TRANSACTION_TAG              | READ_WRITE | `"app=concert,env=dev,action=update"`               |
-| STATEMENT_TAG                | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
-| DATA_BOOST_ENABLED           | READ_WRITE | `TRUE`                                              |
-| AUTO_BATCH_DML               | READ_WRITE | `TRUE`                                              |
+| Name                            | Type       | Example                                             |
+|---------------------------------|------------|-----------------------------------------------------|
+| READONLY                        | READ_WRITE | `TRUE`                                              |
+| READ_ONLY_STALENESS             | READ_WRITE | `"analyze_20241017_15_59_17UTC"`                    |
+| OPTIMIZER_VERSION               | READ_WRITE | `"7"`                                               |
+| OPTIMIZER_STATISTICS_PACKAGE    | READ_WRITE | `"7"`                                               |
+| RPC_PRIORITY                    | READ_WRITE | `"MEDIUM"`                                          |
+| READ_TIMESTAMP                  | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
+| COMMIT_RESPONSE                 | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
+| TRANSACTION_TAG                 | READ_WRITE | `"app=concert,env=dev,action=update"`               |
+| STATEMENT_TAG                   | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
+| DATA_BOOST_ENABLED              | READ_WRITE | `TRUE`                                              |
+| AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
+| EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
 
 #### spanner-mycli original variables
 
