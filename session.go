@@ -272,7 +272,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 	}
 
 	opts := spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true},
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
 		CommitPriority:              priority,
 		TransactionTag:              tag,
 		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,

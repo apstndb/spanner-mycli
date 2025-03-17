@@ -48,6 +48,7 @@ type systemVariables struct {
 	DataBoostEnabled            bool                         // DATA_BOOST_ENABLED
 	AutoBatchDML                bool                         // AUTO_BATCH_DML
 	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
+	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
 
 	// CLI_* variables
 
@@ -200,7 +201,30 @@ var accessorMap = map[string]accessor{
 	"AUTO_PARTITION_MODE": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.AutoPartitionMode
 	}),
-	"AUTOCOMMIT":              {},
+	"AUTOCOMMIT": {},
+	"MAX_COMMIT_DELAY": {
+		Setter: func(this *systemVariables, name, value string) error {
+			if strings.ToUpper(value) == "NULL" {
+				this.MaxCommitDelay = nil
+				return nil
+			}
+
+			duration, err := time.ParseDuration(unquoteString(value))
+			if err != nil {
+				return err
+			}
+
+			this.MaxCommitDelay = &duration
+			return nil
+		},
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			if this.MaxCommitDelay == nil {
+				return nil, errIgnored
+			}
+
+			return singletonMap(name, this.MaxCommitDelay.String()), nil
+		},
+	},
 	"RETRY_ABORTS_INTERNALLY": {},
 	"AUTOCOMMIT_DML_MODE":     {},
 	"STATEMENT_TIMEOUT":       {},
