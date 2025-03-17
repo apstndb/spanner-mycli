@@ -46,17 +46,15 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	}
 
 	qm := session.systemVariables.QueryMode
-	if qm == nil {
-		return executeSQL(ctx, session, s.Query)
-	}
-	switch *qm {
-	case sppb.ExecuteSqlRequest_NORMAL:
-		return executeSQL(ctx, session, s.Query)
-	case sppb.ExecuteSqlRequest_PLAN:
+	switch {
+	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Query, false)
-	case sppb.ExecuteSqlRequest_PROFILE:
+	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query)
 	default:
+		if !session.InTransaction() && session.systemVariables.AutoPartitionMode {
+			return runPartitionedQuery(ctx, session, s.Query)
+		}
 		return executeSQL(ctx, session, s.Query)
 	}
 }
