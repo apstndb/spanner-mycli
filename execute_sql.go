@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	scxiter "spheric.cloud/xiter"
 
@@ -378,18 +381,38 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		batchROTx.Close()
 	}()
 
+	type partitionQueryResult struct {
+		Metadata *sppb.ResultSetMetadata
+		Rows     []Row
+	}
+
+	p := pool.NewWithResults[*partitionQueryResult]().
+		WithContext(ctx).
+		WithMaxGoroutines(cmp.Or(int(session.systemVariables.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
+
+	for _, partition := range partitions {
+		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {
+			iter := batchROTx.Execute(ctx, partition)
+			rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+			if err != nil {
+				return nil, err
+			}
+			return &partitionQueryResult{md, rows}, nil
+		})
+	}
+
+	results, err := p.Wait()
+	if err != nil {
+		return nil, err
+	}
+
 	var allRows []Row
 	var rowType *sppb.StructType
-	for _, partition := range partitions {
-		iter := batchROTx.Execute(ctx, partition)
-		rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-		if err != nil {
-			return nil, err
-		}
-		allRows = append(allRows, rows...)
+	for _, result := range results {
+		allRows = append(allRows, result.Rows...)
 
-		if len(md.GetRowType().GetFields()) > 0 {
-			rowType = md.GetRowType()
+		if len(result.Metadata.GetRowType().GetFields()) > 0 {
+			rowType = result.Metadata.GetRowType()
 		}
 	}
 
