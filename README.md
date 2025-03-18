@@ -1296,7 +1296,7 @@ You can change it using `MAX_PARTTIIONED_PARALLELISM`.
 spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
 ```
 
-
+Note: There is no streaming output, so result won't be printed unless all work is done.
 
 #### Show partition tokens.
 
