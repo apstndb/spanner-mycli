@@ -15,6 +15,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
+  * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * Interactive DDL batching
 * Respects training and verification use-cases.
@@ -517,8 +518,9 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | DATA_BOOST_ENABLED              | READ_WRITE | `TRUE`                                              |
 | AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
 | EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
-| MAX_COMMIT_DELAY                | READ_WRITE | `500ms`                                             |
-| AUTOCOMMIT_DML_MODE             | READ_WRITE | `PARTITIONED_NON_ATOMIC`                            |
+| MAX_COMMIT_DELAY                | READ_WRITE | `"500ms"`                                           |
+| AUTOCOMMIT_DML_MODE             | READ_WRITE | `"PARTITIONED_NON_ATOMIC"`                          |
+| MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 
 #### spanner-mycli original variables
 
@@ -1255,6 +1257,7 @@ spanner> RUN PARTITIONED QUERY SELECT * FROM Singers;
 ```
 
 Or you can use `SET AUTO_PARTITION_MODE`.
+
 ```
 spanner> SET AUTO_PARTITION_MODE = TRUE;
 
@@ -1274,6 +1277,26 @@ spanner> SELECT * FROM Singers;
 ```
 
 Note: Any stats are not available in partitioned query.
+
+##### Enable Data Boost
+
+You can enable Data Boost using `DATA_BOOST_ENABLED`.
+
+```
+spanner> SET DATA_BOOST_ENABLED = TRUE;
+```
+
+##### Parallelism setting
+
+In default, the number of worker goroutines for partitioned query is the value of `GOMAXPROCS`.
+
+You can change it using `MAX_PARTTIIONED_PARALLELISM`.
+
+```
+spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
+```
+
+
 
 #### Show partition tokens.
 
