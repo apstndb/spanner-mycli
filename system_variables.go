@@ -56,6 +56,7 @@ type systemVariables struct {
 	AutoBatchDML                bool                         // AUTO_BATCH_DML
 	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
 	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
+	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
 
 	// CLI_* variables
 
@@ -234,6 +235,9 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"RETRY_ABORTS_INTERNALLY": {},
+	"MAX_PARTITIONED_PARALLELISM": int64Accessor(func(variables *systemVariables) *int64 {
+		return &variables.MaxPartitionedParallelism
+	}),
 	"AUTOCOMMIT_DML_MODE": {
 		Setter: func(this *systemVariables, name, value string) error {
 			switch unquoteString(value) {
@@ -715,6 +719,38 @@ func stringGetter(f func(sysVars *systemVariables) *string) getter {
 			return nil, errIgnored
 		}
 		return singletonMap(name, *ref), nil
+	}
+}
+
+func int64Getter(f func(sysVars *systemVariables) *int64) getter {
+	return func(this *systemVariables, name string) (map[string]string, error) {
+		ref := f(this)
+		if ref == nil {
+			return nil, errIgnored
+		}
+
+		return singletonMap(name, strings.ToUpper(strconv.FormatInt(*ref, 10))), nil
+	}
+}
+
+func int64Setter(f func(sysVars *systemVariables) *int64) setter {
+	return func(this *systemVariables, name string, value string) error {
+		ref := f(this)
+
+		b, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return err
+		}
+
+		*ref = b
+		return nil
+	}
+}
+
+func int64Accessor(f func(variables *systemVariables) *int64) accessor {
+	return accessor{
+		Setter: int64Setter(f),
+		Getter: int64Getter(f),
 	}
 }
 

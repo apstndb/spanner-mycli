@@ -30,6 +30,7 @@ require (
 	github.com/nyaosorg/go-readline-ny v1.8.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/lo v1.49.1
+	github.com/sourcegraph/conc v0.3.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0
 	github.com/vbauerster/mpb/v8 v8.9.1
 	go.uber.org/zap v1.27.0
