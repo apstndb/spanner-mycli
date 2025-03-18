@@ -518,6 +518,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
 | EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
 | MAX_COMMIT_DELAY                | READ_WRITE | `500ms`                                             |
+| AUTOCOMMIT_DML_MODE             | READ_WRITE | `PARTITIONED_NON_ATOMIC`                            |
 
 #### spanner-mycli original variables
 

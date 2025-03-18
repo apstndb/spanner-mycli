@@ -32,6 +32,13 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
+type AutocommitDMLMode bool
+
+const (
+	AutocommitDMLModeTransactional        AutocommitDMLMode = false
+	AutocommitDMLModePartitionedNonAtomic AutocommitDMLMode = true
+)
+
 type systemVariables struct {
 	// java-spanner compatible
 	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
@@ -98,6 +105,7 @@ type systemVariables struct {
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
+	AutocommitDMLMode         AutocommitDMLMode
 }
 
 var errIgnored = errors.New("ignored")
@@ -226,8 +234,25 @@ var accessorMap = map[string]accessor{
 		},
 	},
 	"RETRY_ABORTS_INTERNALLY": {},
-	"AUTOCOMMIT_DML_MODE":     {},
-	"STATEMENT_TIMEOUT":       {},
+	"AUTOCOMMIT_DML_MODE": {
+		Setter: func(this *systemVariables, name, value string) error {
+			switch unquoteString(value) {
+			case "PARTITIONED_NON_ATOMIC":
+				this.AutocommitDMLMode = AutocommitDMLModePartitionedNonAtomic
+				return nil
+			case "TRANSACTIONAL":
+				this.AutocommitDMLMode = AutocommitDMLModeTransactional
+				return nil
+			default:
+				return fmt.Errorf("invalid AUTOCOMMIT_DML_MODE value: %v", value)
+			}
+		},
+		Getter: func(this *systemVariables, name string) (map[string]string, error) {
+			return singletonMap(name,
+				lo.Ternary(this.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic, "PARTITIONED_NON_ATOMIC", "TRANSACTIONAL")), nil
+		},
+	},
+	"STATEMENT_TIMEOUT": {},
 	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": boolAccessor(func(variables *systemVariables) *bool {
 		return &variables.ExcludeTxnFromChangeStreams
 	}),

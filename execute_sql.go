@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
@@ -200,6 +201,15 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 }
 
+func isInsert(sql string) bool {
+	token, err := gsqlutils.FirstNonHintToken("", sql)
+	if err != nil {
+		return false
+	}
+
+	return token.IsKeywordLike("INSERT")
+}
+
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
 	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
@@ -213,6 +223,13 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			session.currentBatch = &BatchDMLStatement{DMLs: []string{sql}}
 			return &Result{IsMutation: true}, nil
 		}
+
+		if !session.InTransaction() &&
+			!isInsert(sql) &&
+			session.systemVariables.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic {
+			return executePDML(ctx, session, sql)
+		}
+
 		return executeDML(ctx, session, sql)
 	}
 }
@@ -384,4 +401,25 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		PartitionCount: len(partitions),
 	}
 	return result, nil
+}
+
+func executePDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
+	defer cancel()
+
+	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		IsMutation:       true,
+		AffectedRows:     int(count),
+		AffectedRowsType: rowCountTypeLowerBound,
+	}, nil
 }
