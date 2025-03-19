@@ -532,18 +532,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowVariableStatement{VarName: matched[1]}, nil
 		},
 	},
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Help for variables`,
-				Syntax: `HELP VARIABLES`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &HelpVariablesStatement{}, nil
-		},
-	},
 	// Query Parameter
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -654,6 +642,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^HELP$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &HelpStatement{}, nil
+		},
+	},
+	{
+		// HELP VARIABLES is a System Variable statement, but placed here because of ordering in HELP
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show help for variables`,
+				Syntax: `HELP VARIABLES`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &HelpVariablesStatement{}, nil
 		},
 	},
 	{
