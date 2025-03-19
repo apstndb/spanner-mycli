@@ -57,6 +57,7 @@ type systemVariables struct {
 	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
 	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
+	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
 
 	// CLI_* variables
 
@@ -106,7 +107,6 @@ type systemVariables struct {
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
-	AutocommitDMLMode         AutocommitDMLMode
 }
 
 var errIgnored = errors.New("ignored")

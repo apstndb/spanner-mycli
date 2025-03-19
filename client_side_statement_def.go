@@ -532,6 +532,18 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowVariableStatement{VarName: matched[1]}, nil
 		},
 	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Help for variables`,
+				Syntax: `HELP VARIABLES`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &HelpVariablesStatement{}, nil
+		},
+	},
 	// Query Parameter
 	{
 		Descriptions: []clientSideStatementDescription{

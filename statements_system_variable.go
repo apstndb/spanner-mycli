@@ -5,7 +5,9 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	scxiter "spheric.cloud/xiter"
 )
 
@@ -85,4 +87,42 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
+}
+
+type HelpVariablesStatement struct{}
+
+func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	type variableDesc struct {
+		Name string
+		typ  []string
+	}
+
+	var merged []variableDesc
+	for k, v := range accessorMap {
+		var typ []string
+		if v.Getter != nil {
+			typ = append(typ, "read")
+		}
+
+		if v.Setter != nil {
+			typ = append(typ, "write")
+		}
+
+		if v.Adder != nil {
+			typ = append(typ, "add")
+		}
+
+		if len(typ) == 0 {
+			continue
+		}
+		merged = append(merged, variableDesc{Name: k, typ: typ})
+	}
+
+	rows := slices.Collect(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.typ, ",")) }, slices.Values(merged)))
+
+	return &Result{
+		ColumnNames:   []string{"name", "type"},
+		Rows:          rows,
+		KeepVariables: true,
+	}, nil
 }
