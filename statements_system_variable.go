@@ -37,12 +37,12 @@ type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
-	for k, v := range accessorMap {
-		if v.Getter == nil {
+	for k, v := range systemVariableDefMap {
+		if v.Accessor.Getter == nil {
 			continue
 		}
 
-		value, err := v.Getter(session.systemVariables, k)
+		value, err := v.Accessor.Getter(session.systemVariables, k)
 		if errors.Is(err, errIgnored) {
 			continue
 		}
@@ -93,35 +93,38 @@ type HelpVariablesStatement struct{}
 
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	type variableDesc struct {
-		Name string
-		typ  []string
+		Name        string
+		typ         []string
+		Description string
 	}
 
 	var merged []variableDesc
-	for k, v := range accessorMap {
+	for k, v := range systemVariableDefMap {
 		var typ []string
-		if v.Getter != nil {
+		if v.Accessor.Getter != nil {
 			typ = append(typ, "read")
 		}
 
-		if v.Setter != nil {
+		if v.Accessor.Setter != nil {
 			typ = append(typ, "write")
 		}
 
-		if v.Adder != nil {
+		if v.Accessor.Adder != nil {
 			typ = append(typ, "add")
 		}
 
 		if len(typ) == 0 {
 			continue
 		}
-		merged = append(merged, variableDesc{Name: k, typ: typ})
+		merged = append(merged, variableDesc{Name: k, typ: typ, Description: v.Description})
 	}
 
-	rows := slices.Collect(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.typ, ",")) }, slices.Values(merged)))
+	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.typ, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+		return strings.Compare(lhs[0], rhs[0])
+	})
 
 	return &Result{
-		ColumnNames:   []string{"name", "type"},
+		ColumnNames:   []string{"name", "type", "desc"},
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
