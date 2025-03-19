@@ -57,6 +57,7 @@ type systemVariables struct {
 	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
 	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
+	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
 
 	// CLI_* variables
 
@@ -106,7 +107,6 @@ type systemVariables struct {
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
-	AutocommitDMLMode         AutocommitDMLMode
 }
 
 var errIgnored = errors.New("ignored")
@@ -123,6 +123,11 @@ type accessor struct {
 	Adder  adder
 }
 
+type systemVariableDef struct {
+	Accessor    accessor
+	Description string
+}
+
 func (sv *systemVariables) InstancePath() string {
 	return instancePath(sv.Project, sv.Instance)
 }
@@ -137,41 +142,41 @@ func (sv *systemVariables) ProjectPath() string {
 
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
-	a, ok := accessorMap[upperName]
+	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)
 	}
-	if a.Setter == nil {
+	if a.Accessor.Setter == nil {
 		return fmt.Errorf("setter unimplemented: %v", name)
 	}
 
-	return a.Setter(sv, upperName, value)
+	return a.Accessor.Setter(sv, upperName, value)
 }
 
 func (sv *systemVariables) Add(name string, value string) error {
 	upperName := strings.ToUpper(name)
-	a, ok := accessorMap[upperName]
+	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)
 	}
-	if a.Adder == nil {
+	if a.Accessor.Adder == nil {
 		return fmt.Errorf("adder unimplemented: %v", name)
 	}
 
-	return a.Adder(sv, upperName, value)
+	return a.Accessor.Adder(sv, upperName, value)
 }
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
-	a, ok := accessorMap[upperName]
+	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", name)
 	}
-	if a.Getter == nil {
+	if a.Accessor.Getter == nil {
 		return nil, fmt.Errorf("getter unimplemented: %v", name)
 	}
 
-	value, err := a.Getter(sv, name)
+	value, err := a.Accessor.Getter(sv, name)
 	if err != nil && !errors.Is(err, errIgnored) {
 		return nil, err
 	}
@@ -190,439 +195,567 @@ func parseTimeString(s string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s)
 }
 
-var accessorMap = map[string]accessor{
+var systemVariableDefMap = map[string]systemVariableDef{
 	"READONLY": {
-		Setter: func(this *systemVariables, name, value string) error {
-			if this.CurrentSession != nil && (this.CurrentSession.InReadOnlyTransaction() || this.CurrentSession.InReadWriteTransaction()) {
-				return errors.New("can't change READONLY when there is a active transaction")
-			}
+		Description: "A boolean indicating whether or not the connection is in read-only mode. The default is false.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if this.CurrentSession != nil && (this.CurrentSession.InReadOnlyTransaction() || this.CurrentSession.InReadWriteTransaction()) {
+					return errors.New("can't change READONLY when there is a active transaction")
+				}
 
-			b, err := strconv.ParseBool(value)
-			if err != nil {
-				return err
-			}
+				b, err := strconv.ParseBool(value)
+				if err != nil {
+					return err
+				}
 
-			this.ReadOnly = b
-			return nil
+				this.ReadOnly = b
+				return nil
+			},
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
 		},
-		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
 	},
-	"AUTO_PARTITION_MODE": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.AutoPartitionMode
-	}),
-	"AUTOCOMMIT": {},
+	"AUTO_PARTITION_MODE": {
+		Description: "A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoPartitionMode
+		}),
+	},
+	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
 	"MAX_COMMIT_DELAY": {
-		Setter: func(this *systemVariables, name, value string) error {
-			if strings.ToUpper(value) == "NULL" {
-				this.MaxCommitDelay = nil
+		Description: "The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if strings.ToUpper(value) == "NULL" {
+					this.MaxCommitDelay = nil
+					return nil
+				}
+
+				duration, err := time.ParseDuration(unquoteString(value))
+				if err != nil {
+					return fmt.Errorf("failed to parse duration %s: %w", value, err)
+				}
+
+				this.MaxCommitDelay = &duration
 				return nil
-			}
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.MaxCommitDelay == nil {
+					return singletonMap(name, "NULL"), errIgnored
+				}
 
-			duration, err := time.ParseDuration(unquoteString(value))
-			if err != nil {
-				return fmt.Errorf("failed to parse duration %s: %w", value, err)
-			}
-
-			this.MaxCommitDelay = &duration
-			return nil
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.MaxCommitDelay == nil {
-				return singletonMap(name, "NULL"), errIgnored
-			}
-
-			return singletonMap(name, this.MaxCommitDelay.String()), nil
+				return singletonMap(name, this.MaxCommitDelay.String()), nil
+			},
 		},
 	},
-	"RETRY_ABORTS_INTERNALLY": {},
-	"MAX_PARTITIONED_PARALLELISM": int64Accessor(func(variables *systemVariables) *int64 {
-		return &variables.MaxPartitionedParallelism
-	}),
+	"RETRY_ABORTS_INTERNALLY": {Description: "A boolean indicating whether the connection automatically retries aborted transactions. The default is true."},
+	"MAX_PARTITIONED_PARALLELISM": {
+		Description: "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
+		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
+			return &variables.MaxPartitionedParallelism
+		}),
+	},
 	"AUTOCOMMIT_DML_MODE": {
-		Setter: func(this *systemVariables, name, value string) error {
-			switch unquoteString(value) {
-			case "PARTITIONED_NON_ATOMIC":
-				this.AutocommitDMLMode = AutocommitDMLModePartitionedNonAtomic
-				return nil
-			case "TRANSACTIONAL":
-				this.AutocommitDMLMode = AutocommitDMLModeTransactional
-				return nil
-			default:
-				return fmt.Errorf("invalid AUTOCOMMIT_DML_MODE value: %v", value)
-			}
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name,
-				lo.Ternary(this.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic, "PARTITIONED_NON_ATOMIC", "TRANSACTIONAL")), nil
+		Description: "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				switch unquoteString(value) {
+				case "PARTITIONED_NON_ATOMIC":
+					this.AutocommitDMLMode = AutocommitDMLModePartitionedNonAtomic
+					return nil
+				case "TRANSACTIONAL":
+					this.AutocommitDMLMode = AutocommitDMLModeTransactional
+					return nil
+				default:
+					return fmt.Errorf("invalid AUTOCOMMIT_DML_MODE value: %v", value)
+				}
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name,
+					lo.Ternary(this.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic, "PARTITIONED_NON_ATOMIC", "TRANSACTIONAL")), nil
+			},
 		},
 	},
-	"STATEMENT_TIMEOUT": {},
-	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.ExcludeTxnFromChangeStreams
-	}),
+	"STATEMENT_TIMEOUT": {
+		Description: "(NOT IMPLEMENTED) A property of type STRING indicating the current timeout value for statements.",
+	},
+	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
+		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.ExcludeTxnFromChangeStreams
+		})},
 	"READ_ONLY_STALENESS": {
-		func(this *systemVariables, name, value string) error {
-			staleness, err := parseTimestampBound(unquoteString(value))
-			if err != nil {
-				return err
-			}
-
-			this.ReadOnlyStaleness = &staleness
-			return nil
-		},
-		func(this *systemVariables, name string) (map[string]string, error) {
-			if this.ReadOnlyStaleness == nil {
-				return nil, errIgnored
-			}
-			s := this.ReadOnlyStaleness.String()
-			stalenessRe := regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
-			matches := stalenessRe.FindStringSubmatch(s)
-			if matches == nil {
-				return singletonMap(name, s), nil
-			}
-			switch matches[1] {
-			case "strong":
-				return singletonMap(name, "STRONG"), nil
-
-			case "exactStaleness":
-				return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
-			case "maxStaleness":
-				return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
-			// TODO: re-format timestamp as RFC3339
-			case "readTimestamp":
-				ts, err := parseTimeString(matches[2])
+		Description: "A property of type `STRING` indicating the current read-only staleness setting that Spanner uses for read-only transactions and single read-only queries.",
+		Accessor: accessor{
+			func(this *systemVariables, name, value string) error {
+				staleness, err := parseTimestampBound(unquoteString(value))
 				if err != nil {
-					return nil, err
+					return err
 				}
-				return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
-			case "minReadTimestamp":
-				ts, err := parseTimeString(matches[2])
-				if err != nil {
-					return nil, err
+
+				this.ReadOnlyStaleness = &staleness
+				return nil
+			},
+			func(this *systemVariables, name string) (map[string]string, error) {
+				if this.ReadOnlyStaleness == nil {
+					return nil, errIgnored
 				}
-				return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
-			default:
-				return singletonMap(name, s), nil
-			}
+				s := this.ReadOnlyStaleness.String()
+				stalenessRe := regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
+				matches := stalenessRe.FindStringSubmatch(s)
+				if matches == nil {
+					return singletonMap(name, s), nil
+				}
+				switch matches[1] {
+				case "strong":
+					return singletonMap(name, "STRONG"), nil
+
+				case "exactStaleness":
+					return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
+				case "maxStaleness":
+					return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
+				// TODO: re-format timestamp as RFC3339
+				case "readTimestamp":
+					ts, err := parseTimeString(matches[2])
+					if err != nil {
+						return nil, err
+					}
+					return singletonMap(name, fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
+				case "minReadTimestamp":
+					ts, err := parseTimeString(matches[2])
+					if err != nil {
+						return nil, err
+					}
+					return singletonMap(name, fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))), nil
+				default:
+					return singletonMap(name, s), nil
+				}
+			},
+			nil,
 		},
-		nil,
 	},
-	"OPTIMIZER_VERSION": stringAccessor(func(sysVars *systemVariables) *string {
-		return &sysVars.OptimizerVersion
-	}),
-	"OPTIMIZER_STATISTICS_PACKAGE": stringAccessor(func(sysVars *systemVariables) *string {
-		return &sysVars.OptimizerStatisticsPackage
-	}),
-	"RETURN_COMMIT_STATS": {},
-	"AUTO_BATCH_DML": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.AutoBatchDML
-	}),
-	"DATA_BOOST_ENABLED": boolAccessor(func(sysVars *systemVariables) *bool {
-		return &sysVars.DataBoostEnabled
-	}),
+	"OPTIMIZER_VERSION": {
+		Description: "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.OptimizerVersion
+		})},
+	"OPTIMIZER_STATISTICS_PACKAGE": {
+		Description: "A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.OptimizerStatisticsPackage
+		})},
+	"RETURN_COMMIT_STATS": {
+		Description: "(NOT IMPLEMENTED) A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+	},
+	"AUTO_BATCH_DML": {
+		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoBatchDML
+		})},
+	"DATA_BOOST_ENABLED": {
+		Description: "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
+		Accessor: boolAccessor(func(sysVars *systemVariables) *bool {
+			return &sysVars.DataBoostEnabled
+		})},
 	"RPC_PRIORITY": {
-		Setter: func(this *systemVariables, name, value string) error {
-			s := unquoteString(value)
+		Description: "A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				s := unquoteString(value)
 
-			p, err := parsePriority(s)
-			if err != nil {
-				return err
-			}
+				p, err := parsePriority(s)
+				if err != nil {
+					return err
+				}
 
-			this.RPCPriority = p
-			return nil
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
+				this.RPCPriority = p
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
+			},
 		},
 	},
 	"TRANSACTION_TAG": {
-		Setter: func(this *systemVariables, name, value string) error {
-			if this.CurrentSession == nil {
-				return errors.New("invalid state: current session is not populated")
-			}
+		Description: "A property of type STRING that contains the transaction tag for the next transaction.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if this.CurrentSession == nil {
+					return errors.New("invalid state: current session is not populated")
+				}
 
-			if !this.CurrentSession.InPendingTransaction() {
-				return errors.New("there is no pending transaction")
-			}
+				if !this.CurrentSession.InPendingTransaction() {
+					return errors.New("there is no pending transaction")
+				}
 
-			this.CurrentSession.tc.tag = unquoteString(value)
-			return nil
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.CurrentSession == nil || this.CurrentSession.tc == nil || this.CurrentSession.tc.tag == "" {
-				return singletonMap(name, ""), errIgnored
-			}
+				this.CurrentSession.tc.tag = unquoteString(value)
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.CurrentSession == nil || this.CurrentSession.tc == nil || this.CurrentSession.tc.tag == "" {
+					return singletonMap(name, ""), errIgnored
+				}
 
-			return singletonMap(name, this.CurrentSession.tc.tag), nil
+				return singletonMap(name, this.CurrentSession.tc.tag), nil
+			},
 		},
 	},
 	"STATEMENT_TAG": {
-		Setter: func(this *systemVariables, name, value string) error {
-			this.RequestTag = unquoteString(value)
-			return nil
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.RequestTag == "" {
-				return nil, errIgnored
-			}
+		Description: "A property of type STRING that contains the request tag for the next statement.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				this.RequestTag = unquoteString(value)
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.RequestTag == "" {
+					return nil, errIgnored
+				}
 
-			return singletonMap(name, this.RequestTag), nil
+				return singletonMap(name, this.RequestTag), nil
+			},
 		},
 	},
 	"READ_TIMESTAMP": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.ReadTimestamp.IsZero() {
-				return nil, errIgnored
-			}
-			return singletonMap(name, this.ReadTimestamp.Format(time.RFC3339Nano)), nil
+		Description: "The read timestamp of the most recent read-only transaction.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.ReadTimestamp.IsZero() {
+					return nil, errIgnored
+				}
+				return singletonMap(name, this.ReadTimestamp.Format(time.RFC3339Nano)), nil
+			},
 		},
 	},
 	"COMMIT_TIMESTAMP": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.CommitTimestamp.IsZero() {
-				return nil, errIgnored
-			}
-			s := this.CommitTimestamp.Format(time.RFC3339Nano)
-			return singletonMap(name, s), nil
+		Description: "The commit timestamp of the last read-write transaction that Spanner committed.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.CommitTimestamp.IsZero() {
+					return nil, errIgnored
+				}
+				s := this.CommitTimestamp.Format(time.RFC3339Nano)
+				return singletonMap(name, s), nil
+			},
 		},
 	},
 	"COMMIT_RESPONSE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.CommitResponse == nil {
-				return nil, errIgnored
-			}
-			mutationCount := this.CommitResponse.GetCommitStats().GetMutationCount()
-			return map[string]string{
-				"COMMIT_TIMESTAMP": this.CommitTimestamp.Format(time.RFC3339Nano),
-				"MUTATION_COUNT":   strconv.FormatInt(mutationCount, 10),
-			}, nil
+		Description: "Returns a result set with one row and two columns, COMMIT_TIMESTAMP and MUTATION_COUNT.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.CommitResponse == nil {
+					return nil, errIgnored
+				}
+				mutationCount := this.CommitResponse.GetCommitStats().GetMutationCount()
+				return map[string]string{
+					"COMMIT_TIMESTAMP": this.CommitTimestamp.Format(time.RFC3339Nano),
+					"MUTATION_COUNT":   strconv.FormatInt(mutationCount, 10),
+				}, nil
+			},
 		},
 	},
 	"CLI_FORMAT": {
-		Setter: func(this *systemVariables, name, value string) error {
-			switch strings.ToUpper(unquoteString(value)) {
-			case "TABLE":
-				this.CLIFormat = DisplayModeTable
-			case "TABLE_COMMENT":
-				this.CLIFormat = DisplayModeTableComment
-			case "TABLE_DETAIL_COMMENT":
-				this.CLIFormat = DisplayModeTableDetailComment
-			case "VERTICAL":
-				this.CLIFormat = DisplayModeVertical
-			case "TAB":
-				this.CLIFormat = DisplayModeTab
-			}
-			return nil
-		},
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			var formatStr string
-			switch this.CLIFormat {
-			case DisplayModeTable:
-				formatStr = "TABLE"
-			case DisplayModeVertical:
-				formatStr = "VERTICAL"
-			case DisplayModeTab:
-				formatStr = "TAB"
-			}
-			return singletonMap(name, formatStr), nil
+		Description: "",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				switch strings.ToUpper(unquoteString(value)) {
+				case "TABLE":
+					this.CLIFormat = DisplayModeTable
+				case "TABLE_COMMENT":
+					this.CLIFormat = DisplayModeTableComment
+				case "TABLE_DETAIL_COMMENT":
+					this.CLIFormat = DisplayModeTableDetailComment
+				case "VERTICAL":
+					this.CLIFormat = DisplayModeVertical
+				case "TAB":
+					this.CLIFormat = DisplayModeTab
+				}
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				var formatStr string
+				switch this.CLIFormat {
+				case DisplayModeTable:
+					formatStr = "TABLE"
+				case DisplayModeVertical:
+					formatStr = "VERTICAL"
+				case DisplayModeTab:
+					formatStr = "TAB"
+				}
+				return singletonMap(name, formatStr), nil
+			},
 		},
 	},
 	"CLI_VERBOSE": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Verbose }),
-		Setter: func(this *systemVariables, name, value string) error {
-			b, err := strconv.ParseBool(value)
-			if err != nil {
-				return err
-			}
-			this.Verbose = b
-			return nil
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Verbose }),
+			Setter: func(this *systemVariables, name, value string) error {
+				b, err := strconv.ParseBool(value)
+				if err != nil {
+					return err
+				}
+				this.Verbose = b
+				return nil
+			},
 		},
 	},
 	"CLI_DATABASE_DIALECT": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.DatabaseDialect.String()), nil
-		},
-		Setter: func(this *systemVariables, name, value string) error {
-			n, ok := databasepb.DatabaseDialect_value[strings.ToUpper(unquoteString(value))]
-			if !ok {
-				return fmt.Errorf("invalid value: %v", value)
-			}
-			this.DatabaseDialect = databasepb.DatabaseDialect(n)
-			return nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.DatabaseDialect.String()), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				n, ok := databasepb.DatabaseDialect_value[strings.ToUpper(unquoteString(value))]
+				if !ok {
+					return fmt.Errorf("invalid value: %v", value)
+				}
+				this.DatabaseDialect = databasepb.DatabaseDialect(n)
+				return nil
+			},
 		},
 	},
 	"CLI_ECHO_EXECUTED_DDL": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.EchoExecutedDDL }),
-		Setter: func(this *systemVariables, name, value string) error {
-			b, err := strconv.ParseBool(value)
-			if err != nil {
-				return err
-			}
-			this.EchoExecutedDDL = b
-			return nil
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.EchoExecutedDDL }),
+			Setter: func(this *systemVariables, name, value string) error {
+				b, err := strconv.ParseBool(value)
+				if err != nil {
+					return err
+				}
+				this.EchoExecutedDDL = b
+				return nil
+			},
 		},
 	},
 	"CLI_ROLE": {
-		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
+		Description: "",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
+		},
 	},
-	"CLI_ECHO_INPUT": boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
+	"CLI_ECHO_INPUT": {
+		Description: "",
+		Accessor:    boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
+	},
 	"CLI_ENDPOINT": {
-		Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+		Description: "",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+		},
 	},
 	"CLI_DIRECT_READ": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, xiter.Join(xiter.Map(
-				slices.Values(this.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
-				func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
-					return fmt.Sprintf("%v:%v", rs.GetLocation(), rs.GetType())
-				},
-			), ",")), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, xiter.Join(xiter.Map(
+					slices.Values(this.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+					func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
+						return fmt.Sprintf("%v:%v", rs.GetLocation(), rs.GetType())
+					},
+				), ",")), nil
+			},
 		},
 	},
 	"CLI_HISTORY_FILE": {
-		Getter: stringGetter(
-			func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
-		),
+		Description: "",
+		Accessor: accessor{
+			Getter: stringGetter(
+				func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
+			),
+		},
 	},
-	"CLI_VERTEXAI_MODEL": stringAccessor(func(sysVars *systemVariables) *string {
-		return &sysVars.VertexAIModel
-	}),
-	"CLI_VERTEXAI_PROJECT": stringAccessor(func(sysVars *systemVariables) *string {
-		return &sysVars.VertexAIProject
-	}),
-	"CLI_PROMPT":  stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
-	"CLI_PROMPT2": stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
+	"CLI_VERTEXAI_MODEL": {
+		Description: "",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.VertexAIModel
+		})},
+	"CLI_VERTEXAI_PROJECT": {
+		Description: "",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.VertexAIProject
+		})},
+	"CLI_PROMPT": {
+		Description: "",
+		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt })},
+	"CLI_PROMPT2": {
+		Description: "",
+		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 })},
 	"CLI_PROJECT": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.Project), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.Project), nil
+			},
 		},
 	},
 	"CLI_INSTANCE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.Instance), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.Instance), nil
+			},
 		},
 	},
 	"CLI_DATABASE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, this.Database), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.Database), nil
+			},
 		},
 	},
 	"CLI_PROTO_DESCRIPTOR_FILE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, strings.Join(this.ProtoDescriptorFile, ",")), nil
-		},
-		Setter: func(this *systemVariables, name, value string) error {
-			filenames := strings.Split(unquoteString(value), ",")
-			if len(filenames) == 0 {
-				return nil
-			}
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, strings.Join(this.ProtoDescriptorFile, ",")), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				filenames := strings.Split(unquoteString(value), ",")
+				if len(filenames) == 0 {
+					return nil
+				}
 
-			var fileDescriptorSet *descriptorpb.FileDescriptorSet
-			for _, filename := range filenames {
+				var fileDescriptorSet *descriptorpb.FileDescriptorSet
+				for _, filename := range filenames {
+					fds, err := readFileDescriptorProtoFromFile(filename)
+					if err != nil {
+						return err
+					}
+					fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
+				}
+
+				this.ProtoDescriptorFile = filenames
+				this.ProtoDescriptor = fileDescriptorSet
+				return nil
+			},
+			Adder: func(this *systemVariables, name, value string) error {
+				filename := unquoteString(value)
+
 				fds, err := readFileDescriptorProtoFromFile(filename)
 				if err != nil {
 					return err
 				}
-				fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
-			}
 
-			this.ProtoDescriptorFile = filenames
-			this.ProtoDescriptor = fileDescriptorSet
-			return nil
-		},
-		Adder: func(this *systemVariables, name, value string) error {
-			filename := unquoteString(value)
-
-			fds, err := readFileDescriptorProtoFromFile(filename)
-			if err != nil {
-				return err
-			}
-
-			if !slices.Contains(this.ProtoDescriptorFile, filename) {
-				this.ProtoDescriptorFile = slices.Concat(this.ProtoDescriptorFile, sliceOf(filename))
-				this.ProtoDescriptor = &descriptorpb.FileDescriptorSet{File: slices.Concat(this.ProtoDescriptor.GetFile(), fds.GetFile())}
-			} else {
-				this.ProtoDescriptor = mergeFDS(this.ProtoDescriptor, fds)
-			}
-			return nil
+				if !slices.Contains(this.ProtoDescriptorFile, filename) {
+					this.ProtoDescriptorFile = slices.Concat(this.ProtoDescriptorFile, sliceOf(filename))
+					this.ProtoDescriptor = &descriptorpb.FileDescriptorSet{File: slices.Concat(this.ProtoDescriptor.GetFile(), fds.GetFile())}
+				} else {
+					this.ProtoDescriptor = mergeFDS(this.ProtoDescriptor, fds)
+				}
+				return nil
+			},
 		},
 	},
 	"CLI_PARSE_MODE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.BuildStatementMode == parseModeUnspecified {
-				return nil, errIgnored
-			}
-			return singletonMap(name, string(this.BuildStatementMode)), nil
-		},
-		Setter: func(this *systemVariables, name, value string) error {
-			s := strings.ToUpper(unquoteString(value))
-			switch s {
-			case string(parseModeFallback),
-				string(parseMemefishOnly),
-				string(parseModeNoMemefish),
-				string(parseModeUnspecified):
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.BuildStatementMode == parseModeUnspecified {
+					return nil, errIgnored
+				}
+				return singletonMap(name, string(this.BuildStatementMode)), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				s := strings.ToUpper(unquoteString(value))
+				switch s {
+				case string(parseModeFallback),
+					string(parseMemefishOnly),
+					string(parseModeNoMemefish),
+					string(parseModeUnspecified):
 
-				this.BuildStatementMode = parseMode(s)
-				return nil
-			default:
-				return fmt.Errorf("invalid value: %v", s)
-			}
+					this.BuildStatementMode = parseMode(s)
+					return nil
+				default:
+					return fmt.Errorf("invalid value: %v", s)
+				}
+			},
 		},
 	},
 	"CLI_INSECURE": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
+		},
 	},
 	"CLI_DEBUG": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool { return lo.Ternary(sysVars.Debug, lo.ToPtr(sysVars.Debug), nil) }),
-		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.Debug }),
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return lo.Ternary(sysVars.Debug, lo.ToPtr(sysVars.Debug), nil) }),
+			Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.Debug }),
+		},
 	},
 	"CLI_LOG_GRPC": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool {
-			return lo.Ternary(sysVars.LogGrpc, &sysVars.LogGrpc, nil)
-		}),
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool {
+				return lo.Ternary(sysVars.LogGrpc, &sysVars.LogGrpc, nil)
+			}),
+		},
 	},
 	"CLI_LINT_PLAN": {
-		Getter: boolGetter(func(sysVars *systemVariables) *bool {
-			return lo.Ternary(sysVars.LintPlan, lo.ToPtr(sysVars.LintPlan), nil)
-		}),
-		Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
-	},
-	"CLI_USE_PAGER": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.UsePager
-	}),
-	"CLI_AUTOWRAP": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.AutoWrap
-	}),
-	"CLI_ENABLE_HIGHLIGHT": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.EnableHighlight
-	}),
-	"CLI_PROTOTEXT_MULTILINE": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.MultilineProtoText
-	}),
-	"CLI_MARKDOWN_CODEBLOCK": boolAccessor(func(variables *systemVariables) *bool {
-		return &variables.MarkdownCodeblock
-	}),
-	"CLI_QUERY_MODE": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			if this.QueryMode == nil {
-				return nil, errIgnored
-			}
-			return singletonMap(name, this.QueryMode.String()), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool {
+				return lo.Ternary(sysVars.LintPlan, lo.ToPtr(sysVars.LintPlan), nil)
+			}),
+			Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
 		},
-		Setter: func(this *systemVariables, name, value string) error {
-			s := unquoteString(value)
-			mode, ok := sppb.ExecuteSqlRequest_QueryMode_value[strings.ToUpper(s)]
-			if !ok {
-				return fmt.Errorf("invalid value: %v", s)
-			}
-			this.QueryMode = sppb.ExecuteSqlRequest_QueryMode(mode).Enum()
-			return nil
+	},
+	"CLI_USE_PAGER": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.UsePager
+		})},
+	"CLI_AUTOWRAP": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoWrap
+		})},
+	"CLI_ENABLE_HIGHLIGHT": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableHighlight
+		})},
+	"CLI_PROTOTEXT_MULTILINE": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.MultilineProtoText
+		})},
+	"CLI_MARKDOWN_CODEBLOCK": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.MarkdownCodeblock
+		})},
+	"CLI_QUERY_MODE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.QueryMode == nil {
+					return nil, errIgnored
+				}
+				return singletonMap(name, this.QueryMode.String()), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				s := unquoteString(value)
+				mode, ok := sppb.ExecuteSqlRequest_QueryMode_value[strings.ToUpper(s)]
+				if !ok {
+					return fmt.Errorf("invalid value: %v", s)
+				}
+				this.QueryMode = sppb.ExecuteSqlRequest_QueryMode(mode).Enum()
+				return nil
+			},
 		},
 	},
 	"CLI_VERSION": {
-		Getter: func(this *systemVariables, name string) (map[string]string, error) {
-			return singletonMap(name, getVersion()), nil
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, getVersion()), nil
+			},
 		},
 	},
 }

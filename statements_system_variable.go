@@ -5,7 +5,9 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	scxiter "spheric.cloud/xiter"
 )
 
@@ -35,12 +37,12 @@ type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
-	for k, v := range accessorMap {
-		if v.Getter == nil {
+	for k, v := range systemVariableDefMap {
+		if v.Accessor.Getter == nil {
 			continue
 		}
 
-		value, err := v.Getter(session.systemVariables, k)
+		value, err := v.Accessor.Getter(session.systemVariables, k)
 		if errors.Is(err, errIgnored) {
 			continue
 		}
@@ -85,4 +87,46 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
+}
+
+type HelpVariablesStatement struct{}
+
+func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	type variableDesc struct {
+		Name        string
+		Operations  []string
+		Description string
+	}
+
+	var merged []variableDesc
+	for k, v := range systemVariableDefMap {
+		var ops []string
+		if v.Accessor.Getter != nil {
+			ops = append(ops, "read")
+		}
+
+		if v.Accessor.Setter != nil {
+			ops = append(ops, "write")
+		}
+
+		if v.Accessor.Adder != nil {
+			ops = append(ops, "add")
+		}
+
+		if len(ops) == 0 {
+			continue
+		}
+		merged = append(merged, variableDesc{Name: k, Operations: ops, Description: v.Description})
+	}
+
+	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+		return strings.Compare(lhs[0], rhs[0])
+	})
+
+	return &Result{
+		ColumnNames:   []string{"name", "operations", "desc"},
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		KeepVariables: true,
+	}, nil
 }
