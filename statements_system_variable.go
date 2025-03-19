@@ -94,37 +94,37 @@ type HelpVariablesStatement struct{}
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	type variableDesc struct {
 		Name        string
-		typ         []string
+		Operations  []string
 		Description string
 	}
 
 	var merged []variableDesc
 	for k, v := range systemVariableDefMap {
-		var typ []string
+		var ops []string
 		if v.Accessor.Getter != nil {
-			typ = append(typ, "read")
+			ops = append(ops, "read")
 		}
 
 		if v.Accessor.Setter != nil {
-			typ = append(typ, "write")
+			ops = append(ops, "write")
 		}
 
 		if v.Accessor.Adder != nil {
-			typ = append(typ, "add")
+			ops = append(ops, "add")
 		}
 
-		if len(typ) == 0 {
+		if len(ops) == 0 {
 			continue
 		}
-		merged = append(merged, variableDesc{Name: k, typ: typ, Description: v.Description})
+		merged = append(merged, variableDesc{Name: k, Operations: ops, Description: v.Description})
 	}
 
-	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.typ, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
 		return strings.Compare(lhs[0], rhs[0])
 	})
 
 	return &Result{
-		ColumnNames:   []string{"name", "type", "desc"},
+		ColumnNames:   []string{"name", "operations", "desc"},
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
