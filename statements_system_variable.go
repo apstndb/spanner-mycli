@@ -126,6 +126,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 	return &Result{
 		ColumnNames:   []string{"name", "type", "desc"},
 		Rows:          rows,
+		AffectedRows:  len(rows),
 		KeepVariables: true,
 	}, nil
 }
