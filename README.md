@@ -315,6 +315,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show the single sampled query plan                 | `SHOW QUERY PROFILE <fingerprint>;`                                                              | EARLY EXPERIMENTAL                                                                                                                                          |
 | Compose query using LLM                            | `GEMINI "<prompt>";`                                                                             |                                                                                                                                                             |
 | Show help                                          | `HELP;`                                                                                          |                                                                                                                                                             |
+| Show help for variables                            | `HELP VARIABLES;`                                                                                |                                                                                                                                                             |
 | Exit CLI                                           | `EXIT;`                                                                                          |                                                                                                                                                             |
 
 ## Customize prompt
@@ -1290,7 +1291,7 @@ spanner> SET DATA_BOOST_ENABLED = TRUE;
 
 In default, the number of worker goroutines for partitioned query is the value of `GOMAXPROCS`.
 
-You can change it using `MAX_PARTTIIONED_PARALLELISM`.
+You can change it using `MAX_PARTITIONED_PARALLELISM`.
 
 ```
 spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
