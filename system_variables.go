@@ -280,7 +280,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "(NOT IMPLEMENTED) A property of type STRING indicating the current timeout value for statements.",
 	},
 	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
-		Description: "",
+		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.ExcludeTxnFromChangeStreams
 		})},
@@ -348,7 +348,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "(NOT IMPLEMENTED) A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
 	},
 	"AUTO_BATCH_DML": {
-		Description: "",
+		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AutoBatchDML
 		})},
@@ -440,7 +440,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"COMMIT_RESPONSE": {
-		Description: "",
+		Description: "Returns a result set with one row and two columns, COMMIT_TIMESTAMP and MUTATION_COUNT.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
 				if this.CommitResponse == nil {
