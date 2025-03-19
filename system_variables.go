@@ -221,9 +221,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			return &variables.AutoPartitionMode
 		}),
 	},
-	"AUTOCOMMIT": {},
+	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
 	"MAX_COMMIT_DELAY": {
-		Description: "",
+		Description: "The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
 				if strings.ToUpper(value) == "NULL" {
@@ -248,7 +248,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"RETRY_ABORTS_INTERNALLY": {},
+	"RETRY_ABORTS_INTERNALLY": {Description: "A boolean indicating whether the connection automatically retries aborted transactions. The default is true."},
 	"MAX_PARTITIONED_PARALLELISM": {
 		Description: "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
 		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
@@ -276,7 +276,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"STATEMENT_TIMEOUT": {},
+	"STATEMENT_TIMEOUT": {
+		Description: "(NOT IMPLEMENTED) A property of type STRING indicating the current timeout value for statements.",
+	},
 	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
@@ -342,7 +344,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
 			return &sysVars.OptimizerStatisticsPackage
 		})},
-	"RETURN_COMMIT_STATS": {},
+	"RETURN_COMMIT_STATS": {
+		Description: "(NOT IMPLEMENTED) A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+	},
 	"AUTO_BATCH_DML": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
