@@ -392,7 +392,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start transaction`,
-				Syntax: `BEGIN [TRANSACTION] [PRIORITY {HIGH|MEDIUM|LOW}]`,
+				Syntax: `BEGIN [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE|REPEATABLE READ}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
 				Note:   "(Spanner JDBC driver style); It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
