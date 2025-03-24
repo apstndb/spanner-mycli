@@ -59,7 +59,7 @@ type systemVariables struct {
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
 	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
 
-	DefautIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
+	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
 
 	// CLI_* variables
 
@@ -224,12 +224,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				v := strings.ToUpper(unquoteString(value))
 				isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
 				if ok {
-					this.DefautIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
+					this.DefaultIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
 				}
 				return nil
 			},
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, this.DefautIsolationLevel.String()), nil
+				return singletonMap(name, this.DefaultIsolationLevel.String()), nil
 			},
 		},
 	},
