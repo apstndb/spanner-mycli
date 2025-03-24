@@ -278,7 +278,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		priority = s.systemVariables.RPCPriority
 	}
 
-	// Use session's isolation level if transaction isolation level is not set.
+	// Use default isolation level if transaction isolation level is not set.
 	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
 		isolationLevel = s.systemVariables.DefaultIsolationLevel
 	}
@@ -684,7 +684,8 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	var implicitRWTx bool
 	if !s.InReadWriteTransaction() {
 		// Start implicit transaction.
-		if err := s.BeginReadWriteTransaction(ctx, 0, s.currentPriority()); err != nil {
+		// Note: isolation level is not session level property so it is left as unspecified.
+		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriority()); err != nil {
 			return 0, spanner.CommitResponse{}, nil, nil, err
 		}
 		implicitRWTx = true

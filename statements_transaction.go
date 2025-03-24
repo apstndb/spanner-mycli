@@ -97,7 +97,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 		result.Timestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, 0, session.tc.priority)
+		err := session.BeginReadWriteTransaction(ctx, session.tc.isolationLevel, session.tc.priority)
 		if err != nil {
 			return nil, err
 		}
