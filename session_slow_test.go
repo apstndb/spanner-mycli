@@ -96,7 +96,7 @@ func TestRequestPriority(t *testing.T) {
 			}
 
 			// Read-Write Transaction.
-			if err := session.BeginReadWriteTransaction(ctx, test.transactionPriority); err != nil {
+			if err := session.BeginReadWriteTransaction(ctx, 0, test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
 			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
@@ -171,24 +171,40 @@ func TestIsolationLevel(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		desc                  string
-		defaultIsolationLevel sppb.TransactionOptions_IsolationLevel
-		want                  sppb.TransactionOptions_IsolationLevel
+		desc                      string
+		defaultIsolationLevel     sppb.TransactionOptions_IsolationLevel
+		transactionIsolationLevel sppb.TransactionOptions_IsolationLevel
+		want                      sppb.TransactionOptions_IsolationLevel
 	}{
 		{
-			desc:                  "use default isolation level",
-			defaultIsolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-			want:                  sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			desc:                      "use default isolation level",
+			defaultIsolationLevel:     sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			transactionIsolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			want:                      sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
 		},
 		{
-			desc:                  "use serializable isolation level",
-			defaultIsolationLevel: sppb.TransactionOptions_SERIALIZABLE,
-			want:                  sppb.TransactionOptions_SERIALIZABLE,
+			desc:                      "use default serializable isolation level",
+			defaultIsolationLevel:     sppb.TransactionOptions_SERIALIZABLE,
+			transactionIsolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			want:                      sppb.TransactionOptions_SERIALIZABLE,
 		},
 		{
-			desc:                  "use repeatable_read isolation level",
-			defaultIsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
-			want:                  sppb.TransactionOptions_REPEATABLE_READ,
+			desc:                      "use default repeatable read isolation level",
+			defaultIsolationLevel:     sppb.TransactionOptions_REPEATABLE_READ,
+			transactionIsolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			want:                      sppb.TransactionOptions_REPEATABLE_READ,
+		},
+		{
+			desc:                      "use override serializable isolation level",
+			defaultIsolationLevel:     sppb.TransactionOptions_REPEATABLE_READ,
+			transactionIsolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+			want:                      sppb.TransactionOptions_SERIALIZABLE,
+		},
+		{
+			desc:                      "use override repeatable read isolation level",
+			defaultIsolationLevel:     sppb.TransactionOptions_SERIALIZABLE,
+			transactionIsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+			want:                      sppb.TransactionOptions_REPEATABLE_READ,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -205,17 +221,14 @@ func TestIsolationLevel(t *testing.T) {
 			}
 
 			// Read-Write Transaction.
-			if err := session.BeginReadWriteTransaction(ctx, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			if err := session.BeginReadWriteTransaction(ctx, test.transactionIsolationLevel, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
-			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
 			if err := iter.Do(func(r *spanner.Row) error {
 				return nil
 			}); err != nil {
 				t.Fatalf("failed to run query: %v", err)
-			}
-			if _, _, _, _, err := session.RunUpdate(ctx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), true); err != nil {
-				t.Fatalf("failed to run update: %v", err)
 			}
 			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {
 				t.Fatalf("failed to commit: %v", err)

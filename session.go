@@ -92,7 +92,8 @@ type transactionContext struct {
 	priority      sppb.RequestOptions_Priority
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
 
-	txn any
+	txn            any
+	isolationLevel sppb.TransactionOptions_IsolationLevel
 
 	// rwTxn         *spanner.ReadWriteStmtBasedTransaction
 	// roTxn         *spanner.ReadOnlyTransaction
@@ -217,7 +218,7 @@ func (s *Session) InTransaction() bool {
 
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
-func (s *Session) BeginPendingTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
+func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
@@ -226,14 +227,20 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, priority sppb.Req
 		return errors.New("read-only transaction is already running")
 	}
 
+	// Use session's default isolation level if transaction priority is not set.
+	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		isolationLevel = s.systemVariables.DefaultIsolationLevel
+	}
+
 	// Use session's priority if transaction priority is not set.
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
 		priority = s.systemVariables.RPCPriority
 	}
 
 	s.tc = &transactionContext{
-		mode:     transactionModePending,
-		priority: priority,
+		mode:           transactionModePending,
+		priority:       priority,
+		isolationLevel: isolationLevel,
 	}
 	return nil
 }
@@ -248,11 +255,11 @@ func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
 		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.tc.priority)
 	}
 
-	return zeroTime, s.BeginReadWriteTransaction(ctx, s.tc.priority)
+	return zeroTime, s.BeginReadWriteTransaction(ctx, s.tc.isolationLevel, s.tc.priority)
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.RequestOptions_Priority) error {
+func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
@@ -271,12 +278,17 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		priority = s.systemVariables.RPCPriority
 	}
 
+	// Use default isolation level if transaction isolation level is not set.
+	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		isolationLevel = s.systemVariables.DefaultIsolationLevel
+	}
+
 	opts := spanner.TransactionOptions{
 		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
 		CommitPriority:              priority,
 		TransactionTag:              tag,
 		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
-		IsolationLevel:              s.systemVariables.DefaultIsolationLevel,
+		IsolationLevel:              isolationLevel,
 	}
 
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
@@ -284,10 +296,11 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 		return err
 	}
 	s.tc = &transactionContext{
-		mode:     transactionModeReadWrite,
-		tag:      tag,
-		priority: priority,
-		txn:      txn,
+		mode:           transactionModeReadWrite,
+		tag:            tag,
+		priority:       priority,
+		txn:            txn,
+		isolationLevel: isolationLevel,
 	}
 	return nil
 }
@@ -671,7 +684,8 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	var implicitRWTx bool
 	if !s.InReadWriteTransaction() {
 		// Start implicit transaction.
-		if err := s.BeginReadWriteTransaction(ctx, s.currentPriority()); err != nil {
+		// Note: isolation level is not session level property so it is left as unspecified.
+		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriority()); err != nil {
 			return 0, spanner.CommitResponse{}, nil, nil, err
 		}
 		implicitRWTx = true

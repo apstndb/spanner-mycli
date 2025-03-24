@@ -1280,6 +1280,15 @@ spanner> SELECT * FROM Singers;
 
 Note: Any stats are not available in partitioned query.
 
+##### Isolation Level
+
+You can set session-level default isolation level and transaction-level isolation level.
+
+```
+spanner> SET DEFAULT_ISOLATION_LEVEL = "REPEATABLE_READ";
+spanner> BEGIN ISOLATION LEVEL REPEATABLE READ;
+```
+
 ##### Enable Data Boost
 
 You can enable Data Boost using `DATA_BOOST_ENABLED`.

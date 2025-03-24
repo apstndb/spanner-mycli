@@ -26,7 +26,8 @@ type BeginRoStatement struct {
 }
 
 type BeginRwStatement struct {
-	Priority sppb.RequestOptions_Priority
+	IsolationLevel sppb.TransactionOptions_IsolationLevel
+	Priority       sppb.RequestOptions_Priority
 }
 
 func (BeginRwStatement) isMutationStatement() {}
@@ -40,7 +41,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 		return nil, errors.New("you're in read-only transaction. Please finish the transaction by 'CLOSE;'")
 	}
 
-	if err := session.BeginReadWriteTransaction(ctx, s.Priority); err != nil {
+	if err := session.BeginReadWriteTransaction(ctx, s.IsolationLevel, s.Priority); err != nil {
 		return nil, err
 	}
 
@@ -48,7 +49,8 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 }
 
 type BeginStatement struct {
-	Priority sppb.RequestOptions_Priority
+	IsolationLevel sppb.TransactionOptions_IsolationLevel
+	Priority       sppb.RequestOptions_Priority
 }
 
 func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -68,7 +70,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		}, nil
 	}
 
-	err := session.BeginPendingTransaction(ctx, s.Priority)
+	err := session.BeginPendingTransaction(ctx, s.IsolationLevel, s.Priority)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +97,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 		result.Timestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, session.tc.priority)
+		err := session.BeginReadWriteTransaction(ctx, session.tc.isolationLevel, session.tc.priority)
 		if err != nil {
 			return nil, err
 		}

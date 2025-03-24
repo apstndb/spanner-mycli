@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -330,18 +331,23 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start R/W transaction`,
-				Syntax: `BEGIN RW [TRANSACTION] [PRIORITY {HIGH|MEDIUM|LOW}]`,
+				Syntax: `BEGIN RW [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE|REPEATABLE READ}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
 				Note:   `(spanner-cli style);  See [Request Priority](#request-priority) for details on the priority.`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
+		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			priority, err := parsePriority(matched[1])
+			isolationLevel, err := parseIsolationLevel(matched[1])
 			if err != nil {
 				return nil, err
 			}
 
-			return &BeginRwStatement{Priority: priority}, nil
+			priority, err := parsePriority(matched[2])
+			if err != nil {
+				return nil, err
+			}
+
+			return &BeginRwStatement{IsolationLevel: isolationLevel, Priority: priority}, nil
 		},
 	},
 	{
@@ -390,14 +396,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "(Spanner JDBC driver style); It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
+		Pattern: regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			priority, err := parsePriority(matched[1])
+			isolationLevel, err := parseIsolationLevel(matched[1])
 			if err != nil {
 				return nil, err
 			}
 
-			return &BeginStatement{Priority: priority}, nil
+			priority, err := parsePriority(matched[2])
+			if err != nil {
+				return nil, err
+			}
+
+			return &BeginStatement{IsolationLevel: isolationLevel, Priority: priority}, nil
 		},
 	},
 	{
@@ -754,4 +765,18 @@ func exprToFullName(expr ast.Expr) (string, error) {
 	default:
 		return "", fmt.Errorf("must be ident or path, but: %T", expr)
 	}
+}
+
+func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_IsolationLevel, error) {
+	if isolationLevel == "" {
+		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, nil
+	}
+
+	value := strings.Join(strings.Fields(strings.ToUpper(isolationLevel)), "_")
+
+	p, ok := sppb.TransactionOptions_IsolationLevel_value[value]
+	if !ok {
+		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, fmt.Errorf("invalid isolation level: %q", value)
+	}
+	return sppb.TransactionOptions_IsolationLevel(p), nil
 }

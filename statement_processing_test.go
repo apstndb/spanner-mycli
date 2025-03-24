@@ -288,10 +288,54 @@ func TestBuildStatement(t *testing.T) {
 			},
 		},
 		{
+			desc:  "BEGIN statement with SERIALIZABLE",
+			input: "BEGIN ISOLATION LEVEL SERIALIZABLE",
+			want: &BeginStatement{
+				IsolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+			},
+		},
+		{
+			desc:  "BEGIN statement with REPEATABLE READ",
+			input: "BEGIN ISOLATION LEVEL REPEATABLE READ",
+			want: &BeginStatement{
+				IsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+			},
+		},
+		{
+			desc:  "BEGIN statement with REPEATABLE READ and PRIORITY",
+			input: "BEGIN ISOLATION LEVEL REPEATABLE READ PRIORITY MEDIUM",
+			want: &BeginStatement{
+				IsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+				Priority:       sppb.RequestOptions_PRIORITY_MEDIUM,
+			},
+		},
+		{
 			desc:  "BEGIN RW PRIORITY statement",
 			input: "BEGIN RW PRIORITY LOW",
 			want: &BeginRwStatement{
 				Priority: sppb.RequestOptions_PRIORITY_LOW,
+			},
+		},
+		{
+			desc:  "BEGIN RW statement with SERIALIZABLE",
+			input: "BEGIN RW ISOLATION LEVEL SERIALIZABLE",
+			want: &BeginRwStatement{
+				IsolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+			},
+		},
+		{
+			desc:  "BEGIN RW statement with REPEATABLE READ",
+			input: "BEGIN RW ISOLATION LEVEL REPEATABLE READ",
+			want: &BeginRwStatement{
+				IsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+			},
+		},
+		{
+			desc:  "BEGIN RW statement with REPEATABLE READ and PRIORITY",
+			input: "BEGIN RW ISOLATION LEVEL REPEATABLE READ PRIORITY MEDIUM",
+			want: &BeginRwStatement{
+				IsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+				Priority:       sppb.RequestOptions_PRIORITY_MEDIUM,
 			},
 		},
 		{
