@@ -59,6 +59,8 @@ type systemVariables struct {
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
 	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
 
+	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
+
 	// CLI_* variables
 
 	CLIFormat   DisplayMode // CLI_FORMAT
@@ -213,6 +215,24 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
+		},
+	},
+	"DEFAULT_ISOLATION_LEVEL": {
+		Description: "The transaction isolation level that is used by default for read/write transactions.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				v := strings.Join(strings.Fields(strings.ToUpper(unquoteString(value))), "_")
+				isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
+				if ok {
+					this.DefaultIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
+				} else {
+					return fmt.Errorf("invalid isolation level: %v", v)
+				}
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.DefaultIsolationLevel.String()), nil
+			},
 		},
 	},
 	"AUTO_PARTITION_MODE": {
