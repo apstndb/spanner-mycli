@@ -195,10 +195,10 @@ func TestIsolationLevel(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:                     project,
-				Instance:                    instance,
-				Database:                    database,
-				DefaultTransactionIsolation: test.defaultIsolationLevel,
+				Project:              project,
+				Instance:             instance,
+				Database:             database,
+				DefautIsolationLevel: test.defaultIsolationLevel,
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
