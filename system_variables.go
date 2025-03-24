@@ -221,10 +221,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "The transaction isolation level that is used by default for read/write transactions.",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
-				v := strings.ToUpper(unquoteString(value))
+				v := strings.Join(strings.Fields(strings.ToUpper(unquoteString(value))), "_")
 				isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
 				if ok {
 					this.DefaultIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
+				} else {
+					return fmt.Errorf("invalid isolation level: %v", v)
 				}
 				return nil
 			},
