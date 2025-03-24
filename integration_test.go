@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/apstndb/spanemuboost"
-
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -84,7 +83,7 @@ func TestMain(m *testing.M) {
 
 func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
 		spanemuboost.WithRandomDatabaseID(),
@@ -140,7 +139,7 @@ func compareResult[T any](t *testing.T, got T, expected T) {
 }
 
 func TestSelect(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -169,7 +168,7 @@ func TestSelect(t *testing.T) {
 }
 
 func TestDml(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, nil)
@@ -236,7 +235,7 @@ func TestSystemVariables(t *testing.T) {
 	defer teardown()
 
 	t.Run("set and show string system variables", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		tcases := []struct {
@@ -467,13 +466,40 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true},
 			},
 		},
+		{
+			desc: "AUTO_BATCH_DML",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
+				"SET AUTO_BATCH_DML = TRUE",
+				"INSERT INTO TestTable6 (id, active) VALUES (1, true)",
+				"BEGIN",
+				"INSERT INTO TestTable6 (id, active) VALUES (2, false)",
+				"COMMIT",
+				"SELECT * FROM TestTable6 ORDER BY id",
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable6"),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: false, KeepVariables: true},
+				{IsMutation: true, AffectedRows: 1},
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2, false)", "1"})},
+				{
+					AffectedRows: 2,
+					ColumnNames:  []string{"id", "active"},
+					ColumnTypes:  testTableRowType,
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 			defer cancel()
 
 			_, session, teardown := initialize(t, nil, nil)
@@ -487,7 +513,7 @@ func TestStatements(t *testing.T) {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
 
-				result, err := stmt.Execute(ctx, session)
+				result, err := session.ExecuteStatement(ctx, stmt)
 				if err != nil {
 					t.Fatalf("unexpected error happened[%d]: %s", i, err)
 				}
@@ -502,7 +528,7 @@ func TestReadWriteTransaction(t *testing.T) {
 	t.Run("begin, insert, and commit", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		_, session, teardown := initialize(t, testTableDDLs, nil)
@@ -585,7 +611,7 @@ func TestReadWriteTransaction(t *testing.T) {
 	})
 
 	t.Run("begin, insert, and rollback", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		_, session, teardown := initialize(t, testTableDDLs, nil)
@@ -650,7 +676,7 @@ func TestReadWriteTransaction(t *testing.T) {
 	})
 
 	t.Run("heartbeat: transaction is not aborted even if the transaction is idle", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -690,7 +716,7 @@ func TestReadWriteTransaction(t *testing.T) {
 func TestReadOnlyTransaction(t *testing.T) {
 	t.Run("begin ro, query, and close", func(t *testing.T) {
 		t.Parallel()
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -753,7 +779,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 	})
 
 	t.Run("begin ro with stale read", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
 		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -819,7 +845,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 }
 
 func TestShowCreateTable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -836,7 +862,7 @@ func TestShowCreateTable(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("Table", "Create Table"),
+		ColumnNames: sliceOf("Name", "DDL"),
 		Rows: sliceOf(
 			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
 		),
@@ -846,7 +872,7 @@ func TestShowCreateTable(t *testing.T) {
 }
 
 func TestShowColumns(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -874,7 +900,7 @@ func TestShowColumns(t *testing.T) {
 }
 
 func TestShowIndexes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -901,7 +927,7 @@ func TestShowIndexes(t *testing.T) {
 }
 
 func TestTruncateTable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
@@ -931,7 +957,7 @@ func TestTruncateTable(t *testing.T) {
 }
 
 func TestPartitionedDML(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, false)"))

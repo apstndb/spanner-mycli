@@ -33,20 +33,21 @@ func TestBuildCommands(t *testing.T) {
 	tests := []struct {
 		Desc        string
 		Input       string
-		Expected    []*command
+		Expected    []Statement
 		ExpectError bool
 	}{
-		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []*command{{&SelectStatement{"SELECT * FROM t1"}}}},
-		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []*command{{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}}},
+		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []Statement{&SelectStatement{"SELECT * FROM t1"}}},
+		{Desc: "EXIT", Input: `EXIT;`, Expected: []Statement{&ExitStatement{}}},
+		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []Statement{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}},
 		{Desc: "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
-			Expected: []*command{{&BulkDdlStatement{[]string{
+			Expected: []Statement{&BulkDdlStatement{[]string{
 				"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
 				"CREATE INDEX i1 ON t1(col)",
 				"DROP INDEX i1",
 				"DROP TABLE t1",
-			}}}},
+			}}},
 		},
 		{Desc: "mixed statements",
 			Input: `CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);
@@ -55,18 +56,16 @@ func TestBuildCommands(t *testing.T) {
                 DROP TABLE t1;
                 DROP TABLE t2;
                 SELECT 1;`,
-			Expected: []*command{
-				{
-					&BulkDdlStatement{
-						[]string{
-							"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
-							"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
-						},
+			Expected: []Statement{
+				&BulkDdlStatement{
+					[]string{
+						"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
+						"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
 					},
 				},
-				{&SelectStatement{"SELECT * FROM t1"}},
-				{&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}}},
-				{&SelectStatement{"SELECT 1"}},
+				&SelectStatement{"SELECT * FROM t1"},
+				&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}},
+				&SelectStatement{"SELECT 1"},
 			}},
 		{Desc: "mixed statements with comments",
 			Input: `
@@ -75,16 +74,14 @@ func TestBuildCommands(t *testing.T) {
 			UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE;
 			DELETE t1 WHERE TRUE /* AND pk = 1 */;
 			SELECT 0x1/**/A`,
-			Expected: []*command{
-				{
-					&BulkDdlStatement{
-						[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
-					},
+			Expected: []Statement{
+				&BulkDdlStatement{
+					[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
 				},
-				{&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"}},
-				{&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"}},
-				{&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"}},
-				{&SelectStatement{"SELECT 0x1/**/A"}},
+				&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"},
+				&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"},
+				&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"},
+				&SelectStatement{"SELECT 0x1/**/A"},
 			}},
 		{
 			Desc: "empty statement",
@@ -101,8 +98,8 @@ func TestBuildCommands(t *testing.T) {
 			Desc: "comment after semicolon",
 			// A comment after the last semicolon is permitted.
 			Input: `SELECT 1; /* comment */`,
-			Expected: []*command{
-				{&SelectStatement{"SELECT 1"}},
+			Expected: []Statement{
+				&SelectStatement{"SELECT 1"},
 			}},
 	}
 
@@ -143,8 +140,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
@@ -165,8 +162,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
@@ -191,8 +188,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					ColumnNames: []string{"foo", "bar"},
 					Rows: []Row{
-						{[]string{"1", "2"}},
-						{[]string{"3", "4"}},
+						{"1", "2"},
+						{"3", "4"},
 					},
 					IsMutation: false,
 				},
@@ -495,6 +492,114 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		t.Run(tt.desc, func(t *testing.T) {
 			if got := resultLine(tt.result, tt.verbose); tt.want != got {
 				t.Errorf("resultLine(%v, %v) = %q, but want = %q", tt.result, tt.verbose, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCli_getInterpolatedPrompt(t *testing.T) {
+	tests := []struct {
+		desc   string
+		prompt string
+
+		// sysVars are used to referenced from Session and Cli.
+		sysVars *systemVariables
+
+		// session.systemVariables are not needed to be populated because it is populated by sysVars.
+		session *Session
+
+		waitingStatus string
+		want          string
+	}{
+		{
+			desc:   "basic variable substitution",
+			prompt: "Project: %p, Instance: %i, Database: %d",
+			sysVars: &systemVariables{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "test-database",
+			},
+			want: "Project: test-project, Instance: test-instance, Database: test-database",
+		},
+		{
+			desc:    "transaction status - read-write",
+			prompt:  "%t> ",
+			sysVars: &systemVariables{},
+			session: &Session{
+				tc: &transactionContext{mode: transactionModeReadWrite},
+			},
+			want: "(rw txn)> ",
+		},
+		{
+			desc:   "transaction status - read-only",
+			prompt: "%t> ",
+			session: &Session{
+				tc: &transactionContext{mode: transactionModeReadOnly},
+			},
+			want: "(ro txn)> ",
+		},
+		{
+			desc:   "transaction status - none",
+			prompt: "%t> ",
+			want:   "> ",
+		},
+		{
+			desc:   "waiting status",
+			prompt: "%R> ",
+			want:   "  -> ",
+		},
+		{
+			desc:          "waiting status - with multiline comment",
+			prompt:        "%R> ",
+			waitingStatus: "*/",
+			want:          " /*> ",
+		},
+		{
+			desc:   "custom system variable",
+			prompt: "Format: %{CLI_FORMAT}",
+			sysVars: &systemVariables{
+				CLIFormat: DisplayModeTable,
+			},
+			want: "Format: TABLE",
+		},
+		{
+			desc:   "invalid variable",
+			prompt: "Invalid: %{INVALID_VAR}",
+			want:   "Invalid: INVALID_VAR{INVALID_VAR}",
+		},
+		{
+			desc:   "escaped percent sign",
+			prompt: "Percent: %%",
+			want:   "Percent: %",
+		},
+		{
+			desc:   "newline",
+			prompt: "Newline: %n",
+			want:   "Newline: \n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			// populate empty value for session and sysVars if not set to avoid nil pointer dereference
+			if tt.session == nil {
+				tt.session = &Session{}
+			}
+
+			if tt.sysVars == nil {
+				tt.sysVars = &systemVariables{}
+			}
+
+			tt.session.systemVariables = tt.sysVars
+			cli := &Cli{
+				Session:         tt.session,
+				SystemVariables: tt.sysVars,
+				waitingStatus:   tt.waitingStatus,
+			}
+
+			got := cli.getInterpolatedPrompt(tt.prompt)
+			if got != tt.want {
+				t.Errorf("getInterpolatedPrompt() = %q, want %q", got, tt.want)
 			}
 		})
 	}

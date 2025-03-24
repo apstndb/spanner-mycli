@@ -26,6 +26,8 @@ import (
 	"time"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/adcplus"
+	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -78,9 +80,10 @@ type Session struct {
 type transactionMode string
 
 const (
-	transactionModePending   = "undetermined"
-	transactionModeReadOnly  = "read-only"
-	transactionModeReadWrite = "read-write"
+	transactionModeUndetermined = ""
+	transactionModePending      = "pending"
+	transactionModeReadOnly     = "read-only"
+	transactionModeReadWrite    = "read-write"
 )
 
 type transactionContext struct {
@@ -90,6 +93,7 @@ type transactionContext struct {
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
 
 	txn any
+
 	// rwTxn         *spanner.ReadWriteStmtBasedTransaction
 	// roTxn         *spanner.ReadOnlyTransaction
 }
@@ -184,6 +188,13 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	return session, nil
 }
 
+func (s *Session) TransactionMode() transactionMode {
+	if s.tc == nil {
+		return transactionModeUndetermined
+	}
+	return s.tc.mode
+}
+
 // InReadWriteTransaction returns true if the session is running read-write transaction.
 func (s *Session) InReadWriteTransaction() bool {
 	return s.tc != nil && s.tc.mode == transactionModeReadWrite
@@ -261,10 +272,11 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, priority sppb.R
 	}
 
 	opts := spanner.TransactionOptions{
-		CommitOptions:  spanner.CommitOptions{ReturnCommitStats: true},
-		CommitPriority: priority,
-		TransactionTag: tag,
-		IsolationLevel: s.systemVariables.DefaultTransactionIsolation,
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
+		CommitPriority:              priority,
+		TransactionTag:              tag,
+		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
+		IsolationLevel:              s.systemVariables.DefaultTransactionIsolation,
 	}
 
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
@@ -385,20 +397,15 @@ func (s *Session) ClosePendingTransaction() error {
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	mode := sppb.ExecuteSqlRequest_PROFILE
-	opts := spanner.QueryOptions{
-		Mode:          &mode,
-		Priority:      s.currentPriority(),
-		LastStatement: implicit,
-	}
+	opts := s.buildQueryOptions(&mode)
+	opts.LastStatement = implicit
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
 
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
-	opts := spanner.QueryOptions{
-		Priority: s.currentPriority(),
-	}
+	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
 
@@ -567,6 +574,19 @@ func (s *Session) currentPriority() sppb.RequestOptions_Priority {
 	return s.systemVariables.RPCPriority
 }
 
+func (s *Session) buildQueryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
+	opts := spanner.QueryOptions{
+		Mode:       mode,
+		Priority:   s.currentPriority(),
+		RequestTag: s.systemVariables.RequestTag,
+		Options: &sppb.ExecuteSqlRequest_QueryOptions{
+			OptimizerVersion:           s.systemVariables.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+		},
+	}
+	return opts
+}
+
 // startHeartbeat starts heartbeat for read-write transaction.
 //
 // If no reads or DMLs happen within 10 seconds, the rw-transaction is considered idle at Cloud Spanner server.
@@ -678,9 +698,11 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	return affected, resp, plan, metadata, nil
 }
 
+var errReadOnly = errors.New("can't execute this statement in READONLY mode")
+
 func (s *Session) failStatementIfReadOnly() error {
 	if s.systemVariables.ReadOnly {
-		return errors.New("can't execute this statement in READONLY mode")
+		return errReadOnly
 	}
 
 	return nil
@@ -746,4 +768,26 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 		return nil, nil, fmt.Errorf("query can't be a partition query: %w", err)
 	}
 	return partitions, batchROTx, nil
+}
+
+func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
+	var opts []option.ClientOption
+	if sysVars.Endpoint != "" {
+		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
+	}
+
+	switch {
+	case sysVars.WithoutAuthentication:
+		opts = append(opts, option.WithoutAuthentication())
+	case sysVars.EnableADCPlus:
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(source))
+	case len(credential) > 0:
+		opts = append(opts, option.WithCredentialsJSON(credential))
+	}
+
+	return NewSession(ctx, sysVars, opts...)
 }

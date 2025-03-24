@@ -33,6 +33,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
+	"github.com/olekukonko/tablewriter"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -85,6 +86,7 @@ type spannerOptions struct {
 	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL"`
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email"`
 	Version                   bool              `long:"version" description:"Show version string."`
+	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -128,27 +130,9 @@ func init() {
 }
 
 func main() {
-	var gopts globalOptions
+	gopts, parserForHelp, err := parseFlags()
 
-	// process config files at first
-	configFileParser := flags.NewParser(&gopts, flags.Default)
-	addEmulatorImageOption(configFileParser)
-
-	if err := readConfigFile(configFileParser); err != nil {
-		exitf("Invalid config file format\n")
-	}
-
-	// then, process environment variables and command line options
-	// use another parser to process environment variables with higher precedence than configuration files
-	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
-	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
-	addEmulatorImageOption(flagParser)
-
-	// TODO: Workaround to avoid to display config value as default
-	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
-	addEmulatorImageOption(parserForHelp)
-
-	if _, err := flagParser.Parse(); flags.WroteHelp(err) {
+	if flags.WroteHelp(err) {
 		// exit successfully
 		return
 	} else if err != nil {
@@ -162,9 +146,17 @@ func main() {
 		return
 	}
 
-	opts := gopts.Spanner
+	exitCode := run(context.Background(), &gopts.Spanner)
+	os.Exit(exitCode)
+}
 
+func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	logMemefish = opts.LogMemefish
+
+	if opts.StatementHelp {
+		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
+		return exitCodeSuccess
+	}
 
 	if opts.Insecure && opts.SkipTlsVerify {
 		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
@@ -284,8 +276,6 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
-
 	if opts.EmbeddedEmulator {
 		sysVars.Project = "emulator-project"
 		sysVars.Instance = "emulator-instance"
@@ -305,7 +295,7 @@ func main() {
 		defer teardown()
 
 		sysVars.Endpoint = container.URI
-
+		sysVars.WithoutAuthentication = true
 	}
 
 	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
@@ -347,7 +337,7 @@ func main() {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
 
-	exitCode := lo.TernaryF(interactive,
+	exitCode = lo.TernaryF(interactive,
 		func() int {
 			sysVars.EnableProgressBar = true
 			return cli.RunInteractive(ctx)
@@ -356,12 +346,56 @@ func main() {
 			return cli.RunBatch(ctx, input)
 		})
 
-	os.Exit(exitCode)
+	return exitCode
+}
+
+// renderClientStatementHelp generates a table of client-side statement help.
+func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
+	var sb strings.Builder
+
+	table := tablewriter.NewWriter(&sb)
+	table.SetHeader([]string{"Usage", "Syntax", "Note"})
+	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+	table.SetCenterSeparator("|")
+	table.SetAutoFormatHeaders(false)
+	table.SetAutoWrapText(false)
+	for _, stmt := range clientSideStatementDefs {
+		for _, desc := range stmt.Descriptions {
+			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
+		}
+	}
+	table.Render()
+
+	return sb.String()
+}
+
+func parseFlags() (globalOptions, *flags.Parser, error) {
+	var gopts globalOptions
+
+	// process config files at first
+	configFileParser := flags.NewParser(&gopts, flags.Default)
+	addEmulatorImageOption(configFileParser)
+
+	if err := readConfigFile(configFileParser); err != nil {
+		exitf("Invalid config file format\n")
+	}
+
+	// then, process environment variables and command line options
+	// use another parser to process environment variables with higher precedence than configuration files
+	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	addEmulatorImageOption(flagParser)
+
+	// TODO: Workaround to avoid to display config value as default
+	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
+	addEmulatorImageOption(parserForHelp)
+	_, err := flagParser.Parse()
+	return gopts, parserForHelp, err
 }
 
 func exitf(format string, a ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, a...)
-	os.Exit(1)
+	os.Exit(exitCodeError)
 }
 
 const cnfFileName = ".spanner_mycli.cnf"
@@ -409,4 +443,27 @@ func readStdin() (string, error) {
 	} else {
 		return "", nil
 	}
+}
+
+// Functions used by multiple files. e.g. system variable, command line flags, client side statements.
+
+func parsePriority(priority string) (sppb.RequestOptions_Priority, error) {
+	if priority == "" {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, nil
+	}
+
+	upper := strings.ToUpper(priority)
+
+	var value string
+	if !strings.HasPrefix(upper, "PRIORITY_") {
+		value = "PRIORITY_" + upper
+	} else {
+		value = upper
+	}
+
+	p, ok := sppb.RequestOptions_Priority_value[value]
+	if !ok {
+		return sppb.RequestOptions_PRIORITY_UNSPECIFIED, fmt.Errorf("invalid priority: %q", value)
+	}
+	return sppb.RequestOptions_Priority(p), nil
 }

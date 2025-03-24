@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"maps"
@@ -10,7 +11,7 @@ import (
 
 	"cloud.google.com/go/civil"
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish"
@@ -21,6 +22,38 @@ import (
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type MutateStatement struct {
+	Table     string
+	Operation string
+	Body      string
+}
+
+func (MutateStatement) isMutationStatement() {}
+
+func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
+	if err != nil {
+		return nil, err
+	}
+	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		err = session.tc.RWTxn().BufferWrite(mutations)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		return 0, nil, nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		IsMutation:  true,
+		CommitStats: stats.CommitStats,
+		Timestamp:   stats.CommitTs,
+	}, nil
+}
+
+// Helper functions for this file
 
 func decode[T any](gcv spanner.GenericColumnValue) (T, error) {
 	var v T
@@ -35,21 +68,21 @@ func gcvToKeyable(gcv spanner.GenericColumnValue) (any, error) {
 	}
 
 	switch gcv.Type.GetCode() {
-	case spannerpb.TypeCode_INT64, spannerpb.TypeCode_ENUM:
+	case sppb.TypeCode_INT64, sppb.TypeCode_ENUM:
 		return decode[int64](gcv)
-	case spannerpb.TypeCode_FLOAT64:
+	case sppb.TypeCode_FLOAT64:
 		return decode[float64](gcv)
-	case spannerpb.TypeCode_FLOAT32:
+	case sppb.TypeCode_FLOAT32:
 		return decode[float32](gcv)
-	case spannerpb.TypeCode_BOOL:
+	case sppb.TypeCode_BOOL:
 		return decode[bool](gcv)
-	case spannerpb.TypeCode_BYTES:
+	case sppb.TypeCode_BYTES:
 		return decode[[]byte](gcv)
-	case spannerpb.TypeCode_STRING:
+	case sppb.TypeCode_STRING:
 		return decode[string](gcv)
-	case spannerpb.TypeCode_TIMESTAMP:
+	case sppb.TypeCode_TIMESTAMP:
 		return decode[time.Time](gcv)
-	case spannerpb.TypeCode_DATE:
+	case sppb.TypeCode_DATE:
 		return decode[civil.Date](gcv)
 	default:
 		s, err := spanvalue.FormatColumnLiteral(gcv)
@@ -182,14 +215,14 @@ func toKeys(values []spanner.GenericColumnValue) (spanner.Key, error) {
 	return key, nil
 }
 
-func typeValueToGCV(k *spannerpb.StructType_Field, v *structpb.Value) spanner.GenericColumnValue {
+func typeValueToGCV(k *sppb.StructType_Field, v *structpb.Value) spanner.GenericColumnValue {
 	return spanner.GenericColumnValue{
 		Type:  k.GetType(),
 		Value: v,
 	}
 }
 
-func extractStructValuesUsingType(fields []*spannerpb.StructType_Field) func(v *structpb.Value) []spanner.GenericColumnValue {
+func extractStructValuesUsingType(fields []*sppb.StructType_Field) func(v *structpb.Value) []spanner.GenericColumnValue {
 	return func(v *structpb.Value) []spanner.GenericColumnValue {
 		return extractStructValues(fields, v.GetListValue().GetValues())
 	}
@@ -197,15 +230,15 @@ func extractStructValuesUsingType(fields []*spannerpb.StructType_Field) func(v *
 
 func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spanner.GenericColumnValue, error) {
 	switch gcv.Type.GetCode() {
-	case spannerpb.TypeCode_STRUCT:
+	case sppb.TypeCode_STRUCT:
 		structTypefields := gcv.Type.GetStructType().GetFields()
 
 		// [values]
 		return extractColumnNames(structTypefields),
 			sliceOf(extractStructValues(structTypefields, gcv.Value.GetListValue().GetValues())),
 			nil
-	case spannerpb.TypeCode_ARRAY:
-		if gcv.Type.GetArrayElementType().GetCode() != spannerpb.TypeCode_STRUCT {
+	case sppb.TypeCode_ARRAY:
+		if gcv.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
 			return nil, slices.Collect(xiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
 				return sliceOf(spanner.GenericColumnValue{
 					Type:  gcv.Type.GetArrayElementType(),
@@ -250,7 +283,7 @@ func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, err
 	return parseLiteralExpr(expr)
 }
 
-func extractStructValues(structTypefields []*spannerpb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
+func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
 	return slices.Collect(hiter.Unify(
 		typeValueToGCV,
 		hiter.Pairs(slices.Values(structTypefields), slices.Values(structValues))))

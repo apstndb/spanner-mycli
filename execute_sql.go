@@ -1,16 +1,21 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	scxiter "spheric.cloud/xiter"
 
@@ -119,7 +124,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(ddl, 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(strings.ReplaceAll(ddl, "\n", " "), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
@@ -135,6 +140,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		ProtoDescriptors: b,
 	})
 	if err != nil {
+		teardown()
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
@@ -198,84 +204,17 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 }
 
-func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, true)
+func isInsert(sql string) bool {
+	token, err := gsqlutils.FirstNonHintToken("", sql)
 	if err != nil {
-		return nil, err
+		return false
 	}
 
-	queryPlan, timestamp, _, err := runAnalyzeQuery(ctx, session, stmt, isDML)
-	if err != nil {
-		return nil, err
-	}
-
-	if queryPlan == nil {
-		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithoutStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		ColumnNames:  explainColumnNames,
-		ColumnAlign:  explainColumnAlign,
-		AffectedRows: len(rows),
-		Rows:         rows,
-		Timestamp:    timestamp,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
-	}
-
-	return result, nil
-}
-
-func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
-
-	stats, _, _, plan, err := consumeRowIterDiscard(iter)
-	if err != nil {
-		return nil, err
-	}
-
-	queryStats, err := parseQueryStats(stats)
-	if err != nil {
-		return nil, err
-	}
-
-	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
-	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
-	if plan == nil {
-		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
-	}
-
-	rows, predicates, err := processPlanWithStats(plan)
-	if err != nil {
-		return nil, err
-	}
-
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
-		ForceVerbose: true,
-		AffectedRows: len(rows),
-		Stats:        queryStats,
-		Timestamp:    lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) }),
-		Rows:         rows,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(plan) }),
-	}
-	return result, nil
+	return token.IsKeywordLike("INSERT")
 }
 
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
 		b.DMLs = append(b.DMLs, sql)
@@ -283,6 +222,17 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
+		if session.InReadWriteTransaction() && session.systemVariables.AutoBatchDML {
+			session.currentBatch = &BatchDMLStatement{DMLs: []string{sql}}
+			return &Result{IsMutation: true}, nil
+		}
+
+		if !session.InTransaction() &&
+			!isInsert(sql) &&
+			session.systemVariables.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic {
+			return executePDML(ctx, session, sql)
+		}
+
 		return executeDML(ctx, session, sql)
 	}
 }
@@ -349,84 +299,6 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}, nil
 }
 
-func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
-	stmt, err := newStatement(sql, session.systemVariables.Params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
-		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
-		return count, plan, metadata, err
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rows, predicates, err := processPlanWithStats(queryPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		IsMutation:       true,
-		ColumnNames:      explainAnalyzeColumnNames,
-		ForceVerbose:     true,
-		AffectedRows:     int(affectedRows),
-		AffectedRowsType: rowCountTypeExact,
-		Rows:             rows,
-		Predicates:       predicates,
-		Timestamp:        commitResp.CommitTs,
-		LintResults:      lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
-	}
-
-	return result, nil
-}
-
-func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
-	if session.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
-	}
-
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
-	iter, _ := session.RunQuery(ctx, stmt)
-
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rows) == 0 && emptyErrorF != nil {
-		return nil, emptyErrorF()
-	}
-
-	return &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
-}
-
-func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
-	if !isDML {
-		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return queryPlan, time.Time{}, metadata, err
-	}
-
-	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
-		return 0, plan, metadata, err
-	})
-	return queryPlan, commitResp.CommitTs, metadata, err
-}
-
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
 	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
@@ -486,4 +358,91 @@ func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, er
 		}
 		return toRow(columns...), nil
 	}
+}
+
+func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
+	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
+
+	type partitionQueryResult struct {
+		Metadata *sppb.ResultSetMetadata
+		Rows     []Row
+	}
+
+	p := pool.NewWithResults[*partitionQueryResult]().
+		WithContext(ctx).
+		WithMaxGoroutines(cmp.Or(int(session.systemVariables.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
+
+	for _, partition := range partitions {
+		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {
+			iter := batchROTx.Execute(ctx, partition)
+			rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+			if err != nil {
+				return nil, err
+			}
+			return &partitionQueryResult{md, rows}, nil
+		})
+	}
+
+	results, err := p.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	var allRows []Row
+	var rowType *sppb.StructType
+	for _, result := range results {
+		allRows = append(allRows, result.Rows...)
+
+		if len(result.Metadata.GetRowType().GetFields()) > 0 {
+			rowType = result.Metadata.GetRowType()
+		}
+	}
+
+	result := &Result{
+		ColumnNames:    extractColumnNames(rowType.GetFields()),
+		Rows:           allRows,
+		ColumnTypes:    rowType.GetFields(),
+		AffectedRows:   len(allRows),
+		PartitionCount: len(partitions),
+	}
+	return result, nil
+}
+
+func executePDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
+	defer cancel()
+
+	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		IsMutation:       true,
+		AffectedRows:     int(count),
+		AffectedRowsType: rowCountTypeLowerBound,
+	}, nil
 }

@@ -11,8 +11,8 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.3.0
-	github.com/apstndb/spanemuboost v0.2.5
-	github.com/apstndb/spannerplanviz v0.3.2
+	github.com/apstndb/spanemuboost v0.2.6
+	github.com/apstndb/spannerplanviz v0.3.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.4
 	github.com/bufbuild/protocompile v0.14.1
@@ -30,6 +30,7 @@ require (
 	github.com/nyaosorg/go-readline-ny v1.8.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/lo v1.49.1
+	github.com/sourcegraph/conc v0.3.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0
 	github.com/vbauerster/mpb/v8 v8.9.1
 	go.uber.org/zap v1.27.0

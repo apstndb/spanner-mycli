@@ -38,9 +38,13 @@ func ToSortFunc[T any, R constraints.Ordered](f func(T) R) func(T, T) int {
 }
 
 func toRow(vs ...string) Row {
-	return Row{Columns: vs}
+	return vs
 }
 
 func ignoreError[T1, T2 any](v1 T1, _ T2) T1 {
 	return v1
+}
+
+func sliceOf[V any](vs ...V) []V {
+	return vs
 }
