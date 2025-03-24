@@ -218,7 +218,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"DEFAULT_TRANSACTION_ISOLATION": {
-		Description: "",
+		Description: "The transaction isolation level that is used by default for read/write transactions.",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
 				v := strings.ToUpper(unquoteString(value))
