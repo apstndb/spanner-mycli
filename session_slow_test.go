@@ -17,14 +17,14 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
-func TestRequestPriority(t *testing.T) {
-	const (
-		project  = "project"
-		instance = "instance"
-		database = "database"
-	)
+const (
+	project  = "project"
+	instance = "instance"
+	database = "database"
+)
 
-	ctx := context.Background()
+func TestRequestPriority(t *testing.T) {
+	ctx := t.Context()
 
 	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
 		spanemuboost.WithProjectID(project),
@@ -44,6 +44,7 @@ func TestRequestPriority(t *testing.T) {
 		grpc.WithUnaryInterceptor(unaryInterceptor),
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
+
 	conn, err := grpc.NewClient(emulator.URI, opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
@@ -135,6 +136,97 @@ func TestRequestPriority(t *testing.T) {
 				case *sppb.CommitRequest:
 					if got := v.GetRequestOptions().GetPriority(); got != test.want {
 						t.Errorf("priority mismatch: got = %v, want = %v", got, test.want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestIsolationLevel(t *testing.T) {
+	ctx := t.Context()
+
+	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
+		spanemuboost.WithProjectID(project),
+		spanemuboost.WithInstanceID(instance),
+		spanemuboost.WithDatabaseID(database),
+		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
+	)
+	if err != nil {
+		t.Fatalf("failed to start emulator: %v", err)
+	}
+	defer teardown()
+
+	var recorder requestRecorder
+	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(unaryInterceptor),
+		grpc.WithStreamInterceptor(streamInterceptor),
+	}
+
+	conn, err := grpc.NewClient(emulator.URI, opts...)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+
+	for _, test := range []struct {
+		desc                  string
+		defaultIsolationLevel sppb.TransactionOptions_IsolationLevel
+		want                  sppb.TransactionOptions_IsolationLevel
+	}{
+		{
+			desc:                  "use default isolation level",
+			defaultIsolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			want:                  sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+		},
+		{
+			desc:                  "use serializable isolation level",
+			defaultIsolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+			want:                  sppb.TransactionOptions_SERIALIZABLE,
+		},
+		{
+			desc:                  "use repeatable_read isolation level",
+			defaultIsolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+			want:                  sppb.TransactionOptions_REPEATABLE_READ,
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			defer recorder.flush()
+
+			session, err := NewSession(ctx, &systemVariables{
+				Project:                     project,
+				Instance:                    instance,
+				Database:                    database,
+				DefaultTransactionIsolation: test.defaultIsolationLevel,
+			}, option.WithGRPCConn(conn))
+			if err != nil {
+				t.Fatalf("failed to create spanner-cli session: %v", err)
+			}
+
+			// Read-Write Transaction.
+			if err := session.BeginReadWriteTransaction(ctx, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatalf("failed to begin read write transaction: %v", err)
+			}
+			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			if err := iter.Do(func(r *spanner.Row) error {
+				return nil
+			}); err != nil {
+				t.Fatalf("failed to run query: %v", err)
+			}
+			if _, _, _, _, err := session.RunUpdate(ctx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), true); err != nil {
+				t.Fatalf("failed to run update: %v", err)
+			}
+			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {
+				t.Fatalf("failed to commit: %v", err)
+			}
+
+			// Check request priority.
+			for _, r := range recorder.requests {
+				switch v := r.(type) {
+				case *sppb.BeginTransactionRequest:
+					if got := v.GetOptions().GetIsolationLevel(); got != test.want {
+						t.Errorf("transaction level mismatch: got = %v, want = %v", got, test.want)
 					}
 				}
 			}
