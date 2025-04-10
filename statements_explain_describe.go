@@ -47,6 +47,15 @@ func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session)
 	return executeExplainAnalyze(ctx, session, sql)
 }
 
+type ExplainDiffStatement struct {
+	NopStatement
+
+	Explain string
+	IsDML   bool
+	Before  string
+	After   string
+}
+
 type ExplainAnalyzeDmlStatement struct {
 	Dml string
 }

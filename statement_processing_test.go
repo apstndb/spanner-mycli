@@ -534,6 +534,15 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainStatement{Explain: "WITH t1 AS (SELECT 1) SELECT * FROM t1"},
 		},
 		{
+			desc:  "EXPLAIN DIFF statement",
+			input: `EXPLAIN DIFF "OPTIMIZER_VERSION=4,FORCE_INDEX=_BASE_TABLE" "OPTIMIZER_VERSION=5,FORCE_INDEX=SingersByFirstLastName" @{OPTIMIZER_VERSION={{.OPTIMIZER_VERSION}}} SELECT * FROM Singers@{FORCE_INDEX={{.FORCE_INDEX}}} WHERE FirstName LIKE "A%"`,
+			want: &ExplainDiffStatement{
+				Explain: `@{OPTIMIZER_VERSION={{.OPTIMIZER_VERSION}}} SELECT * FROM Singers@{FORCE_INDEX={{.FORCE_INDEX}}} WHERE FirstName LIKE "A%"`,
+				Before:  "OPTIMIZER_VERSION=4,FORCE_INDEX=_BASE_TABLE",
+				After:   "OPTIMIZER_VERSION=5,FORCE_INDEX=SingersByFirstLastName",
+			},
+		},
+		{
 			desc:  "GRAPH statement",
 			input: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:  &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},

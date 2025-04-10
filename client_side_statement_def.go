@@ -225,6 +225,46 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  ``,
+				Syntax: `EXPLAIN DIFF "before_parameter=value,..." "after_parameter" <sql>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+DIFF\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			input := matched[1]
+			lex := &memefish.Lexer{
+				File: &token.File{
+					Buffer: input,
+				},
+			}
+			if err := lex.NextToken(); err != nil {
+				return nil, err
+			}
+
+			if lex.Token.Kind != token.TokenString {
+				return nil, fmt.Errorf("expect <string>, but got %v", lex.Token.Raw)
+			}
+			before := lex.Token.AsString
+			if err := lex.NextToken(); err != nil {
+				return nil, err
+			}
+
+			if lex.Token.Kind != token.TokenString {
+				return nil, fmt.Errorf("expect <string>, but got %v", lex.Token.Raw)
+			}
+			after := lex.Token.AsString
+			if err := lex.NextToken(); err != nil {
+				return nil, err
+			}
+
+			sql := strings.TrimSpace(input[lex.Token.Pos:])
+			isDML := stmtkind.IsDMLLexical(sql)
+			return &ExplainDiffStatement{Explain: sql, IsDML: isDML, Before: before, After: after}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  `Show execution plan without execution`,
 				Syntax: `EXPLAIN <sql>`,
 			},

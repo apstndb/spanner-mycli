@@ -362,6 +362,12 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		}
 
 		fmt.Fprintf(c.OutStream, "Database changed")
+	} else if s, ok := stmt.(*ExplainDiffStatement); ok {
+		err := c.handleExplainDiff(ctx, s, interactive)
+		if err != nil {
+			return "", err
+		}
+
 	}
 
 	t0 := time.Now()
@@ -447,6 +453,9 @@ func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) 
 	c.SystemVariables = &newSystemVariables
 
 	return nil
+}
+
+func (c *Cli) handleExplainDiff(ctx context.Context, s *ExplainDiffStatement, interactive bool) error {
 }
 
 func handleInterrupt(cancel context.CancelFunc) {
