@@ -359,7 +359,7 @@ func (stmt *CQLStatement) Execute(ctx context.Context, session *Session) (*Resul
 		rows = append(rows, rowStrs)
 	}
 
-	return &Result{ColumnNames: columnNames, Rows: rows}, nil
+	return &Result{ColumnNames: columnNames, Rows: rows, AffectedRows: len(rows)}, nil
 }
 
 // CLI control
