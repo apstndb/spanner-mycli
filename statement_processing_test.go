@@ -735,6 +735,11 @@ func TestBuildStatement(t *testing.T) {
 				Body:      "ALL",
 			},
 		},
+		{
+			desc:  "CQL statement",
+			input: `CQL SELECT id, active, username FROM users`,
+			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			got, err := BuildStatement(test.input)
