@@ -29,6 +29,7 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+	"github.com/gocql/gocql"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -75,6 +76,10 @@ type Session struct {
 	systemVariables *systemVariables
 
 	currentBatch Statement
+
+	// experimental support of Cassandra interface
+	cqlCluster *gocql.ClusterConfig
+	cqlSession *gocql.Session
 }
 
 type transactionMode string

@@ -642,6 +642,20 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &GeminiStatement{Text: unquoteString(matched[1])}, nil
 		},
 	},
+	// Cassandra interface
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Execute CQL`,
+				Syntax: `CQL ...`,
+				Note:   "EARLY EXPERIMENTAL",
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^CQL\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &CQLStatement{CQL: matched[1]}, nil
+		},
+	},
 	// CLI control
 	{
 		Descriptions: []clientSideStatementDescription{

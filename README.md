@@ -18,6 +18,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * Interactive DDL batching
+  * Experimental Cassandra interface support as `CQL <cql>` statement.
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
@@ -314,6 +315,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show sampled query plans                           | `SHOW QUERY PROFILES;`                                                                                     | EARLY EXPERIMENTAL                                                                                                                                          |
 | Show the single sampled query plan                 | `SHOW QUERY PROFILE <fingerprint>;`                                                                        | EARLY EXPERIMENTAL                                                                                                                                          |
 | Compose query using LLM                            | `GEMINI "<prompt>";`                                                                                       |                                                                                                                                                             |
+| Execute CQL                                        | `CQL ...;`                                                                                                 | EARLY EXPERIMENTAL                                                                                                                                          |
 | Show help                                          | `HELP;`                                                                                                    |                                                                                                                                                             |
 | Show help for variables                            | `HELP VARIABLES;`                                                                                          |                                                                                                                                                             |
 | Exit CLI                                           | `EXIT;`                                                                                                    |                                                                                                                                                             |

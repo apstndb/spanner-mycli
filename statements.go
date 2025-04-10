@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -26,6 +27,7 @@ import (
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
 	"github.com/samber/lo"
 )
 
@@ -298,6 +300,67 @@ func runBatch(ctx context.Context, session *Session) (*Result, error) {
 // Query Profiles related statements are defined in statements_query_profile
 
 // LLM related statements are defined in statements_llm.go
+
+// Cassandra interface
+type CQLStatement struct {
+	CQL string
+}
+
+func (stmt *CQLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.cqlCluster == nil {
+		cluster := spancql.NewCluster(&spancql.Options{
+			DatabaseUri: session.DatabasePath(),
+		})
+		if cluster == nil {
+			return nil, fmt.Errorf("failed to create cluster")
+		}
+
+		session.cqlCluster = cluster
+
+		// You can still configure your cluster as usual after connecting to your
+		// spanner database
+		cluster.Timeout = 5 * time.Second
+		// cluster.Keyspace = "your_db_name"
+	}
+
+	if session.cqlSession == nil {
+		s, err := session.cqlCluster.CreateSession()
+		if err != nil {
+			return nil, err
+		}
+		session.cqlSession = s
+	}
+
+	s := session.cqlSession
+
+	q := s.Query(stmt.CQL)
+	if err := q.Exec(); err != nil {
+		return nil, err
+	}
+
+	it := q.Iter()
+	defer it.Close()
+
+	columns := it.Columns()
+	var columnNames []string
+	for _, column := range columns {
+		columnNames = append(columnNames, column.Name)
+	}
+	var rows []Row
+	for {
+		m := make(map[string]interface{})
+		if !it.MapScan(m) {
+			break
+		}
+		var rowStrs []string
+		for _, name := range columnNames {
+			rowStrs = append(rowStrs, fmt.Sprint(m[name]))
+		}
+		rows = append(rows, rowStrs)
+	}
+
+	return &Result{ColumnNames: columnNames, Rows: rows, AffectedRows: len(rows)}, nil
+}
 
 // CLI control
 
