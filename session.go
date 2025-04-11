@@ -538,7 +538,10 @@ func (s *Session) Close() {
 	if err != nil {
 		log.Printf("error on adminClient.Close(): %v", err)
 	}
-	s.cqlSession.Close()
+
+	if s.cqlSession != nil {
+		s.cqlSession.Close()
+	}
 }
 
 func (s *Session) DatabasePath() string {
