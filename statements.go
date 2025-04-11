@@ -344,20 +344,8 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 	defer it.Close()
 
 	var headers []string
-	var columnNames []string
-	for _, column := range it.Columns() {
-		var typeName string
-		if ct, ok := column.TypeInfo.(gocql.CollectionType); ok {
-			typeName = fmt.Sprintf("%v<%v%v>",
-				ct.Type(),
-				lo.Ternary(ct.Key != nil, fmt.Sprint(ct.Key)+", ", ""),
-				ct.Elem)
-		} else {
-			typeName = fmt.Sprint(column.TypeInfo)
-		}
-
-		headers = append(headers, column.Name+"\n"+typeName)
-		columnNames = append(columnNames, column.Name)
+	for _, col := range it.Columns() {
+		headers = append(headers, col.Name+"\n"+formatCassandraTypeName(col.TypeInfo))
 	}
 
 	var rows []Row
@@ -379,6 +367,17 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 	}
 
 	return &Result{ColumnNames: headers, Rows: rows, AffectedRows: len(rows)}, nil
+}
+
+func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
+	if ct, ok := typeInfo.(gocql.CollectionType); ok {
+		return fmt.Sprintf("%v<%v%v>",
+			ct.Type(),
+			lo.Ternary(ct.Key != nil, fmt.Sprint(ct.Key)+", ", ""),
+			ct.Elem)
+	} else {
+		return fmt.Sprint(typeInfo)
+	}
 }
 
 // CLI control
