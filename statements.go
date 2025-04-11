@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
 	"github.com/samber/lo"
 )
@@ -306,7 +308,8 @@ type CQLStatement struct {
 	CQL string
 }
 
-func (stmt *CQLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// lazy initialize gocql.ClusterConfig
 	if session.cqlCluster == nil {
 		cluster := spancql.NewCluster(&spancql.Options{
 			DatabaseUri: session.DatabasePath(),
@@ -320,9 +323,8 @@ func (stmt *CQLStatement) Execute(ctx context.Context, session *Session) (*Resul
 		// You can still configure your cluster as usual after connecting to your
 		// spanner database
 		cluster.Timeout = 5 * time.Second
-		// cluster.Keyspace = "your_db_name"
 	}
-
+	// lazy initialize gocql.Session
 	if session.cqlSession == nil {
 		s, err := session.cqlCluster.CreateSession()
 		if err != nil {
@@ -333,33 +335,49 @@ func (stmt *CQLStatement) Execute(ctx context.Context, session *Session) (*Resul
 
 	s := session.cqlSession
 
-	q := s.Query(stmt.CQL)
+	q := s.Query(cs.CQL)
 	if err := q.Exec(); err != nil {
 		return nil, err
 	}
 
-	it := q.Iter()
+	it := s.Query(cs.CQL).WithContext(ctx).Iter()
 	defer it.Close()
 
-	columns := it.Columns()
-	var columnNames []string
-	for _, column := range columns {
-		columnNames = append(columnNames, column.Name)
-	}
-	var rows []Row
-	for {
-		m := make(map[string]interface{})
-		if !it.MapScan(m) {
-			break
-		}
-		var rowStrs []string
-		for _, name := range columnNames {
-			rowStrs = append(rowStrs, fmt.Sprint(m[name]))
-		}
-		rows = append(rows, rowStrs)
+	var headers []string
+	for _, col := range it.Columns() {
+		headers = append(headers, col.Name+"\n"+formatCassandraTypeName(col.TypeInfo))
 	}
 
-	return &Result{ColumnNames: columnNames, Rows: rows, AffectedRows: len(rows)}, nil
+	var rows []Row
+	for {
+		rd, err := it.RowData()
+		if err != nil {
+			return nil, err
+		}
+
+		if !it.Scan(rd.Values...) {
+			break
+		}
+
+		var row Row
+		for _, value := range rd.Values {
+			row = append(row, fmt.Sprint(reflect.Indirect(reflect.ValueOf(value)).Interface()))
+		}
+		rows = append(rows, row)
+	}
+
+	return &Result{ColumnNames: headers, Rows: rows, AffectedRows: len(rows)}, nil
+}
+
+func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
+	if ct, ok := typeInfo.(gocql.CollectionType); ok {
+		return fmt.Sprintf("%v<%v%v>",
+			ct.Type(),
+			lo.Ternary(ct.Key != nil, fmt.Sprint(ct.Key)+", ", ""),
+			ct.Elem)
+	} else {
+		return fmt.Sprint(typeInfo)
+	}
 }
 
 // CLI control
