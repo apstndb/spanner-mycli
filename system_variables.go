@@ -699,7 +699,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					this.ExecutionMethodFormat = queryplan.ExecutionMethodFormatAngle
 					return nil
 				default:
-					return fmt.Errorf("invalid value: %v", s)
+					return fmt.Errorf("invalid value: %v. Valid values are 'RAW' and 'ANGLE'", s)
 				}
 			},
 		},
