@@ -228,6 +228,62 @@ $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 ```
 
+
+### EXPLAIN
+
+You can see query plan without query execution using the `EXPLAIN` client side statement.
+
+```
+spanner> EXPLAIN
+         SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
++----+-------------------------------------------------------------------------------------------+
+| ID | Query_Execution_Plan                                                                      |
++----+-------------------------------------------------------------------------------------------+
+| *0 | Distributed Union <Row> (distribution_table: indexOnSingers, split_ranges_aligned: false) |
+|  1 | +- Local Distributed Union <Row>                                                          |
+|  2 |    +- Serialize Result <Row>                                                              |
+|  3 |       +- Filter Scan <Row> (seekable_key_size: 1)                                         |
+| *4 |          +- Index Scan <Row> (Index: indexOnSingers, scan_method: Row)                    |
++----+-------------------------------------------------------------------------------------------+
+Predicates(identified by ID):
+ 0: Split Range: STARTS_WITH($FirstName, 'A')
+ 4: Seek Condition: STARTS_WITH($FirstName, 'A')
+
+5 rows in set (0.86 sec)
+```
+
+Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https://cloud.google.com/spanner/docs/sql-best-practices#optimize-query-execution) of the operator node.
+
+### EXPLAIN ANALYZE
+
+You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
+You should know that it requires executing the query.
+
+```
+spanner> EXPLAIN ANALYZE
+         SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
++----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
+| ID | Query_Execution_Plan                                                                      | Rows_Returned | Executions | Total_Latency |
++----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
+| *0 | Distributed Union <Row> (distribution_table: indexOnSingers, split_ranges_aligned: false) | 235           | 1          | 1.17 msecs    |
+|  1 | +- Local Distributed Union <Row>                                                          | 235           | 1          | 1.12 msecs    |
+|  2 |    +- Serialize Result <Row>                                                              | 235           | 1          | 1.1 msecs     |
+|  3 |       +- Filter Scan <Row> (seekable_key_size: 1)                                         | 235           | 1          | 1.05 msecs    |
+| *4 |          +- Index Scan <Row> (Index: indexOnSingers, scan_method: Row)                    | 235           | 1          | 1.02 msecs    |
++----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
+Predicates(identified by ID):
+ 0: Split Range: STARTS_WITH($FirstName, 'A')
+ 4: Seek Condition: STARTS_WITH($FirstName, 'A')
+
+5 rows in set (4.49 msecs)
+timestamp:            2025-04-16T01:07:59.137819+09:00
+cpu time:             3.73 msecs
+rows scanned:         235 rows
+deleted rows scanned: 0 rows
+optimizer version:    7
+optimizer statistics: auto_20250413_15_34_23UTC
+```
+
 ### Directed reads mode
 
 spanner-mycli now supports directed reads, a feature that allows you to read data from a specific replica of a Spanner database. 
@@ -1497,6 +1553,32 @@ optimizer statistics: auto_20250207_09_19_31UTC
 */
 ```
 ````
+
+### Cassandra interface support
+
+spanner-mycli can execute CQL statements of Cassandra interface with `CQL` client side statement.
+
+```
+# Spanner Cassandra interface doesn't support CQL DDL, so you need to write GoogleSQL DDL
+spanner> CREATE TABLE users (
+           id INT64 OPTIONS (cassandra_type = 'int'),
+           active BOOL OPTIONS (cassandra_type = 'boolean'),
+           username STRING(MAX) OPTIONS (cassandra_type = 'text'),
+         ) PRIMARY KEY (id);
+Query OK, 0 rows affected (7.88 sec)
+
+spanner> CQL INSERT INTO users (id, active, username) VALUES (1, TRUE, 'John Doe');
+Empty set (0.54 sec)
+
+spanner> CQL SELECT * FROM users WHERE id = 1;
++-----+---------+----------+
+| id  | active  | username |
+| int | boolean | varchar  |
++-----+---------+----------+
+| 1   | true    | John Doe |
++-----+---------+----------+
+1 rows in set (0.55 sec)
+```
 
 ## How to develop
 
