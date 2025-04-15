@@ -257,7 +257,7 @@ Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https
 ### EXPLAIN ANALYZE
 
 You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
-You should know that it requires to execute the query.
+You should know that it requires executing the query.
 
 ```
 spanner> EXPLAIN ANALYZE
