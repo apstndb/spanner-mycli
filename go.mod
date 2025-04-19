@@ -11,7 +11,7 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.3.0
-	github.com/apstndb/spanemuboost v0.2.7
+	github.com/apstndb/spanemuboost v0.2.8
 	github.com/apstndb/spannerplanviz v0.4.0
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.5
@@ -33,7 +33,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/lo v1.49.1
 	github.com/sourcegraph/conc v0.3.0
-	github.com/testcontainers/testcontainers-go/modules/gcloud v0.35.0
+	github.com/testcontainers/testcontainers-go/modules/gcloud v0.36.0
 	github.com/vbauerster/mpb/v8 v8.9.3
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
@@ -73,6 +73,7 @@ require (
 	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -109,13 +110,12 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/shirou/gopsutil/v3 v3.23.12 // indirect
-	github.com/shoenig/go-m1cpu v0.1.6 // indirect
+	github.com/shirou/gopsutil/v4 v4.25.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/swaggest/jsonschema-go v0.3.73 // indirect
 	github.com/swaggest/refl v1.3.0 // indirect
-	github.com/testcontainers/testcontainers-go v0.35.0 // indirect
+	github.com/testcontainers/testcontainers-go v0.36.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
