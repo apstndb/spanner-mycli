@@ -129,10 +129,10 @@ const (
 )
 
 var (
-	explainColumnNames = []string{"ID", "Query_Execution_Plan"}
+	explainColumnNames = []string{"ID", "Query_Execution_Plan <execution_method> (metadata, ...)"}
 	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
 
-	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan", "Rows_Returned", "Executions", "Total_Latency"}
+	explainAnalyzeColumnNames = []string{"ID", "Query_Execution_Plan <execution_method> (metadata, ...)", "Rows_Returned", "Executions", "Total_Latency"}
 	explainAnalyzeColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT, tablewriter.ALIGN_LEFT}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}
