@@ -103,7 +103,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	rows, predicates, err := processPlanWithoutStats(queryPlan, session.systemVariables.ExecutionMethodFormat)
+	rows, predicates, err := processPlanWithoutStats(queryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	rows, predicates, err := processPlanWithStats(plan, session.systemVariables.ExecutionMethodFormat)
+	rows, predicates, err := processPlanWithStats(plan, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
-	rows, predicates, err := processPlanWithStats(queryPlan, session.systemVariables.ExecutionMethodFormat)
+	rows, predicates, err := processPlanWithStats(queryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}
@@ -200,16 +200,16 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 	return result, nil
 }
 
-func processPlanWithStats(plan *sppb.QueryPlan, format queryplan.ExecutionMethodFormat) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, true, format)
+func processPlanWithStats(plan *sppb.QueryPlan, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
+	return processPlanImpl(plan, true, spannerCLICompatible)
 }
 
-func processPlanWithoutStats(plan *sppb.QueryPlan, format queryplan.ExecutionMethodFormat) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, false, format)
+func processPlanWithoutStats(plan *sppb.QueryPlan, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
+	return processPlanImpl(plan, false, spannerCLICompatible)
 }
 
-func processPlanImpl(plan *sppb.QueryPlan, withStats bool, format queryplan.ExecutionMethodFormat) (rows []Row, predicates []string, err error) {
-	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), format)
+func processPlanImpl(plan *sppb.QueryPlan, withStats bool, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
+	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), spannerCLICompatible)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -255,7 +255,15 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 	return queryPlan, commitResp.CommitTs, metadata, err
 }
 
-func processPlanNodes(nodes []*sppb.PlanNode, format queryplan.ExecutionMethodFormat) ([]plantree.RowWithPredicates, error) {
-	return plantree.ProcessPlan(queryplan.New(nodes),
-		plantree.WithQueryPlanOptions(queryplan.WithExecutionMethodFormat(format)))
+func processPlanNodes(nodes []*sppb.PlanNode, spannerCLICompatible bool) ([]plantree.RowWithPredicates, error) {
+	var options []plantree.Option
+	if !spannerCLICompatible {
+		options = append(options, plantree.WithQueryPlanOptions(
+			queryplan.WithExecutionMethodFormat(queryplan.ExecutionMethodFormatAngle),
+			queryplan.WithFullScanFormat(queryplan.FullScanFormatLabel),
+			queryplan.WithTargetMetadataFormat(queryplan.TargetMetadataFormatOn),
+		))
+	}
+
+	return plantree.ProcessPlan(queryplan.New(nodes), options...)
 }

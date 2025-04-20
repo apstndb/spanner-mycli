@@ -33,7 +33,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
-	"github.com/apstndb/spannerplanviz/queryplan"
 	"github.com/olekukonko/tablewriter"
 
 	"github.com/cloudspannerecosystem/memefish"
@@ -204,7 +203,6 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		VertexAIProject:           opts.VertexAIProject,
 		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
 		EnableADCPlus:             true,
-		ExecutionMethodFormat:     queryplan.ExecutionMethodFormatAngle,
 	}
 
 	if opts.Strong {

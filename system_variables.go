@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	"github.com/apstndb/spannerplanviz/queryplan"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -97,7 +96,7 @@ type systemVariables struct {
 	EchoInput       bool                       // CLI_ECHO_INPUT
 	Endpoint        string                     // CLI_ENDPOINT
 
-	ExecutionMethodFormat queryplan.ExecutionMethodFormat // CLI_EXECUTION_METHOD_FORMAT
+	SpannerCLICompatiblePlan bool // CLI_SPANNER_CLI_COMPATIBLE_PLAN
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor *descriptorpb.FileDescriptorSet
@@ -673,36 +672,11 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"CLI_EXECUTION_METHOD_FORMAT": {
-		Description: "Format of execution_method metadata. ANGLE is short form like <ROW>, RAW leaves as-is in metadata.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				var s string
-				switch this.ExecutionMethodFormat {
-				case queryplan.ExecutionMethodFormatAngle:
-					s = "ANGLE"
-				case queryplan.ExecutionMethodFormatRaw:
-					s = "RAW"
-				default:
-					s = ""
-				}
-
-				return singletonMap(name, s), nil
-			},
-			Setter: func(this *systemVariables, name, value string) error {
-				s := strings.ToUpper(unquoteString(value))
-				switch s {
-				case "RAW":
-					this.ExecutionMethodFormat = queryplan.ExecutionMethodFormatRaw
-					return nil
-				case "ANGLE":
-					this.ExecutionMethodFormat = queryplan.ExecutionMethodFormatAngle
-					return nil
-				default:
-					return fmt.Errorf("invalid value: %v. Valid values are 'RAW' and 'ANGLE'", s)
-				}
-			},
-		},
+	"CLI_SPANNER_CLI_COMPATIBLE_PLAN": {
+		Description: "Controls query plan notation. FALSE(default): new notation, TRUE: spanner-cli compatible notation.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.SpannerCLICompatiblePlan
+		}),
 	},
 	"CLI_PARSE_MODE": {
 		Description: "",

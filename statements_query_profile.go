@@ -76,7 +76,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithStats(row.QueryProfile.QueryPlan, session.systemVariables.ExecutionMethodFormat)
+		rows, predicates, err := processPlanWithStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +135,7 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, errors.New("empty result")
 	}
 
-	rows, predicates, err := processPlanWithStats(qpr.QueryProfile.QueryPlan, session.systemVariables.ExecutionMethodFormat)
+	rows, predicates, err := processPlanWithStats(qpr.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.3.0
 	github.com/apstndb/spanemuboost v0.2.8
-	github.com/apstndb/spannerplanviz v0.4.0
+	github.com/apstndb/spannerplanviz v0.5.1
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.5
 	github.com/bufbuild/protocompile v0.14.1
