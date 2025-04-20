@@ -378,7 +378,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), queryplan.ExecutionMethodFormatAngle)
+			got, err := processPlanNodes(plan.GetPlanNodes(), true)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
