@@ -96,10 +96,13 @@ type systemVariables struct {
 	EchoInput       bool                       // CLI_ECHO_INPUT
 	Endpoint        string                     // CLI_ENDPOINT
 
+	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
+
 	SpannerCLICompatiblePlan bool // CLI_SPANNER_CLI_COMPATIBLE_PLAN
 
 	// it is internal variable and hidden from system variable statements
-	ProtoDescriptor *descriptorpb.FileDescriptorSet
+	ProtoDescriptor      *descriptorpb.FileDescriptorSet
+	ParsedAnalyzeColumns []columnRenderDef
 
 	WithoutAuthentication bool
 	Params                map[string]ast.Node
@@ -677,6 +680,28 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.SpannerCLICompatiblePlan
 		}),
+	},
+	"CLI_ANALYZE_COLUMNS": {
+		Description: "<name>:<template>[:<alignment>], ...",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				def, err := customListToTableRenderDef(strings.Split(unquoteString(value), ","))
+				if err != nil {
+					return err
+				}
+
+				if err != nil {
+					return err
+				}
+
+				this.AnalyzeColumns = value
+				this.ParsedAnalyzeColumns = def
+				return nil
+			},
+			Getter: stringGetter(func(sysVars *systemVariables) *string {
+				return &sysVars.AnalyzeColumns
+			}),
+		},
 	},
 	"CLI_PARSE_MODE": {
 		Description: "",

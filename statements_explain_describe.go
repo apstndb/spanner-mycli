@@ -17,7 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -25,6 +27,8 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spannerplanviz/plantree"
 	"github.com/apstndb/spannerplanviz/queryplan"
+	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/olekukonko/tablewriter"
 )
 
 type ExplainStatement struct {
@@ -134,35 +138,58 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		return nil, err
 	}
 
-	queryStats, err := parseQueryStats(stats)
-	if err != nil {
-		return nil, err
-	}
-
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
 	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
 	if plan == nil {
 		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	rows, predicates, err := processPlanWithStats(plan, session.systemVariables.SpannerCLICompatiblePlan)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Timestamp = lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) })
+	return result, nil
+}
+
+func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{}) (*Result, error) {
+	def := sysVars.ParsedAnalyzeColumns
+	rows, predicates, err := processPlan(plan, def, sysVars.SpannerCLICompatiblePlan)
+	if err != nil {
+		return nil, err
+	}
+
+	columnNames, columnAlign := explainAnalyzeHeader(def)
+
+	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, err
 	}
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
+		ColumnNames:  columnNames,
+		ColumnAlign:  columnAlign,
 		ForceVerbose: true,
 		AffectedRows: len(rows),
 		Stats:        queryStats,
-		Timestamp:    lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) }),
 		Rows:         rows,
 		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(plan) }),
+		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(plan) }),
 	}
 	return result, nil
+}
+
+func explainAnalyzeHeader(def []columnRenderDef) ([]string, []int) {
+	columnNames := slices.Concat(explainColumnNames, slices.Collect(xiter.Map(func(def columnRenderDef) string {
+		return def.Name
+	}, slices.Values(def))))
+	columnAlign := slices.Concat(explainColumnAlign, slices.Collect(xiter.Map(func(def columnRenderDef) int {
+		return def.Alignment
+	}, slices.Values(def))))
+
+	return columnNames, columnAlign
 }
 
 func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -180,14 +207,18 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
-	rows, predicates, err := processPlanWithStats(queryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+	def := session.systemVariables.ParsedAnalyzeColumns
+	rows, predicates, err := processPlan(queryPlan, def, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}
 
+	columnNames, columnAlign := explainAnalyzeHeader(def)
+
 	result := &Result{
 		IsMutation:       true,
-		ColumnNames:      explainAnalyzeColumnNames,
+		ColumnNames:      columnNames,
+		ColumnAlign:      columnAlign,
 		ForceVerbose:     true,
 		AffectedRows:     int(affectedRows),
 		AffectedRowsType: rowCountTypeExact,
@@ -200,15 +231,11 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 	return result, nil
 }
 
-func processPlanWithStats(plan *sppb.QueryPlan, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, true, spannerCLICompatible)
-}
-
 func processPlanWithoutStats(plan *sppb.QueryPlan, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
-	return processPlanImpl(plan, false, spannerCLICompatible)
+	return processPlan(plan, nil, spannerCLICompatible)
 }
 
-func processPlanImpl(plan *sppb.QueryPlan, withStats bool, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
 	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), spannerCLICompatible)
 	if err != nil {
 		return nil, nil, err
@@ -222,11 +249,16 @@ func processPlanImpl(plan *sppb.QueryPlan, withStats bool, spannerCLICompatible 
 	}
 
 	for _, row := range rowsWithPredicates {
-		if withStats {
-			rows = append(rows, toRow(row.FormatID(), row.Text(), row.ExecutionStats.Rows.Total, row.ExecutionStats.ExecutionSummary.NumExecutions, row.ExecutionStats.Latency.String()))
-		} else {
-			rows = append(rows, toRow(row.FormatID(), row.Text()))
+		rowStrs := []string{row.FormatID(), row.Text()}
+		for _, colRender := range columnRenderDefs {
+			c, err := colRender.MapFunc(row)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			rowStrs = append(rowStrs, c)
 		}
+		rows = append(rows, rowStrs)
 
 		var prefix string
 		for i, predicate := range row.Predicates {
@@ -240,6 +272,79 @@ func processPlanImpl(plan *sppb.QueryPlan, withStats bool, spannerCLICompatible 
 	}
 
 	return rows, predicates, nil
+}
+
+type columnRenderDef struct {
+	MapFunc   func(row plantree.RowWithPredicates) (string, error)
+	Name      string
+	Alignment int
+}
+
+func templateMapFunc(tmplName, tmplText string) (func(row plantree.RowWithPredicates) (string, error), error) {
+	tmpl, err := template.New(tmplName).Parse(tmplText)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(row plantree.RowWithPredicates) (string, error) {
+		var sb strings.Builder
+		if err = tmpl.Execute(&sb, row.ExecutionStats); err != nil {
+			return "", err
+		}
+
+		return sb.String(), nil
+	}, nil
+}
+
+func parseAlignment(s string) (int, error) {
+	switch strings.TrimPrefix(s, "ALIGN_") {
+	case "RIGHT":
+		return tablewriter.ALIGN_RIGHT, nil
+	case "LEFT":
+		return tablewriter.ALIGN_LEFT, nil
+	case "CENTER":
+		return tablewriter.ALIGN_CENTER, nil
+	case "DEFAULT":
+		return tablewriter.ALIGN_DEFAULT, nil
+	default:
+		return 0, fmt.Errorf("unknown Alignment: %s", s)
+	}
+}
+
+func customListToTableRenderDef(custom []string) ([]columnRenderDef, error) {
+	var columns []columnRenderDef
+	for _, s := range custom {
+		split := strings.SplitN(s, ":", 3)
+
+		var align int
+		switch len(split) {
+		case 2:
+			align = tablewriter.ALIGN_RIGHT
+		case 3:
+			alignStr := split[2]
+			var err error
+			align, err = parseAlignment(alignStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parseAlignment(): %w", err)
+			}
+		default:
+			return nil, fmt.Errorf(`invalid format: must be "<name>:<template>[:<alignment>]",  but: %v`, s)
+		}
+
+		name, templateStr := split[0], split[1]
+		mapFunc, err := templateMapFunc(name, templateStr)
+		if err != nil {
+			return nil, err
+		}
+
+		columns = append(columns, columnRenderDef{
+			MapFunc:   mapFunc,
+			Name:      name,
+			Alignment: align,
+		})
+	}
+
+	return columns, nil
 }
 
 func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {

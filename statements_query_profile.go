@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html/template"
 	"log"
 	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -76,7 +76,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -135,15 +135,17 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, errors.New("empty result")
 	}
 
-	rows, predicates, err := processPlanWithStats(qpr.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+	def := session.systemVariables.ParsedAnalyzeColumns
+	rows, predicates, err := processPlan(qpr.QueryProfile.QueryPlan, def, session.systemVariables.SpannerCLICompatiblePlan)
 	if err != nil {
 		return nil, err
 	}
 
+	columnNames, columnAlign := explainAnalyzeHeader(def)
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
+		ColumnNames:  columnNames,
+		ColumnAlign:  columnAlign,
 		ForceVerbose: true,
 		AffectedRows: len(rows),
 		Stats:        qpr.QueryProfile.QueryStats,
