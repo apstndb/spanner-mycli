@@ -611,7 +611,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 	}
 }
 
-//go:embed testdata/distributed_cross_apply_stats.json
+//go:embed testdata/stats/distributed_cross_apply_stats.json
 var dcaStatsJSON []byte
 
 func protojsonUnmarshal[M any, MP interface {
