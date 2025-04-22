@@ -135,26 +135,21 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, errors.New("empty result")
 	}
 
-	def := session.systemVariables.ParsedAnalyzeColumns
-	rows, predicates, err := processPlan(qpr.QueryProfile.QueryPlan, def, session.systemVariables.SpannerCLICompatiblePlan)
+	// TODO: Simplify the logic to get map[string]any of query stats.
+	b, err := json.Marshal(qpr.QueryProfile.QueryStats)
 	if err != nil {
 		return nil, err
 	}
 
-	columnNames, columnAlign := explainAnalyzeHeader(def)
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	result := &Result{
-		ColumnNames:  columnNames,
-		ColumnAlign:  columnAlign,
-		ForceVerbose: true,
-		AffectedRows: len(rows),
-		Stats:        qpr.QueryProfile.QueryStats,
-		Rows:         rows,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(qpr.QueryProfile.QueryPlan) }),
+	var queryStats map[string]any
+	err = json.Unmarshal(b, &queryStats)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+
+	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats)
 }
+
 func formatStats(stats *queryProfilesRow) string {
 	var sb strings.Builder
 	if stats == nil {

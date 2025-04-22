@@ -155,16 +155,22 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{}) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
+
 	rows, predicates, err := processPlan(plan, def, sysVars.SpannerCLICompatiblePlan)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
 
 	columnNames, columnAlign := explainAnalyzeHeader(def)
 
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse query stats: %w", err)
+	}
+
+	var lintResults []string
+	if sysVars.LintPlan {
+		lintResults = lintPlan(plan)
 	}
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
@@ -176,18 +182,23 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 		Stats:        queryStats,
 		Rows:         rows,
 		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(plan) }),
+		LintResults:  lintResults,
 	}
 	return result, nil
 }
 
 func explainAnalyzeHeader(def []columnRenderDef) ([]string, []int) {
-	columnNames := slices.Concat(explainColumnNames, slices.Collect(xiter.Map(func(def columnRenderDef) string {
-		return def.Name
-	}, slices.Values(def))))
-	columnAlign := slices.Concat(explainColumnAlign, slices.Collect(xiter.Map(func(def columnRenderDef) int {
-		return def.Alignment
-	}, slices.Values(def))))
+	// Start with the base columns and alignments for EXPLAIN output.
+	baseNames := explainColumnNames
+	baseAlign := explainColumnAlign
+
+	// Extract the names and alignments from the custom column definitions.
+	customNames := slices.Collect(xiter.Map(func(d columnRenderDef) string { return d.Name }, slices.Values(def)))
+	customAligns := slices.Collect(xiter.Map(func(d columnRenderDef) int { return d.Alignment }, slices.Values(def)))
+
+	// Concatenate the base and custom parts.
+	columnNames := slices.Concat(baseNames, customNames)
+	columnAlign := slices.Concat(baseAlign, customAligns)
 
 	return columnNames, columnAlign
 }
@@ -198,35 +209,26 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
+	var queryStats map[string]any
 	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
-		_, count, metadata, plan, err := consumeRowIterDiscard(iter)
+		qs, count, metadata, plan, err := consumeRowIterDiscard(iter)
+		queryStats = qs
 		return count, plan, metadata, err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	def := session.systemVariables.ParsedAnalyzeColumns
-	rows, predicates, err := processPlan(queryPlan, def, session.systemVariables.SpannerCLICompatiblePlan)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats)
 	if err != nil {
 		return nil, err
 	}
 
-	columnNames, columnAlign := explainAnalyzeHeader(def)
-
-	result := &Result{
-		IsMutation:       true,
-		ColumnNames:      columnNames,
-		ColumnAlign:      columnAlign,
-		ForceVerbose:     true,
-		AffectedRows:     int(affectedRows),
-		AffectedRowsType: rowCountTypeExact,
-		Rows:             rows,
-		Predicates:       predicates,
-		Timestamp:        commitResp.CommitTs,
-		LintResults:      lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
-	}
+	result.IsMutation = true
+	result.AffectedRows = int(affectedRows)
+	result.AffectedRowsType = rowCountTypeExact
+	result.Timestamp = commitResp.CommitTs
 
 	return result, nil
 }
