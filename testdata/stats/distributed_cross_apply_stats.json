@@ -1,0 +1,705 @@
+{
+  "queryPlan": {
+    "planNodes": [
+      {
+        "childLinks": [
+          {
+            "childIndex": 1
+          },
+          {
+            "childIndex": 28,
+            "type": "Split Range"
+          }
+        ],
+        "displayName": "Distributed Union",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.55",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "execution_end_timestamp": "1745283934.188465",
+            "execution_start_timestamp": "1745283934.187468",
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.96",
+            "unit": "msecs"
+          },
+          "remote_calls": {
+            "total": "0",
+            "unit": "calls"
+          },
+          "rows": {
+            "total": "33",
+            "unit": "rows"
+          }
+        },
+        "kind": "RELATIONAL",
+        "metadata": {
+          "distribution_table": "AlbumsByAlbumTitle",
+          "execution_method": "Row",
+          "split_ranges_aligned": "false",
+          "subquery_cluster_node": "1"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 2
+          },
+          {
+            "childIndex": 11,
+            "type": "Map"
+          },
+          {
+            "childIndex": 25,
+            "type": "Split Range"
+          }
+        ],
+        "displayName": "Distributed Cross Apply",
+        "executionStats": {
+          "Number of Batches": {
+            "total": "1",
+            "unit": "batches"
+          },
+          "cpu_time": {
+            "total": "0.53",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "execution_end_timestamp": "1745283934.188460",
+            "execution_start_timestamp": "1745283934.187506",
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.94",
+            "unit": "msecs"
+          },
+          "remote_calls": {
+            "total": "0",
+            "unit": "calls"
+          },
+          "rows": {
+            "total": "33",
+            "unit": "rows"
+          }
+        },
+        "index": 1,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row",
+          "subquery_cluster_node": "11"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 3
+          },
+          {
+            "childIndex": 10,
+            "variable": "v2.Batch"
+          }
+        ],
+        "displayName": "Create Batch",
+        "index": 2,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 4
+          }
+        ],
+        "displayName": "Distributed Union",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.29",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "checkpoint_time": "0.01 msecs",
+            "num_checkpoints": 1,
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.7",
+            "unit": "msecs"
+          },
+          "remote_calls": {
+            "total": "0",
+            "unit": "calls"
+          },
+          "rows": {
+            "total": "7",
+            "unit": "rows"
+          }
+        },
+        "index": 3,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "call_type": "Local",
+          "execution_method": "Row",
+          "subquery_cluster_node": "4"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 5
+          },
+          {
+            "childIndex": 8,
+            "variable": "v1.AlbumId_1"
+          },
+          {
+            "childIndex": 9,
+            "variable": "v1.AlbumTitle"
+          }
+        ],
+        "displayName": "Compute Struct",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.28",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "checkpoint_time": "0 msecs",
+            "num_checkpoints": 1,
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.69",
+            "unit": "msecs"
+          },
+          "rows": {
+            "total": "7",
+            "unit": "rows"
+          }
+        },
+        "index": 4,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 6,
+            "variable": "AlbumId_1"
+          },
+          {
+            "childIndex": 7,
+            "variable": "AlbumTitle"
+          }
+        ],
+        "displayName": "Scan",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.27",
+            "unit": "msecs"
+          },
+          "deleted_rows": {
+            "mean": "0",
+            "std_deviation": "0",
+            "total": "0",
+            "unit": "rows"
+          },
+          "execution_summary": {
+            "checkpoint_time": "0 msecs",
+            "num_checkpoints": 1,
+            "num_executions": "1"
+          },
+          "filesystem_delay_seconds": {
+            "mean": "0.21",
+            "std_deviation": "0.21",
+            "total": "0.42",
+            "unit": "msecs"
+          },
+          "filtered_rows": {
+            "mean": "0",
+            "std_deviation": "0",
+            "total": "0",
+            "unit": "rows"
+          },
+          "latency": {
+            "total": "0.68",
+            "unit": "msecs"
+          },
+          "rows": {
+            "total": "7",
+            "unit": "rows"
+          },
+          "scanned_rows": {
+            "histogram": [
+              {
+                "count": "1",
+                "lower_bound": "0",
+                "percentage": "50",
+                "upper_bound": "1"
+              },
+              {
+                "count": "1",
+                "lower_bound": "4",
+                "percentage": "50",
+                "upper_bound": "16"
+              }
+            ],
+            "mean": "3.5",
+            "std_deviation": "3.5",
+            "total": "7",
+            "unit": "rows"
+          }
+        },
+        "index": 5,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "Full scan": "true",
+          "execution_method": "Row",
+          "scan_method": "Automatic",
+          "scan_target": "AlbumsByAlbumTitle",
+          "scan_type": "IndexScan"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 6,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "AlbumId"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 7,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "AlbumTitle"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 8,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$AlbumId_1"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 9,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$AlbumTitle"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 10,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$v1"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 12
+          },
+          {
+            "childIndex": 24
+          }
+        ],
+        "displayName": "Serialize Result",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.18",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "execution_end_timestamp": "1745283934.188459",
+            "execution_start_timestamp": "1745283934.188255",
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.18",
+            "unit": "msecs"
+          },
+          "rows": {
+            "total": "33",
+            "unit": "rows"
+          }
+        },
+        "index": 11,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 13
+          },
+          {
+            "childIndex": 16,
+            "type": "Map"
+          }
+        ],
+        "displayName": "Cross Apply",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.17",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.17",
+            "unit": "msecs"
+          },
+          "rows": {
+            "total": "33",
+            "unit": "rows"
+          }
+        },
+        "index": 12,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 14,
+            "variable": "batched_AlbumId_1"
+          },
+          {
+            "childIndex": 15,
+            "variable": "batched_AlbumTitle"
+          }
+        ],
+        "displayName": "Scan",
+        "executionStats": {
+          "cpu_time": {
+            "total": "0.01",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "num_executions": "1"
+          },
+          "latency": {
+            "total": "0.01",
+            "unit": "msecs"
+          },
+          "rows": {
+            "total": "7",
+            "unit": "rows"
+          }
+        },
+        "index": 13,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row",
+          "scan_method": "Row",
+          "scan_target": "$v2",
+          "scan_type": "BatchScan"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 14,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "AlbumId_1"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 15,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "AlbumTitle"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 17
+          }
+        ],
+        "displayName": "Distributed Union",
+        "executionStats": {
+          "cpu_time": {
+            "mean": "0.02",
+            "std_deviation": "0.04",
+            "total": "0.16",
+            "unit": "msecs"
+          },
+          "execution_summary": {
+            "num_executions": "7"
+          },
+          "latency": {
+            "mean": "0.02",
+            "std_deviation": "0.04",
+            "total": "0.16",
+            "unit": "msecs"
+          },
+          "remote_calls": {
+            "mean": "0",
+            "std_deviation": "0",
+            "total": "0",
+            "unit": "calls"
+          },
+          "rows": {
+            "histogram": [
+              {
+                "count": "2",
+                "lower_bound": "0",
+                "percentage": "28",
+                "upper_bound": "1"
+              },
+              {
+                "count": "5",
+                "lower_bound": "1",
+                "percentage": "71",
+                "upper_bound": "10"
+              }
+            ],
+            "mean": "4.71",
+            "std_deviation": "3.81",
+            "total": "33",
+            "unit": "rows"
+          }
+        },
+        "index": 16,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "call_type": "Local",
+          "execution_method": "Row",
+          "subquery_cluster_node": "17"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 18
+          },
+          {
+            "childIndex": 23,
+            "type": "Residual Condition"
+          }
+        ],
+        "displayName": "Filter Scan",
+        "index": 17,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "execution_method": "Row",
+          "seekable_key_size": "0"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 19,
+            "variable": "AlbumId"
+          }
+        ],
+        "displayName": "Scan",
+        "executionStats": {
+          "cpu_time": {
+            "mean": "0.02",
+            "std_deviation": "0.04",
+            "total": "0.15",
+            "unit": "msecs"
+          },
+          "deleted_rows": {
+            "total": "0",
+            "unit": "rows"
+          },
+          "execution_summary": {
+            "num_executions": "7"
+          },
+          "filesystem_delay_seconds": {
+            "total": "0",
+            "unit": "msecs"
+          },
+          "filtered_rows": {
+            "total": "30",
+            "unit": "rows"
+          },
+          "latency": {
+            "mean": "0.02",
+            "std_deviation": "0.04",
+            "total": "0.15",
+            "unit": "msecs"
+          },
+          "rows": {
+            "histogram": [
+              {
+                "count": "2",
+                "lower_bound": "0",
+                "percentage": "28",
+                "upper_bound": "1"
+              },
+              {
+                "count": "5",
+                "lower_bound": "1",
+                "percentage": "71",
+                "upper_bound": "10"
+              }
+            ],
+            "mean": "4.71",
+            "std_deviation": "3.81",
+            "total": "33",
+            "unit": "rows"
+          },
+          "scanned_rows": {
+            "total": "63",
+            "unit": "rows"
+          }
+        },
+        "index": 18,
+        "kind": "RELATIONAL",
+        "metadata": {
+          "Full scan": "true",
+          "execution_method": "Row",
+          "scan_method": "Row",
+          "scan_target": "SongsBySongGenre",
+          "scan_type": "IndexScan"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 19,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "AlbumId"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 21
+          },
+          {
+            "childIndex": 22
+          }
+        ],
+        "displayName": "Function",
+        "index": 20,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "($AlbumId = $batched_AlbumId_1)"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 21,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$AlbumId"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 22,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$batched_AlbumId_1"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 20
+          }
+        ],
+        "displayName": "Function",
+        "index": 23,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "($AlbumId = $batched_AlbumId_1)"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 24,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$batched_AlbumTitle"
+        }
+      },
+      {
+        "childLinks": [
+          {
+            "childIndex": 26
+          },
+          {
+            "childIndex": 27
+          }
+        ],
+        "displayName": "Function",
+        "index": 25,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "($AlbumId = $AlbumId_1)"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 26,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$AlbumId"
+        }
+      },
+      {
+        "displayName": "Reference",
+        "index": 27,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "$AlbumId_1"
+        }
+      },
+      {
+        "displayName": "Constant",
+        "index": 28,
+        "kind": "SCALAR",
+        "shortRepresentation": {
+          "description": "true"
+        }
+      }
+    ]
+  },
+  "queryStats": {
+    "bytes_returned": "466",
+    "cpu_time": "28.52 msecs",
+    "data_bytes_read": "32091",
+    "deleted_rows_scanned": "0",
+    "elapsed_time": "28.99 msecs",
+    "filesystem_delay_seconds": "0.42 msecs",
+    "is_graph_query": "false",
+    "locking_delay": "0 msecs",
+    "memory_peak_usage_bytes": "461",
+    "memory_usage_percentage": "0.000",
+    "optimizer_statistics_package": "auto_20250421_21_29_41UTC",
+    "optimizer_version": "7",
+    "query_plan_creation_time": "27.12 msecs",
+    "query_text": "SELECT albumtitle\nFROM   songs\n       JOIN albums\n         ON albums.albumid = songs.albumid;",
+    "remote_server_calls": "0/0",
+    "rows_returned": "33",
+    "rows_scanned": "70",
+    "runtime_creation_time": "0.52 msecs",
+    "server_queue_delay": "0.02 msecs",
+    "statistics_load_time": "0",
+    "total_memory_peak_usage_byte": "461"
+  }
+}

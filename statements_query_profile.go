@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html/template"
 	"log"
 	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -76,7 +76,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -135,24 +135,21 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, errors.New("empty result")
 	}
 
-	rows, predicates, err := processPlanWithStats(qpr.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+	// TODO: Simplify the logic to get map[string]any of query stats.
+	b, err := json.Marshal(qpr.QueryProfile.QueryStats)
 	if err != nil {
 		return nil, err
 	}
 
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
-	result := &Result{
-		ColumnNames:  explainAnalyzeColumnNames,
-		ColumnAlign:  explainAnalyzeColumnAlign,
-		ForceVerbose: true,
-		AffectedRows: len(rows),
-		Stats:        qpr.QueryProfile.QueryStats,
-		Rows:         rows,
-		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(qpr.QueryProfile.QueryPlan) }),
+	var queryStats map[string]any
+	err = json.Unmarshal(b, &queryStats)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+
+	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats)
 }
+
 func formatStats(stats *queryProfilesRow) string {
 	var sb strings.Builder
 	if stats == nil {

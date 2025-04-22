@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"math"
 	"strings"
@@ -27,6 +28,11 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
+	"github.com/samber/lo"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/apstndb/spanner-mycli/internal/protostruct"
 )
 
 func TestBuildCommands(t *testing.T) {
@@ -600,6 +606,83 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			got := cli.getInterpolatedPrompt(tt.prompt)
 			if got != tt.want {
 				t.Errorf("getInterpolatedPrompt() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+//go:embed testdata/stats/distributed_cross_apply_stats.json
+var dcaStatsJSON []byte
+
+func protojsonUnmarshal[M any, MP interface {
+	*M
+	proto.Message
+}](b []byte) (MP, error) {
+	var m M
+	var mp MP = &m
+
+	if err := protojson.Unmarshal(b, mp); err != nil {
+		return nil, err
+	} else {
+		return &m, nil
+	}
+}
+
+func TestRenderPlanTree(t *testing.T) {
+	tcases := []struct {
+		desc           string
+		sysVars        *systemVariables
+		resultSetStats *sppb.ResultSetStats
+		want           string
+	}{
+		{
+			desc: "PROFILE with ParsedAnalyzeColumns",
+			sysVars: &systemVariables{
+				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDef(strings.Split("Rows:{{.Rows.Total}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}", ","))),
+			},
+			resultSetStats: lo.Must(protojsonUnmarshal[sppb.ResultSetStats, *sppb.ResultSetStats](dcaStatsJSON)),
+			want: `+-----+-------------------------------------------------------------------------------------------+------+---------+----------+
+| ID  | Query_Execution_Plan <execution_method> (metadata, ...)                                   | Rows | Scanned | Filtered |
++-----+-------------------------------------------------------------------------------------------+------+---------+----------+
+|   0 | Distributed Union on AlbumsByAlbumTitle <Row> (split_ranges_aligned: false)               |   33 |         |          |
+|  *1 | +- Distributed Cross Apply <Row>                                                          |   33 |         |          |
+|   2 |    +- [Input] Create Batch <Row>                                                          |      |         |          |
+|   3 |    |  +- Local Distributed Union <Row>                                                    |    7 |         |          |
+|   4 |    |     +- Compute Struct <Row>                                                          |    7 |         |          |
+|   5 |    |        +- Index Scan on AlbumsByAlbumTitle <Row> (Full scan, scan_method: Automatic) |    7 |       7 |        0 |
+|  11 |    +- [Map] Serialize Result <Row>                                                        |   33 |         |          |
+|  12 |       +- Cross Apply <Row>                                                                |   33 |         |          |
+|  13 |          +- [Input] Batch Scan on $v2 <Row> (scan_method: Row)                            |    7 |         |          |
+|  16 |          +- [Map] Local Distributed Union <Row>                                           |   33 |         |          |
+| *17 |             +- Filter Scan <Row> (seekable_key_size: 0)                                   |      |         |          |
+|  18 |                +- Index Scan on SongsBySongGenre <Row> (Full scan, scan_method: Row)      |   33 |      63 |       30 |
++-----+-------------------------------------------------------------------------------------------+------+---------+----------+
+Predicates(identified by ID):
+  1: Split Range: ($AlbumId = $AlbumId_1)
+ 17: Residual Condition: ($AlbumId = $batched_AlbumId_1)
+
+12 rows in set (28.99 msecs)
+cpu time:             28.52 msecs
+rows scanned:         70 rows
+deleted rows scanned: 0 rows
+optimizer version:    7
+optimizer statistics: auto_20250421_21_29_41UTC
+`,
+		},
+	}
+	for _, tcase := range tcases {
+		t.Run(tcase.desc, func(t *testing.T) {
+			stats := protostruct.DecodeToMap(tcase.resultSetStats.QueryStats)
+			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats)
+			if err != nil {
+				t.Errorf("shouldn't fail, but: %v", err)
+			}
+
+			var sb strings.Builder
+			printResult(tcase.sysVars, 0, &sb, result, false, "")
+
+			if diff := cmp.Diff(tcase.want, sb.String()); diff != "" {
+				t.Errorf("result differ: %v", diff)
 			}
 		})
 	}

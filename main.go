@@ -185,6 +185,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		}
 	}
 
+	const defaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 	sysVars := systemVariables{
 		Project:                   opts.ProjectId,
 		Instance:                  opts.InstanceId,
@@ -203,6 +204,13 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		VertexAIProject:           opts.VertexAIProject,
 		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
 		EnableADCPlus:             true,
+		AnalyzeColumns:            defaultAnalyzeColumns,
+		ParsedAnalyzeColumns:      lo.Must(customListToTableRenderDef(strings.Split(defaultAnalyzeColumns, ","))),
+	}
+
+	// initialize default value
+	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", defaultAnalyzeColumns); err != nil {
+		exitf("parse error: %v", err)
 	}
 
 	if opts.Strong {
