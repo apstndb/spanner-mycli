@@ -1009,6 +1009,40 @@ spanner> SELECT p, p.*
 +--------------------------+-----------+------------+-------------+-------------+
 1 rows in set (3.37 msecs)
 ```
+
+### Configurable EXPLAIN ANALYZE
+
+spanner-mycli supports to configure execution stats columns of `EXPLAIN ANALYZE` using `CLI_ANALYZE_COLUMNS`.
+
+Note: `CLI_ANALYZE_COLUMNS` is formatted string like `<name>:<template>[:<alignment>]`. `<template>` is needed to be written in [`text/template`] format and it is bounded with [`ExecutionStats`](https://pkg.go.dev/github.com/apstndb/spannerplanviz/stats#ExecutionStats).
+
+```
+spanner> SET CLI_ANALYZE_COLUMNS='Rows:{{if ne .Rows.Total ""}}{{.Rows.Total}}{{end}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}';
+
+Empty set (0.00 sec)
+
+spanner> EXPLAIN ANALYZE
+         SELECT * FROM Singers
+         JOIN Albums USING (SingerId)
+         WHERE FirstName LIKE "M%c%";
++-----+--------------------------------------------------------------------------------+------+---------+----------+
+| ID  | Query_Execution_Plan <execution_method> (metadata, ...)                        | Rows | Scanned | Filtered |
++-----+--------------------------------------------------------------------------------+------+---------+----------+
+|   0 | Distributed Union on Singers <Row> (split_ranges_aligned: true)                |  864 |         |          |
+|   1 | +- Local Distributed Union <Row>                                               |  864 |         |          |
+|   2 |    +- Serialize Result <Row>                                                   |  864 |         |          |
+|   3 |       +- Cross Apply <Row>                                                     |  864 |         |          |
+|  *4 |          +- [Input] Filter Scan <Row> (seekable_key_size: 0)                   |      |         |          |
+|   5 |          |  +- Table Scan on Singers <Row> (Full scan, scan_method: Automatic) |   27 |    1000 |      973 |
+|  15 |          +- [Map] Local Distributed Union <Row>                                |  864 |         |          |
+|  16 |             +- Filter Scan <Row> (seekable_key_size: 0)                        |      |         |          |
+| *17 |                +- Table Scan on Albums <Row> (scan_method: Row)                |  864 |     864 |        0 |
++-----+--------------------------------------------------------------------------------+------+---------+----------+
+Predicates(identified by ID):
+  4: Residual Condition: ($FirstName LIKE 'M%c%')
+ 17: Seek Condition: ($SingerId_1 = $SingerId)
+```
+
 ### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
