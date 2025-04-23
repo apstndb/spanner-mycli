@@ -31,6 +31,7 @@ import (
 	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
 	"github.com/samber/lo"
+	"go.uber.org/zap/zapcore"
 )
 
 var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
@@ -312,6 +313,7 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 	// lazy initialize gocql.ClusterConfig
 	if session.cqlCluster == nil {
 		cluster := spancql.NewCluster(&spancql.Options{
+			LogLevel:    zapcore.WarnLevel.String(),
 			DatabaseUri: session.DatabasePath(),
 		})
 		if cluster == nil {
