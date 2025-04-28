@@ -170,6 +170,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowDdlsStatement{}, nil
 		},
 	},
+	// Split Points
+	{
+		Descriptions: []clientSideStatementDescription{},
+		Pattern:      regexp.MustCompile(`(?is)^SHOW\s+SPLIT\s+POINTS$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowSplitPointsStatement{}, nil
+		},
+	},
 	// Protocol Buffers
 	{
 		Descriptions: []clientSideStatementDescription{

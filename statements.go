@@ -164,6 +164,17 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
+// Split Points
+
+type ShowSplitPointsStatement struct{}
+
+func (s *ShowSplitPointsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	stmt := spanner.NewStatement("SELECT TABLE_NAME, INDEX_NAME, INITIATOR, SPLIT_KEY, EXPIRE_TIME FROM SPANNER_SYS.USER_SPLIT_POINTS")
+
+	return executeInformationSchemaBasedStatementImpl(ctx, session,
+		"SHOW SPLIT POINTS", stmt, true, nil)
+}
+
 // Schema related statements are defined in statements_schema.go
 
 // Protocol Buffers related statements are defined in statements_proto.go
