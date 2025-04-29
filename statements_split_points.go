@@ -177,6 +177,9 @@ func parseSplitPointsEntry(p *memefish.Parser, expireTime *timestamppb.Timestamp
 	}
 }
 
+// parseIdentLikeWithOptDot process sequence of identifier with an optional dot.
+// If the dot is appeared, both tokens are consumed. If not, no token is consumed.
+// It is a workaround to use ParseExpr().
 func parseIdentLikeWithOptDot(p *memefish.Parser) (s string, dot bool, err error) {
 	lex := *p.Lexer
 
@@ -241,9 +244,13 @@ func parseSplitPointKey(p *memefish.Parser) (*databasepb.SplitPoints_Key, error)
 	return parseLiteralExprForSplitPoint(expr)
 }
 
+// parseExpr parses the next expression.
+// Precondition: The first token is skipped because of (*memefish.Parser).ParseExpr() behavior.
 func parseExpr(p *memefish.Parser) (ast.Expr, error) {
 	expr, err := p.ParseExpr()
 	if err != nil {
+		// ParseExpr() returns errors when there are remaining inputs after accepting a complete expression.
+		// We must ignore these errors to continue processing.
 		var me memefish.MultiError
 		if errors.As(err, &me) {
 			for _, e := range me {
