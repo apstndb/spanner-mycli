@@ -1030,7 +1030,7 @@ You can add split points using `ADD SPLIT POINTS` statement.
 spanner> ADD SPLIT POINTS
          TABLE Singers (42);
 
--- split point for table key
+-- split point for table key in named schema
 spanner> ADD SPLIT POINTS EXPIRED AT "2025-05-05T00:00:00"
          TABLE sch1.Singers (21);
 
