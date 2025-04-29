@@ -630,15 +630,12 @@ INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
 			},
 		},
 		{
-			desc: "ADD SPLIT POINTS statement without EXPIRED AT",
-			input: `
-ADD SPLIT POINTS
-TABLE Singers (42)
-`,
+			desc:  "ADD SPLIT POINTS statement without EXPIRED AT with FQN",
+			input: "ADD SPLIT POINTS TABLE `order`.`Order` (42)",
 			want: &AddSplitPointsStatement{
 				SplitPoints: []*databasepb.SplitPoints{
 					{
-						Table:      "Singers",
+						Table:      "order.Order",
 						ExpireTime: nil,
 						Keys: []*databasepb.SplitPoints_Key{
 							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
@@ -651,19 +648,12 @@ TABLE Singers (42)
 			desc: "DROP SPLIT POINTS statement",
 			input: `
 DROP SPLIT POINTS
-TABLE Singers (42)
 INDEX SingersByFirstLastName ("John", "Doe")
 INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
+TABLE Singers (42)
 `,
 			want: &AddSplitPointsStatement{
 				SplitPoints: []*databasepb.SplitPoints{
-					{
-						Table:      "Singers",
-						ExpireTime: &timestamppb.Timestamp{},
-						Keys: []*databasepb.SplitPoints_Key{
-							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
-						},
-					},
 					{
 						Index:      "SingersByFirstLastName",
 						ExpireTime: &timestamppb.Timestamp{},
@@ -677,6 +667,13 @@ INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
 						Keys: []*databasepb.SplitPoints_Key{
 							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("Mary"), structpb.NewStringValue("Sue")}}},
 							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("12")}}},
+						},
+					},
+					{
+						Table:      "Singers",
+						ExpireTime: &timestamppb.Timestamp{},
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
 						},
 					},
 				},

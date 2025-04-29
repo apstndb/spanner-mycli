@@ -12,6 +12,7 @@ import (
 	"github.com/apstndb/memebridge"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/char"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -133,12 +134,16 @@ func parseSplitPointsEntry(p *memefish.Parser, expireTime *timestamppb.Timestamp
 	default:
 		return nil, fmt.Errorf("expected TABLE or INDEX, got %v", p.Token.Raw)
 	}
+
 	if err := p.NextToken(); err != nil {
 		return nil, err
 	}
 
-	// TODO: Support named schemas
-	objectName := p.Token.Raw
+	// the last ident is not consumed
+	objectName, err := parseFQN(p)
+	if err != nil {
+		return nil, err
+	}
 
 	splitPointKey, err := parseSplitPointKey(p)
 	if err != nil {
@@ -171,6 +176,61 @@ func parseSplitPointsEntry(p *memefish.Parser, expireTime *timestamppb.Timestamp
 	}
 }
 
+func parseIdentLikeWithOptDot(p *memefish.Parser) (s string, dot bool, err error) {
+	lex := *p.Lexer
+
+	s, err = peekIdentLike(p)
+	if err != nil {
+		return "", false, err
+	}
+
+	if err := p.NextToken(); err != nil {
+		return "", false, err
+	}
+
+	if p.Token.Kind != "." {
+		// restore the lexer state
+		p.Lexer = &lex
+		return s, false, nil
+	}
+
+	// consume the dot
+	if err := p.NextToken(); err != nil {
+		return "", false, err
+	}
+
+	return s, true, nil
+}
+
+func peekIdentLike(p *memefish.Parser) (s string, err error) {
+	tok := p.Token
+	switch {
+	case tok.Kind == token.TokenIdent:
+		return tok.AsString, nil
+	case char.IsIdentStart(p.Token.Raw[0]):
+		return tok.Raw, nil
+	default:
+		return "", fmt.Errorf("expected identifier, got %v", p.Token.Raw)
+	}
+}
+
+func parseFQN(p *memefish.Parser) (string, error) {
+	var idents []string
+	for {
+		s, dot, err := parseIdentLikeWithOptDot(p)
+		if err != nil {
+			return "", err
+		}
+
+		idents = append(idents, s)
+
+		if !dot {
+			break
+		}
+	}
+	return strings.Join(idents, "."), nil
+}
+
 func parseSplitPointKey(p *memefish.Parser) (*databasepb.SplitPoints_Key, error) {
 	expr, err := parseExpr(p)
 	if err != nil {
@@ -187,12 +247,12 @@ func parseExpr(p *memefish.Parser) (ast.Expr, error) {
 		if errors.As(err, &me) {
 			for _, e := range me {
 				if !strings.Contains(e.Message, "expected token: <eof>") {
-					return nil, err
+					return nil, fmt.Errorf("first error on parseExpr: %w", e)
 				}
 			}
 			// skip
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("parseExpr: %w", err)
 		}
 	}
 	return expr, nil
