@@ -173,7 +173,8 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 
 	return &Result{
 		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		ColumnTypes:  metadata.GetRowType().GetFields(),
+		ColumnTypes:  lox.IfOrEmpty(forceVerbose, metadata.GetRowType().GetFields()),
+		ForceVerbose: forceVerbose,
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
