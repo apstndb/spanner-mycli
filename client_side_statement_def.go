@@ -175,7 +175,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Add split points",
-				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp_string_literal>] {TABLE|INDEX} <object_fqn> (<object_key>, ...) [TableKey (<object_key>, ...)] ...",
+				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^ADD\s+SPLIT\s+POINTS\s+(.*)$`),
@@ -194,7 +194,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Drop split points",
-				Syntax: "DROP SPLIT POINTS {TABLE|INDEX} <object_fqn> (<object_key>, ...) [TableKey (<object_key>, ...)] ...",
+				Syntax: "DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DROP\s+SPLIT\s+POINTS\s+(.*)$`),
@@ -210,8 +210,13 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 	},
 	{
-		Descriptions: []clientSideStatementDescription{},
-		Pattern:      regexp.MustCompile(`(?is)^SHOW\s+SPLIT\s+POINTS$`),
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  "Show split points",
+				Syntax: "SHOW SPLIT POINTS",
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+SPLIT\s+POINTS$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &ShowSplitPointsStatement{}, nil
 		},
