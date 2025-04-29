@@ -50,7 +50,8 @@ func parseDropSplitPointsBody(body string) ([]*databasepb.SplitPoints, error) {
 		return nil, err
 	}
 
-	return parseSplitPoints(p, &timestamppb.Timestamp{})
+	// Use the epoch timestamp to drop split points
+	return parseSplitPoints(p, &timestamppb.Timestamp{Seconds: 0, Nanos: 0})
 }
 
 func newParser(filepath, s string) *memefish.Parser {
