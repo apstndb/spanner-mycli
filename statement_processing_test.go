@@ -23,10 +23,14 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
@@ -589,6 +593,101 @@ func TestBuildStatement(t *testing.T) {
 			want:  &RunPartitionStatement{Token: `123456789`},
 		},
 		{
+			desc: "ADD SPLIT POINTS statement with EXPIRED AT",
+			input: `
+ADD SPLIT POINTS EXPIRED AT "2020-01-01T00:00:00Z"
+TABLE Singers (42)
+INDEX SingersByFirstLastName ("John", "Doe")
+INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
+`,
+			// timestamp literal can't be lower
+			skipLowerCase: true,
+			want: &AddSplitPointsStatement{
+				SplitPoints: []*databasepb.SplitPoints{
+					{
+						Table:      "Singers",
+						ExpireTime: timestamppb.New(time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)),
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
+						},
+					},
+					{
+						Index:      "SingersByFirstLastName",
+						ExpireTime: timestamppb.New(time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)),
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("John"), structpb.NewStringValue("Doe")}}},
+						},
+					},
+					{
+						Index:      "SingersByFirstLastName",
+						ExpireTime: timestamppb.New(time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)),
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("Mary"), structpb.NewStringValue("Sue")}}},
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("12")}}},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "ADD SPLIT POINTS statement without EXPIRED AT",
+			input: `
+ADD SPLIT POINTS
+TABLE Singers (42)
+`,
+			want: &AddSplitPointsStatement{
+				SplitPoints: []*databasepb.SplitPoints{
+					{
+						Table:      "Singers",
+						ExpireTime: nil,
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "DROP SPLIT POINTS statement",
+			input: `
+DROP SPLIT POINTS
+TABLE Singers (42)
+INDEX SingersByFirstLastName ("John", "Doe")
+INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
+`,
+			want: &AddSplitPointsStatement{
+				SplitPoints: []*databasepb.SplitPoints{
+					{
+						Table:      "Singers",
+						ExpireTime: &timestamppb.Timestamp{},
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
+						},
+					},
+					{
+						Index:      "SingersByFirstLastName",
+						ExpireTime: &timestamppb.Timestamp{},
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("John"), structpb.NewStringValue("Doe")}}},
+						},
+					},
+					{
+						Index:      "SingersByFirstLastName",
+						ExpireTime: &timestamppb.Timestamp{},
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("Mary"), structpb.NewStringValue("Sue")}}},
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("12")}}},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc:  "SHOW SPLIT POINTS statement",
+			input: `SHOW SPLIT POINTS`,
+			want:  &ShowSplitPointsStatement{},
+		},
+		{
 			desc:  "SHOW LOCAL PROTO statement",
 			input: `SHOW LOCAL PROTO`,
 			want:  &ShowLocalProtoStatement{},
@@ -746,7 +845,7 @@ func TestBuildStatement(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
 			}
-			if diff := cmp.Diff(test.want, got); diff != "" {
+			if diff := cmp.Diff(test.want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
 			}
 		})
