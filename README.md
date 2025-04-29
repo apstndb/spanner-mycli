@@ -19,6 +19,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * GenAI support(`GEMINI` statement).
   * Interactive DDL batching
   * Experimental Cassandra interface support as `CQL <cql>` statement.
+  * Support split points.
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
@@ -338,6 +339,9 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show columns                                       | `SHOW COLUMNS FROM <table_fqn>;`                                                                           |                                                                                                                                                             |
 | Show indexes                                       | `SHOW INDEX FROM <table_fqn>;`                                                                             |                                                                                                                                                             |
 | SHOW DDLs                                          | `SHOW DDLS;`                                                                                               |                                                                                                                                                             |
+| Add split points                                   | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`         |                                                                                                                                                             |
+| Drop split points                                  | `DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                                 |                                                                                                                                                             |
+| Show split points                                  | `SHOW SPLIT POINTS;`                                                                                       |                                                                                                                                                             |
 | Show local proto descriptors                       | `SHOW LOCAL PROTO;`                                                                                        |                                                                                                                                                             |
 | Show remote proto bundle                           | `SHOW REMOTE PROTO;`                                                                                       |                                                                                                                                                             |
 | Manipulate PROTO BUNDLE                            | `SYNC PROTO BUNDLE [{UPSERT\|DELETE} (<type> ...)];`                                                       |                                                                                                                                                             |
@@ -1009,6 +1013,82 @@ spanner> SELECT p, p.*
 +--------------------------+-----------+------------+-------------+-------------+
 1 rows in set (3.37 msecs)
 ```
+
+### Split Points support
+
+spanner-mycli can [manage split points](https://cloud.google.com/spanner/docs/create-manage-split-points) for [pre-splitting](https://cloud.google.com/spanner/docs/pre-splitting-overview.
+
+#### `ADD SPLIT POINTS`
+
+You can add split points using `ADD SPLIT POINTS` statement.
+
+- You can add multiple split points in a statement.
+- You can specify the expiration of split points.
+
+```
+-- split point for table key with default expiration
+spanner> ADD SPLIT POINTS
+         TABLE Singers (42);
+
+-- split point for table key in named schema
+spanner> ADD SPLIT POINTS EXPIRED AT "2025-05-05T00:00:00"
+         TABLE sch1.Singers (21);
+
+spanner> ADD SPLIT POINTS EXPIRED AT "2025-05-05T00:00:00Z"
+         -- split point for index key
+         INDEX SingersByFirstLastName ("John", "Doe")
+         -- split point for index key with table primary key
+         INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12);
+```
+
+This syntax is similar to [`gcloud spanner databases splits add --splits-file`](https://cloud.google.com/spanner/docs/create-manage-split-points#create-split-points), but there are some differences.
+
+- It is implemented using memefish so it follows GoogleSQL lexical structure.
+- `INT64` and `NUMERIC` Spanner data types can be integer literal. For example, `123` or `99.99`
+- Floating number values need to be written as float literal. For example, `1.0` or `1.287`
+- Even if the split value needs to have a comma, you must not escape the comma.
+
+#### `SHOW SPLIT POINTS`
+
+You can show defined split points using `SHOW SPLIT POINTS` statement.
+
+```
+spanner> SHOW SPLIT POINTS;
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+| TABLE_NAME   | INDEX_NAME             | INITIATOR           | SPLIT_KEY                                                                                     | EXPIRE_TIME                 |
+| STRING       | STRING                 | STRING              | STRING                                                                                        | TIMESTAMP                   |
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+| Singers      |                        | cloud_spanner_mycli | Singers(42)                                                                                   | 2025-05-09T11:29:43.928097Z |
+| Singers      | SingersByFirstLastName | cloud_spanner_mycli | Index: SingersByFirstLastName on Singers, Index Key: (John,Doe), Primary Table Key: (<begin>) | 2025-05-05T00:00:00Z        |
+| Singers      | SingersByFirstLastName | cloud_spanner_mycli | Index: SingersByFirstLastName on Singers, Index Key: (Mary,Sue), Primary Table Key: (12)      | 2025-05-05T00:00:00Z        |
+| sch1.Singers |                        | cloud_spanner_mycli | sch1.Singers(21)                                                                              | 2025-05-05T00:00:00Z        |
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+4 rows in set (0.26 sec)
+```
+
+#### `DROP SPLIT POINTS`
+
+You can drop split points using `DROP SPLIT POINTS` statement.
+
+```
+spanner> DROP SPLIT POINTS
+         INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12);
+-
+Query OK, 0 rows affected (0.26 sec)
+
+spanner> SHOW SPLIT POINTS;
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+| TABLE_NAME   | INDEX_NAME             | INITIATOR           | SPLIT_KEY                                                                                     | EXPIRE_TIME                 |
+| STRING       | STRING                 | STRING              | STRING                                                                                        | TIMESTAMP                   |
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+| Singers      |                        | cloud_spanner_mycli | Singers(42)                                                                                   | 2025-05-09T11:29:43.928097Z |
+| Singers      | SingersByFirstLastName | cloud_spanner_mycli | Index: SingersByFirstLastName on Singers, Index Key: (John,Doe), Primary Table Key: (<begin>) | 2025-05-05T00:00:00Z        |
+| sch1.Singers |                        | cloud_spanner_mycli | sch1.Singers(21)                                                                              | 2025-05-05T00:00:00Z        |
++--------------+------------------------+---------------------+-----------------------------------------------------------------------------------------------+-----------------------------+
+3 rows in set (0.02 sec)
+```
+
+
 
 ### Configurable EXPLAIN ANALYZE
 

@@ -145,6 +145,10 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 // Helper functions for statements_schema.go
 
 func executeInformationSchemaBasedStatement(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, emptyErrorF func() error) (*Result, error) {
+	return executeInformationSchemaBasedStatementImpl(ctx, session, stmtName, stmt, false, emptyErrorF)
+}
+
+func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, forceVerbose bool, emptyErrorF func() error) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
@@ -169,6 +173,8 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 
 	return &Result{
 		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
+		ColumnTypes:  lox.IfOrEmpty(forceVerbose, metadata.GetRowType().GetFields()),
+		ForceVerbose: forceVerbose,
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil

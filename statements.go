@@ -164,6 +164,8 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
+// Split Points
+
 // Schema related statements are defined in statements_schema.go
 
 // Protocol Buffers related statements are defined in statements_proto.go
