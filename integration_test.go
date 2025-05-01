@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/apstndb/spanemuboost"
+	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -101,6 +102,7 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 		Project:     clients.ProjectID,
 		Instance:    clients.InstanceID,
 		Database:    clients.DatabaseID,
+		Params:      make(map[string]ast.Node),
 		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
 	if err != nil {
 		clientsTeardown()
@@ -270,6 +272,59 @@ func TestStatements(t *testing.T) {
 		wantResults  []*Result
 		teardownDDLs []string
 	}{
+		{
+			desc: "query parameters",
+			stmt: sliceOf(
+				`SET PARAM b = true`,
+				`SET PARAM bs = b"foo"`,
+				`SET PARAM i64 = 1`,
+				`SET PARAM f64 = 1.0`,
+				`SET PARAM f32 = CAST(1.0 AS FLOAT32)`,
+				`SET PARAM n = NUMERIC "1"`,
+				`SET PARAM s = "foo"`,
+				`SET PARAM js = JSON "{}"`,
+				`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`,
+				`SET PARAM a_b = [true]`,
+				`SET PARAM n_b = CAST(NULL AS BOOL)`,
+				`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
+ 				        @a_b AS a_b, @n_b AS n_b`,
+			),
+			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
+			wantResults: []*Result{
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{KeepVariables: true},
+				{
+					ColumnNames: sliceOf("b", "bs", "i64", "f64", "f32", "n", "s", "js", "ts", "a_b", "n_b"),
+					ColumnTypes: sliceOf(
+						typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+						typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
+						typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+						typector.NameTypeToStructTypeField("f64", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)),
+						typector.NameTypeToStructTypeField("f32", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)),
+						typector.NameTypeToStructTypeField("n", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)),
+						typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
+						typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
+						typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
+						typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
+						typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+					),
+					Rows: sliceOf(
+						toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
+							"[true]", "NULL"),
+					),
+					AffectedRows: 1,
+				},
+			},
+		},
 		{
 			desc: "SHOW LOCAL PROTO with pb file",
 			stmt: sliceOf(
