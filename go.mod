@@ -10,7 +10,7 @@ require (
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
-	github.com/apstndb/memebridge v0.3.0
+	github.com/apstndb/memebridge v0.4.0
 	github.com/apstndb/spanemuboost v0.2.8
 	github.com/apstndb/spannerplanviz v0.5.2
 	github.com/apstndb/spantype v0.3.8
