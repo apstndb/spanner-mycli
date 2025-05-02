@@ -523,6 +523,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowColumnsStatement{Table: "TABLE"},
 		},
 		{
+			desc:  "SHOW SCHEMA UPDATE OPERATIONS statement",
+			input: "SHOW SCHEMA UPDATE OPERATIONS",
+			want:  &ShowSchemaUpdateOperations{},
+		},
+		{
 			desc:  "EXPLAIN SELECT statement",
 			input: "EXPLAIN SELECT * FROM t1",
 			want:  &ExplainStatement{Explain: "SELECT * FROM t1"},

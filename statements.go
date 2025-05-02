@@ -19,12 +19,15 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -167,6 +170,60 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 // Split Points
 
 // Schema related statements are defined in statements_schema.go
+
+// Operations
+
+type ShowSchemaUpdateOperations struct{}
+
+func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Session) (*Result, error) {
+	num := 0
+
+	var rows []Row
+	for op, err := range session.adminClient.ListOperations(ctx, &longrunningpb.ListOperationsRequest{
+		Name: session.DatabasePath() + "/operations",
+	}).All() {
+		if err != nil {
+			return nil, err
+		}
+
+		switch op.GetMetadata().GetTypeUrl() {
+		case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+			// Only GetOperation contains progresses.
+			if !op.GetDone() {
+				op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+					Name: op.GetName(),
+				})
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			var md databasepb.UpdateDatabaseDdlMetadata
+			if err := op.GetMetadata().UnmarshalTo(&md); err != nil {
+				return nil, err
+			}
+
+			for i := range md.GetStatements() {
+				rows = append(rows, toRow(lo.Ternary(i == 0, lo.LastOrEmpty(strings.Split(op.GetName(), "/")), ""),
+					md.GetStatements()[i]+";",
+					lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
+					lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+						return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
+					}),
+					lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+						return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
+					}),
+					op.GetError().GetMessage()))
+			}
+			num++
+		}
+	}
+	return &Result{
+		ColumnNames:  []string{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"},
+		Rows:         rows,
+		AffectedRows: num,
+	}, nil
+}
 
 // Protocol Buffers related statements are defined in statements_proto.go
 

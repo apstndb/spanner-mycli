@@ -339,6 +339,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show columns                                       | `SHOW COLUMNS FROM <table_fqn>;`                                                                           |                                                                                                                                                             |
 | Show indexes                                       | `SHOW INDEX FROM <table_fqn>;`                                                                             |                                                                                                                                                             |
 | SHOW DDLs                                          | `SHOW DDLS;`                                                                                               |                                                                                                                                                             |
+| Show schema update operations                      | `SHOW SCHEMA UPDATE OPERATIONS;`                                                                           |                                                                                                                                                             |
 | Add split points                                   | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`         |                                                                                                                                                             |
 | Drop split points                                  | `DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                                 |                                                                                                                                                             |
 | Show split points                                  | `SHOW SPLIT POINTS;`                                                                                       |                                                                                                                                                             |
@@ -1012,6 +1013,23 @@ spanner> SELECT p, p.*
 | genre: POP               |           |            |             |             |
 +--------------------------+-----------+------------+-------------+-------------+
 1 rows in set (3.37 msecs)
+```
+
+### Show database operations
+
+You can list [schema update operations and their progress](https://cloud.google.com/spanner/docs/manage-and-observe-long-running-operations#schema_update_operations).
+
+Note: `PROGESS` column is not populated for done operations due to avoid N+1 API calls.
+
+```
+spanner> SHOW SCHEMA UPDATE OPERATIONS;
++---------------------------+---------------------------------------------------+-------+----------+-----------------------------+-------+
+| OPERATION_ID              | STATEMENTS                                        | DONE  | PROGRESS | COMMIT_TIMESTAMP            | ERROR |
++---------------------------+---------------------------------------------------+-------+----------+-----------------------------+-------+
+| _auto_op_0175680d57629380 | CREATE INDEX SongsBySongName3 ON Songs(SongName); | false | 100      | 2025-05-02T14:43:14.658597Z |       |
+|                           | CREATE INDEX SongsBySongName4 ON Songs(SongName); |       | 17       |                             |       |
++---------------------------+---------------------------------------------------+-------+----------+-----------------------------+-------+
+1 rows in set (1.88 sec)
 ```
 
 ### Split Points support
