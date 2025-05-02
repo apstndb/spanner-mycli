@@ -170,6 +170,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowDdlsStatement{}, nil
 		},
 	},
+	// Operations
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show schema update operations`,
+				Syntax: `SHOW SCHEMA UPDATE OPERATIONS`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+SCHEMA\s+UPDATE\s+OPERATIONS$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &ShowSchemaUpdateOperations{}, nil
+		},
+	},
 	// Split Points
 	{
 		Descriptions: []clientSideStatementDescription{
