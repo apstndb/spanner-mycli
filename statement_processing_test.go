@@ -135,6 +135,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &TruncateTableStatement{Table: "t1"},
 		},
 		{
+			desc:  "TRUNCATE TABLE statement with named schema",
+			input: "TRUNCATE TABLE sch1.t1",
+			want:  &TruncateTableStatement{Schema: "sch1", Table: "t1"},
+		},
+		{
+			desc:  "TRUNCATE TABLE statement with quoted identifier",
+			input: "TRUNCATE TABLE `order`.`order`",
+			want:  &TruncateTableStatement{Schema: "order", Table: "order"},
+		},
+		{
 			desc:  "CREATE VIEW statement",
 			input: "CREATE VIEW t1view SQL SECURITY INVOKER AS SELECT t1.Id FROM t1",
 			want:  &DdlStatement{Ddl: "CREATE VIEW t1view SQL SECURITY INVOKER AS SELECT t1.Id FROM t1"},
