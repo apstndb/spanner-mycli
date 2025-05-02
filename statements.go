@@ -301,7 +301,7 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Resu
 }
 
 type BatchDMLStatement struct {
-	DMLs []string
+	DMLs []spanner.Statement
 }
 
 func (BatchDMLStatement) IsMutationStatement() {}

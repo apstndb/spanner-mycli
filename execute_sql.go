@@ -17,7 +17,6 @@ import (
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/lox"
 	"github.com/go-json-experiment/json"
@@ -217,13 +216,21 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
-		b.DMLs = append(b.DMLs, sql)
+		stmt, err := newStatement(sql, session.systemVariables.Params, false)
+		if err != nil {
+			return nil, err
+		}
+		b.DMLs = append(b.DMLs, stmt)
 		return &Result{IsMutation: true}, nil
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
 		if session.InReadWriteTransaction() && session.systemVariables.AutoBatchDML {
-			session.currentBatch = &BatchDMLStatement{DMLs: []string{sql}}
+			stmt, err := newStatement(sql, session.systemVariables.Params, false)
+			if err != nil {
+				return nil, err
+			}
+			session.currentBatch = &BatchDMLStatement{DMLs: []spanner.Statement{stmt}}
 			return &Result{IsMutation: true}, nil
 		}
 
@@ -237,17 +244,10 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	}
 }
 
-func executeBatchDML(ctx context.Context, session *Session, dmls []string) (*Result, error) {
-	stmts, err := scxiter.TryCollect(scxiter.MapErr(slices.Values(dmls), func(stmt string) (spanner.Statement, error) {
-		return newStatement(stmt, session.systemVariables.Params, false)
-	}))
-	if err != nil {
-		return nil, err
-	}
-
+func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
 	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, stmts, spanner.QueryOptions{LastStatement: implicit})
+		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {
@@ -260,8 +260,8 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []string) (*Res
 		CommitStats: commitResp.CommitStats,
 		ColumnTypes: metadata.GetRowType().GetFields(),
 		Rows: slices.Collect(hiter.Unify(
-			func(s string, n int64) Row {
-				return toRow(s, strconv.FormatInt(n, 10))
+			func(s spanner.Statement, n int64) Row {
+				return toRow(s.SQL, strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
 		ColumnNames:      sliceOf("DML", "Rows"),
