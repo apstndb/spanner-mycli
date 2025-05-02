@@ -276,13 +276,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Truncate table`,
-				Syntax: `TRUNCATE TABLE <table>`,
+				Syntax: `TRUNCATE TABLE <table_fqn>`,
 				Note:   `Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en).`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &TruncateTableStatement{Table: unquoteIdentifier(matched[1])}, nil
+			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+			return &TruncateTableStatement{Schema: schema, Table: table}, nil
 		},
 	},
 	// EXPLAIN & EXPLAIN ANALYZE
