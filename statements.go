@@ -17,8 +17,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,10 +29,12 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
 	"github.com/samber/lo"
@@ -301,7 +305,7 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Resu
 }
 
 type BatchDMLStatement struct {
-	DMLs []string
+	DMLs []spanner.Statement
 }
 
 func (BatchDMLStatement) IsMutationStatement() {}
@@ -482,7 +486,19 @@ func (s *NopStatement) Execute(ctx context.Context, session *Session) (*Result, 
 // Helper function for statements.go.
 
 func newStatement(sql string, params map[string]ast.Node, includeType bool) (spanner.Statement, error) {
-	genParams, err := generateParams(params, includeType)
+	usedParamNames, err := usedQueryParameterNames(sql)
+	if err != nil {
+		return spanner.Statement{}, err
+	}
+
+	filteredParams := make(map[string]ast.Node)
+	for _, name := range usedParamNames {
+		if _, ok := params[name]; ok {
+			filteredParams[name] = params[name]
+		}
+	}
+
+	genParams, err := generateParams(filteredParams, includeType)
 	if err != nil {
 		return spanner.Statement{}, err
 	}
@@ -490,6 +506,21 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 		SQL:    sql,
 		Params: genParams,
 	}, nil
+}
+
+func usedQueryParameterNames(s string) ([]string, error) {
+	set := make(map[string]struct{})
+	for tok, err := range gsqlutils.NewLexerSeq("", s) {
+		if err != nil {
+			return nil, err
+		}
+
+		if tok.Kind == token.TokenParam {
+			set[tok.AsString] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(set)), nil
 }
 
 func extractSchemaAndName(s string) (string, string) {

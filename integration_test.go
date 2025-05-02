@@ -267,10 +267,9 @@ func TestSystemVariables(t *testing.T) {
 
 func TestStatements(t *testing.T) {
 	tests := []struct {
-		desc         string
-		stmt         []string
-		wantResults  []*Result
-		teardownDDLs []string
+		desc        string
+		stmt        []string
+		wantResults []*Result
 	}{
 		{
 			desc: "query parameters",
@@ -289,7 +288,6 @@ func TestStatements(t *testing.T) {
 				`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
  				        @a_b AS a_b, @n_b AS n_b`,
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{KeepVariables: true},
@@ -331,7 +329,6 @@ func TestStatements(t *testing.T) {
 				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
 				`SHOW LOCAL PROTO`,
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{
@@ -353,7 +350,6 @@ func TestStatements(t *testing.T) {
 				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`,
 				`SHOW LOCAL PROTO`,
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{
@@ -370,6 +366,51 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "BATCH DML with parameters",
+			stmt: sliceOf(
+				"CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)",
+				"START BATCH DML",
+				"SET PARAM n = 1",
+				"SET PARAM b = true",
+				"INSERT INTO TestTable (id, active) VALUES (@n, @b)",
+				"SET PARAM n = 2",
+				"SET PARAM b = false",
+				"INSERT INTO TestTable (id, active) VALUES (@n, @b)",
+				"RUN BATCH",
+				"SELECT id, active FROM TestTable ORDER BY id ASC",
+			),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
+				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}},
+				{
+					ColumnNames: sliceOf("DML", "Rows"),
+					Rows: sliceOf(
+						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
+						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
+					),
+					AffectedRows:     2,
+					AffectedRowsType: rowCountTypeUpperBound,
+					IsMutation:       true,
+					KeepVariables:    false,
+				},
+				{
+					AffectedRows: 2,
+					Rows: sliceOf(
+						toRow("1", "true"),
+						toRow("2", "false"),
+					),
+					ColumnNames: sliceOf("id", "active"),
+					ColumnTypes: testTableRowType,
+				},
+			},
+		},
+		{
 			desc: "begin, insert THEN RETURN, rollback, select",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -378,7 +419,6 @@ func TestStatements(t *testing.T) {
 				"ROLLBACK",
 				"SELECT id, active FROM TestTable1 ORDER BY id ASC",
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable1"),
 			wantResults: []*Result{
 				{IsMutation: true},
 				{IsMutation: true},
@@ -408,7 +448,6 @@ func TestStatements(t *testing.T) {
 				"COMMIT",
 				"SELECT id, active FROM TestTable2 ORDER BY id ASC",
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable2"),
 			wantResults: []*Result{
 				{IsMutation: true},
 				{IsMutation: true},
@@ -439,7 +478,6 @@ func TestStatements(t *testing.T) {
 				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
 				"COMMIT",
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable3"),
 			wantResults: []*Result{
 				{IsMutation: true},
 				{IsMutation: true, AffectedRows: 2},
@@ -487,7 +525,6 @@ func TestStatements(t *testing.T) {
 				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
 				"COMMIT",
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable4"),
 			wantResults: []*Result{
 				{IsMutation: true},
 				{IsMutation: true, AffectedRows: 2},
@@ -532,7 +569,6 @@ func TestStatements(t *testing.T) {
 				"COMMIT",
 				"SELECT * FROM TestTable6 ORDER BY id",
 			),
-			teardownDDLs: sliceOf("DROP TABLE TestTable6"),
 			wantResults: []*Result{
 				{IsMutation: true},
 				{IsMutation: false, KeepVariables: true},
