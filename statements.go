@@ -246,7 +246,12 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-only transaction`)
 	}
 
-	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM %s`%s` WHERE true", lox.IfOrEmpty(s.Schema != "", fmt.Sprintf("`%s`.", s.Schema)), s.Table))
+	var schemaPart string
+	if s.Schema != "" {
+		schemaPart = fmt.Sprintf("`%s`.", s.Schema)
+	}
+
+	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM %s`%s` WHERE true", schemaPart, s.Table))
 }
 
 // EXPLAIN, EXPLAIN ANALYZE and DESCRIBE related statements are defined in statements_explain.go
