@@ -112,8 +112,8 @@ spanner:
       --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
       --strong                                            Perform a strong query.
       --read-timestamp=                                   Perform a query at the given timestamp.
-      --vertexai-project=                                 VertexAI project
-      --vertexai-model=                                   VertexAI project (default: gemini-2.0-flash)
+      --vertexai-project=                                 Vertex AI project
+      --vertexai-model=                                   Vertex AI model (default: gemini-2.0-flash)
       --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
