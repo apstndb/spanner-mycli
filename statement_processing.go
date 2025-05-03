@@ -115,6 +115,11 @@ type QueryStats struct {
 	FilesystemDelaySeconds     string `json:"filesystem_delay_seconds"`
 	LockingDelay               string `json:"locking_delay"`
 	QueryPlanCreationTime      string `json:"query_plan_creation_time"`
+	ServerQueueDelay           string `json:"server_queue_delay"`
+	DataBytesRead              string `json:"data_bytes_read"`
+	IsGraphQuery               string `json:"is_graph_query"`
+	RuntimeCached              string `json:"runtime_cached"`
+	QueryPlanCached            string `json:"query_plan_cached"`
 
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }

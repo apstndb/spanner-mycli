@@ -278,12 +278,19 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 	var rows []Row
 	var columnNames []string
+	var queryStats map[string]any
 	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, columns, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
+		rs, stats, columns, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
 		rows = rs
 		columnNames = columns
+		queryStats = stats
 		return num, nil, meta, err
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	stats, err := parseQueryStats(queryStats)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +299,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		IsMutation:   true,
 		Timestamp:    commitResp.CommitTs,
 		CommitStats:  commitResp.CommitStats,
+		Stats:        stats,
 		ColumnTypes:  metadata.GetRowType().GetFields(),
 		Rows:         rows,
 		ColumnNames:  columnNames,

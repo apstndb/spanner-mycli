@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	_ "embed"
 	"fmt"
 	"io"
 	"iter"
@@ -10,10 +11,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
+	"github.com/go-sprout/sprout"
+	"github.com/go-sprout/sprout/group/hermetic"
 	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
@@ -146,9 +150,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out)
 	}
 	if sysVars.Verbose || result.ForceVerbose {
-		fmt.Fprint(out, resultLine(result, true))
+		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, true))
 	} else if interactive {
-		fmt.Fprint(out, resultLine(result, sysVars.Verbose))
+		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose))
 	}
 	if mode == DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
@@ -159,7 +163,28 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	}
 }
 
-func resultLine(result *Result, verbose bool) string {
+type OutputContext struct {
+	Verbose     bool
+	IsMutation  bool
+	Timestamp   string
+	Stats       *QueryStats
+	CommitStats *sppb.CommitResponse_CommitStats
+}
+
+func sproutFuncMap() template.FuncMap {
+	handler := sprout.New()
+	lo.Must0(handler.AddGroups(hermetic.RegistryGroup()))
+	return handler.Build()
+}
+
+//go:embed output_default.tmpl
+var outputTemplateStr string
+
+func resultLine(outputTemplate *template.Template, result *Result, verbose bool) string {
+	if outputTemplate == nil {
+		outputTemplate = defaultOutputFormat
+	}
+
 	var timestamp string
 	if !result.Timestamp.IsZero() {
 		timestamp = result.Timestamp.Format(time.RFC3339Nano)
@@ -179,6 +204,19 @@ func resultLine(result *Result, verbose bool) string {
 		)
 	}
 
+	var sb strings.Builder
+	err := outputTemplate.Execute(&sb, OutputContext{
+		Verbose:     verbose,
+		IsMutation:  result.IsMutation,
+		Timestamp:   timestamp,
+		Stats:       &result.Stats,
+		CommitStats: result.CommitStats,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+	detail := sb.String()
+
 	if result.IsMutation {
 		var affectedRowsPart string
 		// If it is a valid mutation, 0 affected row is not printed to avoid confusion.
@@ -196,15 +234,6 @@ func resultLine(result *Result, verbose bool) string {
 			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
 		}
 
-		var detail string
-		if verbose {
-			if timestamp != "" {
-				detail += fmt.Sprintf("timestamp:      %s\n", timestamp)
-			}
-			if result.CommitStats != nil {
-				detail += fmt.Sprintf("mutation_count: %d\n", result.CommitStats.GetMutationCount())
-			}
-		}
 		return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
 	}
 
@@ -217,30 +246,7 @@ func resultLine(result *Result, verbose bool) string {
 		set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
 	}
 
-	if verbose {
-		// detail is aligned with max length of key (current: 20)
-		var detail string
-		if timestamp != "" {
-			detail += fmt.Sprintf("timestamp:            %s\n", timestamp)
-		}
-		if result.Stats.CPUTime != "" {
-			detail += fmt.Sprintf("cpu time:             %s\n", result.Stats.CPUTime)
-		}
-		if result.Stats.RowsScanned != "" {
-			detail += fmt.Sprintf("rows scanned:         %s rows\n", result.Stats.RowsScanned)
-		}
-		if result.Stats.DeletedRowsScanned != "" {
-			detail += fmt.Sprintf("deleted rows scanned: %s rows\n", result.Stats.DeletedRowsScanned)
-		}
-		if result.Stats.OptimizerVersion != "" {
-			detail += fmt.Sprintf("optimizer version:    %s\n", result.Stats.OptimizerVersion)
-		}
-		if result.Stats.OptimizerStatisticsPackage != "" {
-			detail += fmt.Sprintf("optimizer statistics: %s\n", result.Stats.OptimizerStatisticsPackage)
-		}
-		return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
-	}
-	return fmt.Sprintf("%s%s\n", set, elapsedTimePart)
+	return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 }
 
 func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []Row) []int {

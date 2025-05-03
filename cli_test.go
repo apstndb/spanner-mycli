@@ -496,7 +496,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
-			if got := resultLine(tt.result, tt.verbose); tt.want != got {
+			if got := resultLine(defaultOutputFormat, tt.result, tt.verbose); tt.want != got {
 				t.Errorf("resultLine(%v, %v) = %q, but want = %q", tt.result, tt.verbose, got, tt.want)
 			}
 		})
