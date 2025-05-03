@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	cloud.google.com/go v0.120.1
+	cloud.google.com/go/longrunning v0.6.6
 	cloud.google.com/go/spanner v1.79.0
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.1.1
@@ -39,7 +40,7 @@ require (
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 	golang.org/x/term v0.31.0
 	google.golang.org/api v0.229.0
-	google.golang.org/genai v1.1.0
+	google.golang.org/genai v1.3.0
 	google.golang.org/grpc v1.71.1
 	google.golang.org/protobuf v1.36.6
 	spheric.cloud/xiter v0.0.0-20250113160306-a1a2c1108100
@@ -51,7 +52,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/iam v1.4.2 // indirect
-	cloud.google.com/go/longrunning v0.6.6 // indirect
 	cloud.google.com/go/monitoring v1.24.1 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
