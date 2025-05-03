@@ -20,6 +20,7 @@ You can control your Spanner databases with idiomatic SQL commands.
   * Interactive DDL batching
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
+  * Customizable plan node stats & query stats.
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
@@ -1109,6 +1110,72 @@ spanner> SHOW SPLIT POINTS;
 ```
 
 
+### Configurable query stats
+
+The detail lines are customizable using Go text/template.
+
+```
+$ curl -sL https://github.com/apstndb/spanner-mycli/raw/main/output_full.tmpl -o output_full.tmpl
+
+$ cat output_full.tmpl
+{{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
+{{if .Verbose -}}  output_full2.tmpl
+{{if .Timestamp -}}                       timestamp:            {{.Timestamp}}{{"\n"}}{{end -}}
+{{if .CommitStats.GetMutationCount -}}    mutation_count:       {{.CommitStats.GetMutationCount}}{{"\n"}}{{end -}}
+{{if .Stats.ElapsedTime -}}               elapsed time:         {{.Stats.ElapsedTime}}{{"\n"}}{{end -}}
+{{if .Stats.CPUTime -}}                   cpu time:             {{.Stats.CPUTime}}{{"\n"}}{{end -}}
+{{if .Stats.RowsReturned -}}              rows returned:        {{.Stats.RowsReturned}}{{"\n"}}{{end -}}
+{{if .Stats.RowsScanned -}}               rows scanned:         {{.Stats.RowsScanned}}{{"\n"}}{{end -}}
+{{if .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.Stats.DeletedRowsScanned}}{{"\n"}}{{end -}}
+{{if .Stats.OptimizerVersion -}}          optimizer version:    {{.Stats.OptimizerVersion}}{{"\n"}}{{end -}}
+{{if .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.Stats.OptimizerStatisticsPackage}}{{"\n"}}{{end -}}
+{{if .Stats.RemoteServerCalls -}}         remote server calls:  {{.Stats.RemoteServerCalls}}{{"\n"}}{{end -}}
+{{if .Stats.MemoryPeakUsageBytes -}}      peak memory usage:    {{.Stats.MemoryPeakUsageBytes}} bytes{{"\n"}}{{end -}}
+{{if .Stats.TotalMemoryPeakUsageByte -}}  total peak memory:    {{.Stats.TotalMemoryPeakUsageByte}} bytes{{"\n"}}{{end -}}
+{{if .Stats.BytesReturned -}}             bytes returned:       {{.Stats.BytesReturned}} bytes{{"\n"}}{{end -}}
+{{if .Stats.RuntimeCreationTime -}}       runtime creation:     {{.Stats.RuntimeCreationTime}}{{"\n"}}{{end -}}
+{{if .Stats.StatisticsLoadTime -}}        statistics load:      {{.Stats.StatisticsLoadTime}}{{"\n"}}{{end -}}
+{{if .Stats.MemoryUsagePercentage -}}     memory usage:         {{.Stats.MemoryUsagePercentage}} %{{"\n"}}{{end -}}
+{{if .Stats.FilesystemDelaySeconds -}}    filesystem delay:     {{.Stats.FilesystemDelaySeconds}}{{"\n"}}{{end -}}
+{{if .Stats.LockingDelay -}}              locking delay:        {{.Stats.LockingDelay}}{{"\n"}}{{end -}}
+{{if .Stats.QueryPlanCreationTime -}}     plan creation time:   {{.Stats.QueryPlanCreationTime}}{{"\n"}}{{end -}}
+{{if .Stats.ServerQueueDelay -}}          server queue delay:   {{.Stats.ServerQueueDelay}}{{"\n"}}{{end -}}
+{{if .Stats.DataBytesRead -}}             data bytes read:      {{.Stats.DataBytesRead}} bytes{{"\n"}}{{end -}}
+{{if .Stats.IsGraphQuery -}}              is graph query:       {{.Stats.IsGraphQuery}}{{"\n"}}{{end -}}
+{{if .Stats.RuntimeCached -}}             runtime cached:       {{.Stats.RuntimeCached}}{{"\n"}}{{end -}}
+{{if .Stats.QueryPlanCached -}}           query plan cached:    {{.Stats.QueryPlanCached}}{{"\n"}}{{end -}}
+{{if .Stats.Unknown -}}                   unknown:              {{.Stats.Unknown}}{{"\n"}}{{end -}}
+{{end -}}
+
+$ spanner-myucli -t -v --output-template output_full.tmpl -e 'SELECT 1'
++-------+
+| n     |
+| INT64 |
++-------+
+| 1     |
++-------+
+1 rows in set (2.21 msecs)
+timestamp:            2025-05-04T02:46:40.457385+09:00
+elapsed time:         2.21 msecs
+cpu time:             1.53 msecs
+rows returned:        1
+rows scanned:         0
+deleted rows scanned: 0
+optimizer version:    7
+optimizer statistics: auto_20250430_23_51_48UTC
+remote server calls:  0/0
+peak memory usage:    4 bytes
+total peak memory:    4 bytes
+bytes returned:       8 bytes
+runtime creation:     0.04 msecs
+statistics load:      0
+memory usage:         0.000 %
+filesystem delay:     0 msecs
+locking delay:        0 msecs
+plan creation time:   1.05 msecs
+server queue delay:   0.02 msecs
+is graph query:       false
+```
 
 ### Configurable EXPLAIN ANALYZE
 
