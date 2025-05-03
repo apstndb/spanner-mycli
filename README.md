@@ -99,7 +99,7 @@ spanner:
       --log-memefish                                      Emit SQL parse log using memefish
       --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
       --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
-      --role=                                             Use the specific database role
+      --role=                                             Use the specific database role. --database-role is an alias.
       --endpoint=                                         Set the Spanner API endpoint (host:port)
       --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
       --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
@@ -107,12 +107,13 @@ spanner:
       --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.28)
+      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.32)
       --log-grpc                                          Show gRPC logs
       --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
       --strong                                            Perform a strong query.
       --read-timestamp=                                   Perform a query at the given timestamp.
       --vertexai-project=                                 VertexAI project
+      --vertexai-model=                                   VertexAI project (default: gemini-2.0-flash)
       --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.

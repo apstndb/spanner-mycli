@@ -64,7 +64,7 @@ type spannerOptions struct {
 	LogMemefish               bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
 	HistoryFile               *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
 	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role                      string            `long:"role" description:"Use the specific database role"`
+	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias."`
 	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
 	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
 	SQL                       string            `long:"sql" hidden:"true" description:"alias of --execute"`
@@ -87,6 +87,7 @@ type spannerOptions struct {
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email"`
 	Version                   bool              `long:"version" description:"Show version string."`
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
+	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -194,7 +195,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
 		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
 		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
-		Role:                      opts.Role,
+		Role:                      cmp.Or(opts.Role, opts.DatabaseRole),
 		Endpoint:                  opts.Endpoint,
 		Insecure:                  opts.Insecure || opts.SkipTlsVerify,
 		Debug:                     opts.Debug,
