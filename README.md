@@ -117,6 +117,7 @@ spanner:
       --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
+      --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
 ```
 
 ### Authentication
