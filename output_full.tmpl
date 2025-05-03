@@ -1,28 +1,28 @@
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
 {{if .Verbose -}}
-{{if .Timestamp -}}                       timestamp:            {{.Timestamp}}{{"\n"}}{{end -}}
-{{if .CommitStats.GetMutationCount -}}    mutation_count:       {{.CommitStats.GetMutationCount}}{{"\n"}}{{end -}}
-{{if .Stats.ElapsedTime -}}               elapsed time:         {{.Stats.ElapsedTime}}{{"\n"}}{{end -}}
-{{if .Stats.CPUTime -}}                   cpu time:             {{.Stats.CPUTime}}{{"\n"}}{{end -}}
-{{if .Stats.RowsReturned -}}              rows returned:        {{.Stats.RowsReturned}}{{"\n"}}{{end -}}
-{{if .Stats.RowsScanned -}}               rows scanned:         {{.Stats.RowsScanned}}{{"\n"}}{{end -}}
-{{if .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.Stats.DeletedRowsScanned}}{{"\n"}}{{end -}}
-{{if .Stats.OptimizerVersion -}}          optimizer version:    {{.Stats.OptimizerVersion}}{{"\n"}}{{end -}}
-{{if .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.Stats.OptimizerStatisticsPackage}}{{"\n"}}{{end -}}
-{{if .Stats.RemoteServerCalls -}}         remote server calls:  {{.Stats.RemoteServerCalls}}{{"\n"}}{{end -}}
-{{if .Stats.MemoryPeakUsageBytes -}}      peak memory usage:    {{.Stats.MemoryPeakUsageBytes}} bytes{{"\n"}}{{end -}}
-{{if .Stats.TotalMemoryPeakUsageByte -}}  total peak memory:    {{.Stats.TotalMemoryPeakUsageByte}} bytes{{"\n"}}{{end -}}
-{{if .Stats.BytesReturned -}}             bytes returned:       {{.Stats.BytesReturned}} bytes{{"\n"}}{{end -}}
-{{if .Stats.RuntimeCreationTime -}}       runtime creation:     {{.Stats.RuntimeCreationTime}}{{"\n"}}{{end -}}
-{{if .Stats.StatisticsLoadTime -}}        statistics load:      {{.Stats.StatisticsLoadTime}}{{"\n"}}{{end -}}
-{{if .Stats.MemoryUsagePercentage -}}     memory usage:         {{.Stats.MemoryUsagePercentage}} %{{"\n"}}{{end -}}
-{{if .Stats.FilesystemDelaySeconds -}}    filesystem delay:     {{.Stats.FilesystemDelaySeconds}}{{"\n"}}{{end -}}
-{{if .Stats.LockingDelay -}}              locking delay:        {{.Stats.LockingDelay}}{{"\n"}}{{end -}}
-{{if .Stats.QueryPlanCreationTime -}}     plan creation time:   {{.Stats.QueryPlanCreationTime}}{{"\n"}}{{end -}}
-{{if .Stats.ServerQueueDelay -}}          server queue delay:   {{.Stats.ServerQueueDelay}}{{"\n"}}{{end -}}
-{{if .Stats.DataBytesRead -}}             data bytes read:      {{.Stats.DataBytesRead}} bytes{{"\n"}}{{end -}}
-{{if .Stats.IsGraphQuery -}}              is graph query:       {{.Stats.IsGraphQuery}}{{"\n"}}{{end -}}
-{{if .Stats.RuntimeCached -}}             runtime cached:       {{.Stats.RuntimeCached}}{{"\n"}}{{end -}}
-{{if .Stats.QueryPlanCached -}}           query plan cached:    {{.Stats.QueryPlanCached}}{{"\n"}}{{end -}}
-{{if .Stats.Unknown -}}                   unknown:              {{.Stats.Unknown}}{{"\n"}}{{end -}}
+{{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
+{{with .Stats.ElapsedTime -}}               elapsed time:         {{.}}{{"\n"}}{{end -}}
+{{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
+{{with .Stats.RowsReturned -}}              rows returned:        {{.}}{{"\n"}}{{end -}}
+{{with .Stats.RowsScanned -}}               rows scanned:         {{.}}{{"\n"}}{{end -}}
+{{with .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.}}{{"\n"}}{{end -}}
+{{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
+{{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
+{{with .Stats.RemoteServerCalls -}}         remote server calls:  {{.}}{{"\n"}}{{end -}}
+{{with .Stats.MemoryPeakUsageBytes -}}      peak memory usage:    {{.}} bytes{{"\n"}}{{end -}}
+{{with .Stats.TotalMemoryPeakUsageByte -}}  total peak memory:    {{.}} bytes{{"\n"}}{{end -}}
+{{with .Stats.BytesReturned -}}             bytes returned:       {{.}} bytes{{"\n"}}{{end -}}
+{{with .Stats.RuntimeCreationTime -}}       runtime creation:     {{.}}{{"\n"}}{{end -}}
+{{with .Stats.StatisticsLoadTime -}}        statistics load:      {{.}}{{"\n"}}{{end -}}
+{{with .Stats.MemoryUsagePercentage -}}     memory usage:         {{.}} %{{"\n"}}{{end -}}
+{{with .Stats.FilesystemDelaySeconds -}}    filesystem delay:     {{.}}{{"\n"}}{{end -}}
+{{with .Stats.LockingDelay -}}              locking delay:        {{.}}{{"\n"}}{{end -}}
+{{with .Stats.QueryPlanCreationTime -}}     plan creation time:   {{.}}{{"\n"}}{{end -}}
+{{with .Stats.ServerQueueDelay -}}          server queue delay:   {{.}}{{"\n"}}{{end -}}
+{{with .Stats.DataBytesRead -}}             data bytes read:      {{.}} bytes{{"\n"}}{{end -}}
+{{with .Stats.IsGraphQuery -}}              is graph query:       {{.}}{{"\n"}}{{end -}}
+{{with .Stats.RuntimeCached -}}             runtime cached:       {{.}}{{"\n"}}{{end -}}
+{{with .Stats.QueryPlanCached -}}           query plan cached:    {{.}}{{"\n"}}{{end -}}
+{{with .Stats.Unknown -}}                   unknown:              {{.}}{{"\n"}}{{end -}}
 {{end -}}

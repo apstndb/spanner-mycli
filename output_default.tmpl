@@ -1,13 +1,13 @@
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
 {{if and .Verbose .IsMutation -}}
-{{if .Timestamp -}}                       timestamp:      {{.Timestamp}}{{"\n"}}{{end -}}
-{{if .CommitStats.GetMutationCount -}}    mutation_count: {{.CommitStats.GetMutationCount}}{{"\n"}}{{end -}}
+{{with .Timestamp -}}                       timestamp:      {{.}}{{"\n"}}{{end -}}
+{{with .CommitStats.GetMutationCount -}}    mutation_count: {{.}}{{"\n"}}{{end -}}
 {{end -}}
 {{if and .Verbose (not .IsMutation) -}}
-{{if .Timestamp -}}                       timestamp:            {{.Timestamp}}{{"\n"}}{{end -}}
-{{if .Stats.CPUTime -}}                   cpu time:             {{.Stats.CPUTime}}{{"\n"}}{{end -}}
-{{if .Stats.RowsScanned -}}               rows scanned:         {{.Stats.RowsScanned}} rows{{"\n"}}{{end -}}
-{{if .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.Stats.DeletedRowsScanned}} rows{{"\n"}}{{end -}}
-{{if .Stats.OptimizerVersion -}}          optimizer version:    {{.Stats.OptimizerVersion}}{{"\n"}}{{end -}}
-{{if .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.Stats.OptimizerStatisticsPackage}}{{"\n"}}{{end -}}
+{{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
+{{with .Stats.RowsScanned -}}               rows scanned:         {{.}} rows{{"\n"}}{{end -}}
+{{with .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.}} rows{{"\n"}}{{end -}}
+{{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
+{{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
 {{end -}}
