@@ -75,7 +75,7 @@ type spannerOptions struct {
 	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator"`
-	OutputTemplate            string            `long:"output-template" description:"Filepath of output template."`
+	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)"`
 	Help                      bool              `long:"help" short:"h" hidden:"true"`
 	Debug                     bool              `long:"debug" hidden:"true"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs"`
