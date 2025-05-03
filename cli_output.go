@@ -213,7 +213,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		CommitStats: result.CommitStats,
 	})
 	if err != nil {
-		log.Println(err)
+		log.Printf("error on outputTemplate.Execute(), err: %v", err)
 	}
 	detail := sb.String()
 
