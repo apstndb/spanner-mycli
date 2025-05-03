@@ -207,9 +207,25 @@ func parseTimeString(s string) (time.Time, error) {
 
 var defaultOutputFormat = template.Must(template.New("").Funcs(sproutFuncMap()).Parse(outputTemplateStr))
 
-func (sv *systemVariables) setDefaultOutputTemplate() {
-	sv.OutputTemplateFile = ""
-	sv.OutputTemplate = defaultOutputFormat
+func setDefaultOutputTemplate(sysVars *systemVariables) {
+	sysVars.OutputTemplateFile = ""
+	sysVars.OutputTemplate = defaultOutputFormat
+}
+
+func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("").Funcs(sproutFuncMap()).Parse(string(b))
+	if err != nil {
+		return err
+	}
+
+	sysVars.OutputTemplateFile = filename
+	sysVars.OutputTemplate = tmpl
+	return nil
 }
 
 var systemVariableDefMap = map[string]systemVariableDef{
@@ -263,23 +279,11 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			Setter: func(this *systemVariables, name, value string) error {
 				filename := unquoteString(value)
 				if strings.TrimSpace(strings.ToUpper(value)) == "NULL" || filename == "" {
-					this.setDefaultOutputTemplate()
+					setDefaultOutputTemplate(this)
 					return nil
 				}
 
-				b, err := os.ReadFile(filename)
-				if err != nil {
-					return err
-				}
-
-				tmpl, err := template.New("").Funcs(sproutFuncMap()).Parse(string(b))
-				if err != nil {
-					return err
-				}
-
-				this.OutputTemplate = tmpl
-				this.OutputTemplateFile = filename
-				return nil
+				return setOutputTemplateFile(this, filename)
 			},
 			Getter: stringGetter(func(sysVars *systemVariables) *string {
 				return &sysVars.OutputTemplateFile

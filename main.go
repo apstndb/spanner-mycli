@@ -217,9 +217,9 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	}
 
 	if opts.OutputTemplate == "" {
-		sysVars.setDefaultOutputTemplate()
+		setDefaultOutputTemplate(&sysVars)
 	} else {
-		if err := sysVars.Set("CLI_OUTPUT_TEMPLATE_FILE", opts.OutputTemplate); err != nil {
+		if err := setOutputTemplateFile(&sysVars, opts.OutputTemplate); err != nil {
 			exitf("parse error of output template: %v", err)
 		}
 	}
