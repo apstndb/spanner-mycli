@@ -1113,6 +1113,7 @@ spanner> SHOW SPLIT POINTS;
 ### Configurable query stats
 
 The detail lines are customizable using Go text/template.
+Note: You need to know `OutputContext` and `QueryStats` struct in source code of spanner-mycli.
 
 ```
 $ curl -sL https://github.com/apstndb/spanner-mycli/raw/main/output_full.tmpl -o output_full.tmpl
