@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -88,13 +89,14 @@ type systemVariables struct {
 
 	QueryMode *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
 
-	VertexAIProject string                     // CLI_VERTEXAI_PROJECT
-	VertexAIModel   string                     // CLI_VERTEXAI_MODEL
-	DatabaseDialect databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
-	EchoExecutedDDL bool                       // CLI_ECHO_EXECUTED_DDL
-	Role            string                     // CLI_ROLE
-	EchoInput       bool                       // CLI_ECHO_INPUT
-	Endpoint        string                     // CLI_ENDPOINT
+	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
+	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
+	DatabaseDialect    databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
+	EchoExecutedDDL    bool                       // CLI_ECHO_EXECUTED_DDL
+	Role               string                     // CLI_ROLE
+	EchoInput          bool                       // CLI_ECHO_INPUT
+	Endpoint           string                     // CLI_ENDPOINT
+	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
@@ -103,6 +105,7 @@ type systemVariables struct {
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
 	ParsedAnalyzeColumns []columnRenderDef
+	OutputTemplate       *template.Template
 
 	WithoutAuthentication bool
 	Params                map[string]ast.Node
@@ -202,6 +205,29 @@ func parseTimeString(s string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s)
 }
 
+var defaultOutputFormat = template.Must(template.New("").Funcs(sproutFuncMap()).Parse(outputTemplateStr))
+
+func setDefaultOutputTemplate(sysVars *systemVariables) {
+	sysVars.OutputTemplateFile = ""
+	sysVars.OutputTemplate = defaultOutputFormat
+}
+
+func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("").Funcs(sproutFuncMap()).Parse(string(b))
+	if err != nil {
+		return err
+	}
+
+	sysVars.OutputTemplateFile = filename
+	sysVars.OutputTemplate = tmpl
+	return nil
+}
+
 var systemVariableDefMap = map[string]systemVariableDef{
 	"READONLY": {
 		Description: "A boolean indicating whether or not the connection is in read-only mode. The default is false.",
@@ -247,6 +273,23 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		}),
 	},
 	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
+	"CLI_OUTPUT_TEMPLATE_FILE": {
+		Description: "Go text/template for formatting the output of the CLI.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				filename := unquoteString(value)
+				if strings.TrimSpace(strings.ToUpper(value)) == "NULL" || filename == "" {
+					setDefaultOutputTemplate(this)
+					return nil
+				}
+
+				return setOutputTemplateFile(this, filename)
+			},
+			Getter: stringGetter(func(sysVars *systemVariables) *string {
+				return &sysVars.OutputTemplateFile
+			}),
+		},
+	},
 	"MAX_COMMIT_DELAY": {
 		Description: "The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
 		Accessor: accessor{
