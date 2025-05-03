@@ -88,6 +88,7 @@ type spannerOptions struct {
 	Version                   bool              `long:"version" description:"Show version string."`
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
+	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -229,6 +230,12 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	if opts.DatabaseDialect != "" {
 		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
 			exitf("invalid value of --database-dialect: %v, err: %v\n", opts.DatabaseDialect, err)
+		}
+	}
+
+	if opts.EnablePartitionedDML {
+		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
+			exitf("unknown error on --enable-partitioned-dml: err: %v\n", err)
 		}
 	}
 
