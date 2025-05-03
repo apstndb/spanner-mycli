@@ -134,7 +134,7 @@ Here is the prototext of File Proto Descriptors.
 ` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds))
 
 	return genaischema.GenerateObjectContent[*output](ctx, client, model,
-		[]*genai.Content{{Parts: parts}},
+		[]*genai.Content{{Role: genai.RoleUser, Parts: parts}},
 		&genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
 				Parts: sliceOf(genai.NewPartFromText(systemPrompt)),
