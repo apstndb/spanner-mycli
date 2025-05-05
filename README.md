@@ -1,7 +1,7 @@
 spanner-mycli
 ===
 
-My personal fork of spanner-cli, interactive command line tool for Cloud Spanner.
+My personal fork of [spanner-cli](https://github.com/cloudspannerecosystem/spanner-cli), interactive command line tool for Cloud Spanner.
 
 ## Description
 
@@ -10,8 +10,12 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 ## Differences from original spanner-cli
 
+spanner-mycli was forked from [spanner-cli v0.10.6](https://github.com/cloudspannerecosystem/spanner-cli/releases/tag/v0.10.6) and restarted its version numbering from [v0.1.0](https://github.com/apstndb/spanner-mycli/releases/tag/v0.1.0).
+There are differences between spanner-mycli and spanner-cli that include not only functionality but also philosophical differences.
+
+* More concise `EXPLAIN` and `EXPLAIN ANALYZE` format.
 * Respects my minor use cases
-  * Protocol Buffere support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
+  * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
@@ -301,7 +305,7 @@ The replica name can be specified in one of the following formats:
 
 The `<replica_location>` specifies the region where the replica is located such as `us-central1`, `asia-northeast2`.  
 The `<replica_type>` specifies the type of the replica either `READ_WRITE` or `READ_ONLY`. 
- 
+
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1
 
