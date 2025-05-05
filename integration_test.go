@@ -283,10 +283,11 @@ func TestStatements(t *testing.T) {
 				`SET PARAM s = "foo"`,
 				`SET PARAM js = JSON "{}"`,
 				`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`,
+				`SET PARAM u = CAST("f703e11e-b175-46b0-8e04-3723bd71ff62" AS UUID)`,
 				`SET PARAM a_b = [true]`,
 				`SET PARAM n_b = CAST(NULL AS BOOL)`,
 				`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
- 				        @a_b AS a_b, @n_b AS n_b`,
+ 				        @u AS u, @a_b AS a_b, @n_b AS n_b`,
 			),
 			wantResults: []*Result{
 				{KeepVariables: true},
@@ -300,8 +301,9 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true},
 				{KeepVariables: true},
 				{KeepVariables: true},
+				{KeepVariables: true},
 				{
-					ColumnNames: sliceOf("b", "bs", "i64", "f64", "f32", "n", "s", "js", "ts", "a_b", "n_b"),
+					ColumnNames: sliceOf("b", "bs", "i64", "f64", "f32", "n", "s", "js", "ts", "u", "a_b", "n_b"),
 					ColumnTypes: sliceOf(
 						typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
 						typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
@@ -312,12 +314,13 @@ func TestStatements(t *testing.T) {
 						typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
 						typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
 						typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
+						typector.NameTypeToStructTypeField("u", typector.CodeToSimpleType(sppb.TypeCode_UUID)),
 						typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
 						typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
 					),
 					Rows: sliceOf(
 						toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
-							"[true]", "NULL"),
+							"f703e11e-b175-46b0-8e04-3723bd71ff62", "[true]", "NULL"),
 					),
 					AffectedRows: 1,
 				},
