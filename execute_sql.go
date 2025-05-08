@@ -261,7 +261,7 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		ColumnTypes: metadata.GetRowType().GetFields(),
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
-				return toRow(s.SQL, strconv.FormatInt(n, 10))
+				return toRow(strings.ReplaceAll(s.SQL, "\t", " "), strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
 		ColumnNames:      sliceOf("DML", "Rows"),

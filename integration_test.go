@@ -563,9 +563,9 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf(
 				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
 				"SET AUTO_BATCH_DML = TRUE",
-				"INSERT INTO TestTable6 (id, active) VALUES (1, true)",
+				"INSERT INTO TestTable6 (id, active) VALUES (1,true)",
 				"BEGIN",
-				"INSERT INTO TestTable6 (id, active) VALUES (2, false)",
+				"INSERT INTO TestTable6 (id, active) VALUES (2,\tfalse)", // includes tab character
 				"COMMIT",
 				"SELECT * FROM TestTable6 ORDER BY id",
 			),
@@ -575,6 +575,7 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, AffectedRows: 1},
 				{IsMutation: true},
 				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				// tab is converted to a single whitespace
 				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2, false)", "1"})},
 				{
 					AffectedRows: 2,
