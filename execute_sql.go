@@ -196,7 +196,9 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if session.systemVariables.EchoExecutedDDL {
 		result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
-			func(k string, v *timestamppb.Timestamp) Row { return toRow(k+";", v.AsTime().Format(time.RFC3339Nano)) },
+			func(ddl string, v *timestamppb.Timestamp) Row {
+				return toRow(strings.ReplaceAll(ddl, "\t", " ")+";", v.AsTime().Format(time.RFC3339Nano))
+			},
 			hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
 		),
 		)
