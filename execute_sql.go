@@ -91,6 +91,12 @@ func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []
 	}
 }
 
+// replacerForProgress replaces tabs and newlines to avoid breaking progress bars.
+var replacerForProgress = strings.NewReplacer(
+	"\n", " ",
+	"\t", " ",
+)
+
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	logParseStatements(ddls)
 
@@ -118,14 +124,12 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 	if session.systemVariables.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
-		// defer p.Shutdown()
+
 		for _, ddl := range ddls {
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(
-						strings.ReplaceAll(strings.ReplaceAll(ddl, "\n", " "), "\t", " "),
-						40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
