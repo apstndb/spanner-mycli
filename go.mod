@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go v0.120.1
 	cloud.google.com/go/longrunning v0.6.6
 	cloud.google.com/go/spanner v1.79.0
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.1.1
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe

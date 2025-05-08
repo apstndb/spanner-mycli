@@ -23,11 +23,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanemuboost"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/samber/lo"
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -125,9 +130,9 @@ func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.Cli
 	)
 }
 
-func compareResult[T any](t *testing.T, got T, expected T) {
+func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()
-	opts := sliceOf(
+	opts := sliceOf[cmp.Option](
 		cmpopts.IgnoreFields(Result{}, "Stats"),
 		cmpopts.IgnoreFields(Result{}, "Timestamp"),
 		// Commit Stats is only provided by real instances
@@ -135,6 +140,8 @@ func compareResult[T any](t *testing.T, got T, expected T) {
 		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	)
+	opts = append(opts, customCmpOptions...)
+
 	if !cmp.Equal(got, expected, opts...) {
 		t.Errorf("diff(-got, +expected): %s", cmp.Diff(got, expected, opts...))
 	}
@@ -270,6 +277,7 @@ func TestStatements(t *testing.T) {
 		desc        string
 		stmt        []string
 		wantResults []*Result
+		cmpOpts     []cmp.Option
 	}{
 		{
 			desc: "query parameters",
@@ -559,6 +567,43 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "BATCH DDL",
+			stmt: sliceOf(
+				"SET CLI_ECHO_EXECUTED_DDL = TRUE",
+				"START BATCH DDL",
+				heredoc.Doc(`
+								CREATE TABLE TestTable (
+									id		INT64,
+									active	BOOL,
+								) PRIMARY KEY(id)`),
+				`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`,
+				"RUN BATCH",
+			),
+			wantResults: []*Result{
+				{KeepVariables: true},
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}},
+				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
+				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
+				// tab is converted to a single whitespace
+				{IsMutation: true, AffectedRows: 0, ColumnNames: sliceOf("Executed", "Commit Timestamp"), Rows: sliceOf(
+					toRow(
+						heredoc.Doc(`
+										CREATE TABLE TestTable (
+										 id  INT64,
+										 active BOOL,
+										) PRIMARY KEY(id);`), "(ignored)"),
+					toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
+				),
+				},
+			},
+			cmpOpts: sliceOf(
+				// Ignore Commit Timestamp column value
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(`\.Rows\[\d*]\[1]`).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+		},
+		{
 			desc: "AUTO_BATCH_DML",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -600,7 +645,7 @@ func TestStatements(t *testing.T) {
 			var gots []*Result
 			for i, s := range tt.stmt {
 				// begin
-				stmt, err := BuildStatement(s)
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, parseModeNoMemefish)
 				if err != nil {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
@@ -611,7 +656,7 @@ func TestStatements(t *testing.T) {
 				}
 				gots = append(gots, result)
 			}
-			compareResult(t, gots, tt.wantResults)
+			compareResult(t, gots, tt.wantResults, tt.cmpOpts...)
 		})
 	}
 }
