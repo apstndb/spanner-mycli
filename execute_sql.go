@@ -123,10 +123,9 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(strings.NewReplacer(
-						"\n", " ",
-						"\t", " ",
-					).Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(
+						strings.ReplaceAll(strings.ReplaceAll(ddl, "\n", " "), "\t", " "),
+						40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
@@ -197,7 +196,8 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
 			func(ddl string, v *timestamppb.Timestamp) Row {
-				return toRow(strings.ReplaceAll(ddl, "\t", " ")+";", v.AsTime().Format(time.RFC3339Nano))
+				// Replace tabs to avoid broken table
+				return toRow(ddl+";", v.AsTime().Format(time.RFC3339Nano))
 			},
 			hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
 		),
@@ -266,7 +266,7 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		ColumnTypes: metadata.GetRowType().GetFields(),
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
-				return toRow(strings.ReplaceAll(s.SQL, "\t", " "), strconv.FormatInt(n, 10))
+				return toRow(s.SQL, strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
 		ColumnNames:      sliceOf("DML", "Rows"),

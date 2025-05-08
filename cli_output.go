@@ -54,6 +54,23 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
+		// Replace tabs with two whitespace
+		rows := slices.Collect(
+			xiter.Map(
+				func(r Row) Row {
+					return slices.Collect(
+						xiter.Map(
+							func(s string) string {
+								return strings.ReplaceAll(s, "\t", "  ")
+							},
+							slices.Values(r),
+						),
+					)
+				},
+				slices.Values(result.Rows),
+			),
+		)
+
 		var tableBuf strings.Builder
 		table := tablewriter.NewWriter(&tableBuf)
 		table.SetAutoFormatHeaders(false)
@@ -70,9 +87,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 				slices.Values(result.ColumnTypes),
 			))
 			header := slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), result.Rows))
+			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 		} else {
-			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), result.Rows))
+			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), rows))
 		}
 		var forceTableRender bool
 		if sysVars.Verbose && len(result.ColumnTypes) > 0 {
@@ -88,14 +105,14 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		} else {
 			table.SetHeader(result.ColumnNames)
 		}
-		for _, row := range result.Rows {
+		for _, row := range rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
 				runewidth.Wrap,
 				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
 			table.Append(wrappedColumns)
 		}
-		if forceTableRender || len(result.Rows) > 0 {
+		if forceTableRender || len(rows) > 0 {
 			table.Render()
 		}
 

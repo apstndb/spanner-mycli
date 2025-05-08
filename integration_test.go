@@ -584,13 +584,13 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}},
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
-				// tab is converted to a single whitespace
+				// tab is pass-through as is in this layer
 				{IsMutation: true, AffectedRows: 0, ColumnNames: sliceOf("Executed", "Commit Timestamp"), Rows: sliceOf(
 					toRow(
 						heredoc.Doc(`
 										CREATE TABLE TestTable (
-										 id  INT64,
-										 active BOOL,
+											id		INT64,
+											active	BOOL,
 										) PRIMARY KEY(id);`), "(ignored)"),
 					toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
 				),
@@ -610,7 +610,7 @@ func TestStatements(t *testing.T) {
 				"SET AUTO_BATCH_DML = TRUE",
 				"INSERT INTO TestTable6 (id, active) VALUES (1,true)",
 				"BEGIN",
-				"INSERT INTO TestTable6 (id, active) VALUES (2,\tfalse)", // includes tab character
+				"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", // includes tab character
 				"COMMIT",
 				"SELECT * FROM TestTable6 ORDER BY id",
 			),
@@ -620,8 +620,8 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, AffectedRows: 1},
 				{IsMutation: true},
 				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
-				// tab is converted to a single whitespace
-				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2, false)", "1"})},
+				// tab is pass-through as is in this layer
+				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
 				{
 					AffectedRows: 2,
 					ColumnNames:  []string{"id", "active"},
