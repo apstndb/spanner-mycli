@@ -123,7 +123,10 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(strings.ReplaceAll(ddl, "\n", " "), 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(strings.NewReplacer(
+						"\n", " ",
+						"\t", " ",
+					).Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
