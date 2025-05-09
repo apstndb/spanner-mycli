@@ -221,7 +221,6 @@ func isInsert(sql string) bool {
 }
 
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
-	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
 		stmt, err := newStatement(sql, session.systemVariables.Params, false)

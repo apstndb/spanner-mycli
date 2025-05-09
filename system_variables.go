@@ -96,7 +96,7 @@ type systemVariables struct {
 	Role               string                     // CLI_ROLE
 	EchoInput          bool                       // CLI_ECHO_INPUT
 	Endpoint           string                     // CLI_ENDPOINT
-	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE
+	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
@@ -382,7 +382,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					return singletonMap(name, fmt.Sprintf("EXACT_STALENESS %v", matches[2])), nil
 				case "maxStaleness":
 					return singletonMap(name, fmt.Sprintf("MAX_STALENESS %v", matches[2])), nil
-				// TODO: re-format timestamp as RFC3339
 				case "readTimestamp":
 					ts, err := parseTimeString(matches[2])
 					if err != nil {

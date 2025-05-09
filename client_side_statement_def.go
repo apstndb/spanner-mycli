@@ -372,9 +372,17 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 	},
 	{
-		// unimplemented
-		Descriptions: []clientSideStatementDescription{},
-		Pattern:      regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
+		Descriptions: []clientSideStatementDescription{
+			// It is commented out because it is not implemented yet.
+			/*
+				{
+					Usage:  `Run a specific partition`,
+					Syntax: `RUN PARTITION <token>`,
+					Note:   `This statement is currently unimplemented.`,
+				},
+			*/
+		},
+		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
 		},
