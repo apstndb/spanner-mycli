@@ -96,7 +96,7 @@ type systemVariables struct {
 	Role               string                     // CLI_ROLE
 	EchoInput          bool                       // CLI_ECHO_INPUT
 	Endpoint           string                     // CLI_ENDPOINT
-	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE
+	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
