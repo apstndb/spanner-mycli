@@ -13,7 +13,7 @@ You can control your Spanner databases with idiomatic SQL commands.
 spanner-mycli was forked from [spanner-cli v0.10.6](https://github.com/cloudspannerecosystem/spanner-cli/releases/tag/v0.10.6) and restarted its version numbering from [v0.1.0](https://github.com/apstndb/spanner-mycli/releases/tag/v0.1.0).
 There are differences between spanner-mycli and spanner-cli that include not only functionality but also philosophical differences.
 
-* More concise `EXPLAIN` and `EXPLAIN ANALYZE` output, making efficient use of limited display space.
+* [More concise `EXPLAIN` and `EXPLAIN ANALYZE` output](#more-concise-format-of-explain-and-explain-analyze), making efficient use of limited display space.
   * Optimized for narrower terminals and code blocks.
 * Respects my minor use cases
   * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
