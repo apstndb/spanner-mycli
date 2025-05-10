@@ -13,7 +13,8 @@ You can control your Spanner databases with idiomatic SQL commands.
 spanner-mycli was forked from [spanner-cli v0.10.6](https://github.com/cloudspannerecosystem/spanner-cli/releases/tag/v0.10.6) and restarted its version numbering from [v0.1.0](https://github.com/apstndb/spanner-mycli/releases/tag/v0.1.0).
 There are differences between spanner-mycli and spanner-cli that include not only functionality but also philosophical differences.
 
-* More concise `EXPLAIN` and `EXPLAIN ANALYZE` format.
+* [More concise `EXPLAIN` and `EXPLAIN ANALYZE` output](#more-concise-format-of-explain-and-explain-analyze), making efficient use of limited display space.
+  * Optimized for narrower terminals and code blocks.
 * Respects my minor use cases
   * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
   * Can use embedded emulator (`--embedded-emulator`)
@@ -1816,3 +1817,60 @@ In principle, spanner-mycli accepts the same input as spanner-cli, but some comp
 - `\` is no longer used for prompt expansions.
   - Use `%` instead.
   - Rationale: `\` is needed to be escaped in ini files of [jassevdk/go-flags](https://github.com/jessevdk/go-flags).
+
+### More concise format of `EXPLAIN` and `EXPLAIN ANALYZE`
+
+spanner-mycli prioritizes the density of `EXPLAIN` and `EXPLAIN ANALYZE` information, and may sometimes change to a more concise format, even if it involves breaking changes.
+This is because the results of `EXPLAIN` and `EXPLAIN ANALYZE` sometimes need to be displayed in limited spaces, such as:
+
+- Unmaximized terminals in small notebooks
+- Code blocks within GitHub issues or pull requests for review purposes
+- Code blocks on technical information sharing sites like Medium, Zenn, and Qiita
+
+In particular, since code blocks often have a fixed display area, they do not expand even if the browser window size is increased.
+The differences in `EXPLAIN ANALYZE` output between `spanner-cli` and `spanner-mycli` are explained below.
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM Singers
+WHERE LastName LIKE "%son";
+```
+
+spanner-cli
+```text
++----+---------------------------------------------------------------------------------------------------------+---------------+------------+---------------+
+| ID | Query_Execution_Plan                                                                                    | Rows_Returned | Executions | Total_Latency |
++----+---------------------------------------------------------------------------------------------------------+---------------+------------+---------------+
+|  0 | Distributed Union (distribution_table: Singers, execution_method: Row, split_ranges_aligned: false)     | 0             | 1          | 3.46 msecs    |
+|  1 | +- Local Distributed Union (execution_method: Row)                                                      | 0             | 3          | 0.29 msecs    |
+|  2 |    +- Serialize Result (execution_method: Row)                                                          | 0             | 3          | 0.26 msecs    |
+| *3 |       +- Filter Scan (execution_method: Row, seekable_key_size: 0)                                      |               |            |               |
+|  4 |          +- Table Scan (Full scan: true, Table: Singers, execution_method: Row, scan_method: Automatic) | 0             | 3          | 0.26 msecs    |
++----+---------------------------------------------------------------------------------------------------------+---------------+------------+---------------+
+Predicates(identified by ID):
+ 3: Residual Condition: ($LastName LIKE '%son')
+```
+
+spanner-mycli
+
+```text
++----+-----------------------------------------------------------------------------+------+-------+---------------+
+| ID | Query_Execution_Plan <execution_method> (metadata, ...)                     | Rows | Exec. | Total Latency |
++----+-----------------------------------------------------------------------------+------+-------+---------------+
+|  0 | Distributed Union on Singers <Row> (split_ranges_aligned: false)            |    0 |     1 |    7.58 msecs |
+|  1 | +- Local Distributed Union <Row>                                            |    0 |     3 |    0.78 msecs |
+|  2 |    +- Serialize Result <Row>                                                |    0 |     3 |    0.75 msecs |
+| *3 |       +- Filter Scan <Row> (seekable_key_size: 0)                           |      |       |               |
+|  4 |          +- Table Scan on Singers <Row> (Full scan, scan_method: Automatic) |    0 |     3 |    0.75 msecs |
++----+-----------------------------------------------------------------------------+------+-------+---------------+
+Predicates(identified by ID):
+ 3: Residual Condition: ($LastName LIKE '%son')
+
+```
+
+- `execution_method: {Row|Batch}` metadata is simply displayed as `<Row>` or `<Batch>` after display name of operator.
+- Target metadata, `distribution_table: <target>` and `scan_target: <target>`, are displayed as `on <target>` after display name of operator.
+- `Full scan: true` is shortened as `Full scan`.
+- Column names of `EXPLAIN ANALYZE` are shorter than before.
+
+Note: These changes except column names can be controlled using `SET CLI_SPANNER_CLI_COMPATIBLE_PLAN=TRUE`.
