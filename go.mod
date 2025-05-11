@@ -14,7 +14,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.4.0
 	github.com/apstndb/spanemuboost v0.2.8
-	github.com/apstndb/spannerplanviz v0.5.2
+	github.com/apstndb/spannerplanviz v0.6.0
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.5
 	github.com/bufbuild/protocompile v0.14.1
@@ -83,6 +83,7 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
