@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"os"
 	"os/user"
@@ -34,6 +35,8 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
+	"github.com/olekukonko/tablewriter/tw"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -378,18 +381,27 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 	var sb strings.Builder
 
-	table := tablewriter.NewWriter(&sb)
-	table.SetHeader([]string{"Usage", "Syntax", "Note"})
-	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
-	table.SetCenterSeparator("|")
-	table.SetAutoFormatHeaders(false)
-	table.SetAutoWrapText(false)
-	for _, stmt := range clientSideStatementDefs {
+	table := tablewriter.NewTable(&sb,
+		tablewriter.WithRenderer(renderer.NewMarkdown()),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft)).
+		Configure(func(config *tablewriter.Config) {
+			config.Header.Formatting.AutoFormat = false
+		})
+
+	table.Header([]string{"Usage", "Syntax", "Note"})
+
+	for _, stmt := range stmts {
 		for _, desc := range stmt.Descriptions {
-			table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
+			err := table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
+			if err != nil {
+				log.Println("tablewriter.Table.Append() failed, err:", err)
+			}
 		}
 	}
-	table.Render()
+
+	if err := table.Render(); err != nil {
+		log.Println("tablewriter.Table.Render() failed, err:", err)
+	}
 
 	return sb.String()
 }

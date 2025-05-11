@@ -23,6 +23,8 @@ import (
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 )
 
@@ -65,15 +67,16 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		rows := mapAllCells(strings.NewReplacer("\t", "  ").Replace, result.Rows)
 
 		var tableBuf strings.Builder
-		table := tablewriter.NewWriter(&tableBuf)
-		table.SetAutoFormatHeaders(false)
-		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-		table.SetAlignment(tablewriter.ALIGN_LEFT)
-		table.SetAutoWrapText(false)
-
-		if len(result.ColumnAlign) > 0 {
-			table.SetColumnAlignment(result.ColumnAlign)
-		}
+		table := tablewriter.NewTable(&tableBuf,
+			tablewriter.WithRenderer(
+				renderer.NewBlueprint(tw.Rendition{Symbols: tw.NewSymbols(tw.StyleASCII)})),
+			tablewriter.WithHeaderAlignment(tw.AlignLeft),
+			tablewriter.WithTrimSpace(tw.Off),
+		).Configure(func(config *tablewriter.Config) {
+			config.Row.ColumnAligns = result.ColumnAlign
+			config.Row.Formatting.AutoWrap = tw.WrapNone
+			config.Header.Formatting.AutoFormat = false
+		})
 
 		var adjustedWidths []int
 		if len(result.ColumnTypes) > 0 {
@@ -97,9 +100,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 					xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)),
 					slices.Values(adjustedWidths))),
 			)
-			table.SetHeader(headers)
+			table.Header(headers)
 		} else {
-			table.SetHeader(result.ColumnNames)
+			table.Header(result.ColumnNames)
 		}
 
 		for _, row := range rows {
@@ -107,10 +110,14 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 				runewidth.Wrap,
 				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
-			table.Append(wrappedColumns)
+			if err := table.Append(wrappedColumns); err != nil {
+				log.Println("tablewriter.Table.Append() failed, err:", err)
+			}
 		}
 		if forceTableRender || len(rows) > 0 {
-			table.Render()
+			if err := table.Render(); err != nil {
+				log.Println("tablewriter.Table.Render() failed, err:", err)
+			}
 		}
 
 		s := strings.TrimSpace(tableBuf.String())
