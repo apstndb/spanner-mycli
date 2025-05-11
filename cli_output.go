@@ -110,10 +110,14 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 				runewidth.Wrap,
 				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
-			table.Append(wrappedColumns)
+			if err := table.Append(wrappedColumns); err != nil {
+				log.Println("tablewriter.Table.Append() failed, err:", err)
+			}
 		}
 		if forceTableRender || len(rows) > 0 {
-			table.Render()
+			if err := table.Render(); err != nil {
+				log.Println("tablewriter.Table.Render() failed, err:", err)
+			}
 		}
 
 		s := strings.TrimSpace(tableBuf.String())
