@@ -33,7 +33,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.18
 	github.com/nyaosorg/go-readline-ny v1.9.0
-	github.com/olekukonko/tablewriter v0.0.5
+	github.com/olekukonko/tablewriter v1.0.1
 	github.com/samber/lo v1.49.1
 	github.com/sourcegraph/conc v0.3.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.36.0
@@ -108,6 +108,8 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
+	github.com/olekukonko/errors v0.0.0-20250405072817-4e6d85265da6 // indirect
+	github.com/olekukonko/ll v0.0.6-0.20250511102614-9564773e9d27 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

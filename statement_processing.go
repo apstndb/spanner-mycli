@@ -30,7 +30,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json/jsontext"
-	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 // Partitioned DML tends to take long time to be finished.
@@ -66,7 +66,7 @@ type BatchInfo struct {
 
 type Result struct {
 	ColumnNames      []string
-	ColumnAlign      []int // optional
+	ColumnAlign      []tw.Align // optional
 	Rows             []Row
 	Predicates       []string
 	AffectedRows     int
@@ -135,7 +135,7 @@ const (
 
 var (
 	explainColumnNames = []string{"ID", "Query_Execution_Plan <execution_method> (metadata, ...)"}
-	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
+	explainColumnAlign = []tw.Align{tw.AlignRight, tw.AlignLeft}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}
 

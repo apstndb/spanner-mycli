@@ -28,7 +28,7 @@ import (
 	"github.com/apstndb/spannerplanviz/plantree"
 	"github.com/apstndb/spannerplanviz/queryplan"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
-	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 type ExplainStatement struct {
@@ -187,14 +187,14 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 	return result, nil
 }
 
-func explainAnalyzeHeader(def []columnRenderDef) ([]string, []int) {
+func explainAnalyzeHeader(def []columnRenderDef) ([]string, []tw.Align) {
 	// Start with the base columns and alignments for EXPLAIN output.
 	baseNames := explainColumnNames
 	baseAlign := explainColumnAlign
 
 	// Extract the names and alignments from the custom column definitions.
 	customNames := slices.Collect(xiter.Map(func(d columnRenderDef) string { return d.Name }, slices.Values(def)))
-	customAligns := slices.Collect(xiter.Map(func(d columnRenderDef) int { return d.Alignment }, slices.Values(def)))
+	customAligns := slices.Collect(xiter.Map(func(d columnRenderDef) tw.Align { return d.Alignment }, slices.Values(def)))
 
 	// Concatenate the base and custom parts.
 	columnNames := slices.Concat(baseNames, customNames)
@@ -279,7 +279,7 @@ func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, spann
 type columnRenderDef struct {
 	MapFunc   func(row plantree.RowWithPredicates) (string, error)
 	Name      string
-	Alignment int
+	Alignment tw.Align
 }
 
 func templateMapFunc(tmplName, tmplText string) (func(row plantree.RowWithPredicates) (string, error), error) {
@@ -298,18 +298,20 @@ func templateMapFunc(tmplName, tmplText string) (func(row plantree.RowWithPredic
 	}, nil
 }
 
-func parseAlignment(s string) (int, error) {
+func parseAlignment(s string) (tw.Align, error) {
 	switch strings.TrimPrefix(s, "ALIGN_") {
 	case "RIGHT":
-		return tablewriter.ALIGN_RIGHT, nil
+		return tw.AlignRight, nil
 	case "LEFT":
-		return tablewriter.ALIGN_LEFT, nil
+		return tw.AlignLeft, nil
 	case "CENTER":
-		return tablewriter.ALIGN_CENTER, nil
+		return tw.AlignCenter, nil
+	case "NONE":
+		return tw.AlignNone, nil
 	case "DEFAULT":
-		return tablewriter.ALIGN_DEFAULT, nil
+		return tw.AlignDefault, nil
 	default:
-		return 0, fmt.Errorf("unknown Alignment: %s", s)
+		return "", fmt.Errorf("unknown Alignment: %s", s)
 	}
 }
 
@@ -318,10 +320,10 @@ func customListToTableRenderDef(custom []string) ([]columnRenderDef, error) {
 	for _, s := range custom {
 		split := strings.SplitN(s, ":", 3)
 
-		var align int
+		var align tw.Align
 		switch len(split) {
 		case 2:
-			align = tablewriter.ALIGN_RIGHT
+			align = tw.AlignRight
 		case 3:
 			alignStr := split[2]
 			var err error
