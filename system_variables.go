@@ -97,6 +97,7 @@ type systemVariables struct {
 	EchoInput          bool                       // CLI_ECHO_INPUT
 	Endpoint           string                     // CLI_ENDPOINT
 	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
+	TabWidth           int64                      // CLI_TAB_WIDTH
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
@@ -673,6 +674,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return singletonMap(name, this.Database), nil
 			},
 		},
+	},
+	"CLI_TAB_WIDTH": {
+		Description: "",
+		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
+			return &variables.TabWidth
+		}),
 	},
 	"CLI_PROTO_DESCRIPTOR_FILE": {
 		Description: "",

@@ -2467,6 +2467,8 @@ github.com/apstndb/genaischema v0.1.1 h1:oDOp+lEWtYdNkGus0DypWGq14qqUOiBUTIfPwwh
 github.com/apstndb/genaischema v0.1.1/go.mod h1:jiBoJQJxqslpn2qSEbcBcSYgfQMy+n1Aw3dhBoHm3ls=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
+github.com/apstndb/go-runewidthex v0.1.0 h1:BTROSb06XZLb4hz5PC5i+3o/BBNhXS5QW6a6S/f1NTU=
+github.com/apstndb/go-runewidthex v0.1.0/go.mod h1:i5+ICpKj4bQDXUypcMP2oHkoXjj59jC5Cshcb9Bb6fE=
 github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc h1:djtqIk9U2GWAbL2WgpBM/RffNyilUar+War1YWjqI4U=
 github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc/go.mod h1:T2x/xf7GA3AOfm8245sTteb27qYAgbXIMlysbxJzpXk=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKRhehV71v8m4J+76zpjTGcRqsY=

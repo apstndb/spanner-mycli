@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/go-runewidthex"
 	"github.com/apstndb/lox"
 	"github.com/go-sprout/sprout"
 	"github.com/go-sprout/sprout/group/hermetic"
@@ -45,16 +46,8 @@ func mapAllCells(f func(string) string, rows []Row) []Row {
 	)
 }
 
-func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
+func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
 	mode := sysVars.CLIFormat
-
-	if sysVars.MarkdownCodeblock {
-		fmt.Fprintln(out, "```sql")
-	}
-
-	if sysVars.EchoInput && input != "" {
-		fmt.Fprintln(out, input+";")
-	}
 
 	// screenWidth <= means no limit.
 	if screenWidth <= 0 {
@@ -63,8 +56,12 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
-		// Replace tabs with two whitespace
-		rows := mapAllCells(strings.NewReplacer("\t", "  ").Replace, result.Rows)
+		rw := runewidthex.NewCondition()
+		if sysVars.TabWidth != 0 {
+			rw.TabWidth = int(sysVars.TabWidth)
+		}
+
+		rows := result.Rows
 
 		var tableBuf strings.Builder
 		table := tablewriter.NewTable(&tableBuf,
@@ -78,6 +75,8 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 			config.Header.Formatting.AutoFormat = false
 		})
 
+		wc := &widthCalculator{Condition: rw}
+
 		var adjustedWidths []int
 		if len(result.ColumnTypes) > 0 {
 			names := slices.Collect(xiter.Map(
@@ -85,9 +84,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 				slices.Values(result.ColumnTypes),
 			))
 			header := slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
+			adjustedWidths = calculateOptimalWidth(wc, sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 		} else {
-			adjustedWidths = calculateOptimalWidth(sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), rows))
+			adjustedWidths = calculateOptimalWidth(wc, sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), rows))
 		}
 
 		var forceTableRender bool
@@ -95,7 +94,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 			forceTableRender = true
 
 			headers := slices.Collect(hiter.Unify(
-				runewidth.Wrap,
+				rw.Wrap,
 				hiter.Pairs(
 					xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)),
 					slices.Values(adjustedWidths))),
@@ -107,7 +106,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 		for _, row := range rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
-				runewidth.Wrap,
+				rw.Wrap,
 				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
 			if err := table.Append(wrappedColumns); err != nil {
@@ -154,6 +153,18 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 			}
 		}
 	}
+}
+
+func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
+	if sysVars.MarkdownCodeblock {
+		fmt.Fprintln(out, "```sql")
+	}
+
+	if sysVars.EchoInput && input != "" {
+		fmt.Fprintln(out, input+";")
+	}
+
+	printTableData(sysVars, screenWidth, out, result)
 
 	if len(result.Predicates) > 0 {
 		fmt.Fprintln(out, "Predicates(identified by ID):")
@@ -170,12 +181,12 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		}
 		fmt.Fprintln(out)
 	}
-	if sysVars.Verbose || result.ForceVerbose {
-		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, true))
-	} else if interactive {
-		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose))
+
+	if sysVars.Verbose || result.ForceVerbose || interactive {
+		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
 	}
-	if mode == DisplayModeTableDetailComment {
+
+	if sysVars.CLIFormat == DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
 
@@ -270,7 +281,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 }
 
-func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []Row) []int {
+func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, header []string, rows []Row) []int {
 
 	// table overhead is:
 	// len(`|  |`) +
@@ -305,7 +316,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []
 			)))
 	}
 
-	widthCounts := calculateWidthCounts(adjustedWidths, transposedRows)
+	widthCounts := wc.calculateWidthCounts(adjustedWidths, transposedRows)
 	for {
 		if debug {
 			log.Println("widthCounts:", widthCounts)
@@ -319,7 +330,7 @@ func calculateOptimalWidth(debug bool, screenWidth int, header []string, rows []
 				slices.Values(widthCounts))
 
 		// find the largest count idx within available width
-		idx, target := maxIndex(termWidthWithoutOverhead-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
+		idx, target := wc.maxIndex(termWidthWithoutOverhead-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
 		if idx < 0 || target.Count() < 1 {
 			break
 		}
@@ -376,9 +387,13 @@ func MaxByWithIdx[O cmp.Ordered, E any](fallback E, f func(E) O, seq iter.Seq[E]
 	return idx, val
 }
 
-func maxWidth(s string) int {
+func (wc *widthCalculator) StringWidth(s string) int {
+	return wc.Condition.StringWidth(s)
+}
+
+func (wc *widthCalculator) maxWidth(s string) int {
 	return hiter.Max(xiter.Map(
-		runewidth.StringWidth,
+		wc.StringWidth,
 		stringsiter.SplitFunc(s, 0, stringsiter.CutNewLine)))
 }
 
@@ -435,7 +450,9 @@ var invalidWidthCount = WidthCount{
 	count: math.MinInt,
 }
 
-func maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int, WidthCount) {
+type widthCalculator struct{ Condition *runewidthex.Condition }
+
+func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int, WidthCount) {
 	return MaxByWithIdx(
 		invalidWidthCount,
 		WidthCount.Count,
@@ -446,7 +463,7 @@ func maxIndex(ignoreMax int, adjustWidths []int, seq iter.Seq[WidthCount]) (int,
 			hiter.Pairs(slices.Values(adjustWidths), seq)))
 }
 
-func countWidth(ss []string) iter.Seq[WidthCount] {
+func (wc *widthCalculator) countWidth(ss []string) iter.Seq[WidthCount] {
 	return xiter.Map(
 		func(e lo.Entry[int, int]) WidthCount {
 			return WidthCount{
@@ -454,10 +471,10 @@ func countWidth(ss []string) iter.Seq[WidthCount] {
 				count: e.Value,
 			}
 		},
-		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, maxWidth))))
+		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, wc.maxWidth))))
 }
 
-func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
+func (wc *widthCalculator) calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
 	var result [][]WidthCount
 	for columnNo := range len(currentWidths) {
 		currentWidth := currentWidths[columnNo]
@@ -467,7 +484,7 @@ func calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
 				func(v WidthCount) bool {
 					return v.Length() > currentWidth
 				},
-				countWidth(columnValues),
+				wc.countWidth(columnValues),
 			))
 		result = append(result, largerWidthCounts)
 	}
