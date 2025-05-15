@@ -39,13 +39,6 @@ const (
 	DisplayModeTab
 )
 
-func mapAllCells(f func(string) string, rows []Row) []Row {
-	return slices.Collect(
-		xiter.Map(func(r Row) Row { return slices.Collect(xiter.Map(f, slices.Values(r))) },
-			slices.Values(rows)),
-	)
-}
-
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
 	mode := sysVars.CLIFormat
 
@@ -57,9 +50,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
 		rw := runewidthex.NewCondition()
-		if sysVars.TabWidth != 0 {
-			rw.TabWidth = int(sysVars.TabWidth)
-		}
+		rw.TabWidth = cmp.Or(int(sysVars.TabWidth), 4)
 
 		rows := result.Rows
 
