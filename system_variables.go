@@ -676,7 +676,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_TAB_WIDTH": {
-		Description: "",
+		Description: "Tab width. It is used for expanding tabs.",
 		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
 			return &variables.TabWidth
 		}),
