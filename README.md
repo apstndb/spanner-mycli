@@ -1874,3 +1874,64 @@ Predicates(identified by ID):
 - Column names of `EXPLAIN ANALYZE` are shorter than before.
 
 Note: These changes except column names can be controlled using `SET CLI_SPANNER_CLI_COMPATIBLE_PLAN=TRUE`.
+
+### Tab character handling
+
+spanner-mycli expands tab characters to whitespaces.
+Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)
+
+```
+spanner> SET CLI_TAB_WIDTH = 2;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------+
+| s                                    |
++--------------------------------------+
+| a b c d e f                          |
+| あ  い  う  え  お  か               |
+| abc def ghi jkl mno pqr              |
+| あい  うえ  おか  きく  けこ  さし   |
++--------------------------------------+
+1 rows in set (2.81 msecs)
+
+spanner> SET CLI_TAB_WIDTH = 4;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------------------+
+| s                                                |
++--------------------------------------------------+
+| a   b   c   d   e   f                            |
+| あ  い  う  え  お  か                           |
+| abc def ghi jkl mno pqr                          |
+| あい    うえ    おか    きく    けこ    さし     |
++--------------------------------------------------+
+1 rows in set (2.31 msecs)
+
+spanner> SET CLI_TAB_WIDTH = 8;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------------------+
+| s                                                |
++--------------------------------------------------+
+| a       b       c       d       e       f        |
+| あ      い      う      え      お      か       |
+| abc     def     ghi     jkl     mno     pqr      |
+| あい    うえ    おか    きく    けこ    さし     |
++--------------------------------------------------+
+1 rows in set (2.76 msecs)
+```
