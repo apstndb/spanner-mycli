@@ -160,7 +160,8 @@ func main() {
 	// the GetExitCode function in errors.go.
 
 	if err := run(context.Background(), &gopts.Spanner); err != nil {
-		if exitCodeErr := (*ExitCodeError)(nil); !errors.As(err, &exitCodeErr) {
+		var exitCodeErr *ExitCodeError
+		if !errors.As(err, &exitCodeErr) {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 
@@ -382,16 +383,16 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
 
-	exitCode := lo.TernaryF(interactive,
-		func() int {
+	err = lo.TernaryF(interactive,
+		func() error {
 			sysVars.EnableProgressBar = true
 			return cli.RunInteractive(ctx)
 		},
-		func() int {
+		func() error {
 			return cli.RunBatch(ctx, input)
 		})
 
-	return NewExitCodeError(exitCode)
+	return err
 }
 
 // renderClientStatementHelp generates a table of client-side statement help.

@@ -76,21 +76,21 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	}, nil
 }
 
-func (c *Cli) RunInteractive(ctx context.Context) int {
+func (c *Cli) RunInteractive(ctx context.Context) error {
 	exists, err := c.Session.DatabaseExists()
 	if err != nil {
-		return c.ExitOnError(err)
+		return NewExitCodeError(c.ExitOnError(err))
 	}
 
 	if exists {
 		fmt.Fprintf(c.OutStream, "Connected.\n")
 	} else {
-		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
+		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
 	}
 
 	ed, history, err := initializeMultilineEditor(c)
 	if err != nil {
-		return c.ExitOnError(err)
+		return NewExitCodeError(c.ExitOnError(err))
 	}
 
 	// ensure reset
@@ -105,7 +105,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 			switch {
 			case errors.Is(err, io.EOF):
 				fmt.Fprintln(c.OutStream, "Bye")
-				return c.handleExit()
+				return NewExitCodeError(c.handleExit())
 			case isInterrupted(err):
 				// This section is currently redundant but keep as intended
 				c.PrintInteractiveError(err)
@@ -126,7 +126,7 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		if exitCode, processed := c.handleSpecialStatements(stmt); processed {
 			if exitCode >= 0 {
-				return exitCode
+				return NewExitCodeError(exitCode)
 			}
 			continue
 		}
@@ -214,11 +214,11 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 }
 
-func (c *Cli) RunBatch(ctx context.Context, input string) int {
+func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	stmts, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
-		return exitCodeError
+		return NewExitCodeError(exitCodeError)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -226,17 +226,17 @@ func (c *Cli) RunBatch(ctx context.Context, input string) int {
 
 	for _, stmt := range stmts {
 		if _, ok := stmt.(*ExitStatement); ok {
-			return c.handleExit()
+			return NewExitCodeError(c.handleExit())
 		}
 
 		_, err = c.executeStatement(ctx, stmt, false, input)
 		if err != nil {
 			c.PrintBatchError(err)
-			return exitCodeError
+			return NewExitCodeError(exitCodeError)
 		}
 	}
 
-	return exitCodeSuccess
+	return nil
 }
 
 // handleExit processes EXIT statement.
