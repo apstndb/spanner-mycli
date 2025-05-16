@@ -5,7 +5,7 @@ go 1.24
 require (
 	cloud.google.com/go v0.120.1
 	cloud.google.com/go/longrunning v0.6.6
-	cloud.google.com/go/spanner v1.79.0
+	cloud.google.com/go/spanner v1.80.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.1.1
@@ -13,13 +13,13 @@ require (
 	github.com/apstndb/go-runewidthex v0.1.0
 	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
-	github.com/apstndb/memebridge v0.4.0
+	github.com/apstndb/memebridge v0.5.0
 	github.com/apstndb/spanemuboost v0.2.8
 	github.com/apstndb/spannerplanviz v0.6.0
 	github.com/apstndb/spantype v0.3.8
-	github.com/apstndb/spanvalue v0.1.5
+	github.com/apstndb/spanvalue v0.1.6
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.4.0
+	github.com/cloudspannerecosystem/memefish v0.6.0
 	github.com/fatih/color v1.18.0
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1
 	github.com/go-sprout/sprout v1.0.0
@@ -54,7 +54,7 @@ require (
 	cloud.google.com/go/auth v0.16.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/iam v1.4.2 // indirect
+	cloud.google.com/go/iam v1.5.0 // indirect
 	cloud.google.com/go/monitoring v1.24.1 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
