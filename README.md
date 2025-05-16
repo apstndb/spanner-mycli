@@ -114,6 +114,7 @@ spanner:
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
       --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.32)
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
+      --log-level=
       --log-grpc                                          Show gRPC logs
       --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
       --strong                                            Perform a strong query.
