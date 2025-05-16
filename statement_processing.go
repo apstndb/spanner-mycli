@@ -20,7 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -188,9 +188,9 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (S
 		case mode == parseMemefishOnly && err != nil:
 			return nil, fmt.Errorf("invalid statement: %w", err)
 		case errors.Is(err, errStatementNotMatched):
-			log.Println(fmt.Errorf("ignore unknown statement, err: %w", err))
+			slog.Error("ignore unknown statement", "err", err)
 		case err != nil:
-			log.Println(fmt.Errorf("ignore memefish parse error, err: %w", err))
+			slog.Error("ignore memefish parse error", "err", err)
 		default:
 			return stmt, nil
 		}

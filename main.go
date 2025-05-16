@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"os/user"
@@ -80,7 +80,7 @@ type spannerOptions struct {
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)"`
 	Help                      bool              `long:"help" short:"h" hidden:"true"`
-	Debug                     bool              `long:"debug" hidden:"true"`
+	LogLevel                  string            `long:"log-level"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs"`
 	QueryMode                 string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
 	Strong                    bool              `long:"strong" description:"Perform a strong query."`
@@ -123,14 +123,24 @@ func getVersion() string {
 	return info.Main.Version
 }
 
-// Overwrite genkit/logger's init
 func init() {
-	/*
-		h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelWarn,
-		}))
-		slog.SetDefault(h)
-	*/
+	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	}))
+	slog.SetDefault(h)
+}
+
+func SetLogLevel(logLevel string) (slog.Level, error) {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+		return 0, err
+	}
+
+	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	}))
+	slog.SetDefault(h)
+	return level, nil
 }
 
 func main() {
@@ -204,6 +214,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 	}
 
+	l, err := SetLogLevel(cmp.Or(opts.LogLevel, "WARN"))
+	if err != nil {
+		return fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
+	}
+
 	const defaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 	sysVars := systemVariables{
 		Project:                   opts.ProjectId,
@@ -216,9 +231,9 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		Role:                      cmp.Or(opts.Role, opts.DatabaseRole),
 		Endpoint:                  opts.Endpoint,
 		Insecure:                  opts.Insecure || opts.SkipTlsVerify,
-		Debug:                     opts.Debug,
 		Params:                    params,
 		LogGrpc:                   opts.LogGrpc,
+		LogLevel:                  l,
 		ImpersonateServiceAccount: opts.ImpersonateServiceAccount,
 		VertexAIProject:           opts.VertexAIProject,
 		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
@@ -407,13 +422,13 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 		for _, desc := range stmt.Descriptions {
 			err := table.Append([]string{desc.Usage, "`" + strings.NewReplacer("|", `\|`).Replace(desc.Syntax) + ";`", desc.Note})
 			if err != nil {
-				log.Println("tablewriter.Table.Append() failed, err:", err)
+				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
 		}
 	}
 
 	if err := table.Render(); err != nil {
-		log.Println("tablewriter.Table.Render() failed, err:", err)
+		slog.Error("tablewriter.Table.Render() failed", "err", err)
 	}
 
 	return sb.String()

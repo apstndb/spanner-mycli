@@ -20,7 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -555,7 +555,7 @@ func (s *Session) Close() {
 	s.client.Close()
 	err := s.adminClient.Close()
 	if err != nil {
-		log.Printf("error on adminClient.Close(): %v", err)
+		slog.Error("error on adminClient.Close()", "err", err)
 	}
 
 	if s.cqlSession != nil {
@@ -648,7 +648,7 @@ func (s *Session) startHeartbeat() {
 			if s.tc != nil && s.tc.mode == transactionModeReadWrite && s.tc.sendHeartbeat {
 				err := heartbeat(s.tc.RWTxn(), s.currentPriority())
 				if err != nil {
-					log.Printf("heartbeat error: %v", err)
+					slog.Error("heartbeat error", "err", err)
 				}
 			}
 		}()

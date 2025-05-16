@@ -22,7 +22,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -77,7 +78,9 @@ func TestMain(m *testing.M) {
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)
 	if err != nil {
-		log.Fatal(err)
+		// testing.M doesn't have output method
+		slog.Error("failed to create emulator", "err", err)
+		os.Exit(1)
 	}
 
 	defer teardown()

@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -296,17 +296,17 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 
 		err = cmd.Start()
 		if err != nil {
-			log.Println(err)
+			slog.Error("failed to start pager command", "err", err)
 			return
 		}
 		defer func() {
 			err := pw.Close()
 			if err != nil {
-				log.Println(err)
+				slog.Error("failed to close pipe", "err", err)
 			}
 			err = cmd.Wait()
 			if err != nil {
-				log.Println(err)
+				slog.Error("failed to wait for pager command", "err", err)
 			}
 		}()
 	}
