@@ -143,10 +143,11 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 // readInputLine reads and processes an input line from the editor.
 func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	input, err := readInteractiveInput(ctx, ed)
+
 	// reset for next input before continue
 	ed.SetDefault(nil)
 
-	input, err := readInteractiveInput(ctx, ed)
 	if err != nil {
 		return nil, err
 	}
