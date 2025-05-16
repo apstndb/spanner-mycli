@@ -468,7 +468,6 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
-	logParseStatement(stmt.SQL)
 
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
@@ -507,8 +506,6 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	if err != nil {
 		return nil, nil, nil, 0, nil, err
 	}
-
-	logParseStatement(stmt.SQL)
 
 	if !s.InReadWriteTransaction() {
 		return nil, nil, nil, 0, nil, errors.New("read-write transaction is not running")

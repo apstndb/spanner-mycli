@@ -98,8 +98,6 @@ var replacerForProgress = strings.NewReplacer(
 )
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
-	logParseStatements(ddls)
-
 	if len(ddls) == 0 {
 		return &Result{
 			IsMutation:  true,
