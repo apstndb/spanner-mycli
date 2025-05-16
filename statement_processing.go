@@ -188,9 +188,9 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (S
 		case mode == parseMemefishOnly && err != nil:
 			return nil, fmt.Errorf("invalid statement: %w", err)
 		case errors.Is(err, errStatementNotMatched):
-			slog.Error("ignore unknown statement", "err", err)
+			slog.Warn("ignore unknown statement", "err", err)
 		case err != nil:
-			slog.Error("ignore memefish parse error", "err", err)
+			slog.Warn("ignore memefish parse error", "err", err)
 		default:
 			return stmt, nil
 		}
