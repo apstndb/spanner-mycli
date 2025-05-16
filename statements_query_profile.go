@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"text/template"
@@ -158,7 +158,7 @@ func formatStats(stats *queryProfilesRow) string {
 
 	err := temp.Execute(&sb, stats)
 	if err != nil {
-		log.Println(err)
+		slog.Error("error occurred", "err", err)
 		return ""
 	}
 

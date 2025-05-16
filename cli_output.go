@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"log"
+	"log/slog"
 	"math"
 	"regexp"
 	"slices"
@@ -67,18 +67,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		})
 
 		wc := &widthCalculator{Condition: rw}
-
-		var adjustedWidths []int
-		if len(result.ColumnTypes) > 0 {
-			names := slices.Collect(xiter.Map(
-				(*sppb.StructType_Field).GetName,
-				slices.Values(result.ColumnTypes),
-			))
-			header := slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-			adjustedWidths = calculateOptimalWidth(wc, sysVars.Debug, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
-		} else {
-			adjustedWidths = calculateOptimalWidth(wc, sysVars.Debug, screenWidth, result.ColumnNames, slices.Concat(sliceOf(toRow(result.ColumnNames...)), rows))
-		}
+		adjustedWidths := calculateWidth(result, wc, screenWidth, rows)
 
 		var forceTableRender bool
 		if sysVars.Verbose && len(result.ColumnTypes) > 0 {
@@ -101,12 +90,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
 			)
 			if err := table.Append(wrappedColumns); err != nil {
-				log.Println("tablewriter.Table.Append() failed, err:", err)
+				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
 		}
 		if forceTableRender || len(rows) > 0 {
 			if err := table.Render(); err != nil {
-				log.Println("tablewriter.Table.Render() failed, err:", err)
+				slog.Error("tablewriter.Table.Render() failed", "err", err)
 			}
 		}
 
@@ -144,6 +133,19 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			}
 		}
 	}
+}
+
+func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows []Row) []int {
+	var names []string
+	var header []string
+	if len(result.ColumnTypes) > 0 {
+		names = slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(result.ColumnTypes)))
+		header = slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
+	} else {
+		names = result.ColumnNames
+		header = result.ColumnNames
+	}
+	return calculateOptimalWidth(wc, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 }
 
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
@@ -236,7 +238,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		CommitStats: result.CommitStats,
 	})
 	if err != nil {
-		log.Printf("error on outputTemplate.Execute(), err: %v", err)
+		slog.Error("error on outputTemplate.Execute()", "err", err)
 	}
 	detail := sb.String()
 
@@ -272,7 +274,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 }
 
-func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, header []string, rows []Row) []int {
+func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {
 
 	// table overhead is:
 	// len(`|  |`) +
@@ -282,9 +284,7 @@ func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, hea
 	// don't mutate
 	termWidthWithoutOverhead := screenWidth - overheadWidth
 
-	if debug {
-		log.Printf("screenWitdh: %v, remainsWidth: %v", screenWidth, termWidthWithoutOverhead)
-	}
+	slog.Debug("screen width info", "screenWidth", screenWidth, "remainsWidth", termWidthWithoutOverhead)
 
 	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
 		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
@@ -292,9 +292,7 @@ func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, hea
 
 	adjustedWidths := adjustByHeader(header, termWidthWithoutOverhead)
 
-	if debug {
-		log.Println("adjustByName:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-	}
+	slog.Debug("adjustByName", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 
 	var transposedRows [][]string
 	for columnIdx := range len(header) {
@@ -309,9 +307,7 @@ func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, hea
 
 	widthCounts := wc.calculateWidthCounts(adjustedWidths, transposedRows)
 	for {
-		if debug {
-			log.Println("widthCounts:", widthCounts)
-		}
+		slog.Debug("widthCounts", "counts", widthCounts)
 
 		firstCounts :=
 			xiter.Map(
@@ -329,14 +325,10 @@ func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, hea
 		widthCounts[idx] = widthCounts[idx][1:]
 		adjustedWidths[idx] = target.Length()
 
-		if debug {
-			log.Println("adjusting:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-		}
+		slog.Debug("adjusting", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 	}
 
-	if debug {
-		log.Println("semi final:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-	}
+	slog.Debug("semi final", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 
 	// Add rest to the longest shortage column.
 	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
@@ -353,9 +345,7 @@ func calculateOptimalWidth(wc *widthCalculator, debug bool, screenWidth int, hea
 		adjustedWidths[idx] += termWidthWithoutOverhead - lo.Sum(adjustedWidths)
 	}
 
-	if debug {
-		log.Println("final:", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-	}
+	slog.Debug("final", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 
 	return adjustedWidths
 }

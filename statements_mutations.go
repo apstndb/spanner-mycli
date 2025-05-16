@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -184,7 +184,7 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 			return nil, err
 		}
 		if len(columns) > 0 {
-			log.Printf("delete mutation ignores column names: %v", columns)
+			slog.Warn("delete mutation ignores column names", "columns", columns)
 		}
 
 		var keys []spanner.Key

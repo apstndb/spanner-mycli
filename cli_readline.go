@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"slices"
@@ -49,18 +49,18 @@ func (p *persistentHistory) Add(s string) {
 	p.history.Add(s)
 	file, err := os.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
-		log.Println(err)
+		slog.Error("failed to open history file", "file", p.filename, "err", err)
 		return
 	}
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			log.Println(err)
+			slog.Error("failed to close history file", "file", p.filename, "err", err)
 		}
 	}(file)
 	_, err = fmt.Fprintf(file, "%q\n", s)
 	if err != nil {
-		log.Println(err)
+		slog.Error("failed to write to history file", "file", p.filename, "err", err)
 	}
 }
 

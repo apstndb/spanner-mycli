@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -78,7 +79,6 @@ type systemVariables struct {
 	ProtoDescriptorFile []string  // CLI_PROTO_DESCRIPTOR_FILE
 	BuildStatementMode  parseMode // CLI_PARSE_MODE
 	Insecure            bool      // CLI_INSECURE
-	Debug               bool      // CLI_DEBUG
 	LogGrpc             bool      // CLI_LOG_GRPC
 	LintPlan            bool      // CLI_LINT_PLAN
 	UsePager            bool      // CLI_USE_PAGER
@@ -98,6 +98,7 @@ type systemVariables struct {
 	Endpoint           string                     // CLI_ENDPOINT
 	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
 	TabWidth           int64                      // CLI_TAB_WIDTH
+	LogLevel           slog.Level                 // CLI_LOG_LEVEL
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
@@ -783,11 +784,21 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
 		},
 	},
-	"CLI_DEBUG": {
+	"CLI_LOG_LEVEL": {
 		Description: "",
 		Accessor: accessor{
-			Getter: boolGetter(func(sysVars *systemVariables) *bool { return lo.Ternary(sysVars.Debug, lo.ToPtr(sysVars.Debug), nil) }),
-			Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.Debug }),
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.LogLevel.String()), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				s := unquoteString(value)
+				l, err := SetLogLevel(s)
+				if err != nil {
+					return err
+				}
+				this.LogLevel = l
+				return nil
+			},
 		},
 	},
 	"CLI_LOG_GRPC": {
