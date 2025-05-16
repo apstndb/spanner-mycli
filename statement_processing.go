@@ -257,24 +257,6 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-func logParseStatement(stmt string) {
-	if !logMemefish {
-		return
-	}
-	n, err := memefish.ParseStatement("", stmt)
-	if err != nil {
-		log.Printf("SQL can't parsed as a statement, err: %v", err)
-	} else {
-		log.Printf("parsed: %v", n.SQL())
-	}
-}
-
-func logParseStatements(stmts []string) {
-	for _, stmt := range stmts {
-		logParseStatement(stmt)
-	}
-}
-
 // buildCommands parses the input and builds a list of commands for batch execution.
 // It can compose BulkDdlStatement from consecutive DDL statements.
 func buildCommands(input string, mode parseMode) ([]Statement, error) {

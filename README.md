@@ -102,7 +102,6 @@ spanner:
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
       --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
-      --log-memefish                                      Emit SQL parse log using memefish
       --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
       --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
       --role=                                             Use the specific database role. --database-role is an alias.

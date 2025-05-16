@@ -65,7 +65,6 @@ type spannerOptions struct {
 	Credential                string            `long:"credential" description:"Use the specific credential file"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
 	Prompt2                   *string           `long:"prompt2" description:"Set the prompt2 to the specified format" default-mask:"%P%R> "`
-	LogMemefish               bool              `long:"log-memefish" description:"Emit SQL parse log using memefish"`
 	HistoryFile               *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
 	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias."`
@@ -106,8 +105,6 @@ const (
 	defaultHistoryFile   = "/tmp/spanner_mycli_readline.tmp"
 	defaultVertexAIModel = "gemini-2.0-flash"
 )
-
-var logMemefish bool
 
 var (
 	// https://rhysd.hatenablog.com/entry/2021/06/27/222254
@@ -175,8 +172,6 @@ func main() {
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
 func run(ctx context.Context, opts *spannerOptions) error {
-	logMemefish = opts.LogMemefish
-
 	if opts.StatementHelp {
 		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
 		return nil
