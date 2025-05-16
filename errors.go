@@ -12,7 +12,7 @@ type ExitCodeError struct {
 
 // Error implements the error interface
 func (e *ExitCodeError) Error() string {
-	return fmt.Errorf("exit code: %d", e.exitCode).Error()
+	return fmt.Sprintf("exit code: %d", e.exitCode)
 }
 
 // NewExitCodeError creates a new ExitCodeError
