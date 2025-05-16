@@ -20,6 +20,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -143,7 +144,9 @@ func main() {
 		return
 	} else if err != nil {
 		parserForHelp.WriteHelp(os.Stderr)
-		exitf("Invalid options\n")
+		fmt.Fprintf(os.Stderr, "Invalid options: %v\n", err)
+		os.Exit(exitCodeError)
+		return
 	} else if gopts.Spanner.Help {
 		parserForHelp.WriteHelp(os.Stderr)
 		return
@@ -152,28 +155,42 @@ func main() {
 		return
 	}
 
-	exitCode := run(context.Background(), &gopts.Spanner)
-	os.Exit(exitCode)
+	// Using the run function that returns only an error
+	// and determining the exit code based on the error type using
+	// the GetExitCode function in errors.go.
+
+	if err := run(context.Background(), &gopts.Spanner); err != nil {
+		if exitCodeErr := (*ExitCodeError)(nil); !errors.As(err, &exitCodeErr) {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+		}
+
+		os.Exit(GetExitCode(err))
+		return
+	}
+	os.Exit(exitCodeSuccess)
 }
 
-func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
+// run executes the main functionality of the application.
+// It returns an error that may contain an exit code.
+// Use GetExitCode(err) to determine the appropriate exit code.
+func run(ctx context.Context, opts *spannerOptions) error {
 	logMemefish = opts.LogMemefish
 
 	if opts.StatementHelp {
 		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
-		return exitCodeSuccess
+		return nil
 	}
 
 	if opts.Insecure && opts.SkipTlsVerify {
-		exitf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive\n")
+		return fmt.Errorf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive")
 	}
 
 	if opts.Strong && opts.ReadTimestamp != "" {
-		exitf("invalid parameters: --strong and --read-timestamp are mutually exclusive\n")
+		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
 	}
 
 	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
-		exitf("Missing parameters: -p, -i, -d are required\n")
+		return fmt.Errorf("missing parameters: -p, -i, -d are required")
 	}
 
 	params := make(map[string]ast.Node)
@@ -185,7 +202,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 
 		// ignore ParseType error
 		if expr, err := memefish.ParseExpr("", v); err != nil {
-			exitf("error on parsing --param=%v=%v, err: %v", k, v, err)
+			return fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
 		} else {
 			params[k] = expr
 		}
@@ -216,14 +233,14 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 
 	// initialize default value
 	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", defaultAnalyzeColumns); err != nil {
-		exitf("parse error: %v", err)
+		return fmt.Errorf("parse error: %w", err)
 	}
 
 	if opts.OutputTemplate == "" {
 		setDefaultOutputTemplate(&sysVars)
 	} else {
 		if err := setOutputTemplateFile(&sysVars, opts.OutputTemplate); err != nil {
-			exitf("parse error of output template: %v", err)
+			return fmt.Errorf("parse error of output template: %w", err)
 		}
 	}
 
@@ -234,46 +251,46 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	if opts.ReadTimestamp != "" {
 		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
 		if err != nil {
-			exitf("error on parsing --read-timestamp=%v, err: %v\n", opts.ReadTimestamp, err)
+			return fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
 		}
 		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
 
 	if opts.DatabaseDialect != "" {
 		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
-			exitf("invalid value of --database-dialect: %v, err: %v\n", opts.DatabaseDialect, err)
+			return fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
 		}
 	}
 
 	if opts.EnablePartitionedDML {
 		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
-			exitf("unknown error on --enable-partitioned-dml: err: %v\n", err)
+			return fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
 		}
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
 		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			exitf("error on --proto-descriptor-file, file: %v, err: %v\n", s, err)
+			return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
 		}
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
-		exitf("Invalid combination: -e, -f, --sql are exclusive\n")
+		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
 	}
 
 	var cred []byte
 	if opts.Credential != "" {
 		var err error
 		if cred, err = readCredentialFile(opts.Credential); err != nil {
-			exitf("Failed to read the credential file: %v\n", err)
+			return fmt.Errorf("failed to read the credential file: %w", err)
 		}
 	}
 
 	if opts.Priority != "" {
 		priority, err := parsePriority(opts.Priority)
 		if err != nil {
-			exitf("priority must be either HIGH, MEDIUM, or LOW\n")
+			return fmt.Errorf("priority must be either HIGH, MEDIUM, or LOW: %w", err)
 		}
 		sysVars.RPCPriority = priority
 	} else {
@@ -282,7 +299,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 
 	if opts.QueryMode != "" {
 		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
-			exitf("invalid value of --query-mode: %v, err: %v\n", opts.QueryMode, err)
+			return fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
 		}
 	}
 
@@ -291,7 +308,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		var err error
 		directedRead, err = parseDirectedReadOption(opts.DirectedRead)
 		if err != nil {
-			exitf("Invalid directed read option: %v\n", err)
+			return fmt.Errorf("invalid directed read option: %w", err)
 		}
 		sysVars.DirectedRead = directedRead
 	}
@@ -300,7 +317,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 
 	for k, v := range sets {
 		if err := sysVars.Set(k, v); err != nil {
-			exitf("failed to set system variable. name: %v, value: %v, err: %v\n", k, v, err)
+			return fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}
 	}
 
@@ -318,7 +335,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 			spanemuboost.WithDatabaseDialect(sysVars.DatabaseDialect),
 		)
 		if err != nil {
-			exitf("failed to start Cloud Spanner Emulator: %v\n", err)
+			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
 		}
 		defer teardown()
 
@@ -328,11 +345,11 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 
 	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
-		exitf("Failed to connect to Spanner: %v", err)
+		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
 
 	if opts.Execute != "" && opts.SQL != "" {
-		exitf("--execute and --sql are mutually exclusive\n")
+		return fmt.Errorf("--execute and --sql are mutually exclusive")
 	}
 
 	var input string
@@ -343,19 +360,19 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 	} else if opts.File == "-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			exitf("Read from stdin failed: %v", err)
+			return fmt.Errorf("read from stdin failed: %w", err)
 		}
 		input = string(b)
 	} else if opts.File != "" {
 		b, err := os.ReadFile(opts.File)
 		if err != nil {
-			exitf("Read from file %v failed: %v", opts.File, err)
+			return fmt.Errorf("read from file %v failed: %w", opts.File, err)
 		}
 		input = string(b)
 	} else {
 		input, err = readStdin()
 		if err != nil {
-			exitf("Read from stdin failed: %v", err)
+			return fmt.Errorf("read from stdin failed: %w", err)
 		}
 	}
 
@@ -365,7 +382,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
 
-	exitCode = lo.TernaryF(interactive,
+	exitCode := lo.TernaryF(interactive,
 		func() int {
 			sysVars.EnableProgressBar = true
 			return cli.RunInteractive(ctx)
@@ -374,7 +391,7 @@ func run(ctx context.Context, opts *spannerOptions) (exitCode int) {
 			return cli.RunBatch(ctx, input)
 		})
 
-	return exitCode
+	return NewExitCodeError(exitCode)
 }
 
 // renderClientStatementHelp generates a table of client-side statement help.
@@ -414,7 +431,7 @@ func parseFlags() (globalOptions, *flags.Parser, error) {
 	addEmulatorImageOption(configFileParser)
 
 	if err := readConfigFile(configFileParser); err != nil {
-		exitf("Invalid config file format\n")
+		return globalOptions{}, nil, fmt.Errorf("invalid config file format: %w", err)
 	}
 
 	// then, process environment variables and command line options
@@ -428,11 +445,6 @@ func parseFlags() (globalOptions, *flags.Parser, error) {
 	addEmulatorImageOption(parserForHelp)
 	_, err := flagParser.Parse()
 	return gopts, parserForHelp, err
-}
-
-func exitf(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, format, a...)
-	os.Exit(exitCodeError)
 }
 
 const cnfFileName = ".spanner_mycli.cnf"
