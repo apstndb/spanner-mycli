@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hymkor/go-multiline-ny"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
@@ -99,21 +100,23 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		// Reset everytime to reflect system variable
 		setLineEditor(ed, c.SystemVariables.EnableHighlight)
 
-		input, err := readInteractiveInput(ctx, ed)
-
-		// reset for next input before continue
-		ed.SetDefault(nil)
-
-		switch {
-		case errors.Is(err, io.EOF):
-			fmt.Fprintln(c.OutStream, "Bye")
-			return c.handleExit()
-		case isInterrupted(err), err != nil:
-			c.PrintInteractiveError(err)
-			continue
+		input, err := c.readInputLine(ctx, ed)
+		if err != nil {
+			switch {
+			case errors.Is(err, io.EOF):
+				fmt.Fprintln(c.OutStream, "Bye")
+				return c.handleExit()
+			case isInterrupted(err):
+				// This section is currently redundant but keep as intended
+				c.PrintInteractiveError(err)
+				continue
+			default:
+				c.PrintInteractiveError(err)
+				continue
+			}
 		}
 
-		stmt, err := BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+		stmt, err := c.parseStatement(input)
 		if err != nil {
 			c.PrintInteractiveError(err)
 			continue
@@ -121,28 +124,14 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		history.Add(input.statement + ";")
 
-		// Some statements are needed to be handled.
-
-		if _, ok := stmt.(*ExitStatement); ok {
-			fmt.Fprintln(c.OutStream, "Bye")
-			return c.handleExit()
+		if exitCode, processed := c.handleSpecialStatements(stmt); processed {
+			if exitCode >= 0 {
+				return exitCode
+			}
+			continue
 		}
 
-		// DropDatabaseStatement requires confirmation in interactive mode.
-		if s, ok := stmt.(*DropDatabaseStatement); ok {
-			if c.SystemVariables.Database == s.DatabaseId {
-				c.PrintInteractiveError(
-					fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
-				)
-				continue
-			}
-
-			if !confirm(c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
-				continue
-			}
-		}
-
-		preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
+		preInput, err := c.executeStatementInteractive(ctx, stmt, input)
 		if err != nil {
 			c.PrintInteractiveError(err)
 			continue
@@ -150,6 +139,62 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		ed.SetDefault(strings.Split(preInput, "\n"))
 	}
+}
+
+// readInputLine reads and processes an input line from the editor.
+func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	// reset for next input before continue
+	ed.SetDefault(nil)
+
+	input, err := readInteractiveInput(ctx, ed)
+	if err != nil {
+		return nil, err
+	}
+
+	return input, nil
+}
+
+// parseStatement parses the input statement.
+func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
+	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+}
+
+// handleSpecialStatements handles special client-side statements.
+// Returns (exitCode, processed) where:
+// - exitCode: if >= 0, the function should return this exit code
+// - processed: if true, the main loop should continue (either returning exitCode or skipping to next iteration)
+func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed bool) {
+	// Handle ExitStatement
+	if _, ok := stmt.(*ExitStatement); ok {
+		fmt.Fprintln(c.OutStream, "Bye")
+		return c.handleExit(), true
+	}
+
+	// Handle DropDatabaseStatement
+	if s, ok := stmt.(*DropDatabaseStatement); ok {
+		if c.SystemVariables.Database == s.DatabaseId {
+			c.PrintInteractiveError(
+				fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
+			)
+			return -1, true
+		}
+
+		if !confirm(c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+			return -1, true
+		}
+	}
+
+	return -1, false
+}
+
+// executeStatementInteractive executes the statement and displays the result.
+func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
+	preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
+	if err != nil {
+		return "", err
+	}
+
+	return preInput, nil
 }
 
 func (c *Cli) updateSystemVariables(result *Result) {
@@ -355,26 +400,21 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
+	// Handle USE statement
 	if s, ok := stmt.(*UseStatement); ok {
-		err := c.handleUse(ctx, s, interactive)
-		if err != nil {
+		if err := c.handleUseStatement(ctx, s, interactive); err != nil {
 			return "", err
 		}
-
-		fmt.Fprintf(c.OutStream, "Database changed")
 	}
 
+	// Setup progress mark and timing
 	t0 := time.Now()
-	stop := func() {}
-	switch stmt.(type) {
-	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
-		break
-	default:
-		stop = c.PrintProgressingMark()
-	}
+	stop := c.setupProgressMark(stmt)
 
+	// Execute the statement
 	result, err := c.Session.ExecuteStatement(ctx, stmt)
 
+	// Stop progress mark
 	stop()
 	elapsed := time.Since(t0).Seconds()
 
@@ -391,6 +431,39 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		return "", err
 	}
 
+	// Update result stats and system variables
+	c.updateResultStats(result, elapsed)
+
+	// Display the result
+	c.displayResult(result, interactive, input)
+
+	return result.PreInput, nil
+}
+
+// handleUseStatement handles the USE statement.
+func (c *Cli) handleUseStatement(ctx context.Context, s *UseStatement, interactive bool) error {
+	err := c.handleUse(ctx, s, interactive)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(c.OutStream, "Database changed")
+	return nil
+}
+
+// setupProgressMark sets up the progress mark display for the statement execution.
+// Returns a function to stop the progress mark.
+func (c *Cli) setupProgressMark(stmt Statement) func() {
+	switch stmt.(type) {
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
+		return func() {}
+	default:
+		return c.PrintProgressingMark()
+	}
+}
+
+// updateResultStats updates the result stats and system variables.
+func (c *Cli) updateResultStats(result *Result, elapsed float64) {
 	// only SELECT statement has the elapsed time measured by the server
 	if result.Stats.ElapsedTime == "" {
 		result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
@@ -399,7 +472,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	if !result.KeepVariables {
 		c.updateSystemVariables(result)
 	}
+}
 
+// displayResult displays the result of the statement execution.
+func (c *Cli) displayResult(result *Result, interactive bool, input string) {
 	size := math.MaxInt
 	if c.SystemVariables.AutoWrap {
 		sz, _, err := term.GetSize(int(os.Stdout.Fd()))
@@ -415,8 +491,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	if interactive {
 		fmt.Fprintf(c.OutStream, "\n")
 	}
-
-	return result.PreInput, nil
 }
 
 func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) error {
