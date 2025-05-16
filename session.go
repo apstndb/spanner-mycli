@@ -221,9 +221,8 @@ func (s *Session) InTransaction() bool {
 	return s.tc != nil
 }
 
-// BeginPendingTransaction starts pending transaction.
-// The actual start of the transaction is delayed until the first operation in the transaction is executed.
-func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
+// validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
+func (s *Session) validateNoActiveTransaction() error {
 	if s.InReadWriteTransaction() {
 		return errors.New("read-write transaction is already running")
 	}
@@ -232,68 +231,89 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 		return errors.New("read-only transaction is already running")
 	}
 
-	// Use session's default isolation level if transaction priority is not set.
+	return nil
+}
+
+// resolveTransactionPriority returns the effective priority for a transaction.
+// If the provided priority is unspecified, it uses the session's default priority.
+func (s *Session) resolveTransactionPriority(priority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
+	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		return s.systemVariables.RPCPriority
+	}
+	return priority
+}
+
+// resolveIsolationLevel returns the effective isolation level for a transaction.
+// If the provided isolation level is unspecified, it uses the session's default isolation level.
+func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_IsolationLevel) sppb.TransactionOptions_IsolationLevel {
 	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		isolationLevel = s.systemVariables.DefaultIsolationLevel
+		return s.systemVariables.DefaultIsolationLevel
+	}
+	return isolationLevel
+}
+
+// BeginPendingTransaction starts pending transaction.
+// The actual start of the transaction is delayed until the first operation in the transaction is executed.
+func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
+	if err := s.validateNoActiveTransaction(); err != nil {
+		return err
 	}
 
-	// Use session's priority if transaction priority is not set.
-	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.systemVariables.RPCPriority
-	}
+	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
+	resolvedPriority := s.resolveTransactionPriority(priority)
 
 	s.tc = &transactionContext{
 		mode:           transactionModePending,
-		priority:       priority,
-		isolationLevel: isolationLevel,
+		priority:       resolvedPriority,
+		isolationLevel: resolvedIsolationLevel,
 	}
 	return nil
 }
 
+// DetermineTransaction determines the type of transaction to start based on the pending transaction
+// and system variables. It returns the timestamp for read-only transactions or a zero time for read-write transactions.
 func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
 	var zeroTime time.Time
+
+	// If there's no pending transaction, no action is needed
 	if s.tc == nil || s.tc.mode != transactionModePending {
 		return zeroTime, nil
 	}
 
+	// Determine transaction type based on system variables
 	if s.systemVariables.ReadOnly {
+		// Start a read-only transaction with the pending transaction's priority
 		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.tc.priority)
 	}
 
+	// Start a read-write transaction with the pending transaction's isolation level and priority
 	return zeroTime, s.BeginReadWriteTransaction(ctx, s.tc.isolationLevel, s.tc.priority)
+}
+
+// getTransactionTag returns the transaction tag from a pending transaction if it exists.
+func (s *Session) getTransactionTag() string {
+	if s.tc != nil && s.tc.mode == transactionModePending {
+		return s.tc.tag
+	}
+	return ""
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
 func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	if s.InReadWriteTransaction() {
-		return errors.New("read-write transaction is already running")
+	if err := s.validateNoActiveTransaction(); err != nil {
+		return err
 	}
 
-	if s.InReadOnlyTransaction() {
-		return errors.New("read-only transaction is already running")
-	}
-
-	var tag string
-	if s.tc != nil && s.tc.mode == transactionModePending {
-		tag = s.tc.tag
-	}
-
-	// Use session's priority if transaction priority is not set.
-	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.systemVariables.RPCPriority
-	}
-
-	// Use default isolation level if transaction isolation level is not set.
-	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		isolationLevel = s.systemVariables.DefaultIsolationLevel
-	}
+	tag := s.getTransactionTag()
+	resolvedPriority := s.resolveTransactionPriority(priority)
+	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 
 	opts := spanner.TransactionOptions{
 		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
-		CommitPriority:              priority,
+		CommitPriority:              resolvedPriority,
 		TransactionTag:              tag,
 		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
-		IsolationLevel:              isolationLevel,
+		IsolationLevel:              resolvedIsolationLevel,
 	}
 
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
@@ -303,9 +323,9 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	s.tc = &transactionContext{
 		mode:           transactionModeReadWrite,
 		tag:            tag,
-		priority:       priority,
+		priority:       resolvedPriority,
 		txn:            txn,
-		isolationLevel: isolationLevel,
+		isolationLevel: resolvedIsolationLevel,
 	}
 	return nil
 }
@@ -348,12 +368,8 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 	return nil
 }
 
-// BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
-func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
-	if s.InReadOnlyTransaction() {
-		return time.Time{}, errors.New("read-only transaction is already running")
-	}
-
+// resolveTimestampBound returns the effective timestamp bound for a read-only transaction.
+func (s *Session) resolveTimestampBound(typ timestampBoundType, staleness time.Duration, timestamp time.Time) spanner.TimestampBound {
 	tb := spanner.StrongRead()
 	switch typ {
 	case strong:
@@ -367,24 +383,30 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 			tb = *s.systemVariables.ReadOnlyStaleness
 		}
 	}
+	return tb
+}
+
+// BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
+func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
+	if err := s.validateNoActiveTransaction(); err != nil {
+		return time.Time{}, err
+	}
+
+	tb := s.resolveTimestampBound(typ, staleness, timestamp)
+	resolvedPriority := s.resolveTransactionPriority(priority)
 
 	txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
-	// Use session's priority if transaction priority is not set.
-	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = s.systemVariables.RPCPriority
-	}
-
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
 	// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
-	opts := spanner.QueryOptions{Priority: priority}
+	opts := spanner.QueryOptions{Priority: resolvedPriority}
 	if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
 		return time.Time{}, err
 	}
 
 	s.tc = &transactionContext{
 		mode:     transactionModeReadOnly,
-		priority: priority,
+		priority: resolvedPriority,
 		txn:      txn,
 	}
 
