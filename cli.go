@@ -102,12 +102,18 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 
 		input, err := c.readInputLine(ctx, ed)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			switch {
+			case errors.Is(err, io.EOF):
 				fmt.Fprintln(c.OutStream, "Bye")
 				return c.handleExit()
+			case isInterrupted(err):
+				// This section is currently redundant but keep as intended
+				c.PrintInteractiveError(err)
+				continue
+			default:
+				c.PrintInteractiveError(err)
+				continue
 			}
-			c.PrintInteractiveError(err)
-			continue
 		}
 
 		stmt, err := c.parseStatement(input)
