@@ -2469,8 +2469,8 @@ github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-runewidthex v0.1.0 h1:BTROSb06XZLb4hz5PC5i+3o/BBNhXS5QW6a6S/f1NTU=
 github.com/apstndb/go-runewidthex v0.1.0/go.mod h1:i5+ICpKj4bQDXUypcMP2oHkoXjj59jC5Cshcb9Bb6fE=
-github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc h1:djtqIk9U2GWAbL2WgpBM/RffNyilUar+War1YWjqI4U=
-github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc/go.mod h1:T2x/xf7GA3AOfm8245sTteb27qYAgbXIMlysbxJzpXk=
+github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae h1:dM4EYL52u6aQh97R2agNDukCYhPs4aSDdkSZkvVvcf8=
+github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae/go.mod h1:xW+J2790w/YgZZf3y5ff+/iO+dQoJQDGPrNkSLKQ9xc=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKRhehV71v8m4J+76zpjTGcRqsY=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.5.0 h1:WaWD0Wp3Yw1BZwyvT4bIf2XsXAA+vq9ZNxUKXXV/vZQ=

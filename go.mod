@@ -11,7 +11,7 @@ require (
 	github.com/apstndb/genaischema v0.1.1
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-runewidthex v0.1.0
-	github.com/apstndb/gsqlutils v0.0.0-20241220021154-62754cd04acc
+	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
 	github.com/apstndb/spanemuboost v0.2.8
