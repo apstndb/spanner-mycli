@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -60,21 +61,21 @@ func TestSystemVariables_DefaultIsolationLevel(t *testing.T) {
 func TestSystemVariablesSetGet(t *testing.T) {
 	// Should cover normal cases of all system variables
 	tests := []struct {
-		desc             string
-		sysVars          *systemVariables
-		name             string
-		value            string
-		want             map[string]string
-		skipSet, skipGet bool
+		desc                               string
+		sysVars                            *systemVariables
+		name                               string
+		value                              string
+		want                               map[string]string
+		unimplementedSet, unimplementedGet bool
 	}{
 		// Java-spanner compatible variables
-		{desc: "READ_TIMESTAMP", name: "READ_TIMESTAMP", skipSet: true,
+		{desc: "READ_TIMESTAMP", name: "READ_TIMESTAMP", unimplementedSet: true,
 			sysVars: &systemVariables{ReadTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)},
 			want:    singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z")},
-		{desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", skipSet: true,
+		{desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", unimplementedSet: true,
 			sysVars: &systemVariables{CommitTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)},
 			want:    singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z")},
-		{desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", skipSet: true,
+		{desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", unimplementedSet: true,
 			sysVars: &systemVariables{
 				CommitTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC),
 				CommitResponse: &sppb.CommitResponse{CommitStats: &sppb.CommitResponse_CommitStats{
@@ -84,24 +85,24 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want: map[string]string{"COMMIT_TIMESTAMP": "1970-01-01T00:00:00Z", "MUTATION_COUNT": "10"}},
 
 		// CLI_* variables
-		{desc: "CLI_VERSION", name: "CLI_VERSION", skipSet: true,
+		{desc: "CLI_VERSION", name: "CLI_VERSION", unimplementedSet: true,
 			want: singletonMap("CLI_VERSION", getVersion())},
-		{desc: "CLI_PROJECT", name: "CLI_PROJECT", skipSet: true,
+		{desc: "CLI_PROJECT", name: "CLI_PROJECT", unimplementedSet: true,
 			sysVars: &systemVariables{Project: "test-project"},
 			want:    singletonMap("CLI_PROJECT", "test-project")},
-		{desc: "CLI_INSTANCE", name: "CLI_INSTANCE", skipSet: true,
+		{desc: "CLI_INSTANCE", name: "CLI_INSTANCE", unimplementedSet: true,
 			sysVars: &systemVariables{Instance: "test-instance"},
 			want:    singletonMap("CLI_INSTANCE", "test-instance")},
-		{desc: "CLI_DATABASE", name: "CLI_DATABASE", skipSet: true,
+		{desc: "CLI_DATABASE", name: "CLI_DATABASE", unimplementedSet: true,
 			sysVars: &systemVariables{Database: "test-database"},
 			want:    singletonMap("CLI_DATABASE", "test-database")},
-		{desc: "CLI_HISTORY_FILE", name: "CLI_HISTORY_FILE", skipSet: true,
+		{desc: "CLI_HISTORY_FILE", name: "CLI_HISTORY_FILE", unimplementedSet: true,
 			sysVars: &systemVariables{HistoryFile: "/tmp/spanner_mycli_readline.tmp"},
 			want:    singletonMap("CLI_HISTORY_FILE", "/tmp/spanner_mycli_readline.tmp")},
-		{desc: "CLI_ENDPOINT", name: "CLI_ENDPOINT", skipSet: true,
+		{desc: "CLI_ENDPOINT", name: "CLI_ENDPOINT", unimplementedSet: true,
 			sysVars: &systemVariables{Endpoint: "localhost:9010"},
 			want:    singletonMap("CLI_ENDPOINT", "localhost:9010")},
-		{desc: "CLI_DIRECT_READ", name: "CLI_DIRECT_READ", skipSet: true,
+		{desc: "CLI_DIRECT_READ", name: "CLI_DIRECT_READ", unimplementedSet: true,
 			sysVars: &systemVariables{DirectedRead: &sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
 				IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
 					{Type: sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE, Location: "asia-northeast2"}}}}}},
@@ -111,11 +112,11 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want: singletonMap("READONLY", "TRUE")},
 		{desc: "AUTO_PARTITION_MODE", name: "AUTO_PARTITION_MODE", value: "TRUE",
 			want: singletonMap("AUTO_PARTITION_MODE", "TRUE")},
-		{desc: "AUTOCOMMIT", name: "AUTOCOMMIT", skipSet: true, skipGet: true,
+		{desc: "AUTOCOMMIT", name: "AUTOCOMMIT", unimplementedSet: true, unimplementedGet: true,
 			value: "FALSE",
 			want:  singletonMap("AUTOCOMMIT", "FALSE")},
 		{desc: "RETRY_ABORTS_INTERNALLY", name: "RETRY_ABORTS_INTERNALLY",
-			skipSet: true, skipGet: true},
+			unimplementedSet: true, unimplementedGet: true},
 		{desc: "EXCLUDE_TXN_FROM_CHANGE_STREAMS", name: "EXCLUDE_TXN_FROM_CHANGE_STREAMS", value: "TRUE",
 			want: singletonMap("EXCLUDE_TXN_FROM_CHANGE_STREAMS", "TRUE")},
 		{desc: "AUTO_BATCH_DML", name: "AUTO_BATCH_DML", value: "TRUE",
@@ -144,10 +145,10 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want: singletonMap("CLI_MARKDOWN_CODEBLOCK", "TRUE")},
 		{desc: "CLI_LINT_PLAN", name: "CLI_LINT_PLAN", value: "TRUE",
 			want: singletonMap("CLI_LINT_PLAN", "TRUE")},
-		{desc: "CLI_INSECURE", name: "CLI_INSECURE", skipSet: true,
+		{desc: "CLI_INSECURE", name: "CLI_INSECURE", unimplementedSet: true,
 			sysVars: &systemVariables{Insecure: true},
 			want:    singletonMap("CLI_INSECURE", "TRUE")},
-		{desc: "CLI_LOG_GRPC", name: "CLI_LOG_GRPC", skipSet: true,
+		{desc: "CLI_LOG_GRPC", name: "CLI_LOG_GRPC", unimplementedSet: true,
 			sysVars: &systemVariables{LogGrpc: true},
 			want:    singletonMap("CLI_LOG_GRPC", "TRUE")},
 
@@ -174,7 +175,7 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{desc: "CLI_OUTPUT_TEMPLATE_FILE", name: "CLI_OUTPUT_TEMPLATE_FILE", value: "output_default.tmpl",
 			want: singletonMap("CLI_OUTPUT_TEMPLATE_FILE", "output_default.tmpl")},
 		{desc: "CLI_ROLE", name: "CLI_ROLE",
-			skipSet: true, sysVars: &systemVariables{Role: "test-role"},
+			unimplementedSet: true, sysVars: &systemVariables{Role: "test-role"},
 			want: singletonMap("CLI_ROLE", "test-role")},
 		{desc: "CLI_PROMPT", name: "CLI_PROMPT", value: "test-prompt",
 			want: singletonMap("CLI_PROMPT", "test-prompt")},
@@ -225,21 +226,31 @@ func TestSystemVariablesSetGet(t *testing.T) {
 				sysVars = &systemVariables{}
 			}
 
-			if !test.skipSet {
-				err := sysVars.Set(test.name, test.value)
+			err := sysVars.Set(test.name, test.value)
+			if !test.unimplementedSet {
 				if err != nil {
 					t.Errorf("sysVars.Set should success, but failed: %v", err)
 				}
+			} else {
+				var e errSetterUnimplemented
+				if !errors.As(err, &e) {
+					t.Errorf("sysVars.Set is skipped, but implemented: %v", err)
+				}
 			}
 
-			if !test.skipGet {
-				got, err := sysVars.Get(test.name)
+			got, err := sysVars.Get(test.name)
+			if !test.unimplementedGet {
 				if err != nil {
 					t.Errorf("sysVars.Get should success, but failed: %v", err)
 				}
 
 				if diff := cmp.Diff(test.want, got); diff != "" {
 					t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+				}
+			} else {
+				var e errGetterUnimplemented
+				if !errors.As(err, &e) {
+					t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
 				}
 			}
 		})
