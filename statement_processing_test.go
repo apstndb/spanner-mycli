@@ -19,11 +19,13 @@ package main
 import (
 	_ "embed"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/gsqlutils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -43,10 +45,11 @@ func TestBuildStatement(t *testing.T) {
 
 	// valid tests
 	for _, test := range []struct {
-		desc          string
-		input         string
-		want          Statement
-		skipLowerCase bool
+		desc           string
+		input          string
+		want           Statement
+		skipLowerCase  bool
+		skipParseModes []parseMode
 	}{
 		{
 			desc:  "SELECT statement",
@@ -97,12 +100,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER DATABASE statement",
 			input: "ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )",
-			want:  &DdlStatement{Ddl: `ALTER DATABASE d1 SET OPTIONS (version_retention_period = "7d")`},
+			want:  &DdlStatement{Ddl: `ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )`},
 		},
 		{
 			desc:  "CREATE TABLE statement",
 			input: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)",
-			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (\n  id INT64 NOT NULL\n) PRIMARY KEY (id)"},
+			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)"},
 		},
 		{
 			desc:  "RENAME TABLE statement",
@@ -122,7 +125,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "CREATE INDEX statement",
 			input: "CREATE INDEX idx_name ON t1 (name DESC)",
-			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1(name DESC)"},
+			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1 (name DESC)"},
 		},
 		{
 			desc:  "DROP INDEX statement",
@@ -177,7 +180,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER CHANGE STREAM SET OPTIONS statement",
 			input: "ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )",
-			want:  &DdlStatement{Ddl: `ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS (retention_period = "36h")`},
+			want:  &DdlStatement{Ddl: `ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )`},
 		},
 		{
 			desc:  "ALTER CHANGE STREAM DROP FOR ALL statement",
@@ -364,7 +367,7 @@ func TestBuildStatement(t *testing.T) {
 		},
 		{
 			desc:          "BEGIN RO read timestamp statement",
-			input:         "BEGIN RO 2020-03-30T22:54:44.834017+09:00",
+			input:         `BEGIN RO "2020-03-30T22:54:44.834017+09:00"`,
 			want:          &BeginRoStatement{Timestamp: timestamp, TimestampBoundType: readTimestamp},
 			skipLowerCase: true,
 		},
@@ -553,9 +556,10 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainStatement{Explain: "WITH t1 AS (SELECT 1) SELECT * FROM t1"},
 		},
 		{
-			desc:  "GRAPH statement",
-			input: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
-			want:  &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
+			desc:           "GRAPH statement",
+			input:          "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
+			want:           &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
+			skipParseModes: []parseMode{parseMemefishOnly},
 		},
 		{
 			desc:  "EXPLAIN GRAPH statement",
@@ -852,31 +856,61 @@ TABLE Singers (42)
 			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},
 		},
 	} {
+		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseMemefishOnly, parseModeUnspecified}
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := BuildStatement(test.input)
-			if err != nil {
-				t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
-			}
-			if diff := cmp.Diff(test.want, got, protocmp.Transform()); diff != "" {
-				t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
+			for _, mode := range modes {
+				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+					if slices.Contains(test.skipParseModes, mode) {
+						t.Skipf("skip by skipParseModes")
+					}
+
+					stripped, err := gsqlutils.StripComments("", test.input)
+					if err != nil {
+						t.Fatalf("StripComments(%q) got error: %v", test.input, err)
+					}
+
+					got, err := BuildStatementWithCommentsWithMode(stripped, test.input, mode)
+					if err != nil {
+						t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
+					}
+					if diff := cmp.Diff(test.want, got, protocmp.Transform()); diff != "" {
+						t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
+					}
+				})
 			}
 		})
 
-		if !test.skipLowerCase {
-			input := strings.ToLower(test.input)
-			t.Run("Lower "+test.desc, func(t *testing.T) {
-				got, err := BuildStatement(input)
-				if err != nil {
-					t.Fatalf("BuildStatement(%q) got error: %v", input, err)
-				}
-				// check only type
-				gotType := reflect.TypeOf(got)
-				wantType := reflect.TypeOf(test.want)
-				if gotType != wantType {
-					t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
-				}
-			})
-		}
+		input := strings.ToLower(test.input)
+		t.Run("Lower "+test.desc, func(t *testing.T) {
+			if test.skipLowerCase {
+				t.Skip("skip by skipLowerCase")
+			}
+
+			for _, mode := range modes {
+				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+					if slices.Contains(test.skipParseModes, mode) {
+						t.Skip("skip by skipParseModes")
+					}
+
+					stripped, err := gsqlutils.StripComments("", input)
+					if err != nil {
+						t.Fatalf("StripComments(%q) got error: %v", test.input, err)
+					}
+
+					got, err := BuildStatementWithCommentsWithMode(stripped, test.input, mode)
+					if err != nil {
+						t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
+					}
+
+					// check only type
+					gotType := reflect.TypeOf(got)
+					wantType := reflect.TypeOf(test.want)
+					if gotType != wantType {
+						t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
+					}
+				})
+			}
+		})
 	}
 }
 

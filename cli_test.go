@@ -48,7 +48,7 @@ func TestBuildCommands(t *testing.T) {
 		{Desc: "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []Statement{&BulkDdlStatement{[]string{
-				"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
+				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
 				"ALTER TABLE t1 ADD COLUMN col INT64",
 				"CREATE INDEX i1 ON t1(col)",
 				"DROP INDEX i1",
@@ -65,8 +65,8 @@ func TestBuildCommands(t *testing.T) {
 			Expected: []Statement{
 				&BulkDdlStatement{
 					[]string{
-						"CREATE TABLE t1 (\n  pk INT64\n) PRIMARY KEY (pk)",
-						"CREATE TABLE t2 (\n  pk INT64\n) PRIMARY KEY (pk)",
+						"CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk)",
+						"CREATE TABLE t2 (pk INT64) PRIMARY KEY(pk)",
 					},
 				},
 				&SelectStatement{"SELECT * FROM t1"},
@@ -82,7 +82,8 @@ func TestBuildCommands(t *testing.T) {
 			SELECT 0x1/**/A`,
 			Expected: []Statement{
 				&BulkDdlStatement{
-					[]string{"CREATE TABLE t1 (\n  pk INT64,\n  col INT64\n) PRIMARY KEY (pk)"},
+					[]string{`
+			CREATE TABLE t1(pk INT64 /* NOT NULL*/, col INT64) PRIMARY KEY(pk)`},
 				},
 				&DmlStatement{"INSERT t1(pk/*, col*/) VALUES(1/*, 2*/)"},
 				&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"},

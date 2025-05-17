@@ -145,11 +145,18 @@ var (
 
 var errStatementNotMatched = errors.New("statement not matched")
 
+type statementParseFunc func(stripped, raw string) (Statement, error)
+
 func BuildStatement(input string) (Statement, error) {
 	return BuildStatementWithComments(input, input)
 }
 
-func BuildCLIStatement(trimmed string) (Statement, error) {
+func BuildCLIStatement(stripped, raw string) (Statement, error) {
+	trimmed := strings.TrimSpace(stripped)
+	if trimmed == "" {
+		return nil, errors.New("empty statement")
+	}
+
 	for _, cs := range clientSideStatementDefs {
 		if cs.Pattern.MatchString(trimmed) {
 			matches := cs.Pattern.FindStringSubmatch(trimmed)
@@ -168,38 +175,68 @@ func BuildStatementWithComments(stripped, raw string) (Statement, error) {
 	return BuildStatementWithCommentsWithMode(stripped, raw, parseModeFallback)
 }
 
-func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
-	trimmed := strings.TrimSpace(stripped)
-	if trimmed == "" {
-		return nil, errors.New("empty statement")
-	}
-
-	switch stmt, err := BuildCLIStatement(trimmed); {
-	case err != nil && !errors.Is(err, errStatementNotMatched):
-		return nil, err
-	case stmt != nil:
-		return stmt, nil
-	default:
-		// no action
-	}
-
-	if mode != parseModeNoMemefish && mode != parseModeUnspecified {
-		switch stmt, err := BuildNativeStatementMemefish(raw); {
-		case mode == parseMemefishOnly && err != nil:
-			return nil, fmt.Errorf("invalid statement: %w", err)
-		case errors.Is(err, errStatementNotMatched):
-			slog.Warn("ignore unknown statement", "err", err)
-		case err != nil:
-			slog.Warn("ignore memefish parse error", "err", err)
-		default:
-			return stmt, nil
+func composeStatementParseFunc(funcs ...statementParseFunc) statementParseFunc {
+	return func(stripped, raw string) (Statement, error) {
+		for _, f := range funcs {
+			stmt, err := f(stripped, raw)
+			switch {
+			case errors.Is(err, errStatementNotMatched):
+				slog.Debug("fallback to next parser", "err", err)
+				continue
+			case err != nil:
+				return nil, err
+			default:
+				return stmt, nil
+			}
 		}
+		return nil, errStatementNotMatched
 	}
-
-	return BuildNativeStatementFallback(trimmed, raw)
 }
 
-func BuildNativeStatementMemefish(raw string) (Statement, error) {
+func ignoreParseError(f statementParseFunc) statementParseFunc {
+	return func(stripped, raw string) (Statement, error) {
+		s, err := f(stripped, raw)
+		switch {
+		case errors.Is(err, errStatementNotMatched):
+			return nil, err
+		case err != nil:
+			return nil, fmt.Errorf("error ignored: %w", errors.Join(err, errStatementNotMatched))
+		default:
+			return s, nil
+		}
+	}
+}
+
+// getParserForMode returns the appropriate StatementParser for the given mode
+func getParserForMode(mode parseMode) statementParseFunc {
+	switch mode {
+	case parseModeNoMemefish:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			BuildNativeStatementLexical,
+		)
+	case parseMemefishOnly:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			BuildNativeStatementMemefish,
+		)
+	case parseModeFallback, parseModeUnspecified:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			ignoreParseError(BuildNativeStatementMemefish),
+			BuildNativeStatementLexical,
+		)
+	default:
+		panic(fmt.Sprintf("invalid parseMode: %q", mode))
+	}
+}
+
+func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
+	parser := getParserForMode(mode)
+	return parser(stripped, raw)
+}
+
+func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
 		return nil, err
@@ -214,19 +251,18 @@ func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil
 	case kind.IsDDL():
-		// Currently, UpdateDdl doesn't permit comments, so we need to unparse DDLs.
-
 		// Only CREATE DATABASE needs special treatment in DDL.
 		if instanceOf[*ast.CreateDatabase](stmt) {
-			return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
+			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
-		return &DdlStatement{Ddl: stmt.SQL()}, nil
+
+		return &DdlStatement{Ddl: raw}, nil
 	default:
 		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
 	}
 }
 
-func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error) {
+func BuildNativeStatementLexical(stripped string, raw string) (Statement, error) {
 	kind, err := stmtkind.DetectLexical(raw)
 	if err != nil {
 		return nil, err
@@ -240,14 +276,12 @@ func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error)
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil
 	case kind.IsDDL():
-		// Currently, UpdateDdl doesn't permit comments, so we need to use trimmed SQL tex.
-
 		// Only CREATE DATABASE needs special treatment in DDL.
-		if createDatabaseRe.MatchString(trimmed) {
-			return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
+		if createDatabaseRe.MatchString(stripped) {
+			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
 
-		return &DdlStatement{Ddl: trimmed}, nil
+		return &DdlStatement{Ddl: raw}, nil
 	default:
 		return nil, errors.New("invalid statement")
 	}

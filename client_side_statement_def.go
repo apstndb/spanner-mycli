@@ -427,8 +427,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start R/O transaction`,
-				Syntax: `BEGIN RO [TRANSACTION] [{<seconds>|<RFC3339-formatted time>}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
-				Note:   "`<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.",
+				Syntax: `BEGIN RO [TRANSACTION] [{<seconds>|<rfc3339_timestamp>}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
+				Note:   "`<seconds>` and `<rfc3339_timestamp>` is used for stale read. `<rfc3339_timestamp>` must be quoted. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
@@ -438,7 +438,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 
 			if matched[1] != "" {
-				if t, err := time.Parse(time.RFC3339Nano, matched[1]); err == nil {
+				if t, err := time.Parse(time.RFC3339Nano, unquoteString(matched[1])); err == nil {
 					stmt = &BeginRoStatement{
 						TimestampBoundType: readTimestamp,
 						Timestamp:          t,
