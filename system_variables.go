@@ -152,6 +152,34 @@ func (sv *systemVariables) ProjectPath() string {
 	return projectPath(sv.Project)
 }
 
+type errSetterUnimplemented struct {
+	Name string
+}
+
+func (e errSetterUnimplemented) Error() string {
+	return fmt.Sprintf("unimplemented setter: %v", e.Name)
+}
+
+type errGetterUnimplemented struct {
+	Name string
+}
+
+func (e errGetterUnimplemented) Error() string {
+	return fmt.Sprintf("unimplemented getter: %v", e.Name)
+}
+
+type errAdderUnimplemented struct {
+	Name string
+}
+
+func (e errAdderUnimplemented) Error() string {
+	return fmt.Sprintf("unimplemented adder: %v", e.Name)
+}
+
+var _ error = &errSetterUnimplemented{}
+var _ error = &errGetterUnimplemented{}
+var _ error = &errAdderUnimplemented{}
+
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
 	a, ok := systemVariableDefMap[upperName]
@@ -159,7 +187,7 @@ func (sv *systemVariables) Set(name string, value string) error {
 		return fmt.Errorf("unknown variable name: %v", name)
 	}
 	if a.Accessor.Setter == nil {
-		return fmt.Errorf("setter unimplemented: %v", name)
+		return errSetterUnimplemented{name}
 	}
 
 	return a.Accessor.Setter(sv, upperName, value)
@@ -172,7 +200,7 @@ func (sv *systemVariables) Add(name string, value string) error {
 		return fmt.Errorf("unknown variable name: %v", name)
 	}
 	if a.Accessor.Adder == nil {
-		return fmt.Errorf("adder unimplemented: %v", name)
+		return errAdderUnimplemented{name}
 	}
 
 	return a.Accessor.Adder(sv, upperName, value)
@@ -185,7 +213,7 @@ func (sv *systemVariables) Get(name string) (map[string]string, error) {
 		return nil, fmt.Errorf("unknown variable name: %v", name)
 	}
 	if a.Accessor.Getter == nil {
-		return nil, fmt.Errorf("getter unimplemented: %v", name)
+		return nil, errGetterUnimplemented{name}
 	}
 
 	value, err := a.Accessor.Getter(sv, name)
