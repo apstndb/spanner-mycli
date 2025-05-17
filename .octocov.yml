@@ -20,3 +20,5 @@ report:
   if: is_default_branch
   datastores:
     - artifact://${GITHUB_REPOSITORY}
+push:
+  if: is_default_branch
