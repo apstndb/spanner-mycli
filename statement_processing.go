@@ -200,6 +200,7 @@ func ignoreParseError(f statementParseFunc) statementParseFunc {
 		case errors.Is(err, errStatementNotMatched):
 			return nil, err
 		case err != nil:
+			slog.Warn("error ignored", "err", err)
 			return nil, fmt.Errorf("error ignored: %w", errors.Join(err, errStatementNotMatched))
 		default:
 			return s, nil
