@@ -15,8 +15,10 @@
 on:
   push:
     branches:
+      - main
       - master
   pull_request:
+
 name: CI
 jobs:
   test:
