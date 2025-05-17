@@ -724,6 +724,20 @@ TABLE Singers (42)
 			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
 		},
 		{
+			desc: "SYNC PROTO BUNDLE UPSERT statement with single path",
+			// input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType")},
+		},
+		// TODO: Not yet implemented
+		/*
+			{
+				desc: "SYNC PROTO BUNDLE UPSERT DELETE statement",
+				input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+				want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},,
+			},
+		*/
+		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
@@ -854,6 +868,16 @@ TABLE Singers (42)
 			desc:  "CQL statement",
 			input: `CQL SELECT id, active, username FROM users`,
 			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},
+		},
+		{
+			desc:  "HELP statement",
+			input: `HELP`,
+			want:  &HelpStatement{},
+		},
+		{
+			desc:  "HELP VARIABLES statement",
+			input: `HELP VARIABLES`,
+			want:  &HelpVariablesStatement{},
 		},
 	} {
 		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseMemefishOnly, parseModeUnspecified}
