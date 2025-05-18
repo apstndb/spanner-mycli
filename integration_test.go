@@ -102,8 +102,6 @@ func initializeSession(ctx context.Context, emulator *gcloud.GCloudContainer, cl
 		return nil, err
 	}
 
-	session.systemVariables.CurrentSession = session
-
 	return session, nil
 }
 
