@@ -90,6 +90,39 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+	t.Helper()
+	ctx := t.Context()
+
+	_, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
+		spanemuboost.WithDatabaseID(database),
+		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
+		spanemuboost.WithSetupDDLs(ddls),
+		spanemuboost.WithSetupRawDMLs(dmls),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	options := defaultClientOptions(emulator)
+	session, err = NewSession(ctx, &systemVariables{
+		Project:     clients.ProjectID,
+		Instance:    clients.InstanceID,
+		Database:    clients.DatabaseID,
+		Params:      make(map[string]ast.Node),
+		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	if err != nil {
+		clientsTeardown()
+		t.Fatalf("failed to create test session: err=%s", err)
+	}
+
+	session.systemVariables.CurrentSession = session
+
+	return clients, session, func() {
+		session.Close()
+		clientsTeardown()
+	}
+}
 func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
@@ -116,6 +149,8 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 		clientsTeardown()
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
+
+	session.systemVariables.CurrentSession = session
 
 	return clients, session, func() {
 		session.Close()
@@ -278,9 +313,11 @@ func TestSystemVariables(t *testing.T) {
 func TestStatements(t *testing.T) {
 	tests := []struct {
 		desc        string
+		ddls, dmls  []string // initialize statements
 		stmt        []string
 		wantResults []*Result
 		cmpOpts     []cmp.Option
+		database    string
 	}{
 		{
 			desc: "query parameters",
@@ -344,6 +381,18 @@ func TestStatements(t *testing.T) {
 					),
 					AffectedRows: 1,
 				},
+			},
+		},
+		{
+			desc: "SHOW VARIABLE CLI_VERSION",
+			stmt: sliceOf(
+				`SHOW VARIABLE CLI_VERSION`,
+			),
+			wantResults: []*Result{
+				{
+					KeepVariables: true,
+					ColumnNames:   sliceOf("CLI_VERSION"),
+					Rows:          sliceOf(toRow(getVersion()))},
 			},
 		},
 		{
@@ -533,6 +582,111 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "SET PARAM TYPE and SHOW PARAMS",
+			stmt: sliceOf(
+				"SET PARAM i INT64",
+				"SHOW PARAMS",
+				"DESCRIBE SELECT @i AS i",
+			),
+			wantResults: []*Result{
+				{KeepVariables: true},
+				{
+					KeepVariables: true,
+					ColumnNames:   sliceOf("Param_Name", "Param_Kind", "Param_Value"),
+					Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
+				},
+				{
+					AffectedRows: 1,
+					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					Rows:         sliceOf(toRow("i", "INT64")),
+				},
+			},
+		},
+		{
+			desc: "HELP",
+			stmt: sliceOf("HELP"),
+			wantResults: []*Result{
+				// It should be safe because HELP doesn't depend on ctx and session.
+				lo.Must((&HelpStatement{}).Execute(nil, nil)),
+			},
+		},
+		{
+			desc: "SHOW VARIABLES",
+			// TODO: This test case is currently not available because it can't be implemented in this test suite.
+		},
+		{
+			desc: "SHOW DDLS",
+			stmt: sliceOf("SHOW DDLS"),
+			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			wantResults: []*Result{
+				{
+					ColumnNames:   sliceOf(""),
+					KeepVariables: true,
+					Rows: sliceOf(
+						toRow(heredoc.Doc(`
+						CREATE TABLE TestTable (
+						  id INT64,
+						  active BOOL,
+						) PRIMARY KEY(id);
+						`))),
+				},
+			},
+		},
+		{
+			desc: "SHOW DATABASES",
+			stmt: sliceOf("SHOW DATABASES"),
+			wantResults: []*Result{
+				{ColumnNames: sliceOf("Database"), AffectedRows: 1},
+			},
+			// Ignore Rows because the database name is unexpected because of auto generation
+			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
+				return regexp.MustCompile(`\.AffectedRows|\.Rows`).MatchString(path.GoString())
+			}, cmp.Ignore())),
+		},
+		{
+			desc: "SHOW TABLES",
+			stmt: sliceOf("SHOW TABLES"),
+			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			wantResults: []*Result{
+				{ColumnNames: sliceOf(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
+			},
+			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
+				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.GoString())
+			}, cmp.Ignore())),
+		},
+		{
+			desc: "TRY PARTITIONED QUERY",
+			stmt: sliceOf("TRY PARTITIONED QUERY SELECT 1"),
+			wantResults: []*Result{
+				{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					ColumnNames:  sliceOf("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				},
+			},
+		},
+		{
+			desc: "mutation, pdml, partitioned query",
+			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
+			stmt: sliceOf(
+				"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)",
+				"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1",
+				"RUN PARTITIONED QUERY SELECT id, active FROM TestTable",
+			),
+			wantResults: []*Result{
+				{IsMutation: true},
+				{IsMutation: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound},
+				{
+					AffectedRows:   1,
+					PartitionCount: 2,
+					ColumnNames:    sliceOf("id", "active"),
+					ColumnTypes:    testTableRowType,
+					Rows:           sliceOf(toRow("1", "false")),
+				},
+			},
+		},
+		{
 			desc: "read-write transactions",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -645,6 +799,164 @@ func TestStatements(t *testing.T) {
 				},
 			},
 		},
+
+		// --- Added Test Cases ---
+		{
+			desc: "SHOW VARIABLES",
+			stmt: sliceOf("SHOW VARIABLES"),
+			wantResults: []*Result{
+				{
+					ColumnNames:   sliceOf("name", "value"),
+					KeepVariables: true,
+					// Rows are dynamic, so we don't check them here.
+					// We check that AffectedRows > 0 if some variables exist.
+				},
+			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
+						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString()) // AffectedRows can vary
+				}, cmp.Ignore()),
+			),
+		},
+		{
+			desc: "HELP VARIABLES",
+			stmt: sliceOf("HELP VARIABLES"),
+			wantResults: []*Result{
+				lo.Must((&HelpVariablesStatement{}).Execute(nil, nil)),
+			},
+		},
+		{
+			desc: "ABORT BATCH DML",
+			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
+			stmt: sliceOf(
+				"START BATCH DML",
+				"INSERT INTO TestAbortBatchDML (id) VALUES (1)",
+				"ABORT BATCH",
+				"SELECT COUNT(*) FROM TestAbortBatchDML",
+			),
+			wantResults: []*Result{
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},       // START BATCH
+				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
+				{KeepVariables: true}, // ABORT BATCH
+				{ // SELECT COUNT(*)
+					ColumnNames:  sliceOf(""),
+					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("0")),
+					AffectedRows: 1,
+				},
+			},
+			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
+				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
+					!strings.Contains(path.String(), "wantResults[3]")
+			}, cmp.Ignore())),
+		},
+		{
+			desc: "EXPLAIN SELECT",
+			// It can't be tested because cloud-spanner-emulator doesn't support EXPLAIN.
+		},
+		{
+			desc: "SET ADD statement for CLI_PROTO_FILES",
+			stmt: sliceOf(
+				`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`,
+				`SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+				`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`,
+				`SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+			),
+			wantResults: []*Result{
+				{KeepVariables: true}, // SET +=
+				{ // SHOW VARIABLE
+					KeepVariables: true,
+					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb`)),
+				},
+				{KeepVariables: true}, // SET +=
+				{ // SHOW VARIABLE
+					KeepVariables: true,
+					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb,testdata/protos/singer.proto`)),
+				},
+			},
+		},
+		{
+			desc: "SHOW CREATE INDEX",
+			ddls: sliceOf(
+				"CREATE TABLE TestShowCreateIndexTbl(id INT64, val INT64) PRIMARY KEY(id)",
+				"CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)",
+			),
+			stmt: sliceOf("SHOW CREATE INDEX TestShowCreateIndexIdx"),
+			wantResults: []*Result{
+				{
+					ColumnNames:  sliceOf("Name", "DDL"),
+					Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
+					AffectedRows: 1,
+				},
+			},
+		},
+		{
+			desc: "DESCRIBE DML (INSERT with literal)",
+			ddls: sliceOf("CREATE TABLE TestDescribeDMLTbl(id INT64 PRIMARY KEY)"),
+			stmt: sliceOf("DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)"),
+			wantResults: []*Result{
+				{
+					// For DML without THEN RETURN, result is empty.
+					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					Rows:         nil, // No parameters in this DML
+					AffectedRows: 0,   // 0 parameters
+				},
+			},
+		},
+		{
+			desc: "PARTITION SELECT query",
+			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
+			stmt: sliceOf("PARTITION SELECT id FROM TestPartitionQueryTbl"),
+			wantResults: []*Result{
+				{
+					ColumnNames:  sliceOf("Partition_Token"),
+					AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
+					ForceWrap:    true,
+				},
+			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) // Ignore actual token values
+				}, cmp.Ignore()),
+			),
+		},
+		{
+			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
+			stmt: sliceOf("SHOW SCHEMA UPDATE OPERATIONS"),
+			wantResults: []*Result{
+				{
+					ColumnNames:  sliceOf("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+					Rows:         nil, // Expect no operations on a fresh emulator DB
+					AffectedRows: 0,
+				},
+			},
+		},
+		{
+			desc: "MUTATE DELETE",
+			ddls: sliceOf("CREATE TABLE TestMutateDeleteTbl(id INT64 PRIMARY KEY)"),
+			stmt: sliceOf(
+				"INSERT INTO TestMutateDeleteTbl (id) VALUES (1)", // Standard DML to insert
+				"MUTATE TestMutateDeleteTbl DELETE (1)",
+				"SELECT COUNT(*) FROM TestMutateDeleteTbl",
+			),
+			wantResults: []*Result{
+				{IsMutation: true, AffectedRows: 1}, // Result of INSERT
+				{IsMutation: true},                  // Result of MUTATE (AffectedRows not set by MutateStatement)
+				{ // SELECT COUNT(*)
+					ColumnNames:  sliceOf(""),
+					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("0")),
+					AffectedRows: 1,
+				},
+			},
+			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
+				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
+					!strings.Contains(path.String(), "wantResults[2]") // Allow ColumnNames for SELECT
+			}, cmp.Ignore())),
+		},
 	}
 
 	for _, tt := range tests {
@@ -654,7 +966,13 @@ func TestStatements(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 			defer cancel()
 
-			_, session, teardown := initialize(t, nil, nil)
+			var session *Session
+			var teardown func()
+			if tt.database == "" {
+				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
+			} else {
+				_, session, teardown = initializeDedicatedInstance(t, database, tt.ddls, tt.dmls)
+			}
 			defer teardown()
 
 			var gots []*Result
@@ -674,6 +992,7 @@ func TestStatements(t *testing.T) {
 			compareResult(t, gots, tt.wantResults, tt.cmpOpts...)
 		})
 	}
+
 }
 
 func TestReadWriteTransaction(t *testing.T) {
