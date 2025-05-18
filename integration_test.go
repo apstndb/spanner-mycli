@@ -94,8 +94,9 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 	t.Helper()
 	ctx := t.Context()
 
-	_, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
+	emulator, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
 		spanemuboost.WithDatabaseID(database),
+		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
 		spanemuboost.WithSetupDDLs(ddls),
 		spanemuboost.WithSetupRawDMLs(dmls),
@@ -633,15 +634,26 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
-			desc: "SHOW DATABASES",
-			stmt: sliceOf("SHOW DATABASES"),
+			desc: "SPLIT POINTS statements",
+			// TODO: Split points are not yet supported by cloud-spanner-emulator.
+		},
+		{
+			desc:     "DATABASE statements",
+			database: "test-database",
+			stmt: sliceOf("SHOW DATABASES",
+				"CREATE DATABASE `new-database`",
+				"SHOW DATABASES",
+				"DROP DATABASE `new-database`",
+				"SHOW DATABASES",
+				// Note: The USE statement is not processed by Session, so we can't test it.
+			),
 			wantResults: []*Result{
-				{ColumnNames: sliceOf("Database"), AffectedRows: 1},
+				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				{IsMutation: true},
+				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+				{IsMutation: true},
+				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
-			// Ignore Rows because the database name is unexpected because of auto generation
-			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.AffectedRows|\.Rows`).MatchString(path.GoString())
-			}, cmp.Ignore())),
 		},
 		{
 			desc: "SHOW TABLES",
@@ -971,7 +983,7 @@ func TestStatements(t *testing.T) {
 			if tt.database == "" {
 				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
 			} else {
-				_, session, teardown = initializeDedicatedInstance(t, database, tt.ddls, tt.dmls)
+				_, session, teardown = initializeDedicatedInstance(t, tt.database, tt.ddls, tt.dmls)
 			}
 			defer teardown()
 
