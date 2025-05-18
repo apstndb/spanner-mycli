@@ -136,7 +136,7 @@ func (DropDatabaseStatement) isMutationStatement() {}
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
-		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
+		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, s.DatabaseId),
 	}); err != nil {
 		return nil, err
 	}
