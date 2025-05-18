@@ -90,6 +90,23 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+func initializeSession(ctx context.Context, emulator *gcloud.GCloudContainer, clients *spanemuboost.Clients) (session *Session, err error) {
+	options := defaultClientOptions(emulator)
+	session, err = NewSession(ctx, &systemVariables{
+		Project:     clients.ProjectID,
+		Instance:    clients.InstanceID,
+		Database:    clients.DatabaseID,
+		Params:      make(map[string]ast.Node),
+		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	session.systemVariables.CurrentSession = session
+
+	return session, nil
+}
+
 func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
@@ -105,25 +122,18 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 		t.Fatal(err)
 	}
 
-	options := defaultClientOptions(emulator)
-	session, err = NewSession(ctx, &systemVariables{
-		Project:     clients.ProjectID,
-		Instance:    clients.InstanceID,
-		Database:    clients.DatabaseID,
-		Params:      make(map[string]ast.Node),
-		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	session, err = initializeSession(ctx, emulator, clients)
 	if err != nil {
 		clientsTeardown()
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
-
-	session.systemVariables.CurrentSession = session
 
 	return clients, session, func() {
 		session.Close()
 		clientsTeardown()
 	}
 }
+
 func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
@@ -139,19 +149,11 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 		t.Fatal(err)
 	}
 
-	options := defaultClientOptions(emulator)
-	session, err = NewSession(ctx, &systemVariables{
-		Project:     clients.ProjectID,
-		Instance:    clients.InstanceID,
-		Database:    clients.DatabaseID,
-		Params:      make(map[string]ast.Node),
-		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+	session, err = initializeSession(ctx, emulator, clients)
 	if err != nil {
 		clientsTeardown()
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
-
-	session.systemVariables.CurrentSession = session
 
 	return clients, session, func() {
 		session.Close()
@@ -612,10 +614,6 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
-			desc: "SHOW VARIABLES",
-			// TODO: This test case is currently not available because it can't be implemented in this test suite.
-		},
-		{
 			desc: "SHOW DDLS",
 			stmt: sliceOf("SHOW DDLS"),
 			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
@@ -638,19 +636,47 @@ func TestStatements(t *testing.T) {
 			// TODO: Split points are not yet supported by cloud-spanner-emulator.
 		},
 		{
+			desc: "EXPLAIN & EXPLAIN ANALYZE statements",
+			// TODO: QueryMode PLAN(EXPLAIN) and PROFILE(EXPLAIN ANALYZE) are not yet supported by cloud-spanner-emulator.
+		},
+		{
+			desc: "PROTO BUNDLE statements",
+			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
+			stmt: sliceOf(
+				"SHOW REMOTE PROTO",
+				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
+				"CREATE PROTO BUNDLE (`examples.shipping.Order`)",
+				"ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)",
+				"SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
+			),
+			wantResults: []*Result{
+				{KeepVariables: true, ColumnNames: sliceOf("full_name", "kind", "package")},
+				{KeepVariables: true},
+				{IsMutation: true},
+				{IsMutation: true},
+				{IsMutation: true},
+			},
+		},
+		{
 			desc:     "DATABASE statements",
 			database: "test-database",
 			stmt: sliceOf("SHOW DATABASES",
 				"CREATE DATABASE `new-database`",
 				"SHOW DATABASES",
+
+				// Note: The USE statement is not processed by Session, so we can't test the effect of them.
+				"USE `new-database` ROLE spanner_info_reader", // nop
+				"USE `test-database`",                         // nop
+
 				"DROP DATABASE `new-database`",
 				"SHOW DATABASES",
-				// Note: The USE statement is not processed by Session, so we can't test it.
 			),
 			wantResults: []*Result{
 				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				{IsMutation: true},
 				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+				{},
+				{},
 				{IsMutation: true},
 				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
@@ -820,14 +846,13 @@ func TestStatements(t *testing.T) {
 				{
 					ColumnNames:   sliceOf("name", "value"),
 					KeepVariables: true,
-					// Rows are dynamic, so we don't check them here.
-					// We check that AffectedRows > 0 if some variables exist.
+					// Rows and AffectedRows are dynamic, so we don't check them here.
 				},
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
 					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
-						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString()) // AffectedRows can vary
+						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 		},
@@ -864,8 +889,8 @@ func TestStatements(t *testing.T) {
 			}, cmp.Ignore())),
 		},
 		{
-			desc: "EXPLAIN SELECT",
-			// It can't be tested because cloud-spanner-emulator doesn't support EXPLAIN.
+			desc: "CQL SELECT",
+			// It can't be tested because cloud-spanner-emulator doesn't support Cassandra interface.
 		},
 		{
 			desc: "SET ADD statement for CLI_PROTO_FILES",
