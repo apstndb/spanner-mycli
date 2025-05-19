@@ -122,7 +122,8 @@ func toTableHeader[T interface {
 
 		return result
 	default:
-		panic(fmt.Sprintf("unknown type: %T", ss))
+		// It is unreachable because of type constraints
+		panic(fmt.Sprintf("unreachable code: unknown type: %T", ss))
 	}
 }
 
