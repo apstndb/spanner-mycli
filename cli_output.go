@@ -104,7 +104,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			}
 		}
 
-		if forceTableRender || len(rows) > 0 {
+		if (forceTableRender && len(headers) > 0) || len(rows) > 0 {
 			if err := table.Render(); err != nil {
 				slog.Error("tablewriter.Table.Render() failed", "err", err)
 			}
