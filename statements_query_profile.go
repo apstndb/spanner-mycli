@@ -98,7 +98,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Plan"),
+		TableHeader:  toTableHeader("Plan"),
 		Rows:         resultRows,
 		AffectedRows: len(resultRows),
 	}, nil

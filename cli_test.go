@@ -145,7 +145,7 @@ func TestPrintResult(t *testing.T) {
 					CLIFormat: DisplayModeTable,
 				},
 				result: &Result{
-					ColumnNames: []string{"foo", "bar"},
+					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
 						{"1", "2"},
 						{"3", "4"},
@@ -167,7 +167,7 @@ func TestPrintResult(t *testing.T) {
 					CLIFormat: DisplayModeTableComment,
 				},
 				result: &Result{
-					ColumnNames: []string{"foo", "bar"},
+					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
 						{"1", "2"},
 						{"3", "4"},
@@ -193,7 +193,7 @@ func TestPrintResult(t *testing.T) {
 				},
 				input: "SELECT foo, bar\nFROM input",
 				result: &Result{
-					ColumnNames: []string{"foo", "bar"},
+					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
 						{"1", "2"},
 						{"3", "4"},
@@ -221,10 +221,10 @@ Empty set
 				},
 				screenWidth: 20,
 				result: &Result{
-					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					),
+					)),
 					Rows: sliceOf(
 						toRow("1", "2"),
 						toRow("3", "4"),
@@ -251,10 +251,10 @@ Empty set
 				},
 				screenWidth: 19,
 				result: &Result{
-					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					),
+					)),
 					Rows: sliceOf(
 						toRow("1", "2"),
 						toRow("3", "4"),
@@ -281,10 +281,10 @@ Empty set
 				},
 				screenWidth: 25,
 				result: &Result{
-					ColumnTypes: typector.MustNameCodeSlicesToStructTypeFields(
+					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("English", "Japanese"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					),
+					)),
 					Rows: sliceOf(
 						toRow("Hello World", "こんにちは"),
 						toRow("Bye", "さようなら"),
@@ -320,7 +320,7 @@ Empty set
 	t.Run("DisplayModeVertical", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			ColumnNames: sliceOf("foo", "bar"),
+			TableHeader: toTableHeader("foo", "bar"),
 			Rows: sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),
@@ -347,7 +347,7 @@ bar: 4
 	t.Run("DisplayModeTab", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			ColumnNames: sliceOf("foo", "bar"),
+			TableHeader: toTableHeader("foo", "bar"),
 			Rows: sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),

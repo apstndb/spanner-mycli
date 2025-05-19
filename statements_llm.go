@@ -64,7 +64,7 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 				toRow("text", composed.Statement.Text),
 				toRow("semanticDescription", composed.Statement.SemanticDescription),
 				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
-		ColumnNames: sliceOf("Column", "Value")}, nil
+		TableHeader: toTableHeader("Column", "Value")}, nil
 }
 
 func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([][]byte, error) {

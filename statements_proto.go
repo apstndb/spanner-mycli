@@ -95,7 +95,7 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "kind", "package", "file"},
+		TableHeader:   toTableHeader("full_name", "kind", "package", "file"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
@@ -127,7 +127,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "kind", "package"},
+		TableHeader:   toTableHeader("full_name", "kind", "package"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,

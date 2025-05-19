@@ -39,12 +39,25 @@ const (
 	DisplayModeTab
 )
 
+func renderTableHeader(header TableHeader, verbose bool) []string {
+	if header == nil {
+		return nil
+	}
+
+	return header.Render(verbose)
+}
+
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
 	mode := sysVars.CLIFormat
 
 	// screenWidth <= means no limit.
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt
+	}
+
+	var columnNames []string
+	if result.TableHeader != nil {
+		columnNames = renderTableHeader(result.TableHeader, false)
 	}
 
 	switch mode {
@@ -69,20 +82,16 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		wc := &widthCalculator{Condition: rw}
 		adjustedWidths := calculateWidth(result, wc, screenWidth, rows)
 
-		var forceTableRender bool
-		if sysVars.Verbose && len(result.ColumnTypes) > 0 {
-			forceTableRender = true
+		forceTableRender := sysVars.Verbose
 
-			headers := slices.Collect(hiter.Unify(
-				rw.Wrap,
-				hiter.Pairs(
-					xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)),
-					slices.Values(adjustedWidths))),
-			)
-			table.Header(headers)
-		} else {
-			table.Header(result.ColumnNames)
-		}
+		headers := slices.Collect(hiter.Unify(
+			rw.Wrap,
+			hiter.Pairs(
+				slices.Values(renderTableHeader(result.TableHeader, sysVars.Verbose)),
+				slices.Values(adjustedWidths))),
+		)
+
+		table.Header(headers)
 
 		for _, row := range rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
@@ -93,6 +102,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
 		}
+
 		if forceTableRender || len(rows) > 0 {
 			if err := table.Render(); err != nil {
 				slog.Error("tablewriter.Table.Render() failed", "err", err)
@@ -112,7 +122,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		fmt.Fprintln(out, s)
 	case DisplayModeVertical:
 		maxLen := 0
-		for _, columnName := range result.ColumnNames {
+		for _, columnName := range columnNames {
 			if len(columnName) > maxLen {
 				maxLen = len(columnName)
 			}
@@ -122,12 +132,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row { // j represents the index of the column in the row
 
-				fmt.Fprintf(out, format, result.ColumnNames[j], column)
+				fmt.Fprintf(out, format, columnNames[j], column)
 			}
 		}
 	case DisplayModeTab:
-		if len(result.ColumnNames) > 0 {
-			fmt.Fprintln(out, strings.Join(result.ColumnNames, "\t"))
+		if len(columnNames) > 0 {
+			fmt.Fprintln(out, strings.Join(columnNames, "\t"))
 			for _, row := range result.Rows {
 				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}
@@ -136,15 +146,8 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 }
 
 func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	var names []string
-	var header []string
-	if len(result.ColumnTypes) > 0 {
-		names = slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(result.ColumnTypes)))
-		header = slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-	} else {
-		names = result.ColumnNames
-		header = result.ColumnNames
-	}
+	names := renderTableHeader(result.TableHeader, false)
+	header := renderTableHeader(result.TableHeader, true)
 	return calculateOptimalWidth(wc, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 }
 

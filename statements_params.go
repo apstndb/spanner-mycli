@@ -27,7 +27,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 		ToSortFunc(func(r Row) string { return r[0] /* parameter name */ }))
 
 	return &Result{
-		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},
+		TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
