@@ -282,7 +282,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	var rows []Row
 	var queryStats map[string]any
 	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, _, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
+		rs, stats, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
 		rows = rs
 		queryStats = stats
 		return num, nil, meta, err
