@@ -83,8 +83,6 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		wc := &widthCalculator{Condition: rw}
 		adjustedWidths := calculateWidth(result, wc, screenWidth, rows)
 
-		forceTableRender := sysVars.Verbose
-
 		headers := slices.Collect(hiter.Unify(
 			rw.Wrap,
 			hiter.Pairs(
@@ -104,7 +102,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			}
 		}
 
-		if (forceTableRender && len(headers) > 0) || len(rows) > 0 {
+		forceTableRender := sysVars.Verbose && len(headers) > 0
+
+		if forceTableRender || len(rows) > 0 {
 			if err := table.Render(); err != nil {
 				slog.Error("tablewriter.Table.Render() failed", "err", err)
 			}
