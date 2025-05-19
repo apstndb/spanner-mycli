@@ -411,9 +411,9 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 
 	table := tablewriter.NewTable(&sb,
 		tablewriter.WithRenderer(renderer.NewMarkdown()),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
 		tablewriter.WithHeaderAlignment(tw.AlignLeft)).
 		Configure(func(config *tablewriter.Config) {
-			config.Header.Formatting.AutoFormat = false
 		})
 
 	table.Header([]string{"Usage", "Syntax", "Note"})

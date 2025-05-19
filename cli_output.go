@@ -60,10 +60,10 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				renderer.NewBlueprint(tw.Rendition{Symbols: tw.NewSymbols(tw.StyleASCII)})),
 			tablewriter.WithHeaderAlignment(tw.AlignLeft),
 			tablewriter.WithTrimSpace(tw.Off),
+			tablewriter.WithHeaderAutoFormat(tw.Off),
 		).Configure(func(config *tablewriter.Config) {
 			config.Row.ColumnAligns = result.ColumnAlign
 			config.Row.Formatting.AutoWrap = tw.WrapNone
-			config.Header.Formatting.AutoFormat = false
 		})
 
 		wc := &widthCalculator{Condition: rw}
