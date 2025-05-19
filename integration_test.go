@@ -389,7 +389,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_VERSION"),
+					TableHeader:   toTableHeader("CLI_VERSION"),
 					Rows:          sliceOf(toRow(getVersion()))},
 			},
 		},
@@ -583,12 +583,12 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true},
 				{
 					KeepVariables: true,
-					ColumnNames:   sliceOf("Param_Name", "Param_Kind", "Param_Value"),
+					TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
 					Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
 				},
 				{
 					AffectedRows: 1,
-					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
 					Rows:         sliceOf(toRow("i", "INT64")),
 				},
 			},
@@ -607,7 +607,7 @@ func TestStatements(t *testing.T) {
 			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
 			wantResults: []*Result{
 				{
-					ColumnNames:   sliceOf(""),
+					TableHeader:   toTableHeader(""),
 					KeepVariables: true,
 					Rows: sliceOf(
 						toRow(heredoc.Doc(`
@@ -638,7 +638,7 @@ func TestStatements(t *testing.T) {
 				"SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
 			),
 			wantResults: []*Result{
-				{KeepVariables: true, ColumnNames: sliceOf("full_name", "kind", "package")},
+				{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
 				{KeepVariables: true},
 				{IsMutation: true},
 				{IsMutation: true},
@@ -660,13 +660,13 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				{IsMutation: true},
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
 				{IsMutation: true},
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
 		},
 		{
@@ -674,10 +674,10 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW TABLES"),
 			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
 			wantResults: []*Result{
-				{ColumnNames: sliceOf(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
+				{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.GoString())
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.GoString())
 			}, cmp.Ignore())),
 		},
 		{
@@ -687,7 +687,7 @@ func TestStatements(t *testing.T) {
 				{
 					ForceWrap:    true,
 					AffectedRows: 1,
-					ColumnNames:  sliceOf("Root_Partitionable"),
+					TableHeader:  toTableHeader("Root_Partitionable"),
 					Rows:         sliceOf(toRow("TRUE")),
 				},
 			},
@@ -706,8 +706,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows:   1,
 					PartitionCount: 2,
-					ColumnNames:    sliceOf("id", "active"),
-					ColumnTypes:    testTableRowType,
+					TableHeader:    toTableHeader(testTableRowType),
 					Rows:           sliceOf(toRow("1", "false")),
 				},
 			},
@@ -828,7 +827,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW VARIABLES"),
 			wantResults: []*Result{
 				{
-					ColumnNames:   sliceOf("name", "value"),
+					TableHeader:   toTableHeader("name", "value"),
 					KeepVariables: true,
 					// Rows and AffectedRows are dynamic, so we don't check them here.
 				},
@@ -861,14 +860,13 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
 				{KeepVariables: true}, // ABORT BATCH
 				{ // SELECT COUNT(*)
-					ColumnNames:  sliceOf(""),
-					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
 					AffectedRows: 1,
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[3]")
 			}, cmp.Ignore())),
 		},
@@ -888,13 +886,13 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true}, // SET +=
 				{ // SHOW VARIABLE
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
 					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb`)),
 				},
 				{KeepVariables: true}, // SET +=
 				{ // SHOW VARIABLE
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
 					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb,testdata/protos/singer.proto`)),
 				},
 			},
@@ -908,7 +906,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW CREATE INDEX TestShowCreateIndexIdx"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("Name", "DDL"),
+					TableHeader:  toTableHeader("Name", "DDL"),
 					Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
 					AffectedRows: 1,
 				},
@@ -921,7 +919,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{
 					// For DML without THEN RETURN, result is empty.
-					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
 					Rows:         nil, // No parameters in this DML
 					AffectedRows: 0,   // 0 parameters
 				},
@@ -933,7 +931,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("PARTITION SELECT id FROM TestPartitionQueryTbl"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("Partition_Token"),
+					TableHeader:  toTableHeader("Partition_Token"),
 					AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
 					ForceWrap:    true,
 				},
@@ -949,7 +947,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW SCHEMA UPDATE OPERATIONS"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+					TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 					Rows:         nil, // Expect no operations on a fresh emulator DB
 					AffectedRows: 0,
 				},
@@ -967,15 +965,14 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, AffectedRows: 1}, // Result of INSERT
 				{IsMutation: true},                  // Result of MUTATE (AffectedRows not set by MutateStatement)
 				{ // SELECT COUNT(*)
-					ColumnNames:  sliceOf(""),
-					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
 					AffectedRows: 1,
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
-					!strings.Contains(path.String(), "wantResults[2]") // Allow ColumnNames for SELECT
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+					!strings.Contains(path.String(), "wantResults[2]") // Allow TableHeader for SELECT
 			}, cmp.Ignore())),
 		},
 	}
