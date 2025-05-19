@@ -262,7 +262,6 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		IsMutation:  true,
 		Timestamp:   commitResp.CommitTs,
 		CommitStats: commitResp.CommitStats,
-		// ColumnTypes: metadata.GetRowType().GetFields(),
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
