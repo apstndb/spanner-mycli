@@ -165,7 +165,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		rows = append(rows, toRow(matched[1]))
 	}
 
-	return &Result{TableHeader: simpleTableHeader{"Database"},
+	return &Result{TableHeader: toTableHeader("Database"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
@@ -223,7 +223,7 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 		}
 	}
 	return &Result{
-		TableHeader:  simpleTableHeader{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"},
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 		Rows:         rows,
 		AffectedRows: num,
 	}, nil

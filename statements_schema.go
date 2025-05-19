@@ -171,7 +171,8 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 	if len(rows) == 0 && emptyErrorF != nil {
 		return nil, emptyErrorF()
 	}
-	tableHeader := typesTableHeader(metadata.GetRowType().GetFields())
+
+	tableHeader := toTableHeader(metadata.GetRowType().GetFields())
 	return &Result{
 		// Pre-render only column names when forceVerbose is false
 		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(renderTableHeader(tableHeader, false))),
