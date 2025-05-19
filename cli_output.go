@@ -56,10 +56,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		screenWidth = math.MaxInt
 	}
 
-	var columnNames []string
-	if result.TableHeader != nil {
-		columnNames = renderTableHeader(result.TableHeader, false)
-	}
+	columnNames := renderTableHeader(result.TableHeader, false)
 
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
