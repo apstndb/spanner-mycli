@@ -299,7 +299,7 @@ func TestSystemVariables(t *testing.T) {
 			t.Run(tt.varname, func(t *testing.T) {
 				_ = buildAndExecute(t, ctx, session, fmt.Sprintf(`SET %v = "%v"`, tt.varname, tt.value))
 				result := buildAndExecute(t, ctx, session, fmt.Sprintf(`SHOW VARIABLE %v`, tt.varname))
-				if diff := cmp.Diff(sliceOf(tt.varname), result.TableHeader.Render(false)); diff != "" {
+				if diff := cmp.Diff(sliceOf(tt.varname), renderTableHeader(result.TableHeader, false)); diff != "" {
 					t.Errorf("SHOW column names differ: %v", diff)
 				}
 				if diff := cmp.Diff(sliceOf(toRow(tt.value)), result.Rows); diff != "" {

@@ -428,7 +428,7 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 	}
 
 	if err := table.Render(); err != nil {
-		slog.Error("tablewriter.Table.Render() failed", "err", err)
+		slog.Error("tablewriter.Table.internalRender() failed", "err", err)
 	}
 
 	return sb.String()

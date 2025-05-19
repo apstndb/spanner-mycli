@@ -65,12 +65,13 @@ type BatchInfo struct {
 }
 
 type TableHeader interface {
-	Render(verbose bool) []string
+	// internalRender shouldn't be called directly. Use renderTableHeader().
+	internalRender(verbose bool) []string
 }
 
 type simpleTableHeader []string
 
-func (th simpleTableHeader) Render(verbose bool) []string {
+func (th simpleTableHeader) internalRender(verbose bool) []string {
 	return th
 }
 
@@ -127,7 +128,7 @@ func toTableHeader[T interface {
 
 type typesTableHeader []*sppb.StructType_Field
 
-func (th typesTableHeader) Render(verbose bool) []string {
+func (th typesTableHeader) internalRender(verbose bool) []string {
 	var result []string
 	for _, f := range th {
 		if verbose {

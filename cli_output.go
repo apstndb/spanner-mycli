@@ -39,12 +39,13 @@ const (
 	DisplayModeTab
 )
 
+// renderTableHeader renders TableHeader. It is nil safe.
 func renderTableHeader(header TableHeader, verbose bool) []string {
 	if header == nil {
 		return nil
 	}
 
-	return header.Render(verbose)
+	return header.internalRender(verbose)
 }
 
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
