@@ -331,7 +331,7 @@ func (c *Cli) PrintProgressingMark() func() {
 
 	stop := func() {
 		ticker.Stop()
-		fmt.Fprintf(c.OutStream, "\r") // clear progressing mark
+		fmt.Fprintf(c.OutStream, "\r \r") // ensure to clear progressing mark
 	}
 	return stop
 }
