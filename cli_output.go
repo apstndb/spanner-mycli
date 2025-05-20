@@ -117,7 +117,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
 		}
 
-		fmt.Fprintln(out, s)
+		if s != "" {
+			fmt.Fprintln(out, s)
+		}
 	case DisplayModeVertical:
 		maxLen := 0
 		for _, columnName := range columnNames {
