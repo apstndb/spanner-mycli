@@ -85,7 +85,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	result := &Result{
 		AffectedRows: len(rows),
-		ColumnNames:  describeColumnNames,
+		TableHeader:  toTableHeader(describeColumnNames),
 		Timestamp:    timestamp,
 		Rows:         rows,
 	}
@@ -113,7 +113,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	}
 
 	result := &Result{
-		ColumnNames:  explainColumnNames,
+		TableHeader:  toTableHeader(explainColumnNames),
 		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
 		Rows:         rows,
@@ -175,7 +175,7 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	result := &Result{
-		ColumnNames:  columnNames,
+		TableHeader:  toTableHeader(columnNames),
 		ColumnAlign:  columnAlign,
 		ForceVerbose: true,
 		AffectedRows: len(rows),

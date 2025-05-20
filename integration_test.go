@@ -204,13 +204,12 @@ func TestSelect(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("id", "active"),
 		Rows: sliceOf(
 			toRow("1", "true"),
 			toRow("2", "false"),
 		),
 		AffectedRows: 2,
-		ColumnTypes:  testTableRowType,
+		TableHeader:  toTableHeader(testTableRowType),
 		IsMutation:   false,
 	})
 }
@@ -300,7 +299,7 @@ func TestSystemVariables(t *testing.T) {
 			t.Run(tt.varname, func(t *testing.T) {
 				_ = buildAndExecute(t, ctx, session, fmt.Sprintf(`SET %v = "%v"`, tt.varname, tt.value))
 				result := buildAndExecute(t, ctx, session, fmt.Sprintf(`SHOW VARIABLE %v`, tt.varname))
-				if diff := cmp.Diff(sliceOf(tt.varname), result.ColumnNames); diff != "" {
+				if diff := cmp.Diff(sliceOf(tt.varname), renderTableHeader(result.TableHeader, false)); diff != "" {
 					t.Errorf("SHOW column names differ: %v", diff)
 				}
 				if diff := cmp.Diff(sliceOf(toRow(tt.value)), result.Rows); diff != "" {
@@ -357,9 +356,7 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true},
 				{KeepVariables: true},
 				{
-					ColumnNames: sliceOf("b", "bs", "i64", "f64", "f32", "n", "s", "js", "ts",
-						"ival_single", "ival_range", "a_b", "n_b", "n_ival"),
-					ColumnTypes: sliceOf(
+					TableHeader: toTableHeader(sliceOf(
 						typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
 						typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
 						typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
@@ -374,7 +371,7 @@ func TestStatements(t *testing.T) {
 						typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
 						typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
 						typector.NameTypeToStructTypeField("n_ival", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-					),
+					)),
 					Rows: sliceOf(
 						toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
 							"P3D", "P3Y4M5DT6H7M8.999999999S",
@@ -392,7 +389,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_VERSION"),
+					TableHeader:   toTableHeader("CLI_VERSION"),
 					Rows:          sliceOf(toRow(getVersion()))},
 			},
 		},
@@ -405,7 +402,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{
-					ColumnNames: sliceOf("full_name", "kind", "package", "file"),
+					TableHeader: toTableHeader("full_name", "kind", "package", "file"),
 					Rows: sliceOf(
 						toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
 						toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
@@ -426,7 +423,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{
-					ColumnNames: sliceOf("full_name", "kind", "package", "file"),
+					TableHeader: toTableHeader("full_name", "kind", "package", "file"),
 					Rows: sliceOf(
 						toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
 						toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
@@ -462,7 +459,7 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}},
 				{
-					ColumnNames: sliceOf("DML", "Rows"),
+					TableHeader: toTableHeader("DML", "Rows"),
 					Rows: sliceOf(
 						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
 						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
@@ -478,8 +475,7 @@ func TestStatements(t *testing.T) {
 						toRow("1", "true"),
 						toRow("2", "false"),
 					),
-					ColumnNames: sliceOf("id", "active"),
-					ColumnTypes: testTableRowType,
+					TableHeader: toTableHeader(testTableRowType),
 				},
 			},
 		},
@@ -501,14 +497,12 @@ func TestStatements(t *testing.T) {
 						toRow("1", "true"),
 						toRow("2", "false"),
 					),
-					ColumnNames: sliceOf("id", "active"),
-					ColumnTypes: testTableRowType,
+					TableHeader: toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 				{
 					Rows:        nil,
-					ColumnNames: sliceOf("id", "active"),
-					ColumnTypes: testTableRowType,
+					TableHeader: toTableHeader(testTableRowType),
 				},
 			},
 		},
@@ -529,8 +523,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 			},
 		},
@@ -558,8 +551,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 				{IsMutation: true},
@@ -567,8 +559,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 				{KeepVariables: true},
@@ -576,8 +567,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 			},
@@ -593,12 +583,12 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true},
 				{
 					KeepVariables: true,
-					ColumnNames:   sliceOf("Param_Name", "Param_Kind", "Param_Value"),
+					TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
 					Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
 				},
 				{
 					AffectedRows: 1,
-					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
 					Rows:         sliceOf(toRow("i", "INT64")),
 				},
 			},
@@ -617,7 +607,7 @@ func TestStatements(t *testing.T) {
 			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
 			wantResults: []*Result{
 				{
-					ColumnNames:   sliceOf(""),
+					TableHeader:   toTableHeader(""),
 					KeepVariables: true,
 					Rows: sliceOf(
 						toRow(heredoc.Doc(`
@@ -648,7 +638,7 @@ func TestStatements(t *testing.T) {
 				"SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
 			),
 			wantResults: []*Result{
-				{KeepVariables: true, ColumnNames: sliceOf("full_name", "kind", "package")},
+				{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
 				{KeepVariables: true},
 				{IsMutation: true},
 				{IsMutation: true},
@@ -670,13 +660,13 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				{IsMutation: true},
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
 				{IsMutation: true},
-				{ColumnNames: sliceOf("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
 		},
 		{
@@ -684,10 +674,10 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW TABLES"),
 			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
 			wantResults: []*Result{
-				{ColumnNames: sliceOf(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
+				{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.GoString())
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.GoString())
 			}, cmp.Ignore())),
 		},
 		{
@@ -697,7 +687,7 @@ func TestStatements(t *testing.T) {
 				{
 					ForceWrap:    true,
 					AffectedRows: 1,
-					ColumnNames:  sliceOf("Root_Partitionable"),
+					TableHeader:  toTableHeader("Root_Partitionable"),
 					Rows:         sliceOf(toRow("TRUE")),
 				},
 			},
@@ -716,8 +706,7 @@ func TestStatements(t *testing.T) {
 				{
 					AffectedRows:   1,
 					PartitionCount: 2,
-					ColumnNames:    sliceOf("id", "active"),
-					ColumnTypes:    testTableRowType,
+					TableHeader:    toTableHeader(testTableRowType),
 					Rows:           sliceOf(toRow("1", "false")),
 				},
 			},
@@ -746,8 +735,7 @@ func TestStatements(t *testing.T) {
 					IsMutation:   true,
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 				{IsMutation: true},
@@ -756,8 +744,7 @@ func TestStatements(t *testing.T) {
 					IsMutation:   true,
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 				{IsMutation: true},
@@ -765,8 +752,7 @@ func TestStatements(t *testing.T) {
 					IsMutation:   true,
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					ColumnNames:  sliceOf("id", "active"),
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 				},
 				{IsMutation: true},
 			},
@@ -790,7 +776,7 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
 				// tab is pass-through as is in this layer
-				{IsMutation: true, AffectedRows: 0, ColumnNames: sliceOf("Executed", "Commit Timestamp"), Rows: sliceOf(
+				{IsMutation: true, AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
 					toRow(
 						heredoc.Doc(`
 										CREATE TABLE TestTable (
@@ -826,11 +812,10 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true},
 				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
 				// tab is pass-through as is in this layer
-				{IsMutation: true, AffectedRows: 1, ColumnNames: sliceOf("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
+				{IsMutation: true, AffectedRows: 1, TableHeader: toTableHeader("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
 				{
 					AffectedRows: 2,
-					ColumnNames:  []string{"id", "active"},
-					ColumnTypes:  testTableRowType,
+					TableHeader:  toTableHeader(testTableRowType),
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 				},
 			},
@@ -842,7 +827,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW VARIABLES"),
 			wantResults: []*Result{
 				{
-					ColumnNames:   sliceOf("name", "value"),
+					TableHeader:   toTableHeader("name", "value"),
 					KeepVariables: true,
 					// Rows and AffectedRows are dynamic, so we don't check them here.
 				},
@@ -875,14 +860,13 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
 				{KeepVariables: true}, // ABORT BATCH
 				{ // SELECT COUNT(*)
-					ColumnNames:  sliceOf(""),
-					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
 					AffectedRows: 1,
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[3]")
 			}, cmp.Ignore())),
 		},
@@ -902,13 +886,13 @@ func TestStatements(t *testing.T) {
 				{KeepVariables: true}, // SET +=
 				{ // SHOW VARIABLE
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
 					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb`)),
 				},
 				{KeepVariables: true}, // SET +=
 				{ // SHOW VARIABLE
 					KeepVariables: true,
-					ColumnNames:   sliceOf("CLI_PROTO_DESCRIPTOR_FILE"),
+					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
 					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb,testdata/protos/singer.proto`)),
 				},
 			},
@@ -922,7 +906,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW CREATE INDEX TestShowCreateIndexIdx"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("Name", "DDL"),
+					TableHeader:  toTableHeader("Name", "DDL"),
 					Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
 					AffectedRows: 1,
 				},
@@ -935,7 +919,7 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{
 					// For DML without THEN RETURN, result is empty.
-					ColumnNames:  sliceOf("Column_Name", "Column_Type"),
+					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
 					Rows:         nil, // No parameters in this DML
 					AffectedRows: 0,   // 0 parameters
 				},
@@ -947,7 +931,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("PARTITION SELECT id FROM TestPartitionQueryTbl"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("Partition_Token"),
+					TableHeader:  toTableHeader("Partition_Token"),
 					AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
 					ForceWrap:    true,
 				},
@@ -963,7 +947,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("SHOW SCHEMA UPDATE OPERATIONS"),
 			wantResults: []*Result{
 				{
-					ColumnNames:  sliceOf("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+					TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 					Rows:         nil, // Expect no operations on a fresh emulator DB
 					AffectedRows: 0,
 				},
@@ -981,15 +965,14 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, AffectedRows: 1}, // Result of INSERT
 				{IsMutation: true},                  // Result of MUTATE (AffectedRows not set by MutateStatement)
 				{ // SELECT COUNT(*)
-					ColumnNames:  sliceOf(""),
-					ColumnTypes:  sliceOf(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
 					AffectedRows: 1,
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.ColumnNames`).MatchString(path.String()) &&
-					!strings.Contains(path.String(), "wantResults[2]") // Allow ColumnNames for SELECT
+				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+					!strings.Contains(path.String(), "wantResults[2]") // Allow TableHeader for SELECT
 			}, cmp.Ignore())),
 		},
 	}
@@ -1256,13 +1239,12 @@ func TestReadOnlyTransaction(t *testing.T) {
 		}
 
 		compareResult(t, result, &Result{
-			ColumnNames: sliceOf("id", "active"),
 			Rows: sliceOf(
 				toRow("1", "true"),
 				toRow("2", "false"),
 			),
 
-			ColumnTypes:  testTableRowType,
+			TableHeader:  toTableHeader(testTableRowType),
 			AffectedRows: 2,
 			IsMutation:   false,
 		})
@@ -1327,12 +1309,11 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 		// should not include id=3 and id=4
 		compareResult(t, result, &Result{
-			ColumnNames: sliceOf("id", "active"),
 			Rows: sliceOf(
 				toRow("1", "true"),
 				toRow("2", "false"),
 			),
-			ColumnTypes:  testTableRowType,
+			TableHeader:  toTableHeader(testTableRowType),
 			AffectedRows: 2,
 			IsMutation:   false,
 		})
@@ -1368,7 +1349,7 @@ func TestShowCreateTable(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("Name", "DDL"),
+		TableHeader: toTableHeader("Name", "DDL"),
 		Rows: sliceOf(
 			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
 		),
@@ -1395,7 +1376,7 @@ func TestShowColumns(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("Field", "Type", "NULL", "Key", "Key_Order", "Options"),
+		TableHeader: toTableHeader("Field", "Type", "NULL", "Key", "Key_Order", "Options"),
 		Rows: sliceOf(
 			toRow("id", "INT64", "NO", "PRIMARY_KEY", "ASC", "NULL"),
 			toRow("active", "BOOL", "NO", "NULL", "NULL", "NULL"),
@@ -1423,7 +1404,7 @@ func TestShowIndexes(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		ColumnNames: sliceOf("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"),
+		TableHeader: toTableHeader("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"),
 		Rows: sliceOf(
 			toRow("tbl", "", "PRIMARY_KEY", "PRIMARY_KEY", "true", "false", "NULL"),
 		),

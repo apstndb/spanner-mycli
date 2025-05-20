@@ -64,8 +64,84 @@ type BatchInfo struct {
 	Size int
 }
 
+type TableHeader interface {
+	// internalRender shouldn't be called directly. Use renderTableHeader().
+	internalRender(verbose bool) []string
+}
+
+type simpleTableHeader []string
+
+func (th simpleTableHeader) internalRender(verbose bool) []string {
+	return th
+}
+
+// toTableHeader convert slice or variable arguments to TableHeader.
+// nil or empty slice will return untyped nil.
+func toTableHeader[T interface {
+	string | []string | *sppb.StructType_Field | []*sppb.StructType_Field
+}](ss ...T) TableHeader {
+	if len(ss) == 0 {
+		return nil
+	}
+
+	switch any(ss[0]).(type) {
+	case *sppb.StructType_Field:
+		var result typesTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).(*sppb.StructType_Field))
+		}
+
+		return result
+	case string:
+		var result simpleTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).(string))
+		}
+
+		return result
+	case []*sppb.StructType_Field:
+		var result typesTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).([]*sppb.StructType_Field)...)
+		}
+
+		if len(result) == 0 {
+			return nil
+		}
+
+		return result
+	case []string:
+		var result simpleTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).([]string)...)
+		}
+
+		if len(result) == 0 {
+			return nil
+		}
+
+		return result
+	default:
+		// It is unreachable because of type constraints
+		panic(fmt.Sprintf("unreachable code: unknown type: %T", ss))
+	}
+}
+
+type typesTableHeader []*sppb.StructType_Field
+
+func (th typesTableHeader) internalRender(verbose bool) []string {
+	var result []string
+	for _, f := range th {
+		if verbose {
+			result = append(result, formatTypedHeaderColumn(f))
+		} else {
+			result = append(result, f.Name)
+		}
+	}
+	return result
+}
+
 type Result struct {
-	ColumnNames      []string
 	ColumnAlign      []tw.Align // optional
 	Rows             []Row
 	Predicates       []string
@@ -81,8 +157,8 @@ type Result struct {
 	CommitStats   *sppb.CommitResponse_CommitStats
 	KeepVariables bool
 
-	// ColumnTypes will be printed in `--verbose` mode if it is not empty
-	ColumnTypes []*sppb.StructType_Field
+	TableHeader TableHeader
+
 	ForceWrap   bool
 	LintResults []string
 	PreInput    string

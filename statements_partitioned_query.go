@@ -35,7 +35,7 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Partition_Token"),
+		TableHeader:  toTableHeader("Partition_Token"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 		Timestamp:    ts,
@@ -67,7 +67,7 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Root_Partitionable"),
+		TableHeader:  toTableHeader("Root_Partitionable"),
 		Rows:         sliceOf(toRow("TRUE")),
 		AffectedRows: 1,
 		Timestamp:    ts,

@@ -12,6 +12,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/samber/lo"
 )
 
 type ShowCreateStatement struct {
@@ -42,7 +43,7 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	result := &Result{
-		ColumnNames:  []string{"Name", "DDL"},
+		TableHeader:  toTableHeader("Name", "DDL"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}
@@ -135,7 +136,7 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 	return &Result{
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
-		ColumnNames: sliceOf(""),
+		TableHeader: toTableHeader(""),
 		Rows: sliceOf(toRow(stringsiter.Collect(xiter.Map(
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
@@ -171,9 +172,10 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		return nil, emptyErrorF()
 	}
 
+	tableHeader := toTableHeader(metadata.GetRowType().GetFields())
 	return &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		ColumnTypes:  lox.IfOrEmpty(forceVerbose, metadata.GetRowType().GetFields()),
+		// Pre-render only column names when forceVerbose is false
+		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(renderTableHeader(tableHeader, false))),
 		ForceVerbose: forceVerbose,
 		Rows:         rows,
 		AffectedRows: len(rows),

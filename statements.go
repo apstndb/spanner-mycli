@@ -165,7 +165,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		rows = append(rows, toRow(matched[1]))
 	}
 
-	return &Result{ColumnNames: []string{"Database"},
+	return &Result{TableHeader: toTableHeader("Database"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
@@ -223,7 +223,7 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 		}
 	}
 	return &Result{
-		ColumnNames:  []string{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"},
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 		Rows:         rows,
 		AffectedRows: num,
 	}, nil
@@ -437,7 +437,7 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 		rows = append(rows, row)
 	}
 
-	return &Result{ColumnNames: headers, Rows: rows, AffectedRows: len(rows)}, nil
+	return &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}, nil
 }
 
 func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
@@ -463,7 +463,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 		}
 	}
 	return &Result{
-		ColumnNames:   sliceOf("Usage", "Syntax"),
+		TableHeader:   toTableHeader("Usage", "Syntax"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,

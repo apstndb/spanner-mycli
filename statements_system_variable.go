@@ -27,7 +27,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 		row = append(row, value[n])
 	}
 	return &Result{
-		ColumnNames:   columnNames,
+		TableHeader:   toTableHeader(columnNames),
 		Rows:          sliceOf(toRow(row...)),
 		KeepVariables: true,
 	}, nil
@@ -59,7 +59,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		ToSortFunc(func(r Row) string { return r[0] /* name */ }))
 
 	return &Result{
-		ColumnNames:   []string{"name", "value"},
+		TableHeader:   toTableHeader("name", "value"),
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
@@ -124,7 +124,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 	})
 
 	return &Result{
-		ColumnNames:   []string{"name", "operations", "desc"},
+		TableHeader:   toTableHeader("name", "operations", "desc"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,

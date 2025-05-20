@@ -39,6 +39,15 @@ const (
 	DisplayModeTab
 )
 
+// renderTableHeader renders TableHeader. It is nil safe.
+func renderTableHeader(header TableHeader, verbose bool) []string {
+	if header == nil {
+		return nil
+	}
+
+	return header.internalRender(verbose)
+}
+
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
 	mode := sysVars.CLIFormat
 
@@ -46,6 +55,8 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt
 	}
+
+	columnNames := renderTableHeader(result.TableHeader, false)
 
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
@@ -60,29 +71,23 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				renderer.NewBlueprint(tw.Rendition{Symbols: tw.NewSymbols(tw.StyleASCII)})),
 			tablewriter.WithHeaderAlignment(tw.AlignLeft),
 			tablewriter.WithTrimSpace(tw.Off),
+			tablewriter.WithHeaderAutoFormat(tw.Off),
 		).Configure(func(config *tablewriter.Config) {
 			config.Row.ColumnAligns = result.ColumnAlign
 			config.Row.Formatting.AutoWrap = tw.WrapNone
-			config.Header.Formatting.AutoFormat = false
 		})
 
 		wc := &widthCalculator{Condition: rw}
 		adjustedWidths := calculateWidth(result, wc, screenWidth, rows)
 
-		var forceTableRender bool
-		if sysVars.Verbose && len(result.ColumnTypes) > 0 {
-			forceTableRender = true
+		headers := slices.Collect(hiter.Unify(
+			rw.Wrap,
+			hiter.Pairs(
+				slices.Values(renderTableHeader(result.TableHeader, sysVars.Verbose)),
+				slices.Values(adjustedWidths))),
+		)
 
-			headers := slices.Collect(hiter.Unify(
-				rw.Wrap,
-				hiter.Pairs(
-					xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)),
-					slices.Values(adjustedWidths))),
-			)
-			table.Header(headers)
-		} else {
-			table.Header(result.ColumnNames)
-		}
+		table.Header(headers)
 
 		for _, row := range rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
@@ -93,6 +98,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
 		}
+
+		forceTableRender := sysVars.Verbose && len(headers) > 0
+
 		if forceTableRender || len(rows) > 0 {
 			if err := table.Render(); err != nil {
 				slog.Error("tablewriter.Table.Render() failed", "err", err)
@@ -112,7 +120,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		fmt.Fprintln(out, s)
 	case DisplayModeVertical:
 		maxLen := 0
-		for _, columnName := range result.ColumnNames {
+		for _, columnName := range columnNames {
 			if len(columnName) > maxLen {
 				maxLen = len(columnName)
 			}
@@ -122,12 +130,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row { // j represents the index of the column in the row
 
-				fmt.Fprintf(out, format, result.ColumnNames[j], column)
+				fmt.Fprintf(out, format, columnNames[j], column)
 			}
 		}
 	case DisplayModeTab:
-		if len(result.ColumnNames) > 0 {
-			fmt.Fprintln(out, strings.Join(result.ColumnNames, "\t"))
+		if len(columnNames) > 0 {
+			fmt.Fprintln(out, strings.Join(columnNames, "\t"))
 			for _, row := range result.Rows {
 				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}
@@ -136,15 +144,8 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 }
 
 func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	var names []string
-	var header []string
-	if len(result.ColumnTypes) > 0 {
-		names = slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(result.ColumnTypes)))
-		header = slices.Collect(xiter.Map(formatTypedHeaderColumn, slices.Values(result.ColumnTypes)))
-	} else {
-		names = result.ColumnNames
-		header = result.ColumnNames
-	}
+	names := renderTableHeader(result.TableHeader, false)
+	header := renderTableHeader(result.TableHeader, true)
 	return calculateOptimalWidth(wc, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 }
 

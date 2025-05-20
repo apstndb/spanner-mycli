@@ -64,9 +64,8 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	result := &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
 		Rows:         rows,
-		ColumnTypes:  metadata.GetRowType().GetFields(),
+		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows: len(rows),
 		Stats:        queryStats,
 	}
@@ -101,7 +100,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if len(ddls) == 0 {
 		return &Result{
 			IsMutation:  true,
-			ColumnNames: lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp")),
+			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
 		}, nil
 	}
 
@@ -195,7 +194,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
 	result := &Result{IsMutation: true, Timestamp: lastCommitTS}
 	if session.systemVariables.EchoExecutedDDL {
-		result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
+		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
 			func(ddl string, v *timestamppb.Timestamp) Row {
 				return toRow(ddl+";", v.AsTime().Format(time.RFC3339Nano))
@@ -251,7 +250,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	affected, commitResp, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
@@ -263,13 +262,12 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		IsMutation:  true,
 		Timestamp:   commitResp.CommitTs,
 		CommitStats: commitResp.CommitStats,
-		ColumnTypes: metadata.GetRowType().GetFields(),
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
-		ColumnNames:      sliceOf("DML", "Rows"),
+		TableHeader:      toTableHeader("DML", "Rows"),
 		AffectedRows:     int(affected),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
 	}, nil
@@ -282,12 +280,10 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	var rows []Row
-	var columnNames []string
 	var queryStats map[string]any
 	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, columns, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
+		rs, stats, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
 		rows = rs
-		columnNames = columns
 		queryStats = stats
 		return num, nil, meta, err
 	})
@@ -305,9 +301,8 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		Timestamp:    commitResp.CommitTs,
 		CommitStats:  commitResp.CommitStats,
 		Stats:        stats,
-		ColumnTypes:  metadata.GetRowType().GetFields(),
+		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		Rows:         rows,
-		ColumnNames:  columnNames,
 		AffectedRows: int(affected),
 	}, nil
 }
@@ -430,9 +425,8 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	}
 
 	result := &Result{
-		ColumnNames:    extractColumnNames(rowType.GetFields()),
 		Rows:           allRows,
-		ColumnTypes:    rowType.GetFields(),
+		TableHeader:    toTableHeader(rowType.GetFields()),
 		AffectedRows:   len(allRows),
 		PartitionCount: len(partitions),
 	}
