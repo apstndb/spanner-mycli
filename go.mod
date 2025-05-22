@@ -27,7 +27,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/googleapis/go-spanner-cassandra v0.2.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.1
-	github.com/hymkor/go-multiline-ny v0.20.2
+	github.com/hymkor/go-multiline-ny v0.20.3
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
