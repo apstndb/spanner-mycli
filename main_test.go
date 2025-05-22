@@ -400,3 +400,122 @@ func Test_initializeSystemVariables(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpannerOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    *spannerOptions
+		wantErr bool
+	}{
+		{
+			name: "valid options",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+				DatabaseId: "database",
+			},
+			wantErr: false,
+		},
+		{
+			name: "insecure and skip-tls-verify mutually exclusive",
+			opts: &spannerOptions{
+				Insecure:      true,
+				SkipTlsVerify: true,
+			},
+			wantErr: true,
+		},
+		{
+			name: "strong and read-timestamp mutually exclusive",
+			opts: &spannerOptions{
+				Strong:        true,
+				ReadTimestamp: "2023-01-01T00:00:00Z",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing project id without embedded emulator",
+			opts: &spannerOptions{
+				InstanceId: "instance",
+				DatabaseId: "database",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing instance id without embedded emulator",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing database id without embedded emulator",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+			},
+			wantErr: true,
+		},
+		{
+			name: "embedded emulator, no project/instance/database required",
+			opts: &spannerOptions{
+				EmbeddedEmulator: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "execute and file mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+				DatabaseId: "database",
+				Execute:    "SELECT 1",
+				File:       "query.sql",
+			},
+			wantErr: true,
+		},
+		{
+			name: "execute and sql mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+				DatabaseId: "database",
+				Execute:    "SELECT 1",
+				SQL:        "SELECT 2",
+			},
+			wantErr: true,
+		},
+		{
+			name: "file and sql mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+				DatabaseId: "database",
+				File:       "query.sql",
+				SQL:        "SELECT 2",
+			},
+			wantErr: true,
+		},
+		{
+			name: "all three (execute, file, sql) mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "project",
+				InstanceId: "instance",
+				DatabaseId: "database",
+				Execute:    "SELECT 1",
+				File:       "query.sql",
+				SQL:        "SELECT 2",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSpannerOptions(tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateSpannerOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

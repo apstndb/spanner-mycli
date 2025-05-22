@@ -190,25 +190,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return nil
 	}
 
-	if opts.Insecure && opts.SkipTlsVerify {
-		return fmt.Errorf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive")
-	}
-
-	if opts.Strong && opts.ReadTimestamp != "" {
-		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
-	}
-
-	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
-		return fmt.Errorf("missing parameters: -p, -i, -d are required")
+	if err := ValidateSpannerOptions(opts); err != nil {
+		return err
 	}
 
 	sysVars, err := initializeSystemVariables(opts)
 	if err != nil {
 		return err
-	}
-
-	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
-		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
 	}
 
 	var cred []byte
@@ -239,10 +227,6 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
-	}
-
-	if opts.Execute != "" && opts.SQL != "" {
-		return fmt.Errorf("--execute and --sql are mutually exclusive")
 	}
 
 	var input string
@@ -289,6 +273,32 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		})
 
 	return err
+}
+
+// ValidateSpannerOptions validates the spannerOptions struct.
+func ValidateSpannerOptions(opts *spannerOptions) error {
+	if opts.Insecure && opts.SkipTlsVerify {
+		return fmt.Errorf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive")
+	}
+
+	if opts.Strong && opts.ReadTimestamp != "" {
+		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
+	}
+
+	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
+		return fmt.Errorf("missing parameters: -p, -i, -d are required")
+	}
+
+	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
+		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
+	}
+
+	// This check is redundant with the above, but kept for consistency with original code.
+	if opts.Execute != "" && opts.SQL != "" {
+		return fmt.Errorf("--execute and --sql are mutually exclusive")
+	}
+
+	return nil
 }
 
 // initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
