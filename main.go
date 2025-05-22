@@ -100,11 +100,14 @@ func addEmulatorImageOption(parser *flags.Parser) {
 }
 
 const (
-	defaultPrompt        = "spanner%t> "
-	defaultPrompt2       = "%P%R> "
-	defaultHistoryFile   = "/tmp/spanner_mycli_readline.tmp"
-	defaultVertexAIModel = "gemini-2.0-flash"
+	defaultPrompt         = "spanner%t> "
+	defaultPrompt2        = "%P%R> "
+	defaultHistoryFile    = "/tmp/spanner_mycli_readline.tmp"
+	defaultVertexAIModel  = "gemini-2.0-flash"
+	DefaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
+
+var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDef(strings.Split(DefaultAnalyzeColumns, ",")))
 
 var (
 	// https://rhysd.hatenablog.com/entry/2021/06/27/222254
@@ -311,7 +314,6 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		return systemVariables{}, fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
 	}
 
-	const defaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 	sysVars := systemVariables{
 		Project:                   opts.ProjectId,
 		Instance:                  opts.InstanceId,
@@ -330,12 +332,12 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		VertexAIProject:           opts.VertexAIProject,
 		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
 		EnableADCPlus:             true,
-		AnalyzeColumns:            defaultAnalyzeColumns,
-		ParsedAnalyzeColumns:      lo.Must(customListToTableRenderDef(strings.Split(defaultAnalyzeColumns, ","))),
+		AnalyzeColumns:            DefaultAnalyzeColumns,
+		ParsedAnalyzeColumns:      DefaultParsedAnalyzeColumns,
 	}
 
 	// initialize default value
-	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", defaultAnalyzeColumns); err != nil {
+	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
 		return systemVariables{}, fmt.Errorf("parse error: %w", err)
 	}
 
