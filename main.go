@@ -199,91 +199,9 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return fmt.Errorf("missing parameters: -p, -i, -d are required")
 	}
 
-	params := make(map[string]ast.Node)
-	for k, v := range opts.Param {
-		if typ, err := memefish.ParseType("", v); err == nil {
-			params[k] = typ
-			continue
-		}
-
-		// ignore ParseType error
-		if expr, err := memefish.ParseExpr("", v); err != nil {
-			return fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
-		} else {
-			params[k] = expr
-		}
-	}
-
-	l, err := SetLogLevel(cmp.Or(opts.LogLevel, "WARN"))
+	sysVars, err := initializeSystemVariables(opts)
 	if err != nil {
-		return fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
-	}
-
-	const defaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
-	sysVars := systemVariables{
-		Project:                   opts.ProjectId,
-		Instance:                  opts.InstanceId,
-		Database:                  opts.DatabaseId,
-		Verbose:                   opts.Verbose,
-		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
-		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
-		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
-		Role:                      cmp.Or(opts.Role, opts.DatabaseRole),
-		Endpoint:                  opts.Endpoint,
-		Insecure:                  opts.Insecure || opts.SkipTlsVerify,
-		Params:                    params,
-		LogGrpc:                   opts.LogGrpc,
-		LogLevel:                  l,
-		ImpersonateServiceAccount: opts.ImpersonateServiceAccount,
-		VertexAIProject:           opts.VertexAIProject,
-		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
-		EnableADCPlus:             true,
-		AnalyzeColumns:            defaultAnalyzeColumns,
-		ParsedAnalyzeColumns:      lo.Must(customListToTableRenderDef(strings.Split(defaultAnalyzeColumns, ","))),
-	}
-
-	// initialize default value
-	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", defaultAnalyzeColumns); err != nil {
-		return fmt.Errorf("parse error: %w", err)
-	}
-
-	if opts.OutputTemplate == "" {
-		setDefaultOutputTemplate(&sysVars)
-	} else {
-		if err := setOutputTemplateFile(&sysVars, opts.OutputTemplate); err != nil {
-			return fmt.Errorf("parse error of output template: %w", err)
-		}
-	}
-
-	if opts.Strong {
-		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
-	}
-
-	if opts.ReadTimestamp != "" {
-		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
-		if err != nil {
-			return fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
-		}
-		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
-	}
-
-	if opts.DatabaseDialect != "" {
-		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
-			return fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
-		}
-	}
-
-	if opts.EnablePartitionedDML {
-		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
-			return fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
-		}
-	}
-
-	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
-	for _, s := range ss {
-		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
-		}
+		return err
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -298,46 +216,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 	}
 
-	if opts.Priority != "" {
-		priority, err := parsePriority(opts.Priority)
-		if err != nil {
-			return fmt.Errorf("priority must be either HIGH, MEDIUM, or LOW: %w", err)
-		}
-		sysVars.RPCPriority = priority
-	} else {
-		sysVars.RPCPriority = defaultPriority
-	}
-
-	if opts.QueryMode != "" {
-		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
-			return fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
-		}
-	}
-
-	var directedRead *sppb.DirectedReadOptions
-	if opts.DirectedRead != "" {
-		var err error
-		directedRead, err = parseDirectedReadOption(opts.DirectedRead)
-		if err != nil {
-			return fmt.Errorf("invalid directed read option: %w", err)
-		}
-		sysVars.DirectedRead = directedRead
-	}
-
-	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
-
-	for k, v := range sets {
-		if err := sysVars.Set(k, v); err != nil {
-			return fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
-		}
-	}
-
 	if opts.EmbeddedEmulator {
-		sysVars.Project = "emulator-project"
-		sysVars.Instance = "emulator-instance"
-		sysVars.Database = "emulator-database"
-		sysVars.Insecure = true
-
 		container, teardown, err := spanemuboost.NewEmulator(ctx,
 			spanemuboost.WithProjectID(sysVars.Project),
 			spanemuboost.WithInstanceID(sysVars.Instance),
@@ -389,6 +268,10 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 	interactive := input == ""
 
+	// CLI_FORMAT is set in initializeSystemVariables from opts.Set,
+	// but if not set there, it's set here based on interactive mode or --table flag.
+	// This logic needs to be after sysVars is initialized.
+	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
@@ -403,6 +286,138 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		})
 
 	return err
+}
+
+// initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
+// It extracts the logic for setting default values and applying flag values.
+func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
+	params := make(map[string]ast.Node)
+	for k, v := range opts.Param {
+		if typ, err := memefish.ParseType("", v); err == nil {
+			params[k] = typ
+			continue
+		}
+
+		// ignore ParseType error
+		if expr, err := memefish.ParseExpr("", v); err != nil {
+			return systemVariables{}, fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
+		} else {
+			params[k] = expr
+		}
+	}
+
+	l, err := SetLogLevel(cmp.Or(opts.LogLevel, "WARN"))
+	if err != nil {
+		return systemVariables{}, fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
+	}
+
+	const defaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
+	sysVars := systemVariables{
+		Project:                   opts.ProjectId,
+		Instance:                  opts.InstanceId,
+		Database:                  opts.DatabaseId,
+		Verbose:                   opts.Verbose,
+		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
+		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
+		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
+		Role:                      cmp.Or(opts.Role, opts.DatabaseRole),
+		Endpoint:                  opts.Endpoint,
+		Insecure:                  opts.Insecure || opts.SkipTlsVerify,
+		Params:                    params,
+		LogGrpc:                   opts.LogGrpc,
+		LogLevel:                  l,
+		ImpersonateServiceAccount: opts.ImpersonateServiceAccount,
+		VertexAIProject:           opts.VertexAIProject,
+		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
+		EnableADCPlus:             true,
+		AnalyzeColumns:            defaultAnalyzeColumns,
+		ParsedAnalyzeColumns:      lo.Must(customListToTableRenderDef(strings.Split(defaultAnalyzeColumns, ","))),
+	}
+
+	// initialize default value
+	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", defaultAnalyzeColumns); err != nil {
+		return systemVariables{}, fmt.Errorf("parse error: %w", err)
+	}
+
+	if opts.OutputTemplate == "" {
+		setDefaultOutputTemplate(&sysVars)
+	} else {
+		if err := setOutputTemplateFile(&sysVars, opts.OutputTemplate); err != nil {
+			return systemVariables{}, fmt.Errorf("parse error of output template: %w", err)
+		}
+	}
+
+	if opts.Strong {
+		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
+	}
+
+	if opts.ReadTimestamp != "" {
+		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
+		}
+		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
+	}
+
+	if opts.DatabaseDialect != "" {
+		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
+		}
+	}
+
+	if opts.EnablePartitionedDML {
+		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
+			return systemVariables{}, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
+		}
+	}
+
+	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
+	for _, s := range ss {
+		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
+			return systemVariables{}, fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
+		}
+	}
+
+	if opts.Priority != "" {
+		priority, err := parsePriority(opts.Priority)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("priority must be either HIGH, MEDIUM, or LOW: %w", err)
+		}
+		sysVars.RPCPriority = priority
+	} else {
+		sysVars.RPCPriority = defaultPriority
+	}
+
+	if opts.QueryMode != "" {
+		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
+		}
+	}
+
+	if opts.DirectedRead != "" {
+		directedRead, err := parseDirectedReadOption(opts.DirectedRead)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("invalid directed read option: %w", err)
+		}
+		sysVars.DirectedRead = directedRead
+	}
+
+	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
+	for k, v := range sets {
+		if err := sysVars.Set(k, v); err != nil {
+			return systemVariables{}, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
+		}
+	}
+
+	if opts.EmbeddedEmulator {
+		sysVars.Project = "emulator-project"
+		sysVars.Instance = "emulator-instance"
+		sysVars.Database = "emulator-database"
+		sysVars.Insecure = true
+		// sysVars.Endpoint and sysVars.WithoutAuthentication will be set in run() after emulator starts
+	}
+
+	return sysVars, nil
 }
 
 // renderClientStatementHelp generates a table of client-side statement help.
