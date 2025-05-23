@@ -777,18 +777,9 @@ func Test_confirm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			// Save original Stdin and restore after test
-			oldStdin := os.Stdin
-			defer func() { os.Stdin = oldStdin }()
-
-			// Create a pipe to simulate Stdin
-			r, w, _ := os.Pipe()
-			os.Stdin = r
-			_, _ = w.WriteString(tt.input)
-			_ = w.Close()
-
+			inBuf := strings.NewReader(tt.input)
 			outBuf := &bytes.Buffer{}
-			got := confirm(outBuf, "Do you confirm?")
+			got := confirm(inBuf, outBuf, "Do you confirm?")
 
 			if got != tt.expected {
 				t.Errorf("confirm() got = %v, want %v", got, tt.expected)
