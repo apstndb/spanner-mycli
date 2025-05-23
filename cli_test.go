@@ -21,8 +21,8 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"math"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -796,6 +796,62 @@ func Test_confirm(t *testing.T) {
 	}
 }
 
+func TestCli_handleExit(t *testing.T) {
+	outBuf := &bytes.Buffer{}
+	cli := &Cli{
+		Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+		OutStream: outBuf,
+	}
+
+	exitCode := cli.handleExit()
+
+	if exitCode != exitCodeSuccess {
+		t.Errorf("handleExit() exitCode = %d, want %d", exitCode, exitCodeSuccess)
+	}
+	if outBuf.String() != "" { // Corrected: handleExit itself does not print "Bye\n"
+		t.Errorf("OutStream got = %q, want %q", outBuf.String(), "")
+	}
+}
+
+func TestCli_ExitOnError(t *testing.T) {
+	tests := []struct {
+		desc         string
+		err          error
+		wantErrorOut string
+	}{
+		{
+			desc:         "normal error",
+			err:          errors.New("some error"),
+			wantErrorOut: "ERROR: some error\n",
+		},
+		{
+			desc: "Spanner error with unknown code",
+			err:  spanner.ToSpannerError(status.New(codes.Unknown, "some spanner error").Err()),
+			wantErrorOut: `ERROR: spanner: code = "Unknown", desc = "rpc error: code = Unknown desc = some spanner error"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errBuf := &bytes.Buffer{}
+			cli := &Cli{
+				Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+				ErrStream: errBuf,
+			}
+
+			exitCode := cli.ExitOnError(tt.err)
+
+			if exitCode != exitCodeError {
+				t.Errorf("ExitOnError() exitCode = %d, want %d", exitCode, exitCodeError)
+			}
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("ErrStream got = %q, want %q", errBuf.String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
 func TestCli_handleSpecialStatements(t *testing.T) {
 	tests := []struct {
 		desc          string
@@ -807,6 +863,13 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 		wantOut       string
 		wantErrorOut  string
 	}{
+		{
+			desc:          "EXIT statement",
+			stmt:          &ExitStatement{},
+			wantExitCode:  exitCodeSuccess,
+			wantProcessed: true,
+			wantOut:       "Bye\n",
+		},
 		{
 			desc:          "DROP DATABASE on current database, user says no",
 			stmt:          &DropDatabaseStatement{DatabaseId: "my-db"},
@@ -855,21 +918,13 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			// Mock os.Stdin for confirm function
-			oldStdin := os.Stdin
-			defer func() { os.Stdin = oldStdin }()
-			r, w, _ := os.Pipe()
-			os.Stdin = r
-			_, _ = w.WriteString(tt.confirmInput)
-			_ = w.Close()
-
 			sysVars := &systemVariables{Database: tt.currentDB}
-			// Sessionモックを諦めるため、Sessionフィールドはダミーで初期化
-			outBuf := &bytes.Buffer{} // outBufをここで定義
-			errBuf := &bytes.Buffer{} // errBufをここで定義
+			outBuf := &bytes.Buffer{}
+			errBuf := &bytes.Buffer{}
 			cli := &Cli{
-				Session:         &Session{systemVariables: sysVars}, // ダミーのSession
+				Session:         &Session{systemVariables: sysVars}, // Dummy Session
 				SystemVariables: sysVars,
+				InStream:        io.NopCloser(strings.NewReader(tt.confirmInput)), // Set InStream for confirm
 				OutStream:       outBuf,
 				ErrStream:       errBuf,
 			}
@@ -882,12 +937,90 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			if processed != tt.wantProcessed {
 				t.Errorf("handleSpecialStatements() processed = %t, want %t", processed, tt.wantProcessed)
 			}
-			// outBufとerrBufはcliのフィールドとしてアクセス
-			if cli.OutStream.(*bytes.Buffer).String() != tt.wantOut {
-				t.Errorf("OutStream got = %q, want %q", cli.OutStream.(*bytes.Buffer).String(), tt.wantOut)
+			if outBuf.String() != tt.wantOut {
+				t.Errorf("OutStream got = %q, want %q", outBuf.String(), tt.wantOut)
 			}
-			if cli.ErrStream.(*bytes.Buffer).String() != tt.wantErrorOut {
-				t.Errorf("ErrStream got = %q, want %q", cli.ErrStream.(*bytes.Buffer).String(), tt.wantErrorOut)
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("ErrStream got = %q, want %q", errBuf.String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
+func TestCli_PrintResult(t *testing.T) {
+	tests := []struct {
+		desc        string
+		usePager    bool
+		result      *Result
+		interactive bool
+		input       string
+		wantOut     string
+	}{
+		{
+			desc:     "UsePager is false, simple result",
+			usePager: false,
+			result: &Result{
+				TableHeader: toTableHeader("col1"),
+				Rows:        []Row{{"foo"}},
+			},
+			interactive: false,
+			input:       "SELECT 'foo'",
+			wantOut:     "col1\nfoo\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			outBuf := &bytes.Buffer{}
+			cli := &Cli{
+				OutStream: outBuf,
+				SystemVariables: &systemVariables{
+					UsePager:  tt.usePager,
+					CLIFormat: DisplayModeTab, // Use TAB format for predictable output
+				},
+			}
+
+			cli.PrintResult(80, tt.result, tt.interactive, tt.input)
+
+			got := outBuf.String()
+			t.Logf("PrintResult() got = %q, want %q", got, tt.wantOut)
+			if got != tt.wantOut {
+				t.Errorf("PrintResult() got = %q, want %q", got, tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestCli_PrintBatchError(t *testing.T) {
+	tests := []struct {
+		desc         string
+		err          error
+		wantErrorOut string
+	}{
+		{
+			desc:         "normal error",
+			err:          errors.New("batch error"),
+			wantErrorOut: "ERROR: batch error\n",
+		},
+		{
+			desc: "Spanner error in batch",
+			err:  spanner.ToSpannerError(status.New(codes.Internal, "internal batch error").Err()),
+			wantErrorOut: `ERROR: spanner: code="Internal", desc: internal batch error
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errBuf := &bytes.Buffer{}
+			cli := &Cli{
+				ErrStream: errBuf,
+			}
+
+			cli.PrintBatchError(tt.err)
+
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("PrintBatchError() got = %q, want %q", errBuf.String(), tt.wantErrorOut)
 			}
 		})
 	}

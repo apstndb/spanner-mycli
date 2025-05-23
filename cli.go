@@ -180,7 +180,7 @@ func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed b
 			return -1, true
 		}
 
-		if !confirm(os.Stdin, c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		if !confirm(c.InStream, c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}
