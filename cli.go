@@ -180,7 +180,7 @@ func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed b
 			return -1, true
 		}
 
-		if !confirm(c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		if !confirm(c.InStream, c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}
@@ -380,10 +380,10 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 	})
 }
 
-func confirm(out io.Writer, msg string) bool {
+func confirm(in io.Reader, out io.Writer, msg string) bool {
 	fmt.Fprintf(out, "%s [yes/no] ", msg)
 
-	s := bufio.NewScanner(os.Stdin)
+	s := bufio.NewScanner(in)
 	for {
 		s.Scan()
 		switch strings.ToLower(s.Text()) {

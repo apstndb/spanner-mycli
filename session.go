@@ -552,10 +552,14 @@ func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorp
 }
 
 func (s *Session) Close() {
-	s.client.Close()
-	err := s.adminClient.Close()
-	if err != nil {
-		slog.Error("error on adminClient.Close()", "err", err)
+	if s.client != nil {
+		s.client.Close()
+	}
+	if s.adminClient != nil {
+		err := s.adminClient.Close()
+		if err != nil {
+			slog.Error("error on adminClient.Close()", "err", err)
+		}
 	}
 
 	if s.cqlSession != nil {

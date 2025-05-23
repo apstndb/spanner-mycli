@@ -19,16 +19,21 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -684,6 +689,401 @@ optimizer statistics: auto_20250421_21_29_41UTC
 
 			if diff := cmp.Diff(tcase.want, sb.String()); diff != "" {
 				t.Errorf("result differ: %v", diff)
+			}
+		})
+	}
+}
+
+func Test_printError(t *testing.T) {
+	tests := []struct {
+		desc string
+		err  error
+		want string
+	}{
+		{
+			desc: "normal error",
+			err:  errors.New("some error"),
+			want: "ERROR: some error\n",
+		},
+		{
+			desc: "Spanner error with unknown code",
+			err:  spanner.ToSpannerError(status.New(codes.Unknown, "some spanner error").Err()),
+			want: `ERROR: spanner: code = "Unknown", desc = "rpc error: code = Unknown desc = some spanner error"
+`,
+		},
+		{
+			desc: "Spanner error with specific code and unescaped characters",
+			err:  spanner.ToSpannerError(status.New(codes.InvalidArgument, `invalid argument: \"foo\" \'bar\' \\baz\\ \nnewline`).Err()),
+			want: `ERROR: spanner: code="InvalidArgument", desc: invalid argument: "foo" 'bar' \baz\ 
+newline
+`,
+		},
+		{
+			desc: "Spanner error with specific code and no unescaped characters",
+			err:  spanner.ToSpannerError(status.New(codes.NotFound, `database not found`).Err()),
+			want: `ERROR: spanner: code="NotFound", desc: database not found
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			outBuf := &bytes.Buffer{}
+			printError(outBuf, tt.err)
+			if outBuf.String() != tt.want {
+				t.Errorf("printError() got = %q, want %q", outBuf.String(), tt.want)
+			}
+		})
+	}
+}
+
+func Test_confirm(t *testing.T) {
+	tests := []struct {
+		desc     string
+		input    string
+		expected bool
+	}{
+		{
+			desc:     "user enters yes",
+			input:    "yes\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters YES",
+			input:    "YES\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters no",
+			input:    "no\n",
+			expected: false,
+		},
+		{
+			desc:     "user enters NO",
+			input:    "NO\n",
+			expected: false,
+		},
+		{
+			desc:     "user enters invalid then yes",
+			input:    "maybe\nyes\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters invalid then no",
+			input:    "invalid\nno\n",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			inBuf := strings.NewReader(tt.input)
+			outBuf := &bytes.Buffer{}
+			got := confirm(inBuf, outBuf, "Do you confirm?")
+
+			if got != tt.expected {
+				t.Errorf("confirm() got = %v, want %v", got, tt.expected)
+			}
+			// Check prompt messages
+			expectedPrompt := "Do you confirm? [yes/no] "
+			if strings.Contains(tt.input, "invalid") || strings.Contains(tt.input, "maybe") {
+				expectedPrompt += "Please answer yes or no: "
+			}
+			if !strings.HasPrefix(outBuf.String(), expectedPrompt) {
+				t.Errorf("Prompt message mismatch: got %q, want prefix %q", outBuf.String(), expectedPrompt)
+			}
+		})
+	}
+}
+
+func TestCli_handleExit(t *testing.T) {
+	outBuf := &bytes.Buffer{}
+	cli := &Cli{
+		Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+		OutStream: outBuf,
+	}
+
+	exitCode := cli.handleExit()
+
+	if exitCode != exitCodeSuccess {
+		t.Errorf("handleExit() exitCode = %d, want %d", exitCode, exitCodeSuccess)
+	}
+	if outBuf.String() != "" { // Corrected: handleExit itself does not print "Bye\n"
+		t.Errorf("OutStream got = %q, want %q", outBuf.String(), "")
+	}
+}
+
+func TestCli_ExitOnError(t *testing.T) {
+	tests := []struct {
+		desc         string
+		err          error
+		wantErrorOut string
+	}{
+		{
+			desc:         "normal error",
+			err:          errors.New("some error"),
+			wantErrorOut: "ERROR: some error\n",
+		},
+		{
+			desc: "Spanner error with unknown code",
+			err:  spanner.ToSpannerError(status.New(codes.Unknown, "some spanner error").Err()),
+			wantErrorOut: `ERROR: spanner: code = "Unknown", desc = "rpc error: code = Unknown desc = some spanner error"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errBuf := &bytes.Buffer{}
+			cli := &Cli{
+				Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+				ErrStream: errBuf,
+			}
+
+			exitCode := cli.ExitOnError(tt.err)
+
+			if exitCode != exitCodeError {
+				t.Errorf("ExitOnError() exitCode = %d, want %d", exitCode, exitCodeError)
+			}
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("ErrStream got = %q, want %q", errBuf.String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
+func TestCli_handleSpecialStatements(t *testing.T) {
+	tests := []struct {
+		desc          string
+		stmt          Statement
+		currentDB     string
+		confirmInput  string // "yes", "no", or "invalid\nyes" etc. for confirm mock
+		wantExitCode  int
+		wantProcessed bool
+		wantOut       string
+		wantErrorOut  string
+	}{
+		{
+			desc:          "EXIT statement",
+			stmt:          &ExitStatement{},
+			wantExitCode:  exitCodeSuccess,
+			wantProcessed: true,
+			wantOut:       "Bye\n",
+		},
+		{
+			desc:          "DROP DATABASE on current database, user says no",
+			stmt:          &DropDatabaseStatement{DatabaseId: "my-db"},
+			currentDB:     "my-db",
+			confirmInput:  "no\n",
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
+			wantErrorOut:  "",
+		},
+		{
+			desc:          "DROP DATABASE on current database, user says yes (should still error)",
+			stmt:          &DropDatabaseStatement{DatabaseId: "my-db"},
+			currentDB:     "my-db",
+			confirmInput:  "yes\n", // Even if user says yes, it should still error due to current DB check
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
+			wantErrorOut:  "",
+		},
+		{
+			desc:          "DROP DATABASE on different database, user says no",
+			stmt:          &DropDatabaseStatement{DatabaseId: "other-db"},
+			currentDB:     "my-db",
+			confirmInput:  "no\n",
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+		},
+		{
+			desc:          "DROP DATABASE on different database, user says yes (not processed by this func)",
+			stmt:          &DropDatabaseStatement{DatabaseId: "other-db"},
+			currentDB:     "my-db",
+			confirmInput:  "yes\n",
+			wantExitCode:  -1,
+			wantProcessed: false, // This statement is not fully processed here, it proceeds to executeStatement
+			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+		},
+		{
+			desc:          "Non-special statement",
+			stmt:          &SelectStatement{Query: "SELECT 1"}, // Corrected: use Query field
+			wantExitCode:  -1,
+			wantProcessed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			sysVars := &systemVariables{Database: tt.currentDB}
+			outBuf := &bytes.Buffer{}
+			errBuf := &bytes.Buffer{}
+			cli := &Cli{
+				Session:         &Session{systemVariables: sysVars}, // Dummy Session
+				SystemVariables: sysVars,
+				InStream:        io.NopCloser(strings.NewReader(tt.confirmInput)), // Set InStream for confirm
+				OutStream:       outBuf,
+				ErrStream:       errBuf,
+			}
+
+			exitCode, processed := cli.handleSpecialStatements(tt.stmt)
+
+			if exitCode != tt.wantExitCode {
+				t.Errorf("handleSpecialStatements() exitCode = %d, want %d", exitCode, tt.wantExitCode)
+			}
+			if processed != tt.wantProcessed {
+				t.Errorf("handleSpecialStatements() processed = %t, want %t", processed, tt.wantProcessed)
+			}
+			if outBuf.String() != tt.wantOut {
+				t.Errorf("OutStream got = %q, want %q", outBuf.String(), tt.wantOut)
+			}
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("ErrStream got = %q, want %q", errBuf.String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
+func TestCli_PrintResult(t *testing.T) {
+	tests := []struct {
+		desc        string
+		usePager    bool
+		result      *Result
+		interactive bool
+		input       string
+		wantOut     string
+	}{
+		{
+			desc:     "UsePager is false, simple result",
+			usePager: false,
+			result: &Result{
+				TableHeader: toTableHeader("col1"),
+				Rows:        []Row{{"foo"}},
+			},
+			interactive: false,
+			input:       "SELECT 'foo'",
+			wantOut:     "col1\nfoo\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			outBuf := &bytes.Buffer{}
+			cli := &Cli{
+				OutStream: outBuf,
+				SystemVariables: &systemVariables{
+					UsePager:  tt.usePager,
+					CLIFormat: DisplayModeTab, // Use TAB format for predictable output
+				},
+			}
+
+			cli.PrintResult(80, tt.result, tt.interactive, tt.input)
+
+			got := outBuf.String()
+			t.Logf("PrintResult() got = %q, want %q", got, tt.wantOut)
+			if got != tt.wantOut {
+				t.Errorf("PrintResult() got = %q, want %q", got, tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestCli_PrintBatchError(t *testing.T) {
+	tests := []struct {
+		desc         string
+		err          error
+		wantErrorOut string
+	}{
+		{
+			desc:         "normal error",
+			err:          errors.New("batch error"),
+			wantErrorOut: "ERROR: batch error\n",
+		},
+		{
+			desc: "Spanner error in batch",
+			err:  spanner.ToSpannerError(status.New(codes.Internal, "internal batch error").Err()),
+			wantErrorOut: `ERROR: spanner: code="Internal", desc: internal batch error
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errBuf := &bytes.Buffer{}
+			cli := &Cli{
+				ErrStream: errBuf,
+			}
+
+			cli.PrintBatchError(tt.err)
+
+			if errBuf.String() != tt.wantErrorOut {
+				t.Errorf("PrintBatchError() got = %q, want %q", errBuf.String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
+func TestCli_parseStatement(t *testing.T) {
+	tests := []struct {
+		desc          string
+		input         *inputStatement
+		wantStatement Statement
+		wantErr       bool
+	}{
+		{
+			desc: "valid select statement",
+			input: &inputStatement{
+				statementWithoutComments: "SELECT 1",
+				statement:                "SELECT 1;",
+			},
+			wantStatement: &SelectStatement{Query: "SELECT 1;"},
+			wantErr:       false,
+		},
+		{
+			desc: "invalid statement",
+			input: &inputStatement{
+				statementWithoutComments: "INVALID SYNTAX",
+				statement:                "INVALID SYNTAX;",
+			},
+			wantStatement: nil,
+			wantErr:       true,
+		},
+		{
+			desc: "empty statement",
+			input: &inputStatement{
+				statementWithoutComments: "",
+				statement:                "",
+			},
+			wantStatement: nil,
+			wantErr:       true,
+		},
+		{
+			desc: "statement with comments",
+			input: &inputStatement{
+				statementWithoutComments: "SELECT 1",
+				statement:                "SELECT 1; -- comment",
+			},
+			wantStatement: &SelectStatement{Query: "SELECT 1; -- comment"},
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			cli := &Cli{
+				SystemVariables: &systemVariables{BuildStatementMode: parseModeFallback},
+			}
+			got, err := cli.parseStatement(tt.input)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseStatement() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !cmp.Equal(got, tt.wantStatement) {
+				t.Errorf("parseStatement() got = %v, want %v", got, tt.wantStatement)
 			}
 		})
 	}
