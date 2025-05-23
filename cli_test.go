@@ -19,16 +19,21 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -684,6 +689,277 @@ optimizer statistics: auto_20250421_21_29_41UTC
 
 			if diff := cmp.Diff(tcase.want, sb.String()); diff != "" {
 				t.Errorf("result differ: %v", diff)
+			}
+		})
+	}
+}
+
+func Test_printError(t *testing.T) {
+	tests := []struct {
+		desc string
+		err  error
+		want string
+	}{
+		{
+			desc: "normal error",
+			err:  errors.New("some error"),
+			want: "ERROR: some error\n",
+		},
+		{
+			desc: "Spanner error with unknown code",
+			err:  spanner.ToSpannerError(status.New(codes.Unknown, "some spanner error").Err()),
+			want: `ERROR: spanner: code = "Unknown", desc = "rpc error: code = Unknown desc = some spanner error"
+`,
+		},
+		{
+			desc: "Spanner error with specific code and unescaped characters",
+			err:  spanner.ToSpannerError(status.New(codes.InvalidArgument, `invalid argument: \"foo\" \'bar\' \\baz\\ \nnewline`).Err()),
+			want: `ERROR: spanner: code="InvalidArgument", desc: invalid argument: "foo" 'bar' \baz\ 
+newline
+`,
+		},
+		{
+			desc: "Spanner error with specific code and no unescaped characters",
+			err:  spanner.ToSpannerError(status.New(codes.NotFound, `database not found`).Err()),
+			want: `ERROR: spanner: code="NotFound", desc: database not found
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			outBuf := &bytes.Buffer{}
+			printError(outBuf, tt.err)
+			if outBuf.String() != tt.want {
+				t.Errorf("printError() got = %q, want %q", outBuf.String(), tt.want)
+			}
+		})
+	}
+}
+
+func Test_confirm(t *testing.T) {
+	tests := []struct {
+		desc     string
+		input    string
+		expected bool
+	}{
+		{
+			desc:     "user enters yes",
+			input:    "yes\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters YES",
+			input:    "YES\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters no",
+			input:    "no\n",
+			expected: false,
+		},
+		{
+			desc:     "user enters NO",
+			input:    "NO\n",
+			expected: false,
+		},
+		{
+			desc:     "user enters invalid then yes",
+			input:    "maybe\nyes\n",
+			expected: true,
+		},
+		{
+			desc:     "user enters invalid then no",
+			input:    "invalid\nno\n",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			// Save original Stdin and restore after test
+			oldStdin := os.Stdin
+			defer func() { os.Stdin = oldStdin }()
+
+			// Create a pipe to simulate Stdin
+			r, w, _ := os.Pipe()
+			os.Stdin = r
+			_, _ = w.WriteString(tt.input)
+			_ = w.Close()
+
+			outBuf := &bytes.Buffer{}
+			got := confirm(outBuf, "Do you confirm?")
+
+			if got != tt.expected {
+				t.Errorf("confirm() got = %v, want %v", got, tt.expected)
+			}
+			// Check prompt messages
+			expectedPrompt := "Do you confirm? [yes/no] "
+			if strings.Contains(tt.input, "invalid") || strings.Contains(tt.input, "maybe") {
+				expectedPrompt += "Please answer yes or no: "
+			}
+			if !strings.HasPrefix(outBuf.String(), expectedPrompt) {
+				t.Errorf("Prompt message mismatch: got %q, want prefix %q", outBuf.String(), expectedPrompt)
+			}
+		})
+	}
+}
+
+func TestCli_handleSpecialStatements(t *testing.T) {
+	tests := []struct {
+		desc          string
+		stmt          Statement
+		currentDB     string
+		confirmInput  string // "yes", "no", or "invalid\nyes" etc. for confirm mock
+		wantExitCode  int
+		wantProcessed bool
+		wantOut       string
+		wantErrorOut  string
+	}{
+		{
+			desc:          "DROP DATABASE on current database, user says no",
+			stmt:          &DropDatabaseStatement{DatabaseId: "my-db"},
+			currentDB:     "my-db",
+			confirmInput:  "no\n",
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
+			wantErrorOut:  "",
+		},
+		{
+			desc:          "DROP DATABASE on current database, user says yes (should still error)",
+			stmt:          &DropDatabaseStatement{DatabaseId: "my-db"},
+			currentDB:     "my-db",
+			confirmInput:  "yes\n", // Even if user says yes, it should still error due to current DB check
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
+			wantErrorOut:  "",
+		},
+		{
+			desc:          "DROP DATABASE on different database, user says no",
+			stmt:          &DropDatabaseStatement{DatabaseId: "other-db"},
+			currentDB:     "my-db",
+			confirmInput:  "no\n",
+			wantExitCode:  -1,
+			wantProcessed: true,
+			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+		},
+		{
+			desc:          "DROP DATABASE on different database, user says yes (not processed by this func)",
+			stmt:          &DropDatabaseStatement{DatabaseId: "other-db"},
+			currentDB:     "my-db",
+			confirmInput:  "yes\n",
+			wantExitCode:  -1,
+			wantProcessed: false, // This statement is not fully processed here, it proceeds to executeStatement
+			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+		},
+		{
+			desc:          "Non-special statement",
+			stmt:          &SelectStatement{Query: "SELECT 1"}, // Corrected: use Query field
+			wantExitCode:  -1,
+			wantProcessed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			// Mock os.Stdin for confirm function
+			oldStdin := os.Stdin
+			defer func() { os.Stdin = oldStdin }()
+			r, w, _ := os.Pipe()
+			os.Stdin = r
+			_, _ = w.WriteString(tt.confirmInput)
+			_ = w.Close()
+
+			sysVars := &systemVariables{Database: tt.currentDB}
+			// Sessionモックを諦めるため、Sessionフィールドはダミーで初期化
+			outBuf := &bytes.Buffer{} // outBufをここで定義
+			errBuf := &bytes.Buffer{} // errBufをここで定義
+			cli := &Cli{
+				Session:         &Session{systemVariables: sysVars}, // ダミーのSession
+				SystemVariables: sysVars,
+				OutStream:       outBuf,
+				ErrStream:       errBuf,
+			}
+
+			exitCode, processed := cli.handleSpecialStatements(tt.stmt)
+
+			if exitCode != tt.wantExitCode {
+				t.Errorf("handleSpecialStatements() exitCode = %d, want %d", exitCode, tt.wantExitCode)
+			}
+			if processed != tt.wantProcessed {
+				t.Errorf("handleSpecialStatements() processed = %t, want %t", processed, tt.wantProcessed)
+			}
+			// outBufとerrBufはcliのフィールドとしてアクセス
+			if cli.OutStream.(*bytes.Buffer).String() != tt.wantOut {
+				t.Errorf("OutStream got = %q, want %q", cli.OutStream.(*bytes.Buffer).String(), tt.wantOut)
+			}
+			if cli.ErrStream.(*bytes.Buffer).String() != tt.wantErrorOut {
+				t.Errorf("ErrStream got = %q, want %q", cli.ErrStream.(*bytes.Buffer).String(), tt.wantErrorOut)
+			}
+		})
+	}
+}
+
+func TestCli_parseStatement(t *testing.T) {
+	tests := []struct {
+		desc          string
+		input         *inputStatement
+		wantStatement Statement
+		wantErr       bool
+	}{
+		{
+			desc: "valid select statement",
+			input: &inputStatement{
+				statementWithoutComments: "SELECT 1",
+				statement:                "SELECT 1;",
+			},
+			wantStatement: &SelectStatement{Query: "SELECT 1;"},
+			wantErr:       false,
+		},
+		{
+			desc: "invalid statement",
+			input: &inputStatement{
+				statementWithoutComments: "INVALID SYNTAX",
+				statement:                "INVALID SYNTAX;",
+			},
+			wantStatement: nil,
+			wantErr:       true,
+		},
+		{
+			desc: "empty statement",
+			input: &inputStatement{
+				statementWithoutComments: "",
+				statement:                "",
+			},
+			wantStatement: nil,
+			wantErr:       true,
+		},
+		{
+			desc: "statement with comments",
+			input: &inputStatement{
+				statementWithoutComments: "SELECT 1",
+				statement:                "SELECT 1; -- comment",
+			},
+			wantStatement: &SelectStatement{Query: "SELECT 1; -- comment"},
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			cli := &Cli{
+				SystemVariables: &systemVariables{BuildStatementMode: parseModeFallback},
+			}
+			got, err := cli.parseStatement(tt.input)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseStatement() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !cmp.Equal(got, tt.wantStatement) {
+				t.Errorf("parseStatement() got = %v, want %v", got, tt.wantStatement)
 			}
 		})
 	}
