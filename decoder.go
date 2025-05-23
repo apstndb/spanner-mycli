@@ -41,10 +41,6 @@ func DecodeRow(row *spanner.Row) ([]string, error) {
 	return spanvalue.FormatRowSpannerCLICompatible(row)
 }
 
-func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
-	return spanvalue.FormatColumnSpannerCLICompatible(column)
-}
-
 func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
 	types, err := dynamicTypesByFDS(fds)
 	if err != nil {
