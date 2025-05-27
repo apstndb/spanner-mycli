@@ -88,7 +88,15 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
 	}
 
-	ed, history, err := initializeMultilineEditor(c)
+	// Create the concrete editor instance
+	concreteEditor := &multilineEditorWrapper{&multiline.Editor{}}
+
+	ed, history, err := initializeMultilineEditor(
+		concreteEditor, // Pass the concrete editor as the first argument
+		c.SystemVariables,
+		c.getInterpolatedPrompt,
+		&c.waitingStatus,
+	)
 	if err != nil {
 		return NewExitCodeError(c.ExitOnError(err))
 	}
@@ -122,7 +130,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			continue
 		}
 
-		history.Add(input.statement + ";")
+		history.Add(input.Statement + ";")
 
 		if exitCode, processed := c.handleSpecialStatements(stmt); processed {
 			if exitCode >= 0 {
@@ -142,7 +150,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 }
 
 // readInputLine reads and processes an input line from the editor.
-func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+func (c *Cli) readInputLine(ctx context.Context, ed Editor) (*inputStatement, error) {
 	input, err := readInteractiveInput(ctx, ed)
 
 	// reset for next input before continue
@@ -157,7 +165,7 @@ func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputSt
 
 // parseStatement parses the input statement.
 func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
-	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+	return BuildStatementWithCommentsWithMode(input.StatementWithoutComments, input.Statement, c.SystemVariables.BuildStatementMode)
 }
 
 // handleSpecialStatements handles special client-side statements.
@@ -190,7 +198,7 @@ func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed b
 
 // executeStatementInteractive executes the statement and displays the result.
 func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
-	preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
+	preInput, err := c.executeStatement(ctx, stmt, true, input.Statement)
 	if err != nil {
 		return "", err
 	}

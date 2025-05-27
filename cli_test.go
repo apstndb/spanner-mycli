@@ -1036,8 +1036,8 @@ func TestCli_parseStatement(t *testing.T) {
 		{
 			desc: "valid select statement",
 			input: &inputStatement{
-				statementWithoutComments: "SELECT 1",
-				statement:                "SELECT 1;",
+				StatementWithoutComments: "SELECT 1",
+				Statement:                "SELECT 1;",
 			},
 			wantStatement: &SelectStatement{Query: "SELECT 1;"},
 			wantErr:       false,
@@ -1045,8 +1045,8 @@ func TestCli_parseStatement(t *testing.T) {
 		{
 			desc: "invalid statement",
 			input: &inputStatement{
-				statementWithoutComments: "INVALID SYNTAX",
-				statement:                "INVALID SYNTAX;",
+				StatementWithoutComments: "INVALID SYNTAX",
+				Statement:                "INVALID SYNTAX;",
 			},
 			wantStatement: nil,
 			wantErr:       true,
@@ -1054,8 +1054,8 @@ func TestCli_parseStatement(t *testing.T) {
 		{
 			desc: "empty statement",
 			input: &inputStatement{
-				statementWithoutComments: "",
-				statement:                "",
+				StatementWithoutComments: "",
+				Statement:                "",
 			},
 			wantStatement: nil,
 			wantErr:       true,
@@ -1063,8 +1063,8 @@ func TestCli_parseStatement(t *testing.T) {
 		{
 			desc: "statement with comments",
 			input: &inputStatement{
-				statementWithoutComments: "SELECT 1",
-				statement:                "SELECT 1; -- comment",
+				StatementWithoutComments: "SELECT 1",
+				Statement:                "SELECT 1; -- comment",
 			},
 			wantStatement: &SelectStatement{Query: "SELECT 1; -- comment"},
 			wantErr:       false,

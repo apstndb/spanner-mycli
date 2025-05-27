@@ -31,9 +31,9 @@ const (
 )
 
 type inputStatement struct {
-	statement                string
-	statementWithoutComments string
-	delim                    string
+	Statement                string
+	StatementWithoutComments string
+	Delim                    string
 }
 
 func separateInput(input string) ([]inputStatement, error) {
@@ -44,5 +44,5 @@ func separateInput(input string) ([]inputStatement, error) {
 func convertStatement(stmt gsqlutils.RawStatement) inputStatement {
 	stripped, err := stmt.StripComments()
 	strippedStmt := lo.Ternary(err != nil, stmt, stripped).Statement
-	return inputStatement{statement: stmt.Statement, statementWithoutComments: strippedStmt, delim: stmt.Terminator}
+	return inputStatement{Statement: stmt.Statement, StatementWithoutComments: strippedStmt, Delim: stmt.Terminator}
 }

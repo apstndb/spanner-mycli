@@ -85,15 +85,62 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 	return &persistentHistory{filename: filename, history: h}, nil
 }
 
-func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
-	ed := &multiline.Editor{}
+// Editor is an interface that defines the methods used from multiline.Editor.
+type Editor interface {
+	BindKey(key keys.Code, cmd readline.Command) error
+	SubmitOnEnterWhen(f func(lines []string, point int) bool)
+	SetPrompt(f func(w io.Writer, lnum int) (int, error))
+	SetDefault(s []string)
+	Read(ctx context.Context) ([]string, error)
+	SetHistory(h readline.IHistory)
+	SetHistoryCycling(b bool)
+	SetHighlight(h []readline.Highlight)
+	SetDefaultColor(s string)
+	SetResetColor(s string)
+	// NewLine method with signature matching readline.Command
+	NewLine(ctx context.Context, b *readline.Buffer) readline.Result
+}
 
-	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
+// multilineEditorWrapper wraps multiline.Editor to satisfy the Editor interface.
+type multilineEditorWrapper struct {
+	*multiline.Editor
+}
+
+// NewLine implements the NewLine method of the Editor interface,
+// adapting the multiline.Editor's NewLine() to the required signature.
+func (m *multilineEditorWrapper) NewLine(ctx context.Context, b *readline.Buffer) readline.Result {
+	return m.Editor.NewLine(ctx, b) // Call the underlying multiline.Editor's NewLine()
+}
+
+func (m *multilineEditorWrapper) SetHighlight(h []readline.Highlight) {
+	m.Highlight = h
+}
+
+func (m *multilineEditorWrapper) SetDefaultColor(s string) {
+	m.DefaultColor = s
+}
+
+func (m *multilineEditorWrapper) SetResetColor(s string) {
+	m.ResetColor = s
+}
+
+type PromptFunc = func(w io.Writer, lnum int) (int, error)
+type SubmitOnEnterWhenFunc = func(lines []string, point int) bool
+
+func initializeMultilineEditor(
+	ed Editor, // New argument: Editor interface
+	sysVars *systemVariables,
+	getInterpolatedPrompt func(prompt string) string,
+	waitingStatus *string,
+) (Editor, History, error) {
+	// ed is now passed as an argument, no need to create it here
+
+	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine)) // Use the passed 'ed'
 	if err != nil {
 		return nil, nil, err
 	}
 
-	history, err := setupHistory(ed, c.SystemVariables.HistoryFile)
+	history, err := setupHistory(ed, sysVars.HistoryFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,26 +150,27 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 
 		// Continue with waiting prompt if there is an error with waiting status
 		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
-			c.waitingStatus = e.WaitingString
+			*waitingStatus = e.WaitingString
 			return false
 		}
 
 		// reset waitingStatus
-		c.waitingStatus = ""
+		*waitingStatus = ""
 
 		// Submit if there is an error or completed statement.
-		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].Delim != delimiterUndefined)
 	})
 
 	ed.SetPrompt(PS1PS2FuncToPromptFunc(
 		func() string {
-			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
+			return getInterpolatedPrompt(sysVars.Prompt)
 		},
 		func(ps1 string) string {
 			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
 
-			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
-			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
+			prompt2Val := sysVars.Prompt2
+			prompt2, needPadding := strings.CutPrefix(prompt2Val, "%P")
+			interpolatedPrompt2 := getInterpolatedPrompt(prompt2)
 			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
 		}))
 
@@ -241,20 +289,20 @@ var (
 	}
 )
 
-func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
+func setLineEditor(ed Editor, enableHighlight bool) {
 	if color.NoColor || !enableHighlight {
-		ed.Highlight = nil
-		ed.DefaultColor = ""
-		ed.ResetColor = ""
+		ed.SetHighlight(nil)
+		ed.SetDefaultColor("")
+		ed.SetResetColor("")
 		return
 	}
 
-	ed.Highlight = defaultHighlights
-	ed.ResetColor = colorToSequence(color.Reset)
-	ed.DefaultColor = colorToSequence(color.Reset)
+	ed.SetHighlight(defaultHighlights)
+	ed.SetResetColor(colorToSequence(color.Reset))
+	ed.SetDefaultColor(colorToSequence(color.Reset))
 }
 
-func setupHistory(ed *multiline.Editor, historyFileName string) (History, error) {
+func setupHistory(ed Editor, historyFileName string) (History, error) {
 	history, err := newPersistentHistory(historyFileName, simplehistory.New())
 	if err != nil {
 		return nil, err
@@ -266,7 +314,7 @@ func setupHistory(ed *multiline.Editor, historyFileName string) (History, error)
 	return history, nil
 }
 
-func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+func readInteractiveInput(ctx context.Context, ed Editor) (*inputStatement, error) {
 	lines, err := ed.Read(ctx)
 	if err != nil {
 		if len(lines) == 0 {
@@ -275,13 +323,13 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 
 		str := strings.Join(lines, "\n")
 		return &inputStatement{
-			statement:                str,
-			statementWithoutComments: str,
-			delim:                    "",
+			Statement:                str,
+			StatementWithoutComments: str,
+			Delim:                    "",
 		}, err
 	}
 
-	input := strings.Join(lines, "\n") + "\n"
+	input := strings.Join(lines, "\n")
 
 	statements, err := separateInput(input)
 	if err != nil {

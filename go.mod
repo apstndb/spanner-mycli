@@ -37,6 +37,7 @@ require (
 	github.com/olekukonko/tablewriter v1.0.6
 	github.com/samber/lo v1.49.1
 	github.com/sourcegraph/conc v0.3.0
+	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.36.0
 	github.com/vbauerster/mpb/v8 v8.9.3
 	go.uber.org/zap v1.27.0
@@ -122,7 +123,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/swaggest/jsonschema-go v0.3.73 // indirect
 	github.com/swaggest/refl v1.3.0 // indirect
 	github.com/testcontainers/testcontainers-go v0.36.0 // indirect

@@ -34,9 +34,9 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT "123";`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT "123"`,
-					statementWithoutComments: `SELECT "123"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT "123"`,
+					StatementWithoutComments: `SELECT "123"`,
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -45,14 +45,14 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT "123"; SELECT "456";`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT "123"`,
-					statementWithoutComments: `SELECT "123"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT "123"`,
+					StatementWithoutComments: `SELECT "123"`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                `SELECT "456"`,
-					statementWithoutComments: `SELECT "456"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT "456"`,
+					StatementWithoutComments: `SELECT "456"`,
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -61,14 +61,14 @@ func TestSeparateInput(t *testing.T) {
 			input: "SELECT `1`, `2`; SELECT `3`, `4`;",
 			want: []inputStatement{
 				{
-					statement:                "SELECT `1`, `2`",
-					statementWithoutComments: "SELECT `1`, `2`",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT `1`, `2`",
+					StatementWithoutComments: "SELECT `1`, `2`",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "SELECT `3`, `4`",
-					statementWithoutComments: "SELECT `3`, `4`",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT `3`, `4`",
+					StatementWithoutComments: "SELECT `3`, `4`",
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -77,14 +77,14 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT * FROM t1 WHERE id = "123" AND "456"; DELETE FROM t2 WHERE true;`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT * FROM t1 WHERE id = "123" AND "456"`,
-					statementWithoutComments: `SELECT * FROM t1 WHERE id = "123" AND "456"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT * FROM t1 WHERE id = "123" AND "456"`,
+					StatementWithoutComments: `SELECT * FROM t1 WHERE id = "123" AND "456"`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                `DELETE FROM t2 WHERE true`,
-					statementWithoutComments: `DELETE FROM t2 WHERE true`,
-					delim:                    delimiterHorizontal,
+					Statement:                `DELETE FROM t2 WHERE true`,
+					StatementWithoutComments: `DELETE FROM t2 WHERE true`,
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -93,13 +93,13 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT 1; ;`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT 1`,
-					statementWithoutComments: `SELECT 1`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT 1`,
+					StatementWithoutComments: `SELECT 1`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement: ``,
-					delim:     delimiterHorizontal,
+					Statement: ``,
+					Delim:     delimiterHorizontal,
 				},
 			},
 		},
@@ -108,14 +108,14 @@ func TestSeparateInput(t *testing.T) {
 			input: "SELECT 1;\n SELECT 2;\n",
 			want: []inputStatement{
 				{
-					statement:                `SELECT 1`,
-					statementWithoutComments: `SELECT 1`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT 1`,
+					StatementWithoutComments: `SELECT 1`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                `SELECT 2`,
-					statementWithoutComments: `SELECT 2`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT 2`,
+					StatementWithoutComments: `SELECT 2`,
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -124,14 +124,14 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT "1;2;3"; SELECT 'TL;DR';`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT "1;2;3"`,
-					statementWithoutComments: `SELECT "1;2;3"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT "1;2;3"`,
+					StatementWithoutComments: `SELECT "1;2;3"`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                `SELECT 'TL;DR'`,
-					statementWithoutComments: `SELECT 'TL;DR'`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT 'TL;DR'`,
+					StatementWithoutComments: `SELECT 'TL;DR'`,
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -140,14 +140,14 @@ func TestSeparateInput(t *testing.T) {
 			input: "SELECT `1;2`; SELECT `3;4`;",
 			want: []inputStatement{
 				{
-					statement:                "SELECT `1;2`",
-					statementWithoutComments: "SELECT `1;2`",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT `1;2`",
+					StatementWithoutComments: "SELECT `1;2`",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "SELECT `3;4`",
-					statementWithoutComments: "SELECT `3;4`",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT `3;4`",
+					StatementWithoutComments: "SELECT `3;4`",
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -156,14 +156,14 @@ func TestSeparateInput(t *testing.T) {
 			input: "SELECT '123'\n; SELECT '456'\n;",
 			want: []inputStatement{
 				{
-					statement:                "SELECT '123'\n",
-					statementWithoutComments: "SELECT '123'\n",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT '123'\n",
+					StatementWithoutComments: "SELECT '123'\n",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "SELECT '456'\n",
-					statementWithoutComments: "SELECT '456'\n",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT '456'\n",
+					StatementWithoutComments: "SELECT '456'\n",
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -172,9 +172,9 @@ func TestSeparateInput(t *testing.T) {
 			input: "CREATE t1 (\nId INT64 NOT NULL\n) PRIMARY KEY (Id);",
 			want: []inputStatement{
 				{
-					statement:                "CREATE t1 (\nId INT64 NOT NULL\n) PRIMARY KEY (Id)",
-					statementWithoutComments: "CREATE t1 (\nId INT64 NOT NULL\n) PRIMARY KEY (Id)",
-					delim:                    delimiterHorizontal,
+					Statement:                "CREATE t1 (\nId INT64 NOT NULL\n) PRIMARY KEY (Id)",
+					StatementWithoutComments: "CREATE t1 (\nId INT64 NOT NULL\n) PRIMARY KEY (Id)",
+					Delim:                    delimiterHorizontal,
 				},
 			},
 		},
@@ -184,17 +184,17 @@ func TestSeparateInput(t *testing.T) {
 			input: "# comment;\nSELECT /* comment */ 1; --comment\nSELECT 2;/* comment */",
 			want: []inputStatement{
 				{
-					statement:                "# comment;\nSELECT /* comment */ 1",
-					statementWithoutComments: "SELECT  1",
-					delim:                    delimiterHorizontal,
+					Statement:                "# comment;\nSELECT /* comment */ 1",
+					StatementWithoutComments: "SELECT  1",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "--comment\nSELECT 2",
-					statementWithoutComments: "SELECT 2",
-					delim:                    delimiterHorizontal,
+					Statement:                "--comment\nSELECT 2",
+					StatementWithoutComments: "SELECT 2",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement: "/* comment */",
+					Statement: "/* comment */",
 				},
 			},
 		},
@@ -203,7 +203,7 @@ func TestSeparateInput(t *testing.T) {
 			input: "# comment;\n/* comment */--comment\n/* comment */",
 			want: []inputStatement{
 				{
-					statement: "# comment;\n/* comment */--comment\n/* comment */",
+					Statement: "# comment;\n/* comment */--comment\n/* comment */",
 				},
 			},
 		},
@@ -212,14 +212,14 @@ func TestSeparateInput(t *testing.T) {
 			input: `SELECT "123"; SELECT "45`,
 			want: []inputStatement{
 				{
-					statement:                `SELECT "123"`,
-					statementWithoutComments: `SELECT "123"`,
-					delim:                    delimiterHorizontal,
+					Statement:                `SELECT "123"`,
+					StatementWithoutComments: `SELECT "123"`,
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                `SELECT "45`,
-					statementWithoutComments: `SELECT "45`,
-					delim:                    delimiterUndefined,
+					Statement:                `SELECT "45`,
+					StatementWithoutComments: `SELECT "45`,
+					Delim:                    delimiterUndefined,
 				},
 			},
 			wantAnyErr: true,
@@ -229,9 +229,9 @@ func TestSeparateInput(t *testing.T) {
 			input: `a"""""""""'''''''''b`,
 			want: []inputStatement{
 				{
-					statement:                `a"""""""""'''''''''b`,
-					statementWithoutComments: `a"""""""""'''''''''b`,
-					delim:                    delimiterUndefined,
+					Statement:                `a"""""""""'''''''''b`,
+					StatementWithoutComments: `a"""""""""'''''''''b`,
+					Delim:                    delimiterUndefined,
 				},
 			},
 			wantAnyErr: true,
@@ -241,19 +241,19 @@ func TestSeparateInput(t *testing.T) {
 			input: "SELECT 0x1/* comment */A; SELECT 0x2--\nB; SELECT 0x3#\nC",
 			want: []inputStatement{
 				{
-					statement:                "SELECT 0x1/* comment */A",
-					statementWithoutComments: "SELECT 0x1 A",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT 0x1/* comment */A",
+					StatementWithoutComments: "SELECT 0x1 A",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "SELECT 0x2--\nB",
-					statementWithoutComments: "SELECT 0x2\nB",
-					delim:                    delimiterHorizontal,
+					Statement:                "SELECT 0x2--\nB",
+					StatementWithoutComments: "SELECT 0x2\nB",
+					Delim:                    delimiterHorizontal,
 				},
 				{
-					statement:                "SELECT 0x3#\nC",
-					statementWithoutComments: "SELECT 0x3\nC",
-					delim:                    delimiterUndefined,
+					Statement:                "SELECT 0x3#\nC",
+					StatementWithoutComments: "SELECT 0x3\nC",
+					Delim:                    delimiterUndefined,
 				},
 			},
 		},

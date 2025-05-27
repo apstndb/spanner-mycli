@@ -380,13 +380,13 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	}
 	for _, separated := range stmts {
 		// Ignore the last empty statement
-		if separated.delim == delimiterUndefined && separated.statementWithoutComments == "" {
+		if separated.Delim == delimiterUndefined && separated.StatementWithoutComments == "" {
 			continue
 		}
 
-		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.statementWithoutComments), separated.statement, mode)
+		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.StatementWithoutComments), separated.Statement, mode)
 		if err != nil {
-			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.statement, separated.statementWithoutComments)
+			return nil, fmt.Errorf("failed with statement, error: %w, statement: %q, without comments: %q", err, separated.Statement, separated.StatementWithoutComments)
 		}
 		if ddl, ok := stmt.(*DdlStatement); ok {
 			pendingDdls = append(pendingDdls, ddl.Ddl)
