@@ -25,40 +25,47 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
-	"github.com/apstndb/spannerplanviz/plantree"
-	"github.com/apstndb/spannerplanviz/queryplan"
+	"github.com/apstndb/spannerplan"
+	"github.com/apstndb/spannerplan/plantree"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/olekukonko/tablewriter/tw"
+	"github.com/samber/lo"
 )
 
 type ExplainStatement struct {
 	Explain string
 	IsDML   bool
+	Format  explainFormat
+	Width   int64
 }
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplain(ctx, session, s.Explain, s.IsDML)
+	return executeExplain(ctx, session, s.Explain, s.IsDML, s.Format, s.Width)
 }
 
 type ExplainAnalyzeStatement struct {
-	Query string
+	Query  string
+	Format explainFormat
+	Width  int64
 }
 
 func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	sql := s.Query
 
-	return executeExplainAnalyze(ctx, session, sql)
+	return executeExplainAnalyze(ctx, session, sql, s.Format, s.Width)
 }
 
 type ExplainAnalyzeDmlStatement struct {
-	Dml string
+	Dml    string
+	Format explainFormat
+	Width  int64
 }
 
 func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplainAnalyzeDML(ctx, session, s.Dml)
+	return executeExplainAnalyzeDML(ctx, session, s.Dml, s.Format, s.Width)
 }
 
 type DescribeStatement struct {
@@ -92,7 +99,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	return result, nil
 }
-func executeExplain(ctx context.Context, session *Session, sql string, isDML bool) (*Result, error) {
+func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format explainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
 		return nil, err
@@ -107,7 +114,10 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	rows, predicates, err := processPlanWithoutStats(queryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+	rows, predicates, err := processPlanWithoutStats(queryPlan,
+		lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
+		lo.Ternary(width != 0, width, session.systemVariables.ExplainWrapWidth),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +135,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	return result, nil
 }
 
-func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*Result, error) {
+func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format explainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -144,7 +154,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats, format, width)
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +163,14 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string) (*
 	return result, nil
 }
 
-func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{}) (*Result, error) {
+func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
+	format explainFormat, width int64) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
 
-	rows, predicates, err := processPlan(plan, def, sysVars.SpannerCLICompatiblePlan)
+	rows, predicates, err := processPlan(plan, def,
+		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
+		lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
@@ -203,7 +217,7 @@ func explainAnalyzeHeader(def []columnRenderDef) ([]string, []tw.Align) {
 	return columnNames, columnAlign
 }
 
-func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string) (*Result, error) {
+func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format explainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -220,7 +234,10 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 		return nil, err
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats,
+		lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
+		lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -233,12 +250,12 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string)
 	return result, nil
 }
 
-func processPlanWithoutStats(plan *sppb.QueryPlan, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
-	return processPlan(plan, nil, spannerCLICompatible)
+func processPlanWithoutStats(plan *sppb.QueryPlan, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
+	return processPlan(plan, nil, format, width)
 }
 
-func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, spannerCLICompatible bool) (rows []Row, predicates []string, err error) {
-	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), spannerCLICompatible)
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
+	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), format, width)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -364,15 +381,28 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 	return queryPlan, commitResp.CommitTs, metadata, err
 }
 
-func processPlanNodes(nodes []*sppb.PlanNode, spannerCLICompatible bool) ([]plantree.RowWithPredicates, error) {
+func processPlanNodes(nodes []*sppb.PlanNode, format explainFormat, width int64) ([]plantree.RowWithPredicates, error) {
 	var options []plantree.Option
-	if !spannerCLICompatible {
+	switch format {
+	case explainFormatCurrent, explainFormatUnspecified:
 		options = append(options, plantree.WithQueryPlanOptions(
-			queryplan.WithExecutionMethodFormat(queryplan.ExecutionMethodFormatAngle),
-			queryplan.WithFullScanFormat(queryplan.FullScanFormatLabel),
-			queryplan.WithTargetMetadataFormat(queryplan.TargetMetadataFormatOn),
+			spannerplan.WithExecutionMethodFormat(spannerplan.ExecutionMethodFormatAngle),
+			spannerplan.WithKnownFlagFormat(spannerplan.KnownFlagFormatLabel),
+			spannerplan.WithTargetMetadataFormat(spannerplan.TargetMetadataFormatOn),
 		))
+	case explainFormatCompact:
+		options = append(options,
+			plantree.EnableCompact(),
+			plantree.WithQueryPlanOptions(
+				spannerplan.WithExecutionMethodFormat(spannerplan.ExecutionMethodFormatAngle),
+				spannerplan.WithKnownFlagFormat(spannerplan.KnownFlagFormatLabel),
+				spannerplan.WithTargetMetadataFormat(spannerplan.TargetMetadataFormatOn),
+			))
 	}
 
-	return plantree.ProcessPlan(queryplan.New(nodes), options...)
+	if width > 0 {
+		options = append(options, plantree.WithWrapWidth(int(width)))
+	}
+
+	return plantree.ProcessPlan(spannerplan.New(nodes), options...)
 }

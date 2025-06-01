@@ -102,7 +102,8 @@ type systemVariables struct {
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 
-	SpannerCLICompatiblePlan bool // CLI_SPANNER_CLI_COMPATIBLE_PLAN
+	ExplainFormat    explainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth int64         // CLI_EXPLAIN_WRAP_WIDTH
 
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
@@ -753,11 +754,28 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"CLI_SPANNER_CLI_COMPATIBLE_PLAN": {
-		Description: "Controls query plan notation. FALSE(default): new notation, TRUE: spanner-cli compatible notation.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.SpannerCLICompatiblePlan
+	"CLI_EXPLAIN_WRAP_WIDTH": {
+		Description: "Controls query plan wrap width. It effects only operators column contents",
+		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
+			return &variables.ExplainWrapWidth
 		}),
+	},
+	"CLI_EXPLAIN_FORMAT": {
+		Description: "Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, string(this.ExplainFormat)), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				format, err := parseExplainFormat(unquoteString(value))
+				if err != nil {
+					return err
+				}
+
+				this.ExplainFormat = format
+				return nil
+			},
+		},
 	},
 	"CLI_ANALYZE_COLUMNS": {
 		Description: "<name>:<template>[:<alignment>], ...",

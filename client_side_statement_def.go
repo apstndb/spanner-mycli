@@ -291,24 +291,38 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show execution plan without execution`,
-				Syntax: `EXPLAIN <sql>`,
+				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>`,
 			},
 			{
 				Usage:  `Execute query and show execution plan with profile`,
-				Syntax: `EXPLAIN ANALYZE <sql>`,
+				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(?:FORMAT=(\S+)\s+)?(?:WIDTH=(\d+)\s+)?(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
-			isDML := stmtkind.IsDMLLexical(matched[2])
+			format, err := parseExplainFormat(matched[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			var width int64
+			if widthStr := matched[3]; widthStr != "" {
+				width, err = strconv.ParseInt(matched[3], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid WIDTH: %v, err: %w", matched[3], err)
+				}
+			}
+
+			sql := matched[4]
+			isDML := stmtkind.IsDMLLexical(sql)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: sql, Format: format, Width: width}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: matched[2]}, nil
+				return &ExplainAnalyzeStatement{Query: sql, Format: format, Width: width}, nil
 			default:
-				return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
+				return &ExplainStatement{Explain: sql, IsDML: isDML, Format: format, Width: width}, nil
 			}
 		},
 	},
@@ -767,6 +781,31 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ExitStatement{}, nil
 		},
 	},
+}
+
+type explainFormat string
+
+const (
+	explainFormatUnspecified explainFormat = ""
+	explainFormatCurrent     explainFormat = "CURRENT"
+	explainFormatTraditional explainFormat = "TRADITIONAL"
+	explainFormatCompact     explainFormat = "COMPACT"
+)
+
+func parseExplainFormat(s string) (explainFormat, error) {
+	switch strings.ToUpper(s) {
+	case "COMPACT":
+		return explainFormatCompact, nil
+	case "CURRENT":
+		return explainFormatCurrent, nil
+	case "TRADITIONAL":
+		return explainFormatTraditional, nil
+	case "":
+		return explainFormatUnspecified, nil
+	default:
+		return "", fmt.Errorf("parse error: unknown explain format: %s", s)
+	}
+
 }
 
 // Helper functions for HandleSubmatch implementations

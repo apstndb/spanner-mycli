@@ -650,7 +650,7 @@ func TestRenderPlanTree(t *testing.T) {
 			want: `+-----+-------------------------------------------------------------------------------------------+------+---------+----------+
 | ID  | Query_Execution_Plan <execution_method> (metadata, ...)                                   | Rows | Scanned | Filtered |
 +-----+-------------------------------------------------------------------------------------------+------+---------+----------+
-|   0 | Distributed Union on AlbumsByAlbumTitle <Row> (split_ranges_aligned: false)               |   33 |         |          |
+|   0 | Distributed Union on AlbumsByAlbumTitle <Row>                                             |   33 |         |          |
 |  *1 | +- Distributed Cross Apply <Row>                                                          |   33 |         |          |
 |   2 |    +- [Input] Create Batch <Row>                                                          |      |         |          |
 |   3 |    |  +- Local Distributed Union <Row>                                                    |    7 |         |          |
@@ -679,7 +679,7 @@ optimizer statistics: auto_20250421_21_29_41UTC
 	for _, tcase := range tcases {
 		t.Run(tcase.desc, func(t *testing.T) {
 			stats := protostruct.DecodeToMap(tcase.resultSetStats.QueryStats)
-			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats)
+			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats, explainFormatUnspecified, 0)
 			if err != nil {
 				t.Errorf("shouldn't fail, but: %v", err)
 			}

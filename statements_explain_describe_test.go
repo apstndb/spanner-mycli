@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spannerplanviz/plantree"
-	"github.com/apstndb/spannerplanviz/queryplan"
-	"github.com/apstndb/spannerplanviz/stats"
+	"github.com/apstndb/spannerplan"
+	"github.com/apstndb/spannerplan/plantree"
+	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -378,7 +378,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), true)
+			got, err := processPlanNodes(plan.GetPlanNodes(), explainFormatTraditional, 0)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
@@ -500,7 +500,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 			}},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			got, err := plantree.ProcessPlan(queryplan.New(test.plan.GetPlanNodes()))
+			got, err := plantree.ProcessPlan(spannerplan.New(test.plan.GetPlanNodes()))
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
@@ -572,7 +572,7 @@ func TestNodeString(t *testing.T) {
 				}),
 			}, "Stream Aggregate"},
 	} {
-		if got := queryplan.NodeTitle(test.node); got != test.want {
+		if got := spannerplan.NodeTitle(test.node); got != test.want {
 			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
 		}
 	}
