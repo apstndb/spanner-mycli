@@ -15,6 +15,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
 
 * [More concise `EXPLAIN` and `EXPLAIN ANALYZE` output](#more-concise-format-of-explain-and-explain-analyze), making efficient use of limited display space.
   * Optimized for narrower terminals and code blocks.
+  * Compact format and query plan wrapping to fit into  more limited space.
 * Respects my minor use cases
   * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
   * Can use embedded emulator (`--embedded-emulator`)
@@ -1857,9 +1858,9 @@ spanner-mycli
 
 ```text
 +----+-----------------------------------------------------------------------------+------+-------+---------------+
-| ID | Query_Execution_Plan <execution_method> (metadata, ...)                     | Rows | Exec. | Total Latency |
+| ID | Operator <execution_method> (metadata, ...)                                 | Rows | Exec. | Total Latency |
 +----+-----------------------------------------------------------------------------+------+-------+---------------+
-|  0 | Distributed Union on Singers <Row> (split_ranges_aligned: false)            |    0 |     1 |    7.58 msecs |
+|  0 | Distributed Union on Singers <Row>                                          |    0 |     1 |    7.58 msecs |
 |  1 | +- Local Distributed Union <Row>                                            |    0 |     3 |    0.78 msecs |
 |  2 |    +- Serialize Result <Row>                                                |    0 |     3 |    0.75 msecs |
 | *3 |       +- Filter Scan <Row> (seekable_key_size: 0)                           |      |       |               |
@@ -1871,16 +1872,89 @@ Predicates(identified by ID):
 ```
 
 - `execution_method: {Row|Batch}` metadata is simply displayed as `<Row>` or `<Batch>` after display name of operator.
-- Target metadata, `distribution_table: <target>` and `scan_target: <target>`, are displayed as `on <target>` after display name of operator.
-- `Full scan: true` is shortened as `Full scan`.
+- Target metadata, `distribution_table: <target>`, `scan_target: <target>`, and `table: <target>` are displayed as `on <target>` after display name of operator.
+- Some metadata with boolean value is printed as label.
+  - For example, `Full scan: true` and `split_ranges_aligned: true` are shortened as `Full scan` and `split_ranges_aligned`, and they are not printed if the value is `false`.
 - Column names of `EXPLAIN ANALYZE` are shorter than before.
 
-Note: These changes except column names can be controlled using `SET CLI_SPANNER_CLI_COMPATIBLE_PLAN=TRUE`.
+Note: These changes except column names can be controlled using `EXPLAIN [ANALYZE] FORMAT=TRADITIONAL` or `SET CLI_EXPLAIN_FORMAT=TRADITIONAL`.
+
+To support more limited width environment, there are further options.
+#### Compact format
+
+`FORMAT=COMPACT` option removes characters that use width for readability, as long as it doesn't compromise information.
+
+- Whitespace is generally not inserted.
+- The characters used for the tree will only be one character wide per level.
+
+```
+spanner> EXPLAIN FORMAT=COMPACT
+         SELECT * FROM Singers
+         JOIN Albums USING (SingerId)
+         WHERE LastName LIKE "%son";
++-----+-------------------------------------------------------------------+
+| ID  | Operator <execution_method> (metadata, ...)                       |
++-----+-------------------------------------------------------------------+
+|   0 | Distributed Union on Albums<Row>                                  |
+|   1 | +Serialize Result<Row>                                            |
+|   2 |  +Cross Apply<Row>                                                |
+|   3 |   +[Input]Distributed Union on Singers<Row>                       |
+|   4 |   |+Local Distributed Union<Row>                                  |
+|  *5 |   | +Filter Scan<Row>(seekable_key_size:0)                        |
+|   6 |   |  +Table Scan on Singers<Row>(Full scan,scan_method:Automatic) |
+|  17 |   +[Map]Local Distributed Union<Row>                              |
+|  18 |    +Filter Scan<Row>(seekable_key_size:0)                         |
+| *19 |     +Table Scan on Albums<Row>(scan_method:Row)                   |
++-----+-------------------------------------------------------------------+
+Predicates(identified by ID):
+  5: Residual Condition: ($LastName LIKE '%son')
+ 19: Seek Condition: ($SingerId_1 = $SingerId)
+```
+
+#### Wrapped plans
+
+When you want to adjust the width, such as when displaying an execution plan on media where horizontal scrolling is not possible and content might be truncated or wrapped,
+you can use the `WIDTH=<width>` option to wrap the content of the `Operator` column at the specified width.
+
+For example, in the illustration below, by setting the width of the ASCII tree drawn in the Operator column to 39 characters,
+the entire output, including the ASCII table, can fit within 80 characters.
+
+```
+spanner> EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=39
+         SELECT * FROM Singers
+         JOIN Albums USING (SingerId)
+         WHERE LastName LIKE "%r";
++-----+-----------------------------------------+------+-------+---------------+
+| ID  | Operator                                | Rows | Exec. | Total Latency |
++-----+-----------------------------------------+------+-------+---------------+
+|   0 | Distributed Union on Albums<Row>        |    1 |     1 |    3.82 msecs |
+|   1 | +Serialize Result<Row>                  |    1 |     3 |     2.2 msecs |
+|   2 |  +Cross Apply<Row>                      |    1 |     3 |    2.19 msecs |
+|   3 |   +[Input]Distributed Union on Singers< |    1 |     3 |    2.16 msecs |
+|     |   |Row>                                 |      |       |               |
+|   4 |   |+Local Distributed Union<Row>        |    1 |     4 |    0.25 msecs |
+|  *5 |   | +Filter Scan<Row>(seekable_key_size |      |       |               |
+|     |   |  :0)                                |      |       |               |
+|   6 |   |  +Table Scan on Singers<Row>(Full s |    1 |     4 |    0.21 msecs |
+|     |   |   can,scan_method:Automatic)        |      |       |               |
+|  17 |   +[Map]Local Distributed Union<Row>    |    1 |     1 |    0.03 msecs |
+|  18 |    +Filter Scan<Row>(seekable_key_size: |      |       |               |
+|     |     0)                                  |      |       |               |
+| *19 |     +Table Scan on Albums<Row>(scan_met |    1 |     1 |    0.03 msecs |
+|     |      hod:Row)                           |      |       |               |
++-----+-----------------------------------------+------+-------+---------------+
+Predicates(identified by ID):
+  5: Residual Condition: ($LastName LIKE '%r')
+ 19: Seek Condition: ($SingerId_1 = $SingerId)
+```
+
+Note: Since the widths of columns other than the Operator column are not deterministic, there may be cases where the output does not fit within 80 characters even with the same settings, such as when the number of Rows is large.
+
 
 ### Tab character handling
 
 spanner-mycli expands tab characters to whitespaces.
-Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)
+Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)I
 
 ```
 spanner> SET CLI_TAB_WIDTH = 2;
