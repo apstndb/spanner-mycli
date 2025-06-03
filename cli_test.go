@@ -648,7 +648,7 @@ func TestRenderPlanTree(t *testing.T) {
 			},
 			resultSetStats: lo.Must(protojsonUnmarshal[sppb.ResultSetStats, *sppb.ResultSetStats](dcaStatsJSON)),
 			want: `+-----+-------------------------------------------------------------------------------------------+------+---------+----------+
-| ID  | Query_Execution_Plan <execution_method> (metadata, ...)                                   | Rows | Scanned | Filtered |
+| ID  | Operator <execution_method> (metadata, ...)                                               | Rows | Scanned | Filtered |
 +-----+-------------------------------------------------------------------------------------------+------+---------+----------+
 |   0 | Distributed Union on AlbumsByAlbumTitle <Row>                                             |   33 |         |          |
 |  *1 | +- Distributed Cross Apply <Row>                                                          |   33 |         |          |
