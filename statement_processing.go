@@ -210,7 +210,15 @@ const (
 )
 
 var (
-	explainColumnNames = []string{"ID", "Query_Execution_Plan <execution_method> (metadata, ...)"}
+	operatorColumnName       = "Operator <execution_method> (metadata, ...)"
+	operatorColumnNameLength = int64(len(operatorColumnName))
+
+	// default EXPLAIN columns
+	explainColumnNames = []string{"ID", operatorColumnName}
+
+	// EXPLAIN columns for limited width
+	explainColumnNamesShort = []string{"ID", "Operator"}
+
 	explainColumnAlign = []tw.Align{tw.AlignRight, tw.AlignLeft}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}

@@ -166,16 +166,17 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
 	format explainFormat, width int64) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
+	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
 
 	rows, predicates, err := processPlan(plan, def,
 		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
-		lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth),
+		width,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
 
-	columnNames, columnAlign := explainAnalyzeHeader(def)
+	columnNames, columnAlign := explainAnalyzeHeader(def, width)
 
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
@@ -201,9 +202,9 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 	return result, nil
 }
 
-func explainAnalyzeHeader(def []columnRenderDef) ([]string, []tw.Align) {
+func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Align) {
 	// Start with the base columns and alignments for EXPLAIN output.
-	baseNames := explainColumnNames
+	baseNames := lo.Ternary(width == 0 || width >= operatorColumnNameLength, explainColumnNames, explainColumnNamesShort)
 	baseAlign := explainColumnAlign
 
 	// Extract the names and alignments from the custom column definitions.
@@ -404,5 +405,10 @@ func processPlanNodes(nodes []*sppb.PlanNode, format explainFormat, width int64)
 		options = append(options, plantree.WithWrapWidth(int(width)))
 	}
 
-	return plantree.ProcessPlan(spannerplan.New(nodes), options...)
+	qp, err := spannerplan.New(nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return plantree.ProcessPlan(qp, options...)
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -57,7 +58,12 @@ func formatKeyElem(qp *spannerplan.QueryPlan, variableToExp map[string]*sppb.Pla
 }
 
 func lintPlan(plan *sppb.QueryPlan) []string {
-	qp := spannerplan.New(plan.GetPlanNodes())
+	qp, err := spannerplan.New(plan.GetPlanNodes())
+	if err != nil {
+		slog.Error("lintPlan: failed on spannerplan.New", "err", err)
+		return nil
+	}
+
 	variableToExp := buildVariableToNodeMap(qp)
 
 	var result []string
