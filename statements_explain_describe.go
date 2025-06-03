@@ -399,6 +399,8 @@ func processPlanNodes(nodes []*sppb.PlanNode, format explainFormat, width int64)
 				spannerplan.WithKnownFlagFormat(spannerplan.KnownFlagFormatLabel),
 				spannerplan.WithTargetMetadataFormat(spannerplan.TargetMetadataFormatOn),
 			))
+	case explainFormatTraditional:
+		// nop because it is default bformat in plantree.ProcessPlan.
 	}
 
 	if width > 0 {

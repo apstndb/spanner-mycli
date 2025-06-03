@@ -60,6 +60,7 @@ func formatKeyElem(qp *spannerplan.QueryPlan, variableToExp map[string]*sppb.Pla
 func lintPlan(plan *sppb.QueryPlan) []string {
 	qp, err := spannerplan.New(plan.GetPlanNodes())
 	if err != nil {
+		// lint is only informative so emit log and return empty lint results
 		slog.Error("lintPlan: failed on spannerplan.New", "err", err)
 		return nil
 	}
