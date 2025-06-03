@@ -76,7 +76,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.ExplainFormat, session.systemVariables.ExplainWrapWidth)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +147,8 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, err
 	}
 
-	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats)
+	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats,
+		session.systemVariables.ExplainFormat, session.systemVariables.ExplainWrapWidth)
 }
 
 func formatStats(stats *queryProfilesRow) string {

@@ -60,9 +60,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	qm := session.systemVariables.QueryMode
 	switch {
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Query, false)
+		return executeExplain(ctx, session, s.Query, false, explainFormatUnspecified, 0)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyze(ctx, session, s.Query)
+		return executeExplainAnalyze(ctx, session, s.Query, explainFormatUnspecified, 0)
 	default:
 		if !session.InTransaction() && session.systemVariables.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
@@ -80,9 +80,9 @@ func (DmlStatement) isMutationStatement() {}
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	switch lo.FromPtr(session.systemVariables.QueryMode) {
 	case sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Dml, true)
+		return executeExplain(ctx, session, s.Dml, true, explainFormatUnspecified, 0)
 	case sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyzeDML(ctx, session, s.Dml)
+		return executeExplainAnalyzeDML(ctx, session, s.Dml, explainFormatUnspecified, 0)
 	default:
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}

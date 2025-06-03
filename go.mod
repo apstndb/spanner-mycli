@@ -14,8 +14,8 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
-	github.com/apstndb/spanemuboost v0.2.8
-	github.com/apstndb/spannerplanviz v0.6.0
+	github.com/apstndb/spanemuboost v0.2.10
+	github.com/apstndb/spannerplan v0.1.1
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.6
 	github.com/bufbuild/protocompile v0.14.1
@@ -37,7 +37,7 @@ require (
 	github.com/olekukonko/tablewriter v1.0.6
 	github.com/samber/lo v1.49.1
 	github.com/sourcegraph/conc v0.3.0
-	github.com/testcontainers/testcontainers-go/modules/gcloud v0.36.0
+	github.com/testcontainers/testcontainers-go/modules/gcloud v0.37.0
 	github.com/vbauerster/mpb/v8 v8.9.3
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
@@ -65,6 +65,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
+	github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20250326154945-ae57f3c0d45f // indirect
@@ -97,7 +98,7 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
-	github.com/magiconair/properties v1.8.9 // indirect
+	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
@@ -125,10 +126,9 @@ require (
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/swaggest/jsonschema-go v0.3.73 // indirect
 	github.com/swaggest/refl v1.3.0 // indirect
-	github.com/testcontainers/testcontainers-go v0.36.0 // indirect
+	github.com/testcontainers/testcontainers-go v0.37.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect
-	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

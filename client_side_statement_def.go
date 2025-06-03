@@ -291,24 +291,46 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show execution plan without execution`,
-				Syntax: `EXPLAIN <sql>`,
+				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
 				Usage:  `Execute query and show execution plan with profile`,
-				Syntax: `EXPLAIN ANALYZE <sql>`,
+				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`),
+		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
-			isDML := stmtkind.IsDMLLexical(matched[2])
+			options, err := parseExplainOptions(matched[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			format, err := parseExplainFormat(options["FORMAT"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			var width int64
+			if widthStr := options["WIDTH"]; widthStr != "" {
+				width, err = strconv.ParseInt(widthStr, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
+				}
+			}
+
+			sql := matched[3]
+			isDML := stmtkind.IsDMLLexical(sql)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: sql, Format: format, Width: width}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: matched[2]}, nil
+				return &ExplainAnalyzeStatement{Query: sql, Format: format, Width: width}, nil
 			default:
-				return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
+				return &ExplainStatement{Explain: sql, IsDML: isDML, Format: format, Width: width}, nil
 			}
 		},
 	},
@@ -769,6 +791,31 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 }
 
+type explainFormat string
+
+const (
+	explainFormatUnspecified explainFormat = ""
+	explainFormatCurrent     explainFormat = "CURRENT"
+	explainFormatTraditional explainFormat = "TRADITIONAL"
+	explainFormatCompact     explainFormat = "COMPACT"
+)
+
+func parseExplainFormat(s string) (explainFormat, error) {
+	switch strings.ToUpper(s) {
+	case "COMPACT":
+		return explainFormatCompact, nil
+	case "CURRENT":
+		return explainFormatCurrent, nil
+	case "TRADITIONAL":
+		return explainFormatTraditional, nil
+	case "":
+		return explainFormatUnspecified, nil
+	default:
+		return "", fmt.Errorf("parse error: unknown explain format: %s", s)
+	}
+
+}
+
 // Helper functions for HandleSubmatch implementations
 
 func parseTransaction(s string) (isReadOnly bool, err error) {
@@ -866,4 +913,16 @@ func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_Isolati
 		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, fmt.Errorf("invalid isolation level: %q", value)
 	}
 	return sppb.TransactionOptions_IsolationLevel(p), nil
+}
+
+func parseExplainOptions(ss string) (map[string]string, error) {
+	m := make(map[string]string)
+	for s := range strings.FieldsSeq(ss) {
+		before, after, _ := strings.Cut(s, "=")
+		if before == "" {
+			return nil, fmt.Errorf("invalid EXPLAIN option, expect <key>[=<value>], but: %s", s)
+		}
+		m[strings.ToUpper(before)] = after
+	}
+	return m, nil
 }

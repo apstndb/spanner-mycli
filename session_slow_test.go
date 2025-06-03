@@ -45,7 +45,7 @@ func TestRequestPriority(t *testing.T) {
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
 
-	conn, err := grpc.NewClient(emulator.URI, opts...)
+	conn, err := grpc.NewClient(emulator.URI(), opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestIsolationLevel(t *testing.T) {
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
 
-	conn, err := grpc.NewClient(emulator.URI, opts...)
+	conn, err := grpc.NewClient(emulator.URI(), opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
