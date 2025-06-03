@@ -292,29 +292,36 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show execution plan without execution`,
 				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
 				Usage:  `Execute query and show execution plan with profile`,
 				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(?:FORMAT=(\S+)\s+)?(?:WIDTH=(\d+)\s+)?(.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*)(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
-			format, err := parseExplainFormat(matched[2])
+			options, err := parseExplainOptions(matched[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			format, err := parseExplainFormat(options["FORMAT"])
 			if err != nil {
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
 			var width int64
-			if widthStr := matched[3]; widthStr != "" {
-				width, err = strconv.ParseInt(matched[3], 10, 64)
+			if widthStr := options["WIDTH"]; widthStr != "" {
+				width, err = strconv.ParseInt(widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH: %v, err: %w", matched[3], err)
+					return nil, fmt.Errorf("invalid WIDTH: %v, err: %w", widthStr, err)
 				}
 			}
 
-			sql := matched[4]
+			sql := matched[3]
 			isDML := stmtkind.IsDMLLexical(sql)
 			switch {
 			case isAnalyze && isDML:
@@ -905,4 +912,16 @@ func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_Isolati
 		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, fmt.Errorf("invalid isolation level: %q", value)
 	}
 	return sppb.TransactionOptions_IsolationLevel(p), nil
+}
+
+func parseExplainOptions(ss string) (map[string]string, error) {
+	m := make(map[string]string)
+	for s := range strings.FieldsSeq(ss) {
+		before, after, _ := strings.Cut(s, "=")
+		if before == "" {
+			return nil, fmt.Errorf("invalid EXPLAIN option, expect <key>[=<value>], but: %s", s)
+		}
+		m[strings.ToUpper(before)] = after
+	}
+	return m, nil
 }

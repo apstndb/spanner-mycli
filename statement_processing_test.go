@@ -577,6 +577,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
 		},
 		{
+			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT",
+			input: "EXPLAIN FORMAT=COMPACT SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: explainFormatCompact},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with WIDTH",
+			input: "EXPLAIN WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Width: 50},
+		},
+		{
 			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
 			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
 			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
