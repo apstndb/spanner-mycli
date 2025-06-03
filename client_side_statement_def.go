@@ -300,7 +300,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*)(.+)$`),
+		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
