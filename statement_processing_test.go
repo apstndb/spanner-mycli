@@ -572,6 +572,21 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainAnalyzeStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
 		},
 		{
+			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 DELETE t1 WHERE FALSE",
+			want:  &ExplainAnalyzeDmlStatement{Dml: "DELETE t1 WHERE FALSE", Format: explainFormatCompact, Width: 50},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
