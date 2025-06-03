@@ -317,7 +317,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			if widthStr := options["WIDTH"]; widthStr != "" {
 				width, err = strconv.ParseInt(widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH: %v, err: %w", widthStr, err)
+					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
 				}
 			}
 
