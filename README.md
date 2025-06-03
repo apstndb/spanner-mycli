@@ -1954,7 +1954,7 @@ Note: Since the widths of columns other than the Operator column are not determi
 ### Tab character handling
 
 spanner-mycli expands tab characters to whitespaces.
-Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)I
+Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)
 
 ```
 spanner> SET CLI_TAB_WIDTH = 2;
