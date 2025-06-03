@@ -220,7 +220,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 		defer teardown()
 
-		sysVars.Endpoint = container.URI
+		sysVars.Endpoint = container.URI()
 		sysVars.WithoutAuthentication = true
 	}
 

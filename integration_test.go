@@ -40,7 +40,7 @@ import (
 
 	"google.golang.org/protobuf/testing/protocmp"
 
-	"cloud.google.com/go/spanner"
+	spanner "cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/iterator"
@@ -49,7 +49,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	"github.com/apstndb/spantype/typector"
-	"github.com/testcontainers/testcontainers-go/modules/gcloud"
+	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 )
 
 type testTableSchema struct {
@@ -71,7 +71,7 @@ CREATE TABLE tbl (
 
 var testTableDDLs = sliceOf(testTableDDL)
 
-var emulator *gcloud.GCloudContainer
+var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
 	emu, teardown, err := spanemuboost.NewEmulator(context.Background(),
@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-func initializeSession(ctx context.Context, emulator *gcloud.GCloudContainer, clients *spanemuboost.Clients) (session *Session, err error) {
+func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
 	options := defaultClientOptions(emulator)
 	session, err = NewSession(ctx, &systemVariables{
 		Project:     clients.ProjectID,
@@ -160,9 +160,9 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 }
 
 // spannerContainer is a global variable but it receives explicitly.
-func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
+func defaultClientOptions(spannerContainer *tcspanner.Container) []option.ClientOption {
 	return sliceOf(
-		option.WithEndpoint(spannerContainer.URI),
+		option.WithEndpoint(spannerContainer.URI()),
 		option.WithoutAuthentication(),
 		internaloption.SkipDialSettingsValidation(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
