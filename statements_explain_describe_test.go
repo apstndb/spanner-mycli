@@ -10,6 +10,7 @@ import (
 	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -500,7 +501,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 			}},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			got, err := plantree.ProcessPlan(spannerplan.New(test.plan.GetPlanNodes()))
+			got, err := plantree.ProcessPlan(lo.Must(spannerplan.New(test.plan.GetPlanNodes())))
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
