@@ -341,12 +341,12 @@ func parseAlignment(s string) (tw.Align, error) {
 	}
 }
 
-func parseInlineStatsDefs(s string) ([]inlineStatsDef, error) {
+func parseInlineStatsDefs(input string) ([]inlineStatsDef, error) {
 	var columns []inlineStatsDef
-	for s := range strings.SplitSeq(s, ",") {
-		name, templateStr, found := strings.Cut(s, ":")
+	for part := range strings.SplitSeq(input, ",") {
+		name, templateStr, found := strings.Cut(part, ":")
 		if !found {
-			return nil, fmt.Errorf(`invalid inline stats format: must be "<name>:<template>", but: %v`, s)
+			return nil, fmt.Errorf(`invalid inline stats format: must be "<name>:<template>", but: %v`, part)
 		}
 
 		mapFunc, err := templateMapFunc(name, templateStr)
@@ -365,8 +365,8 @@ func parseInlineStatsDefs(s string) ([]inlineStatsDef, error) {
 
 func customListToTableRenderDefs(custom string) ([]columnRenderDef, error) {
 	var columns []columnRenderDef
-	for s := range strings.SplitSeq(custom, ",") {
-		split := strings.SplitN(s, ":", 3)
+	for part := range strings.SplitSeq(custom, ",") {
+		split := strings.SplitN(part, ":", 3)
 
 		var align tw.Align
 		switch len(split) {
@@ -380,7 +380,7 @@ func customListToTableRenderDefs(custom string) ([]columnRenderDef, error) {
 				return nil, fmt.Errorf("failed to parseAlignment(): %w", err)
 			}
 		default:
-			return nil, fmt.Errorf(`invalid format: must be "<name>:<template>[:<alignment>]", but: %v`, s)
+			return nil, fmt.Errorf(`invalid format: must be "<name>:<template>[:<alignment>]", but: %v`, part)
 		}
 
 		name, templateStr := split[0], split[1]
