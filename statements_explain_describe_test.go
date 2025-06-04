@@ -400,9 +400,10 @@ func TotalWithUnit(s, unit string) stats.ExecutionStatsValue {
 
 func TestRenderTreeWithStats(t *testing.T) {
 	for _, test := range []struct {
-		title string
-		plan  *sppb.QueryPlan
-		want  []plantree.RowWithPredicates
+		title           string
+		plan            *sppb.QueryPlan
+		inlineStatsDefs []inlineStatsDef
+		want            []plantree.RowWithPredicates
 	}{
 		{
 			title: "Simple Query",
@@ -455,9 +456,18 @@ func TestRenderTreeWithStats(t *testing.T) {
 						Metadata:    mustNewStruct(map[string]interface{}{"scan_type": "IndexScan", "scan_target": "SongsBySingerAlbumSongNameDesc", "Full scan": "true"}),
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9"},
+							"rows":              map[string]interface{}{"total": "9", "unit": "rows"},
+							"scanned_rows":      map[string]interface{}{"total": "9", "unit": "rows"},
 							"execution_summary": map[string]interface{}{"num_executions": "1"},
 						}),
+					},
+				},
+			},
+			inlineStatsDefs: []inlineStatsDef{
+				{
+					Name: "scanned_rows",
+					MapFunc: func(row plantree.RowWithPredicates) (string, error) {
+						return row.ExecutionStats.ScannedRows.Total, nil
 					},
 				},
 			},
@@ -491,17 +501,24 @@ func TestRenderTreeWithStats(t *testing.T) {
 				},
 				{
 					ID:       3,
-					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
+					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc, scanned_rows=9)",
 					ExecutionStats: stats.ExecutionStats{
-						Rows:             Total("9"),
+						Rows:             TotalWithUnit("9", "rows"),
 						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
 						Latency:          TotalWithUnit("1", "msec"),
+						ScannedRows:      TotalWithUnit("9", "rows"),
 					},
 				},
 			}},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			got, err := plantree.ProcessPlan(lo.Must(spannerplan.New(test.plan.GetPlanNodes())))
+			var opts []plantree.Option
+			if len(test.inlineStatsDefs) > 0 {
+				opts = append(opts, plantree.WithQueryPlanOptions(
+					spannerplan.WithInlineStatsFunc(inlineStatsFunc(test.inlineStatsDefs)),
+				))
+			}
+			got, err := plantree.ProcessPlan(lo.Must(spannerplan.New(test.plan.GetPlanNodes())), opts...)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
