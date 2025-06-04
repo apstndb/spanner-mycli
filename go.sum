@@ -2467,8 +2467,8 @@ github.com/apstndb/memebridge v0.5.0 h1:WaWD0Wp3Yw1BZwyvT4bIf2XsXAA+vq9ZNxUKXXV/
 github.com/apstndb/memebridge v0.5.0/go.mod h1:fPrWYKcg5/eaavD6RovT9qeq8K7bDhgLKOcGhqg6zo4=
 github.com/apstndb/spanemuboost v0.2.10 h1:4L0NtAIsJidTnNvI/+rSOv2+W4qYzICYC/klMzMB0x4=
 github.com/apstndb/spanemuboost v0.2.10/go.mod h1:KmsJ3/u6BZSA99E5jizrfSAjN3+6MSheruMsmGpLhTQ=
-github.com/apstndb/spannerplan v0.1.1 h1:Ror2/R03Im4Ws81KtKNWjWFt9E3d0WCtRZPCjT5Lu+4=
-github.com/apstndb/spannerplan v0.1.1/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
+github.com/apstndb/spannerplan v0.1.2 h1:7qysdoQQ1LfVO7c6/xaFMYR2OSBRFq+gtZj8yvpiOlA=
+github.com/apstndb/spannerplan v0.1.2/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
 github.com/apstndb/spantype v0.3.8 h1:xy43Cclc2Hz6SL+3tZYuozOqJv6AML4Mv8cASgYo1O0=
 github.com/apstndb/spantype v0.3.8/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
 github.com/apstndb/spanvalue v0.1.6 h1:ySkhuzi+8B3oq7DaVy69pTc2hXqoLZoK8fEjSZ+pL5w=

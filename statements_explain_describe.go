@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"text/template"
@@ -27,6 +28,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
+	spstats "github.com/apstndb/spannerplan/stats"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
@@ -166,9 +168,10 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
 	format explainFormat, width int64) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
+	inlines := sysVars.ParsedInlineStats
 	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
 
-	rows, predicates, err := processPlan(plan, def,
+	rows, predicates, err := processPlan(plan, def, inlines,
 		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
 		width,
 	)
@@ -252,11 +255,11 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 }
 
 func processPlanWithoutStats(plan *sppb.QueryPlan, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
-	return processPlan(plan, nil, format, width)
+	return processPlan(plan, nil, nil, format, width)
 }
 
-func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
-	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), format, width)
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
+	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), inlineStatsDefs, format, width)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -300,6 +303,11 @@ type columnRenderDef struct {
 	Alignment tw.Align
 }
 
+type inlineStatsDef struct {
+	MapFunc func(row plantree.RowWithPredicates) (string, error)
+	Name    string
+}
+
 func templateMapFunc(tmplName, tmplText string) (func(row plantree.RowWithPredicates) (string, error), error) {
 	tmpl, err := template.New(tmplName).Parse(tmplText)
 	if err != nil {
@@ -331,6 +339,28 @@ func parseAlignment(s string) (tw.Align, error) {
 	default:
 		return "", fmt.Errorf("unknown Alignment: %s", s)
 	}
+}
+
+func parseInlineStatsDefs(s string) ([]inlineStatsDef, error) {
+	var columns []inlineStatsDef
+	for s := range strings.SplitSeq(s, ",") {
+		name, templateStr, found := strings.Cut(s, ":")
+		if !found {
+			return nil, fmt.Errorf(`invalid inline stats format: must be "<name>:<template>", but: %v`, s)
+		}
+
+		mapFunc, err := templateMapFunc(name, templateStr)
+		if err != nil {
+			return nil, err
+		}
+
+		columns = append(columns, inlineStatsDef{
+			MapFunc: mapFunc,
+			Name:    name,
+		})
+	}
+
+	return columns, nil
 }
 
 func customListToTableRenderDef(custom []string) ([]columnRenderDef, error) {
@@ -382,7 +412,7 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 	return queryPlan, commitResp.CommitTs, metadata, err
 }
 
-func processPlanNodes(nodes []*sppb.PlanNode, format explainFormat, width int64) ([]plantree.RowWithPredicates, error) {
+func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format explainFormat, width int64) ([]plantree.RowWithPredicates, error) {
 	var options []plantree.Option
 	switch format {
 	case explainFormatCurrent, explainFormatUnspecified:
@@ -407,10 +437,38 @@ func processPlanNodes(nodes []*sppb.PlanNode, format explainFormat, width int64)
 		options = append(options, plantree.WithWrapWidth(int(width)))
 	}
 
+	if len(statsDefs) > 0 {
+		options = append(options, plantree.WithQueryPlanOptions(
+			spannerplan.WithInlineStatsFunc(inlineStatsFunc(statsDefs)),
+		))
+	}
+
 	qp, err := spannerplan.New(nodes)
 	if err != nil {
 		return nil, err
 	}
 
 	return plantree.ProcessPlan(qp, options...)
+}
+
+func inlineStatsFunc(defs []inlineStatsDef) func(*sppb.PlanNode) []string {
+	return func(node *sppb.PlanNode) []string {
+		extracted, err := spstats.Extract(node, false)
+		if err != nil {
+			slog.Warn("failed on extract inline stats", "node_id", node.GetIndex(), "err", err)
+			return nil
+		}
+
+		var result []string
+		for _, def := range defs {
+			v, err := def.MapFunc(plantree.RowWithPredicates{ExecutionStats: *extracted})
+			if err != nil {
+				return nil
+			}
+			if v != "" {
+				result = append(result, fmt.Sprintf("%s=%s", def.Name, v))
+			}
+		}
+		return result
+	}
 }

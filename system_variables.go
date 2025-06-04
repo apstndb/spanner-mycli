@@ -101,6 +101,7 @@ type systemVariables struct {
 	LogLevel           slog.Level                 // CLI_LOG_LEVEL
 
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
+	InlineStats    string // CLI_INLINE_STATS
 
 	ExplainFormat    explainFormat // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth int64         // CLI_EXPLAIN_WRAP_WIDTH
@@ -108,6 +109,7 @@ type systemVariables struct {
 	// it is internal variable and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
 	ParsedAnalyzeColumns []columnRenderDef
+	ParsedInlineStats    []inlineStatsDef
 	OutputTemplate       *template.Template
 
 	WithoutAuthentication bool
@@ -792,6 +794,29 @@ var systemVariableDefMap = map[string]systemVariableDef{
 
 				this.AnalyzeColumns = value
 				this.ParsedAnalyzeColumns = def
+				return nil
+			},
+			Getter: stringGetter(func(sysVars *systemVariables) *string {
+				return &sysVars.AnalyzeColumns
+			}),
+		},
+	},
+	"CLI_INLINE_STATS": {
+		Description: "<name>:<template>, ...",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				unquoted := unquoteString(value)
+				defs, err := parseInlineStatsDefs(unquoted)
+				if err != nil {
+					return err
+				}
+
+				if err != nil {
+					return err
+				}
+
+				this.InlineStats = unquoted
+				this.ParsedInlineStats = defs
 				return nil
 			},
 			Getter: stringGetter(func(sysVars *systemVariables) *string {

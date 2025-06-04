@@ -379,7 +379,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), explainFormatTraditional, 0)
+			got, err := processPlanNodes(plan.GetPlanNodes(), nil, explainFormatTraditional, 0)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
