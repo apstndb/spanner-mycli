@@ -1218,6 +1218,47 @@ Predicates(identified by ID):
  17: Seek Condition: ($SingerId_1 = $SingerId)
 ```
 
+#### Inline stats
+
+You can define inline stats using `CLI_INLINE_STATS`.
+Inline stats are rendered in Operator column, and it is good for sparse stats which are not appeared in all operators.
+
+```
+spanner> SET CLI_INLINE_STATS='Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}';
+Empty set (0.00 sec)
+
+spanner> EXPLAIN ANALYZE WIDTH=70
+         SELECT * FROM Singers
+         JOIN Albums USING (SingerId)
+         WHERE FirstName LIKE "M%c%";
++-----+-----------------------------------------------------------------------+------+-------+---------------+
+| ID  | Operator <execution_method> (metadata, ...)                           | Rows | Exec. | Total Latency |
++-----+-----------------------------------------------------------------------+------+-------+---------------+
+|   0 | Distributed Union on Albums <Row>                                     |  864 |     1 |  105.05 msecs |
+|   1 | +- Serialize Result <Row>                                             |  864 |     1 |   104.9 msecs |
+|   2 |    +- Cross Apply <Row>                                               |  864 |     1 |  104.52 msecs |
+|   3 |       +- [Input] Distributed Union on Singers <Row>                   |   27 |     1 |   93.77 msecs |
+|   4 |       |  +- Local Distributed Union <Row>                             |   27 |     1 |   93.74 msecs |
+|  *5 |       |     +- Filter Scan <Row> (seekable_key_size: 0)               |      |       |               |
+|   6 |       |        +- Table Scan on Singers <Row> (Full scan, scan_method |   27 |     1 |   93.71 msecs |
+|     |       |           : Automatic, Scanned=1000, Filtered=973)            |      |       |               |
+|  17 |       +- [Map] Local Distributed Union <Row>                          |  864 |    27 |   10.64 msecs |
+|  18 |          +- Filter Scan <Row> (seekable_key_size: 0)                  |      |       |               |
+| *19 |             +- Table Scan on Albums <Row> (scan_method: Row, Scanned= |  864 |    27 |   10.51 msecs |
+|     |                864, Filtered=0)                                       |      |       |               |
++-----+-----------------------------------------------------------------------+------+-------+---------------+
+Predicates(identified by ID):
+  5: Residual Condition: ($FirstName LIKE 'M%c%')
+ 19: Seek Condition: ($SingerId_1 = $SingerId)
+
+10 rows in set (120.95 msecs)
+timestamp:            2025-06-05T05:43:23.912275+09:00
+cpu time:             45.08 msecs
+rows scanned:         1864 rows
+deleted rows scanned: 0 rows
+optimizer version:    8
+optimizer statistics: auto_20250604_03_26_04UTC
+```
 ### memefish integration
 
 spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memefish) as:
