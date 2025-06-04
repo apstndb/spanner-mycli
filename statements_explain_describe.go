@@ -463,8 +463,10 @@ func inlineStatsFunc(defs []inlineStatsDef) func(*sppb.PlanNode) []string {
 		for _, def := range defs {
 			v, err := def.MapFunc(plantree.RowWithPredicates{ExecutionStats: *extracted})
 			if err != nil {
-				return nil
+				slog.Warn("failed to execute inline stats template", "name", def.Name, "node_id", node.GetIndex(), "err", err)
+				continue
 			}
+
 			if v != "" {
 				result = append(result, fmt.Sprintf("%s=%s", def.Name, v))
 			}
