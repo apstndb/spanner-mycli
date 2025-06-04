@@ -363,9 +363,9 @@ func parseInlineStatsDefs(s string) ([]inlineStatsDef, error) {
 	return columns, nil
 }
 
-func customListToTableRenderDef(custom []string) ([]columnRenderDef, error) {
+func customListToTableRenderDefs(custom string) ([]columnRenderDef, error) {
 	var columns []columnRenderDef
-	for _, s := range custom {
+	for s := range strings.SplitSeq(custom, ",") {
 		split := strings.SplitN(s, ":", 3)
 
 		var align tw.Align

@@ -783,7 +783,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "<name>:<template>[:<alignment>], ...",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
-				def, err := customListToTableRenderDef(strings.Split(unquoteString(value), ","))
+				def, err := customListToTableRenderDefs(unquoteString(value))
 				if err != nil {
 					return err
 				}

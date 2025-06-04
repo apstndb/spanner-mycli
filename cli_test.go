@@ -644,7 +644,7 @@ func TestRenderPlanTree(t *testing.T) {
 		{
 			desc: "PROFILE with ParsedAnalyzeColumns",
 			sysVars: &systemVariables{
-				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDef(strings.Split("Rows:{{.Rows.Total}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}", ","))),
+				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Rows:{{.Rows.Total}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}")),
 			},
 			resultSetStats: lo.Must(protojsonUnmarshal[sppb.ResultSetStats, *sppb.ResultSetStats](dcaStatsJSON)),
 			want: `+-----+-------------------------------------------------------------------------------------------+------+---------+----------+

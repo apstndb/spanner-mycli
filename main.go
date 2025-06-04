@@ -107,7 +107,7 @@ const (
 	DefaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
 
-var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDef(strings.Split(DefaultAnalyzeColumns, ",")))
+var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDefs(DefaultAnalyzeColumns))
 
 var (
 	// https://rhysd.hatenablog.com/entry/2021/06/27/222254

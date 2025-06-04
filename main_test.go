@@ -2,7 +2,6 @@ package main
 
 import (
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -283,7 +282,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
 				AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
-				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDef(strings.Split("Col1:{{.Col1}},Col2:{{.Col2}}", ","))), // This one is different, keep as is
+				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
