@@ -811,10 +811,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					return err
 				}
 
-				if err != nil {
-					return err
-				}
-
 				this.InlineStats = unquoted
 				this.ParsedInlineStats = defs
 				return nil
