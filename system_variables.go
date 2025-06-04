@@ -820,7 +820,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 			Getter: stringGetter(func(sysVars *systemVariables) *string {
-				return &sysVars.AnalyzeColumns
+				return &sysVars.InlineStats
 			}),
 		},
 	},
