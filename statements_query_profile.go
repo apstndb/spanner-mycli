@@ -148,7 +148,7 @@ ORDER BY INTERVAL_END DESC`,
 	}
 
 	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats,
-		session.systemVariables.ExplainFormat, session.systemVariables.ExplainWrapWidth)
+		explainFormatUnspecified, 0)
 }
 
 func formatStats(stats *queryProfilesRow) string {

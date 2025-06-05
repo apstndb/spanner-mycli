@@ -85,19 +85,16 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		return nil, fmt.Errorf("missing last query plan. If you use cloud-spanner-emulator, it doesn't support EXPLAIN and EXPLAIN ANALYZE")
 	}
 
-	format := lo.Ternary(s.Format != explainFormatUnspecified, s.Format, session.systemVariables.ExplainFormat)
-	width := lo.Ternary(s.Width > 0, s.Width, session.systemVariables.ExplainWrapWidth)
-
 	var err error
 	var result *Result
 	if s.Analyze {
 		result, err = generateExplainAnalyzeResult(session.systemVariables,
 			session.systemVariables.LastQueryCache.QueryPlan,
 			session.systemVariables.LastQueryCache.QueryStats,
-			format, width)
+			s.Format, s.Width)
 	} else {
 		result, err = generateExplainResult(session.systemVariables,
-			session.systemVariables.LastQueryCache.QueryPlan, format, width)
+			session.systemVariables.LastQueryCache.QueryPlan, s.Format, s.Width)
 	}
 
 	if err != nil {
@@ -166,10 +163,9 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 }
 
 func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format explainFormat, width int64) (*Result, error) {
-	rows, predicates, err := processPlanWithoutStats(queryPlan,
-		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
-		lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth),
-	)
+	format = lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat)
+	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
+	rows, predicates, err := processPlanWithoutStats(queryPlan, format, width)
 	if err != nil {
 		return nil, err
 	}
@@ -224,12 +220,10 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 	format explainFormat, width int64) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
 	inlines := sysVars.ParsedInlineStats
+	format = lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
 
-	rows, predicates, err := processPlan(plan, def, inlines,
-		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
-		width,
-	)
+	rows, predicates, err := processPlan(plan, def, inlines, format, width)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
@@ -294,10 +288,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 		return nil, err
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats,
-		lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
-		lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
-	)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats, format, width)
 	if err != nil {
 		return nil, err
 	}
