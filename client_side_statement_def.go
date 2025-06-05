@@ -320,27 +320,36 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
-			format, err := parseExplainFormat(options["FORMAT"])
+			format, err := parseExplainFormat(lo.FromPtr(options["FORMAT"]))
 			if err != nil {
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
 			var width int64
-			if widthStr := options["WIDTH"]; widthStr != "" {
+			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
 				width, err = strconv.ParseInt(widthStr, 10, 64)
 				if err != nil {
 					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
 				}
 			}
 
-			v, hasLastOption := options["LAST"]
-			if v != "" {
-				return nil, fmt.Errorf(`invalid LAST=%v, LAST must be appeared without =`, v)
+			// expectLabel enforces <name> is not appeared as <name>=<value> form.
+			expectLabel := func(options map[string]*string, name string) (bool, error) {
+				v, ok := options[name]
+				if v != nil {
+					return false, fmt.Errorf(`invalid %[1]v=%[2]v, %[1]v must be appeared without =`, name, v)
+				}
+				return ok, nil
 			}
 
-			v, hasQueryOption := options["QUERY"]
-			if v != "" {
-				return nil, fmt.Errorf(`invalid QUERY=%v, QUERY must be appeared without =`, v)
+			hasLastOption, err := expectLabel(options, "LAST")
+			if err != nil {
+				return nil, err
+			}
+
+			hasQueryOption, err := expectLabel(options, "QUERY")
+			if err != nil {
+				return nil, err
 			}
 
 			query := matched[3]
@@ -944,14 +953,14 @@ func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_Isolati
 	return sppb.TransactionOptions_IsolationLevel(p), nil
 }
 
-func parseExplainOptions(ss string) (map[string]string, error) {
-	m := make(map[string]string)
+func parseExplainOptions(ss string) (map[string]*string, error) {
+	m := make(map[string]*string)
 	for s := range strings.FieldsSeq(ss) {
-		before, after, _ := strings.Cut(s, "=")
+		before, after, found := strings.Cut(s, "=")
 		if before == "" {
 			return nil, fmt.Errorf("invalid EXPLAIN option, expect <key>[=<value>], but: %s", s)
 		}
-		m[strings.ToUpper(before)] = after
+		m[strings.ToUpper(before)] = lo.Ternary(found, lo.ToPtr(after), nil)
 	}
 	return m, nil
 }
