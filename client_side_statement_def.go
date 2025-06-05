@@ -306,7 +306,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(LAST\s+QUERY|.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(?:(LAST\s+QUERY)\s*|(.+))$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
@@ -327,12 +327,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				}
 			}
 
-			lastQueryRe := regexp.MustCompile(`(?is)^\s*LAST\s+QUERY\s*$`)
-			if lastQueryRe.MatchString(matched[3]) {
+			if matched[3] != "" {
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
-			sql := matched[3]
+			sql := matched[4]
 			isDML := stmtkind.IsDMLLexical(sql)
 			switch {
 			case isAnalyze && isDML:
