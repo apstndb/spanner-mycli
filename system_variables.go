@@ -112,7 +112,7 @@ type systemVariables struct {
 	ExplainFormat    explainFormat // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth int64         // CLI_EXPLAIN_WRAP_WIDTH
 
-	// They are internal variable and hidden from system variable statements
+	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
 	ParsedAnalyzeColumns []columnRenderDef
 	ParsedInlineStats    []inlineStatsDef
