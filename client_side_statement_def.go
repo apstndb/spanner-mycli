@@ -333,9 +333,17 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				}
 			}
 
-			_, hasLast := options["LAST"]
-			_, hasQuery := options["QUERY"]
-			if hasLast && hasQuery {
+			v, hasLastOption := options["LAST"]
+			if v != "" {
+				return nil, fmt.Errorf(`invalid LAST=%v, LAST must be appeared without =`, v)
+			}
+
+			v, hasQueryOption := options["QUERY"]
+			if v != "" {
+				return nil, fmt.Errorf(`invalid QUERY=%v, QUERY must be appeared without =`, v)
+			}
+
+			if hasLastOption && hasQueryOption {
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
