@@ -299,9 +299,20 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
+			{
+				Usage:  `Show EXPLAIN or EXPLAIN ANALYZE of the last query without execution`,
+				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
+			},
 		},
-		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(.+)$`),
+		// EXPLAIN statement pattern:
+		// - (?is): case-insensitive, dot matches newline
+		// - ^EXPLAIN\s+: start with EXPLAIN keyword
+		// - (?P<analyze>ANALYZE\s+)?: optional ANALYZE keyword
+		// - (?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)): options with format/width/last/query
+		// - (?P<query>.*|): optional query text or empty string
+		// - $: end of string
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)(?P<query>.*|)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
@@ -309,28 +320,62 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
-			format, err := parseExplainFormat(options["FORMAT"])
+			format, err := parseExplainFormat(lo.FromPtr(options["FORMAT"]))
 			if err != nil {
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
 			var width int64
-			if widthStr := options["WIDTH"]; widthStr != "" {
+			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
 				width, err = strconv.ParseInt(widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
+					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", widthStr, err)
+				}
+				if width <= 0 {
+					return nil, fmt.Errorf("invalid WIDTH option value: %d, expected a positive integer", width)
 				}
 			}
 
-			sql := matched[3]
-			isDML := stmtkind.IsDMLLexical(sql)
+			// expectLabel enforces <name> is not appeared as <name>=<value> form.
+			expectLabel := func(options map[string]*string, name string) (bool, error) {
+				v, ok := options[name]
+				if v != nil {
+					return false, fmt.Errorf(`invalid option %s=%s, %s must be specified without a value (e.g., EXPLAIN LAST QUERY)`, name, *v, name)
+				}
+				return ok, nil
+			}
+
+			hasLastOption, err := expectLabel(options, "LAST")
+			if err != nil {
+				return nil, err
+			}
+
+			hasQueryOption, err := expectLabel(options, "QUERY")
+			if err != nil {
+				return nil, err
+			}
+
+			query := matched[3]
+			if hasLastOption && hasQueryOption {
+				if strings.TrimSpace(query) != "" {
+					return nil, fmt.Errorf(`invalid string after LAST QUERY: %q. Correct syntax: EXPLAIN [ANALYZE] [options] LAST QUERY`, query)
+				}
+
+				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
+			}
+
+			if strings.TrimSpace(query) == "" && !(hasLastOption && hasQueryOption) {
+				return nil, fmt.Errorf("missing SQL query or 'LAST QUERY' for EXPLAIN%s statement", lo.Ternary(isAnalyze, " ANALYZE", ""))
+			}
+
+			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: sql, Format: format, Width: width}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: query, Format: format, Width: width}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: sql, Format: format, Width: width}, nil
+				return &ExplainAnalyzeStatement{Query: query, Format: format, Width: width}, nil
 			default:
-				return &ExplainStatement{Explain: sql, IsDML: isDML, Format: format, Width: width}, nil
+				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width}, nil
 			}
 		},
 	},
@@ -915,14 +960,14 @@ func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_Isolati
 	return sppb.TransactionOptions_IsolationLevel(p), nil
 }
 
-func parseExplainOptions(ss string) (map[string]string, error) {
-	m := make(map[string]string)
+func parseExplainOptions(ss string) (map[string]*string, error) {
+	m := make(map[string]*string)
 	for s := range strings.FieldsSeq(ss) {
-		before, after, _ := strings.Cut(s, "=")
+		before, after, found := strings.Cut(s, "=")
 		if before == "" {
 			return nil, fmt.Errorf("invalid EXPLAIN option, expect <key>[=<value>], but: %s", s)
 		}
-		m[strings.ToUpper(before)] = after
+		m[strings.ToUpper(before)] = lo.Ternary(found, lo.ToPtr(after), nil)
 	}
 	return m, nil
 }

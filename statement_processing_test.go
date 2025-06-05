@@ -597,6 +597,31 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainAnalyzeDmlStatement{Dml: "DELETE t1 WHERE FALSE", Format: explainFormatCompact, Width: 50},
 		},
 		{
+			desc:  "EXPLAIN ANALYZE LAST QUERY",
+			input: "EXPLAIN ANALYZE LAST QUERY",
+			want:  &ExplainLastQueryStatement{Analyze: true},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE LAST QUERY with options",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 LAST QUERY",
+			want:  &ExplainLastQueryStatement{Analyze: true, Format: explainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY",
+			input: "EXPLAIN LAST QUERY",
+			want:  &ExplainLastQueryStatement{},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY with options",
+			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 LAST QUERY",
+			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY with options",
+			input: "EXPLAIN LAST QUERY FORMAT=COMPACT WIDTH=50",
+			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},

@@ -1,0 +1,130 @@
+{
+  "metadata": {
+    "rowType": {
+      "fields": [
+        {
+          "type": {
+            "code": "INT64"
+          }
+        }
+      ]
+    },
+    "transaction": {
+      "readTimestamp": "2025-06-05T14:28:11.223158Z"
+    },
+    "undeclaredParameters": {}
+  },
+  "rows": [
+    [
+      "1"
+    ]
+  ],
+  "stats": {
+    "queryPlan": {
+      "planNodes": [
+        {
+          "childLinks": [
+            {
+              "childIndex": 1
+            },
+            {
+              "childIndex": 3
+            }
+          ],
+          "displayName": "Serialize Result",
+          "executionStats": {
+            "cpu_time": {
+              "total": "0",
+              "unit": "msecs"
+            },
+            "execution_summary": {
+              "execution_end_timestamp": "1749133691.223805",
+              "execution_start_timestamp": "1749133691.223788",
+              "num_executions": "1"
+            },
+            "latency": {
+              "total": "0",
+              "unit": "msecs"
+            },
+            "rows": {
+              "total": "1",
+              "unit": "rows"
+            }
+          },
+          "kind": "RELATIONAL",
+          "metadata": {
+            "execution_method": "Row"
+          }
+        },
+        {
+          "childLinks": [
+            {
+              "childIndex": 2
+            }
+          ],
+          "displayName": "Unit Relation",
+          "executionStats": {
+            "cpu_time": {
+              "total": "0",
+              "unit": "msecs"
+            },
+            "execution_summary": {
+              "num_executions": "1"
+            },
+            "latency": {
+              "total": "0",
+              "unit": "msecs"
+            },
+            "rows": {
+              "total": "1",
+              "unit": "rows"
+            }
+          },
+          "index": 1,
+          "kind": "RELATIONAL",
+          "metadata": {
+            "execution_method": "Row"
+          }
+        },
+        {
+          "displayName": "Constant",
+          "index": 2,
+          "kind": "SCALAR",
+          "shortRepresentation": {
+            "description": "1"
+          }
+        },
+        {
+          "displayName": "Constant",
+          "index": 3,
+          "kind": "SCALAR",
+          "shortRepresentation": {
+            "description": "1"
+          }
+        }
+      ]
+    },
+    "queryStats": {
+      "bytes_returned": "8",
+      "cpu_time": "0.2 msecs",
+      "deleted_rows_scanned": "0",
+      "elapsed_time": "0.23 msecs",
+      "filesystem_delay_seconds": "0 msecs",
+      "is_graph_query": "false",
+      "locking_delay": "0 msecs",
+      "memory_peak_usage_bytes": "4",
+      "memory_usage_percentage": "0.000",
+      "optimizer_statistics_package": "auto_20250604_03_26_04UTC",
+      "optimizer_version": "7",
+      "query_plan_cached": "true",
+      "query_text": "SELECT 1",
+      "remote_server_calls": "0/0",
+      "rows_returned": "1",
+      "rows_scanned": "0",
+      "runtime_cached": "true",
+      "server_queue_delay": "0.01 msecs",
+      "statistics_load_time": "0",
+      "total_memory_peak_usage_byte": "4"
+    }
+  }
+}

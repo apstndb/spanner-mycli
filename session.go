@@ -501,14 +501,15 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
-func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64, *sppb.ResultSetMetadata, error) {
+func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64,
+	*sppb.ResultSetMetadata, *sppb.QueryPlan, error) {
 	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
-		return nil, nil, 0, nil, err
+		return nil, nil, 0, nil, nil, err
 	}
 
 	if !s.InReadWriteTransaction() {
-		return nil, nil, 0, nil, errors.New("read-write transaction is not running")
+		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
 	}
 
 	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
@@ -517,9 +518,9 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	rows, stats, count, metadata, _, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
+	rows, stats, count, metadata, plan, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
 	s.tc.sendHeartbeat = true
-	return rows, stats, count, metadata, err
+	return rows, stats, count, metadata, plan, err
 }
 
 func (s *Session) queryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {

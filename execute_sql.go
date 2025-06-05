@@ -46,7 +46,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
@@ -73,6 +73,12 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	if roTxn != nil {
 		result.Timestamp, _ = roTxn.Timestamp()
+	}
+
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:  plan,
+		QueryStats: stats,
+		Timestamp:  result.Timestamp,
 	}
 
 	return result, nil
@@ -281,11 +287,11 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 	var rows []Row
 	var queryStats map[string]any
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
+	affected, commitResp, plan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		rs, stats, num, meta, plan, err := session.RunUpdate(ctx, stmt, implicit)
 		rows = rs
 		queryStats = stats
-		return num, nil, meta, err
+		return num, plan, meta, err
 	})
 	if err != nil {
 		return nil, err
@@ -294,6 +300,12 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	stats, err := parseQueryStats(queryStats)
 	if err != nil {
 		return nil, err
+	}
+
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:  plan,
+		QueryStats: queryStats,
+		Timestamp:  commitResp.CommitTs,
 	}
 
 	return &Result{
