@@ -329,7 +329,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
 				width, err = strconv.ParseInt(widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
+					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", widthStr, err)
+				}
+				if width <= 0 {
+					return nil, fmt.Errorf("invalid WIDTH option value: %d, expected a positive integer", width)
 				}
 			}
 
@@ -337,7 +340,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			expectLabel := func(options map[string]*string, name string) (bool, error) {
 				v, ok := options[name]
 				if v != nil {
-					return false, fmt.Errorf(`invalid %[1]v=%[2]v, %[1]v must be appeared without =`, name, v)
+					return false, fmt.Errorf(`invalid option %s=%s, %s must be specified without a value (e.g., EXPLAIN LAST QUERY)`, name, *v, name)
 				}
 				return ok, nil
 			}
@@ -355,10 +358,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			query := matched[3]
 			if hasLastOption && hasQueryOption {
 				if strings.TrimSpace(query) != "" {
-					return nil, fmt.Errorf(`invalid string after LAST QUERY: %s`, query)
+					return nil, fmt.Errorf(`invalid string after LAST QUERY: %q. Correct syntax: EXPLAIN [ANALYZE] [options] LAST QUERY`, query)
 				}
 
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
+			}
+
+			if strings.TrimSpace(query) == "" && !(hasLastOption && hasQueryOption) {
+				return nil, fmt.Errorf("missing SQL query or 'LAST QUERY' for EXPLAIN%s statement", lo.Ternary(isAnalyze, " ANALYZE", ""))
 			}
 
 			isDML := stmtkind.IsDMLLexical(query)
