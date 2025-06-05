@@ -77,8 +77,12 @@ type ExplainLastQueryStatement struct {
 }
 
 func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if len(session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
+		return nil, fmt.Errorf("last query cache missing. Have you run a query")
+	}
+
 	if session.systemVariables.LastQueryCache == nil || len(session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
-		return nil, fmt.Errorf("last query cache missing")
+		return nil, fmt.Errorf("missing last query plan. If you use cloud-spanner-emulator, it doesn't support EXPLAIN and EXPLAIN ANALYZE")
 	}
 
 	format := lo.Ternary(s.Format != explainFormatUnspecified, s.Format, session.systemVariables.ExplainFormat)
