@@ -117,10 +117,7 @@ type systemVariables struct {
 	ParsedAnalyzeColumns []columnRenderDef
 	ParsedInlineStats    []inlineStatsDef
 	OutputTemplate       *template.Template
-	// CachedResultSetStats *sppb.ResultSetStats
-	CachedQueryPlan  *sppb.QueryPlan
-	CachedQueryStats map[string]any
-	LastQueryCache   *LastQueryCache
+	LastQueryCache       *LastQueryCache
 
 	WithoutAuthentication bool
 	Params                map[string]ast.Node
