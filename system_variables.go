@@ -41,6 +41,12 @@ const (
 	AutocommitDMLModePartitionedNonAtomic AutocommitDMLMode = true
 )
 
+type LastQueryCache struct {
+	QueryPlan  *sppb.QueryPlan
+	QueryStats map[string]any
+	Timestamp  time.Time
+}
+
 type systemVariables struct {
 	// java-spanner compatible
 	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
@@ -106,11 +112,15 @@ type systemVariables struct {
 	ExplainFormat    explainFormat // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth int64         // CLI_EXPLAIN_WRAP_WIDTH
 
-	// it is internal variable and hidden from system variable statements
+	// They are internal variable and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
 	ParsedAnalyzeColumns []columnRenderDef
 	ParsedInlineStats    []inlineStatsDef
 	OutputTemplate       *template.Template
+	// CachedResultSetStats *sppb.ResultSetStats
+	CachedQueryPlan  *sppb.QueryPlan
+	CachedQueryStats map[string]any
+	LastQueryCache   *LastQueryCache
 
 	WithoutAuthentication bool
 	Params                map[string]ast.Node

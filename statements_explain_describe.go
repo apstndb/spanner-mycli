@@ -70,6 +70,43 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 	return executeExplainAnalyzeDML(ctx, session, s.Dml, s.Format, s.Width)
 }
 
+type ExplainLastQueryStatement struct {
+	Analyze bool
+	Format  explainFormat
+	Width   int64
+}
+
+func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.systemVariables.LastQueryCache == nil || len(session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
+		return nil, fmt.Errorf("last query cache missing")
+	}
+
+	format := s.Format
+	width := s.Width
+
+	var err error
+	var result *Result
+	if s.Analyze {
+		result, err = generateExplainAnalyzeResult(session.systemVariables,
+			session.systemVariables.LastQueryCache.QueryPlan,
+			session.systemVariables.LastQueryCache.QueryStats,
+			lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
+			lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
+		)
+	} else {
+		result, err = generateExplainResult(session.systemVariables,
+			session.systemVariables.LastQueryCache.QueryPlan,
+			lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
+			lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 type DescribeStatement struct {
 	Statement string
 	IsDML     bool
@@ -101,6 +138,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	return result, nil
 }
+
 func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format explainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
@@ -116,9 +154,20 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
 	}
 
+	result, err := generateExplainResult(session.systemVariables, queryPlan, format, width)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Timestamp = timestamp
+
+	return result, nil
+}
+
+func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format explainFormat, width int64) (*Result, error) {
 	rows, predicates, err := processPlanWithoutStats(queryPlan,
-		lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
-		lo.Ternary(width != 0, width, session.systemVariables.ExplainWrapWidth),
+		lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat),
+		lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth),
 	)
 	if err != nil {
 		return nil, err
@@ -129,11 +178,9 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
 		Rows:         rows,
-		Timestamp:    timestamp,
 		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(session.systemVariables.LintPlan, func() []string { return lintPlan(queryPlan) }),
+		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
-
 	return result, nil
 }
 
@@ -162,6 +209,13 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	}
 
 	result.Timestamp = lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) })
+
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:  plan,
+		QueryStats: stats,
+		Timestamp:  result.Timestamp,
+	}
+
 	return result, nil
 }
 
@@ -202,6 +256,7 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 		Predicates:   predicates,
 		LintResults:  lintResults,
 	}
+
 	return result, nil
 }
 

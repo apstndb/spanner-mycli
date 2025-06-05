@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	_ "embed"
 	"os"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -593,5 +596,80 @@ func TestNodeString(t *testing.T) {
 		if got := spannerplan.NodeTitle(test.node); got != test.want {
 			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
 		}
+	}
+}
+
+//go:embed testdata/stats/select.json
+var selectProfileJSON []byte
+var selectProfileResultSet = lo.Must(protojsonUnmarshal[sppb.ResultSet](selectProfileJSON))
+
+func TestExplainLastQueryStatement_Execute(t *testing.T) {
+	tests := []struct {
+		name           string
+		statement      *ExplainLastQueryStatement
+		lastQueryCache *LastQueryCache
+		want           *Result
+		wantErr        bool
+	}{
+		{"no cache", &ExplainLastQueryStatement{}, nil, nil, true},
+		{"no query plan", &ExplainLastQueryStatement{}, &LastQueryCache{}, nil, true},
+		{"EXPLAIN", &ExplainLastQueryStatement{}, &LastQueryCache{
+			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+		}, &Result{
+			Rows:         sliceOf(toRow("0", "Serialize Result <Row>"), toRow("1", "+- Unit Relation <Row>")),
+			AffectedRows: 2,
+			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft),
+			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)"),
+		}, false},
+		{"EXPLAIN ANALYZE", &ExplainLastQueryStatement{Analyze: true}, &LastQueryCache{
+			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+		}, &Result{
+			Rows:         sliceOf(toRow("0", "Serialize Result <Row>", "1", "1", "0 msecs"), toRow("1", "+- Unit Relation <Row>", "1", "1", "0 msecs")),
+			AffectedRows: 2,
+			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft, tw.AlignRight, tw.AlignRight, tw.AlignRight),
+			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)", "Rows", "Exec.", "Total Latency"),
+			Stats: QueryStats{
+				ElapsedTime:                "0.23 msecs",
+				CPUTime:                    "0.2 msecs",
+				RowsReturned:               "1",
+				RowsScanned:                "0",
+				DeletedRowsScanned:         "0",
+				OptimizerVersion:           "7",
+				OptimizerStatisticsPackage: "auto_20250604_03_26_04UTC",
+				RemoteServerCalls:          "0/0",
+				MemoryPeakUsageBytes:       "4",
+				TotalMemoryPeakUsageByte:   "4",
+				QueryText:                  "SELECT 1",
+				BytesReturned:              "8",
+				RuntimeCreationTime:        "",
+				StatisticsLoadTime:         "0",
+				MemoryUsagePercentage:      "0.000",
+				FilesystemDelaySeconds:     "0 msecs",
+				LockingDelay:               "0 msecs",
+				ServerQueueDelay:           "0.01 msecs",
+				IsGraphQuery:               "false",
+				RuntimeCached:              "true",
+				QueryPlanCached:            "true",
+			},
+			ForceVerbose: true,
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				LastQueryCache:       tt.lastQueryCache,
+			}})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("Execute() diff = %v", diff)
+				return
+			}
+		})
 	}
 }

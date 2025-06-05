@@ -299,9 +299,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
+			{
+				Usage:  `Show EXPLAIN or EXPLAIN ANALYZE of the last query without execution`,
+				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
+			},
 		},
 		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(LAST\s+QUERY|.+)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
@@ -320,6 +325,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				if err != nil {
 					return nil, fmt.Errorf("invalid WIDTH: %v, expected a positive integer, err: %w", widthStr, err)
 				}
+			}
+
+			lastQueryRe := regexp.MustCompile(`(?is)^\s*LAST\s+QUERY\s*$`)
+			if lastQueryRe.MatchString(matched[3]) {
+				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
 			sql := matched[3]
