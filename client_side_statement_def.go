@@ -305,8 +305,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
-		// To prevent ReDoS, repetition is limit to 10. Maybe it will be enhanced.
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?((?:(?:FORMAT|WIDTH)(?:|=\S+)\s+){0,10})(?:(LAST\s+QUERY)\s*|(.+))$`),
+		// EXPLAIN statement pattern:
+		// - (?is): case-insensitive, dot matches newline
+		// - ^EXPLAIN\s+: start with EXPLAIN keyword
+		// - (?P<analyze>ANALYZE\s+)?: optional ANALYZE keyword
+		// - (?P<options>(?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*): options with format/width
+		// - (?:(?P<last_query>LAST\s+QUERY)\s*|(?P<query>.+)): either LAST QUERY or query text
+		// - $: end of string
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*)(?:(?P<last_query>LAST\s+QUERY)\s*|(?P<query>.+))$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
@@ -331,15 +337,15 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
-			sql := matched[4]
-			isDML := stmtkind.IsDMLLexical(sql)
+			query := matched[4]
+			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: sql, Format: format, Width: width}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: query, Format: format, Width: width}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: sql, Format: format, Width: width}, nil
+				return &ExplainAnalyzeStatement{Query: query, Format: format, Width: width}, nil
 			default:
-				return &ExplainStatement{Explain: sql, IsDML: isDML, Format: format, Width: width}, nil
+				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width}, nil
 			}
 		},
 	},
