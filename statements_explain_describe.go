@@ -78,7 +78,7 @@ type ExplainLastQueryStatement struct {
 
 func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.systemVariables.LastQueryCache == nil {
-		return nil, fmt.Errorf("last query cache missing. Have you run a query")
+		return nil, fmt.Errorf("last query cache missing because query not executed")
 	}
 
 	if session.systemVariables.LastQueryCache.QueryPlan == nil || len(session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
