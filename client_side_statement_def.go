@@ -343,11 +343,15 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf(`invalid QUERY=%v, QUERY must be appeared without =`, v)
 			}
 
+			query := matched[3]
 			if hasLastOption && hasQueryOption {
+				if strings.TrimSpace(query) != "" {
+					return nil, fmt.Errorf(`invalid string after LAST QUERY: %s`, query)
+				}
+
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
-			query := matched[3]
 			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:
