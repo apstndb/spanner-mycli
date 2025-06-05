@@ -81,8 +81,8 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		return nil, fmt.Errorf("last query cache missing")
 	}
 
-	format := s.Format
-	width := s.Width
+	format := lo.Ternary(s.Format != explainFormatUnspecified, s.Format, session.systemVariables.ExplainFormat)
+	width := lo.Ternary(s.Width > 0, s.Width, session.systemVariables.ExplainWrapWidth)
 
 	var err error
 	var result *Result
@@ -90,20 +90,17 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		result, err = generateExplainAnalyzeResult(session.systemVariables,
 			session.systemVariables.LastQueryCache.QueryPlan,
 			session.systemVariables.LastQueryCache.QueryStats,
-			lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
-			lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
-		)
+			format, width)
 	} else {
 		result, err = generateExplainResult(session.systemVariables,
-			session.systemVariables.LastQueryCache.QueryPlan,
-			lo.Ternary(format != explainFormatUnspecified, format, session.systemVariables.ExplainFormat),
-			lo.Ternary(width > 0, width, session.systemVariables.ExplainWrapWidth),
-		)
+			session.systemVariables.LastQueryCache.QueryPlan, format, width)
 	}
+
 	if err != nil {
 		return nil, err
 	}
 
+	result.Timestamp = session.systemVariables.LastQueryCache.Timestamp
 	return result, nil
 }
 
