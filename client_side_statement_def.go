@@ -309,10 +309,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		// - (?is): case-insensitive, dot matches newline
 		// - ^EXPLAIN\s+: start with EXPLAIN keyword
 		// - (?P<analyze>ANALYZE\s+)?: optional ANALYZE keyword
-		// - (?P<options>(?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*): options with format/width
-		// - (?:(?P<last_query>LAST\s+QUERY)\s*|(?P<query>.+)): either LAST QUERY or query text
+		// - (?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)): options with format/width/last/query
+		// - (?P<query>.*|): optional query text or empty string
 		// - $: end of string
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH)(?:|=\S+)\s+)*)(?:(?P<last_query>LAST\s+QUERY)\s*|(?P<query>.+))$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)(?P<query>.*|)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
 			options, err := parseExplainOptions(matched[2])
@@ -333,11 +333,13 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				}
 			}
 
-			if matched[3] != "" {
+			_, hasLast := options["LAST"]
+			_, hasQuery := options["QUERY"]
+			if hasLast && hasQuery {
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
-			query := matched[4]
+			query := matched[3]
 			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:

@@ -617,6 +617,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
 		},
 		{
+			desc:  "EXPLAIN LAST QUERY with options",
+			input: "EXPLAIN LAST QUERY FORMAT=COMPACT WIDTH=50",
+			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
