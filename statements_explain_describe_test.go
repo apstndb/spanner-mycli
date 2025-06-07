@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	"github.com/apstndb/spannerplan/stats"
@@ -655,6 +656,56 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 			},
 			ForceVerbose: true,
 		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				LastQueryCache:       tt.lastQueryCache,
+			}})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("Execute() diff = %v", diff)
+				return
+			}
+		})
+	}
+}
+
+func TestShowPlanNodeStatement_Execute(t *testing.T) {
+	tests := []struct {
+		name           string
+		statement      *ShowPlanNodeStatement
+		lastQueryCache *LastQueryCache
+		want           *Result
+		wantErr        bool
+	}{
+		{"EXPLAIN ANALYZE",
+			&ShowPlanNodeStatement{NodeID: 1},
+			&LastQueryCache{
+				QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+				QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+			},
+			&Result{
+				Rows: sliceOf(toRow(heredoc.Doc(`
+index: 1
+kind: 1
+display_name: Unit Relation
+child_links:
+- {child_index: 2}
+metadata: {execution_method: Row}
+execution_stats:
+  cpu_time: {total: "0", unit: msecs}
+  execution_summary: {num_executions: "1"}
+  latency: {total: "0", unit: msecs}
+  rows: {total: "1", unit: rows}
+`))),
+				AffectedRows: 1,
+				TableHeader:  toTableHeader("Content of Node 1"),
+			}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

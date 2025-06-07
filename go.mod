@@ -15,7 +15,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
 	github.com/apstndb/spanemuboost v0.2.10
-	github.com/apstndb/spannerplan v0.1.2
+	github.com/apstndb/spannerplan v0.1.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.6
 	github.com/bufbuild/protocompile v0.14.1
@@ -23,6 +23,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1
 	github.com/go-sprout/sprout v1.0.0
+	github.com/goccy/go-yaml v1.17.1
 	github.com/gocql/gocql v1.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/googleapis/go-spanner-cassandra v0.2.0
@@ -85,7 +86,6 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v1.0.0 // indirect

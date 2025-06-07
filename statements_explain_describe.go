@@ -24,14 +24,19 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
+	"github.com/apstndb/spannerplan/protoyaml"
 	spstats "github.com/apstndb/spannerplan/stats"
+	"github.com/goccy/go-yaml"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ExplainStatement struct {
@@ -103,6 +108,79 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 
 	result.Timestamp = session.systemVariables.LastQueryCache.Timestamp
 	return result, nil
+}
+
+type ShowPlanNodeStatement struct {
+	NodeID int
+}
+
+func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.systemVariables.LastQueryCache == nil || session.systemVariables.LastQueryCache.QueryPlan == nil {
+		return nil, errors.New("no query plan cached. Run query or EXPLAIN ANALYZE first")
+	}
+
+	planNodes := session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()
+	if s.NodeID >= len(planNodes) {
+		return nil, fmt.Errorf("node with ID %d not found in the cached query plan", s.NodeID)
+	}
+
+	planNode := planNodes[s.NodeID]
+	y, err := protoyaml.Marshal(planNode, getGlobalOpts()...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", s.NodeID)),
+		Rows:         sliceOf(toRow(string(y))),
+		AffectedRows: 1,
+	}, nil
+}
+
+func hasCompound(fields map[string]*structpb.Value) bool {
+	for _, v := range fields {
+		switch v.GetKind().(type) {
+		case *structpb.Value_ListValue, *structpb.Value_StructValue:
+			return true
+		}
+	}
+	return false
+}
+
+func getStructOpts() []yaml.EncodeOption {
+	return []yaml.EncodeOption{
+		yaml.CustomMarshaler[*structpb.Value](func(value *structpb.Value) ([]byte, error) {
+			switch kind := value.GetKind().(type) {
+			case *structpb.Value_ListValue:
+				return yaml.MarshalWithOptions(kind.ListValue.GetValues(), getStructOpts()...)
+			case *structpb.Value_StructValue:
+				return yaml.MarshalWithOptions(kind.StructValue, getStructOpts()...)
+			case *structpb.Value_StringValue:
+				// Use yaml.Marshal() to follow YAML quotation rule
+				return yaml.Marshal(kind.StringValue)
+			default:
+				return protojson.Marshal(value)
+			}
+		}),
+		yaml.CustomMarshaler[*structpb.Struct](func(value *structpb.Struct) ([]byte, error) {
+			opts := getStructOpts()
+			if !hasCompound(value.GetFields()) {
+				opts = append(opts, yaml.Flow(true))
+			}
+			return yaml.MarshalWithOptions(value.GetFields(), opts...)
+		}),
+	}
+}
+
+func getGlobalOpts() []yaml.EncodeOption {
+	return slices.Concat(
+		[]yaml.EncodeOption{
+			yaml.CustomMarshaler[*spannerpb.PlanNode_ChildLink](func(link *spannerpb.PlanNode_ChildLink) ([]byte, error) {
+				return yaml.MarshalWithOptions(link, yaml.UseJSONMarshaler(), yaml.Flow(true))
+			}),
+		},
+		getStructOpts(),
+	)
 }
 
 type DescribeStatement struct {

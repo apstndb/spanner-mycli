@@ -300,7 +300,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
-				Usage:  `Show EXPLAIN or EXPLAIN ANALYZE of the last query without execution`,
+				Usage:  `Show EXPLAIN [ANALYZE] of the last query without execution`,
 				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
@@ -377,6 +377,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			default:
 				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width}, nil
 			}
+		},
+	},
+	// SHOW PLAN NODE
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show the specific raw plan node from the last cached query plan`,
+				Syntax: `SHOW PLAN NODE <node_id>`,
+				Note:   `Requires a preceding query or EXPLAIN ANALYZE.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PLAN\s+NODE\s+(\d+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			nodeIDStr := matched[1]
+			nodeID, err := strconv.ParseInt(nodeIDStr, 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid node ID: %q. Node ID must be an integer", nodeIDStr)
+			}
+			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
 		},
 	},
 	// DESCRIBE
