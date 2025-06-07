@@ -622,6 +622,11 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
 		},
 		{
+			desc:  "SHOW PLAN NODE",
+			input: "SHOW PLAN NODE 42",
+			want:  &ShowPlanNodeStatement{NodeID: 42},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
