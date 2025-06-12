@@ -61,7 +61,7 @@ optimizer statistics: auto_20250413_15_34_23UTC
 
 spanner-mycli supports to configure execution stats columns of `EXPLAIN ANALYZE` using `CLI_ANALYZE_COLUMNS`.
 
-Note: `CLI_ANALYZE_COLUMNS` is formatted string like `<name>:<template>[:<alignment>]`. `<template>` is needed to be written in [`text/template`] format and it is bounded with [`ExecutionStats`](https://pkg.go.dev/github.com/apstndb/spannerplanviz/stats#ExecutionStats).
+Note: `CLI_ANALYZE_COLUMNS` is formatted string like `<name>:<template>[:<alignment>]`. `<template>` is needed to be written in [`text/template`](https://pkg.go.dev/text/template) format and it is bounded with [`ExecutionStats`](https://pkg.go.dev/github.com/apstndb/spannerplanviz/stats#ExecutionStats).
 
 ```
 spanner> SET CLI_ANALYZE_COLUMNS='Rows:{{if ne .Rows.Total ""}}{{.Rows.Total}}{{end}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}';
