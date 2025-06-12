@@ -246,7 +246,7 @@ spanner> SHOW PLAN NODE 18;
 1 rows in set (0.00 sec)
 ```
 
-## Query plan linter (EARLY EXPERIMANTAL)
+## Query plan linter (EARLY EXPERIMENTAL)
 
 `CLI_LINT_PLAN` system variable enables heuristic query plan linter in `EXPLAIN` and `EXPLAIN ANALYZE`.
 
