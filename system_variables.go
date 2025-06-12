@@ -124,7 +124,8 @@ type systemVariables struct {
 	Params                map[string]ast.Node
 
 	// link to session
-	CurrentSession *Session
+	CurrentSession   *Session
+	CurrentOutStream io.Writer
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -932,7 +933,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				width, err := GetTerminalSize(os.Stdout)
+				width, err := GetTerminalSize(this.CurrentOutStream)
 				if err != nil {
 					slog.Warn("failed to get terminal size", "error", err)
 					return singletonMap(name, "NULL"), nil

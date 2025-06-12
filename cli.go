@@ -66,6 +66,8 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 		return nil, err
 	}
 
+	sysVars.CurrentOutStream = outStream
+
 	return &Cli{
 		Session:         session,
 		Credential:      credential,

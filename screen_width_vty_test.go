@@ -156,9 +156,10 @@ func TestDisplayResultWithPty(t *testing.T) {
 			cli := &Cli{
 				OutStream: tty,
 				SystemVariables: &systemVariables{
-					AutoWrap:   tt.autowrap,
-					FixedWidth: tt.fixedWidth,
-					CLIFormat:  DisplayModeTab, // Use TAB format for predictable output
+					CurrentOutStream: tty,
+					AutoWrap:         tt.autowrap,
+					FixedWidth:       tt.fixedWidth,
+					CLIFormat:        DisplayModeTab, // Use TAB format for predictable output
 				},
 			}
 
@@ -190,5 +191,3 @@ func isUnixLike() bool {
 	_, err := os.Stat("/dev/null")
 	return err == nil
 }
-
-// Use the existing int64Ptr function from screen_width_test.go
