@@ -246,6 +246,8 @@ $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 
 You can see query plan without query execution using the `EXPLAIN` client side statement.
 
+For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
+
 ```
 spanner> EXPLAIN
          SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
@@ -271,6 +273,8 @@ Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https
 
 You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
 You should know that it requires executing the query.
+
+For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
 
 ```
 spanner> EXPLAIN ANALYZE
