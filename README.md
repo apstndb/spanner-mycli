@@ -13,9 +13,6 @@ You can control your Spanner databases with idiomatic SQL commands.
 spanner-mycli was forked from [spanner-cli v0.10.6](https://github.com/cloudspannerecosystem/spanner-cli/releases/tag/v0.10.6) and restarted its version numbering from [v0.1.0](https://github.com/apstndb/spanner-mycli/releases/tag/v0.1.0).
 There are differences between spanner-mycli and spanner-cli that include not only functionality but also philosophical differences.
 
-* [More concise `EXPLAIN` and `EXPLAIN ANALYZE` output](#more-concise-format-of-explain-and-explain-analyze), making efficient use of limited display space.
-  * Optimized for narrower terminals and code blocks.
-  * Compact format and query plan wrapping to fit into  more limited space.
 * Advanced query plan features for constrained display environments and comprehensive analysis. See [docs/query_plan.md](docs/query_plan.md) for details.
   * Configurable `EXPLAIN ANALYZE` with customizable execution stats columns using `CLI_ANALYZE_COLUMNS` and inline stats using `CLI_INLINE_STATS`
   * Query plan investigation with `EXPLAIN [ANALYZE] LAST QUERY` for re-rendering without re-execution and `SHOW PLAN NODE` for inspecting specific plan nodes
