@@ -283,58 +283,70 @@ These features are early experimental state so it will be changed.
 
 ```
 spanner> SHOW QUERY PROFILES;
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| Plan                                                                                                                                                      |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| SELECT INTERVAL_END, QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR                                                                               |
-| ID | Plan                                                                                                                                                 |
-| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false)                                                              |
-|  1 | +- Local Distributed Union                                                                                                                           |
-|  2 |    +- Serialize Result                                                                                                                               |
-| *3 |       +- Filter Scan (seekable_key_size: 0)                                                                                                          |
-| *4 |          +- Table Scan (Table: _TopNQueryProfiles, scan_method: Scalar)                                                                              |
-| Predicates:                                                                                                                                               |
-| 0: Split Range: (($interval_seconds = <scrubbed>) AND ($source = <scrubbed>) AND ($call_type = <scrubbed>))                                               |
-| 3: Residual Condition: (($source = <scrubbed>) AND ($call_type = <scrubbed>))                                                                             |
-| 4: Seek Condition: ($interval_seconds = <scrubbed>)                                                                                                       |
-|                                                                                                                                                           |
-| interval_end:                 2024-11-29 16:00:00 +0000 UTC                                                                                               |
-| text_fingerprint:             1603015871075919821                                                                                                         |
-| elapsed_time:                 8.52 msecs                                                                                                                  |
-| cpu_time:                     7.48 msecs                                                                                                                  |
-| rows_returned:                24                                                                                                                          |
-| deleted_rows_scanned:         3                                                                                                                           |
-| optimizer_version:            7                                                                                                                           |
-| optimizer_statistics_package: auto_20241128_05_46_13UTC                                                                                                   |
-|                                                                                                                                                           |
-| SELECT @_p0_INT64                                                                                                                                         |
-| ID | Plan                                                                                                                                                 |
-|  0 | Serialize Result                                                                                                                                     |
-|  1 | +- Unit Relation                                                                                                                                     |
-|                                                                                                                                                           |
-| interval_end:                 2024-11-23 17:00:00 +0000 UTC                                                                                               |
-| text_fingerprint:             -773118905674708524                                                                                                         |
-| elapsed_time:                 2.25 msecs                                                                                                                  |
-| cpu_time:                     1.26 msecs                                                                                                                  |
-| rows_returned:                1                                                                                                                           |
-| deleted_rows_scanned:         0                                                                                                                           |
-| optimizer_version:            7                                                                                                                           |
-| optimizer_statistics_package: auto_20241122_05_36_46UTC                                                                                                   |
-|
-
++-------------------------------------------------------------------------------------------+
+| Plan                                                                                      |
++-------------------------------------------------------------------------------------------+
+| SELECT * FROM Singers JOIN Albums USING (SingerId)                                        |
+| ID  | Plan                                                                                |
+|   0 | Distributed Union on Singers <Row> (split_ranges_aligned)                           |
+|   1 | +- Local Distributed Union <Row>                                                    |
+|   2 |    +- Serialize Result <Row>                                                        |
+|   3 |       +- Cross Apply <Row>                                                          |
+|   4 |          +- [Input] Table Scan on Singers <Row> (Full scan, scan_method: Automatic) |
+|  10 |          +- [Map] Local Distributed Union <Row>                                     |
+|  11 |             +- Filter Scan <Row> (seekable_key_size: 0)                             |
+| *12 |                +- Table Scan on Albums <Row> (scan_method: Row)                     |
+| Predicates:                                                                               |
+| 12: Seek Condition: ($SingerId_1 = $SingerId)                                             |
+| interval_end:                 2025-05-29 08:00:00 +0000 UTC                               |
+| text_fingerprint:             -6422424748333414178                                        |
+| elapsed_time:                 11.09 msecs                                                 |
+| cpu_time:                     9.2 msecs                                                   |
+| rows_returned:                7                                                           |
+| deleted_rows_scanned:         0                                                           |
+| optimizer_version:            7                                                           |
+| optimizer_statistics_package: auto_20250527_16_21_42UTC                                   |
+| SELECT @_p0_INT64                                                                         |
+| ID | Plan                                                                                 |
+|  0 | Serialize Result <Row>                                                               |
+|  1 | +- Unit Relation <Row>                                                               |
+| interval_end:                 2025-05-22 05:00:00 +0000 UTC                               |
+| text_fingerprint:             -773118905674708524                                         |
+| elapsed_time:                 19.78 msecs                                                 |
+| cpu_time:                     19.73 msecs                                                 |
+| rows_returned:                1                                                           |
+| deleted_rows_scanned:         0                                                           |
+| optimizer_version:            7                                                           |
+| optimizer_statistics_package: auto_20250521_18_02_30UTC                                   |
++-------------------------------------------------------------------------------------------+
+24 rows in set (0.62 sec)
 ```
 
 Render a latest profile for a `TEXT_FINGERPRINT`. It is compatible with plan linter(`CLI_LINT_PLAN`).
 
 ```
-spanner> SHOW QUERY PROFILE 1603015871075919821;
-+----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
-| ID | Query_Execution_Plan                                                                    | Rows_Returned | Executions | Total_Latency |
-+----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
-| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false) | 24            | 1          | 3.31 msecs    |
-|  1 | +- Local Distributed Union                                                              | 24            | 1          | 3.29 msecs    |
-|  2 |    +- Serialize Result                                                                  | 24            | 1          | 3.28 msecs    |
-| *3 |       +- Filter Scan (seekable_key_size: 0)                                             |               |            |               |
+spanner> SHOW QUERY PROFILE -6422424748333414178;
++-----+-------------------------------------------------------------------------------------+------+-------+---------------+
+| ID  | Operator <execution_method> (metadata, ...)                                         | Rows | Exec. | Total Latency |
++-----+-------------------------------------------------------------------------------------+------+-------+---------------+
+|   0 | Distributed Union on Singers <Row> (split_ranges_aligned)                           |    7 |     1 |    5.09 msecs |
+|   1 | +- Local Distributed Union <Row>                                                    |    7 |     3 |    2.85 msecs |
+|   2 |    +- Serialize Result <Row>                                                        |    7 |     4 |    0.18 msecs |
+|   3 |       +- Cross Apply <Row>                                                          |    7 |     4 |    0.17 msecs |
+|   4 |          +- [Input] Table Scan on Singers <Row> (Full scan, scan_method: Automatic) |    5 |     4 |     0.1 msecs |
+|  10 |          +- [Map] Local Distributed Union <Row>                                     |    7 |     5 |    0.06 msecs |
+|  11 |             +- Filter Scan <Row> (seekable_key_size: 0)                             |      |       |               |
+| *12 |                +- Table Scan on Albums <Row> (scan_method: Row)                     |    7 |     5 |    0.05 msecs |
++-----+-------------------------------------------------------------------------------------+------+-------+---------------+
+Predicates(identified by ID):
+ 12: Seek Condition: ($SingerId_1 = $SingerId)
+
+8 rows in set (11.09 msecs)
+cpu time:             9.2 msecs
+rows scanned:         12 rows
+deleted rows scanned: 0 rows
+optimizer version:    7
+optimizer statistics: auto_20250527_16_21_42UTC
 ```
 
 ## More concise format of `EXPLAIN` and `EXPLAIN ANALYZE`
