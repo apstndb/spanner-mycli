@@ -1386,8 +1386,6 @@ You can use value query parameters in any statement.
 2 rows in set (7.8 msecs)
 ```
 
-<!-- TODO: Ensure to move to docs/query_plan.md -->
-
 You can use type query parameters only in `EXPLAIN` or `DESCRIBE` without value.
 
 ```
