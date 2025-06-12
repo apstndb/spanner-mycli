@@ -51,7 +51,8 @@ There are differences between spanner-mycli and spanner-cli that include not onl
     * Allow newlines in prompt using `%n`
     * System variables expansion
     * Prompt2 with margin and waiting status
-  * Autowrap and auto adjust column width to fit within terminal width when `CLI_AUTOWRAP = TRUE`).
+  * Autowrap and auto adjust column width to fit within terminal width (overridable with `CLI_FIXED_WIDTH`) when
+    `CLI_AUTOWRAP = TRUE`).
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
@@ -629,6 +630,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
+| CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
 
 ### Batch statements
 
