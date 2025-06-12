@@ -475,15 +475,43 @@ func (c *Cli) updateResultStats(result *Result, elapsed float64) {
 	}
 }
 
+// GetTerminalSize returns the width of the terminal for the given io.Writer.
+// It attempts to type assert the writer to *os.File to get the file descriptor.
+// Returns an error if the terminal size cannot be determined.
+func GetTerminalSize(w io.Writer) (int, error) {
+	// Try to type assert to *os.File
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0, fmt.Errorf("writer is not a file")
+	}
+
+	// Get terminal size using the file descriptor
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0, err
+	}
+
+	return width, nil
+}
+
 // displayResult displays the result of the statement execution.
 func (c *Cli) displayResult(result *Result, interactive bool, input string) {
 	size := math.MaxInt
 	if c.SystemVariables.AutoWrap {
-		sz, _, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil {
-			size = math.MaxInt
+		if c.SystemVariables.FixedWidth != nil {
+			// Use fixed width if set
+			size = int(*c.SystemVariables.FixedWidth)
 		} else {
-			size = sz
+			// Otherwise get terminal width
+			width, err := GetTerminalSize(c.OutStream)
+			if err != nil {
+				// Add warning log when terminal size cannot be obtained
+				// and CLI_AUTOWRAP = TRUE
+				slog.Warn("failed to get terminal size", "err", err)
+				size = math.MaxInt
+			} else {
+				size = width
+			}
 		}
 	}
 

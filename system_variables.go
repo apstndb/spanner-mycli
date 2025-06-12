@@ -89,6 +89,7 @@ type systemVariables struct {
 	LintPlan            bool      // CLI_LINT_PLAN
 	UsePager            bool      // CLI_USE_PAGER
 	AutoWrap            bool      // CLI_AUTOWRAP
+	FixedWidth          *int64    // CLI_FIXED_WIDTH
 	EnableHighlight     bool      // CLI_ENABLE_HIGHLIGHT
 	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
 	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
@@ -902,6 +903,44 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AutoWrap
 		})},
+	"CLI_FIXED_WIDTH": {
+		Description: "Set fixed width to overwrite wrap width for CLI_AUTOWRAP.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if strings.ToUpper(value) == "NULL" {
+					this.FixedWidth = nil
+					return nil
+				}
+
+				width, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return err
+				}
+
+				this.FixedWidth = &width
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.FixedWidth == nil {
+					return singletonMap(name, "NULL"), nil
+				}
+				return singletonMap(name, strconv.FormatInt(*this.FixedWidth, 10)), nil
+			},
+		},
+	},
+	"CLI_CURRENT_WIDTH": {
+		Description: "Get the current screen width in spanner-mycli client-side statement.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				width, err := GetTerminalSize(os.Stdout)
+				if err != nil {
+					slog.Warn("failed to get terminal size", "error", err)
+					return singletonMap(name, "NULL"), nil
+				}
+				return singletonMap(name, strconv.Itoa(width)), nil
+			},
+		},
+	},
 	"CLI_ENABLE_HIGHLIGHT": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
