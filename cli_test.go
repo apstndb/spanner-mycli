@@ -980,7 +980,7 @@ func TestCli_PrintResult(t *testing.T) {
 				},
 			}
 
-			cli.PrintResult(80, tt.result, tt.interactive, tt.input)
+			cli.PrintResult(80, tt.result, tt.interactive, tt.input, outBuf)
 
 			got := outBuf.String()
 			t.Logf("PrintResult() got = %q, want %q", got, tt.wantOut)

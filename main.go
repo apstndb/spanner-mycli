@@ -93,6 +93,7 @@ type spannerOptions struct {
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
+	MCP                       bool              `long:"mcp" description:"Run as MCP server"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -229,6 +230,10 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
 
+	if opts.MCP {
+		return cli.RunMCP(ctx)
+	}
+
 	var input string
 	if opts.Execute != "" {
 		input = opts.Execute
@@ -263,16 +268,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
 	}
 
-	err = lo.TernaryF(interactive,
-		func() error {
-			sysVars.EnableProgressBar = true
-			return cli.RunInteractive(ctx)
-		},
-		func() error {
-			return cli.RunBatch(ctx, input)
-		})
-
-	return err
+	switch {
+	case interactive:
+		sysVars.EnableProgressBar = true
+		return cli.RunInteractive(ctx)
+	default:
+		return cli.RunBatch(ctx, input)
+	}
 }
 
 // ValidateSpannerOptions validates the spannerOptions struct.
@@ -328,7 +330,8 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		Project:                   opts.ProjectId,
 		Instance:                  opts.InstanceId,
 		Database:                  opts.DatabaseId,
-		Verbose:                   opts.Verbose,
+		Verbose:                   opts.Verbose || opts.MCP, // Set Verbose to true when MCP is true
+		MCP:                       opts.MCP,                 // Set MCP field for CLI_MCP system variable
 		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
 		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
 		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),

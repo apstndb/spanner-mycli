@@ -131,6 +131,7 @@ type systemVariables struct {
 	EnableProgressBar         bool
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
+	MCP                       bool // CLI_MCP (read-only)
 }
 
 var errIgnored = errors.New("ignored")
@@ -607,6 +608,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				this.Verbose = b
 				return nil
 			},
+		},
+	},
+	"CLI_MCP": {
+		Description: "A read-only boolean indicating whether the connection is running as an MCP server.",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.MCP }),
 		},
 	},
 	"CLI_DATABASE_DIALECT": {

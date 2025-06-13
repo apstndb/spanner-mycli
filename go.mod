@@ -20,6 +20,7 @@ require (
 	github.com/apstndb/spanvalue v0.1.6
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.0
+	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.18.0
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1
 	github.com/go-sprout/sprout v1.0.0
@@ -32,6 +33,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
+	github.com/mark3labs/mcp-go v0.31.0
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/ngicks/go-iterator-helper v0.0.18
 	github.com/nyaosorg/go-readline-ny v1.9.0
@@ -73,7 +75,6 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/datastax/go-cassandra-native-protocol v0.0.0-20240903140133-605a850e203b // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -130,6 +131,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.37.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

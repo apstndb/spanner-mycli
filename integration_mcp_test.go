@@ -1,0 +1,414 @@
+//go:build !skip_slow_test
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+// setupMCPClientServer creates a complete MCP client-server setup for testing
+func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer, error) {
+	t.Helper()
+	// Create CLI instance
+	var outputBuf strings.Builder
+	cli := &Cli{
+		Session:   session,
+		OutStream: &outputBuf,
+		ErrStream: &outputBuf,
+		SystemVariables: &systemVariables{
+			Project:               session.systemVariables.Project,
+			Instance:              session.systemVariables.Instance,
+			Database:              session.systemVariables.Database,
+			Params:                make(map[string]ast.Node),
+			RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			Endpoint:              session.systemVariables.Endpoint,
+			WithoutAuthentication: session.systemVariables.WithoutAuthentication,
+			Verbose:               true, // Set Verbose to true to ensure result line is printed
+		},
+	}
+
+	// Create MCP server using extracted function
+	mcpServer := createMCPServer(cli)
+
+	// Create in-process transport and client
+	mcpTransport := transport.NewInProcessTransport(mcpServer)
+	mcpClient := client.NewClient(mcpTransport)
+
+	// Start the client
+	if err := mcpClient.Start(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to start MCP client: %w", err)
+	}
+
+	// Initialize the client
+	initRequest := mcp.InitializeRequest{
+		Params: mcp.InitializeParams{
+			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+			ClientInfo: mcp.Implementation{
+				Name:    "spanner-mycli-test",
+				Version: version,
+			},
+			Capabilities: mcp.ClientCapabilities{},
+		},
+	}
+	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize MCP client: %w", err)
+	}
+
+	return mcpClient, mcpServer, nil
+}
+
+// testExecuteStatementTool tests the execute_statement tool functionality
+func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Session, statement string, wantOutput string, wantError bool) {
+	t.Helper()
+	// Skip tests that are not compatible with the emulator
+	upperStatement := strings.ToUpper(statement)
+	if strings.HasPrefix(upperStatement, "EXPLAIN") {
+		t.Skip("EXPLAIN statement is not supported for Cloud Spanner Emulator")
+	}
+	// We no longer need to skip these tests since we're checking the result line
+	// which should be consistent across different environments
+	// if strings.HasPrefix(upperStatement, "CREATE TABLE") {
+	// 	t.Skip("CREATE TABLE output format differs in emulator")
+	// }
+	// if strings.HasPrefix(upperStatement, "INSERT INTO") {
+	// 	t.Skip("INSERT INTO output format differs in emulator")
+	// }
+	// if strings.HasPrefix(upperStatement, "SET CLI_") {
+	// 	t.Skip("SET VARIABLE output format differs in emulator")
+	// }
+
+	// Setup MCP client and server
+	mcpClient, _, err := setupMCPClientServer(t, ctx, session)
+	if err != nil {
+		t.Fatalf("Failed to setup MCP client-server: %v", err)
+	}
+
+	// Create a CallToolRequest with the statement as an argument
+	request := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "execute_statement",
+			Arguments: ExecuteStatementArgs{
+				Statement: statement,
+			},
+		},
+	}
+
+	// Call the execute_statement tool using the MCP client
+	t.Logf("Executing statement via MCP client: %q", statement)
+	result, err := mcpClient.CallTool(ctx, request)
+
+	// Handle errors
+	if err != nil {
+		if wantError {
+			t.Logf("Got expected error: %v", err)
+			return // Expected error
+		}
+		t.Fatalf("Failed to call execute_statement tool: %v", err)
+	}
+
+	// Check if the tool result indicates an error
+	if result.IsError {
+		if wantError {
+			t.Logf("Got expected error in tool result")
+			return // Expected error
+		}
+		t.Fatalf("Tool execution failed: %v", result.Content)
+	}
+
+	if wantError {
+		t.Errorf("Expected error but tool executed successfully")
+		return
+	}
+
+	// Extract the text content from the result
+	var gotOutput string
+	for _, content := range result.Content {
+		if textContent, ok := content.(mcp.TextContent); ok {
+			gotOutput = textContent.Text
+			break
+		}
+	}
+
+	// Extract the first line of the result message (after the table output)
+	// This is typically a line that starts with "Empty set", "N rows in set", or "Query OK"
+	lines := strings.Split(gotOutput, "\n")
+	var resultLine string
+	for _, line := range lines {
+		if strings.Contains(line, "Empty set") ||
+			strings.Contains(line, "rows in set") ||
+			strings.Contains(line, "Query OK") {
+			resultLine = line
+			break
+		}
+	}
+
+	t.Logf("Result line: %q", resultLine)
+
+	// If we found a result line, check if it contains the expected output
+	if resultLine != "" && strings.Contains(resultLine, wantOutput) {
+		return
+	}
+
+	// If we didn't find a result line or it doesn't contain the expected output,
+	// fall back to checking the entire output
+	if !strings.Contains(gotOutput, wantOutput) {
+		// Print the full output for debugging
+		t.Logf("Full output: %q", gotOutput)
+		t.Errorf("Output should contain %q, got: %s", wantOutput, gotOutput)
+	}
+
+	// Verify output is not empty for valid statements
+	compareResult(t, len(gotOutput) > 0, true)
+}
+
+// testDatabaseExistence tests the database existence check functionality
+func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
+	t.Helper()
+	exists, err := session.DatabaseExists()
+	if err != nil {
+		t.Fatalf("DatabaseExists check failed: %v", err)
+	}
+
+	compareResult(t, exists, shouldExist)
+}
+
+// testRunMCPWithNonExistentDatabase tests RunMCP with a non-existent database
+func testRunMCPWithNonExistentDatabase(t *testing.T) {
+	t.Helper()
+	ctx := t.Context()
+
+	// Create system variables with non-existent database
+	sysVarsNonExistent := systemVariables{
+		Project:               "test-project",
+		Instance:              "test-instance",
+		Database:              "non-existent-database",
+		Params:                make(map[string]ast.Node),
+		RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+		Endpoint:              emulator.URI(),
+		WithoutAuthentication: true,
+	}
+
+	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, defaultClientOptions(emulator)...)
+	if err != nil {
+		t.Fatalf("Failed to create session for non-existent database test: %v", err)
+	}
+	defer sessionNonExistent.Close()
+
+	// Test database existence check
+	testDatabaseExistence(t, sessionNonExistent, false)
+
+	// Test that RunMCP returns error for non-existent database
+	var outputBuf strings.Builder
+	pipeReader, pipeWriter := io.Pipe()
+	defer func() { _ = pipeReader.Close() }()
+	defer func() { _ = pipeWriter.Close() }()
+
+	cli, err := NewCli(ctx, nil, pipeReader, &outputBuf, &outputBuf, &sysVarsNonExistent)
+	if err != nil {
+		t.Fatalf("Failed to create CLI with non-existent database: %v", err)
+	}
+	defer cli.Session.Close()
+
+	err = cli.RunMCP(ctx)
+	if err == nil {
+		t.Errorf("RunMCP should return error for non-existent database")
+		return
+	}
+
+	// Check that an error was returned
+	compareResult(t, err != nil, true)
+}
+
+// testMCPClientServerSetup tests the MCP client-server setup
+func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer) {
+	t.Helper()
+	mcpClient, mcpServer, err := setupMCPClientServer(t, ctx, session)
+	if err != nil {
+		t.Fatalf("Failed to setup MCP client-server: %v", err)
+	}
+
+	// Verify client and server are not nil
+	if mcpClient == nil {
+		t.Fatalf("MCP client is nil")
+	}
+	if mcpServer == nil {
+		t.Fatalf("MCP server is nil")
+	}
+
+	return mcpClient, mcpServer
+}
+
+func TestRunMCP(t *testing.T) {
+	tests := []struct {
+		desc       string
+		ddls, dmls []string
+		statement  string
+		wantOutput string
+		wantError  bool
+	}{
+		// Basic functionality tests
+		{
+			desc:       "MCP execute_statement with HELP",
+			statement:  "HELP",
+			wantOutput: "Usage", // HELP output should contain usage information
+		},
+		{
+			desc:       "MCP execute_statement with SHOW TABLES",
+			ddls:       testTableDDLs,
+			statement:  "SHOW TABLES",
+			wantOutput: "tbl", // Should show the test table
+		},
+		{
+			desc:       "MCP execute_statement with SELECT",
+			ddls:       testTableDDLs,
+			dmls:       sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"),
+			statement:  "SELECT id, active FROM tbl ORDER BY id",
+			wantOutput: "1", // Should contain data from the table
+		},
+		{
+			desc:       "MCP execute_statement with SELECT empty result",
+			ddls:       testTableDDLs,
+			statement:  "SELECT id, active FROM tbl WHERE id > 1000",
+			wantOutput: "Empty set", // Should show Empty set for no results
+		},
+		{
+			desc:       "MCP execute_statement with SHOW VARIABLES",
+			statement:  "SHOW VARIABLES",
+			wantOutput: "name", // Should show variable names
+		},
+
+		// Additional statement types
+		{
+			desc:       "MCP execute_statement with DML",
+			ddls:       testTableDDLs,
+			statement:  "INSERT INTO tbl (id, active) VALUES (3, true)",
+			wantOutput: "1 row", // Should show rows affected
+		},
+		{
+			desc:       "MCP execute_statement with DDL",
+			statement:  "CREATE TABLE test_table (id INT64) PRIMARY KEY (id)",
+			wantOutput: "OK", // Should show success
+		},
+		{
+			desc:       "MCP execute_statement with EXPLAIN",
+			ddls:       testTableDDLs,
+			statement:  "EXPLAIN SELECT * FROM tbl",
+			wantOutput: "Query Plan", // Should contain query plan
+		},
+		{
+			desc:       "MCP execute_statement with SET VARIABLE",
+			statement:  "SET CLI_AUTOWRAP = TRUE",
+			wantOutput: "Empty set", // Output for SET VARIABLE statements
+		},
+
+		// Error cases
+		{
+			desc:      "MCP execute_statement with invalid SQL",
+			statement: "INVALID SQL STATEMENT",
+			wantError: true,
+		},
+		{
+			desc:      "MCP execute_statement with syntax error",
+			statement: "SELECT * FROM",
+			wantError: true,
+		},
+		{
+			desc:      "MCP execute_statement with non-existent table",
+			statement: "SELECT * FROM non_existent_table",
+			wantError: true,
+		},
+		{
+			desc:      "MCP execute_statement with invalid column",
+			ddls:      testTableDDLs,
+			statement: "SELECT non_existent_column FROM tbl",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+			defer cancel()
+
+			// Initialize database for each test case
+			_, session, teardown := initialize(t, tt.ddls, tt.dmls)
+			defer teardown()
+
+			// Test the execute_statement tool functionality
+			testExecuteStatementTool(t, ctx, session, tt.statement, tt.wantOutput, tt.wantError)
+		})
+	}
+
+	// Test database validation (the first step of RunMCP)
+	t.Run("database exists validation", func(t *testing.T) {
+		// Test with existing database
+		_, session, teardown := initialize(t, testTableDDLs, nil)
+		defer teardown()
+
+		testDatabaseExistence(t, session, true)
+	})
+
+	// Test MCP client-server setup
+	t.Run("mcp client-server setup", func(t *testing.T) {
+		_, session, teardown := initialize(t, testTableDDLs, nil)
+		defer teardown()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+		defer cancel()
+
+		client, server := testMCPClientServerSetup(t, ctx, session)
+		// Just verify they're created successfully, no need to use them
+		_ = client
+		_ = server
+	})
+
+	// Test server creation with different CLI configurations
+	t.Run("server creation with different CLI configurations", func(t *testing.T) {
+		_, session, teardown := initialize(t, testTableDDLs, nil)
+		defer teardown()
+
+		// Create CLI with different system variables
+		var outputBuf strings.Builder
+		cli := &Cli{
+			Session:   session,
+			OutStream: &outputBuf,
+			ErrStream: &outputBuf,
+			SystemVariables: &systemVariables{
+				Project:               session.systemVariables.Project,
+				Instance:              session.systemVariables.Instance,
+				Database:              session.systemVariables.Database,
+				Params:                make(map[string]ast.Node),
+				RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+				Endpoint:              session.systemVariables.Endpoint,
+				WithoutAuthentication: session.systemVariables.WithoutAuthentication,
+				AutoWrap:              true, // Set a different value
+				EnableHighlight:       true, // Set a different value
+			},
+		}
+
+		// Create server with the modified CLI
+		server := createMCPServer(cli)
+		if server == nil {
+			t.Fatalf("Failed to create MCP server with modified CLI")
+		}
+	})
+
+	// Test non-existent database error case
+	t.Run("database does not exist", func(t *testing.T) {
+		testRunMCPWithNonExistentDatabase(t)
+	})
+}
