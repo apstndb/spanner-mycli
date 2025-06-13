@@ -163,13 +163,6 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// If we didn't find a result line or it doesn't contain the expected output,
 	// fall back to checking the entire output
 	if !strings.Contains(gotOutput, wantOutput) {
-		// For DDL, DML, and SET VARIABLE statements, just check if output is not empty
-		if (strings.HasPrefix(strings.ToUpper(statement), "CREATE TABLE") ||
-			strings.HasPrefix(strings.ToUpper(statement), "INSERT INTO") ||
-			strings.HasPrefix(strings.ToUpper(statement), "SET CLI_")) && len(gotOutput) > 0 {
-			// Output is not empty, which is good enough for these statements
-			return
-		}
 		// Print the full output for debugging
 		t.Logf("Full output: %q", gotOutput)
 		t.Errorf("Output should contain %q, got: %s", wantOutput, gotOutput)
@@ -316,7 +309,7 @@ func TestRunMCP(t *testing.T) {
 		{
 			desc:       "MCP execute_statement with SET VARIABLE",
 			statement:  "SET CLI_AUTOWRAP = TRUE",
-			wantOutput: "OK", // Should show success
+			wantOutput: "Empty set", // Output for SET VARIABLE statements
 		},
 
 		// Error cases
