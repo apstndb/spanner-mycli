@@ -18,10 +18,9 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// createMCPServer is now defined in cli_mcp.go
-
 // setupMCPClientServer creates a complete MCP client-server setup for testing
-func setupMCPClientServer(ctx context.Context, session *Session) (*client.Client, *server.MCPServer, error) {
+func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer, error) {
+	t.Helper()
 	// Create CLI instance
 	var outputBuf strings.Builder
 	cli := &Cli{
@@ -71,6 +70,7 @@ func setupMCPClientServer(ctx context.Context, session *Session) (*client.Client
 
 // testExecuteStatementTool tests the execute_statement tool functionality
 func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Session, statement string, wantOutput string, wantError bool) {
+	t.Helper()
 	// Skip tests that are not compatible with the emulator
 	upperStatement := strings.ToUpper(statement)
 	if strings.HasPrefix(upperStatement, "EXPLAIN") {
@@ -89,7 +89,7 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// }
 
 	// Setup MCP client and server
-	mcpClient, _, err := setupMCPClientServer(ctx, session)
+	mcpClient, _, err := setupMCPClientServer(t, ctx, session)
 	if err != nil {
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}
@@ -181,6 +181,7 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 
 // testDatabaseExistence tests the database existence check functionality
 func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
+	t.Helper()
 	exists, err := session.DatabaseExists()
 	if err != nil {
 		t.Fatalf("DatabaseExists check failed: %v", err)
@@ -191,6 +192,7 @@ func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
 
 // testRunMCPWithNonExistentDatabase tests RunMCP with a non-existent database
 func testRunMCPWithNonExistentDatabase(t *testing.T) {
+	t.Helper()
 	ctx := t.Context()
 
 	// Create system variables with non-existent database
@@ -237,7 +239,8 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 
 // testMCPClientServerSetup tests the MCP client-server setup
 func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer) {
-	mcpClient, mcpServer, err := setupMCPClientServer(ctx, session)
+	t.Helper()
+	mcpClient, mcpServer, err := setupMCPClientServer(t, ctx, session)
 	if err != nil {
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}

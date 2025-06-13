@@ -265,6 +265,7 @@ func TestDml(t *testing.T) {
 }
 
 func buildAndExecute(t *testing.T, ctx context.Context, session *Session, s string) *Result {
+	t.Helper()
 	stmt, err := BuildStatement(s)
 	if err != nil {
 		t.Fatalf("invalid statement: error=%s", err)
