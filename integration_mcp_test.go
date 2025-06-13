@@ -21,7 +21,7 @@ import (
 // createMCPServer is now defined in cli_mcp.go
 
 // setupMCPClientServer creates a complete MCP client-server setup for testing
-func setupMCPClientServer(session *Session) (*client.Client, *server.MCPServer, error) {
+func setupMCPClientServer(ctx context.Context, session *Session) (*client.Client, *server.MCPServer, error) {
 	// Create CLI instance
 	var outputBuf strings.Builder
 	cli := &Cli{
@@ -47,7 +47,7 @@ func setupMCPClientServer(session *Session) (*client.Client, *server.MCPServer, 
 	mcpClient := client.NewClient(mcpTransport)
 
 	// Start the client
-	if err := mcpClient.Start(context.Background()); err != nil {
+	if err := mcpClient.Start(ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to start MCP client: %w", err)
 	}
 
@@ -62,7 +62,7 @@ func setupMCPClientServer(session *Session) (*client.Client, *server.MCPServer, 
 			Capabilities: mcp.ClientCapabilities{},
 		},
 	}
-	if _, err := mcpClient.Initialize(context.Background(), initRequest); err != nil {
+	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize MCP client: %w", err)
 	}
 
@@ -89,7 +89,7 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// }
 
 	// Setup MCP client and server
-	mcpClient, _, err := setupMCPClientServer(session)
+	mcpClient, _, err := setupMCPClientServer(ctx, session)
 	if err != nil {
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}
@@ -191,6 +191,8 @@ func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
 
 // testRunMCPWithNonExistentDatabase tests RunMCP with a non-existent database
 func testRunMCPWithNonExistentDatabase(t *testing.T) {
+	ctx := t.Context()
+
 	// Create system variables with non-existent database
 	sysVarsNonExistent := systemVariables{
 		Project:               "test-project",
@@ -202,7 +204,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		WithoutAuthentication: true,
 	}
 
-	sessionNonExistent, err := NewSession(context.Background(), &sysVarsNonExistent, defaultClientOptions(emulator)...)
+	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, defaultClientOptions(emulator)...)
 	if err != nil {
 		t.Fatalf("Failed to create session for non-existent database test: %v", err)
 	}
@@ -217,13 +219,13 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	defer func() { _ = pipeReader.Close() }()
 	defer func() { _ = pipeWriter.Close() }()
 
-	cli, err := NewCli(context.Background(), nil, pipeReader, &outputBuf, &outputBuf, &sysVarsNonExistent)
+	cli, err := NewCli(ctx, nil, pipeReader, &outputBuf, &outputBuf, &sysVarsNonExistent)
 	if err != nil {
 		t.Fatalf("Failed to create CLI with non-existent database: %v", err)
 	}
 	defer cli.Session.Close()
 
-	err = cli.RunMCP(context.Background())
+	err = cli.RunMCP(ctx)
 	if err == nil {
 		t.Errorf("RunMCP should return error for non-existent database")
 		return
@@ -234,8 +236,8 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 }
 
 // testMCPClientServerSetup tests the MCP client-server setup
-func testMCPClientServerSetup(t *testing.T, session *Session) (*client.Client, *server.MCPServer) {
-	mcpClient, mcpServer, err := setupMCPClientServer(session)
+func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer) {
+	mcpClient, mcpServer, err := setupMCPClientServer(ctx, session)
 	if err != nil {
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}
@@ -368,7 +370,10 @@ func TestRunMCP(t *testing.T) {
 		_, session, teardown := initialize(t, testTableDDLs, nil)
 		defer teardown()
 
-		client, server := testMCPClientServerSetup(t, session)
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+		defer cancel()
+
+		client, server := testMCPClientServerSetup(t, ctx, session)
 		// Just verify they're created successfully, no need to use them
 		_ = client
 		_ = server
