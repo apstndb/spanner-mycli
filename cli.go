@@ -32,8 +32,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/kballard/go-shellquote"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 
@@ -42,6 +44,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/mark3labs/mcp-go/server"
 	"google.golang.org/grpc/codes"
 )
 
@@ -412,7 +415,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 
 	// Setup progress mark and timing
 	t0 := time.Now()
-	stop := c.setupProgressMark(stmt)
+	stop := c.setupProgressMark(interactive, stmt)
 
 	// Execute the statement
 	result, err := c.Session.ExecuteStatement(ctx, stmt)
@@ -456,7 +459,10 @@ func (c *Cli) handleUseStatement(ctx context.Context, s *UseStatement, interacti
 
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
-func (c *Cli) setupProgressMark(stmt Statement) func() {
+func (c *Cli) setupProgressMark(interactive bool, stmt Statement) func() {
+	if !interactive {
+		return func() {}
+	}
 	switch stmt.(type) {
 	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
 		return func() {}
@@ -551,6 +557,53 @@ func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) 
 
 	c.SystemVariables = &newSystemVariables
 
+	return nil
+}
+
+func (c *Cli) RunMCP(ctx context.Context) error {
+	exists, err := c.Session.DatabaseExists()
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+	}
+
+	s := server.NewMCPServer("spanner-mycli", version,
+		server.WithToolCapabilities(false))
+
+	tool := mcp.NewTool("execute_statement",
+		mcp.WithDescription(heredoc.Doc(
+			`Execute any spanner-mycli statement.
+If you want to check valid statements, see "HELP".
+Result is ASCII table rendered, so you need to print as code block`)),
+		mcp.WithString("statement",
+			mcp.Required(),
+			mcp.Description("Valid spanner-mycli statement. It can be SQL(Query, DML, DDL), GQL, and spanner-mycli client-side statements"),
+		),
+	)
+
+	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		statement := strings.TrimSuffix(request.GetString("statement", ""), ";")
+		stmt, err := c.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
+		if err != nil {
+			return nil, err
+		}
+
+		var sb strings.Builder
+		c.OutStream = &sb
+		_, err = c.executeStatement(ctx, stmt, false, statement)
+		if err != nil {
+			return nil, err
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	if err := server.ServeStdio(s); err != nil {
+		return fmt.Errorf("failed to serve mcp: %w", err)
+	}
 	return nil
 }
 
