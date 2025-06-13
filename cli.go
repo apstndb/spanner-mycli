@@ -192,7 +192,7 @@ func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed b
 
 // executeStatementInteractive executes the statement and displays the result.
 func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
-	preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
+	preInput, err := c.executeStatement(ctx, stmt, true, input.statement, c.OutStream)
 	if err != nil {
 		return "", err
 	}
@@ -231,7 +231,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 			return NewExitCodeError(c.handleExit())
 		}
 
-		_, err = c.executeStatement(ctx, stmt, false, input)
+		_, err = c.executeStatement(ctx, stmt, false, input, c.OutStream)
 		if err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)
@@ -279,8 +279,13 @@ func (c *Cli) PrintBatchError(err error) {
 	printError(c.ErrStream, err)
 }
 
-func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string) {
-	ostream := c.OutStream
+func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.OutStream
+	}
+
+	ostream := w
 	var cmd *exec.Cmd
 	if c.SystemVariables.UsePager {
 		pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
@@ -294,7 +299,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 		pr, pw := io.Pipe()
 		ostream = pw
 		cmd.Stdin = pr
-		cmd.Stdout = c.OutStream
+		cmd.Stdout = w
 
 		err = cmd.Start()
 		if err != nil {
@@ -315,7 +320,12 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 	printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
 }
 
-func (c *Cli) PrintProgressingMark() func() {
+func (c *Cli) PrintProgressingMark(w io.Writer) func() {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.OutStream
+	}
+
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
 	go func() {
@@ -326,14 +336,14 @@ func (c *Cli) PrintProgressingMark() func() {
 		for {
 			<-ticker.C
 			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(c.OutStream, "\r%s", mark)
+			fmt.Fprintf(w, "\r%s", mark)
 			i++
 		}
 	}()
 
 	stop := func() {
 		ticker.Stop()
-		fmt.Fprintf(c.OutStream, "\r \r") // ensure to clear progressing mark
+		fmt.Fprintf(w, "\r \r") // ensure to clear progressing mark
 	}
 	return stop
 }
@@ -399,7 +409,11 @@ func confirm(in io.Reader, out io.Writer, msg string) bool {
 	}
 }
 
-func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string) (string, error) {
+func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string, w io.Writer) (string, error) {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.OutStream
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
@@ -408,11 +422,19 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		if err := c.handleUseStatement(ctx, s, interactive); err != nil {
 			return "", err
 		}
+		// Print "Database changed" here after successful database change
+		fmt.Fprintf(w, "Database changed")
 	}
 
 	// Setup progress mark and timing
 	t0 := time.Now()
-	stop := c.setupProgressMark(interactive, stmt)
+	// Only call setupProgressMark in interactive mode
+	var stop func()
+	if interactive {
+		stop = c.setupProgressMark(stmt, w)
+	} else {
+		stop = func() {}
+	}
 
 	// Execute the statement
 	result, err := c.Session.ExecuteStatement(ctx, stmt)
@@ -438,33 +460,24 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	c.updateResultStats(result, elapsed)
 
 	// Display the result
-	c.displayResult(result, interactive, input)
+	c.displayResult(result, interactive, input, w)
 
 	return result.PreInput, nil
 }
 
 // handleUseStatement handles the USE statement.
 func (c *Cli) handleUseStatement(ctx context.Context, s *UseStatement, interactive bool) error {
-	err := c.handleUse(ctx, s, interactive)
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(c.OutStream, "Database changed")
-	return nil
+	return c.handleUse(ctx, s, interactive)
 }
 
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
-func (c *Cli) setupProgressMark(interactive bool, stmt Statement) func() {
-	if !interactive {
-		return func() {}
-	}
+func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
 	switch stmt.(type) {
 	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
 		return func() {}
 	default:
-		return c.PrintProgressingMark()
+		return c.PrintProgressingMark(w)
 	}
 }
 
@@ -500,7 +513,12 @@ func GetTerminalSize(w io.Writer) (int, error) {
 }
 
 // displayResult displays the result of the statement execution.
-func (c *Cli) displayResult(result *Result, interactive bool, input string) {
+func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.OutStream
+	}
+
 	size := math.MaxInt
 	if c.SystemVariables.AutoWrap {
 		if c.SystemVariables.FixedWidth != nil {
@@ -508,7 +526,7 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string) {
 			size = int(*c.SystemVariables.FixedWidth)
 		} else {
 			// Otherwise get terminal width
-			width, err := GetTerminalSize(c.OutStream)
+			width, err := GetTerminalSize(w)
 			if err != nil {
 				// Add warning log when terminal size cannot be obtained
 				// and CLI_AUTOWRAP = TRUE
@@ -520,10 +538,10 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string) {
 		}
 	}
 
-	c.PrintResult(size, result, interactive, input)
+	c.PrintResult(size, result, interactive, input, w)
 
 	if interactive {
-		fmt.Fprintf(c.OutStream, "\n")
+		fmt.Fprintf(w, "\n")
 	}
 }
 

@@ -93,7 +93,7 @@ type spannerOptions struct {
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	Mcp                       bool              `long:"mcp" description:"Run as MCP server"`
+	MCP                       bool              `long:"mcp" description:"Run as MCP server"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -230,7 +230,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
 
-	if opts.Mcp {
+	if opts.MCP {
 		return cli.RunMCP(ctx)
 	}
 
@@ -330,7 +330,8 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		Project:                   opts.ProjectId,
 		Instance:                  opts.InstanceId,
 		Database:                  opts.DatabaseId,
-		Verbose:                   opts.Verbose,
+		Verbose:                   opts.Verbose || opts.MCP, // Set Verbose to true when MCP is true
+		MCP:                       opts.MCP,                 // Set MCP field for CLI_MCP system variable
 		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
 		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
 		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),

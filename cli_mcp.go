@@ -61,23 +61,11 @@ Result is ASCII table rendered, so you need to print as code block`)),
 			return nil, err
 		}
 
-		// Save original state
+		// Create a string builder to capture the output
 		var sb strings.Builder
-		originalOutStream := cli.OutStream
-		originalVerbose := cli.SystemVariables.Verbose
 
-		// Set up new state for this operation
-		cli.OutStream = &sb
-		cli.SystemVariables.Verbose = true
-
-		// Ensure original state is restored even if an error occurs
-		defer func() {
-			cli.OutStream = originalOutStream
-			cli.SystemVariables.Verbose = originalVerbose
-		}()
-
-		// Execute the statement
-		_, err = cli.executeStatement(ctx, stmt, false, statement)
+		// Execute the statement with the string builder as the output
+		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
 		if err != nil {
 			return nil, err
 		}

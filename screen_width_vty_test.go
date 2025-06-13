@@ -164,7 +164,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			}
 
 			// Call displayResult
-			cli.displayResult(tt.result, tt.interactive, tt.input)
+			cli.displayResult(tt.result, tt.interactive, tt.input, tty)
 
 			// Read from the master side of the PTY to get the output
 			buf := make([]byte, 1024)

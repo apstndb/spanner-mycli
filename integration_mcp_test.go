@@ -35,6 +35,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 			RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 			Endpoint:              session.systemVariables.Endpoint,
 			WithoutAuthentication: session.systemVariables.WithoutAuthentication,
+			Verbose:               true, // Set Verbose to true to ensure result line is printed
 		},
 	}
 
