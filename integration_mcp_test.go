@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -44,6 +46,26 @@ func setupMCPClientServer(session *Session) (*client.Client, *server.MCPServer, 
 	mcpTransport := transport.NewInProcessTransport(mcpServer)
 	mcpClient := client.NewClient(mcpTransport)
 
+	// Start the client
+	if err := mcpClient.Start(context.Background()); err != nil {
+		return nil, nil, fmt.Errorf("failed to start MCP client: %w", err)
+	}
+
+	// Initialize the client
+	initRequest := mcp.InitializeRequest{
+		Params: mcp.InitializeParams{
+			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+			ClientInfo: mcp.Implementation{
+				Name:    "spanner-mycli-test",
+				Version: version,
+			},
+			Capabilities: mcp.ClientCapabilities{},
+		},
+	}
+	if _, err := mcpClient.Initialize(context.Background(), initRequest); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize MCP client: %w", err)
+	}
+
 	return mcpClient, mcpServer, nil
 }
 
@@ -66,50 +88,57 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// 	t.Skip("SET VARIABLE output format differs in emulator")
 	// }
 
-	// Create CLI instance for testing
-	var outputBuf strings.Builder
-	cli := &Cli{
-		Session:   session,
-		OutStream: &outputBuf,
-		ErrStream: &outputBuf,
-		SystemVariables: &systemVariables{
-			Params:  make(map[string]ast.Node),
-			Verbose: true, // Set verbose to true to ensure result line is printed
+	// Setup MCP client and server
+	mcpClient, _, err := setupMCPClientServer(session)
+	if err != nil {
+		t.Fatalf("Failed to setup MCP client-server: %v", err)
+	}
+
+	// Create a CallToolRequest with the statement as an argument
+	request := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "execute_statement",
+			Arguments: ExecuteStatementArgs{
+				Statement: statement,
+			},
 		},
 	}
 
-	// Parse the statement (same logic as in MCP tool handler)
-	statement = strings.TrimSuffix(statement, ";")
-	stmt, err := cli.parseStatement(&inputStatement{
-		statement:                statement,
-		statementWithoutComments: statement,
-		delim:                    ";",
-	})
+	// Call the execute_statement tool using the MCP client
+	t.Logf("Executing statement via MCP client: %q", statement)
+	result, err := mcpClient.CallTool(ctx, request)
+
+	// Handle errors
 	if err != nil {
 		if wantError {
-			return // Expected error during parsing
+			t.Logf("Got expected error: %v", err)
+			return // Expected error
 		}
-		t.Fatalf("Failed to parse statement: %v", err)
+		t.Fatalf("Failed to call execute_statement tool: %v", err)
 	}
 
-	// Execute the statement (same logic as in MCP tool handler)
-	t.Logf("Executing statement: %q", statement)
-	result, err := cli.executeStatement(ctx, stmt, false, statement)
-	if err != nil {
+	// Check if the tool result indicates an error
+	if result.IsError {
 		if wantError {
-			return // Expected error during execution
+			t.Logf("Got expected error in tool result")
+			return // Expected error
 		}
-		t.Fatalf("Failed to execute statement: %v", err)
+		t.Fatalf("Tool execution failed: %v", result.Content)
 	}
-	t.Logf("Statement executed successfully, result: %+v", result)
 
 	if wantError {
-		t.Errorf("Expected error but statement executed successfully")
+		t.Errorf("Expected error but tool executed successfully")
 		return
 	}
 
-	// Check output contains expected content
-	gotOutput := outputBuf.String()
+	// Extract the text content from the result
+	var gotOutput string
+	for _, content := range result.Content {
+		if textContent, ok := content.(mcp.TextContent); ok {
+			gotOutput = textContent.Text
+			break
+		}
+	}
 
 	// Extract the first line of the result message (after the table output)
 	// This is typically a line that starts with "Empty set", "N rows in set", or "Query OK"

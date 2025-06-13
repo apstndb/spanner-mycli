@@ -45,25 +45,38 @@ Result is ASCII table rendered, so you need to print as code block`)),
 			mcp.Required(),
 			mcp.Description("Valid spanner-mycli statement. It can be SQL(Query, DML, DDL), GQL, and spanner-mycli client-side statements"),
 		),
+		// Add tool annotations to provide hints about the tool's behavior
+		mcp.WithTitleAnnotation("Execute Spanner SQL Statement"),
+		mcp.WithReadOnlyHintAnnotation(false),   // Can modify the database
+		mcp.WithDestructiveHintAnnotation(true), // Can perform destructive operations
+		mcp.WithIdempotentHintAnnotation(false), // Repeated calls can have different effects
+		mcp.WithOpenWorldHintAnnotation(true),   // Interacts with external entities (the database)
 	)
 
 	s.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, request mcp.CallToolRequest, args ExecuteStatementArgs) (*mcp.CallToolResult, error) {
+		// Parse the statement
 		statement := strings.TrimSuffix(args.Statement, ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
 			return nil, err
 		}
 
+		// Save original state
 		var sb strings.Builder
 		originalOutStream := cli.OutStream
-		cli.OutStream = &sb
-		defer func() { cli.OutStream = originalOutStream }()
-
-		// Set Verbose to true to ensure result line is printed
 		originalVerbose := cli.SystemVariables.Verbose
-		cli.SystemVariables.Verbose = true
-		defer func() { cli.SystemVariables.Verbose = originalVerbose }()
 
+		// Set up new state for this operation
+		cli.OutStream = &sb
+		cli.SystemVariables.Verbose = true
+
+		// Ensure original state is restored even if an error occurs
+		defer func() {
+			cli.OutStream = originalOutStream
+			cli.SystemVariables.Verbose = originalVerbose
+		}()
+
+		// Execute the statement
 		_, err = cli.executeStatement(ctx, stmt, false, statement)
 		if err != nil {
 			return nil, err
