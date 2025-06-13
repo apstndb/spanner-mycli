@@ -29,6 +29,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Interactive DDL batching
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
+  * Run as MCP server (EXPERIMENTAL, `--mcp`).
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
