@@ -93,7 +93,7 @@ type spannerOptions struct {
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	Mcp                       bool              `long:"mcp"`
+	Mcp                       bool              `long:"mcp" description:"Run as MCP server"`
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {

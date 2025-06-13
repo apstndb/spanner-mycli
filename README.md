@@ -91,6 +91,7 @@ https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 
 ## Usage
 
+<!-- go run ./ --help -->
 ```
 Usage:
   spanner-mycli [OPTIONS]
@@ -116,7 +117,7 @@ spanner:
       --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.32)
+      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.34)
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
       --log-grpc                                          Show gRPC logs
@@ -129,6 +130,7 @@ spanner:
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --mcp                                               Run as MCP server
 ```
 
 ### Authentication
