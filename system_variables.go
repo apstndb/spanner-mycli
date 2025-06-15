@@ -725,10 +725,10 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_DATABASE": {
-		Description: "Current database name. Empty string when in admin-only mode.",
+		Description: "Current database name. Empty string when in detached mode.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				// Return empty string for admin-only mode, actual database name when connected
+				// Return empty string for detached mode, actual database name when connected
 				if this.CurrentSession != nil && this.CurrentSession.IsAdminOnly() {
 					return singletonMap(name, ""), nil
 				}

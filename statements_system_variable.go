@@ -16,6 +16,7 @@ type ShowVariableStatement struct {
 }
 
 func (s *ShowVariableStatement) isAdminCompatible() {}
+func (s *ShowVariableStatement) DetachedCompatible() {}
 
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	value, err := session.systemVariables.Get(s.VarName)
@@ -38,6 +39,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) isAdminCompatible() {}
+func (s *ShowVariablesStatement) DetachedCompatible() {}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
@@ -75,6 +77,7 @@ type SetStatement struct {
 }
 
 func (s *SetStatement) isAdminCompatible() {}
+func (s *SetStatement) DetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
@@ -89,6 +92,7 @@ type SetAddStatement struct {
 }
 
 func (s *SetAddStatement) isAdminCompatible() {}
+func (s *SetAddStatement) DetachedCompatible() {}
 
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
@@ -100,6 +104,7 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 type HelpVariablesStatement struct{}
 
 func (s *HelpVariablesStatement) isAdminCompatible() {}
+func (s *HelpVariablesStatement) DetachedCompatible() {}
 
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	type variableDesc struct {

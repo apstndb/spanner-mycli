@@ -58,7 +58,7 @@ type spannerOptions struct {
 	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
 	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
 	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"Cloud Spanner Database ID. Optional when --detached is used."`
-	Detached                  bool              `long:"detached" description:"Start in admin-only mode, ignoring database env var/flag"`
+	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag"`
 	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
 	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
 	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
@@ -101,7 +101,7 @@ type spannerOptions struct {
 func determineInitialDatabase(opts *spannerOptions) string {
 	// Explicit --detached flag overrides everything
 	if opts.Detached {
-		return "" // Start in admin-only mode
+		return "" // Start in detached mode
 	}
 
 	// Explicit --database flag takes precedence
@@ -114,7 +114,7 @@ func determineInitialDatabase(opts *spannerOptions) string {
 		return envDB
 	}
 
-	// Default: admin-only mode (empty string)
+	// Default: detached mode (empty string)
 	return ""
 }
 
@@ -314,7 +314,7 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 	
 	if !opts.EmbeddedEmulator && !opts.Detached && opts.DatabaseId == "" {
-		return fmt.Errorf("missing parameter: -d is required (or use --detached for admin-only mode)")
+		return fmt.Errorf("missing parameter: -d is required (or use --detached for detached mode)")
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {

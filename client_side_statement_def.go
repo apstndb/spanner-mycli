@@ -84,7 +84,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Detach from database`,
 				Syntax: `DETACH`,
-				Note:   `Switch to admin-only mode, disconnecting from the current database.`,
+				Note:   `Switch to detached mode, disconnecting from the current database.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DETACH$`),
