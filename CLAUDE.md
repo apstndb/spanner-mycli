@@ -314,34 +314,6 @@ This PR implements the optional --database flag functionality.
 - **Review Response**: Gemini typically responds within 1-2 minutes with comprehensive feedback
 - **Re-review Process**: After addressing comments, use `/gemini review` again for follow-up review
 
-#### SessionHandler Pattern Implementation (Example from #258/#262)
-When implementing session management patterns:
-
-1. **Embedded Fields Approach**: Use Go's embedded fields for method delegation
-   ```go
-   type SessionHandler struct {
-       *Session  // Embedded for direct method access
-   }
-   ```
-
-2. **Client Options Reuse**: Leverage existing session's client options for consistency
-   ```go
-   func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
-       return NewSession(ctx, sysVars, h.Session.clientOpts...)
-   }
-   ```
-
-3. **Integration Test Compatibility**: Ensure SessionHandler works with emulator environments
-   ```go
-   // Use existing session's client options for emulator compatibility
-   sessionHandler := NewSessionHandler(session)
-   ```
-
-4. **Non-breaking Changes**: When modifying output formats, revert to previous behavior for compatibility
-   ```go
-   // Return empty result like previous versions (non-breaking change)
-   result := &Result{IsMutation: true}
-   ```
 
 #### Code Review Response Strategy
 1. **Address each comment individually** with focused commits
@@ -349,3 +321,34 @@ When implementing session management patterns:
 3. **Test thoroughly** before pushing changes
 4. **Request re-review** using appropriate methods for each reviewer type
 5. **Document architectural decisions** in code comments and CLAUDE.md updates
+
+#### Handling Different Types of Review Comments
+
+**For Issues Requiring Fixes:**
+1. Create focused commits addressing the specific issue
+2. Reference the review comment in commit message
+3. Push changes and request re-review
+
+**For Praise Comments from AI Automated Reviews (e.g., Gemini Code Assist):**
+1. **Acknowledge the feedback** with a brief reply thanking the reviewer
+2. **Resolve the conversation** to keep the review clean and focused on actionable items
+3. **Example response**: "Thank you for highlighting this good practice! Resolving as acknowledged."
+
+**Sample AI praise comment response workflow:**
+```bash
+# Step 1: Reply directly to the specific review comment using REST API
+gh api repos/apstndb/spanner-mycli/pulls/263/comments \
+  -f body="Thank you for highlighting this good practice! The admin-only mode check is indeed important for preventing database access errors when not connected to a specific database. Resolving as acknowledged." \
+  -F in_reply_to=2148555280
+
+# Step 2: Resolve the review thread using GraphQL mutation
+gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_kwDONC6gMM5SSFCY"}) { thread { id isResolved } } }'
+
+# Note: You'll need to get the specific comment ID and thread ID from:
+# gh api repos/OWNER/REPO/pulls/PR_NUMBER/comments | jq '.[] | {id, body: .body[0:100]}'
+# gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { pullRequest(number: PR_NUMBER) { reviewThreads(first: 10) { nodes { id comments(first: 2) { nodes { id author { login } } } } } } } }'
+```
+
+**Note**: This workflow is specifically for automated AI reviews (like Gemini Code Assist) that often include praise comments to highlight good implementation practices. For human reviewers, follow standard code review etiquette and engage in meaningful discussion about the feedback.
+
+This approach maintains good communication with AI reviewers while keeping the review focused on actionable items and reduces noise from praise-only comments.
