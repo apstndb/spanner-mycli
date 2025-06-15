@@ -188,7 +188,7 @@ When adding new client-side statements:
    
    # The script automatically:
    # 1. Fetches latest reviews with timestamps and IDs
-   # 2. Compares with previous state (stored in ~/.cache/spanner-mycli-reviews/)
+   # 2. Compares with previous state (stored in .cache/pr-reviews/)
    # 3. Verifies data integrity by checking if previous review still exists
    # 4. Shows only new reviews since last check
    # 5. Updates state for next incremental check
@@ -196,6 +196,20 @@ When adding new client-side statements:
    # First run shows all recent reviews and creates baseline state
    # Subsequent runs show only new reviews, preventing duplicates and missed reviews
    ```
+
+   **Script Advantages vs GitHub MCP Server:**
+   - **Incremental Efficiency**: Only fetches new comments since last check, reducing API calls
+   - **Built-in State Management**: Automatically maintains state in `.cache/pr-reviews/` (git-ignored)
+   - **Data Integrity Verification**: Checks if previously seen reviews still exist to detect data corruption
+   - **Optimized GitHub API Usage**: Uses direct `gh` CLI and GraphQL for minimal data transfer
+   - **Robust Duplicate Prevention**: Timestamp and ID-based comparison prevents missing or duplicate reviews
+   - **Single Command Simplicity**: No need to implement client-side filtering or caching logic
+   
+   **MCP Alternative Trade-offs:**
+   - MCP functions require full data retrieval on each check (less efficient)
+   - Need to implement state management and incremental logic manually
+   - Client-side filtering required instead of API-level filtering
+   - Multiple API calls may be needed vs single GraphQL query
 
 3. **Address Comments Individually**:
    - Handle each review comment as a separate commit
