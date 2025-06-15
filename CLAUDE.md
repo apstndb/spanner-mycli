@@ -154,7 +154,7 @@ When adding new client-side statements:
 - **No external library usage**: spanner-mycli's exported symbols are not consumed by external packages
 - **Clean refactoring over compatibility**: Prefer clear, well-named interfaces over maintaining deprecated ones
 - **Direct removal of old interfaces**: When renaming or restructuring, remove old interfaces entirely rather than keeping deprecated versions
-- **Example**: When changing from `AdminOnly` to `Detached` terminology, the `AdminCompatible` interface was completely removed and replaced with `DetachedCompatible`
+- **Example**: When changing from `AdminOnly` to `Detached` terminology, all `AdminCompatible` interfaces and deprecated wrapper methods were removed in favor of clean `DetachedCompatible` implementations
 
 This approach allows for:
 - **Cleaner codebase**: No accumulation of deprecated interfaces or methods

@@ -352,10 +352,6 @@ func (s *Session) IsDetached() bool {
 	return s.mode == Detached
 }
 
-// IsAdminOnly is deprecated, use IsDetached instead
-func (s *Session) IsAdminOnly() bool {
-	return s.IsDetached()
-}
 
 
 func (s *Session) RequiresDatabaseConnection() bool {
@@ -367,10 +363,6 @@ func (s *Session) ValidateDetachedOperation() error {
 	return nil
 }
 
-// ValidateAdminOnlyOperation is deprecated, use ValidateDetachedOperation instead
-func (s *Session) ValidateAdminOnlyOperation() error {
-	return s.ValidateDetachedOperation()
-}
 
 func (s *Session) ValidateDatabaseOperation() error {
 	if s.client == nil {
@@ -676,7 +668,7 @@ func (s *Session) ClosePendingTransaction() error {
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if AdminCompatible interface validation is working correctly
+		// This should not happen if DetachedCompatible interface validation is working correctly
 		// Log the error for debugging since we can't return it directly
 		slog.Error("RunQueryWithStats called without database connection", "error", err, "statement", stmt.SQL)
 		// Return nil to indicate error - caller should check for nil
@@ -693,7 +685,7 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if AdminCompatible interface validation is working correctly
+		// This should not happen if DetachedCompatible interface validation is working correctly
 		// Log the error for debugging since we can't return it directly
 		slog.Error("RunQuery called without database connection", "error", err, "statement", stmt.SQL)
 		// Return nil to indicate error - caller should check for nil
@@ -746,7 +738,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
 		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
-		// and AdminCompatible interface checks in ExecuteStatement
+		// and DetachedCompatible interface checks in ExecuteStatement
 		if s.client == nil {
 			// This is a programming error - log it and return a failing iterator
 			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations", 

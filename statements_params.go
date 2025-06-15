@@ -14,8 +14,7 @@ import (
 
 type ShowParamsStatement struct{}
 
-func (s *ShowParamsStatement) isAdminCompatible() {}
-func (s *ShowParamsStatement) DetachedCompatible() {}
+func (s *ShowParamsStatement) isDetachedCompatible() {}
 
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	strMap := make(map[string]string)
@@ -41,8 +40,7 @@ type SetParamTypeStatement struct {
 	Type string
 }
 
-func (s *SetParamTypeStatement) isAdminCompatible() {}
-func (s *SetParamTypeStatement) DetachedCompatible() {}
+func (s *SetParamTypeStatement) isDetachedCompatible() {}
 
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseType("", s.Type); err != nil {
@@ -58,8 +56,7 @@ type SetParamValueStatement struct {
 	Value string
 }
 
-func (s *SetParamValueStatement) isAdminCompatible() {}
-func (s *SetParamValueStatement) DetachedCompatible() {}
+func (s *SetParamValueStatement) isDetachedCompatible() {}
 
 func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
