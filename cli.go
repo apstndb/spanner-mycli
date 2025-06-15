@@ -427,26 +427,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	// Handle USE and DETACH statements with special output
-	if _, ok := stmt.(*UseStatement); ok {
-		_, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
-		if err != nil {
-			return "", err
-		}
-		// Print "Database changed" here after successful database change
-		fmt.Fprintf(w, "Database changed")
-		return "", nil
-	}
-
-	if _, ok := stmt.(*DetachStatement); ok {
-		_, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(w, "Detached from database")
-		return "", nil
-	}
-
 	// Setup progress mark and timing
 	t0 := time.Now()
 	// Only call setupProgressMark in interactive mode
@@ -475,6 +455,14 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			}
 		}
 		return "", err
+	} else {
+		// Handle special output messages for session-changing statements
+		if _, ok := stmt.(*UseStatement); ok {
+			fmt.Fprintf(w, "Database changed")
+		}
+		if _, ok := stmt.(*DetachStatement); ok {
+			fmt.Fprintf(w, "Detached from database")
+		}
 	}
 
 	// Update result stats and system variables
