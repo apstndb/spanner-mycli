@@ -1,3 +1,7 @@
+// System Variables Naming Convention:
+// - Variables that correspond to java-spanner JDBC properties use the same names
+// - Variables that are spanner-mycli specific MUST use CLI_ prefix
+// - This ensures compatibility with existing JDBC tooling while clearly identifying custom extensions
 package main
 
 import (
@@ -110,8 +114,9 @@ type systemVariables struct {
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 	InlineStats    string // CLI_INLINE_STATS
 
-	ExplainFormat    explainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth int64         // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainFormat         explainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth      int64         // CLI_EXPLAIN_WRAP_WIDTH
+	AutoConnectAfterCreate bool         // CLI_AUTO_CONNECT_AFTER_CREATE
 
 	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
@@ -991,6 +996,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return singletonMap(name, getVersion()), nil
 			},
 		},
+	},
+	"CLI_AUTO_CONNECT_AFTER_CREATE": {
+		Description: "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoConnectAfterCreate
+		}),
 	},
 }
 

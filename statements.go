@@ -107,18 +107,46 @@ func (CreateDatabaseStatement) IsMutationStatement() {}
 func (s *CreateDatabaseStatement) isAdminCompatible() {}
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	start := time.Now()
+	
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initiate database creation: %w", err)
 	}
-	if _, err := op.Wait(ctx); err != nil {
-		return nil, err
+	
+	dbResponse, err := op.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database creation operation failed: %w", err)
 	}
 
-	return &Result{IsMutation: true}, nil
+	if dbResponse == nil || dbResponse.Name == "" {
+		return nil, fmt.Errorf("database creation succeeded but response is missing database name")
+	}
+
+	elapsed := time.Since(start)
+	
+	// Extract database name from the response
+	// Database name is in format: projects/PROJECT/instances/INSTANCE/databases/DATABASE
+	parts := strings.Split(dbResponse.Name, "/")
+	if len(parts) < 6 {
+		return nil, fmt.Errorf("unexpected database name format: %s", dbResponse.Name)
+	}
+	dbName := parts[5]
+	
+	// Create result with enhanced feedback
+	result := &Result{
+		IsMutation:   true,
+		TableHeader:  toTableHeader("Status", "Database", "Duration"),
+		AffectedRows: 1,
+		Rows: []Row{
+			{"Created", dbName, elapsed.Truncate(time.Millisecond).String()},
+		},
+	}
+
+	return result, nil
 }
 
 // Database

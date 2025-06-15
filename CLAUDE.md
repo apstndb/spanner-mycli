@@ -146,6 +146,11 @@ When adding new client-side statements:
 - Security considerations
 - Error handling completeness
 
+### Issue Management Best Practices
+- Use `gh issue edit <number> --body "content"` for issue updates
+- Multi-line content can be handled with heredoc or escaped newlines in shell commands
+- This ensures better readability than using the GitHub MCP server for issue updates
+
 ## Documentation Structure
 
 ### Overview
