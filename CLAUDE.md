@@ -177,14 +177,34 @@ When adding new client-side statements:
    gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }' | jq '.data.repository.pullRequest.reviews.nodes[] | select(.author.login == "<REVIEWER_LOGIN>") | .comments.edges[] | .node'
    ```
 
-2. **Address Comments Individually**:
+2. **Efficient Review Tracking** (Automated Script):
+   ```bash
+   # Use the provided script for robust incremental review checking
+   ./scripts/check-pr-reviews.sh <PR_NUMBER> [OWNER] [REPO]
+   
+   # Example usage:
+   ./scripts/check-pr-reviews.sh 259                    # Uses default apstndb/spanner-mycli
+   ./scripts/check-pr-reviews.sh 259 owner repo-name   # Custom owner/repo
+   
+   # The script automatically:
+   # 1. Fetches latest reviews with timestamps and IDs
+   # 2. Compares with previous state (stored in ~/.cache/spanner-mycli-reviews/)
+   # 3. Verifies data integrity by checking if previous review still exists
+   # 4. Shows only new reviews since last check
+   # 5. Updates state for next incremental check
+   
+   # First run shows all recent reviews and creates baseline state
+   # Subsequent runs show only new reviews, preventing duplicates and missed reviews
+   ```
+
+3. **Address Comments Individually**:
    - Handle each review comment as a separate commit
    - Use clear commit messages describing the specific fix
    - Prioritize by severity: critical → high → medium → low (for automated reviews)
    - Prioritize by reviewer feedback and discussion for human reviews
    - One commit per review comment for better traceability
 
-3. **Follow-up Actions**:
+4. **Follow-up Actions**:
    - For Gemini Code Assist: Comment `/gemini review` to trigger re-review
    - For human reviewers: Tag reviewer or request re-review through GitHub UI
    - Mark conversations as resolved after addressing each comment
