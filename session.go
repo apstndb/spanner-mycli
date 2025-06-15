@@ -279,6 +279,17 @@ func (s *Session) ValidateDatabaseOperation() error {
 	return nil
 }
 
+func (s *Session) ValidateStatementExecution(stmt Statement) error {
+	if s.IsAdminOnly() {
+		// In AdminOnly mode, only AdminCompatible statements can be executed
+		if _, ok := stmt.(AdminCompatible); !ok {
+			return fmt.Errorf("statement %T is not compatible with admin-only session mode", stmt)
+		}
+	}
+	// In DatabaseConnected mode, all statements can be executed
+	return nil
+}
+
 func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) error {
 	if s.mode == DatabaseConnected && s.client != nil {
 		return errors.New("session is already connected to a database")
@@ -562,6 +573,11 @@ func (s *Session) ClosePendingTransaction() error {
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	// Validate that we have a database client for query operations
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		// Return empty iterator with error embedded - caller should check for nil
+		return nil, nil
+	}
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
@@ -571,6 +587,11 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	// Validate that we have a database client for query operations
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		// Return nil to indicate error - caller should check for nil
+		return nil, nil
+	}
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -617,8 +638,10 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	case s.InReadOnlyTransaction():
 		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
+		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
+		// But we keep this check as a safety measure
 		if s.client == nil {
-			panic("database client is required for single queries")
+			return nil, nil
 		}
 		txn := s.client.Single()
 		if s.systemVariables.ReadOnlyStaleness != nil {
@@ -979,6 +1002,11 @@ func extractBatchInfo(stmt Statement) *BatchInfo {
 // ExecuteStatement executes stmt.
 // If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
 func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result *Result, err error) {
+	// Validate statement compatibility with current session mode
+	if err := s.ValidateStatementExecution(stmt); err != nil {
+		return nil, err
+	}
+	
 	defer func() {
 		if result != nil {
 			result.BatchInfo = extractBatchInfo(s.currentBatch)

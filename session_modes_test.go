@@ -215,3 +215,166 @@ func TestInstanceValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestAdminCompatibleStatements(t *testing.T) {
+	ctx := context.Background()
+
+	sysVars := &systemVariables{
+		Project:  "test-project",
+		Instance: "test-instance",
+		Database: "",
+	}
+
+	session, err := NewAdminSession(ctx, sysVars)
+	if err != nil {
+		t.Skip("Skipping test due to authentication requirements:", err)
+	}
+	defer session.Close()
+
+	// Test AdminCompatible statements can be validated
+	t.Run("AdminCompatible statements pass validation", func(t *testing.T) {
+		adminCompatibleStmts := []Statement{
+			&CreateDatabaseStatement{CreateStatement: "CREATE DATABASE test"},
+			&DropDatabaseStatement{DatabaseId: "test"},
+			&ShowDatabasesStatement{},
+			&UseStatement{Database: "test"},
+			&HelpStatement{},
+			&ExitStatement{},
+			// System variables statements
+			&ShowVariableStatement{VarName: "READONLY"},
+			&ShowVariablesStatement{},
+			&SetStatement{VarName: "CLI_FORMAT", Value: "JSON"},
+			&SetAddStatement{VarName: "PROTO_DESCRIPTOR_FILE", Value: "test.pb"},
+			&HelpVariablesStatement{},
+			// Query parameters statements  
+			&ShowParamsStatement{},
+			&SetParamTypeStatement{Name: "p1", Type: "STRING"},
+			&SetParamValueStatement{Name: "p1", Value: "test"},
+		}
+
+		for _, stmt := range adminCompatibleStmts {
+			err := session.ValidateStatementExecution(stmt)
+			if err != nil {
+				t.Errorf("Expected %T to be admin-compatible, got error: %v", stmt, err)
+			}
+		}
+	})
+
+	// Test non-AdminCompatible statements fail validation
+	t.Run("Non-AdminCompatible statements fail validation", func(t *testing.T) {
+		nonAdminCompatibleStmts := []Statement{
+			&SelectStatement{Query: "SELECT 1"},
+			&DmlStatement{Dml: "UPDATE test SET col1 = 1"},
+			&DdlStatement{Ddl: "CREATE TABLE test (id INT64)"},
+		}
+
+		for _, stmt := range nonAdminCompatibleStmts {
+			err := session.ValidateStatementExecution(stmt)
+			if err == nil {
+				t.Errorf("Expected %T to fail validation in admin-only mode", stmt)
+			}
+		}
+	})
+}
+
+func TestDatabaseConnectedSessionStatements(t *testing.T) {
+	ctx := context.Background()
+
+	sysVars := &systemVariables{
+		Project:  "test-project",
+		Instance: "test-instance",
+		Database: "test-database",
+	}
+
+	session, err := NewSession(ctx, sysVars)
+	if err != nil {
+		t.Skip("Skipping test due to authentication or database requirements:", err)
+	}
+	defer session.Close()
+
+	// Test all statements pass validation in DatabaseConnected mode
+	t.Run("All statements pass validation in DatabaseConnected mode", func(t *testing.T) {
+		allStmts := []Statement{
+			&CreateDatabaseStatement{CreateStatement: "CREATE DATABASE test"},
+			&DropDatabaseStatement{DatabaseId: "test"},
+			&ShowDatabasesStatement{},
+			&UseStatement{Database: "test"},
+			&HelpStatement{},
+			&ExitStatement{},
+			&SelectStatement{Query: "SELECT 1"},
+			&DmlStatement{Dml: "UPDATE test SET col1 = 1"},
+			&DdlStatement{Ddl: "CREATE TABLE test (id INT64)"},
+		}
+
+		for _, stmt := range allStmts {
+			err := session.ValidateStatementExecution(stmt)
+			if err != nil {
+				t.Errorf("Expected %T to pass validation in database-connected mode, got error: %v", stmt, err)
+			}
+		}
+	})
+}
+
+func TestAdminSessionStatementExecution(t *testing.T) {
+	ctx := context.Background()
+
+	sysVars := &systemVariables{
+		Project:  "test-project",
+		Instance: "test-instance",
+		Database: "",
+	}
+
+	session, err := NewAdminSession(ctx, sysVars)
+	if err != nil {
+		t.Skip("Skipping test due to authentication requirements:", err)
+	}
+	defer session.Close()
+
+	// Test executing SHOW VARIABLES in admin session
+	t.Run("SHOW VARIABLES execution in AdminOnly session", func(t *testing.T) {
+		stmt := &ShowVariablesStatement{}
+		result, err := session.ExecuteStatement(ctx, stmt)
+		if err != nil {
+			t.Errorf("SHOW VARIABLES failed in admin session: %v", err)
+		} else if result == nil {
+			t.Error("SHOW VARIABLES returned nil result")
+		} else {
+			t.Logf("SHOW VARIABLES returned %d rows", len(result.Rows))
+		}
+	})
+
+	// Test executing SET statement in admin session
+	t.Run("SET statement execution in AdminOnly session", func(t *testing.T) {
+		stmt := &SetStatement{VarName: "CLI_FORMAT", Value: "JSON"}
+		result, err := session.ExecuteStatement(ctx, stmt)
+		if err != nil {
+			t.Errorf("SET CLI_FORMAT failed in admin session: %v", err)
+		} else if result == nil {
+			t.Error("SET returned nil result")
+		}
+	})
+
+	// Test executing SHOW VARIABLE in admin session
+	t.Run("SHOW VARIABLE execution in AdminOnly session", func(t *testing.T) {
+		stmt := &ShowVariableStatement{VarName: "CLI_FORMAT"}
+		result, err := session.ExecuteStatement(ctx, stmt)
+		if err != nil {
+			t.Errorf("SHOW VARIABLE failed in admin session: %v", err)
+		} else if result == nil {
+			t.Error("SHOW VARIABLE returned nil result")
+		} else if len(result.Rows) != 1 {
+			t.Errorf("Expected 1 row, got %d", len(result.Rows))
+		}
+	})
+
+	// Test SHOW PARAMS in admin session
+	t.Run("SHOW PARAMS execution in AdminOnly session", func(t *testing.T) {
+		stmt := &ShowParamsStatement{}
+		result, err := session.ExecuteStatement(ctx, stmt)
+		if err != nil {
+			t.Errorf("SHOW PARAMS failed in admin session: %v", err)
+		} else if result == nil {
+			t.Error("SHOW PARAMS returned nil result")
+		}
+	})
+}

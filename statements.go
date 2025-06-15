@@ -104,6 +104,8 @@ type CreateDatabaseStatement struct {
 
 func (CreateDatabaseStatement) IsMutationStatement() {}
 
+func (s *CreateDatabaseStatement) isAdminCompatible() {}
+
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
@@ -128,11 +130,15 @@ type UseStatement struct {
 	NopStatement
 }
 
+func (s *UseStatement) isAdminCompatible() {}
+
 type DropDatabaseStatement struct {
 	DatabaseId string
 }
 
 func (DropDatabaseStatement) isMutationStatement() {}
+
+func (s *DropDatabaseStatement) isAdminCompatible() {}
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
@@ -147,6 +153,8 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 }
 
 type ShowDatabasesStatement struct{}
+
+func (s *ShowDatabasesStatement) isAdminCompatible() {}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
@@ -455,6 +463,8 @@ func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
 
 type HelpStatement struct{}
 
+func (s *HelpStatement) isAdminCompatible() {}
+
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var rows []Row
 	for _, stmt := range clientSideStatementDefs {
@@ -473,6 +483,8 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 type ExitStatement struct {
 	NopStatement
 }
+
+func (s *ExitStatement) isAdminCompatible() {}
 
 type NopStatement struct{}
 
