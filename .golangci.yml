@@ -1,0 +1,13 @@
+version: 2
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*os.File).Close
+        - (*os.File).Sync
+        - (io.ReadCloser).Close
+        - (*github.com/gocql/gocql.Iter).Close

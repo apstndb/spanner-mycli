@@ -141,10 +141,6 @@ func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Client
 	return initializeWithOptions(t, ddls, dmls, false, false)
 }
 
-func initializeAdminOnly(t *testing.T) (clients *spanemuboost.Clients, session *Session, teardown func()) {
-	return initializeWithOptions(t, nil, nil, true, false)
-}
-
 func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicated bool) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()

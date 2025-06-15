@@ -25,9 +25,11 @@ make fasttest-verbose  # Run fast tests with verbose output
 
 ### Development
 ```bash
-make lint           # Run golangci-lint
+make lint           # Run golangci-lint (REQUIRED before push)
 make clean          # Clean build artifacts and test cache
 ```
+
+**IMPORTANT**: Always run `make lint` before pushing changes or creating pull requests to ensure code quality.
 
 ## Architecture
 
