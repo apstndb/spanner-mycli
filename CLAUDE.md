@@ -271,3 +271,81 @@ EOF
    - For Gemini Code Assist: Comment `/gemini review` to trigger re-review
    - For human reviewers: Tag reviewer or request re-review through GitHub UI
    - Mark conversations as resolved after addressing each comment
+
+## Development Workflow Best Practices
+
+### Issue and Pull Request Management
+
+#### Linking Issues and Pull Requests
+When working on issues, always use GitHub's issue linking syntax in both commit messages and PR descriptions to enable automatic issue closure and better traceability:
+
+**In commit messages:**
+```bash
+git commit -m "feat: implement optional --database flag with detach/attach functionality
+
+Resolves #258
+Fixes #262
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
+**In PR descriptions:**
+```markdown
+## Summary
+This PR implements the optional --database flag functionality.
+
+## Issues Resolved
+- Resolves #258 - Make --database flag optional with detach/attach functionality  
+- Fixes #262 - Integration tests cannot properly test CLI-level statements
+
+## Changes
+- Added SessionHandler for proper session management
+- Implemented USE/DETACH statements with actual session switching
+- Enhanced integration tests to verify CLI-level statement behavior
+```
+
+**Supported Keywords:** `Closes`, `Fixes`, `Resolves` (and their variations: `Close`, `Fix`, `Resolve`)
+
+#### Gemini Code Assist Integration
+- **Manual Review Trigger**: Gemini Code Assist does not automatically review PRs
+- **Trigger Command**: Use `/gemini review` as an issue comment to request code review
+- **Review Response**: Gemini typically responds within 1-2 minutes with comprehensive feedback
+- **Re-review Process**: After addressing comments, use `/gemini review` again for follow-up review
+
+#### SessionHandler Pattern Implementation (Example from #258/#262)
+When implementing session management patterns:
+
+1. **Embedded Fields Approach**: Use Go's embedded fields for method delegation
+   ```go
+   type SessionHandler struct {
+       *Session  // Embedded for direct method access
+   }
+   ```
+
+2. **Client Options Reuse**: Leverage existing session's client options for consistency
+   ```go
+   func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
+       return NewSession(ctx, sysVars, h.Session.clientOpts...)
+   }
+   ```
+
+3. **Integration Test Compatibility**: Ensure SessionHandler works with emulator environments
+   ```go
+   // Use existing session's client options for emulator compatibility
+   sessionHandler := NewSessionHandler(session)
+   ```
+
+4. **Non-breaking Changes**: When modifying output formats, revert to previous behavior for compatibility
+   ```go
+   // Return empty result like previous versions (non-breaking change)
+   result := &Result{IsMutation: true}
+   ```
+
+#### Code Review Response Strategy
+1. **Address each comment individually** with focused commits
+2. **Use descriptive commit messages** that reference the specific issue being addressed
+3. **Test thoroughly** before pushing changes
+4. **Request re-review** using appropriate methods for each reviewer type
+5. **Document architectural decisions** in code comments and CLAUDE.md updates
