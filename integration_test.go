@@ -703,7 +703,7 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
-			desc:     "DATABASE statements",
+			desc:     "DATABASE statements (dedicated instance)",
 			database: "test-database",
 			stmt: sliceOf("SHOW DATABASES",
 				"CREATE DATABASE `new-database`",
@@ -738,6 +738,7 @@ func TestStatements(t *testing.T) {
 					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
+			dedicated: true, // Use dedicated instance to avoid interference from other tests
 		},
 		{
 			desc: "SHOW TABLES",
