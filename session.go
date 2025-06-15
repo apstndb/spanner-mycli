@@ -72,7 +72,7 @@ const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
 	mode            SessionMode
-	client          *spanner.Client // can be nil in AdminOnly mode
+	client          *spanner.Client // can be nil in Detached mode
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
@@ -183,7 +183,7 @@ func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (
 type SessionMode int
 
 const (
-	AdminOnly SessionMode = iota
+	Detached SessionMode = iota
 	DatabaseConnected
 )
 
@@ -321,7 +321,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	}
 
 	session := &Session{
-		mode:            AdminOnly,
+		mode:            Detached,
 		client:          nil, // no database client in detached mode
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
@@ -348,8 +348,13 @@ func (s *Session) Mode() SessionMode {
 	return s.mode
 }
 
+func (s *Session) IsDetached() bool {
+	return s.mode == Detached
+}
+
+// IsAdminOnly is deprecated, use IsDetached instead
 func (s *Session) IsAdminOnly() bool {
-	return s.mode == AdminOnly
+	return s.IsDetached()
 }
 
 
@@ -357,9 +362,14 @@ func (s *Session) RequiresDatabaseConnection() bool {
 	return s.client == nil
 }
 
-func (s *Session) ValidateAdminOnlyOperation() error {
-	// Admin operations only require adminClient, which is always present
+func (s *Session) ValidateDetachedOperation() error {
+	// Detached operations only require adminClient, which is always present
 	return nil
+}
+
+// ValidateAdminOnlyOperation is deprecated, use ValidateDetachedOperation instead
+func (s *Session) ValidateAdminOnlyOperation() error {
+	return s.ValidateDetachedOperation()
 }
 
 func (s *Session) ValidateDatabaseOperation() error {
@@ -370,10 +380,10 @@ func (s *Session) ValidateDatabaseOperation() error {
 }
 
 func (s *Session) ValidateStatementExecution(stmt Statement) error {
-	if s.IsAdminOnly() {
-		// In AdminOnly mode, only AdminCompatible statements can be executed
-		if _, ok := stmt.(AdminCompatible); !ok {
-			return fmt.Errorf("statement %T is not compatible with admin-only session mode", stmt)
+	if s.IsDetached() {
+		// In Detached mode, only DetachedCompatible statements can be executed
+		if _, ok := stmt.(DetachedCompatible); !ok {
+			return fmt.Errorf("statement %T is not compatible with detached session mode", stmt)
 		}
 	}
 	// In DatabaseConnected mode, all statements can be executed
@@ -399,15 +409,15 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 		s.client.Close()
 	}
 
-	wasAdminOnly := s.mode == AdminOnly
+	wasDetached := s.mode == Detached
 	
 	// Update state only after successful client creation
 	s.systemVariables.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
 	
-	// Start heartbeat if transitioning from AdminOnly mode
-	if wasAdminOnly {
+	// Start heartbeat if transitioning from Detached mode
+	if wasDetached {
 		go s.startHeartbeat()
 	}
 

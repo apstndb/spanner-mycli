@@ -7,11 +7,11 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
-// TestAdminSessionSystemVariables tests system variable operations in AdminOnly session mode
+// TestDetachedSessionSystemVariables tests system variable operations in Detached session mode (admin operation only mode)
 // without requiring actual Google Cloud authentication.
-// Note: This is a basic test to ensure system variables work in AdminOnly mode.
+// Note: This is a basic test to ensure system variables work in Detached mode.
 // We don't need exhaustive examples here - just verify the mechanism works.
-func TestAdminSessionSystemVariables(t *testing.T) {
+func TestDetachedSessionSystemVariables(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a mock admin session without actual authentication
@@ -28,8 +28,8 @@ func TestAdminSessionSystemVariables(t *testing.T) {
 
 	// Create a minimal admin session for testing
 	session := &Session{
-		mode:            AdminOnly,
-		client:          nil, // no database client in admin-only mode
+		mode:            Detached,
+		client:          nil, // no database client in detached mode
 		adminClient:     nil, // we won't actually use the admin client in these tests
 		systemVariables: sysVars,
 	}

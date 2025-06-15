@@ -583,7 +583,7 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --i
 
 ## Detached Mode
 
-spanner-mycli supports a detached mode that allows you to connect to a Cloud Spanner instance without initially connecting to a specific database. This is useful for performing instance-level administrative operations like creating or dropping databases.
+spanner-mycli supports a detached mode (admin operation only mode) that allows you to connect to a Cloud Spanner instance without initially connecting to a specific database. This is useful for performing instance-level administrative operations like creating or dropping databases.
 
 ### Starting in Detached Mode
 
