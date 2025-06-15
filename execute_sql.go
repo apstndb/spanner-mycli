@@ -51,7 +51,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); err != nil {
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 			}
 		}
