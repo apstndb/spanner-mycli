@@ -82,7 +82,7 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 
 func (c *Cli) RunInteractive(ctx context.Context) error {
 	// Only check database existence if we're not in detached mode
-	if !c.SessionHandler.IsAdminOnly() {
+	if !c.SessionHandler.IsDetached() {
 		exists, err := c.SessionHandler.DatabaseExists()
 		if err != nil {
 			return NewExitCodeError(c.ExitOnError(err))
@@ -372,7 +372,7 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 		case "%i":
 			return sysVars.Instance
 		case "%d":
-			if c.SessionHandler.IsAdminOnly() {
+			if c.SessionHandler.IsDetached() {
 				return "*detached*"
 			}
 			return sysVars.Database
