@@ -146,6 +146,24 @@ When adding new client-side statements:
 - Run `make lint` for code quality (note: local linter config may differ from CI)
 - Keep changes focused and minimal when fixing bugs
 
+### Backward Compatibility Philosophy
+
+**spanner-mycli does not require traditional backward compatibility for exported symbols** since it is not used as an external library. This allows for clean refactoring and interface improvements without maintaining deprecated code.
+
+**Key principles:**
+- **No external library usage**: spanner-mycli's exported symbols are not consumed by external packages
+- **Clean refactoring over compatibility**: Prefer clear, well-named interfaces over maintaining deprecated ones
+- **Direct removal of old interfaces**: When renaming or restructuring, remove old interfaces entirely rather than keeping deprecated versions
+- **Example**: When changing from `AdminOnly` to `Detached` terminology, the `AdminCompatible` interface was completely removed and replaced with `DetachedCompatible`
+
+This approach allows for:
+- **Cleaner codebase**: No accumulation of deprecated interfaces or methods
+- **Better maintainability**: Single source of truth for functionality
+- **Faster development**: No need to maintain multiple interface versions
+- **Clearer intent**: Interface names and methods accurately reflect current design
+
+**Note**: This philosophy applies specifically to spanner-mycli as a standalone CLI tool, not to general library development practices.
+
 ### Review Criteria
 - Code correctness and logic
 - Following project conventions
