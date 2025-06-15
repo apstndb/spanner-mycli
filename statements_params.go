@@ -14,6 +14,8 @@ import (
 
 type ShowParamsStatement struct{}
 
+func (s *ShowParamsStatement) isAdminCompatible() {}
+
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	strMap := make(map[string]string)
 	for k, v := range session.systemVariables.Params {
@@ -38,6 +40,8 @@ type SetParamTypeStatement struct {
 	Type string
 }
 
+func (s *SetParamTypeStatement) isAdminCompatible() {}
+
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseType("", s.Type); err != nil {
 		return nil, err
@@ -51,6 +55,8 @@ type SetParamValueStatement struct {
 	Name  string
 	Value string
 }
+
+func (s *SetParamValueStatement) isAdminCompatible() {}
 
 func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseExpr("", s.Value); err != nil {

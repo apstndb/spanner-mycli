@@ -47,6 +47,12 @@ type MutationStatement interface {
 	isMutationStatement()
 }
 
+// AdminCompatible is a marker interface for statements that can run in AdminOnly session mode.
+// Statements implementing this interface can execute when session.IsAdminOnly() is true.
+type AdminCompatible interface {
+	isAdminCompatible()
+}
+
 // rowCountType is type of modified rows count by DML.
 type rowCountType int
 
