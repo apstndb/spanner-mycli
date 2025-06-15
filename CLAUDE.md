@@ -158,3 +158,6 @@ When adding new client-side statements:
 - Improved documentation structure separating overview from detailed technical documentation
 - Enhanced emphasis on constrained display environment support (narrow terminals, code blocks, documentation sites)
 - Added comprehensive issue tracking and code review process documentation
+
+### Code Review Process
+- After addressing Gemini Code Assist review comments and pushing to a PR, trigger re-review by commenting `/gemini review`
