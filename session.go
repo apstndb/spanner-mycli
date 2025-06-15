@@ -1002,6 +1002,10 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 }
 
 func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		return nil, nil, err
+	}
+	
 	tb := lo.FromPtrOr(s.systemVariables.ReadOnlyStaleness, spanner.StrongRead())
 
 	batchROTx, err := s.client.BatchReadOnlyTransaction(ctx, tb)
@@ -1038,6 +1042,11 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		opts = append(opts, option.WithTokenSource(source))
 	case len(credential) > 0:
 		opts = append(opts, option.WithCredentialsJSON(credential))
+	}
+
+	// Create admin-only session if database is not specified
+	if sysVars.Database == "" {
+		return NewAdminSession(ctx, sysVars, opts...)
 	}
 
 	return NewSession(ctx, sysVars, opts...)
