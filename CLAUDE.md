@@ -221,6 +221,9 @@ EOF
    
    # Get specific reviewer's line comments
    gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }' | jq '.data.repository.pullRequest.reviews.nodes[] | select(.author.login == "<REVIEWER_LOGIN>") | .comments.edges[] | .node'
+   
+   # Get specific review's comments by review ID (most efficient for targeted review inspection)
+   gh api graphql -f query='{ node(id: "<REVIEW_ID>") { ... on PullRequestReview { comments(first: 50) { nodes { id body path line originalLine } } } } }' | jq '.data.node.comments.nodes'
    ```
 
 2. **Efficient Review Tracking** (Automated Script):
