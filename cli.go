@@ -79,15 +79,20 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 }
 
 func (c *Cli) RunInteractive(ctx context.Context) error {
-	exists, err := c.Session.DatabaseExists()
-	if err != nil {
-		return NewExitCodeError(c.ExitOnError(err))
-	}
+	// Only check database existence if we're not in admin-only mode
+	if c.Session.IsDatabaseConnected() {
+		exists, err := c.Session.DatabaseExists()
+		if err != nil {
+			return NewExitCodeError(c.ExitOnError(err))
+		}
 
-	if exists {
-		fmt.Fprintf(c.OutStream, "Connected.\n")
+		if exists {
+			fmt.Fprintf(c.OutStream, "Connected.\n")
+		} else {
+			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		}
 	} else {
-		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		fmt.Fprintf(c.OutStream, "Connected in admin-only mode.\n")
 	}
 
 	ed, history, err := initializeMultilineEditor(c)
@@ -365,6 +370,9 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 		case "%i":
 			return sysVars.Instance
 		case "%d":
+			if c.Session.IsAdminOnly() {
+				return "*detached*"
+			}
 			return sysVars.Database
 		case "%t":
 			switch {
@@ -426,6 +434,14 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		fmt.Fprintf(w, "Database changed")
 	}
 
+	// Handle DETACH statement
+	if s, ok := stmt.(*DetachStatement); ok {
+		if err := c.handleDetachStatement(ctx, s, interactive); err != nil {
+			return "", err
+		}
+		fmt.Fprintf(w, "Detached from database")
+	}
+
 	// Setup progress mark and timing
 	t0 := time.Now()
 	// Only call setupProgressMark in interactive mode
@@ -468,6 +484,11 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 // handleUseStatement handles the USE statement.
 func (c *Cli) handleUseStatement(ctx context.Context, s *UseStatement, interactive bool) error {
 	return c.handleUse(ctx, s, interactive)
+}
+
+// handleDetachStatement handles the DETACH statement.
+func (c *Cli) handleDetachStatement(ctx context.Context, s *DetachStatement, interactive bool) error {
+	return c.handleDetach(ctx, s, interactive)
 }
 
 // setupProgressMark sets up the progress mark display for the statement execution.
@@ -565,6 +586,26 @@ func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) 
 	if !exists {
 		newSession.Close()
 		return fmt.Errorf("unknown database %q", s.Database)
+	}
+
+	c.Session.Close()
+	c.Session = newSession
+
+	c.SystemVariables = &newSystemVariables
+
+	return nil
+}
+
+func (c *Cli) handleDetach(ctx context.Context, s *DetachStatement, interactive bool) error {
+	newSystemVariables := *c.SystemVariables
+
+	// Clear database and role to switch to admin-only mode
+	newSystemVariables.Database = ""
+	newSystemVariables.Role = ""
+
+	newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
+	if err != nil {
+		return err
 	}
 
 	c.Session.Close()

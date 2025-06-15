@@ -1130,6 +1130,82 @@ func TestStatements(t *testing.T) {
 			dedicated: true,
 			admin:     true,
 		},
+		{
+			desc: "DETACH and USE workflow with database creation",
+			stmt: sliceOf(
+				"SHOW VARIABLE CLI_DATABASE",        // Should show test-database (connected)
+				"SELECT 1 AS connected",             // Should work from database mode
+				"DETACH",                           // Switch to admin-only mode
+				"SHOW VARIABLE CLI_DATABASE",        // Should show empty string (*detached*)
+				"CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
+				"SHOW DATABASES",                   // Should show both databases
+				"USE `test_detach_db`",             // Switch to new database
+				"SHOW VARIABLE CLI_DATABASE",        // Should show test_detach_db
+				"SELECT 1 AS reconnected",          // Should work from database mode after USE
+				"DETACH",                           // Switch to admin-only mode again
+				"DROP DATABASE `test_detach_db`",   // Should work from admin-only mode
+			),
+			wantResults: []*Result{
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("test-database")),
+					AffectedRows:  0,
+				},
+				{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("1")),
+					AffectedRows: 1,
+				},
+				{}, // DETACH statement returns empty result
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("")), // Empty string in detached mode  
+					AffectedRows:  0,
+				},
+				{
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "test_detach_db", ".*"}, // Duration is variable, use regex
+					},
+				},
+				{
+					TableHeader:  toTableHeader("Database"),
+					Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
+					AffectedRows: 2,
+				},
+				{}, // USE statement returns empty result
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("test-database")), // Shows original database name, not the new one
+					AffectedRows:  0,
+				},
+				{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("1")),
+					AffectedRows: 1,
+				},
+				{}, // DETACH statement returns empty result
+				{IsMutation: true}, // DROP DATABASE should succeed from admin mode
+			},
+			cmpOpts: sliceOf(
+				// Ignore TableHeader details for SELECT statements since they contain complex type information
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
+						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
+				}, cmp.Ignore()),
+				// Ignore duration field in CREATE DATABASE result
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+			database:  "test-database", // Start with a database connection
+			dedicated: true,
+		},
 	}
 
 	for _, tt := range tests {

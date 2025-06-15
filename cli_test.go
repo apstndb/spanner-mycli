@@ -531,6 +531,9 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 				Instance: "test-instance",
 				Database: "test-database",
 			},
+			session: &Session{
+				mode: DatabaseConnected,
+			},
 			want: "Project: test-project, Instance: test-instance, Database: test-database",
 		},
 		{
@@ -588,6 +591,28 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "newline",
 			prompt: "Newline: %n",
 			want:   "Newline: \n",
+		},
+		{
+			desc:   "database name - when in admin-only mode shows *detached*",
+			prompt: "spanner:%d%t> ",
+			sysVars: &systemVariables{
+				Database: "",
+			},
+			session: &Session{
+				mode: AdminOnly,
+			},
+			want: "spanner:*detached*> ",
+		},
+		{
+			desc:   "database name - when connected to database shows database name",
+			prompt: "spanner:%d%t> ",
+			sysVars: &systemVariables{
+				Database: "test-database",
+			},
+			session: &Session{
+				mode: DatabaseConnected,
+			},
+			want: "spanner:test-database> ",
 		},
 	}
 

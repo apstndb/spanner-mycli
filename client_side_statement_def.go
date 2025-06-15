@@ -80,6 +80,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 	},
 	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Detach from database`,
+				Syntax: `DETACH`,
+				Note:   `Switch to admin-only mode, disconnecting from the current database.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DETACH$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DetachStatement{}, nil
+		},
+	},
+	{
 		// DROP DATABASE is not native Cloud Spanner statement
 		Descriptions: []clientSideStatementDescription{
 			{

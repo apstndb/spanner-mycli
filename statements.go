@@ -160,6 +160,13 @@ type UseStatement struct {
 
 func (s *UseStatement) isAdminCompatible() {}
 
+// DetachStatement is actually implemented in cli.go because it needs to replace Session pointer in Cli.
+type DetachStatement struct {
+	NopStatement
+}
+
+func (s *DetachStatement) isAdminCompatible() {}
+
 type DropDatabaseStatement struct {
 	DatabaseId string
 }

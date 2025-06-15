@@ -155,9 +155,42 @@ When adding new client-side statements:
 - Error handling completeness
 
 ### Issue Management Best Practices
+
+#### Creating Issues
+- Use `gh issue create --body` instead of GitHub MCP tools for better readability and formatting control:
+
+```bash
+gh issue create --title "Issue title" --body "$(cat <<'EOF'
+## Problem
+Description of the problem...
+
+## Expected Behavior
+What should happen...
+
+## Actual Behavior  
+What actually happens...
+
+## Steps to Reproduce
+1. Step one
+2. Step two
+
+## Additional Context
+Any other relevant information...
+EOF
+)" --label "bug,enhancement"
+```
+
+#### Updating Issues
 - Use `gh issue edit <number> --body "content"` for issue updates
 - Multi-line content can be handled with heredoc or escaped newlines in shell commands
 - This ensures better readability than using the GitHub MCP server for issue updates
+
+#### Why Use gh CLI Over GitHub MCP
+- Better control over markdown formatting
+- More readable issue content
+- Proper handling of multi-line content and code blocks
+- Consistent formatting with project standards
+- Direct command-line control without API abstraction layers
 
 ## Documentation Structure
 
