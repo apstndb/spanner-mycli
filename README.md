@@ -101,7 +101,7 @@ spanner:
   -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
   -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
   -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used. [$SPANNER_DATABASE_ID]
-      --detached                                          Start in admin-only mode, ignoring database env var/flag
+      --detached                                          Start in detached mode, ignoring database env var/flag
   -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
   -f, --file=                                             Execute SQL statement from file and quit.
   -t, --table                                             Display output in table format for batch mode.
@@ -353,7 +353,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Usage                                                           | Syntax                                                                                                     | Note                                                                                                                                                                       |
 |:----------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Switch database                                                 | `USE <database> [ROLE <role>];`                                                                            | The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about).                                               |
-| Detach from database                                            | `DETACH;`                                                                                                  | Switch to admin-only mode, disconnecting from the current database.                                                                                                        |
+| Detach from database                                            | `DETACH;`                                                                                                  | Switch to detached mode, disconnecting from the current database.                                                                                                          |
 | Drop database                                                   | `DROP DATABASE <database>;`                                                                                |                                                                                                                                                                            |
 | List databases                                                  | `SHOW DATABASES;`                                                                                          |                                                                                                                                                                            |
 | Show DDL of the schema object                                   | `SHOW CREATE <type> <fqn>;`                                                                                |                                                                                                                                                                            |
@@ -413,7 +413,7 @@ Escape sequences:
 
 * `%p` : GCP Project ID
 * `%i` : Cloud Spanner Instance ID
-* `%d` : Cloud Spanner Database ID (shows `*detached*` when in admin-only mode)
+* `%d` : Cloud Spanner Database ID (shows `*detached*` when in detached mode)
 * `%t` : In transaction mode `(ro txn)` or `(rw txn)`
 * `%n` : Newline
 * `%%` : Character `%`
@@ -581,17 +581,17 @@ $ unset SPANNER_EMULATOR_HOST
 $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
 
-## Admin-Only Mode
+## Detached Mode
 
-spanner-mycli supports an admin-only mode that allows you to connect to a Cloud Spanner instance without initially connecting to a specific database. This is useful for performing instance-level administrative operations like creating or dropping databases.
+spanner-mycli supports a detached mode that allows you to connect to a Cloud Spanner instance without initially connecting to a specific database. This is useful for performing instance-level administrative operations like creating or dropping databases.
 
-### Starting in Admin-Only Mode
+### Starting in Detached Mode
 
-You can start spanner-mycli in admin-only mode using the `--detached` flag:
+You can start spanner-mycli in detached mode using the `--detached` flag:
 
 ```bash
 $ spanner-mycli -p myproject -i myinstance --detached
-Connected in admin-only mode.
+Connected in detached mode.
 spanner:*detached*> SHOW DATABASES;
 +----------------+
 | Database       |
@@ -605,17 +605,17 @@ spanner:*detached*> CREATE DATABASE mydb;
 Query OK, 0 rows affected (45.20 sec)
 ```
 
-### Switching Between Database and Admin-Only Mode
+### Switching Between Database and Detached Mode
 
-You can switch between databases and admin-only mode during an interactive session:
+You can switch between databases and detached mode during an interactive session:
 
 ```bash
-# Connect to a database from admin-only mode
+# Connect to a database from detached mode
 spanner:*detached*> USE mydb;
 Database changed
 spanner:mydb> 
 
-# Detach from database and return to admin-only mode  
+# Detach from database and return to detached mode  
 spanner:mydb> DETACH;
 Detached from database
 spanner:*detached*>
@@ -625,14 +625,14 @@ spanner:*detached*>
 
 The database connection follows this priority order:
 
-1. `--detached` flag (highest priority) - forces admin-only mode
+1. `--detached` flag (highest priority) - forces detached mode
 2. `--database` command line option
 3. `SPANNER_DATABASE_ID` environment variable
-4. Default behavior (admin-only mode if no database specified)
+4. Default behavior (detached mode if no database specified)
 
-### Limitations in Admin-Only Mode
+### Limitations in Detached Mode
 
-When in admin-only mode, you can only execute:
+When in detached mode, you can only execute:
 - Instance-level operations (`SHOW DATABASES`, `CREATE DATABASE`, `DROP DATABASE`)
 - Client-side statements that don't require database access
 - `USE` statements to connect to a database

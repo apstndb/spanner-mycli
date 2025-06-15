@@ -81,7 +81,7 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 }
 
 func (c *Cli) RunInteractive(ctx context.Context) error {
-	// Only check database existence if we're not in admin-only mode
+	// Only check database existence if we're not in detached mode
 	if !c.SessionHandler.IsAdminOnly() {
 		exists, err := c.SessionHandler.DatabaseExists()
 		if err != nil {
@@ -94,7 +94,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
 		}
 	} else {
-		fmt.Fprintf(c.OutStream, "Connected in admin-only mode.\n")
+		fmt.Fprintf(c.OutStream, "Connected in detached mode.\n")
 	}
 
 	ed, history, err := initializeMultilineEditor(c)

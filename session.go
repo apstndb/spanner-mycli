@@ -164,7 +164,7 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
 	newSystemVariables := *h.Session.systemVariables
 	
-	// Clear database and role to switch to admin-only mode
+	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""
 	newSystemVariables.Role = ""
 
@@ -322,7 +322,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 
 	session := &Session{
 		mode:            AdminOnly,
-		client:          nil, // no database client in admin-only mode
+		client:          nil, // no database client in detached mode
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
