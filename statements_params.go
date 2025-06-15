@@ -14,7 +14,7 @@ import (
 
 type ShowParamsStatement struct{}
 
-func (s *ShowParamsStatement) isDetachedCompatible() {} //nolint:unused // marker interface method
+func (s *ShowParamsStatement) isDetachedCompatible() {}
 
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	strMap := make(map[string]string)
@@ -40,7 +40,7 @@ type SetParamTypeStatement struct {
 	Type string
 }
 
-func (s *SetParamTypeStatement) isDetachedCompatible() {} //nolint:unused // marker interface method
+func (s *SetParamTypeStatement) isDetachedCompatible() {}
 
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseType("", s.Type); err != nil {
@@ -56,7 +56,7 @@ type SetParamValueStatement struct {
 	Value string
 }
 
-func (s *SetParamValueStatement) isDetachedCompatible() {} //nolint:unused // marker interface method
+func (s *SetParamValueStatement) isDetachedCompatible() {}
 
 func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
