@@ -424,3 +424,9 @@ This workflow should be followed whenever:
 - Client-side statements are added, removed, or modified
 - Help text descriptions are updated
 - Documentation review identifies outdated help content
+
+**Important Git Practices:**
+- Always use `git add <specific-files>` instead of `git add .` to avoid committing unintended files
+- Example: `git add README.md CLAUDE.md` instead of `git add .`
+- Check `git status` before committing to verify only intended files are staged
+- Use `git show --name-only` to review what files were included in the last commit
