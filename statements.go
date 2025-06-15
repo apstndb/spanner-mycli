@@ -107,8 +107,6 @@ func (CreateDatabaseStatement) IsMutationStatement() {}
 func (s *CreateDatabaseStatement) isAdminCompatible() {}
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	start := time.Now()
-	
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
@@ -125,25 +123,10 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 	if dbResponse == nil || dbResponse.Name == "" {
 		return nil, fmt.Errorf("database creation succeeded but response is missing database name")
 	}
-
-	elapsed := time.Since(start)
 	
-	// Extract database name from the response
-	// Database name is in format: projects/PROJECT/instances/INSTANCE/databases/DATABASE
-	parts := strings.Split(dbResponse.Name, "/")
-	if len(parts) < 6 {
-		return nil, fmt.Errorf("unexpected database name format: %s", dbResponse.Name)
-	}
-	dbName := parts[5]
-	
-	// Create result with enhanced feedback
+	// Return empty result like previous versions (non-breaking change)
 	result := &Result{
-		IsMutation:   true,
-		TableHeader:  toTableHeader("Status", "Database", "Duration"),
-		AffectedRows: 1,
-		Rows: []Row{
-			{"Created", dbName, elapsed.Truncate(time.Millisecond).String()},
-		},
+		IsMutation: true,
 	}
 
 	return result, nil

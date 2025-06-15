@@ -718,14 +718,7 @@ func TestStatements(t *testing.T) {
 			),
 			wantResults: []*Result{
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "new-database", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
@@ -1053,21 +1046,8 @@ func TestStatements(t *testing.T) {
 				"CREATE DATABASE test_db_create",
 			),
 			wantResults: []*Result{
-				{
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "test_db_create", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					// Allow regex matching for duration field
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
 			database:  "", // Empty database with admin=true means admin-only session
 			dedicated: true,
 			admin:     true,
@@ -1102,14 +1082,7 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{ // CREATE DATABASE
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "test_workflow_db", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 				{
 					TableHeader: toTableHeader("Database"),
 					// Don't check specific content
@@ -1164,14 +1137,7 @@ func TestStatements(t *testing.T) {
 					Rows:          sliceOf(toRow("")), // Empty string in detached mode
 					AffectedRows:  0,
 				},
-				{
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "test_detach_db", ""}, // Duration will be ignored by cmpOpts
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 				{
 					TableHeader:  toTableHeader("Database"),
 					Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
@@ -1197,11 +1163,6 @@ func TestStatements(t *testing.T) {
 				cmp.FilterPath(func(path cmp.Path) bool {
 					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
-				}, cmp.Ignore()),
-				// Ignore duration field in CREATE DATABASE result
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.String())
 				}, cmp.Ignore()),
 			),
 			database:  "test-database", // Start with a database connection
