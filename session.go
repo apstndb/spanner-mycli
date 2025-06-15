@@ -295,10 +295,8 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 		return errors.New("session is already connected to a database")
 	}
 
-	// Update system variables
-	s.systemVariables.Database = databaseId
-	
-	dbPath := s.systemVariables.DatabasePath()
+	// Construct database path directly to avoid modifying state before success
+	dbPath := databasePath(s.systemVariables.Project, s.systemVariables.Instance, databaseId)
 	clientConfig := s.clientConfig
 	
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
@@ -312,6 +310,9 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	}
 
 	wasAdminOnly := s.mode == AdminOnly
+	
+	// Update state only after successful client creation
+	s.systemVariables.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
 	
@@ -1081,5 +1082,10 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		opts = append(opts, option.WithCredentialsJSON(credential))
 	}
 
+	// Create admin-only session if no database is specified
+	if sysVars.Database == "" {
+		return NewAdminSession(ctx, sysVars, opts...)
+	}
+	
 	return NewSession(ctx, sysVars, opts...)
 }
