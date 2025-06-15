@@ -352,3 +352,75 @@ gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_
 **Note**: This workflow is specifically for automated AI reviews (like Gemini Code Assist) that often include praise comments to highlight good implementation practices. For human reviewers, follow standard code review etiquette and engage in meaningful discussion about the feedback.
 
 This approach maintains good communication with AI reviewers while keeping the review focused on actionable items and reduces noise from praise-only comments.
+
+## Documentation Update Workflow
+
+### Updating README.md with Current Help Output
+
+When updating README.md documentation sections that include command-line help or statement help output:
+
+1. **Generate help output**:
+   ```bash
+   # Create tmp directory if not exists
+   mkdir -p ./tmp
+   
+   # Generate --help output with 200-column width (avoids 80-column wrapping)
+   script -q ./tmp/help_output.txt sh -c "stty cols 200; go run . --help"
+   
+   # Generate --statement-help output (no script needed, table format doesn't wrap)
+   go run . --statement-help > ./tmp/statement_help.txt
+   
+   # Clean up control characters if needed for --help
+   sed '1s/^.\{2\}//' ./tmp/help_output.txt > ./tmp/help_clean.txt
+   ```
+
+2. **Update README.md**: Replace existing content with the exact output from the generated files
+3. **Document the source**: 
+   - For --help: `<!-- Generated with: script -q ./tmp/help_clean.txt sh -c "stty cols 200; go run . --help" -->`
+   - For --statement-help: `<!-- Generated with: go run . --statement-help > ./tmp/statement_help.txt -->`
+4. **Don't manually format**: Even if tables become long, use the actual output without manual formatting changes
+
+**Why different approaches for --help vs --statement-help?**
+- **--help**: go-flags library detects terminal width and wraps at 80 columns when redirected to files. Using `script` creates a pseudo-terminal (PTY) with 200-column width to prevent wrapping.
+- **--statement-help**: Table format output doesn't have line wrapping issues, so direct redirection works fine.
+
+**Example workflow for updating help sections:**
+
+```bash
+# Generate help outputs
+mkdir -p ./tmp
+script -q ./tmp/help_output.txt sh -c "stty cols 200; go run . --help"
+go run . --statement-help > ./tmp/statement_help.txt
+
+# Clean control characters for --help if present
+sed '1s/^.\{2\}//' ./tmp/help_output.txt > ./tmp/help_clean.txt
+
+# Update README.md sections with actual output
+# For --help section, replace content between:
+# <!-- Generated with: script -q ./tmp/help_clean.txt sh -c "stty cols 200; go run . --help" -->
+# ```
+# [OLD CONTENT]
+# ```
+# 
+# With content from ./tmp/help_clean.txt
+
+# For --statement-help section, replace content between:
+# <!-- Generated with: go run . --statement-help > ./tmp/statement_help.txt -->
+# | Usage | Syntax | Note |
+# 
+# With content from ./tmp/statement_help.txt
+```
+
+**Benefits of this approach:**
+- Ensures documentation matches actual behavior
+- Prevents drift between documentation and implementation
+- Produces clean, unwrapped output suitable for documentation (for --help)
+- Makes it clear where content comes from and how it was generated
+- Avoids 80-column wrapping that makes --help documentation harder to read
+- Simplifies maintenance by removing manual formatting decisions
+
+This workflow should be followed whenever:
+- Command-line flags are added, removed, or modified
+- Client-side statements are added, removed, or modified
+- Help text descriptions are updated
+- Documentation review identifies outdated help content
