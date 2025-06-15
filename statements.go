@@ -104,8 +104,7 @@ type CreateDatabaseStatement struct {
 
 func (CreateDatabaseStatement) IsMutationStatement() {}
 
-func (s *CreateDatabaseStatement) isAdminCompatible() {}
-func (s *CreateDatabaseStatement) DetachedCompatible() {}
+func (s *CreateDatabaseStatement) isDetachedCompatible() {}
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
@@ -142,16 +141,14 @@ type UseStatement struct {
 	NopStatement
 }
 
-func (s *UseStatement) isAdminCompatible() {}
-func (s *UseStatement) DetachedCompatible() {}
+func (s *UseStatement) isDetachedCompatible() {}
 
 // DetachStatement is actually implemented in cli.go because it needs to replace Session pointer in Cli.
 type DetachStatement struct {
 	NopStatement
 }
 
-func (s *DetachStatement) isAdminCompatible() {}
-func (s *DetachStatement) DetachedCompatible() {}
+func (s *DetachStatement) isDetachedCompatible() {}
 
 type DropDatabaseStatement struct {
 	DatabaseId string
@@ -159,8 +156,7 @@ type DropDatabaseStatement struct {
 
 func (DropDatabaseStatement) isMutationStatement() {}
 
-func (s *DropDatabaseStatement) isAdminCompatible() {}
-func (s *DropDatabaseStatement) DetachedCompatible() {}
+func (s *DropDatabaseStatement) isDetachedCompatible() {}
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
@@ -176,8 +172,7 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 
 type ShowDatabasesStatement struct{}
 
-func (s *ShowDatabasesStatement) isAdminCompatible() {}
-func (s *ShowDatabasesStatement) DetachedCompatible() {}
+func (s *ShowDatabasesStatement) isDetachedCompatible() {}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
@@ -486,8 +481,7 @@ func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
 
 type HelpStatement struct{}
 
-func (s *HelpStatement) isAdminCompatible() {}
-func (s *HelpStatement) DetachedCompatible() {}
+func (s *HelpStatement) isDetachedCompatible() {}
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var rows []Row
@@ -508,8 +502,7 @@ type ExitStatement struct {
 	NopStatement
 }
 
-func (s *ExitStatement) isAdminCompatible() {}
-func (s *ExitStatement) DetachedCompatible() {}
+func (s *ExitStatement) isDetachedCompatible() {}
 
 type NopStatement struct{}
 
