@@ -599,7 +599,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 				Database: "",
 			},
 			session: &Session{
-				mode: AdminOnly,
+				mode: Detached,
 			},
 			want: "spanner:*detached*> ",
 		},

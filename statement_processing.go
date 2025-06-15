@@ -47,10 +47,10 @@ type MutationStatement interface {
 	isMutationStatement()
 }
 
-// AdminCompatible is a marker interface for statements that can run in AdminOnly session mode.
-// Statements implementing this interface can execute when session.IsAdminOnly() is true.
-type AdminCompatible interface {
-	isAdminCompatible()
+// DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
+// Statements implementing this interface can execute when session.IsDetached() is true.
+type DetachedCompatible interface {
+	isDetachedCompatible()
 }
 
 // rowCountType is type of modified rows count by DML.

@@ -8,11 +8,11 @@ import (
 func TestSessionModes(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("NewAdminSession creates admin-only session", func(t *testing.T) {
+	t.Run("NewAdminSession creates detached session", func(t *testing.T) {
 		sysVars := &systemVariables{
 			Project:  "test-project",
 			Instance: "test-instance",
-			Database: "", // no database for admin-only
+			Database: "", // no database for detached
 		}
 
 		session, err := NewAdminSession(ctx, sysVars)
@@ -22,11 +22,11 @@ func TestSessionModes(t *testing.T) {
 		defer session.Close()
 
 		// Check session mode
-		if !session.IsAdminOnly() {
-			t.Error("Expected admin-only session")
+		if !session.IsDetached() {
+			t.Error("Expected detached session")
 		}
 		if session.client != nil {
-			t.Error("Expected nil client in admin-only mode")
+			t.Error("Expected nil client in detached mode")
 		}
 		if session.adminClient == nil {
 			t.Error("Expected non-nil admin client")
@@ -47,7 +47,7 @@ func TestSessionModes(t *testing.T) {
 		defer session.Close()
 
 		// Check session mode
-		if session.IsAdminOnly() {
+		if session.IsDetached() {
 			t.Error("Expected database connected session")
 		}
 		if session.client == nil {
@@ -62,7 +62,7 @@ func TestSessionModes(t *testing.T) {
 		sysVars := &systemVariables{
 			Project:  "test-project",
 			Instance: "test-instance",
-			Database: "", // empty database should trigger admin-only mode
+			Database: "", // empty database should trigger detached mode
 		}
 
 		session, err := createSession(ctx, nil, sysVars)
@@ -71,8 +71,8 @@ func TestSessionModes(t *testing.T) {
 		}
 		defer session.Close()
 
-		if !session.IsAdminOnly() {
-			t.Error("Expected admin-only session when database is empty")
+		if !session.IsDetached() {
+			t.Error("Expected detached session when database is empty")
 		}
 	})
 
@@ -89,7 +89,7 @@ func TestSessionModes(t *testing.T) {
 		}
 		defer session.Close()
 
-		if session.IsAdminOnly() {
+		if session.IsDetached() {
 			t.Error("Expected database-connected session when database is specified")
 		}
 	})
@@ -107,9 +107,9 @@ func TestSessionModes(t *testing.T) {
 		}
 		defer session.Close()
 
-		// Verify it starts as admin-only
-		if !session.IsAdminOnly() {
-			t.Error("Expected admin-only session initially")
+		// Verify it starts as detached
+		if !session.IsDetached() {
+			t.Error("Expected detached session initially")
 		}
 
 		// Try to connect to database
@@ -119,7 +119,7 @@ func TestSessionModes(t *testing.T) {
 		}
 
 		// Verify it's now database-connected
-		if session.IsAdminOnly() {
+		if session.IsDetached() {
 			t.Error("Expected database-connected session after ConnectToDatabase")
 		}
 		if session.client == nil {
@@ -143,23 +143,23 @@ func TestDatabaseOperationValidation(t *testing.T) {
 	}
 	defer session.Close()
 
-	t.Run("ValidateAdminOnlyOperation succeeds", func(t *testing.T) {
-		err := session.ValidateAdminOnlyOperation()
+	t.Run("ValidateDetachedOperation succeeds", func(t *testing.T) {
+		err := session.ValidateDetachedOperation()
 		if err != nil {
-			t.Error("Expected ValidateAdminOnlyOperation to succeed:", err)
+			t.Error("Expected ValidateDetachedOperation to succeed:", err)
 		}
 	})
 
-	t.Run("ValidateDatabaseOperation fails for admin-only session", func(t *testing.T) {
+	t.Run("ValidateDatabaseOperation fails for detached session", func(t *testing.T) {
 		err := session.ValidateDatabaseOperation()
 		if err == nil {
-			t.Error("Expected ValidateDatabaseOperation to fail for admin-only session")
+			t.Error("Expected ValidateDatabaseOperation to fail for detached session")
 		}
 	})
 
-	t.Run("RequiresDatabaseConnection returns true for admin-only session", func(t *testing.T) {
+	t.Run("RequiresDatabaseConnection returns true for detached session", func(t *testing.T) {
 		if !session.RequiresDatabaseConnection() {
-			t.Error("Expected RequiresDatabaseConnection to be true for admin-only session")
+			t.Error("Expected RequiresDatabaseConnection to be true for detached session")
 		}
 	})
 }
@@ -210,7 +210,7 @@ func TestInstanceValidation(t *testing.T) {
 	})
 }
 
-func TestAdminCompatibleStatements(t *testing.T) {
+func TestDetachedCompatibleStatements(t *testing.T) {
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
@@ -225,8 +225,8 @@ func TestAdminCompatibleStatements(t *testing.T) {
 	}
 	defer session.Close()
 
-	// Test AdminCompatible statements can be validated
-	t.Run("AdminCompatible statements pass validation", func(t *testing.T) {
+	// Test DetachedCompatible statements can be validated
+	t.Run("DetachedCompatible statements pass validation", func(t *testing.T) {
 		adminCompatibleStmts := []Statement{
 			&CreateDatabaseStatement{CreateStatement: "CREATE DATABASE test"},
 			&DropDatabaseStatement{DatabaseId: "test"},
@@ -254,18 +254,18 @@ func TestAdminCompatibleStatements(t *testing.T) {
 		}
 	})
 
-	// Test non-AdminCompatible statements fail validation
-	t.Run("Non-AdminCompatible statements fail validation", func(t *testing.T) {
-		nonAdminCompatibleStmts := []Statement{
+	// Test non-DetachedCompatible statements fail validation
+	t.Run("Non-DetachedCompatible statements fail validation", func(t *testing.T) {
+		nonDetachedCompatibleStmts := []Statement{
 			&SelectStatement{Query: "SELECT 1"},
 			&DmlStatement{Dml: "UPDATE test SET col1 = 1"},
 			&DdlStatement{Ddl: "CREATE TABLE test (id INT64)"},
 		}
 
-		for _, stmt := range nonAdminCompatibleStmts {
+		for _, stmt := range nonDetachedCompatibleStmts {
 			err := session.ValidateStatementExecution(stmt)
 			if err == nil {
-				t.Errorf("Expected %T to fail validation in admin-only mode", stmt)
+				t.Errorf("Expected %T to fail validation in detached mode", stmt)
 			}
 		}
 	})
@@ -325,7 +325,7 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 	defer session.Close()
 
 	// Test executing SHOW VARIABLES in admin session
-	t.Run("SHOW VARIABLES execution in AdminOnly session", func(t *testing.T) {
+	t.Run("SHOW VARIABLES execution in Detached session", func(t *testing.T) {
 		stmt := &ShowVariablesStatement{}
 		result, err := session.ExecuteStatement(ctx, stmt)
 		if err != nil {
@@ -338,7 +338,7 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 	})
 
 	// Test executing SET statement in admin session
-	t.Run("SET statement execution in AdminOnly session", func(t *testing.T) {
+	t.Run("SET statement execution in Detached session", func(t *testing.T) {
 		stmt := &SetStatement{VarName: "CLI_FORMAT", Value: "JSON"}
 		result, err := session.ExecuteStatement(ctx, stmt)
 		if err != nil {
@@ -349,7 +349,7 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 	})
 
 	// Test executing SHOW VARIABLE in admin session
-	t.Run("SHOW VARIABLE execution in AdminOnly session", func(t *testing.T) {
+	t.Run("SHOW VARIABLE execution in Detached session", func(t *testing.T) {
 		stmt := &ShowVariableStatement{VarName: "CLI_FORMAT"}
 		result, err := session.ExecuteStatement(ctx, stmt)
 		if err != nil {
@@ -362,7 +362,7 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 	})
 
 	// Test SHOW PARAMS in admin session
-	t.Run("SHOW PARAMS execution in AdminOnly session", func(t *testing.T) {
+	t.Run("SHOW PARAMS execution in Detached session", func(t *testing.T) {
 		stmt := &ShowParamsStatement{}
 		result, err := session.ExecuteStatement(ctx, stmt)
 		if err != nil {

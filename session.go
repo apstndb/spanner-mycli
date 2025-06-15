@@ -72,7 +72,7 @@ const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
 	mode            SessionMode
-	client          *spanner.Client // can be nil in AdminOnly mode
+	client          *spanner.Client // can be nil in Detached mode
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
@@ -164,7 +164,7 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
 	newSystemVariables := *h.Session.systemVariables
 	
-	// Clear database and role to switch to admin-only mode
+	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""
 	newSystemVariables.Role = ""
 
@@ -183,7 +183,7 @@ func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (
 type SessionMode int
 
 const (
-	AdminOnly SessionMode = iota
+	Detached SessionMode = iota
 	DatabaseConnected
 )
 
@@ -321,8 +321,8 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	}
 
 	session := &Session{
-		mode:            AdminOnly,
-		client:          nil, // no database client in admin-only mode
+		mode:            Detached,
+		client:          nil, // no database client in detached mode
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
 		adminClient:     adminClient,
@@ -348,19 +348,21 @@ func (s *Session) Mode() SessionMode {
 	return s.mode
 }
 
-func (s *Session) IsAdminOnly() bool {
-	return s.mode == AdminOnly
+func (s *Session) IsDetached() bool {
+	return s.mode == Detached
 }
+
 
 
 func (s *Session) RequiresDatabaseConnection() bool {
 	return s.client == nil
 }
 
-func (s *Session) ValidateAdminOnlyOperation() error {
-	// Admin operations only require adminClient, which is always present
+func (s *Session) ValidateDetachedOperation() error {
+	// Detached operations only require adminClient, which is always present
 	return nil
 }
+
 
 func (s *Session) ValidateDatabaseOperation() error {
 	if s.client == nil {
@@ -370,10 +372,10 @@ func (s *Session) ValidateDatabaseOperation() error {
 }
 
 func (s *Session) ValidateStatementExecution(stmt Statement) error {
-	if s.IsAdminOnly() {
-		// In AdminOnly mode, only AdminCompatible statements can be executed
-		if _, ok := stmt.(AdminCompatible); !ok {
-			return fmt.Errorf("statement %T is not compatible with admin-only session mode", stmt)
+	if s.IsDetached() {
+		// In Detached mode, only DetachedCompatible statements can be executed
+		if _, ok := stmt.(DetachedCompatible); !ok {
+			return fmt.Errorf("statement %T is not compatible with detached session mode", stmt)
 		}
 	}
 	// In DatabaseConnected mode, all statements can be executed
@@ -399,15 +401,15 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 		s.client.Close()
 	}
 
-	wasAdminOnly := s.mode == AdminOnly
+	wasDetached := s.mode == Detached
 	
 	// Update state only after successful client creation
 	s.systemVariables.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
 	
-	// Start heartbeat if transitioning from AdminOnly mode
-	if wasAdminOnly {
+	// Start heartbeat if transitioning from Detached mode
+	if wasDetached {
 		go s.startHeartbeat()
 	}
 
@@ -666,7 +668,7 @@ func (s *Session) ClosePendingTransaction() error {
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if AdminCompatible interface validation is working correctly
+		// This should not happen if DetachedCompatible interface validation is working correctly
 		// Log the error for debugging since we can't return it directly
 		slog.Error("RunQueryWithStats called without database connection", "error", err, "statement", stmt.SQL)
 		// Return nil to indicate error - caller should check for nil
@@ -683,7 +685,7 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if AdminCompatible interface validation is working correctly
+		// This should not happen if DetachedCompatible interface validation is working correctly
 		// Log the error for debugging since we can't return it directly
 		slog.Error("RunQuery called without database connection", "error", err, "statement", stmt.SQL)
 		// Return nil to indicate error - caller should check for nil
@@ -736,7 +738,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
 		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
-		// and AdminCompatible interface checks in ExecuteStatement
+		// and DetachedCompatible interface checks in ExecuteStatement
 		if s.client == nil {
 			// This is a programming error - log it and return a failing iterator
 			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations", 
