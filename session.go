@@ -26,19 +26,23 @@ import (
 	"time"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	instancepb "cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
 	"github.com/gocql/gocql"
 	"github.com/samber/lo"
+	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"google.golang.org/grpc"
 
 	"cloud.google.com/go/spanner"
+	instanceapi "cloud.google.com/go/spanner/admin/instance/apiv1"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 
@@ -67,7 +71,8 @@ var defaultClientOpts = []option.ClientOption{
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
 type Session struct {
-	client          *spanner.Client
+	mode            SessionMode
+	client          *spanner.Client // can be nil in AdminOnly mode
 	adminClient     *adminapi.DatabaseAdminClient
 	clientConfig    spanner.ClientConfig
 	clientOpts      []option.ClientOption
@@ -81,6 +86,13 @@ type Session struct {
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
 }
+
+type SessionMode int
+
+const (
+	AdminOnly SessionMode = iota
+	DatabaseConnected
+)
 
 type transactionMode string
 
@@ -182,6 +194,7 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	}
 
 	session := &Session{
+		mode:            DatabaseConnected,
 		client:          client,
 		clientConfig:    clientConfig,
 		clientOpts:      opts,
@@ -192,6 +205,123 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	go session.startHeartbeat()
 
 	return session, nil
+}
+
+func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
+	clientConfig := defaultClientConfig
+	clientConfig.DatabaseRole = sysVars.Role
+	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+
+	if sysVars.Insecure {
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	}
+
+	if sysVars.LogGrpc {
+		opts = append(opts, logGrpcClientOptions()...)
+	}
+
+	opts = append(opts, defaultClientOpts...)
+
+	adminClient, err := adminapi.NewDatabaseAdminClient(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	session := &Session{
+		mode:            AdminOnly,
+		client:          nil, // no database client in admin-only mode
+		clientConfig:    clientConfig,
+		clientOpts:      opts,
+		adminClient:     adminClient,
+		systemVariables: sysVars,
+	}
+	sysVars.CurrentSession = session
+
+	// Validate instance exists
+	exists, err := session.InstanceExists()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	if !exists {
+		session.Close()
+		return nil, fmt.Errorf("unknown instance %q", sysVars.Instance)
+	}
+
+	return session, nil
+}
+
+func (s *Session) Mode() SessionMode {
+	return s.mode
+}
+
+func (s *Session) IsAdminOnly() bool {
+	return s.mode == AdminOnly
+}
+
+func (s *Session) IsDatabaseConnected() bool {
+	return s.mode == DatabaseConnected
+}
+
+func (s *Session) RequiresDatabaseConnection() bool {
+	return s.client == nil
+}
+
+func (s *Session) ValidateAdminOnlyOperation() error {
+	// Admin operations only require adminClient, which is always present
+	return nil
+}
+
+func (s *Session) ValidateDatabaseOperation() error {
+	if s.client == nil {
+		return errors.New("database operation requires a database connection")
+	}
+	return nil
+}
+
+func (s *Session) ValidateStatementExecution(stmt Statement) error {
+	if s.IsAdminOnly() {
+		// In AdminOnly mode, only AdminCompatible statements can be executed
+		if _, ok := stmt.(AdminCompatible); !ok {
+			return fmt.Errorf("statement %T is not compatible with admin-only session mode", stmt)
+		}
+	}
+	// In DatabaseConnected mode, all statements can be executed
+	return nil
+}
+
+func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) error {
+	if s.mode == DatabaseConnected && s.client != nil {
+		return errors.New("session is already connected to a database")
+	}
+
+	// Construct database path directly to avoid modifying state before success
+	dbPath := databasePath(s.systemVariables.Project, s.systemVariables.Instance, databaseId)
+	clientConfig := s.clientConfig
+	
+	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
+	if err != nil {
+		return err
+	}
+
+	// Close existing client if any
+	if s.client != nil {
+		s.client.Close()
+	}
+
+	wasAdminOnly := s.mode == AdminOnly
+	
+	// Update state only after successful client creation
+	s.systemVariables.Database = databaseId
+	s.client = client
+	s.mode = DatabaseConnected
+	
+	// Start heartbeat if transitioning from AdminOnly mode
+	if wasAdminOnly {
+		go s.startHeartbeat()
+	}
+
+	return nil
 }
 
 func (s *Session) TransactionMode() transactionMode {
@@ -300,6 +430,10 @@ func (s *Session) getTransactionTag() string {
 
 // BeginReadWriteTransaction starts read-write transaction.
 func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		return err
+	}
+	
 	if err := s.validateNoActiveTransaction(); err != nil {
 		return err
 	}
@@ -388,6 +522,10 @@ func (s *Session) resolveTimestampBound(typ timestampBoundType, staleness time.D
 
 // BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
 func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		return time.Time{}, err
+	}
+	
 	if err := s.validateNoActiveTransaction(); err != nil {
 		return time.Time{}, err
 	}
@@ -436,6 +574,14 @@ func (s *Session) ClosePendingTransaction() error {
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	// Validate that we have a database client for query operations
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		// This should not happen if AdminCompatible interface validation is working correctly
+		// Log the error for debugging since we can't return it directly
+		slog.Error("RunQueryWithStats called without database connection", "error", err, "statement", stmt.SQL)
+		// Return nil to indicate error - caller should check for nil
+		return nil, nil
+	}
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
@@ -445,6 +591,14 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	// Validate that we have a database client for query operations
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		// This should not happen if AdminCompatible interface validation is working correctly
+		// Log the error for debugging since we can't return it directly
+		slog.Error("RunQuery called without database connection", "error", err, "statement", stmt.SQL)
+		// Return nil to indicate error - caller should check for nil
+		return nil, nil
+	}
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -491,6 +645,18 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	case s.InReadOnlyTransaction():
 		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
+		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
+		// and AdminCompatible interface checks in ExecuteStatement
+		if s.client == nil {
+			// This is a programming error - log it and return a failing iterator
+			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations", 
+				"sessionMode", s.mode,
+				"statement", stmt.SQL)
+			// Create a failing iterator that will return an error when used
+			iter := &spanner.RowIterator{}
+			iter.Stop()
+			return iter, nil
+		}
 		txn := s.client.Single()
 		if s.systemVariables.ReadOnlyStaleness != nil {
 			txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
@@ -576,7 +742,78 @@ func (s *Session) InstancePath() string {
 	return s.systemVariables.InstancePath()
 }
 
+func (s *Session) InstanceExists() (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	
+	// Method 1: Try listing databases (databases.list) first
+	// This works for users with database-level permissions and uses the already available adminClient
+	dbIter := s.adminClient.ListDatabases(ctx, &adminpb.ListDatabasesRequest{
+		Parent:   s.InstancePath(),
+		PageSize: 1, // Only check if instance is accessible
+	})
+	
+	// Try to get the first item from iterator
+	_, err := dbIter.Next()
+	
+	if err == nil {
+		// Successfully got at least one database, instance exists
+		return true, nil
+	}
+	
+	// Check if it's an iterator.Done error (no databases but instance exists)
+	if err == iterator.Done {
+		return true, nil
+	}
+	
+	switch status.Code(err) {
+	case codes.NotFound:
+		return false, nil
+	case codes.PermissionDenied:
+		// Fall through to try instance admin API
+	default:
+		// For other errors, fall through to try instance admin API
+	}
+	
+	// Method 2: Try using instance admin API (instances.get)
+	// This works for users with spanner.instances.get permission (like Database Reader role)
+	instanceAdminClient, err := instanceapi.NewInstanceAdminClient(ctx, s.clientOpts...)
+	if err != nil {
+		// If we can't create the instance admin client, return the original database list error
+		return false, fmt.Errorf("failed to create instance admin client: %v; original database list error: tried both spanner.databases.list and spanner.instances.get", err)
+	}
+	defer func() {
+		if closeErr := instanceAdminClient.Close(); closeErr != nil {
+			slog.Error("error on instanceAdminClient.Close()", "err", closeErr)
+		}
+	}()
+	
+	_, err = instanceAdminClient.GetInstance(ctx, &instancepb.GetInstanceRequest{
+		Name: s.InstancePath(),
+	})
+	
+	if err == nil {
+		return true, nil
+	}
+	
+	switch status.Code(err) {
+	case codes.NotFound:
+		return false, nil
+	case codes.PermissionDenied:
+		// Both methods failed with permission denied
+		// The instance likely exists but we don't have sufficient permissions
+		// to verify its existence. Return an error to inform the user.
+		return false, fmt.Errorf("insufficient permissions to verify instance existence: tried both spanner.databases.list and spanner.instances.get")
+	default:
+		return false, fmt.Errorf("checking instance existence failed: %v", err)
+	}
+}
+
 func (s *Session) DatabaseExists() (bool, error) {
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		return false, err
+	}
+	
 	// For users who don't have `spanner.databases.get` IAM permission,
 	// check database existence by running an actual query.
 	// cf. https://github.com/cloudspannerecosystem/spanner-cli/issues/10
@@ -603,6 +840,10 @@ func (s *Session) DatabaseExists() (bool, error) {
 
 // RecreateClient closes the current client and creates a new client for the session.
 func (s *Session) RecreateClient() error {
+	if err := s.ValidateDatabaseOperation(); err != nil {
+		return err
+	}
+	
 	ctx := context.Background()
 	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), s.clientConfig, s.clientOpts...)
 	if err != nil {
@@ -775,6 +1016,11 @@ func extractBatchInfo(stmt Statement) *BatchInfo {
 // ExecuteStatement executes stmt.
 // If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
 func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result *Result, err error) {
+	// Validate statement compatibility with current session mode
+	if err := s.ValidateStatementExecution(stmt); err != nil {
+		return nil, err
+	}
+	
 	defer func() {
 		if result != nil {
 			result.BatchInfo = extractBatchInfo(s.currentBatch)
@@ -836,5 +1082,10 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		opts = append(opts, option.WithCredentialsJSON(credential))
 	}
 
+	// Create admin-only session if no database is specified
+	if sysVars.Database == "" {
+		return NewAdminSession(ctx, sysVars, opts...)
+	}
+	
 	return NewSession(ctx, sysVars, opts...)
 }

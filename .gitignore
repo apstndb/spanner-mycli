@@ -3,3 +3,4 @@ credentials.json
 dist/
 .DS_Store
 .idea
+.cache/

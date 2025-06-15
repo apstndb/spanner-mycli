@@ -158,3 +158,67 @@ When adding new client-side statements:
 - Improved documentation structure separating overview from detailed technical documentation
 - Enhanced emphasis on constrained display environment support (narrow terminals, code blocks, documentation sites)
 - Added comprehensive issue tracking and code review process documentation
+
+### Code Review Process
+
+#### Review Comment Management
+1. **Extract Review Comments**:
+   ```bash
+   # Get all PR-level comments
+   gh pr view <PR_NUMBER> -R <OWNER>/<REPO> --json 'comments'
+   
+   # Get specific reviewer's comments (e.g., Gemini Code Assist)
+   gh pr view <PR_NUMBER> -R <OWNER>/<REPO> --json 'comments' | jq '.comments[] | select(.author.login == "gemini-code-assist")'
+   
+   # Get all line-level review comments
+   gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }'
+   
+   # Get specific reviewer's line comments
+   gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }' | jq '.data.repository.pullRequest.reviews.nodes[] | select(.author.login == "<REVIEWER_LOGIN>") | .comments.edges[] | .node'
+   ```
+
+2. **Efficient Review Tracking** (Automated Script):
+   ```bash
+   # Use the provided script for robust incremental review checking
+   ./scripts/check-pr-reviews.sh <PR_NUMBER> [OWNER] [REPO]
+   
+   # Example usage:
+   ./scripts/check-pr-reviews.sh 259                    # Uses default apstndb/spanner-mycli
+   ./scripts/check-pr-reviews.sh 259 owner repo-name   # Custom owner/repo
+   
+   # The script automatically:
+   # 1. Fetches latest reviews with timestamps and IDs
+   # 2. Compares with previous state (stored in .cache/pr-reviews/)
+   # 3. Verifies data integrity by checking if previous review still exists
+   # 4. Shows only new reviews since last check
+   # 5. Updates state for next incremental check
+   
+   # First run shows all recent reviews and creates baseline state
+   # Subsequent runs show only new reviews, preventing duplicates and missed reviews
+   ```
+
+   **Script Advantages vs GitHub MCP Server:**
+   - **Incremental Efficiency**: Only fetches new comments since last check, reducing API calls
+   - **Built-in State Management**: Automatically maintains state in `.cache/pr-reviews/` (git-ignored)
+   - **Data Integrity Verification**: Checks if previously seen reviews still exist to detect data corruption
+   - **Optimized GitHub API Usage**: Uses direct `gh` CLI and GraphQL for minimal data transfer
+   - **Robust Duplicate Prevention**: Timestamp and ID-based comparison prevents missing or duplicate reviews
+   - **Single Command Simplicity**: No need to implement client-side filtering or caching logic
+   
+   **MCP Alternative Trade-offs:**
+   - MCP functions require full data retrieval on each check (less efficient)
+   - Need to implement state management and incremental logic manually
+   - Client-side filtering required instead of API-level filtering
+   - Multiple API calls may be needed vs single GraphQL query
+
+3. **Address Comments Individually**:
+   - Handle each review comment as a separate commit
+   - Use clear commit messages describing the specific fix
+   - Prioritize by severity: critical → high → medium → low (for automated reviews)
+   - Prioritize by reviewer feedback and discussion for human reviews
+   - One commit per review comment for better traceability
+
+4. **Follow-up Actions**:
+   - For Gemini Code Assist: Comment `/gemini review` to trigger re-review
+   - For human reviewers: Tag reviewer or request re-review through GitHub UI
+   - Mark conversations as resolved after addressing each comment

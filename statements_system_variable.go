@@ -15,6 +15,8 @@ type ShowVariableStatement struct {
 	VarName string
 }
 
+func (s *ShowVariableStatement) isAdminCompatible() {}
+
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	value, err := session.systemVariables.Get(s.VarName)
 	if err != nil {
@@ -34,6 +36,8 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 }
 
 type ShowVariablesStatement struct{}
+
+func (s *ShowVariablesStatement) isAdminCompatible() {}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	merged := make(map[string]string)
@@ -70,6 +74,8 @@ type SetStatement struct {
 	Value   string
 }
 
+func (s *SetStatement) isAdminCompatible() {}
+
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
 		return nil, err
@@ -82,6 +88,8 @@ type SetAddStatement struct {
 	Value   string
 }
 
+func (s *SetAddStatement) isAdminCompatible() {}
+
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
 		return nil, err
@@ -90,6 +98,8 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Resul
 }
 
 type HelpVariablesStatement struct{}
+
+func (s *HelpVariablesStatement) isAdminCompatible() {}
 
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	type variableDesc struct {
