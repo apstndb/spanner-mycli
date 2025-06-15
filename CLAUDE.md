@@ -160,4 +160,31 @@ When adding new client-side statements:
 - Added comprehensive issue tracking and code review process documentation
 
 ### Code Review Process
-- After addressing Gemini Code Assist review comments and pushing to a PR, trigger re-review by commenting `/gemini review`
+
+#### Review Comment Management
+1. **Extract Review Comments**:
+   ```bash
+   # Get all PR-level comments
+   gh pr view <PR_NUMBER> -R <OWNER>/<REPO> --json 'comments'
+   
+   # Get specific reviewer's comments (e.g., Gemini Code Assist)
+   gh pr view <PR_NUMBER> -R <OWNER>/<REPO> --json 'comments' | jq '.comments[] | select(.author.login == "gemini-code-assist")'
+   
+   # Get all line-level review comments
+   gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }'
+   
+   # Get specific reviewer's line comments
+   gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }' | jq '.data.repository.pullRequest.reviews.nodes[] | select(.author.login == "<REVIEWER_LOGIN>") | .comments.edges[] | .node'
+   ```
+
+2. **Address Comments Individually**:
+   - Handle each review comment as a separate commit
+   - Use clear commit messages describing the specific fix
+   - Prioritize by severity: critical → high → medium → low (for automated reviews)
+   - Prioritize by reviewer feedback and discussion for human reviews
+   - One commit per review comment for better traceability
+
+3. **Follow-up Actions**:
+   - For Gemini Code Assist: Comment `/gemini review` to trigger re-review
+   - For human reviewers: Tag reviewer or request re-review through GitHub UI
+   - Mark conversations as resolved after addressing each comment
