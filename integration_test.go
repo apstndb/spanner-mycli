@@ -718,13 +718,26 @@ func TestStatements(t *testing.T) {
 			),
 			wantResults: []*Result{
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{IsMutation: true},
+				{
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "new-database", ".*"}, // Duration is variable, use regex
+					},
+				},
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
 				{IsMutation: true},
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					// Allow regex matching for duration field in CREATE DATABASE result
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
 		},
 		{
 			desc: "SHOW TABLES",
@@ -734,7 +747,7 @@ func TestStatements(t *testing.T) {
 				{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.GoString())
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
 			}, cmp.Ignore())),
 		},
 		{
@@ -847,7 +860,7 @@ func TestStatements(t *testing.T) {
 			cmpOpts: sliceOf(
 				// Ignore Commit Timestamp column value
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows\[\d*]\[1]`).MatchString(path.GoString())
+					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 		},
@@ -891,8 +904,8 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
-						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 		},
@@ -923,7 +936,7 @@ func TestStatements(t *testing.T) {
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[3]")
 			}, cmp.Ignore())),
 		},
@@ -995,7 +1008,7 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) // Ignore actual token values
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) // Ignore actual token values
 				}, cmp.Ignore()),
 			),
 		},
@@ -1028,7 +1041,7 @@ func TestStatements(t *testing.T) {
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[2]") // Allow TableHeader for SELECT
 			}, cmp.Ignore())),
 		},
@@ -1051,7 +1064,7 @@ func TestStatements(t *testing.T) {
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
 					// Allow regex matching for duration field
-					return regexp.MustCompile(`\.Rows\[0\]\[2\]`).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 			database:  "", // Empty database with admin=true means admin-only session
@@ -1071,8 +1084,8 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
-						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 			database:  "", // Empty database with admin=true means admin-only session
@@ -1088,7 +1101,14 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{IsMutation: true}, // CREATE DATABASE
+				{ // CREATE DATABASE
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "test_workflow_db", ".*"}, // Duration is variable, use regex
+					},
+				},
 				{
 					TableHeader: toTableHeader("Database"),
 					// Don't check specific content
@@ -1101,8 +1121,8 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
-						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 			database:  "", 
