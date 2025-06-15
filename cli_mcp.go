@@ -78,7 +78,7 @@ Result is ASCII table rendered, so you need to print as code block`)),
 
 // RunMCP runs the MCP server
 func (c *Cli) RunMCP(ctx context.Context) error {
-	exists, err := c.Session.DatabaseExists()
+	exists, err := c.SessionHandler.DatabaseExists()
 	if err != nil {
 		return err
 	}

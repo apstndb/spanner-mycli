@@ -51,7 +51,7 @@ const (
 )
 
 type Cli struct {
-	Session         *Session
+	SessionHandler  *SessionHandler
 	Credential      []byte
 	InStream        io.ReadCloser
 	OutStream       io.Writer
@@ -65,11 +65,13 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	if err != nil {
 		return nil, err
 	}
+	
+	sessionHandler := NewSessionHandler(session)
 
 	sysVars.CurrentOutStream = outStream
 
 	return &Cli{
-		Session:         session,
+		SessionHandler:  sessionHandler,
 		Credential:      credential,
 		InStream:        inStream,
 		OutStream:       outStream,
@@ -79,15 +81,20 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 }
 
 func (c *Cli) RunInteractive(ctx context.Context) error {
-	exists, err := c.Session.DatabaseExists()
-	if err != nil {
-		return NewExitCodeError(c.ExitOnError(err))
-	}
+	// Only check database existence if we're not in admin-only mode
+	if !c.SessionHandler.IsAdminOnly() {
+		exists, err := c.SessionHandler.DatabaseExists()
+		if err != nil {
+			return NewExitCodeError(c.ExitOnError(err))
+		}
 
-	if exists {
-		fmt.Fprintf(c.OutStream, "Connected.\n")
+		if exists {
+			fmt.Fprintf(c.OutStream, "Connected.\n")
+		} else {
+			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		}
 	} else {
-		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		fmt.Fprintf(c.OutStream, "Connected in admin-only mode.\n")
 	}
 
 	ed, history, err := initializeMultilineEditor(c)
@@ -243,12 +250,12 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 
 // handleExit processes EXIT statement.
 func (c *Cli) handleExit() int {
-	c.Session.Close()
+	c.SessionHandler.Close()
 	return exitCodeSuccess
 }
 
 func (c *Cli) ExitOnError(err error) int {
-	c.Session.Close()
+	c.SessionHandler.Close()
 	printError(c.ErrStream, err)
 	return exitCodeError
 }
@@ -353,7 +360,7 @@ var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
 
 // getInterpolatedPrompt returns the prompt string with the values of system variables interpolated.
 func (c *Cli) getInterpolatedPrompt(prompt string) string {
-	sysVars := c.Session.systemVariables
+	sysVars := c.SessionHandler.GetSession().systemVariables
 	return promptRe.ReplaceAllStringFunc(prompt, func(s string) string {
 		switch s {
 		case "%%":
@@ -365,14 +372,17 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 		case "%i":
 			return sysVars.Instance
 		case "%d":
+			if c.SessionHandler.IsAdminOnly() {
+				return "*detached*"
+			}
 			return sysVars.Database
 		case "%t":
 			switch {
-			case c.Session.InReadWriteTransaction():
+			case c.SessionHandler.InReadWriteTransaction():
 				return "(rw txn)"
-			case c.Session.InReadOnlyTransaction():
+			case c.SessionHandler.InReadOnlyTransaction():
 				return "(ro txn)"
-			case c.Session.InPendingTransaction():
+			case c.SessionHandler.InPendingTransaction():
 				return "(txn)"
 			default:
 				return ""
@@ -417,15 +427,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
 
-	// Handle USE statement
-	if s, ok := stmt.(*UseStatement); ok {
-		if err := c.handleUseStatement(ctx, s, interactive); err != nil {
-			return "", err
-		}
-		// Print "Database changed" here after successful database change
-		fmt.Fprintf(w, "Database changed")
-	}
-
 	// Setup progress mark and timing
 	t0 := time.Now()
 	// Only call setupProgressMark in interactive mode
@@ -437,7 +438,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	}
 
 	// Execute the statement
-	result, err := c.Session.ExecuteStatement(ctx, stmt)
+	result, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
 
 	// Stop progress mark
 	stop()
@@ -448,12 +449,20 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
 			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 			// the Cloud Spanner's session with new one to revert the lock priority of the session.
-			innerErr := c.Session.RecreateClient()
+			innerErr := c.SessionHandler.RecreateClient()
 			if innerErr != nil {
 				err = errors.Join(err, innerErr)
 			}
 		}
 		return "", err
+	} else {
+		// Handle special output messages for session-changing statements
+		if _, ok := stmt.(*UseStatement); ok {
+			fmt.Fprintf(w, "Database changed")
+		}
+		if _, ok := stmt.(*DetachStatement); ok {
+			fmt.Fprintf(w, "Detached from database")
+		}
 	}
 
 	// Update result stats and system variables
@@ -465,10 +474,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	return result.PreInput, nil
 }
 
-// handleUseStatement handles the USE statement.
-func (c *Cli) handleUseStatement(ctx context.Context, s *UseStatement, interactive bool) error {
-	return c.handleUse(ctx, s, interactive)
-}
 
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
@@ -545,35 +550,6 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 	}
 }
 
-func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) error {
-	newSystemVariables := *c.SystemVariables
-
-	newSystemVariables.Database = s.Database
-	newSystemVariables.Role = s.Role
-
-	newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
-	if err != nil {
-		return err
-	}
-
-	exists, err := newSession.DatabaseExists()
-	if err != nil {
-		newSession.Close()
-		return err
-	}
-
-	if !exists {
-		newSession.Close()
-		return fmt.Errorf("unknown database %q", s.Database)
-	}
-
-	c.Session.Close()
-	c.Session = newSession
-
-	c.SystemVariables = &newSystemVariables
-
-	return nil
-}
 
 func handleInterrupt(cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)

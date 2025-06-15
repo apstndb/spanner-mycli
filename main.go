@@ -57,7 +57,8 @@ type globalOptions struct {
 type spannerOptions struct {
 	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
 	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"(required) Cloud Spanner Database ID."`
+	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"Cloud Spanner Database ID. Optional when --detached is used."`
+	Detached                  bool              `long:"detached" description:"Start in admin-only mode, ignoring database env var/flag"`
 	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
 	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
 	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
@@ -94,6 +95,27 @@ type spannerOptions struct {
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server"`
+}
+
+// determineInitialDatabase determines the initial database based on CLI flags and environment
+func determineInitialDatabase(opts *spannerOptions) string {
+	// Explicit --detached flag overrides everything
+	if opts.Detached {
+		return "" // Start in admin-only mode
+	}
+
+	// Explicit --database flag takes precedence
+	if opts.DatabaseId != "" {
+		return opts.DatabaseId
+	}
+
+	// Fall back to environment variable
+	if envDB := os.Getenv("SPANNER_DATABASE_ID"); envDB != "" {
+		return envDB
+	}
+
+	// Default: admin-only mode (empty string)
+	return ""
 }
 
 func addEmulatorImageOption(parser *flags.Parser) {
@@ -287,8 +309,12 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
 	}
 
-	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "" || opts.DatabaseId == "") {
-		return fmt.Errorf("missing parameters: -p, -i, -d are required")
+	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "") {
+		return fmt.Errorf("missing parameters: -p, -i are required")
+	}
+	
+	if !opts.EmbeddedEmulator && !opts.Detached && opts.DatabaseId == "" {
+		return fmt.Errorf("missing parameter: -d is required (or use --detached for admin-only mode)")
 	}
 
 	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
@@ -329,7 +355,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	sysVars := systemVariables{
 		Project:                   opts.ProjectId,
 		Instance:                  opts.InstanceId,
-		Database:                  opts.DatabaseId,
+		Database:                  determineInitialDatabase(opts),
 		Verbose:                   opts.Verbose || opts.MCP, // Set Verbose to true when MCP is true
 		MCP:                       opts.MCP,                 // Set MCP field for CLI_MCP system variable
 		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),

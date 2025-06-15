@@ -155,9 +155,42 @@ When adding new client-side statements:
 - Error handling completeness
 
 ### Issue Management Best Practices
+
+#### Creating Issues
+- Use `gh issue create --body` instead of GitHub MCP tools for better readability and formatting control:
+
+```bash
+gh issue create --title "Issue title" --body "$(cat <<'EOF'
+## Problem
+Description of the problem...
+
+## Expected Behavior
+What should happen...
+
+## Actual Behavior  
+What actually happens...
+
+## Steps to Reproduce
+1. Step one
+2. Step two
+
+## Additional Context
+Any other relevant information...
+EOF
+)" --label "bug,enhancement"
+```
+
+#### Updating Issues
 - Use `gh issue edit <number> --body "content"` for issue updates
 - Multi-line content can be handled with heredoc or escaped newlines in shell commands
 - This ensures better readability than using the GitHub MCP server for issue updates
+
+#### Why Use gh CLI Over GitHub MCP
+- Better control over markdown formatting
+- More readable issue content
+- Proper handling of multi-line content and code blocks
+- Consistent formatting with project standards
+- Direct command-line control without API abstraction layers
 
 ## Documentation Structure
 
@@ -188,6 +221,9 @@ When adding new client-side statements:
    
    # Get specific reviewer's line comments
    gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO>") { pullRequest(number: <PR_NUMBER>) { reviews(first: 100) { nodes { author { login } comments(first: 25) { edges { node { id body path line originalLine } } } } } } } }' | jq '.data.repository.pullRequest.reviews.nodes[] | select(.author.login == "<REVIEWER_LOGIN>") | .comments.edges[] | .node'
+   
+   # Get specific review's comments by review ID (most efficient for targeted review inspection)
+   gh api graphql -f query='{ node(id: "<REVIEW_ID>") { ... on PullRequestReview { comments(first: 50) { nodes { id body path line originalLine } } } } }' | jq '.data.node.comments.nodes'
    ```
 
 2. **Efficient Review Tracking** (Automated Script):
@@ -235,3 +271,84 @@ When adding new client-side statements:
    - For Gemini Code Assist: Comment `/gemini review` to trigger re-review
    - For human reviewers: Tag reviewer or request re-review through GitHub UI
    - Mark conversations as resolved after addressing each comment
+
+## Development Workflow Best Practices
+
+### Issue and Pull Request Management
+
+#### Linking Issues and Pull Requests
+When working on issues, always use GitHub's issue linking syntax in both commit messages and PR descriptions to enable automatic issue closure and better traceability:
+
+**In commit messages:**
+```bash
+git commit -m "feat: implement optional --database flag with detach/attach functionality
+
+Resolves #258
+Fixes #262
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
+**In PR descriptions:**
+```markdown
+## Summary
+This PR implements the optional --database flag functionality.
+
+## Issues Resolved
+- Resolves #258 - Make --database flag optional with detach/attach functionality  
+- Fixes #262 - Integration tests cannot properly test CLI-level statements
+
+## Changes
+- Added SessionHandler for proper session management
+- Implemented USE/DETACH statements with actual session switching
+- Enhanced integration tests to verify CLI-level statement behavior
+```
+
+**Supported Keywords:** `Closes`, `Fixes`, `Resolves` (and their variations: `Close`, `Fix`, `Resolve`)
+
+#### Gemini Code Assist Integration
+- **Manual Review Trigger**: Gemini Code Assist does not automatically review PRs
+- **Trigger Command**: Use `/gemini review` as an issue comment to request code review
+- **Review Response**: Gemini typically responds within 1-2 minutes with comprehensive feedback
+- **Re-review Process**: After addressing comments, use `/gemini review` again for follow-up review
+
+
+#### Code Review Response Strategy
+1. **Address each comment individually** with focused commits
+2. **Use descriptive commit messages** that reference the specific issue being addressed
+3. **Test thoroughly** before pushing changes
+4. **Request re-review** using appropriate methods for each reviewer type
+5. **Document architectural decisions** in code comments and CLAUDE.md updates
+
+#### Handling Different Types of Review Comments
+
+**For Issues Requiring Fixes:**
+1. Create focused commits addressing the specific issue
+2. Reference the review comment in commit message
+3. Push changes and request re-review
+
+**For Praise Comments from AI Automated Reviews (e.g., Gemini Code Assist):**
+1. **Acknowledge the feedback** with a brief reply thanking the reviewer
+2. **Resolve the conversation** to keep the review clean and focused on actionable items
+3. **Example response**: "Thank you for highlighting this good practice! Resolving as acknowledged."
+
+**Sample AI praise comment response workflow:**
+```bash
+# Step 1: Reply directly to the specific review comment using REST API
+gh api repos/apstndb/spanner-mycli/pulls/263/comments \
+  -f body="Thank you for highlighting this good practice! The admin-only mode check is indeed important for preventing database access errors when not connected to a specific database. Resolving as acknowledged." \
+  -F in_reply_to=2148555280
+
+# Step 2: Resolve the review thread using GraphQL mutation
+gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "PRRT_kwDONC6gMM5SSFCY"}) { thread { id isResolved } } }'
+
+# Note: You'll need to get the specific comment ID and thread ID from:
+# gh api repos/OWNER/REPO/pulls/PR_NUMBER/comments | jq '.[] | {id, body: .body[0:100]}'
+# gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { pullRequest(number: PR_NUMBER) { reviewThreads(first: 10) { nodes { id comments(first: 2) { nodes { id author { login } } } } } } } }'
+```
+
+**Note**: This workflow is specifically for automated AI reviews (like Gemini Code Assist) that often include praise comments to highlight good implementation practices. For human reviewers, follow standard code review etiquette and engage in meaningful discussion about the feedback.
+
+This approach maintains good communication with AI reviewers while keeping the review focused on actionable items and reduces noise from praise-only comments.

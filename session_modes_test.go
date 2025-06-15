@@ -25,9 +25,6 @@ func TestSessionModes(t *testing.T) {
 		if !session.IsAdminOnly() {
 			t.Error("Expected admin-only session")
 		}
-		if session.IsDatabaseConnected() {
-			t.Error("Expected not database connected")
-		}
 		if session.client != nil {
 			t.Error("Expected nil client in admin-only mode")
 		}
@@ -51,9 +48,6 @@ func TestSessionModes(t *testing.T) {
 
 		// Check session mode
 		if session.IsAdminOnly() {
-			t.Error("Expected not admin-only session")
-		}
-		if !session.IsDatabaseConnected() {
 			t.Error("Expected database connected session")
 		}
 		if session.client == nil {
@@ -95,7 +89,7 @@ func TestSessionModes(t *testing.T) {
 		}
 		defer session.Close()
 
-		if !session.IsDatabaseConnected() {
+		if session.IsAdminOnly() {
 			t.Error("Expected database-connected session when database is specified")
 		}
 	})
@@ -125,7 +119,7 @@ func TestSessionModes(t *testing.T) {
 		}
 
 		// Verify it's now database-connected
-		if !session.IsDatabaseConnected() {
+		if session.IsAdminOnly() {
 			t.Error("Expected database-connected session after ConnectToDatabase")
 		}
 		if session.client == nil {

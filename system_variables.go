@@ -51,6 +51,10 @@ type LastQueryCache struct {
 	Timestamp  time.Time
 }
 
+// systemVariables holds configuration state for spanner-mycli sessions.
+// IMPORTANT: This struct is designed to be read-only after creation for session safety.
+// SessionHandler depends on this read-only property when creating new sessions with 
+// modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
 	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
@@ -721,9 +725,13 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_DATABASE": {
-		Description: "",
+		Description: "Current database name. Empty string when in admin-only mode.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				// Return empty string for admin-only mode, actual database name when connected
+				if this.CurrentSession != nil && this.CurrentSession.IsAdminOnly() {
+					return singletonMap(name, ""), nil
+				}
 				return singletonMap(name, this.Database), nil
 			},
 		},

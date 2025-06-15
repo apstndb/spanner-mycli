@@ -24,7 +24,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	// Create CLI instance
 	var outputBuf strings.Builder
 	cli := &Cli{
-		Session:   session,
+		SessionHandler: NewSessionHandler(session),
 		OutStream: &outputBuf,
 		ErrStream: &outputBuf,
 		SystemVariables: &systemVariables{
@@ -219,7 +219,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create CLI with non-existent database: %v", err)
 	}
-	defer cli.Session.Close()
+	defer cli.SessionHandler.Close()
 
 	err = cli.RunMCP(ctx)
 	if err == nil {
@@ -384,7 +384,7 @@ func TestRunMCP(t *testing.T) {
 		// Create CLI with different system variables
 		var outputBuf strings.Builder
 		cli := &Cli{
-			Session:   session,
+			SessionHandler: NewSessionHandler(session),
 			OutStream: &outputBuf,
 			ErrStream: &outputBuf,
 			SystemVariables: &systemVariables{

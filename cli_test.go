@@ -531,6 +531,9 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 				Instance: "test-instance",
 				Database: "test-database",
 			},
+			session: &Session{
+				mode: DatabaseConnected,
+			},
 			want: "Project: test-project, Instance: test-instance, Database: test-database",
 		},
 		{
@@ -589,6 +592,28 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			prompt: "Newline: %n",
 			want:   "Newline: \n",
 		},
+		{
+			desc:   "database name - when in admin-only mode shows *detached*",
+			prompt: "spanner:%d%t> ",
+			sysVars: &systemVariables{
+				Database: "",
+			},
+			session: &Session{
+				mode: AdminOnly,
+			},
+			want: "spanner:*detached*> ",
+		},
+		{
+			desc:   "database name - when connected to database shows database name",
+			prompt: "spanner:%d%t> ",
+			sysVars: &systemVariables{
+				Database: "test-database",
+			},
+			session: &Session{
+				mode: DatabaseConnected,
+			},
+			want: "spanner:test-database> ",
+		},
 	}
 
 	for _, tt := range tests {
@@ -604,7 +629,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 
 			tt.session.systemVariables = tt.sysVars
 			cli := &Cli{
-				Session:         tt.session,
+				SessionHandler:  NewSessionHandler(tt.session),
 				SystemVariables: tt.sysVars,
 				waitingStatus:   tt.waitingStatus,
 			}
@@ -799,7 +824,7 @@ func Test_confirm(t *testing.T) {
 func TestCli_handleExit(t *testing.T) {
 	outBuf := &bytes.Buffer{}
 	cli := &Cli{
-		Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+		SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
 		OutStream: outBuf,
 	}
 
@@ -836,7 +861,7 @@ func TestCli_ExitOnError(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
 			cli := &Cli{
-				Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+				SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
 				ErrStream: errBuf,
 			}
 
@@ -922,7 +947,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			outBuf := &bytes.Buffer{}
 			errBuf := &bytes.Buffer{}
 			cli := &Cli{
-				Session:         &Session{systemVariables: sysVars}, // Dummy Session
+				SessionHandler:  NewSessionHandler(&Session{systemVariables: sysVars}), // Dummy Session
 				SystemVariables: sysVars,
 				InStream:        io.NopCloser(strings.NewReader(tt.confirmInput)), // Set InStream for confirm
 				OutStream:       outBuf,

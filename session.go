@@ -87,6 +87,99 @@ type Session struct {
 	cqlSession *gocql.Session
 }
 
+// SessionHandler manages a session pointer and can handle session-changing statements
+type SessionHandler struct {
+	*Session
+}
+
+func NewSessionHandler(session *Session) *SessionHandler {
+	return &SessionHandler{
+		Session: session,
+	}
+}
+
+func (h *SessionHandler) GetSession() *Session {
+	return h.Session
+}
+
+func (h *SessionHandler) Close() {
+	if h.Session != nil {
+		h.Session.Close()
+	}
+}
+
+// ExecuteStatement executes a statement, handling session-changing statements appropriately
+func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (*Result, error) {
+	// Handle session-changing statements
+	switch s := stmt.(type) {
+	case *UseStatement:
+		return h.handleUse(ctx, s)
+	case *DetachStatement:
+		return h.handleDetach(ctx, s)
+	default:
+		// For regular statements, delegate to the embedded session
+		return h.Session.ExecuteStatement(ctx, stmt)
+	}
+}
+
+// createSessionWithOpts creates a new session using current session's client options
+func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
+	// Create admin-only session if no database is specified
+	if sysVars.Database == "" {
+		return NewAdminSession(ctx, sysVars, h.Session.clientOpts...)
+	}
+	
+	return NewSession(ctx, sysVars, h.Session.clientOpts...)
+}
+
+func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
+	newSystemVariables := *h.Session.systemVariables
+	newSystemVariables.Database = s.Database
+	newSystemVariables.Role = s.Role
+
+	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if the target database exists
+	exists, err := newSession.DatabaseExists()
+	if err != nil {
+		newSession.Close()
+		return nil, err
+	}
+
+	if !exists {
+		newSession.Close()
+		return nil, fmt.Errorf("unknown database %q", s.Database)
+	}
+
+	// Replace the old session with the new one
+	h.Session.Close()
+	h.Session = newSession
+
+	return &Result{}, nil
+}
+
+func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
+	newSystemVariables := *h.Session.systemVariables
+	
+	// Clear database and role to switch to admin-only mode
+	newSystemVariables.Database = ""
+	newSystemVariables.Role = ""
+
+	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
+	if err != nil {
+		return nil, err
+	}
+
+	// Replace the old session with the new one
+	h.Session.Close()
+	h.Session = newSession
+
+	return &Result{}, nil
+}
+
 type SessionMode int
 
 const (
@@ -259,9 +352,6 @@ func (s *Session) IsAdminOnly() bool {
 	return s.mode == AdminOnly
 }
 
-func (s *Session) IsDatabaseConnected() bool {
-	return s.mode == DatabaseConnected
-}
 
 func (s *Session) RequiresDatabaseConnection() bool {
 	return s.client == nil
@@ -1063,7 +1153,8 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 	return partitions, batchROTx, nil
 }
 
-func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
+// createClientOptions creates client options based on credential and system variables
+func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
 	var opts []option.ClientOption
 	if sysVars.Endpoint != "" {
 		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
@@ -1080,6 +1171,15 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		opts = append(opts, option.WithTokenSource(source))
 	case len(credential) > 0:
 		opts = append(opts, option.WithCredentialsJSON(credential))
+	}
+
+	return opts, nil
+}
+
+func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
+	opts, err := createClientOptions(ctx, credential, sysVars)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create admin-only session if no database is specified

@@ -718,14 +718,7 @@ func TestStatements(t *testing.T) {
 			),
 			wantResults: []*Result{
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "new-database", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
@@ -1053,21 +1046,8 @@ func TestStatements(t *testing.T) {
 				"CREATE DATABASE test_db_create",
 			),
 			wantResults: []*Result{
-				{
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "test_db_create", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					// Allow regex matching for duration field
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
 			database:  "", // Empty database with admin=true means admin-only session
 			dedicated: true,
 			admin:     true,
@@ -1102,14 +1082,7 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{ // CREATE DATABASE
-					IsMutation:   true,
-					TableHeader:  toTableHeader("Status", "Database", "Duration"),
-					AffectedRows: 1,
-					Rows: []Row{
-						{"Created", "test_workflow_db", ".*"}, // Duration is variable, use regex
-					},
-				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
 				{
 					TableHeader: toTableHeader("Database"),
 					// Don't check specific content
@@ -1129,6 +1102,71 @@ func TestStatements(t *testing.T) {
 			database:  "", 
 			dedicated: true,
 			admin:     true,
+		},
+		{
+			desc: "DETACH and USE workflow with database creation",
+			stmt: sliceOf(
+				"SHOW VARIABLE CLI_DATABASE",        // Should show test-database (connected)
+				"SELECT 1 AS connected",             // Should work from database mode
+				"DETACH",                           // Switch to admin-only mode
+				"SHOW VARIABLE CLI_DATABASE",        // Should show empty string (*detached*)
+				"CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
+				"SHOW DATABASES",                   // Should show both databases
+				"USE `test_detach_db`",             // Switch to new database
+				"SHOW VARIABLE CLI_DATABASE",        // Should show test_detach_db
+				"SELECT 1 AS reconnected",          // Should work from database mode after USE
+				"DETACH",                           // Switch to admin-only mode again
+				"DROP DATABASE `test_detach_db`",   // Should work from admin-only mode
+			),
+			wantResults: []*Result{
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("test-database")),
+					AffectedRows:  0,
+				},
+				{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("1")),
+					AffectedRows: 1,
+				},
+				{}, // DETACH statement returns empty result
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("")), // Empty string in detached mode
+					AffectedRows:  0,
+				},
+				{IsMutation: true}, // CREATE DATABASE returns empty result
+				{
+					TableHeader:  toTableHeader("Database"),
+					Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
+					AffectedRows: 2,
+				},
+				{}, // USE statement returns empty result
+				{
+					KeepVariables: true,
+					TableHeader:   toTableHeader("CLI_DATABASE"),
+					Rows:          sliceOf(toRow("test_detach_db")), // Shows new database name after USE
+					AffectedRows:  0,
+				},
+				{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("1")),
+					AffectedRows: 1,
+				},
+				{}, // DETACH statement returns empty result
+				{IsMutation: true}, // DROP DATABASE should succeed from admin mode
+			},
+			cmpOpts: sliceOf(
+				// Ignore TableHeader details for SELECT statements since they contain complex type information
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
+						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
+				}, cmp.Ignore()),
+			),
+			database:  "test-database", // Start with a database connection
+			dedicated: true,
 		},
 	}
 
@@ -1156,6 +1194,10 @@ func TestStatements(t *testing.T) {
 			}
 			defer teardown()
 
+			// Create SessionHandler to properly test USE/DETACH statements
+			// SessionHandler will use the session's existing client options for emulator compatibility
+			sessionHandler := NewSessionHandler(session)
+
 			var gots []*Result
 			for i, s := range tt.stmt {
 				// begin
@@ -1164,7 +1206,7 @@ func TestStatements(t *testing.T) {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
 
-				result, err := session.ExecuteStatement(ctx, stmt)
+				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
 				if err != nil {
 					t.Fatalf("unexpected error happened[%d]: %s", i, err)
 				}
