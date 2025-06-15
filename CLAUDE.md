@@ -26,10 +26,16 @@ make fasttest-verbose  # Run fast tests with verbose output
 ### Development
 ```bash
 make lint           # Run golangci-lint (REQUIRED before push)
+make test           # Run all tests including integration tests (REQUIRED before push)
 make clean          # Clean build artifacts and test cache
 ```
 
-**IMPORTANT**: Always run `make lint` before pushing changes or creating pull requests to ensure code quality.
+**CRITICAL REQUIREMENTS before push**:
+1. **Always run `make test`** (not `make fasttest`) to ensure all integration tests pass
+2. **Always run `make lint`** to ensure code quality and style compliance
+3. Fix any test failures or lint errors before pushing changes or creating pull requests
+
+**Note**: Integration tests use testcontainers with Spanner emulator and take longer to run, but they are essential to catch issues before CI.
 
 ## Architecture
 
