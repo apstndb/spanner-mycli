@@ -51,6 +51,10 @@ type LastQueryCache struct {
 	Timestamp  time.Time
 }
 
+// systemVariables holds configuration state for spanner-mycli sessions.
+// IMPORTANT: This struct is designed to be read-only after creation for session safety.
+// SessionHandler depends on this read-only property when creating new sessions with 
+// modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
 	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE

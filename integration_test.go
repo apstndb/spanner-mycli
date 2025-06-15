@@ -1131,8 +1131,6 @@ func TestStatements(t *testing.T) {
 			admin:     true,
 		},
 		{
-			// TODO(#262): USE and DETACH are correctly implemented but TestStatements
-			// uses session.ExecuteStatement() which cannot change the session connection
 			desc: "DETACH and USE workflow with database creation",
 			stmt: sliceOf(
 				"SHOW VARIABLE CLI_DATABASE",        // Should show test-database (connected)
@@ -1163,7 +1161,7 @@ func TestStatements(t *testing.T) {
 				{
 					KeepVariables: true,
 					TableHeader:   toTableHeader("CLI_DATABASE"),
-					Rows:          sliceOf(toRow("test-database")), // Shows original database name (session connection unchanged in ExecuteStatement)  
+					Rows:          sliceOf(toRow("")), // Empty string in detached mode
 					AffectedRows:  0,
 				},
 				{
@@ -1171,7 +1169,7 @@ func TestStatements(t *testing.T) {
 					TableHeader:  toTableHeader("Status", "Database", "Duration"),
 					AffectedRows: 1,
 					Rows: []Row{
-						{"Created", "test_detach_db", ".*"}, // Duration is variable, use regex
+						{"Created", "test_detach_db", ""}, // Duration will be ignored by cmpOpts
 					},
 				},
 				{
@@ -1183,7 +1181,7 @@ func TestStatements(t *testing.T) {
 				{
 					KeepVariables: true,
 					TableHeader:   toTableHeader("CLI_DATABASE"),
-					Rows:          sliceOf(toRow("test-database")), // Shows original database name (session connection unchanged in ExecuteStatement)
+					Rows:          sliceOf(toRow("test_detach_db")), // Shows new database name after USE
 					AffectedRows:  0,
 				},
 				{
@@ -1202,7 +1200,8 @@ func TestStatements(t *testing.T) {
 				}, cmp.Ignore()),
 				// Ignore duration field in CREATE DATABASE result
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`wantResults[4].Rows[0][2]`)).MatchString(path.String())
 				}, cmp.Ignore()),
 			),
 			database:  "test-database", // Start with a database connection
@@ -1234,6 +1233,10 @@ func TestStatements(t *testing.T) {
 			}
 			defer teardown()
 
+			// Create SessionHandler to properly test USE/DETACH statements
+			// SessionHandler will use the session's existing client options for emulator compatibility
+			sessionHandler := NewSessionHandler(session)
+
 			var gots []*Result
 			for i, s := range tt.stmt {
 				// begin
@@ -1242,7 +1245,7 @@ func TestStatements(t *testing.T) {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
 
-				result, err := session.ExecuteStatement(ctx, stmt)
+				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
 				if err != nil {
 					t.Fatalf("unexpected error happened[%d]: %s", i, err)
 				}

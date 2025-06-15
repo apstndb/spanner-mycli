@@ -629,7 +629,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 
 			tt.session.systemVariables = tt.sysVars
 			cli := &Cli{
-				Session:         tt.session,
+				SessionHandler:  NewSessionHandler(tt.session),
 				SystemVariables: tt.sysVars,
 				waitingStatus:   tt.waitingStatus,
 			}
@@ -824,7 +824,7 @@ func Test_confirm(t *testing.T) {
 func TestCli_handleExit(t *testing.T) {
 	outBuf := &bytes.Buffer{}
 	cli := &Cli{
-		Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+		SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
 		OutStream: outBuf,
 	}
 
@@ -861,7 +861,7 @@ func TestCli_ExitOnError(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
 			cli := &Cli{
-				Session:   &Session{}, // Dummy session, Close() is now safe with nil client
+				SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
 				ErrStream: errBuf,
 			}
 
@@ -947,7 +947,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			outBuf := &bytes.Buffer{}
 			errBuf := &bytes.Buffer{}
 			cli := &Cli{
-				Session:         &Session{systemVariables: sysVars}, // Dummy Session
+				SessionHandler:  NewSessionHandler(&Session{systemVariables: sysVars}), // Dummy Session
 				SystemVariables: sysVars,
 				InStream:        io.NopCloser(strings.NewReader(tt.confirmInput)), // Set InStream for confirm
 				OutStream:       outBuf,
