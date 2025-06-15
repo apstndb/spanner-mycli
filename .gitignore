@@ -1,6 +1,9 @@
 spanner-cli
+spanner-mycli
 credentials.json
 dist/
 .DS_Store
 .idea
 .cache/
+tmp/
+.*.cnf

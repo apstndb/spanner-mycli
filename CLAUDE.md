@@ -25,9 +25,17 @@ make fasttest-verbose  # Run fast tests with verbose output
 
 ### Development
 ```bash
-make lint           # Run golangci-lint
+make lint           # Run golangci-lint (REQUIRED before push)
+make test           # Run all tests including integration tests (REQUIRED before push)
 make clean          # Clean build artifacts and test cache
 ```
+
+**CRITICAL REQUIREMENTS before push**:
+1. **Always run `make test`** (not `make fasttest`) to ensure all integration tests pass
+2. **Always run `make lint`** to ensure code quality and style compliance
+3. Fix any test failures or lint errors before pushing changes or creating pull requests
+
+**Note**: Integration tests use testcontainers with Spanner emulator and take longer to run, but they are essential to catch issues before CI.
 
 ## Architecture
 
@@ -145,6 +153,11 @@ When adding new client-side statements:
 - Test coverage adequacy
 - Security considerations
 - Error handling completeness
+
+### Issue Management Best Practices
+- Use `gh issue edit <number> --body "content"` for issue updates
+- Multi-line content can be handled with heredoc or escaped newlines in shell commands
+- This ensures better readability than using the GitHub MCP server for issue updates
 
 ## Documentation Structure
 

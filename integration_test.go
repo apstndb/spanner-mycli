@@ -109,6 +109,11 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 	t.Helper()
 	ctx := t.Context()
 
+	if database == "" {
+		// Empty database means admin-only mode with dedicated instance
+		return initializeWithOptions(t, ddls, dmls, true, true)
+	}
+
 	emulator, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
@@ -133,29 +138,74 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 }
 
 func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+	return initializeWithOptions(t, ddls, dmls, false, false)
+}
+
+func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicated bool) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
-		spanemuboost.WithRandomDatabaseID(),
-		spanemuboost.EnableDatabaseAutoConfigOnly(),
-		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
-		spanemuboost.WithSetupDDLs(ddls),
-		spanemuboost.WithSetupRawDMLs(dmls),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if adminOnly {
+		// Admin-only mode: create instance without database
+		var emulatorInstance *tcspanner.Container
+		var clientsTeardown func()
+		var err error
 
-	session, err = initializeSession(ctx, emulator, clients)
-	if err != nil {
-		clientsTeardown()
-		t.Fatalf("failed to create test session: err=%s", err)
-	}
+		if dedicated {
+			emulatorInstance, clients, clientsTeardown, err = spanemuboost.NewEmulatorWithClients(ctx,
+				spanemuboost.EnableInstanceAutoConfigOnly(),
+			)
+		} else {
+			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
+				spanemuboost.EnableInstanceAutoConfigOnly(),
+			)
+			emulatorInstance = emulator
+		}
 
-	return clients, session, func() {
-		session.Close()
-		clientsTeardown()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Create admin-only session
+		sysVars := &systemVariables{
+			Project:  clients.ProjectID,
+			Instance: clients.InstanceID,
+			Database: "", // No database for admin-only mode
+		}
+
+		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
+		if err != nil {
+			clientsTeardown()
+			t.Fatalf("failed to create admin session: err=%s", err)
+		}
+
+		return clients, session, func() {
+			session.Close()
+			clientsTeardown()
+		}
+	} else {
+		// Regular database mode
+		clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
+			spanemuboost.WithRandomDatabaseID(),
+			spanemuboost.EnableDatabaseAutoConfigOnly(),
+			spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
+			spanemuboost.WithSetupDDLs(ddls),
+			spanemuboost.WithSetupRawDMLs(dmls),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		session, err := initializeSession(ctx, emulator, clients)
+		if err != nil {
+			clientsTeardown()
+			t.Fatalf("failed to create test session: err=%s", err)
+		}
+
+		return clients, session, func() {
+			session.Close()
+			clientsTeardown()
+		}
 	}
 }
 
@@ -318,7 +368,13 @@ func TestStatements(t *testing.T) {
 		stmt        []string
 		wantResults []*Result
 		cmpOpts     []cmp.Option
-		database    string
+		database    string // Database name behavior:
+		             // - Empty + admin=false: Random database name (auto-assigned)
+		             // - Empty + admin=true: Admin-only session (no database)
+		             // - Non-empty + admin=false: Specific database name
+		             // - Non-empty + admin=true: Invalid combination (will be rejected)
+		dedicated   bool // Use dedicated instance (vs shared emulator)
+		admin       bool // Create admin-only session (no database connection)
 	}{
 		{
 			desc: "query parameters",
@@ -647,7 +703,7 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
-			desc:     "DATABASE statements",
+			desc:     "DATABASE statements (dedicated instance)",
 			database: "test-database",
 			stmt: sliceOf("SHOW DATABASES",
 				"CREATE DATABASE `new-database`",
@@ -662,13 +718,27 @@ func TestStatements(t *testing.T) {
 			),
 			wantResults: []*Result{
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{IsMutation: true},
+				{
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "new-database", ".*"}, // Duration is variable, use regex
+					},
+				},
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
 				{IsMutation: true},
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					// Allow regex matching for duration field in CREATE DATABASE result
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+			dedicated: true, // Use dedicated instance to avoid interference from other tests
 		},
 		{
 			desc: "SHOW TABLES",
@@ -678,7 +748,7 @@ func TestStatements(t *testing.T) {
 				{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.GoString())
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
 			}, cmp.Ignore())),
 		},
 		{
@@ -791,7 +861,7 @@ func TestStatements(t *testing.T) {
 			cmpOpts: sliceOf(
 				// Ignore Commit Timestamp column value
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows\[\d*]\[1]`).MatchString(path.GoString())
+					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 		},
@@ -835,8 +905,8 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) ||
-						regexp.MustCompile(`\.AffectedRows`).MatchString(path.GoString())
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
 		},
@@ -867,7 +937,7 @@ func TestStatements(t *testing.T) {
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[3]")
 			}, cmp.Ignore())),
 		},
@@ -939,7 +1009,7 @@ func TestStatements(t *testing.T) {
 			},
 			cmpOpts: sliceOf(
 				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows`).MatchString(path.GoString()) // Ignore actual token values
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) // Ignore actual token values
 				}, cmp.Ignore()),
 			),
 		},
@@ -972,9 +1042,93 @@ func TestStatements(t *testing.T) {
 				},
 			},
 			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(`\.TableHeader`).MatchString(path.String()) &&
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[2]") // Allow TableHeader for SELECT
 			}, cmp.Ignore())),
+		},
+		// --- Admin Mode Tests ---
+		{
+			desc: "CREATE DATABASE in admin mode",
+			stmt: sliceOf(
+				"CREATE DATABASE test_db_create",
+			),
+			wantResults: []*Result{
+				{
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "test_db_create", ".*"}, // Duration is variable, use regex
+					},
+				},
+			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					// Allow regex matching for duration field
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+			database:  "", // Empty database with admin=true means admin-only session
+			dedicated: true,
+			admin:     true,
+		},
+		{
+			desc: "SHOW DATABASES in admin mode",
+			stmt: sliceOf(
+				"SHOW DATABASES",
+			),
+			wantResults: []*Result{
+				{
+					TableHeader: toTableHeader("Database"),
+					// Don't check specific rows since databases vary
+				},
+			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+			database:  "", // Empty database with admin=true means admin-only session
+			dedicated: true,
+			admin:     true,
+		},
+		{
+			desc: "CREATE and DROP DATABASE workflow in admin mode",
+			stmt: sliceOf(
+				"CREATE DATABASE test_workflow_db",
+				"SHOW DATABASES",
+				"DROP DATABASE test_workflow_db",
+				"SHOW DATABASES",
+			),
+			wantResults: []*Result{
+				{ // CREATE DATABASE
+					IsMutation:   true,
+					TableHeader:  toTableHeader("Status", "Database", "Duration"),
+					AffectedRows: 1,
+					Rows: []Row{
+						{"Created", "test_workflow_db", ".*"}, // Duration is variable, use regex
+					},
+				},
+				{
+					TableHeader: toTableHeader("Database"),
+					// Don't check specific content
+				},
+				{IsMutation: true}, // DROP DATABASE should also be mutation
+				{
+					TableHeader: toTableHeader("Database"),
+					// Don't check specific content
+				},
+			},
+			cmpOpts: sliceOf(
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			),
+			database:  "", 
+			dedicated: true,
+			admin:     true,
 		},
 	}
 
@@ -985,12 +1139,20 @@ func TestStatements(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 			defer cancel()
 
+			// Validate admin + non-empty database combination
+			if tt.admin && tt.database != "" {
+				t.Fatalf("Invalid test configuration: admin=true with non-empty database=%q", tt.database)
+			}
+
 			var session *Session
 			var teardown func()
-			if tt.database == "" {
-				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
-			} else {
+			if tt.admin {
+				// Admin-only session (database must be empty)
+				_, session, teardown = initializeWithOptions(t, tt.ddls, tt.dmls, true, tt.dedicated)
+			} else if tt.dedicated {
 				_, session, teardown = initializeDedicatedInstance(t, tt.database, tt.ddls, tt.dmls)
+			} else {
+				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
 			}
 			defer teardown()
 
