@@ -575,7 +575,10 @@ func (s *Session) ClosePendingTransaction() error {
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
-		// Return empty iterator with error embedded - caller should check for nil
+		// This should not happen if AdminCompatible interface validation is working correctly
+		// Log the error for debugging since we can't return it directly
+		slog.Error("RunQueryWithStats called without database connection", "error", err, "statement", stmt.SQL)
+		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
 	mode := sppb.ExecuteSqlRequest_PROFILE
@@ -589,6 +592,9 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Validate that we have a database client for query operations
 	if err := s.ValidateDatabaseOperation(); err != nil {
+		// This should not happen if AdminCompatible interface validation is working correctly
+		// Log the error for debugging since we can't return it directly
+		slog.Error("RunQuery called without database connection", "error", err, "statement", stmt.SQL)
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
@@ -639,9 +645,16 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
 	default:
 		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
-		// But we keep this check as a safety measure
+		// and AdminCompatible interface checks in ExecuteStatement
 		if s.client == nil {
-			return nil, nil
+			// This is a programming error - log it and return a failing iterator
+			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations", 
+				"sessionMode", s.mode,
+				"statement", stmt.SQL)
+			// Create a failing iterator that will return an error when used
+			iter := &spanner.RowIterator{}
+			iter.Stop()
+			return iter, nil
 		}
 		txn := s.client.Single()
 		if s.systemVariables.ReadOnlyStaleness != nil {
@@ -766,7 +779,7 @@ func (s *Session) InstanceExists() (bool, error) {
 	instanceAdminClient, err := instanceapi.NewInstanceAdminClient(ctx, s.clientOpts...)
 	if err != nil {
 		// If we can't create the instance admin client, return the original database list error
-		return false, fmt.Errorf("checking instance existence failed: %v", err)
+		return false, fmt.Errorf("failed to create instance admin client: %v; original database list error: tried both spanner.databases.list and spanner.instances.get", err)
 	}
 	defer func() {
 		if closeErr := instanceAdminClient.Close(); closeErr != nil {
