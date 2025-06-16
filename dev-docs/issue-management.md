@@ -374,13 +374,34 @@ gh pr comment <PR_NUMBER> --body "## Review Comment Responses
 - **Context Information**: Shows file location, subject type, and comment previews
 - **Available Review IDs**: Lists all review IDs you can use for replies
 
-**Schema Exploration (for extending functionality):**
+**Schema Exploration and Documentation:**
+
+**Official Documentation:**
+- [GitHub GraphQL API Documentation](https://docs.github.com/en/graphql) - Complete reference for all types, queries, and mutations
+- [GraphQL Explorer](https://docs.github.com/en/graphql/overview/explorer) - Interactive query builder and schema browser
+
+**Schema Introspection with gh CLI:**
 ```bash
 # Discover available fields for any GraphQL type
 gh api graphql -f query='{ __type(name: "PullRequestReviewThread") { fields { name description } } }'
 
 # Find all input fields for mutations
 gh api graphql -f query='{ __type(name: "AddPullRequestReviewThreadReplyInput") { inputFields { name description type { name } } } }'
+
+# List all available mutations
+gh api graphql -f query='{ __schema { mutationType { fields { name description } } } }' | jq '.data.__schema.mutationType.fields[] | select(.name | contains("pullRequest") or contains("review"))'
+
+# Get full schema documentation for a specific type
+gh api graphql -f query='{ __type(name: "PullRequest") { description fields { name description type { name kind } } } }'
+```
+
+**Useful Schema Query Patterns:**
+```bash
+# Find all review-related types
+gh api graphql -f query='{ __schema { types { name } } }' | jq '.data.__schema.types[].name' | grep -i review
+
+# Check required vs optional fields for mutations
+gh api graphql -f query='{ __type(name: "AddPullRequestReviewThreadReplyInput") { inputFields { name type { kind name } } } }' | jq '.data.__type.inputFields[] | {name, required: (.type.kind == "NON_NULL")}'
 ```
 
 **Quick Helper Script Template:**
@@ -413,11 +434,25 @@ gh api graphql -F query=@/tmp/reply_mutation.graphql | jq '.data.addPullRequestR
 ```
 
 **Key Points for GraphQL Approach:**
-- Use existing review ID from the PR reviews list (not a pending review)
-- Thread IDs and review IDs can be found via enhanced GraphQL query with jq filtering
-- Schema introspection helps discover available fields and extend functionality
-- Create mutation file to avoid shell escaping issues with complex text
-- Use `-F query=@file.graphql` for file input to avoid quote escaping
+- **Documentation First**: Always check [GitHub GraphQL API docs](https://docs.github.com/en/graphql) for official field descriptions and examples
+- **Schema Introspection**: Use `gh api graphql` with `__type` and `__schema` queries to explore available fields dynamically
+- **Interactive Development**: Use [GraphQL Explorer](https://docs.github.com/en/graphql/overview/explorer) for building and testing queries interactively
+- **Required Fields**: Use schema introspection to identify required vs optional fields (`NON_NULL` type kind)
+- **Existing Review IDs**: Use review IDs from PR reviews list (not pending reviews)
+- **File-based Mutations**: Create mutation files to avoid shell escaping issues with complex text
+- **Validation**: Always validate GraphQL queries against schema before implementing in scripts
+
+**Common GraphQL API Patterns:**
+```bash
+# Rate limit checking
+gh api graphql -f query='{ rateLimit { cost remaining resetAt } }'
+
+# Node ID resolution (useful for debugging)
+gh api graphql -f query='{ node(id: "PRRT_kwDONC6gMM5SU-GH") { __typename } }'
+
+# Pagination with cursors (for large result sets)
+gh api graphql -f query='{ repository(owner: "apstndb", name: "spanner-mycli") { pullRequests(first: 5, after: "cursor") { pageInfo { hasNextPage endCursor } } } }'
+```
 
 ### Review Comment Response Template
 

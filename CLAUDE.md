@@ -113,6 +113,8 @@ This is a simplified guide. For detailed information, refer to:
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
+3. **For review replies**: [dev-docs/issue-management.md#replying-to-review-thread-comments](dev-docs/issue-management.md#replying-to-review-thread-comments) - GraphQL mutation approach
+4. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
