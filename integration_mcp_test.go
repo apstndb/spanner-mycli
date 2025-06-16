@@ -16,6 +16,7 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/samber/lo"
 )
 
 // setupMCPClientServer creates a complete MCP client-server setup for testing
