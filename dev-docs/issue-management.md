@@ -276,7 +276,20 @@ EOF
 
 ### Replying to Review Thread Comments
 
-**Method 1: GraphQL Mutation (Recommended for direct thread replies)**
+**Method 1: Automated Scripts (Recommended)**
+
+```bash
+# List unresolved review threads that need replies
+scripts/dev/list-review-threads.sh 287
+
+# Reply to a specific thread
+scripts/dev/review-reply.sh PRRT_kwDONC6gMM5SU-GH "Thank you for the feedback!"
+
+# Reply with mention for AI reviews
+scripts/dev/review-reply.sh PRRT_kwDONC6gMM5SVHTH "Fixed as suggested!" gemini-code-assist
+```
+
+**Method 2: Manual GraphQL Mutation (For understanding the process)**
 
 ```bash
 # Step 1: Get review thread IDs and existing comments (enhanced query)
@@ -340,16 +353,17 @@ gh api graphql -f query='
   }
 '
 
-# Step 2: Create GraphQL mutation file
+# Step 2: Create GraphQL mutation file (recommended approach - omit pullRequestReviewId)
 cat > /tmp/reply_mutation.graphql << 'EOF'
 mutation {
   addPullRequestReviewThreadReply(input: {
     pullRequestReviewThreadId: "PRRT_kwDONC6gMM5SU-GH"
-    pullRequestReviewId: "PRR_kwDONC6gMM6uvWPT"
     body: "Your detailed response here"
   }) {
     comment {
       id
+      url
+      body
     }
   }
 }
@@ -461,10 +475,15 @@ gh api graphql -F query=@/tmp/reply_mutation.graphql | jq '.data.addPullRequestR
 - **Documentation First**: Always check [GitHub GraphQL API docs](https://docs.github.com/en/graphql) for official field descriptions and examples
 - **Schema Introspection**: Use `gh api graphql` with `__type` and `__schema` queries to explore available fields dynamically
 - **Interactive Development**: Use [GraphQL Explorer](https://docs.github.com/en/graphql/overview/explorer) for building and testing queries interactively
-- **Required Fields**: Use schema introspection to identify required vs optional fields (`NON_NULL` type kind)
-- **Existing Review IDs**: Use review IDs from PR reviews list (not pending reviews)
+- **Required vs Optional Fields**: Use schema introspection to identify required fields (`NON_NULL` type kind)
+- **pullRequestReviewId**: **IMPORTANT** - This field is optional and often causes failures when included. Omit it for simple thread replies
 - **File-based Mutations**: Create mutation files to avoid shell escaping issues with complex text
 - **Validation**: Always validate GraphQL queries against schema before implementing in scripts
+
+**Common Issues and Solutions:**
+- **Mutation returns null comment**: Often caused by including optional `pullRequestReviewId` field
+- **Permission errors**: Ensure you have write access to the repository
+- **Thread not found**: Verify thread ID is correct and thread still exists
 
 **Common GraphQL API Patterns:**
 ```bash
