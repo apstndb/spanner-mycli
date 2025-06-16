@@ -31,8 +31,12 @@ func InterceptorLogger(l *zap.Logger) logging.Logger {
 			case bool:
 				f = append(f, zap.Bool(key.(string), v))
 			case proto.Message:
-				b, _ := protojson.Marshal(v)
-				f = append(f, zap.Any(key.(string), json.RawMessage(b)))
+				b, err := protojson.Marshal(v)
+				if err != nil {
+					f = append(f, zap.Error(err))
+				} else {
+					f = append(f, zap.Any(key.(string), json.RawMessage(b)))
+				}
 			default:
 				f = append(f, zap.Any(key.(string), v))
 			}

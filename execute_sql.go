@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"slices"
 	"strconv"
@@ -72,7 +73,12 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.
 	if roTxn != nil {
-		result.Timestamp, _ = roTxn.Timestamp()
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+		} else {
+			result.Timestamp = ts
+		}
 	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{

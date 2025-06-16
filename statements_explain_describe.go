@@ -283,7 +283,14 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, err
 	}
 
-	result.Timestamp = lox.IfOrEmptyF(roTxn != nil, func() time.Time { return ignoreError(roTxn.Timestamp()) })
+	if roTxn != nil {
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+		} else {
+			result.Timestamp = ts
+		}
+	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{
 		QueryPlan:  plan,
