@@ -2,9 +2,11 @@ package main
 
 import (
 	_ "embed"
+	"context"
 	"errors"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -120,4 +122,132 @@ func TestSession_FailStatementIfReadOnly(t *testing.T) {
 	if err != nil {
 		t.Errorf("failStatementIfReadOnly should not return an error when ReadOnly is false")
 	}
+}
+
+func TestTransactionContext_NilChecks(t *testing.T) {
+	tests := []struct {
+		name         string
+		tc           *transactionContext
+		method       string
+		shouldPanic  bool
+		panicMessage string
+	}{
+		{
+			name:         "RWTxn with nil context",
+			tc:           nil,
+			method:       "RWTxn",
+			shouldPanic:  true,
+			panicMessage: "read-write transaction is not available",
+		},
+		{
+			name: "RWTxn with nil txn",
+			tc: &transactionContext{
+				mode: transactionModeReadWrite,
+				txn:  nil,
+			},
+			method:       "RWTxn",
+			shouldPanic:  true,
+			panicMessage: "read-write transaction is not available",
+		},
+		{
+			name: "RWTxn with wrong mode",
+			tc: &transactionContext{
+				mode: transactionModeReadOnly,
+				txn:  &mockTransaction{},
+			},
+			method:       "RWTxn",
+			shouldPanic:  true,
+			panicMessage: "must be in read-write transaction, but: read-only",
+		},
+		{
+			name:         "ROTxn with nil context",
+			tc:           nil,
+			method:       "ROTxn",
+			shouldPanic:  true,
+			panicMessage: "read-only transaction is not available",
+		},
+		{
+			name: "ROTxn with nil txn",
+			tc: &transactionContext{
+				mode: transactionModeReadOnly,
+				txn:  nil,
+			},
+			method:       "ROTxn",
+			shouldPanic:  true,
+			panicMessage: "read-only transaction is not available",
+		},
+		{
+			name: "ROTxn with wrong mode",
+			tc: &transactionContext{
+				mode: transactionModeReadWrite,
+				txn:  &mockTransaction{},
+			},
+			method:       "ROTxn",
+			shouldPanic:  true,
+			panicMessage: "must be in read-only transaction, but: read-write",
+		},
+		{
+			name:         "Txn with nil context",
+			tc:           nil,
+			method:       "Txn",
+			shouldPanic:  true,
+			panicMessage: "transaction is not available",
+		},
+		{
+			name: "Txn with nil txn",
+			tc: &transactionContext{
+				mode: transactionModeReadWrite,
+				txn:  nil,
+			},
+			method:       "Txn",
+			shouldPanic:  true,
+			panicMessage: "transaction is not available",
+		},
+		{
+			name: "Txn with wrong mode",
+			tc: &transactionContext{
+				mode: transactionModeUndetermined,
+				txn:  &mockTransaction{},
+			},
+			method:       "Txn",
+			shouldPanic:  true,
+			panicMessage: "must be in transaction, but: ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					if !tt.shouldPanic {
+						t.Errorf("Method %s panicked unexpectedly: %v", tt.method, r)
+					} else if tt.panicMessage != "" && r != tt.panicMessage {
+						t.Errorf("Method %s panicked with wrong message. Expected: %q, got: %v", tt.method, tt.panicMessage, r)
+					}
+				} else if tt.shouldPanic {
+					t.Errorf("Method %s should have panicked but didn't", tt.method)
+				}
+			}()
+
+			switch tt.method {
+			case "RWTxn":
+				tt.tc.RWTxn()
+			case "ROTxn":
+				tt.tc.ROTxn()
+			case "Txn":
+				tt.tc.Txn()
+			}
+		})
+	}
+}
+
+// mockTransaction implements the transaction interface for testing
+type mockTransaction struct{}
+
+func (m *mockTransaction) QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator {
+	return nil
+}
+
+func (m *mockTransaction) Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator {
+	return nil
 }
