@@ -218,7 +218,6 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		timestamp = result.Timestamp.Format(time.RFC3339Nano)
 	}
 
-	// FIXME: Currently, ElapsedTime is not populated in batch mode.
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 
 	var batchInfo string
