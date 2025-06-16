@@ -218,6 +218,19 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want:  singletonMap("CLI_DATABASE_DIALECT", "GOOGLE_STANDARD_SQL")},
 		{desc: "CLI_QUERY_MODE", name: "CLI_QUERY_MODE", value: "PROFILE",
 			want: singletonMap("CLI_QUERY_MODE", "PROFILE")},
+
+		// New CLI_* variables added for Issue #243
+		{desc: "CLI_ENABLE_PROGRESS_BAR", name: "CLI_ENABLE_PROGRESS_BAR", value: "TRUE",
+			want: singletonMap("CLI_ENABLE_PROGRESS_BAR", "TRUE")},
+		{desc: "CLI_IMPERSONATE_SERVICE_ACCOUNT", name: "CLI_IMPERSONATE_SERVICE_ACCOUNT", unimplementedSet: true,
+			sysVars: &systemVariables{ImpersonateServiceAccount: "test@example.com"},
+			want:    singletonMap("CLI_IMPERSONATE_SERVICE_ACCOUNT", "test@example.com")},
+		{desc: "CLI_ENABLE_ADC_PLUS", name: "CLI_ENABLE_ADC_PLUS", unimplementedSet: true,
+			sysVars: &systemVariables{EnableADCPlus: true},
+			want:    singletonMap("CLI_ENABLE_ADC_PLUS", "TRUE")},
+		{desc: "CLI_MCP", name: "CLI_MCP", unimplementedSet: true,
+			sysVars: &systemVariables{MCP: true},
+			want:    singletonMap("CLI_MCP", "TRUE")},
 	}
 
 	for _, test := range tests {
