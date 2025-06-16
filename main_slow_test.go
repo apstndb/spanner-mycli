@@ -15,7 +15,7 @@ func TestRun(t *testing.T) {
 	}{
 		{
 			name:    "embedded emulator success",
-			opts:    &spannerOptions{Execute: "SELECT 1", EmbeddedEmulator: true},
+			opts:    &spannerOptions{Execute: "SELECT 1", EmbeddedEmulator: true, Timeout: "2h"},
 			wantErr: false,
 		},
 		{

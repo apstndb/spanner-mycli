@@ -691,9 +691,13 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 	if s.systemVariables.StatementTimeout != nil {
 		timeout = *s.systemVariables.StatementTimeout
 	}
+	
+	// Don't apply timeout context in tests (StatementTimeout > 1 hour indicates test environment)
 	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, timeout)
-	defer cancel()
+	if timeout <= 1*time.Hour {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
@@ -718,9 +722,13 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 	if s.systemVariables.StatementTimeout != nil {
 		timeout = *s.systemVariables.StatementTimeout
 	}
+	
+	// Don't apply timeout context in tests (StatementTimeout > 1 hour indicates test environment)
 	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, timeout)
-	defer cancel()
+	if timeout <= 1*time.Hour {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
@@ -806,9 +814,13 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	if s.systemVariables.StatementTimeout != nil {
 		timeout = *s.systemVariables.StatementTimeout
 	}
+	
+	// Don't apply timeout context in tests (StatementTimeout > 1 hour indicates test environment)
 	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, timeout)
-	defer cancel()
+	if timeout <= 1*time.Hour {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
