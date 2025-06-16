@@ -457,7 +457,7 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 	}
 
 	// Apply statement timeout
-	timeout := 10 * time.Minute // default timeout
+	timeout := 24 * time.Hour // default timeout for PDML (longer than regular queries)
 	if session.systemVariables.StatementTimeout != nil {
 		timeout = *session.systemVariables.StatementTimeout
 	}
