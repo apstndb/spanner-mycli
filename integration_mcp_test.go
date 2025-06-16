@@ -24,6 +24,10 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	t.Helper()
 	// Create CLI instance
 	var outputBuf strings.Builder
+	
+	// Update the session's StatementTimeout for integration tests
+	session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
+	
 	cli := &Cli{
 		SessionHandler: NewSessionHandler(session),
 		OutStream: &outputBuf,
