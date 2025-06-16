@@ -404,6 +404,24 @@ gh api graphql -f query='{ __schema { types { name } } }' | jq '.data.__schema.t
 gh api graphql -f query='{ __type(name: "AddPullRequestReviewThreadReplyInput") { inputFields { name type { kind name } } } }' | jq '.data.__type.inputFields[] | {name, required: (.type.kind == "NON_NULL")}'
 ```
 
+**Reply with Mentions (Recommended for AI reviews):**
+```bash
+# Include @mention for acknowledgment and notification
+cat > /tmp/reply_mention.graphql << 'EOF'
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "PRRT_kwDONC6gMM5SVHTH"
+    pullRequestReviewId: "PRR_kwDONC6gMM6uvWPT"
+    body: "@gemini-code-assist Thank you for the suggestion! I've addressed your feedback by [specific change made]."
+  }) {
+    comment { id url }
+  }
+}
+EOF
+
+gh api graphql -F query=@/tmp/reply_mention.graphql
+```
+
 **Quick Helper Script Template:**
 ```bash
 #!/bin/bash
@@ -412,10 +430,16 @@ PR_NUMBER=$1
 THREAD_ID=$2
 REVIEW_ID=$3
 REPLY_TEXT="$4"
+MENTION_USER="$5"  # Optional: @username for mention
 
-if [ $# -ne 4 ]; then
-    echo "Usage: $0 <pr_number> <thread_id> <review_id> <reply_text>"
+if [ $# -lt 4 ]; then
+    echo "Usage: $0 <pr_number> <thread_id> <review_id> <reply_text> [mention_user]"
     exit 1
+fi
+
+# Add mention if provided
+if [ -n "$MENTION_USER" ]; then
+    REPLY_TEXT="@$MENTION_USER $REPLY_TEXT"
 fi
 
 cat > /tmp/reply_mutation.graphql << EOF

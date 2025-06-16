@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **CRITICAL RULE**: CLAUDE.md should only contain information that would cause problems if skipped. All other details belong in specialized documentation files.
 
+**Why this rule is critical**: CLAUDE.md is read by AI assistants for every development task. Including verbose content creates cognitive overload and buries essential requirements like `make test && make lint`.
+
 ### What belongs in CLAUDE.md
 - Critical requirements (e.g., `make test && make lint` before push)
 - Essential commands for daily development
