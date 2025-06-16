@@ -44,8 +44,127 @@ phantom shell issue-<number>-<brief-description> --tmux-horizontal # horizontal 
 # Work within the isolated worktree using Claude or preferred tools
 # Each worktree maintains independent build artifacts and test state
 
+# Record development knowledge (see Knowledge Management section below)
+echo "Pattern discovered..." >> .worktree-knowledge.md
+
+# Before cleanup, extract knowledge to CLAUDE.md
 # Cleanup after PR merge
 phantom delete issue-<number>-<brief-description>
+```
+
+#### Knowledge Management Workflow
+
+To capture and integrate development insights from phantom worktrees:
+
+1. **Record Knowledge During Development**:
+   ```bash
+   # In each worktree, document discoveries
+   cat > .worktree-knowledge.md << EOF
+   # Issue #XXX Knowledge
+   
+   ## Problem Category
+   [Architecture/Development Flow/Testing Strategy/etc.]
+   
+   ## Development Flow Insights
+   - Workflow pattern discovered or improved
+   - Tool integration insights
+   - Process efficiency improvements
+   
+   ## Architecture Insights  
+   - Design patterns or principles discovered
+   - Component interaction patterns
+   - System boundary clarifications
+   
+   ## Testing Strategy Insights
+   - Testing approach discoveries
+   - Integration test patterns
+   - Test organization improvements
+   
+   ## Development Process Improvements
+   - phantom/tmux workflow optimizations
+   - Git branching insights
+   - CI/CD process observations
+   
+   ## CLAUDE.md Integration Suggestions
+   - Target Section: [Which CLAUDE.md section should be updated]
+   - Focus Area: [Architecture/Workflow/Testing/Process]
+   EOF
+   ```
+
+2. **Complete Development and PR Process**:
+   ```bash
+   # Normal development workflow
+   # 1. Implement fix/feature in worktree
+   # 2. Create PR, get reviews, run tests
+   # 3. Squash and merge PR
+   # 4. THEN extract knowledge (this order is important)
+   ```
+
+3. **Extract Knowledge After PR Merge**:
+   ```bash
+   # After successful PR merge, extract knowledge before deletion
+   phantom exec issue-XXX-description "cat .worktree-knowledge.md 2>/dev/null || echo 'No knowledge recorded'"
+   
+   # For multiple worktrees
+   for worktree in $(phantom list --names); do
+       echo "=== $worktree ==="
+       phantom exec $worktree "cat .worktree-knowledge.md 2>/dev/null || echo 'No knowledge file'"
+       echo ""
+   done
+   ```
+
+4. **Integrate into CLAUDE.md and Clean Up**:
+   ```bash
+   # Claude Code reviews the collected knowledge and updates CLAUDE.md
+   
+   # Before deletion, check for uncommitted changes
+   phantom exec issue-XXX-description "git status --porcelain"
+   
+   # If .worktree-knowledge.md is the only uncommitted file, safe to delete
+   phantom delete issue-XXX-description
+   
+   # If other files are uncommitted, investigate before using --force
+   # phantom delete issue-XXX-description --force  # only if you understand what's uncommitted
+   
+   # Create separate documentation PR if needed for CLAUDE.md updates
+   ```
+
+**Knowledge Template Generation**:
+```bash
+# Generate template for new worktree
+generate_knowledge_template() {
+    local issue_number=$1
+    cat > .worktree-knowledge.md << EOF
+# Issue #${issue_number} Knowledge
+
+## Problem Category
+[Architecture/Development Flow/Testing Strategy/Process Improvement]
+
+## Development Flow Insights
+- [Workflow improvements or discoveries]
+- [Tool integration insights]
+- [Efficiency optimizations]
+
+## Architecture Insights
+- [Design pattern discoveries]
+- [Component interaction patterns]
+- [System boundary clarifications]
+
+## Testing Strategy Insights
+- [Testing approach improvements]
+- [Test organization discoveries]
+- [Integration test patterns]
+
+## Development Process Improvements
+- [phantom/tmux workflow optimizations]
+- [Git workflow insights]
+- [CI/CD observations]
+
+## CLAUDE.md Integration Suggestions
+- Target Section: [Architecture/Development Practices/Testing/etc.]
+- Focus Area: [Architecture/Workflow/Testing/Process]
+EOF
+}
 ```
 
 ## Architecture and Code Organization
@@ -92,6 +211,31 @@ Key statement categories:
 - Prioritizes author's specific needs over stability
 - Allows testing of experimental features
 - Follows "ZeroVer" version policy (will never reach v1.0.0)
+
+### Development Flow Insights
+
+#### Parallel Issue Development with Phantom
+**Discovery**: Using phantom worktrees enables efficient parallel development of multiple low-hanging fruit issues
+- **Workflow**: Create multiple worktrees simultaneously (`issue-245`, `issue-243`, `issue-241`, etc.)
+- **tmux Integration**: Different layout strategies (window/horizontal/vertical) optimize screen space usage
+- **Independent Testing**: Each worktree maintains separate build artifacts and test state
+- **Context Switching**: No rebuild costs when switching between issues
+- **Knowledge Capture**: `.worktree-knowledge.md` enables systematic capture of insights
+
+#### Error Handling Architecture Evolution  
+**Discovery**: Systematic replacement of panics with proper error handling improves system robustness
+- **Architecture Impact**: Moving from panic-driven failure to graceful error propagation
+- **System Boundary**: Clear distinction between "programming errors" (should panic) vs "runtime conditions" (should return errors)
+- **Testing Strategy**: Comprehensive nil checks and error condition testing becomes critical
+- **Maintenance**: Error handling patterns should be consistent across similar components
+
+#### Resource Management in Batch Processing
+**Discovery**: Proper resource cleanup requires careful defer placement and lifecycle management
+- **defer Timing**: Place defer statements immediately after successful resource creation, not after subsequent operations
+- **Batch Processing Complexity**: Partitioned query processing involves multiple goroutines sharing resources, requiring careful lifecycle management
+- **Architecture Pattern**: Long-lived resources like `batchROTx` need both `Cleanup()` and `Close()` calls in proper sequence
+- **Systematic Review**: Audit defer statement placement by checking if resource creation and cleanup reservation are adjacent
+- **Error Path Safety**: Ensure cleanup occurs even when errors happen in subsequent processing steps
 
 ### Backward Compatibility
 **spanner-mycli does not require traditional backward compatibility** since it's not used as an external library:
