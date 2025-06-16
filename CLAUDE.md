@@ -32,13 +32,16 @@ go run . -p PROJECT -i INSTANCE -d DATABASE
 We use [phantom](https://github.com/aku11i/phantom) for efficient Git worktree management:
 
 ```bash
-# Start new work
-phantom create issue-<number>-<brief-description>
+# Start new work with Claude settings synchronized
+phantom create issue-<number>-<brief-description> --exec 'ln -sf ../../../../.claude .claude'
 
 # Open in tmux (vary layout based on workflow)
 phantom shell issue-<number>-<brief-description> --tmux           # new window
 phantom shell issue-<number>-<brief-description> --tmux-vertical  # vertical split  
 phantom shell issue-<number>-<brief-description> --tmux-horizontal # horizontal split
+
+# Alternative: Create and open in one command (choose one layout)
+phantom create issue-<number>-<brief-description> --exec 'ln -sf ../../../../.claude .claude && tmux split-window -h'
 
 # Work within the isolated worktree using Claude or preferred tools
 # Each worktree maintains independent build artifacts and test state
@@ -47,44 +50,67 @@ phantom shell issue-<number>-<brief-description> --tmux-horizontal # horizontal 
 echo "Discovery: Pattern XXX is effective" >> .notes.md
 
 # Before cleanup, extract knowledge to CLAUDE.md
-# Cleanup after PR merge
+# IMPORTANT: Always check git status before deleting phantom worktree
+phantom exec issue-<number>-<brief-description> git status
+# Verify no unexpected file changes, then cleanup after PR merge
 phantom delete issue-<number>-<brief-description>
 ```
 
 #### Knowledge Management for Automated Integration
 
-Simple knowledge capture with automated integration by Claude Code:
+**Recommended Approach**: Record development insights in PR description and comments:
 
 ```bash
-# In each worktree, record insights in simple format for automated processing
-cat > .notes.md << EOF
-# Issue #XXX Development Notes
+# Include development insights in PR description during creation
+gh pr create --title "Fix: description" --body "$(cat <<'EOF'
+## Summary
+Brief description of changes...
 
-## Discoveries
-- Pattern: Error handling approach for component X
+## Development Insights
+
+### Discoveries
+- Pattern: Error handling approach for component X  
 - Architecture: Component Y dependency should be reversed
 - Testing: Integration test pattern for feature Z
 
-## Improvements Needed
-- TODO: Refactor method A for better testability
-- TODO: Add validation for input B
-- TODO: Optimize query performance in function C
-
-## Process Insights
+### Process Insights  
 - Workflow: phantom + tmux horizontal split works best for this type of issue
 - Tool: Command X saves significant time for debugging
-- CI: Test Y consistently fails in specific conditions
+
+### CLAUDE.md Integration Candidates
+- Add pattern X to Development Flow Insights section
+- Update Dependencies section with library behavior Y
+
+Fixes #XXX
 EOF
+)"
+
+# Add additional insights discovered during review process as comments
+gh pr comment <PR-number> --body "$(cat <<'EOF'
+## Review Process Insights
+
+### Code Review Discoveries
+- Pattern Y emerged during review discussion
+- Alternative approach Z suggested by reviewer
+
+### CI/Testing Insights
+- Test failure revealed edge case in component A
+EOF
+)"
 ```
 
-**Automated Integration Process**:
-After PR completion, Claude Code can automatically:
-1. **Scan `.notes.md`** files across worktrees
-2. **Categorize insights** (code-level, architecture, process)
-3. **Suggest integration locations** (code comments, CLAUDE.md sections, README updates)
-4. **Update documentation** with valuable patterns and insights
+**Benefits of PR Comment Approach**:
+- **Searchable**: GitHub search finds insights across all PRs
+- **Contextual**: Insights linked directly to implementation
+- **Persistent**: No worktree cleanup affects knowledge retention
+- **Collaborative**: Team members can see and build on insights
 
-**Manual Review**: Developer reviews and approves Claude Code's integration suggestions before applying.
+**Alternative (.notes.md)**: Still useful for complex multi-session development or when working offline extensively
+
+**Knowledge Management Evolution**:
+- **Legacy Issue #243**: `.notes.md` files in worktrees required manual integration and were lost during cleanup
+- **Improved Workflow**: PR comments provide persistent, searchable, contextual knowledge capture
+- **Best Practice**: Add development insights as PR comments after implementation for future reference
 
 ## Architecture and Code Organization
 
@@ -118,6 +144,46 @@ Key statement categories:
 3. Create corresponding Statement struct and handler
 4. Add implementation in appropriate `statements_*.go` file
 5. Update tests and documentation
+
+### Adding New System Variables
+When exposing new system variables, follow these patterns established in `system_variables.go`:
+
+1. **Naming Convention**: CLI-specific variables **MUST** use `CLI_` prefix to distinguish from java-spanner JDBC properties
+2. **Access Control Design**:
+   - **Presentation layer variables** (display, formatting): Use `boolAccessor()` or `stringAccessor()` for full read/write access
+   - **Session behavior variables** (authentication, connection settings): Use explicit `accessor{Getter: ...}` for read-only access to prevent runtime session state changes
+3. **Implementation Pattern**:
+   ```go
+   // Read/write variable
+   "CLI_VARIABLE_NAME": {
+       Description: "Clear description of purpose and default value",
+       Accessor: boolAccessor(func(variables *systemVariables) *bool {
+           return &variables.FieldName
+       }),
+   },
+   
+   // Read-only variable (session behavior)
+   "CLI_SESSION_VARIABLE": {
+       Description: "Clear description with read-only nature explained",
+       Accessor: accessor{
+           Getter: stringGetter(func(variables *systemVariables) *string {
+               return &variables.FieldName
+           }),
+       },
+   },
+   ```
+4. **Testing Requirements**: Add comprehensive test cases to `system_variables_test.go` covering both successful operations and proper error handling for unimplemented setters
+5. **Documentation**: Include clear descriptions explaining purpose, default values, and any access restrictions
+
+#### System Variable Design Patterns (Issue #243 Insights)
+**Discovery**: Consistent patterns for system variable implementation improve maintainability and user experience
+- **Pattern**: Use `boolAccessor()` and `stringAccessor()` for read/write variables, explicit `accessor{Getter: ...}` for read-only variables
+- **Architecture**: Session behavior variables should be read-only to prevent runtime session state changes that could cause inconsistencies
+- **Error Handling**: Proper use of `errSetterUnimplemented` and `errGetterUnimplemented` for consistent error reporting
+- **Testing Strategy**: System variables test pattern in `system_variables_test.go` covers both SET/GET operations and proper error handling for unimplemented setters
+- **Code Organization**: System variable definitions follow clear patterns that make adding new variables straightforward
+- **Workflow**: phantom + tmux horizontal split works well for focused system variable implementation
+- **Manual Testing**: Use `--embedded-emulator` only when Go test suite is insufficient - prefer comprehensive test cases in existing test suite
 
 ## Configuration
 
@@ -184,6 +250,12 @@ database = mydatabase
 - **Architecture Pattern**: Long-lived resources like `batchROTx` need both `Cleanup()` and `Close()` calls in proper sequence
 - **Systematic Review**: Audit defer statement placement by checking if resource creation and cleanup reservation are adjacent
 - **Error Path Safety**: Ensure cleanup occurs even when errors happen in subsequent processing steps
+
+#### Systematic Code Quality Improvement (Issue #261 Insights)
+**Discovery**: Re-enabling linters after fixing warnings often reveals additional hidden issues not in original scope
+- **Linter Re-enablement Workflow**: Fix reported warnings → `make lint` → fix newly revealed warnings → re-enable in `.golangci.yml` → verify
+- **Multiple Lint Run Requirement**: Critical practice when re-enabling linters as fixes can expose previously hidden warnings
+- **Staticcheck Warning Categories**: QF series (optimization quick fixes), ST series (Go style compliance) - address by category for consistency
 
 ### Backward Compatibility
 **spanner-mycli does not require traditional backward compatibility** since it's not used as an external library:
@@ -303,3 +375,9 @@ Use GitHub's issue linking syntax in commit messages and PR descriptions:
 - CLI: `github.com/jessevdk/go-flags`, `github.com/nyaosorg/go-readline-ny`
 - Output: `github.com/olekukonko/tablewriter`
 - GenAI: `google.golang.org/genai`
+
+#### go-flags Library Behavior (Issue #251 Insights)
+**Discovery**: go-flags library uses struct field values as defaults in help text, not just `default` tags
+- **Default Display Control**: Use `default-mask:"-"` struct tag to hide config/env values from help text defaults
+- **Architecture Pattern**: Avoid creating multiple parser instances with shared structs to prevent config value leakage into help display
+- **Testing Requirement**: Help text output verification important when modifying flag parsing logic
