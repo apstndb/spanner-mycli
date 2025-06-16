@@ -274,6 +274,79 @@ EOF
 4. **For AI reviews (Gemini Code Assist)**: Use `/gemini review` to trigger re-review
 5. **For praise comments**: Acknowledge briefly and resolve conversation
 
+### Replying to Review Thread Comments
+
+**Method 1: GraphQL Mutation (Recommended for direct thread replies)**
+
+```bash
+# Step 1: Get review thread IDs and existing comments
+gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    pullRequest(number: <PR_NUMBER>) {
+      reviewThreads(first: 10) {
+        nodes {
+          id
+          line
+          path
+          comments(first: 10) {
+            nodes {
+              body
+              author {
+                login
+              }
+            }
+          }
+        }
+      }
+      reviews(first: 10) {
+        nodes {
+          id
+          author {
+            login
+          }
+          state
+        }
+      }
+    }
+  }
+}'
+
+# Step 2: Create GraphQL mutation file
+cat > /tmp/reply_mutation.graphql << 'EOF'
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "PRRT_kwDONC6gMM5SU-GH"
+    pullRequestReviewId: "PRR_kwDONC6gMM6uvWPT"
+    body: "Your detailed response here"
+  }) {
+    comment {
+      id
+    }
+  }
+}
+EOF
+
+# Step 3: Execute the mutation
+gh api graphql -F query=@/tmp/reply_mutation.graphql
+```
+
+**Method 2: General PR Comment (Simpler, but not thread-specific)**
+
+```bash
+gh pr comment <PR_NUMBER> --body "## Review Comment Responses
+
+**Issue 1 (file.go:123):** Response to specific comment...
+**Issue 2 (other.go:456):** Response to another comment..."
+```
+
+**Key Points for GraphQL Approach:**
+- Use existing review ID from the PR reviews list (not a pending review)
+- Thread IDs and review IDs can be found via GraphQL query
+- Include sufficient `first: N` limit to get all comments/threads/reviews
+- Create mutation file to avoid shell escaping issues with complex text
+- Use `-F query=@file.graphql` for file input to avoid quote escaping
+
 ### Review Comment Response Template
 
 ```markdown
