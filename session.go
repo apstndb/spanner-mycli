@@ -202,14 +202,19 @@ type transactionContext struct {
 	priority      sppb.RequestOptions_Priority
 	sendHeartbeat bool // Becomes true only after a user-driven query is executed on the transaction.
 
-	txn            any
+	// txn holds either a read-write or read-only transaction.
+	// Design rationale: Using a single transaction interface field maintains mutual exclusivity
+	// by preventing both RW and RO transactions from existing simultaneously.
+	// The transaction interface provides type safety while still requiring type assertions
+	// for specific transaction types.
+	txn            transaction
 	isolationLevel sppb.TransactionOptions_IsolationLevel
-
-	// rwTxn         *spanner.ReadWriteStmtBasedTransaction
-	// roTxn         *spanner.ReadOnlyTransaction
 }
 
 func (tc *transactionContext) RWTxn() *spanner.ReadWriteStmtBasedTransaction {
+	if tc == nil || tc.txn == nil {
+		panic("read-write transaction is not available")
+	}
 	if tc.mode != transactionModeReadWrite {
 		panic(fmt.Sprintf("must be in read-write transaction, but: %v", tc.mode))
 	}
@@ -217,6 +222,9 @@ func (tc *transactionContext) RWTxn() *spanner.ReadWriteStmtBasedTransaction {
 }
 
 func (tc *transactionContext) ROTxn() *spanner.ReadOnlyTransaction {
+	if tc == nil || tc.txn == nil {
+		panic("read-only transaction is not available")
+	}
 	if tc.mode != transactionModeReadOnly {
 		panic(fmt.Sprintf("must be in read-only transaction, but: %v", tc.mode))
 	}
@@ -229,10 +237,13 @@ var (
 )
 
 func (tc *transactionContext) Txn() transaction {
+	if tc == nil || tc.txn == nil {
+		panic("transaction is not available")
+	}
 	if tc.mode != transactionModeReadOnly && tc.mode != transactionModeReadWrite {
 		panic(fmt.Sprintf("must be in transaction, but: %v", tc.mode))
 	}
-	return tc.txn.(transaction)
+	return tc.txn
 }
 
 type transaction interface {
