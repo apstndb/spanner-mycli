@@ -8,5 +8,5 @@ dist/
 tmp/
 .*.cnf
 
-# Phantom worktree knowledge files
-.worktree-knowledge.md
+# Phantom worktree notes
+.notes.md
