@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -130,7 +129,7 @@ func toTableHeader[T interface {
 		return result
 	default:
 		// This should be unreachable due to type constraints, but log instead of panic
-		fmt.Fprintf(os.Stderr, "Warning: toTableHeader received unexpected type: %T\n", ss)
+		slog.Warn("toTableHeader received unexpected type", "type", fmt.Sprintf("%T", ss))
 		return nil
 	}
 }
