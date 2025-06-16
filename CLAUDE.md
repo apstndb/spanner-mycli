@@ -51,6 +51,10 @@ scripts/docs/update-help-output.sh    # Update README.md help sections
 
 # Phantom worktree management (recommended)
 scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
+
+# GitHub review replies (automated)
+scripts/dev/list-review-threads.sh 287         # Find threads needing replies
+scripts/dev/review-reply.sh THREAD_ID "reply"  # Reply to specific thread
 ```
 
 ## Core Architecture Overview
@@ -115,7 +119,7 @@ This is a simplified guide. For detailed information, refer to:
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-3. **For review replies**: [dev-docs/issue-management.md#replying-to-review-thread-comments](dev-docs/issue-management.md#replying-to-review-thread-comments) - GraphQL mutation approach
+3. **For review replies**: Use `scripts/dev/list-review-threads.sh` and `scripts/dev/review-reply.sh` - Automated thread replies
 4. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 ### When encountering development problems:
