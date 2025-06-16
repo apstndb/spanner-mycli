@@ -395,7 +395,6 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	if err != nil {
 		return nil, err
 	}
-
 	defer func() {
 		batchROTx.Cleanup(ctx)
 		batchROTx.Close()
