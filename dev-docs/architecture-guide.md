@@ -270,4 +270,3 @@ spanner-mycli/
 - [Development Insights](development-insights.md) - Development patterns and best practices
 - [System Variable Patterns](patterns/system-variables.md) - System variable implementation
 - [Issue Management](issue-management.md) - GitHub workflow and processes
-- [Testing Guide](testing-guide.md) - Testing strategies and execution

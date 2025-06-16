@@ -22,6 +22,23 @@ scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
 
 # Manual setup (for reference)
 phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude'
+```
+
+### Path Structure Explanation
+
+**Phantom worktree directory structure:**
+```
+/home/user/spanner-mycli/                    # Repository root
+├── .claude/                                 # Claude settings directory
+└── .git/phantom/worktrees/<worktree-name>/  # Phantom worktree location
+```
+
+**Symlink path breakdown (`../../../../.claude`):**
+- `../` → `/home/user/spanner-mycli/.git/phantom/worktrees/`
+- `../../` → `/home/user/spanner-mycli/.git/phantom/`
+- `../../../` → `/home/user/spanner-mycli/.git/`
+- `../../../../` → `/home/user/spanner-mycli/` (repository root)
+- `../../../../.claude` → `/home/user/spanner-mycli/.claude/`
 phantom shell issue-276-timeout-flag --tmux-horizontal
 ```
 

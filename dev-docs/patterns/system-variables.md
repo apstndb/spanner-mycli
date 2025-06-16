@@ -194,4 +194,3 @@ func TestIntegration_LongRunningQuery(t *testing.T) {
 
 - [Development Insights](../development-insights.md) - General development patterns
 - [Architecture Guide](../architecture-guide.md) - Overall system architecture
-- [Testing Guide](../testing-guide.md) - Testing strategies and patterns
