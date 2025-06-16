@@ -93,11 +93,13 @@ func TestMain(m *testing.M) {
 func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
 	options := defaultClientOptions(emulator)
 	session, err = NewSession(ctx, &systemVariables{
-		Project:     clients.ProjectID,
-		Instance:    clients.InstanceID,
-		Database:    clients.DatabaseID,
-		Params:      make(map[string]ast.Node),
-		RPCPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}, options...)
+		Project:          clients.ProjectID,
+		Instance:         clients.InstanceID,
+		Database:         clients.DatabaseID,
+		Params:           make(map[string]ast.Node),
+		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+	}, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -168,9 +170,10 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 
 		// Create admin-only session
 		sysVars := &systemVariables{
-			Project:  clients.ProjectID,
-			Instance: clients.InstanceID,
-			Database: "", // No database for admin-only mode
+			Project:          clients.ProjectID,
+			Instance:         clients.InstanceID,
+			Database:         "", // No database for admin-only mode
+			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
 
 		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
