@@ -94,6 +94,7 @@ type spannerOptions struct {
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
+	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server"`
 }
 
@@ -406,6 +407,17 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	if opts.EnablePartitionedDML {
 		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
 			return systemVariables{}, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
+		}
+	}
+
+	if opts.Timeout != "" {
+		// Validate timeout format before setting system variable for better error reporting
+		_, err := time.ParseDuration(opts.Timeout)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+		}
+		if err := sysVars.Set("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
 	}
 

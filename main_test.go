@@ -188,6 +188,36 @@ func Test_initializeSystemVariables(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "valid timeout flag",
+			opts: &spannerOptions{
+				Timeout: "30s",
+			},
+			want: systemVariables{
+				Prompt:               defaultPrompt,
+				Prompt2:              defaultPrompt2,
+				HistoryFile:          defaultHistoryFile,
+				LogLevel:             slog.LevelWarn,
+				VertexAIModel:        defaultVertexAIModel,
+				EnableADCPlus:        true,
+				AnalyzeColumns:       DefaultAnalyzeColumns,
+				RPCPriority:          defaultPriority,
+				OutputTemplateFile:   "",
+				OutputTemplate:       defaultOutputFormat,
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				Params:               make(map[string]ast.Node),
+				StatementTimeout:     lo.ToPtr(30 * time.Second),
+			},
+			wantErr: false,
+		},
+		{
+			name: "error: invalid timeout format",
+			opts: &spannerOptions{
+				Timeout: "invalid",
+			},
+			want:    systemVariables{},
+			wantErr: true,
+		},
+		{
 			name: "error: invalid directed read option",
 			opts: &spannerOptions{
 				DirectedRead: "invalid-option",

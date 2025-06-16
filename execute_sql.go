@@ -456,9 +456,6 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
-	defer cancel()
-
 	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
 	if err != nil {
 		return nil, err

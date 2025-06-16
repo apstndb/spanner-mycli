@@ -33,9 +33,6 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 )
 
-// Partitioned DML tends to take long time to be finished.
-// See: https://github.com/cloudspannerecosystem/spanner-cli/issues/102
-const pdmlTimeout = time.Hour * 24
 
 type Statement interface {
 	Execute(ctx context.Context, session *Session) (*Result, error)
