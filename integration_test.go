@@ -98,7 +98,7 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 		Database:         clients.DatabaseID,
 		Params:           make(map[string]ast.Node),
 		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		StatementTimeout: lo.ToPtr(2 * time.Hour), // Long timeout for integration tests
+		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}, options...)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,7 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 			Project:          clients.ProjectID,
 			Instance:         clients.InstanceID,
 			Database:         "", // No database for admin-only mode
-			StatementTimeout: lo.ToPtr(2 * time.Hour), // Long timeout for integration tests
+			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
 
 		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)

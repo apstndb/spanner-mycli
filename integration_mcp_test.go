@@ -25,8 +25,8 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	// Create CLI instance
 	var outputBuf strings.Builder
 	
-	// Update the session's StatementTimeout for integration tests (2 hours to skip timeout context)
-	session.systemVariables.StatementTimeout = lo.ToPtr(2 * time.Hour)
+	// Update the session's StatementTimeout for integration tests
+	session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
 	session.systemVariables.Verbose = true // Set Verbose to true to ensure result line is printed
 	
 	cli := &Cli{
@@ -193,7 +193,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		Database:              "non-existent-database",
 		Params:                make(map[string]ast.Node),
 		RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		StatementTimeout:      lo.ToPtr(2 * time.Hour), // Long timeout for integration tests
+		StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		Endpoint:              emulator.URI(),
 		WithoutAuthentication: true,
 	}
@@ -380,7 +380,7 @@ func TestRunMCP(t *testing.T) {
 		defer teardown()
 
 		// Create CLI with different system variables (but make sure session has timeout too)
-		session.systemVariables.StatementTimeout = lo.ToPtr(2 * time.Hour)
+		session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
 		
 		var outputBuf strings.Builder
 		cli := &Cli{
@@ -395,7 +395,7 @@ func TestRunMCP(t *testing.T) {
 				RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 				Endpoint:              session.systemVariables.Endpoint,
 				WithoutAuthentication: session.systemVariables.WithoutAuthentication,
-				StatementTimeout:      lo.ToPtr(2 * time.Hour), // Long timeout for integration tests
+				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 				AutoWrap:              true, // Set a different value
 				EnableHighlight:       true, // Set a different value
 			},

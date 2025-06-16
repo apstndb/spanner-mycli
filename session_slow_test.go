@@ -91,7 +91,7 @@ func TestRequestPriority(t *testing.T) {
 				Database:         database,
 				RPCPriority:      test.sessionPriority,
 				Role:             "role",
-				StatementTimeout: lo.ToPtr(2 * time.Hour), // Long timeout for integration tests
+				StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
