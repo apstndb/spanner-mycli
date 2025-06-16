@@ -685,6 +685,16 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
+	
+	// Apply statement timeout
+	timeout := 10 * time.Minute // default timeout
+	if s.systemVariables.StatementTimeout != nil {
+		timeout = *s.systemVariables.StatementTimeout
+	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, timeout)
+	defer cancel()
+	
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
@@ -702,6 +712,16 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
+	
+	// Apply statement timeout
+	timeout := 10 * time.Minute // default timeout
+	if s.systemVariables.StatementTimeout != nil {
+		timeout = *s.systemVariables.StatementTimeout
+	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, timeout)
+	defer cancel()
+	
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -780,6 +800,15 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	if !s.InReadWriteTransaction() {
 		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
 	}
+
+	// Apply statement timeout
+	timeout := 10 * time.Minute // default timeout
+	if s.systemVariables.StatementTimeout != nil {
+		timeout = *s.systemVariables.StatementTimeout
+	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit

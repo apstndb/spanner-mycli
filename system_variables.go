@@ -74,6 +74,7 @@ type systemVariables struct {
 	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
 	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
+	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
 
 	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
 
@@ -397,7 +398,26 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"STATEMENT_TIMEOUT": {
-		Description: "(NOT IMPLEMENTED) A property of type STRING indicating the current timeout value for statements.",
+		Description: "A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.StatementTimeout == nil {
+					return singletonMap(name, "10m"), nil
+				}
+				return singletonMap(name, this.StatementTimeout.String()), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				timeout, err := time.ParseDuration(unquoteString(value))
+				if err != nil {
+					return fmt.Errorf("invalid timeout format: %v", err)
+				}
+				if timeout < 0 {
+					return fmt.Errorf("timeout cannot be negative")
+				}
+				this.StatementTimeout = &timeout
+				return nil
+			},
+		},
 	},
 	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
 		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
