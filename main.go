@@ -411,6 +411,11 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	if opts.Timeout != "" {
+		// Validate timeout format before setting system variable for better error reporting
+		_, err := time.ParseDuration(opts.Timeout)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+		}
 		if err := sysVars.Set("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
