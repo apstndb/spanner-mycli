@@ -126,14 +126,14 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
 	// Create admin-only session if no database is specified
 	if sysVars.Database == "" {
-		return NewAdminSession(ctx, sysVars, h.Session.clientOpts...)
+		return NewAdminSession(ctx, sysVars, h.clientOpts...)
 	}
 	
-	return NewSession(ctx, sysVars, h.Session.clientOpts...)
+	return NewSession(ctx, sysVars, h.clientOpts...)
 }
 
 func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
-	newSystemVariables := *h.Session.systemVariables
+	newSystemVariables := *h.systemVariables
 	newSystemVariables.Database = s.Database
 	newSystemVariables.Role = s.Role
 
@@ -162,7 +162,7 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 }
 
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
-	newSystemVariables := *h.Session.systemVariables
+	newSystemVariables := *h.systemVariables
 	
 	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""

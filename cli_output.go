@@ -221,9 +221,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 
 	var batchInfo string
-	switch {
-	case result.BatchInfo == nil:
-		break
+	switch result.BatchInfo {
+	case nil:
 	default:
 		batchInfo = fmt.Sprintf(" (%d %s%s in batch)", result.BatchInfo.Size,
 			lo.Ternary(result.BatchInfo.Mode == batchModeDDL, "DDL", "DML"),

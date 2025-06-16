@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spannerplan"
@@ -175,7 +174,7 @@ func getStructOpts() []yaml.EncodeOption {
 func getGlobalOpts() []yaml.EncodeOption {
 	return slices.Concat(
 		[]yaml.EncodeOption{
-			yaml.CustomMarshaler[*spannerpb.PlanNode_ChildLink](func(link *spannerpb.PlanNode_ChildLink) ([]byte, error) {
+			yaml.CustomMarshaler[*sppb.PlanNode_ChildLink](func(link *sppb.PlanNode_ChildLink) ([]byte, error) {
 				return yaml.MarshalWithOptions(link, yaml.UseJSONMarshaler(), yaml.Flow(true))
 			}),
 		},
@@ -227,7 +226,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	}
 
 	if queryPlan == nil {
-		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator.")
+		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator")
 	}
 
 	result, err := generateExplainResult(session.systemVariables, queryPlan, format, width)
@@ -275,7 +274,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
 	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
 	if plan == nil {
-		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator.")
+		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator")
 	}
 
 	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats, format, width)

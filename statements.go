@@ -297,11 +297,11 @@ func (PartitionedDmlStatement) isMutationStatement() {}
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
+		return nil, errors.New(`partitioned DML statement can not be run in a read-write transaction`)
 	}
 	if session.InReadOnlyTransaction() {
 		// Just for user-friendly.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
+		return nil, errors.New(`partitioned DML statement can not be run in a read-only transaction`)
 	}
 
 	return executePDML(ctx, session, s.Dml)

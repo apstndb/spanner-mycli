@@ -377,7 +377,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
 			}
 
-			if strings.TrimSpace(query) == "" && !(hasLastOption && hasQueryOption) {
+			if strings.TrimSpace(query) == "" && (!hasLastOption || !hasQueryOption) {
 				return nil, fmt.Errorf("missing SQL query or 'LAST QUERY' for EXPLAIN%s statement", lo.Ternary(isAnalyze, " ANALYZE", ""))
 			}
 
