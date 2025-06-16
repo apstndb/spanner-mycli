@@ -1011,6 +1011,29 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			return &variables.AutoConnectAfterCreate
 		}),
 	},
+	"CLI_ENABLE_PROGRESS_BAR": {
+		Description: "A boolean indicating whether to display progress bars during operations. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableProgressBar
+		}),
+	},
+	// Session behavior variables - Getter only to avoid runtime session state changes
+	"CLI_IMPERSONATE_SERVICE_ACCOUNT": {
+		Description: "Service account email for impersonation.",
+		Accessor: accessor{
+			Getter: stringGetter(func(variables *systemVariables) *string {
+				return &variables.ImpersonateServiceAccount
+			}),
+		},
+	},
+	"CLI_ENABLE_ADC_PLUS": {
+		Description: "A boolean indicating whether to enable enhanced Application Default Credentials. The default is false.",
+		Accessor: accessor{
+			Getter: boolGetter(func(variables *systemVariables) *bool {
+				return &variables.EnableADCPlus
+			}),
+		},
+	},
 }
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
