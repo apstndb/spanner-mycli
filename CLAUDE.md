@@ -56,66 +56,109 @@ phantom delete issue-<number>-<brief-description>
 
 To capture and integrate development insights from phantom worktrees:
 
-1. **Record Knowledge During Development**:
+1. **Record Knowledge During Development** (Broad Scope):
    ```bash
-   # In each worktree, document discoveries
+   # In each worktree, document all discoveries broadly
    cat > .worktree-knowledge.md << EOF
    # Issue #XXX Knowledge
    
+   ## Development Phase
+   [pre-PR / during-review / post-completion]
+   
    ## Problem Category
-   [Architecture/Development Flow/Testing Strategy/etc.]
+   [Architecture/Development Flow/Testing Strategy/Code Quality/Tool Integration/etc.]
+   
+   ## Code-Level Insights (Consider for codebase documentation)
+   - API design patterns discovered
+   - Error handling patterns
+   - Performance optimization techniques
+   - Testing patterns specific to this component
+   - Code organization principles
+   
+   ## Architecture Insights
+   - System design patterns or principles discovered
+   - Component interaction patterns
+   - System boundary clarifications
+   - Scalability considerations
    
    ## Development Flow Insights
    - Workflow pattern discovered or improved
-   - Tool integration insights
+   - Tool integration insights (phantom/tmux/git/CI)
    - Process efficiency improvements
-   
-   ## Architecture Insights  
-   - Design patterns or principles discovered
-   - Component interaction patterns
-   - System boundary clarifications
+   - Debugging techniques and strategies
    
    ## Testing Strategy Insights
    - Testing approach discoveries
    - Integration test patterns
    - Test organization improvements
+   - Coverage strategy insights
    
-   ## Development Process Improvements
-   - phantom/tmux workflow optimizations
-   - Git branching insights
-   - CI/CD process observations
+   ## Code Review & Collaboration Insights
+   - Review feedback patterns
+   - Communication strategies with AI assistants
+   - Conflict resolution approaches
+   
+   ## Tooling & Environment Insights
+   - Editor/IDE optimizations
+   - Build system discoveries
+   - Local development environment improvements
+   
+   ## Codebase Integration Recommendations
+   - Should this knowledge become code comments?
+   - Should this become inline documentation?
+   - Should this update existing code documentation?
+   - Does this warrant updating README or docs/?
    
    ## CLAUDE.md Integration Suggestions
    - Target Section: [Which CLAUDE.md section should be updated]
-   - Focus Area: [Architecture/Workflow/Testing/Process]
+   - Focus Area: [Architecture/Workflow/Testing/Process/Tooling]
+   - Priority: [High/Medium/Low - for integration decision]
    EOF
    ```
 
-2. **Complete Development and PR Process**:
+2. **Knowledge Evolution During Development Phases**:
    ```bash
-   # Normal development workflow
-   # 1. Implement fix/feature in worktree
-   # 2. Create PR, get reviews, run tests
-   # 3. Squash and merge PR
-   # 4. THEN extract knowledge (this order is important)
+   # Pre-PR Phase: Focus on implementation discoveries
+   echo "## Development Phase: pre-PR" >> .worktree-knowledge.md
+   echo "- Implementation approach discoveries" >> .worktree-knowledge.md
+   echo "- Initial architecture insights" >> .worktree-knowledge.md
+   
+   # During Review Phase: Capture review feedback and iteration insights
+   echo "## Development Phase: during-review" >> .worktree-knowledge.md  
+   echo "- Review feedback patterns and resolution strategies" >> .worktree-knowledge.md
+   echo "- Code improvement insights from collaboration" >> .worktree-knowledge.md
+   
+   # Post-Completion Phase: Comprehensive reflection
+   echo "## Development Phase: post-completion" >> .worktree-knowledge.md
+   echo "- Final architecture insights and lessons learned" >> .worktree-knowledge.md
+   echo "- Process optimization opportunities" >> .worktree-knowledge.md
    ```
 
-3. **Extract Knowledge After PR Merge**:
+3. **Knowledge Integration Decision Process**:
    ```bash
-   # After successful PR merge, extract knowledge before deletion
+   # After successful PR merge, extract and categorize knowledge
    phantom exec issue-XXX-description "cat .worktree-knowledge.md 2>/dev/null || echo 'No knowledge recorded'"
    
-   # For multiple worktrees
-   for worktree in $(phantom list --names); do
-       echo "=== $worktree ==="
-       phantom exec $worktree "cat .worktree-knowledge.md 2>/dev/null || echo 'No knowledge file'"
-       echo ""
-   done
+   # Claude Code evaluates each insight for appropriate integration:
+   # 1. Code-level insights → Consider for code comments, inline docs, or README updates
+   # 2. Architecture insights → Potential CLAUDE.md integration 
+   # 3. Process insights → CLAUDE.md workflow sections
+   # 4. Tool insights → CLAUDE.md development practices
    ```
 
-4. **Integrate into CLAUDE.md and Clean Up**:
+4. **Selective Integration and Clean Up**:
    ```bash
-   # Claude Code reviews the collected knowledge and updates CLAUDE.md
+   # Strategic integration based on knowledge type and timing:
+   
+   # PRIORITY 1: Code-level insights requiring immediate action
+   # - Should this knowledge become code comments before PR merge?
+   # - Does this require README or docs/ updates as part of the feature PR?
+   # - Are there API documentation updates needed?
+   
+   # PRIORITY 2: Architecture and process insights for CLAUDE.md
+   # - High priority: System design patterns, critical workflow improvements
+   # - Medium priority: Development efficiency insights, tool optimizations  
+   # - Low priority: Minor process observations, environment tweaks
    
    # Before deletion, check for uncommitted changes
    phantom exec issue-XXX-description "git status --porcelain"
@@ -123,46 +166,63 @@ To capture and integrate development insights from phantom worktrees:
    # If .worktree-knowledge.md is the only uncommitted file, safe to delete
    phantom delete issue-XXX-description
    
-   # If other files are uncommitted, investigate before using --force
-   # phantom delete issue-XXX-description --force  # only if you understand what's uncommitted
-   
-   # Create separate documentation PR if needed for CLAUDE.md updates
+   # Create separate documentation PR for CLAUDE.md updates only if substantial
+   # Minor insights can be integrated directly without separate PR
    ```
 
-**Knowledge Template Generation**:
+**Enhanced Knowledge Template Generation**:
 ```bash
-# Generate template for new worktree
+# Generate comprehensive template for new worktree
 generate_knowledge_template() {
     local issue_number=$1
     cat > .worktree-knowledge.md << EOF
 # Issue #${issue_number} Knowledge
 
+## Development Phase
+pre-PR
+
 ## Problem Category
-[Architecture/Development Flow/Testing Strategy/Process Improvement]
+[Architecture/Development Flow/Testing Strategy/Code Quality/Tool Integration/etc.]
+
+## Code-Level Insights (Consider for codebase documentation)
+- [API design patterns discovered]
+- [Error handling patterns]
+- [Performance optimization techniques]
+- [Testing patterns specific to this component]
+
+## Architecture Insights
+- [System design patterns or principles discovered]
+- [Component interaction patterns]
+- [System boundary clarifications]
 
 ## Development Flow Insights
 - [Workflow improvements or discoveries]
-- [Tool integration insights]
-- [Efficiency optimizations]
-
-## Architecture Insights
-- [Design pattern discoveries]
-- [Component interaction patterns]
-- [System boundary clarifications]
+- [Tool integration insights (phantom/tmux/git/CI)]
+- [Debugging techniques and strategies]
 
 ## Testing Strategy Insights
 - [Testing approach improvements]
 - [Test organization discoveries]
 - [Integration test patterns]
 
-## Development Process Improvements
-- [phantom/tmux workflow optimizations]
-- [Git workflow insights]
-- [CI/CD observations]
+## Code Review & Collaboration Insights
+- [Review feedback patterns]
+- [Communication strategies with AI assistants]
+
+## Tooling & Environment Insights
+- [Editor/IDE optimizations]
+- [Build system discoveries]
+
+## Codebase Integration Recommendations
+- Should this knowledge become code comments? [Yes/No + reasoning]
+- Should this become inline documentation? [Yes/No + where]
+- Should this update existing code documentation? [Yes/No + which files]
+- Does this warrant updating README or docs/? [Yes/No + sections]
 
 ## CLAUDE.md Integration Suggestions
 - Target Section: [Architecture/Development Practices/Testing/etc.]
-- Focus Area: [Architecture/Workflow/Testing/Process]
+- Focus Area: [Architecture/Workflow/Testing/Process/Tooling]
+- Priority: [High/Medium/Low]
 EOF
 }
 ```
@@ -228,6 +288,26 @@ Key statement categories:
 - **System Boundary**: Clear distinction between "programming errors" (should panic) vs "runtime conditions" (should return errors)
 - **Testing Strategy**: Comprehensive nil checks and error condition testing becomes critical
 - **Maintenance**: Error handling patterns should be consistent across similar components
+
+#### Systematic Error Detection and Quality Improvement
+**Discovery**: Comprehensive error handling review reveals patterns and establishes sustainable practices
+- **Detection Strategy**: Use `rg "_, _ ="` and `rg "ignoreError"` for systematic scanning of ignored errors
+- **Three-Tier Improvement**: Silent failure → warning logs → contextual logging with relevant data
+- **Contextual Information Priority**: Include SQL statements, proto type names, and operation context in error logs
+- **Review-Driven Development**: AI assistant collaboration provides iterative improvement from basic fixes to optimization
+- **Helper Function Elimination**: Remove error-hiding utilities (`ignoreError`) to enforce explicit handling
+- **Log Efficiency**: Balance between debugging information and log volume (proto type names vs full messages)
+
+#### System Robustness Through Panic Elimination
+**Discovery**: Strategic panic removal requires systematic categorization and staged approach
+- **Decision Criteria for panic vs error return**:
+  - Programming errors (type violations, impossible states) → panic or log + graceful degradation
+  - Runtime conditions (invalid input, configuration errors) → error return
+  - External package code → preserve original behavior
+- **Library Code Principles**: Avoid panics in library code, provide callers with choices
+- **Systematic Approach**: Use `rg "panic\("` to scan → categorize by file/purpose → prioritize by impact
+- **Parallel Development**: Consider PR conflicts when multiple issues address overlapping code areas
+- **Consistency Patterns**: Maintain unified structured logging (slog) for better caller control
 
 #### Resource Management in Batch Processing
 **Discovery**: Proper resource cleanup requires careful defer placement and lifecycle management
