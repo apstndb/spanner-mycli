@@ -75,7 +75,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	if roTxn != nil {
 		ts, err := roTxn.Timestamp()
 		if err != nil {
-			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+			slog.Warn("failed to get read-only transaction timestamp", "err", err, "sql", sql)
 		} else {
 			result.Timestamp = ts
 		}
