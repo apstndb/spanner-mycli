@@ -55,9 +55,9 @@ type globalOptions struct {
 
 // We can't use `default` because spanner-mycli uses multiple flags.NewParser() to process config files and flags.
 type spannerOptions struct {
-	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID"  description:"(required) GCP Project ID."`
-	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" description:"Cloud Spanner Database ID. Optional when --detached is used."`
+	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID" default-mask:"-" description:"(required) GCP Project ID."`
+	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" default-mask:"-" description:"(required) Cloud Spanner Instance ID"`
+	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" default-mask:"-" description:"Cloud Spanner Database ID. Optional when --detached is used."`
 	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag"`
 	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
 	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
@@ -118,9 +118,6 @@ func determineInitialDatabase(opts *spannerOptions) string {
 	return ""
 }
 
-func addEmulatorImageOption(parser *flags.Parser) {
-	parser.Groups()[0].Find("spanner").FindOptionByLongName("emulator-image").DefaultMask = spanemuboost.DefaultEmulatorImage
-}
 
 const (
 	defaultPrompt         = "spanner%t> "
@@ -170,18 +167,18 @@ func SetLogLevel(logLevel string) (slog.Level, error) {
 }
 
 func main() {
-	gopts, parserForHelp, err := parseFlags()
+	gopts, parser, err := parseFlags()
 
 	if flags.WroteHelp(err) {
 		// exit successfully
 		return
 	} else if err != nil {
-		parserForHelp.WriteHelp(os.Stderr)
+		parser.WriteHelp(os.Stderr)
 		fmt.Fprintf(os.Stderr, "Invalid options: %v\n", err)
 		os.Exit(exitCodeError)
 		return
 	} else if gopts.Spanner.Help {
-		parserForHelp.WriteHelp(os.Stderr)
+		parser.WriteHelp(os.Stderr)
 		return
 	} else if gopts.Spanner.Version {
 		fmt.Printf("%v\n%v\n", getVersion(), installFrom)
@@ -491,11 +488,14 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 }
 
 func parseFlags() (globalOptions, *flags.Parser, error) {
+	// Initialize globalOptions with default values that should appear in help text.
+	// go-flags uses struct field values as defaults when displaying help.
+	// This is why we set EmulatorImage here instead of using default-mask.
 	var gopts globalOptions
+	gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
 
 	// process config files at first
 	configFileParser := flags.NewParser(&gopts, flags.Default)
-	addEmulatorImageOption(configFileParser)
 
 	if err := readConfigFile(configFileParser); err != nil {
 		return globalOptions{}, nil, fmt.Errorf("invalid config file format: %w", err)
@@ -503,15 +503,10 @@ func parseFlags() (globalOptions, *flags.Parser, error) {
 
 	// then, process environment variables and command line options
 	// use another parser to process environment variables with higher precedence than configuration files
-	// flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
 	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
-	addEmulatorImageOption(flagParser)
 
-	// TODO: Workaround to avoid to display config value as default
-	parserForHelp := flags.NewParser(&globalOptions{}, flags.Default)
-	addEmulatorImageOption(parserForHelp)
 	_, err := flagParser.Parse()
-	return gopts, parserForHelp, err
+	return gopts, flagParser, err
 }
 
 const cnfFileName = ".spanner_mycli.cnf"
