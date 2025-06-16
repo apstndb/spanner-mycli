@@ -279,7 +279,7 @@ EOF
 **Method 1: GraphQL Mutation (Recommended for direct thread replies)**
 
 ```bash
-# Step 1: Get review thread IDs and existing comments
+# Step 1: Get review thread IDs and existing comments (enhanced query)
 gh api graphql -f query='
 {
   repository(owner: "apstndb", name: "spanner-mycli") {
@@ -289,12 +289,16 @@ gh api graphql -f query='
           id
           line
           path
+          isResolved
+          subjectType
           comments(first: 10) {
             nodes {
+              id
               body
               author {
                 login
               }
+              createdAt
             }
           }
         }
@@ -306,11 +310,35 @@ gh api graphql -f query='
             login
           }
           state
+          submittedAt
         }
       }
     }
   }
-}'
+}' | jq '
+  .data.repository.pullRequest |
+  {
+    "unresolved_threads": [
+      .reviewThreads.nodes[] | 
+      select(.isResolved == false) |
+      {
+        "thread_id": .id,
+        "location": "\(.path):\(.line)",
+        "subject_type": .subjectType,
+        "latest_comment": .comments.nodes[-1].body[0:100] + "...",
+        "needs_reply": (.comments.nodes | map(.author.login) | unique | contains(["apstndb"]) | not)
+      }
+    ],
+    "available_review_ids": [
+      .reviews.nodes[] |
+      {
+        "review_id": .id,
+        "author": .author.login,
+        "state": .state
+      }
+    ]
+  }
+'
 
 # Step 2: Create GraphQL mutation file
 cat > /tmp/reply_mutation.graphql << 'EOF'
@@ -340,10 +368,54 @@ gh pr comment <PR_NUMBER> --body "## Review Comment Responses
 **Issue 2 (other.go:456):** Response to another comment..."
 ```
 
+**Enhanced Features Using GraphQL Schema:**
+- **Filtered Output**: Only shows unresolved threads that need replies
+- **Smart Detection**: Identifies threads where you haven't replied yet
+- **Context Information**: Shows file location, subject type, and comment previews
+- **Available Review IDs**: Lists all review IDs you can use for replies
+
+**Schema Exploration (for extending functionality):**
+```bash
+# Discover available fields for any GraphQL type
+gh api graphql -f query='{ __type(name: "PullRequestReviewThread") { fields { name description } } }'
+
+# Find all input fields for mutations
+gh api graphql -f query='{ __type(name: "AddPullRequestReviewThreadReplyInput") { inputFields { name description type { name } } } }'
+```
+
+**Quick Helper Script Template:**
+```bash
+#!/bin/bash
+# scripts/dev/review-reply-helper.sh
+PR_NUMBER=$1
+THREAD_ID=$2
+REVIEW_ID=$3
+REPLY_TEXT="$4"
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 <pr_number> <thread_id> <review_id> <reply_text>"
+    exit 1
+fi
+
+cat > /tmp/reply_mutation.graphql << EOF
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "$THREAD_ID"
+    pullRequestReviewId: "$REVIEW_ID"
+    body: "$REPLY_TEXT"
+  }) {
+    comment { id url }
+  }
+}
+EOF
+
+gh api graphql -F query=@/tmp/reply_mutation.graphql | jq '.data.addPullRequestReviewThreadReply.comment'
+```
+
 **Key Points for GraphQL Approach:**
 - Use existing review ID from the PR reviews list (not a pending review)
-- Thread IDs and review IDs can be found via GraphQL query
-- Include sufficient `first: N` limit to get all comments/threads/reviews
+- Thread IDs and review IDs can be found via enhanced GraphQL query with jq filtering
+- Schema introspection helps discover available fields and extend functionality
 - Create mutation file to avoid shell escaping issues with complex text
 - Use `-F query=@file.graphql` for file input to avoid quote escaping
 
