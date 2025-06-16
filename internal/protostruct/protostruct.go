@@ -14,6 +14,7 @@
 
 // Package protostruct supports operations on the protocol buffer Struct message.
 // This file is copied from github.com/googleapis/google-cloud-go/internal/protostruct/protostruct.go
+// Since this is from an internal package, we maintain the original implementation as-is.
 package protostruct
 
 import (
@@ -22,6 +23,7 @@ import (
 
 // DecodeToMap converts a pb.Struct to a map from strings to Go types.
 // DecodeToMap panics if s is invalid.
+// Note: This function is copied from Google's internal package and maintains original panic behavior.
 func DecodeToMap(s *pb.Struct) map[string]interface{} {
 	if s == nil {
 		return nil
@@ -33,6 +35,8 @@ func DecodeToMap(s *pb.Struct) map[string]interface{} {
 	return m
 }
 
+// decodeValue maintains original panic behavior from Google's internal package.
+// This is intentionally kept as-is to preserve compatibility with the upstream internal implementation.
 func decodeValue(v *pb.Value) interface{} {
 	switch k := v.Kind.(type) {
 	case *pb.Value_NullValue:
