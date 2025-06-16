@@ -1113,3 +1113,52 @@ func TestCli_parseStatement(t *testing.T) {
 		})
 	}
 }
+
+// TestUpdateResultStatsElapsedTime tests that updateResultStats correctly populates ElapsedTime
+func TestUpdateResultStatsElapsedTime(t *testing.T) {
+	tests := []struct {
+		name            string
+		existingElapsed string
+		measuredElapsed float64
+		expectedElapsed string
+	}{
+		{
+			name:            "Server elapsed time already set (SELECT query)",
+			existingElapsed: "5.23 msecs",
+			measuredElapsed: 0.1,
+			expectedElapsed: "5.23 msecs", // Should keep server-measured time
+		},
+		{
+			name:            "No server elapsed time (non-SELECT or batch)",
+			existingElapsed: "",
+			measuredElapsed: 0.15,
+			expectedElapsed: "0.15 sec", // Should use client-measured time
+		},
+		{
+			name:            "Batch mode timing",
+			existingElapsed: "",
+			measuredElapsed: 2.5,
+			expectedElapsed: "2.50 sec", // Should format with 2 decimal places
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cli := &Cli{
+				SystemVariables: &systemVariables{},
+			}
+
+			result := &Result{
+				Stats: QueryStats{
+					ElapsedTime: tt.existingElapsed,
+				},
+			}
+
+			cli.updateResultStats(result, tt.measuredElapsed)
+
+			if result.Stats.ElapsedTime != tt.expectedElapsed {
+				t.Errorf("Expected ElapsedTime to be %q, got %q", tt.expectedElapsed, result.Stats.ElapsedTime)
+			}
+		})
+	}
+}
