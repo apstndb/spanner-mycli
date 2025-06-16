@@ -81,11 +81,7 @@ func parseAddSplitPointsBody(body string) ([]*databasepb.SplitPoints, error) {
 
 func parseSplitPoints(p *memefish.Parser, expireTime *timestamppb.Timestamp) ([]*databasepb.SplitPoints, error) {
 	var result []*databasepb.SplitPoints
-	for {
-		if p.Token.Kind == token.TokenEOF {
-			break
-		}
-
+	for p.Token.Kind != token.TokenEOF {
 		sp, err := parseSplitPointsEntry(p, expireTime)
 		if err != nil {
 			return nil, err
