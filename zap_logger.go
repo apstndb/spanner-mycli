@@ -35,7 +35,7 @@ func InterceptorLogger(l *zap.Logger) logging.Logger {
 				if err != nil {
 					// Associate the error with the original key to avoid collisions
 					// and to make it clear which field failed to marshal.
-					f = append(f, zap.String(key.(string), fmt.Sprintf("ERROR: failed to marshal proto: %v, proto: %v", err, v)))
+					f = append(f, zap.String(key.(string), fmt.Sprintf("ERROR: failed to marshal proto type %s: %v", string(v.ProtoReflect().Descriptor().FullName()), err)))
 				} else {
 					f = append(f, zap.Any(key.(string), json.RawMessage(b)))
 				}
