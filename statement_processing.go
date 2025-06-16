@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -128,8 +129,9 @@ func toTableHeader[T interface {
 
 		return result
 	default:
-		// It is unreachable because of type constraints
-		panic(fmt.Sprintf("unreachable code: unknown type: %T", ss))
+		// This should be unreachable due to type constraints, but log instead of panic
+		fmt.Fprintf(os.Stderr, "Warning: toTableHeader received unexpected type: %T\n", ss)
+		return nil
 	}
 }
 
@@ -299,31 +301,34 @@ func ignoreParseError(f statementParseFunc) statementParseFunc {
 }
 
 // getParserForMode returns the appropriate StatementParser for the given mode
-func getParserForMode(mode parseMode) statementParseFunc {
+func getParserForMode(mode parseMode) (statementParseFunc, error) {
 	switch mode {
 	case parseModeNoMemefish:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementLexical,
-		)
+		), nil
 	case parseMemefishOnly:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementMemefish,
-		)
+		), nil
 	case parseModeFallback, parseModeUnspecified:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			ignoreParseError(BuildNativeStatementMemefish),
 			BuildNativeStatementLexical,
-		)
+		), nil
 	default:
-		panic(fmt.Sprintf("invalid parseMode: %q", mode))
+		return nil, fmt.Errorf("invalid parseMode: %q", mode)
 	}
 }
 
 func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
-	parser := getParserForMode(mode)
+	parser, err := getParserForMode(mode)
+	if err != nil {
+		return nil, err
+	}
 	return parser(stripped, raw)
 }
 
