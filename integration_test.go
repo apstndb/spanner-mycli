@@ -1711,18 +1711,22 @@ func TestShowOperation(t *testing.T) {
 		t.Fatal("Expected at least one schema update operation, but got none")
 	}
 
-	// Extract operation ID from the first row (assuming it's our CREATE TABLE operation)
-	if len(result.Rows) == 0 {
-		t.Fatal("Expected at least one row in SHOW SCHEMA UPDATE OPERATIONS result")
+	// Extract operation ID by matching the DDL statement
+	var operationID string
+	var foundOp bool
+	for _, row := range result.Rows {
+		// Assuming DDL statement is in the second column (index 1) and operation ID in the first (index 0)
+		if len(row) > 1 && strings.Contains(row[1], "CREATE TABLE TestShowOperationTable") {
+			if len(row[0]) > 0 {
+				operationID = row[0]
+				foundOp = true
+				break
+			}
+		}
 	}
 
-	operationID := ""
-	if len(result.Rows[0]) > 0 {
-		operationID = result.Rows[0][0]
-	}
-	
-	if operationID == "" {
-		t.Fatal("Failed to extract operation ID from SHOW SCHEMA UPDATE OPERATIONS result")
+	if !foundOp {
+		t.Fatalf("Failed to find operation ID for DDL: %s in SHOW SCHEMA UPDATE OPERATIONS result", ddlStatement)
 	}
 
 	// Test SHOW OPERATION with the extracted operation ID
