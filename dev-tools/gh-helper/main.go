@@ -45,18 +45,23 @@ var threadsCmd = &cobra.Command{
 }
 
 var checkReviewsCmd = &cobra.Command{
-	Use:   "check <pr-number>",
+	Use:   "check [pr-number-or-issue]",
 	Short: "Check for new PR reviews with state tracking",
 	Long: `Check for new pull request reviews, tracking state to identify updates.
 
 This command maintains state in ~/.cache/spanner-mycli-reviews/ to detect
-new reviews since the last check. Useful for monitoring PR activity.`,
-	Args: cobra.ExactArgs(1),
+new reviews since the last check. Useful for monitoring PR activity.
+
+Arguments:
+- If no argument: Uses current branch's PR
+- If issue number: Finds associated open PR  
+- If PR number: Uses directly`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: checkReviews,
 }
 
 var waitReviewsCmd = &cobra.Command{
-	Use:   "wait <pr-number>",
+	Use:   "wait [pr-number-or-issue]",
 	Short: "Wait for both reviews and PR checks (default behavior)",
 	Long: `Continuously monitor for both new reviews AND PR checks completion by default.
 
@@ -68,9 +73,14 @@ Use --exclude-reviews to wait for PR checks only.
 Use --exclude-checks to wait for reviews only.
 Use --request-review to automatically request Gemini review before waiting.
 
+Arguments:
+- If no argument: Uses current branch's PR
+- If issue number: Finds associated open PR  
+- If PR number: Uses directly
+
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
-	Args:         cobra.ExactArgs(1),
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true, // Don't show usage help for operational errors (timeouts, API failures)
 	RunE: waitForReviews,
 }
@@ -336,7 +346,20 @@ func checkClaudeCodeEnvironment() (time.Duration, bool) {
 }
 
 func checkReviews(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
+	// Resolve PR number using smart resolution
+	var input string
+	if len(args) > 0 {
+		input = args[0]
+	}
+	
+	client := shared.NewGitHubClient(owner, repo)
+	prNumber, resolveMessage, err := client.ResolvePRNumber(input)
+	if err != nil {
+		return fmt.Errorf("failed to resolve PR number: %w", err)
+	}
+	
+	fmt.Printf("🔍 %s\n", resolveMessage)
+	prNumberStr := fmt.Sprintf("%d", prNumber)
 
 	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
 
@@ -344,7 +367,7 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
-	fmt.Printf("Checking reviews for PR #%s in %s/%s...\n", prNumber, owner, repo)
+	fmt.Printf("Checking reviews for PR #%s in %s/%s...\n", prNumberStr, owner, repo)
 
 	query := fmt.Sprintf(`
 query {
@@ -404,7 +427,7 @@ query {
 	// They should already be sorted, but let's be explicit
 
 	// Load existing state
-	lastState, err := loadReviewState(prNumber)
+	lastState, err := loadReviewState(prNumberStr)
 	if err == nil {
 		fmt.Printf("Last known review: %s at %s\n", lastState.ID, lastState.CreatedAt)
 
@@ -468,7 +491,7 @@ query {
 			ID:        latestReview.ID,
 			CreatedAt: latestReview.CreatedAt,
 		}
-		if err := saveReviewState(prNumber, newState); err != nil {
+		if err := saveReviewState(prNumberStr, newState); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", err)
 		} else {
 			fmt.Printf("\n💾 Updated state: Latest review %s at %s\n", latestReview.ID, latestReview.CreatedAt)

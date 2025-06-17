@@ -91,17 +91,24 @@ bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 bin/spanner-mycli-dev worktree setup issue-123-feature
 ```
 
-### Error Prevention Tips
+### Smart Number Resolution
 
-**Always verify PR numbers before using commands:**
+**No more PR number confusion!** Tools now automatically resolve issue numbers to PRs:
+
 ```bash
-# Check available PRs first
-gh pr list --state open
+# All these work automatically:
+bin/gh-helper reviews wait              # Uses current branch PR
+bin/gh-helper reviews wait 301          # Issue #301 → finds open PR #306  
+bin/gh-helper reviews wait 306          # Direct PR #306
 
-# Then use the correct PR number
-bin/gh-helper reviews wait 306 --timeout 15m  # ✅ Correct format
-# NOT: bin/gh-helper reviews wait 301 --timeout 15  # ❌ Wrong PR number and format
+# No need to manually check PR numbers anymore!
 ```
+
+**Resolution strategy:**
+1. **No argument**: Uses current branch's PR (via `gh pr view`)
+2. **Number provided**: Checks if it's issue or PR using GraphQL `issueOrPullRequest`
+3. **If issue**: Finds associated open PR automatically
+4. **If PR**: Uses directly
 
 **Timeout format examples:**
 - `--timeout 15m` (15 minutes) ✅

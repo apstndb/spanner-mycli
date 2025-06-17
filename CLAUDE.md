@@ -79,10 +79,12 @@ bin/gh-helper reviews wait PR_NUMBER --exclude-reviews # Wait for checks only
 bin/gh-helper reviews wait PR_NUMBER --request-review  # Request + wait for both (RECOMMENDED)
 bin/gh-helper reviews wait-all PR_NUMBER --request-review  # Legacy: explicit wait-all command
 
-# ⚠️ IMPORTANT USAGE NOTES:
-# - Always verify PR numbers with: gh pr list --state open
+# 🚀 SMART FEATURES:
+# - No arguments: Tools auto-detect current branch PR (via gh pr view)
+# - Issue numbers: Automatically resolve to associated open PRs
+# - PR numbers: Use directly without conversion
 # - Timeout format: Use duration strings like --timeout 15m, 30s, 1.5m (not just numbers)
-# - Tools provide helpful error messages for common mistakes
+# - Helpful error messages for common mistakes
 ```
 
 ## Core Architecture Overview

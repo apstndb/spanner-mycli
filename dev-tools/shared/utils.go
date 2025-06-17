@@ -39,3 +39,9 @@ func RunCommand(name string, args ...string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+// RunCommandOutput executes a command and returns its output
+func RunCommandOutput(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.Output()
+}
