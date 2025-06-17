@@ -277,6 +277,9 @@ func TestSelect(t *testing.T) {
 }
 
 func TestDml(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -341,6 +344,9 @@ func buildAndExecute(t *testing.T, ctx context.Context, session *Session, s stri
 }
 
 func TestSystemVariables(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	_, session, teardown := initialize(t, nil, nil)
 	defer teardown()
 
@@ -1234,6 +1240,9 @@ func TestStatements(t *testing.T) {
 }
 
 func TestReadWriteTransaction(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Run("begin, insert, and commit", func(t *testing.T) {
 		t.Parallel()
 
@@ -1423,6 +1432,9 @@ func TestReadWriteTransaction(t *testing.T) {
 }
 
 func TestReadOnlyTransaction(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Run("begin ro, query, and close", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
@@ -1552,6 +1564,9 @@ func TestReadOnlyTransaction(t *testing.T) {
 }
 
 func TestShowCreateTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -1579,6 +1594,9 @@ func TestShowCreateTable(t *testing.T) {
 }
 
 func TestShowColumns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -1607,6 +1625,9 @@ func TestShowColumns(t *testing.T) {
 }
 
 func TestShowIndexes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -1634,6 +1655,9 @@ func TestShowIndexes(t *testing.T) {
 }
 
 func TestTruncateTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -1664,6 +1688,9 @@ func TestTruncateTable(t *testing.T) {
 }
 
 func TestPartitionedDML(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
