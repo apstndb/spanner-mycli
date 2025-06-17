@@ -683,17 +683,15 @@ gh pr comment <PR-number> --body "/gemini review"
 
 ### Phantom Worktree Management
 
-**CRITICAL RULE**: Only delete phantom worktrees when their associated issue is completely resolved (PR merged + issue closed).
-
 #### Worktree Lifecycle
 - **Create**: Use `scripts/dev/setup-phantom-worktree.sh issue-123-feature`
 - **Work**: Develop in isolated environment with `phantom shell`
-- **Delete**: Only after issue resolution - never during active development
+- **Delete**: Use `phantom delete worktree-name` when no longer needed
 
 #### AI Assistant Guidelines
-- **Never delete worktrees autonomously** - always request user permission
-- **Resolve conflicts** instead of deleting worktrees when technical issues arise
-- **Preserve development context** - worktrees contain valuable work-in-progress
+- **Never use `--force` flag autonomously** - always request user permission for forced deletion
+- **Clean deletion preferred** - resolve uncommitted changes before deletion when possible
+- **User confirmation required** - ask before any worktree deletion, especially with uncommitted changes
 
 ### Linking Issues and Pull Requests
 
