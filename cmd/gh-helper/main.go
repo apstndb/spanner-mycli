@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -48,6 +49,20 @@ new reviews since the last check. Useful for monitoring PR activity.`,
 	RunE: checkReviews,
 }
 
+var waitReviewsCmd = &cobra.Command{
+	Use:   "wait <pr-number>",
+	Short: "Wait for new PR reviews with periodic checking",
+	Long: `Continuously monitor for new pull request reviews with periodic polling.
+
+This command polls for new reviews every 30 seconds and reports when
+new reviews are found. Useful for waiting on specific review feedback.
+
+AI-FRIENDLY: Designed to run autonomously while waiting for review responses.
+Default timeout is 10 minutes, configurable with --timeout flag.`,
+	Args: cobra.ExactArgs(1),
+	RunE: waitForReviews,
+}
+
 var listThreadsCmd = &cobra.Command{
 	Use:   "list <pr-number>",
 	Short: "List unresolved review threads",
@@ -80,11 +95,23 @@ Examples:
 	RunE: replyToThread,
 }
 
+var showThreadCmd = &cobra.Command{
+	Use:   "show <thread-id>",
+	Short: "Show detailed view of a review thread",
+	Long: `Show detailed view of a specific review thread including all comments.
+
+This provides full context for understanding review feedback before replying.
+Useful for getting complete thread history and comment details.`,
+	Args: cobra.ExactArgs(1),
+	RunE: showThread,
+}
+
 var (
 	owner       string
 	repo        string
 	message     string
 	mentionUser string
+	timeout     int
 )
 
 func init() {
@@ -94,8 +121,10 @@ func init() {
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
 
-	reviewsCmd.AddCommand(checkReviewsCmd)
-	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd)
+	waitReviewsCmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
+
+	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd)
+	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
 
@@ -264,6 +293,186 @@ query {
 	return nil
 }
 
+func waitForReviews(cmd *cobra.Command, args []string) error {
+	prNumber := args[0]
+	fmt.Printf("🔄 Waiting for new reviews on PR #%s (timeout: %d minutes)...\n", prNumber, timeout)
+	fmt.Println("Press Ctrl+C to stop monitoring")
+
+	// Setup timeout
+	timeoutDuration := time.Duration(timeout) * time.Minute
+	startTime := time.Now()
+
+	// Get initial state
+	initialCheck := true
+	for {
+		// Check timeout
+		if time.Since(startTime) > timeoutDuration {
+			fmt.Printf("\n⏰ Timeout reached (%d minutes). No new reviews found.\n", timeout)
+			return nil
+		}
+		// Check for new reviews
+		stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
+		lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
+
+		query := fmt.Sprintf(`
+query {
+  repository(owner: "%s", name: "%s") {
+    pullRequest(number: %s) {
+      reviews(last: 15) {
+        nodes {
+          id
+          author {
+            login
+          }
+          createdAt
+          state
+          body
+        }
+      }
+    }
+  }
+}`, owner, repo, prNumber)
+
+		result, err := runGraphQLQuery(query)
+		if err != nil {
+			fmt.Printf("Error checking reviews: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		var response struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						Reviews struct {
+							Nodes []struct {
+								ID        string `json:"id"`
+								Author    struct {
+									Login string `json:"login"`
+								} `json:"author"`
+								CreatedAt string `json:"createdAt"`
+								State     string `json:"state"`
+								Body      string `json:"body"`
+							} `json:"nodes"`
+						} `json:"reviews"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			fmt.Printf("Error parsing response: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+		if len(reviews) == 0 {
+			fmt.Printf("[%s] No reviews found\n", time.Now().Format("15:04:05"))
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		// Check for previous state
+		var lastKnownReview struct {
+			ID        string `json:"id"`
+			CreatedAt string `json:"createdAt"`
+		}
+
+		hasState := false
+		if data, err := os.ReadFile(lastReviewFile); err == nil {
+			if err := json.Unmarshal(data, &lastKnownReview); err == nil {
+				hasState = true
+			}
+		}
+
+		if initialCheck {
+			fmt.Printf("[%s] Monitoring started. Current reviews: %d\n", time.Now().Format("15:04:05"), len(reviews))
+			if hasState {
+				fmt.Printf("Last known review: %s at %s\n", lastKnownReview.ID, lastKnownReview.CreatedAt)
+			}
+			initialCheck = false
+		}
+
+		if hasState {
+			newReviews := []interface{}{}
+			for _, review := range reviews {
+				if review.CreatedAt > lastKnownReview.CreatedAt ||
+					(review.CreatedAt == lastKnownReview.CreatedAt && review.ID != lastKnownReview.ID) {
+					newReviews = append(newReviews, review)
+				}
+			}
+
+			if len(newReviews) > 0 {
+				fmt.Printf("\n🆕 [%s] Found %d new review(s)!\n", time.Now().Format("15:04:05"), len(newReviews))
+				for _, review := range newReviews {
+					r := review.(struct {
+						ID        string `json:"id"`
+						Author    struct {
+							Login string `json:"login"`
+						} `json:"author"`
+						CreatedAt string `json:"createdAt"`
+						State     string `json:"state"`
+						Body      string `json:"body"`
+					})
+					body := r.Body
+					if len(body) > 100 {
+						body = body[:100] + "..."
+					}
+					if body == "" {
+						body = "No body"
+					}
+					fmt.Printf("  📝 %s (%s) at %s\n", r.Author.Login, r.State, r.CreatedAt)
+					if r.Body != "" {
+						fmt.Printf("     %s\n", body)
+					}
+				}
+				
+				// Update state with latest review
+				if len(reviews) > 0 {
+					latestReview := reviews[len(reviews)-1]
+					stateData := map[string]string{
+						"id":        latestReview.ID,
+						"createdAt": latestReview.CreatedAt,
+					}
+					if data, err := json.Marshal(stateData); err == nil {
+						if err := os.MkdirAll(stateDir, 0755); err == nil {
+							if err := os.WriteFile(lastReviewFile, data, 0644); err != nil {
+								fmt.Fprintf(os.Stderr, "Warning: failed to write state file %s: %v\n", lastReviewFile, err)
+							}
+						}
+					}
+				}
+				
+				fmt.Printf("\n✅ New review(s) detected! Use 'gh-helper threads list %s' to see any review threads.\n", prNumber)
+				return nil // Exit after finding new reviews
+			}
+		} else {
+			// No previous state, create initial state
+			if len(reviews) > 0 {
+				latestReview := reviews[len(reviews)-1]
+				stateData := map[string]string{
+					"id":        latestReview.ID,
+					"createdAt": latestReview.CreatedAt,
+				}
+				if data, err := json.Marshal(stateData); err == nil {
+					if err := os.MkdirAll(stateDir, 0755); err == nil {
+						os.WriteFile(lastReviewFile, data, 0644)
+					}
+				}
+				hasState = true
+				lastKnownReview.ID = latestReview.ID
+				lastKnownReview.CreatedAt = latestReview.CreatedAt
+			}
+		}
+
+		elapsed := time.Since(startTime)
+		remaining := timeoutDuration - elapsed
+		fmt.Printf("[%s] No new reviews (remaining: %v)\n", time.Now().Format("15:04:05"), remaining.Truncate(time.Second))
+		time.Sleep(30 * time.Second)
+	}
+}
+
 func listThreads(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 
@@ -393,6 +602,121 @@ func listThreads(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func showThread(cmd *cobra.Command, args []string) error {
+	threadID := args[0]
+
+	fmt.Printf("🔍 Fetching details for thread: %s\n", threadID)
+
+	query := fmt.Sprintf(`
+{
+  node(id: "%s") {
+    ... on PullRequestReviewThread {
+      id
+      line
+      path
+      isResolved
+      subjectType
+      pullRequest {
+        number
+        title
+      }
+      comments(first: 20) {
+        nodes {
+          id
+          body
+          author {
+            login
+          }
+          createdAt
+          diffHunk
+        }
+      }
+    }
+  }
+}`, threadID)
+
+	result, err := runGraphQLQuery(query)
+	if err != nil {
+		return fmt.Errorf("failed to fetch thread details: %w", err)
+	}
+
+	var response struct {
+		Data struct {
+			Node struct {
+				ID          string `json:"id"`
+				Line        *int   `json:"line"`
+				Path        string `json:"path"`
+				IsResolved  bool   `json:"isResolved"`
+				SubjectType string `json:"subjectType"`
+				PullRequest struct {
+					Number int    `json:"number"`
+					Title  string `json:"title"`
+				} `json:"pullRequest"`
+				Comments struct {
+					Nodes []struct {
+						ID       string `json:"id"`
+						Body     string `json:"body"`
+						Author   struct {
+							Login string `json:"login"`
+						} `json:"author"`
+						CreatedAt string    `json:"createdAt"`
+						DiffHunk  *string   `json:"diffHunk"`
+					} `json:"nodes"`
+				} `json:"comments"`
+			} `json:"node"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(result, &response); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	thread := response.Data.Node
+	if thread.ID == "" {
+		return fmt.Errorf("thread not found or invalid thread ID")
+	}
+
+	// Display thread header
+	fmt.Printf("\n📋 Thread Details\n")
+	fmt.Printf("Thread ID: %s\n", thread.ID)
+	fmt.Printf("PR: #%d - %s\n", thread.PullRequest.Number, thread.PullRequest.Title)
+	
+	location := thread.Path
+	if thread.Line != nil {
+		location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
+	}
+	fmt.Printf("Location: %s\n", location)
+	fmt.Printf("Subject Type: %s\n", thread.SubjectType)
+	fmt.Printf("Resolved: %v\n", thread.IsResolved)
+	fmt.Printf("Comments: %d\n\n", len(thread.Comments.Nodes))
+
+	// Display diff context if available
+	if len(thread.Comments.Nodes) > 0 && thread.Comments.Nodes[0].DiffHunk != nil {
+		fmt.Printf("📄 Code Context:\n")
+		fmt.Printf("```diff\n%s\n```\n\n", *thread.Comments.Nodes[0].DiffHunk)
+	}
+
+	// Display all comments
+	fmt.Printf("💬 Comments:\n")
+	for i, comment := range thread.Comments.Nodes {
+		fmt.Printf("─────────────────────────────────────────────────────────────\n")
+		fmt.Printf("%d. %s (%s)\n", i+1, comment.Author.Login, comment.CreatedAt)
+		fmt.Printf("─────────────────────────────────────────────────────────────\n")
+		fmt.Printf("%s\n\n", comment.Body)
+	}
+
+	if !thread.IsResolved && len(thread.Comments.Nodes) > 0 {
+		lastComment := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
+		if lastComment.Author.Login != "apstndb" { // Assuming current user
+			fmt.Printf("💡 To reply to this thread:\n")
+			fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
+			fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
+		}
+	}
+
+	return nil
+}
+
 func replyToThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
 
@@ -426,6 +750,12 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 	// CRITICAL INSIGHT (Issue #301): GitHub GraphQL API quirk
 	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
 	// This was discovered during AI-friendly tool development and is documented in dev-docs/development-insights.md
+	
+	escapedText, err := jsonEscape(replyText)
+	if err != nil {
+		return fmt.Errorf("failed to escape reply text: %w", err)
+	}
+	
 	mutation := fmt.Sprintf(`
 mutation {
   addPullRequestReviewThreadReply(input: {
@@ -438,7 +768,7 @@ mutation {
       body
     }
   }
-}`, threadID, jsonEscape(replyText))
+}`, threadID, escapedText)
 
 	result, err := runGraphQLQuery(mutation)
 	if err != nil {
@@ -488,7 +818,10 @@ func runGraphQLQuery(query string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-func jsonEscape(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
+func jsonEscape(s string) (string, error) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal string for json escaping: %w", err)
+	}
+	return string(b), nil
 }
