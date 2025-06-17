@@ -284,10 +284,25 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 	var rows []Row
 	
 	// Handle different operation types
-	switch op.GetMetadata().GetTypeUrl() {
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		// Handle operations with no metadata
+		// Note: In Go, calling methods on nil receivers is safe and typically returns zero values,
+		// but we explicitly check for nil metadata to provide a clearer error message to users.
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		rows = append(rows, toRow(
+			operationId,
+			"N/A (No metadata available)",
+			strconv.FormatBool(op.GetDone()),
+			"N/A",
+			"N/A",
+			op.GetError().GetMessage(),
+		))
+	} else {
+		switch metadata.GetTypeUrl() {
 	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
 		var md databasepb.UpdateDatabaseDdlMetadata
-		if err := op.GetMetadata().UnmarshalTo(&md); err != nil {
+		if err := metadata.UnmarshalTo(&md); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
 		}
 		
@@ -318,6 +333,7 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 			"N/A",
 			op.GetError().GetMessage(),
 		))
+	}
 	}
 	
 	if len(rows) == 0 {
