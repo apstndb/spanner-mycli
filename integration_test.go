@@ -1813,18 +1813,22 @@ func TestShowOperation(t *testing.T) {
 		t.Error("Expected error for non-existent operation ID, but got none")
 	}
 
-	// Test SYNC mode error (not yet implemented)
-	syncStmt, err := BuildStatement("SHOW OPERATION 'auto_op_123456789' SYNC")
+	// Test SYNC mode functionality
+	// Test SYNC mode with completed operation (should not hang, just return status)
+	syncStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s' SYNC", operationID))
 	if err != nil {
 		t.Fatalf("invalid SHOW OPERATION SYNC statement: %v", err)
 	}
 
-	_, err = syncStmt.Execute(ctx, session)
-	if err == nil {
-		t.Error("Expected error for SYNC mode (not implemented), but got none")
+	syncResult, err := syncStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW OPERATION SYNC execution failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "SYNC mode is not yet implemented") {
-		t.Errorf("Expected SYNC mode error message, got: %v", err)
+
+	// Results should be identical for default and SYNC mode when operation is already completed
+	if len(syncResult.Rows) != len(opResult.Rows) {
+		t.Errorf("Expected same number of rows for default (%d) and SYNC mode (%d)", 
+			len(opResult.Rows), len(syncResult.Rows))
 	}
 
 	// Test explicit ASYNC mode (should work same as default)
