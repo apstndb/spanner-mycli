@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/apstndb/spanner-mycli/dev-tools/internal/shared"
+	"github.com/apstndb/spanner-mycli/dev-tools/shared"
 	"github.com/spf13/cobra"
 )
 
