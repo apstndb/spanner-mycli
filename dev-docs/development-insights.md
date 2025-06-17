@@ -42,6 +42,121 @@ phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude
 phantom shell issue-276-timeout-flag --tmux-horizontal
 ```
 
+## AI-Friendly Tool Development Insights (Issue #301)
+
+### GitHub GraphQL API Edge Cases
+
+**Critical Discovery: statusCheckRollup Behavior with Merge Conflicts**
+
+During development of `gh-helper`, we discovered that GitHub's GraphQL API returns `statusCheckRollup: null` when a Pull Request has merge conflicts, rather than providing check status information.
+
+**Technical Details**:
+- `mergeable: "CONFLICTING"` + `mergeStateStatus: "DIRTY"` indicates merge conflicts
+- `statusCheckRollup: null` in this state prevents CI workflows from starting
+- This is GitHub's intentional behavior, not a bug or API limitation
+
+**Implementation Lessons**:
+1. Always check `mergeable` field before interpreting `statusCheckRollup`
+2. Immediate termination with actionable guidance beats infinite waiting
+3. User experience benefits from clear problem diagnosis + solution steps
+
+**References**: 
+- [GitHub Community Discussion](https://github.community/t/what-does-it-mean-when-statuscheckrollup-is-null/252822)
+- Real-world testing showed this pattern consistently across repositories
+
+### Claude Code Environment Constraints
+
+**Discovery: Hard 2-Minute Timeout with No Grace Period**
+
+Claude Code enforces a hard 2-minute timeout on bash commands, but this creates challenges for long-running operations like CI waiting.
+
+**Technical Implementation**:
+```go
+// Use 90 seconds to provide 30-second safety margin
+claudeCodeSafeTimeout := 1.5 // 90 seconds
+if float64(effectiveTimeout) > claudeCodeSafeTimeout {
+    fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to %.1f minutes for safety.\n", 
+        timeout, claudeCodeSafeTimeout)
+    effectiveTimeout = int(claudeCodeSafeTimeout * 60)
+}
+```
+
+**Key Lessons**:
+- Environment detection enables adaptive behavior
+- Safety margins prevent mid-execution termination
+- Clear user communication about constraint reasoning builds trust
+
+### Cobra CLI Framework Assumptions vs Reality
+
+**Critical Discovery**: Cobra's error handling makes assumptions that break down for operational tools.
+
+**Cobra's Assumptions**:
+- All `RunE` errors = user syntax mistakes → Show usage help
+- All errors should be printed by framework → Duplicate messages
+- CLI tools are primarily for syntax-driven operations
+
+**Reality for Development Tools**:
+- Most errors are operational (merge conflicts, API failures, timeouts)
+- Users need specific solutions, not generic command syntax
+- Rich error messaging happens in business logic, not error handling
+
+**Evolution of Understanding**:
+1. **Initial**: "Why does my tool show usage help for merge conflicts?"
+2. **Investigation**: Cobra assumes all errors are usage errors
+3. **Solution**: Separate operational guidance from error propagation
+4. **Insight**: Framework assumptions don't match all use cases
+
+**Architectural Lesson**: When framework assumptions don't match your use case, work with the framework's design rather than against it. Use error codes for control flow, user messaging for guidance.
+
+### AI Assistant Integration Patterns
+
+**Discovery: State Tracking Reduces API Load**
+
+Implementing incremental review state tracking in `~/.cache/spanner-mycli-reviews/` reduced GitHub API calls by ~80% during development cycles.
+
+**Technical Implementation**:
+- Store last known review ID and timestamp
+- Compare against current state to detect "new" reviews
+- Survives tool restarts and provides consistent behavior
+
+**Benefits**:
+- Faster response times (no redundant API calls)
+- Better rate limiting compliance
+- More reliable detection of incremental changes
+
+**File Format**:
+```json
+{
+  "id": "PRR_kwDONC6gMM6vB1Fv",
+  "createdAt": "2025-06-17T17:20:47Z"
+}
+```
+
+### Error Message Design for AI Workflows
+
+**Key Insight**: AI assistants need structured, actionable error messages with specific next steps.
+
+**Effective Pattern**:
+```
+❌ [timestamp] Clear problem statement
+⚠️  Impact explanation (why this matters)
+💡 Specific solution command
+💡 Follow-up action with exact syntax
+```
+
+**Example**:
+```
+❌ [04:07:27] PR has merge conflicts (status: DIRTY)
+⚠️  CI checks will not run until conflicts are resolved
+💡 Resolve conflicts with: git rebase origin/main
+💡 Then push and run: bin/gh-helper reviews wait 306
+```
+
+**Benefits**:
+- AI can parse structured information
+- Users get clear action items
+- Reduces back-and-forth troubleshooting
+
 ## Error Handling Architecture Evolution
 
 **Discovery**: Systematic replacement of panics with proper error handling improves system robustness

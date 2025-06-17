@@ -50,7 +50,7 @@ go run . -p PROJECT -i INSTANCE -d DATABASE
 # Development tools (issue #301 - AI-friendly subcommands)
 make build-tools                               # Build development tools
 bin/gh-helper reviews check PR_NUMBER          # Check PR reviews with state tracking  
-bin/gh-helper reviews wait PR_NUMBER           # Wait for new reviews (with timeout)
+bin/gh-helper reviews wait PR_NUMBER           # Wait for reviews + checks (auto-detects conflicts)
 bin/gh-helper threads list PR_NUMBER           # List unresolved review threads
 bin/gh-helper threads show THREAD_ID           # Show detailed thread context
 bin/gh-helper threads reply THREAD_ID          # Reply to review thread (supports stdin)
@@ -143,6 +143,8 @@ This is a simplified guide. For detailed information, refer to:
 2. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
 3. **For review replies**: Use `bin/gh-helper threads list` and `bin/gh-helper threads reply` - Automated thread replies
 4. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+
+**⚠️ CRITICAL: Use `bin/gh-helper reviews wait` to avoid CI confusion from merge conflicts**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions

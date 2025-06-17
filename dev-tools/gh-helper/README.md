@@ -92,6 +92,75 @@ File format: `pr-{number}-last-review.json`
 
 **Historical note**: Originally 15 minutes, reduced based on 95th percentile real-world data.
 
+## Critical Implementation Insights
+
+### GitHub statusCheckRollup vs Merge Conflicts
+
+**Key Discovery**: When a PR has merge conflicts (`mergeable: "CONFLICTING"`), GitHub's `statusCheckRollup` field returns `null` instead of check status. This prevents CI workflows from running until conflicts are resolved.
+
+**Implementation Impact**:
+- Must check `mergeable` field before interpreting `statusCheckRollup: null` as "no checks required"
+- Prevents infinite waiting for CI that will never start
+- Provides immediate actionable feedback to users
+
+**GraphQL Query Pattern**:
+```graphql
+pullRequest(number: $prNumber) {
+  mergeable          # CRITICAL: Check this first
+  mergeStateStatus   # Additional context (DIRTY, etc.)
+  statusCheckRollup { state }  # May be null if conflicts exist
+}
+```
+
+### Claude Code Timeout Handling
+
+**Key Insight**: Claude Code enforces a hard 2-minute timeout for bash commands, but safety margins are essential.
+
+**Lessons Learned**:
+- Use 90 seconds (not 120) for effective timeout to prevent mid-execution termination
+- Provide clear continuation instructions when timeout is reduced
+- Auto-detect execution environment and adjust behavior accordingly
+
+Reference: [GitHub Issue #1216](https://github.com/anthropics/claude-code/issues/1216)
+
+### Cobra Error Handling for Operational vs Usage Errors
+
+**Problem**: Default Cobra behavior shows confusing usage help on operational errors (like merge conflicts).
+
+**Root Cause**: Cobra assumes all `RunE` errors are user command syntax problems.
+
+**Complete Solution Pattern**:
+```go
+var rootCmd = &cobra.Command{
+    SilenceErrors: true,  // Disable Cobra's automatic error printing
+}
+
+var operationalCmd = &cobra.Command{
+    SilenceUsage: true,   // No usage help for operational errors
+    RunE: func(cmd *cobra.Command, args []string) error {
+        if operationalProblem {
+            // Show detailed operational guidance
+            fmt.Printf("❌ Problem description\n")
+            fmt.Printf("💡 Specific solution\n")
+            return fmt.Errorf("operational error")  // Clean error for exit code
+        }
+        return nil
+    },
+}
+
+func main() {
+    if err := rootCmd.Execute(); err != nil {
+        os.Exit(1)  // Clean exit - detailed messages already shown
+    }
+}
+```
+
+**Key Insights**:
+- `SilenceUsage: true` prevents usage help on operational errors
+- `SilenceErrors: true` prevents duplicate error messages
+- Detailed guidance in the operational flow, not in generic error handling
+- Clean exit codes without redundant messaging
+
 ## GraphQL API Usage
 
 ### Efficient Queries

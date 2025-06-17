@@ -428,7 +428,8 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	
 	// Claude Code has a 2-minute timeout limit. Adjust strategy accordingly.
 	// Issue: https://github.com/anthropics/claude-code/issues/1216
-	// Use 90 seconds to provide safety margin for cleanup and final output
+	// CRITICAL INSIGHT: Use 90 seconds (not 120) to provide safety margin for cleanup and final output.
+	// Without this margin, processes get forcefully terminated mid-execution.
 	effectiveTimeout := timeout
 	claudeCodeSafeTimeout := 1.5 // 90 seconds = 1.5 minutes
 	if float64(effectiveTimeout) > claudeCodeSafeTimeout {
@@ -602,6 +603,9 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check mergeable status first - if conflicting, stop immediately
+		// CRITICAL INSIGHT: statusCheckRollup is null when PR has merge conflicts,
+		// which prevents CI from running. This is GitHub's intentional behavior.
+		// Must check mergeable before assuming "no checks required" scenario.
 		mergeable := response.Data.Repository.PullRequest.Mergeable
 		mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
 		if mergeable == "CONFLICTING" {
