@@ -91,6 +91,9 @@ var geminiWorkflowCmd = &cobra.Command{
 	Short: "Complete Gemini Code Review workflow",
 	Long: `Execute the complete Gemini Code Review workflow for spanner-mycli.
 
+IMPORTANT: Only use this AFTER pushes made AFTER PR creation.
+Gemini automatically reviews the initial PR, so this is only needed for subsequent changes.
+
 This command automates the project-specific Gemini review process:
 1. Request Gemini review (/gemini review)
 2. Wait for review feedback (15 min timeout)

@@ -59,7 +59,8 @@ bin/spanner-mycli-dev worktree setup NAME      # Setup phantom worktree
 bin/spanner-mycli-dev docs update-help         # Generate help output for README.md
 
 # Gemini Code Review workflow (project-specific)
-bin/spanner-mycli-dev review gemini PR_NUMBER      # Complete automated workflow
+# NOTE: Only use after pushes AFTER PR creation (Gemini auto-reviews initial PR)
+bin/spanner-mycli-dev review gemini PR_NUMBER      # Complete automated workflow  
 gh pr comment PR_NUMBER --body "/gemini review"    # Manual review request
 bin/gh-helper reviews wait PR_NUMBER --timeout 15  # Manual review waiting
 ```

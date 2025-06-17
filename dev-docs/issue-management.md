@@ -499,10 +499,13 @@ bin/gh-helper reviews wait <PR_NUMBER> --timeout 10
 ```
 
 **When to request Gemini review:**
-- Initial PR submission
-- After addressing major feedback with significant code changes
-- When adding new functionality or making architectural changes
+- **IMPORTANT**: Only after pushes made AFTER PR creation (not for initial PR)
+- After addressing review feedback with code changes
+- When adding new functionality or making architectural changes  
+- After significant refactoring or bug fixes
 - Before final merge to ensure all concerns are addressed
+
+**Note**: Gemini automatically reviews the initial PR creation, so `/gemini review` is only needed for subsequent pushes to the same PR.
 
 **Gemini-specific reply patterns:**
 ```bash
