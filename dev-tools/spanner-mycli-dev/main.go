@@ -218,7 +218,7 @@ func setupWorktree(cmd *cobra.Command, args []string) error {
 	if worktreeExists(worktreeName) {
 		fmt.Printf("❌ Worktree '%s' already exists\n\n", worktreeName)
 		fmt.Println("📋 Existing worktrees:")
-		listWorktrees(cmd, []string{})
+		_ = listWorktrees(cmd, []string{}) // Best effort listing
 		return fmt.Errorf("worktree already exists")
 	}
 

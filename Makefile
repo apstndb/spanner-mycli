@@ -30,8 +30,18 @@ fasttest:
 fasttest-verbose:
 	go test -short -v ./...
 
+# Test both main project and dev-tools
+test-all:
+	go test ./...
+	cd dev-tools && go test ./...
+
 lint:
 	golangci-lint run
+
+# Lint both main project and dev-tools
+lint-all:
+	golangci-lint run
+	cd dev-tools && golangci-lint run
 
 # Enhanced development targets (issue #301 - AI-friendly script reorganization)
 # These targets integrate the new Go-based development tools (gh-helper, spanner-mycli-dev)
@@ -45,6 +55,9 @@ test-quick:
 # Combined test and lint check (required before push)
 check: test lint
 
+# Combined test and lint check for both main project and dev-tools
+check-all: test-all lint-all
+
 # Update README.md help sections
 docs-update:
 	@bin/spanner-mycli-dev docs update-help
@@ -55,10 +68,13 @@ help-dev:
 	@echo "  make build          - Build the application"
 	@echo "  make build-tools    - Build gh-helper and spanner-mycli-dev tools"
 	@echo "  make test           - Run full test suite (required before push)"
+	@echo "  make test-all       - Run tests for main project and dev-tools"
 	@echo "  make test-quick     - Run quick tests (go test -short)"
 	@echo "  make fasttest       - Run tests excluding slow ones"
 	@echo "  make lint           - Run linter (required before push)"
+	@echo "  make lint-all       - Run linter for main project and dev-tools"
 	@echo "  make check          - Run test && lint (required before push)"
+	@echo "  make check-all      - Run test-all && lint-all (comprehensive check)"
 	@echo "  make clean          - Clean build artifacts and test cache"
 	@echo "  make run            - Run with PROJECT/INSTANCE/DATABASE env vars"
 	@echo "  make docs-update    - Generate help output for README.md"

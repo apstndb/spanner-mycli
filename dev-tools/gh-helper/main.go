@@ -337,18 +337,16 @@ func checkClaudeCodeEnvironment() (time.Duration, bool) {
 	
 	// Check for BASH_MAX_TIMEOUT_MS (upper limit for explicit timeouts)
 	if maxTimeoutStr := os.Getenv("BASH_MAX_TIMEOUT_MS"); maxTimeoutStr != "" {
-		if maxTimeoutMs, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeoutMs)
-			maxTimeout = maxTimeoutMs
+		if maxTimeout, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeout)
 			hasMax = true
 		}
 	}
 	
 	// Check for BASH_DEFAULT_TIMEOUT_MS (default when no timeout specified)
 	if defaultTimeoutStr := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); defaultTimeoutStr != "" {
-		if defaultTimeoutMs, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeoutMs)
-			defaultTimeout = defaultTimeoutMs
+		if defaultTimeout, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeout)
 			hasDefault = true
 		}
 	}
@@ -714,7 +712,7 @@ func waitForReviewsOnly(prNumber string) error {
 					ID:        latestReview.ID,
 					CreatedAt: latestReview.CreatedAt,
 				}
-				saveReviewState(prNumber, newState)
+				_ = saveReviewState(prNumber, newState) // Best effort state save
 			}
 			
 			fmt.Println("\n✅ New reviews available!")
@@ -1145,7 +1143,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 	unresolvedThreads := []interface{}{}
 	for _, thread := range response.Data.Repository.PullRequest.ReviewThreads.Nodes {
 		if !thread.IsResolved {
-			location := thread.Path
+			var location string
 			if thread.Line != nil {
 				location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
 			} else {
@@ -1511,39 +1509,6 @@ mutation($threadID: ID!, $body: String!) {
 	return nil
 }
 
-func runGraphQLQuery(query string) ([]byte, error) {
-	cmd := exec.Command("gh", "api", "graphql", "--field", "query="+query)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		// Try to extract meaningful error message from stderr
-		stderrStr := stderr.String()
-		if strings.Contains(stderrStr, "Could not resolve to a PullRequest") {
-			return nil, fmt.Errorf("PR not found - please check the PR number is correct\n💡 Tip: Use 'gh pr list --state open' to see available PR numbers")
-		}
-		if strings.Contains(stderrStr, "authentication") || strings.Contains(stderrStr, "token") {
-			return nil, fmt.Errorf("GitHub authentication failed\n💡 Tip: Run 'gh auth login' to authenticate")
-		}
-		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderrStr)
-	}
-
-	// Check for GraphQL errors in the response
-	var errorCheck struct {
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	
-	result := stdout.Bytes()
-	if err := json.Unmarshal(result, &errorCheck); err == nil && len(errorCheck.Errors) > 0 {
-		return nil, fmt.Errorf("GraphQL error: %s", errorCheck.Errors[0].Message)
-	}
-
-	return result, nil
-}
-
 func runGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
 	args := []string{"api", "graphql", "-f", "query=" + query}
 	
@@ -1581,12 +1546,4 @@ func runGraphQLQueryWithVariables(query string, variables map[string]interface{}
 	}
 
 	return result, nil
-}
-
-func jsonEscape(s string) (string, error) {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal string for json escaping: %w", err)
-	}
-	return string(b), nil
 }
