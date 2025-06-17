@@ -61,15 +61,19 @@ bin/spanner-mycli-dev docs update-help         # Generate help output for README
 # Gemini Code Review workflow (project-specific)
 # Explicit scenario commands (recommended for clarity)
 bin/spanner-mycli-dev pr-workflow create           # Create PR + wait for auto Gemini review
+bin/spanner-mycli-dev pr-workflow create --wait-checks  # Also wait for CI checks
 bin/spanner-mycli-dev pr-workflow review PR_NUMBER # Request review + wait (for existing PRs)
+bin/spanner-mycli-dev pr-workflow review PR_NUMBER --wait-checks  # Also wait for CI checks
 
 # Smart auto-detection command (alternative)
 bin/spanner-mycli-dev review gemini PR_NUMBER      # Auto-detects scenario + runs workflow
 bin/spanner-mycli-dev review gemini PR_NUMBER --force-request  # Always request review
+bin/spanner-mycli-dev review gemini PR_NUMBER --wait-checks     # Also wait for CI checks
 
 # Manual components (for understanding)
 gh pr comment PR_NUMBER --body "/gemini review"    # Manual review request
-bin/gh-helper reviews wait PR_NUMBER --timeout 15  # Manual review waiting
+bin/gh-helper reviews wait PR_NUMBER --timeout 15  # Wait for reviews only
+bin/gh-helper reviews wait-all PR_NUMBER --timeout 15  # Wait for reviews AND checks
 ```
 
 ## Core Architecture Overview

@@ -96,6 +96,7 @@ var geminiWorkflowCmd = &cobra.Command{
 This command automates the project-specific Gemini review process with smart detection:
 - Auto-detects if this is post-PR creation push (requests Gemini review)
 - Always waits for review feedback (15 min timeout)
+- Optionally waits for PR checks completion (--wait-checks flag)
 - Displays unresolved threads for manual handling
 
 Usage scenarios:
@@ -103,6 +104,7 @@ Usage scenarios:
 2. After pushes to existing PR: Requests /gemini review then waits
 
 Use --force-request to always request review regardless of detection.
+Use --wait-checks to also wait for CI/PR checks completion.
 
 Designed for AI assistants to autonomously manage code review cycles.`,
 	Args: cobra.ExactArgs(1),
@@ -131,7 +133,8 @@ var createPRCmd = &cobra.Command{
 This command:
 1. Creates PR using gh pr create with title/body from stdin or flags
 2. Waits for automatic Gemini review (15 min timeout)
-3. Displays any review threads for handling
+3. Optionally waits for PR checks completion (--wait-checks flag)
+4. Displays any review threads for handling
 
 For new PRs, Gemini automatically reviews so no manual trigger needed.`,
 	RunE: createPRAndWait,
@@ -145,7 +148,8 @@ var reviewPRCmd = &cobra.Command{
 This command:
 1. Requests Gemini review (/gemini review)
 2. Waits for review feedback (15 min timeout)  
-3. Displays review threads for handling
+3. Optionally waits for PR checks completion (--wait-checks flag)
+4. Displays review threads for handling
 
 Use this after pushing fixes/changes to an existing PR.`,
 	Args: cobra.ExactArgs(1),
@@ -158,6 +162,7 @@ var (
 	forceRequest bool
 	prTitle      string
 	prBody       string
+	waitForChecks bool
 )
 
 func init() {
@@ -167,6 +172,10 @@ func init() {
 	
 	createPRCmd.Flags().StringVar(&prTitle, "title", "", "PR title (or use stdin)")
 	createPRCmd.Flags().StringVar(&prBody, "body", "", "PR body (or use stdin)")
+	createPRCmd.Flags().BoolVar(&waitForChecks, "wait-checks", false, "Also wait for PR checks completion")
+	
+	reviewPRCmd.Flags().BoolVar(&waitForChecks, "wait-checks", false, "Also wait for PR checks completion")
+	geminiWorkflowCmd.Flags().BoolVar(&waitForChecks, "wait-checks", false, "Also wait for PR checks completion")
 
 	worktreeCmd.AddCommand(setupWorktreeCmd, listWorktreesCmd, deleteWorktreeCmd)
 	docsCmd.AddCommand(updateHelpCmd)
@@ -418,15 +427,21 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 		fmt.Println("⏭️  Skipping review request (waiting for automatic Gemini review)")
 	}
 	
-	// Step 2: Wait for review feedback using gh-helper
-	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
+	// Step 2: Wait for review feedback using gh-helper (and optionally checks)
+	var waitCmd *exec.Cmd
+	if waitForChecks {
+		fmt.Println("⏳ Waiting for Gemini review feedback AND PR checks (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait-all", prNumber, "--timeout", "15")
+	} else {
+		fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	}
 	
-	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
 	
 	if err := waitCmd.Run(); err != nil {
-		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+		fmt.Printf("⚠️  Wait completed with issues (this may be normal): %v\n", err)
 	}
 	
 	// Step 3: Check for unresolved threads
@@ -627,20 +642,26 @@ func createPRAndWait(cmd *cobra.Command, args []string) error {
 	prNumber := strings.TrimSpace(string(output))
 	fmt.Printf("📋 PR Number: #%s\n", prNumber)
 	
-	// Wait for automatic Gemini review (no manual trigger needed)
-	fmt.Println("⏳ Waiting for automatic Gemini review (15 minute timeout)...")
-	
+	// Wait for automatic Gemini review (and optionally checks)
 	ghHelperPath := "./bin/gh-helper"
 	if !fileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
 	
-	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	var waitCmd *exec.Cmd
+	if waitForChecks {
+		fmt.Println("⏳ Waiting for automatic Gemini review AND PR checks (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait-all", prNumber, "--timeout", "15")
+	} else {
+		fmt.Println("⏳ Waiting for automatic Gemini review (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	}
+	
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
 	
 	if err := waitCmd.Run(); err != nil {
-		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+		fmt.Printf("⚠️  Wait completed with issues (this may be normal): %v\n", err)
 	}
 	
 	// Check for review threads
@@ -674,20 +695,26 @@ func handlePRReview(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("✅ Gemini review requested")
 	
-	// Wait for review feedback
-	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
-	
+	// Wait for review feedback (and optionally checks)
 	ghHelperPath := "./bin/gh-helper"
 	if !fileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
 	
-	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	var waitCmd *exec.Cmd
+	if waitForChecks {
+		fmt.Println("⏳ Waiting for Gemini review feedback AND PR checks (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait-all", prNumber, "--timeout", "15")
+	} else {
+		fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
+		waitCmd = exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	}
+	
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
 	
 	if err := waitCmd.Run(); err != nil {
-		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+		fmt.Printf("⚠️  Wait completed with issues (this may be normal): %v\n", err)
 	}
 	
 	// Check for review threads

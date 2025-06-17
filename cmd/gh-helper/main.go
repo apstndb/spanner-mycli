@@ -63,6 +63,24 @@ Default timeout is 10 minutes, configurable with --timeout flag.`,
 	RunE: waitForReviews,
 }
 
+var waitAllCmd = &cobra.Command{
+	Use:   "wait-all <pr-number>",
+	Short: "Wait for both reviews and PR checks completion",
+	Long: `Continuously monitor for both new reviews AND PR check completion.
+
+This command polls every 30 seconds and waits until BOTH conditions are met:
+1. New reviews are available (same as 'reviews wait')
+2. All PR checks have completed (success, failure, or cancelled)
+
+This is useful for waiting until both Gemini review feedback AND CI checks
+are complete before proceeding with next steps.
+
+AI-FRIENDLY: Designed for autonomous workflows that need both review and CI feedback.
+Default timeout is 15 minutes, configurable with --timeout flag.`,
+	Args: cobra.ExactArgs(1),
+	RunE: waitForReviewsAndChecks,
+}
+
 var listThreadsCmd = &cobra.Command{
 	Use:   "list <pr-number>",
 	Short: "List unresolved review threads",
@@ -135,8 +153,9 @@ func init() {
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
 
 	waitReviewsCmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
+	waitAllCmd.Flags().IntVar(&timeout, "timeout", 15, "Timeout in minutes (default: 15)")
 
-	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd)
+	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd, waitAllCmd)
 	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd, replyWithCommitCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
@@ -482,6 +501,201 @@ query {
 		elapsed := time.Since(startTime)
 		remaining := timeoutDuration - elapsed
 		fmt.Printf("[%s] No new reviews (remaining: %v)\n", time.Now().Format("15:04:05"), remaining.Truncate(time.Second))
+		time.Sleep(30 * time.Second)
+	}
+}
+
+func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
+	prNumber := args[0]
+	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %d minutes)...\n", prNumber, timeout)
+	fmt.Println("Press Ctrl+C to stop monitoring")
+
+	// Setup timeout
+	timeoutDuration := time.Duration(timeout) * time.Minute
+	startTime := time.Now()
+
+	// Get initial state
+	initialCheck := true
+	reviewsReady := false
+	checksComplete := false
+
+	for {
+		// Check timeout
+		if time.Since(startTime) > timeoutDuration {
+			fmt.Printf("\n⏰ Timeout reached (%d minutes).\n", timeout)
+			if reviewsReady && checksComplete {
+				fmt.Println("✅ Both reviews and checks completed!")
+				return nil
+			} else {
+				fmt.Printf("Status: Reviews ready: %v, Checks complete: %v\n", reviewsReady, checksComplete)
+				return nil
+			}
+		}
+
+		// Combined GraphQL query for both reviews and checks
+		query := fmt.Sprintf(`
+{
+  repository(owner: "%s", name: "%s") {
+    pullRequest(number: %s) {
+      reviews(last: 15) {
+        nodes {
+          id
+          author { login }
+          createdAt
+          state
+          body
+        }
+      }
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              state
+              contexts(first: 50) {
+                nodes {
+                  ... on StatusContext {
+                    context
+                    state
+                    targetUrl
+                  }
+                  ... on CheckRun {
+                    name
+                    status
+                    conclusion
+                    detailsUrl
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`, owner, repo, prNumber)
+
+		result, err := runGraphQLQuery(query)
+		if err != nil {
+			fmt.Printf("Error checking PR status: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		var response struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						Reviews struct {
+							Nodes []struct {
+								ID        string `json:"id"`
+								Author    struct {
+									Login string `json:"login"`
+								} `json:"author"`
+								CreatedAt string `json:"createdAt"`
+								State     string `json:"state"`
+								Body      string `json:"body"`
+							} `json:"nodes"`
+						} `json:"reviews"`
+						Commits struct {
+							Nodes []struct {
+								Commit struct {
+									StatusCheckRollup *struct {
+										State    string `json:"state"`
+										Contexts struct {
+											Nodes []interface{} `json:"nodes"`
+										} `json:"contexts"`
+									} `json:"statusCheckRollup"`
+								} `json:"commit"`
+							} `json:"nodes"`
+						} `json:"commits"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			fmt.Printf("Error parsing response: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		// Check reviews status (same logic as waitForReviews)
+		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+		if len(reviews) > 0 && !reviewsReady {
+			// Check for new reviews using same state tracking logic
+			stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
+			lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
+
+			var lastKnownReview struct {
+				ID        string `json:"id"`
+				CreatedAt string `json:"createdAt"`
+			}
+
+			hasState := false
+			if data, err := os.ReadFile(lastReviewFile); err == nil {
+				if err := json.Unmarshal(data, &lastKnownReview); err == nil {
+					hasState = true
+				}
+			}
+
+			if hasState {
+				for _, review := range reviews {
+					if review.CreatedAt > lastKnownReview.CreatedAt ||
+						(review.CreatedAt == lastKnownReview.CreatedAt && review.ID != lastKnownReview.ID) {
+						reviewsReady = true
+						break
+					}
+				}
+			} else {
+				// No previous state, consider reviews ready
+				reviewsReady = true
+			}
+		}
+
+		// Check PR checks status
+		commits := response.Data.Repository.PullRequest.Commits.Nodes
+		if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
+			rollupState := commits[0].Commit.StatusCheckRollup.State
+			checksComplete = (rollupState == "SUCCESS" || rollupState == "FAILURE" || rollupState == "ERROR")
+		} else {
+			// No checks required or no commits
+			checksComplete = true
+		}
+
+		if initialCheck {
+			fmt.Printf("[%s] Monitoring started.\n", time.Now().Format("15:04:05"))
+			fmt.Printf("   Reviews: %d found, Ready: %v\n", len(reviews), reviewsReady)
+			if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
+				fmt.Printf("   Checks: %s, Complete: %v\n", commits[0].Commit.StatusCheckRollup.State, checksComplete)
+			} else {
+				fmt.Printf("   Checks: None required, Complete: %v\n", checksComplete)
+			}
+			initialCheck = false
+		}
+
+		// Check if both conditions are met
+		if reviewsReady && checksComplete {
+			fmt.Printf("\n🎉 [%s] Both reviews and checks are ready!\n", time.Now().Format("15:04:05"))
+			
+			if reviewsReady {
+				fmt.Println("✅ Reviews: New reviews available")
+			}
+			if checksComplete {
+				rollupState := "UNKNOWN"
+				if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
+					rollupState = commits[0].Commit.StatusCheckRollup.State
+				}
+				fmt.Printf("✅ Checks: All completed (%s)\n", rollupState)
+			}
+			
+			return nil
+		}
+
+		elapsed := time.Since(startTime)
+		remaining := timeoutDuration - elapsed
+		fmt.Printf("[%s] Status: Reviews: %v, Checks: %v (remaining: %v)\n",
+			time.Now().Format("15:04:05"), reviewsReady, checksComplete, remaining.Truncate(time.Second))
+		
 		time.Sleep(30 * time.Second)
 	}
 }
