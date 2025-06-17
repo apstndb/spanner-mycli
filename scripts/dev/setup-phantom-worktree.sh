@@ -14,9 +14,10 @@ show_usage() {
     echo "  $0 fix-lint-warnings"
     echo ""
     echo "This script will:"
-    echo "  1. Create a phantom worktree with the specified name"
-    echo "  2. Set up Claude settings symlink"
-    echo "  3. Provide next steps for development"
+    echo "  1. Fetch latest changes from origin"
+    echo "  2. Create a phantom worktree based on origin/main"
+    echo "  3. Set up Claude settings symlink"
+    echo "  4. Provide next steps for development"
 }
 
 # Check arguments
@@ -51,9 +52,16 @@ if phantom list 2>/dev/null | grep -q "^$WORKTREE_NAME\$"; then
     exit 1
 fi
 
-# Create phantom worktree with Claude settings
+# Fetch latest changes from origin
+echo "Fetching latest changes from origin..."
+if ! git fetch origin; then
+    echo "❌ Failed to fetch from origin"
+    exit 1
+fi
+
+# Create phantom worktree based on origin/main with Claude settings
 echo "Creating worktree and setting up Claude configuration..."
-if ! phantom create "$WORKTREE_NAME" --exec 'ln -sf ../../../../.claude .claude'; then
+if ! phantom create "$WORKTREE_NAME" --base origin/main --exec 'ln -sf ../../../../.claude .claude'; then
     echo "❌ Failed to create phantom worktree"
     exit 1
 fi

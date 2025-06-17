@@ -33,6 +33,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 1. **Always run `make test`** (not `make fasttest`) - all integration tests must pass
 2. **Always run `make lint`** - code quality and style compliance required
 3. **Never push directly to main branch** - always use Pull Requests
+4. **Never commit directly to main branch** - always use feature branches
 
 ## Essential Commands
 
@@ -78,7 +79,7 @@ For detailed implementation patterns, see [dev-docs/patterns/system-variables.md
 ### Phantom Worktree Usage
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-123-feature
+scripts/dev/setup-phantom-worktree.sh issue-123-feature  # Auto-fetches and bases on origin/main
 
 # Work in isolated environment
 phantom shell issue-123-feature --tmux-horizontal
