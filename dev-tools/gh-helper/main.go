@@ -423,6 +423,15 @@ func waitForReviewsOnly(prNumber string) error {
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 	
+	// Claude Code has a 2-minute timeout limit. Adjust strategy accordingly.
+	// Issue: https://github.com/anthropics/claude-code/issues/1216
+	effectiveTimeout := timeout
+	if effectiveTimeout > 2 {
+		fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to 2 minutes.\n", timeout)
+		fmt.Printf("💡 For longer waits, run this command again after 2 minutes.\n")
+		effectiveTimeout = 2
+	}
+	
 	// Request Gemini review if flag is set
 	if requestReview {
 		fmt.Printf("📝 Requesting Gemini review for PR #%s...\n", prNumber)
@@ -433,11 +442,11 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		fmt.Println("✅ Gemini review requested")
 	}
 	
-	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %d minutes)...\n", prNumber, timeout)
+	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %d minutes)...\n", prNumber, effectiveTimeout)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
 	// Setup timeout
-	timeoutDuration := time.Duration(timeout) * time.Minute
+	timeoutDuration := time.Duration(effectiveTimeout) * time.Minute
 	startTime := time.Now()
 
 	// Get initial state
@@ -448,12 +457,15 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	for {
 		// Check timeout
 		if time.Since(startTime) > timeoutDuration {
-			fmt.Printf("\n⏰ Timeout reached (%d minutes).\n", timeout)
+			fmt.Printf("\n⏰ Timeout reached (%d minutes).\n", effectiveTimeout)
 			if reviewsReady && checksComplete {
 				fmt.Println("✅ Both reviews and checks completed!")
 				return nil
 			} else {
 				fmt.Printf("Status: Reviews ready: %v, Checks complete: %v\n", reviewsReady, checksComplete)
+				if effectiveTimeout < timeout {
+					fmt.Printf("💡 To continue waiting, run: bin/gh-helper reviews wait %s\n", prNumber)
+				}
 				return nil
 			}
 		}
