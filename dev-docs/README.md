@@ -9,6 +9,7 @@ dev-docs/
 ├── README.md                    # This file - overview and navigation
 ├── architecture-guide.md        # System architecture and code organization
 ├── development-insights.md      # Development patterns and best practices
+├── development-tools-guide.md   # AI-friendly development tools (issue #301)
 ├── issue-management.md          # GitHub workflow and PR processes
 ├── coding-guidelines.md         # Coding standards and style guidelines
 └── patterns/                    # Specific implementation patterns
@@ -31,6 +32,13 @@ dev-docs/
 - Code quality improvement techniques
 - Context and session management
 
+### [Development Tools Guide](development-tools-guide.md)
+- AI-friendly development tools (issue #301)
+- gh-helper and spanner-mycli-dev architecture
+- Migration from shell scripts
+- Performance data and timeout rationale
+- Integration patterns and workflows
+
 ### [Issue Management](issue-management.md)
 - GitHub issue workflow
 - Pull request process
@@ -38,14 +46,10 @@ dev-docs/
 - Git best practices
 - Knowledge management through PR comments
 
-<<<<<<< HEAD
-=======
 ### [Coding Guidelines](coding-guidelines.md)
 - Go language standards and conventions
 - Project-specific coding rules
 - Current deviations and future improvements
-
->>>>>>> origin/main
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
 

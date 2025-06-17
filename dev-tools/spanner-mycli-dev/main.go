@@ -15,12 +15,17 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "spanner-mycli-dev",
 	Short: "Development tools for spanner-mycli project",
-	Long: `spanner-mycli-dev provides project-specific development tools.
+	Long: `Project-specific development tools for spanner-mycli.
 
-This tool focuses on spanner-mycli specific workflows:
-- Phantom worktree management
-- Documentation generation
-- Project-specific automation`,
+COMMON PATTERNS:
+  spanner-mycli-dev pr-workflow create --wait-checks    # Create PR + wait for review/CI
+  spanner-mycli-dev worktree setup issue-123-feature   # Setup phantom worktree
+  spanner-mycli-dev review gemini <PR> --wait-checks   # Smart review workflow
+
+See cmd/spanner-mycli-dev/README.md for detailed documentation, phantom
+worktree conventions, and Gemini Code Review integration patterns.
+
+TIP: Use 'make build-tools' to build both spanner-mycli-dev and gh-helper.`,
 }
 
 var worktreeCmd = &cobra.Command{

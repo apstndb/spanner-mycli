@@ -19,13 +19,15 @@ const DefaultRepo = "spanner-mycli"
 var rootCmd = &cobra.Command{
 	Use:   "gh-helper",
 	Short: "Generic GitHub operations helper",
-	Long: `gh-helper provides reusable GitHub operations that work well with AI assistants.
+	Long: `Generic GitHub operations optimized for AI assistants.
 
-This tool focuses on AI-friendly patterns:
-- stdin/heredoc support for content input
-- Separate read/write commands for permission clarity  
-- Self-documenting with comprehensive --help
-- No temporary file dependencies`,
+COMMON PATTERNS:
+  gh-helper reviews wait <PR> --request-review     # Complete review workflow
+  gh-helper threads list <PR>                      # Show review threads
+  gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
+
+See cmd/gh-helper/README.md for detailed documentation, design rationale,
+and migration guide from shell scripts.`,
 }
 
 var reviewsCmd = &cobra.Command{

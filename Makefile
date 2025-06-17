@@ -2,9 +2,12 @@ build:
 	go build
 
 build-tools:
+	# Build development tools from issue #301 script reorganization
+	# gh-helper: Generic GitHub operations (reviews, threads)
+	# spanner-mycli-dev: Project-specific workflows (worktrees, docs, Gemini integration)
 	mkdir -p bin
-	cd cmd/gh-helper && go build -o ../../bin/gh-helper .
-	cd cmd/spanner-mycli-dev && go build -o ../../bin/spanner-mycli-dev .
+	cd dev-tools/gh-helper && go build -o ../../bin/gh-helper .
+	cd dev-tools/spanner-mycli-dev && go build -o ../../bin/spanner-mycli-dev .
 
 clean:
 	rm -f spanner-mycli
@@ -30,7 +33,9 @@ fasttest-verbose:
 lint:
 	golangci-lint run
 
-# Enhanced development targets (issue #301)
+# Enhanced development targets (issue #301 - AI-friendly script reorganization)
+# These targets integrate the new Go-based development tools (gh-helper, spanner-mycli-dev)
+# replacing scattered shell scripts with structured, maintainable commands.
 .PHONY: test-quick check docs-update help-dev worktree-setup gh-review build-tools
 
 # Quick tests for development cycle
@@ -60,9 +65,13 @@ help-dev:
 	@echo "  make worktree-setup - Setup phantom worktree (requires WORKTREE_NAME)"
 	@echo "  make gh-review      - Check PR reviews (requires PR_NUMBER)"
 	@echo ""
-	@echo "🔧 New Development Tools (issue #301):"
+	@echo "🔧 Development Tools (issue #301 - AI-friendly script reorganization):"
 	@echo "  bin/gh-helper       - Generic GitHub operations (reviews, threads)"
-	@echo "  bin/spanner-mycli-dev - Project-specific tools (worktrees, docs)"
+	@echo "  bin/spanner-mycli-dev - Project-specific tools (worktrees, docs, Gemini)"
+	@echo ""
+	@echo "🚀 Quick Start for AI Assistants:"
+	@echo "  bin/gh-helper reviews wait <PR> --request-review  # Complete review workflow"
+	@echo "  bin/spanner-mycli-dev pr-workflow create --wait-checks  # Full PR creation"
 
 # Phantom worktree setup (requires WORKTREE_NAME)
 worktree-setup:
