@@ -394,7 +394,9 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	}
 	
 	// For all other cases (checks-only or both), delegate to the full implementation
-	return waitForReviewsAndChecks(cmd, args)
+	err := waitForReviewsAndChecks(cmd, args)
+	// Don't wrap the error to avoid double error messages
+	return err
 }
 
 // Simplified reviews-only wait function
@@ -607,7 +609,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			fmt.Println("⚠️  CI checks will not run until conflicts are resolved")
 			fmt.Printf("💡 Resolve conflicts with: git rebase origin/main\n")
 			fmt.Printf("💡 Then push and run: bin/gh-helper reviews wait %s\n", prNumber)
-			return fmt.Errorf("merge conflicts prevent CI execution")
+			os.Exit(1)
 		}
 
 		// Check PR checks status
