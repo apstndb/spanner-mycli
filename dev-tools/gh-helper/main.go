@@ -28,6 +28,7 @@ COMMON PATTERNS:
 
 See cmd/gh-helper/README.md for detailed documentation, design rationale,
 and migration guide from shell scripts.`,
+	SilenceErrors: true,
 }
 
 var reviewsCmd = &cobra.Command{
@@ -181,7 +182,6 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -609,7 +609,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			fmt.Println("⚠️  CI checks will not run until conflicts are resolved")
 			fmt.Printf("💡 Resolve conflicts with: git rebase origin/main\n")
 			fmt.Printf("💡 Then push and run: bin/gh-helper reviews wait %s\n", prNumber)
-			os.Exit(1)
+			return fmt.Errorf("merge conflicts prevent CI execution")
 		}
 
 		// Check PR checks status
