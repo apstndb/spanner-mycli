@@ -16,6 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newOperationalCommand creates a command optimized for operational tasks
+// All operational commands should silence usage help since most errors are runtime issues
+func newOperationalCommand(use, short, long string, runE func(*cobra.Command, []string) error) *cobra.Command {
+	return &cobra.Command{
+		Use:          use,
+		Short:        short,
+		Long:         long,
+		SilenceUsage: true, // Don't show usage help for operational errors (API failures, etc.)
+		RunE:         runE,
+	}
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "gh-helper",
 	Short: "Generic GitHub operations helper",
@@ -44,10 +56,10 @@ var threadsCmd = &cobra.Command{
 	Short: "GitHub review thread operations",
 }
 
-var checkReviewsCmd = &cobra.Command{
-	Use:   "check [pr-number-or-issue]",
-	Short: "Check for new PR reviews with state tracking",
-	Long: `Check for new pull request reviews, tracking state to identify updates.
+var checkReviewsCmd = newOperationalCommand(
+	"check [pr-number-or-issue]",
+	"Check for new PR reviews with state tracking",
+	`Check for new pull request reviews, tracking state to identify updates.
 
 This command maintains state in ~/.cache/spanner-mycli-reviews/ to detect
 new reviews since the last check. Useful for monitoring PR activity.
@@ -57,14 +69,13 @@ Arguments:
 - Plain number (123): Auto-detects issue vs PR
 - Explicit issue (issues/123, issue/123): Forces issue resolution
 - Explicit PR (pull/123, pr/123): Forces PR usage`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: checkReviews,
-}
+	checkReviews,
+)
 
-var waitReviewsCmd = &cobra.Command{
-	Use:   "wait [pr-number-or-issue]",
-	Short: "Wait for both reviews and PR checks (default behavior)",
-	Long: `Continuously monitor for both new reviews AND PR checks completion by default.
+var waitReviewsCmd = newOperationalCommand(
+	"wait [pr-number-or-issue]",
+	"Wait for both reviews and PR checks (default behavior)",
+	`Continuously monitor for both new reviews AND PR checks completion by default.
 
 This command polls every 30 seconds and waits until BOTH conditions are met:
 1. New reviews are available
@@ -82,15 +93,13 @@ Arguments:
 
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
-	Args:         cobra.MaximumNArgs(1),
-	SilenceUsage: true, // Don't show usage help for operational errors (timeouts, API failures)
-	RunE: waitForReviews,
-}
+	waitForReviews,
+)
 
-var waitAllCmd = &cobra.Command{
-	Use:   "wait-all <pr-number>",
-	Short: "Wait for both reviews and PR checks completion",
-	Long: `Continuously monitor for both new reviews AND PR check completion.
+var waitAllCmd = newOperationalCommand(
+	"wait-all <pr-number>",
+	"Wait for both reviews and PR checks completion",
+	`Continuously monitor for both new reviews AND PR check completion.
 
 This command polls every 30 seconds and waits until BOTH conditions are met:
 1. New reviews are available (same as 'reviews wait')
@@ -104,25 +113,23 @@ This is useful for post-push scenarios where you need to trigger review.
 
 AI-FRIENDLY: Designed for autonomous workflows that need both review and CI feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
-	Args: cobra.ExactArgs(1),
-	RunE: waitForReviewsAndChecks,
-}
+	waitForReviewsAndChecks,
+)
 
-var listThreadsCmd = &cobra.Command{
-	Use:   "list <pr-number>",
-	Short: "List unresolved review threads",
-	Long: `List unresolved review threads that may need replies.
+var listThreadsCmd = newOperationalCommand(
+	"list <pr-number>",
+	"List unresolved review threads",
+	`List unresolved review threads that may need replies.
 
 Shows thread IDs for use with the reply command, along with
 file locations and latest comments.`,
-	Args: cobra.ExactArgs(1),
-	RunE: listThreads,
-}
+	listThreads,
+)
 
-var replyThreadsCmd = &cobra.Command{
-	Use:   "reply <thread-id>",
-	Short: "Reply to a review thread",
-	Long: `Reply to a GitHub pull request review thread.
+var replyThreadsCmd = newOperationalCommand(
+	"reply <thread-id>",
+	"Reply to a review thread",
+	`Reply to a GitHub pull request review thread.
 
 AI-FRIENDLY DESIGN (Issue #301): The reply text can be provided via:
 - --message flag for single-line responses
@@ -136,33 +143,30 @@ Examples:
   - Handles edge cases properly
   - Includes proper error handling
   EOF`,
-	Args: cobra.ExactArgs(1),
-	RunE: replyToThread,
-}
+	replyToThread,
+)
 
-var showThreadCmd = &cobra.Command{
-	Use:   "show <thread-id>",
-	Short: "Show detailed view of a review thread",
-	Long: `Show detailed view of a specific review thread including all comments.
+var showThreadCmd = newOperationalCommand(
+	"show <thread-id>",
+	"Show detailed view of a review thread",
+	`Show detailed view of a specific review thread including all comments.
 
 This provides full context for understanding review feedback before replying.
 Useful for getting complete thread history and comment details.`,
-	Args: cobra.ExactArgs(1),
-	RunE: showThread,
-}
+	showThread,
+)
 
-var replyWithCommitCmd = &cobra.Command{
-	Use:   "reply-commit <thread-id> <commit-hash>",
-	Short: "Reply to a review thread with commit reference",
-	Long: `Reply to a review thread indicating that fixes were made in a specific commit.
+var replyWithCommitCmd = newOperationalCommand(
+	"reply-commit <thread-id> <commit-hash>",
+	"Reply to a review thread with commit reference",
+	`Reply to a review thread indicating that fixes were made in a specific commit.
 
 This command automatically formats the reply to include the commit hash,
 following best practices for review response traceability.
 
 The reply text can be provided via --message flag or stdin.`,
-	Args: cobra.ExactArgs(2),
-	RunE: replyWithCommit,
-}
+	replyWithCommit,
+)
 
 var (
 	owner          string
@@ -177,6 +181,16 @@ var (
 )
 
 func init() {
+	// Configure Args for operational commands (using newOperationalCommand)
+	checkReviewsCmd.Args = cobra.MaximumNArgs(1)
+	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
+	waitAllCmd.Args = cobra.ExactArgs(1)
+	listThreadsCmd.Args = cobra.ExactArgs(1)
+	replyThreadsCmd.Args = cobra.ExactArgs(1)
+	showThreadCmd.Args = cobra.ExactArgs(1)
+	replyWithCommitCmd.Args = cobra.ExactArgs(2)
+	
+	// Configure flags
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
 	rootCmd.PersistentFlags().StringVar(&repo, "repo", shared.DefaultRepo, "GitHub repository name")
 
@@ -193,6 +207,7 @@ func init() {
 	waitAllCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 
+	// Add subcommands
 	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd, waitAllCmd)
 	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd, replyWithCommitCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
@@ -200,6 +215,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
