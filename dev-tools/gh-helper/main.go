@@ -12,11 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/apstndb/spanner-mycli/dev-tools/internal/shared"
 	"github.com/spf13/cobra"
 )
-
-const DefaultOwner = "apstndb"
-const DefaultRepo = "spanner-mycli"
 
 var rootCmd = &cobra.Command{
 	Use:   "gh-helper",
@@ -167,8 +165,8 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&owner, "owner", DefaultOwner, "GitHub repository owner")
-	rootCmd.PersistentFlags().StringVar(&repo, "repo", DefaultRepo, "GitHub repository name")
+	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
+	rootCmd.PersistentFlags().StringVar(&repo, "repo", shared.DefaultRepo, "GitHub repository name")
 
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
@@ -213,31 +211,8 @@ func parseTimeout() (time.Duration, error) {
 
 // getCurrentUser returns the current authenticated GitHub username
 func getCurrentUser() (string, error) {
-	query := `
-	{
-	  viewer {
-	    login
-	  }
-	}`
-	
-	result, err := runGraphQLQuery(query)
-	if err != nil {
-		return "", fmt.Errorf("failed to get current user: %w", err)
-	}
-	
-	var response struct {
-		Data struct {
-			Viewer struct {
-				Login string `json:"login"`
-			} `json:"viewer"`
-		} `json:"data"`
-	}
-	
-	if err := json.Unmarshal(result, &response); err != nil {
-		return "", fmt.Errorf("failed to parse user response: %w", err)
-	}
-	
-	return response.Data.Viewer.Login, nil
+	client := shared.NewGitHubClient(owner, repo)
+	return client.GetCurrentUser()
 }
 
 // ReviewState represents the state of the last known review

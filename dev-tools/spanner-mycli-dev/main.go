@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/spanner-mycli/dev-tools/internal/shared"
 	"github.com/spf13/cobra"
 )
 
@@ -208,7 +209,7 @@ func setupWorktree(cmd *cobra.Command, args []string) error {
 	fmt.Printf("🔧 Creating phantom worktree: %s\n", worktreeName)
 
 	// Check if phantom command exists
-	if !commandExists("phantom") {
+	if !shared.CommandExists("phantom") {
 		return fmt.Errorf("phantom command not found. Please install phantom first:\n   https://github.com/aku11i/phantom")
 	}
 
@@ -222,14 +223,14 @@ func setupWorktree(cmd *cobra.Command, args []string) error {
 
 	// Fetch latest changes from origin
 	fmt.Println("Fetching latest changes from origin...")
-	if err := runCommand("git", "fetch", "origin"); err != nil {
+	if err := shared.RunCommand("git", "fetch", "origin"); err != nil {
 		return fmt.Errorf("failed to fetch from origin: %w", err)
 	}
 
 	// Create phantom worktree based on origin/main with Claude settings
 	fmt.Println("Creating worktree and setting up Claude configuration...")
 	createCmd := []string{"phantom", "create", worktreeName, "--base", "origin/main", "--exec", "ln -sf ../../../../.claude .claude"}
-	if err := runCommand(createCmd[0], createCmd[1:]...); err != nil {
+	if err := shared.RunCommand(createCmd[0], createCmd[1:]...); err != nil {
 		return fmt.Errorf("failed to create phantom worktree: %w", err)
 	}
 
@@ -257,7 +258,7 @@ func setupWorktree(cmd *cobra.Command, args []string) error {
 }
 
 func listWorktrees(cmd *cobra.Command, args []string) error {
-	if !commandExists("phantom") {
+	if !shared.CommandExists("phantom") {
 		return fmt.Errorf("phantom command not found")
 	}
 
@@ -286,7 +287,7 @@ func listWorktrees(cmd *cobra.Command, args []string) error {
 func deleteWorktree(cmd *cobra.Command, args []string) error {
 	worktreeName := args[0]
 
-	if !commandExists("phantom") {
+	if !shared.CommandExists("phantom") {
 		return fmt.Errorf("phantom command not found")
 	}
 
@@ -318,7 +319,7 @@ func deleteWorktree(cmd *cobra.Command, args []string) error {
 
 	// Delete the worktree
 	fmt.Printf("🗑️  Deleting worktree: %s\n", worktreeName)
-	if err := runCommand("phantom", "delete", worktreeName); err != nil {
+	if err := shared.RunCommand("phantom", "delete", worktreeName); err != nil {
 		return fmt.Errorf("failed to delete worktree: %w", err)
 	}
 
@@ -366,11 +367,11 @@ func updateHelp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Verify generated files exist and have content
-	if !fileHasContent("./tmp/help_clean.txt") {
+	if !shared.FileHasContent("./tmp/help_clean.txt") {
 		return fmt.Errorf("generated help_clean.txt is empty")
 	}
 
-	if !fileHasContent("./tmp/statement_help.txt") {
+	if !shared.FileHasContent("./tmp/statement_help.txt") {
 		return fmt.Errorf("generated statement_help.txt is empty")
 	}
 
@@ -395,7 +396,7 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("🤖 Starting Gemini Code Review workflow for PR #%s...\n", prNumber)
 	
 	ghHelperPath := "./bin/gh-helper"
-	if !fileExists(ghHelperPath) {
+	if !shared.FileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
 	
@@ -424,7 +425,7 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 	// Step 1: Request Gemini review if needed
 	if shouldRequestReview {
 		fmt.Println("📝 Requesting Gemini code review...")
-		if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+		if err := shared.RunCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
 			return fmt.Errorf("failed to request Gemini review: %w", err)
 		}
 		fmt.Println("✅ Gemini review requested")
@@ -568,16 +569,6 @@ func detectNeedsGeminiRequest(prNumber string) (bool, error) {
 	return needsRequest, nil
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func commandExists(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
 func worktreeExists(name string) bool {
 	cmd := exec.Command("phantom", "list")
 	output, err := cmd.Output()
@@ -592,21 +583,6 @@ func worktreeExists(name string) bool {
 		}
 	}
 	return false
-}
-
-func runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func fileHasContent(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.Size() > 0
 }
 
 func createPRAndWait(cmd *cobra.Command, args []string) error {
@@ -649,7 +625,7 @@ func createPRAndWait(cmd *cobra.Command, args []string) error {
 	
 	// Wait for automatic Gemini review (and optionally checks)
 	ghHelperPath := "./bin/gh-helper"
-	if !fileExists(ghHelperPath) {
+	if !shared.FileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
 	
@@ -695,14 +671,14 @@ func handlePRReview(cmd *cobra.Command, args []string) error {
 	
 	// Request Gemini review
 	fmt.Println("📝 Requesting Gemini code review...")
-	if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+	if err := shared.RunCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
 		return fmt.Errorf("failed to request Gemini review: %w", err)
 	}
 	fmt.Println("✅ Gemini review requested")
 	
 	// Wait for review feedback (and optionally checks)
 	ghHelperPath := "./bin/gh-helper"
-	if !fileExists(ghHelperPath) {
+	if !shared.FileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
 	
