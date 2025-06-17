@@ -326,18 +326,29 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 			mpb.BarRemoveOnComplete(),
 		)
 		bar.EnableTriggerComplete()
+		defer teardown()
+	}
+	
+	// Update progress bar with initial status
+	if bar != nil && !bar.Completed() {
+		progressPercent := s.getOperationProgress(op)
+		bar.SetCurrent(int64(progressPercent))
 	}
 	
 	// Polling loop
 	for !op.GetDone() {
-		time.Sleep(5 * time.Second)
+		select {
+		case <-time.After(5 * time.Second):
+			// Continue polling
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		
 		// Poll the operation
 		op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
 			Name: operationName,
 		})
 		if err != nil {
-			teardown()
 			return nil, fmt.Errorf("failed to poll operation %q: %w", operationName, err)
 		}
 		
@@ -351,10 +362,6 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	// Operation completed, update progress bar to 100%
 	if bar != nil && !bar.Completed() {
 		bar.SetCurrent(100)
-	}
-	
-	if p != nil {
-		p.Wait()
 	}
 	
 	// Return final operation status
