@@ -37,7 +37,19 @@ func NewGitHubClient(owner, repo string) *GitHubClient {
 
 // RunGraphQLQuery executes a GraphQL query using gh CLI
 func (c *GitHubClient) RunGraphQLQuery(query string) ([]byte, error) {
-	cmd := exec.Command("gh", "api", "graphql", "-F", "query="+query)
+	cmd := exec.Command("gh", "api", "graphql", "-f", "query="+query)
+	return cmd.Output()
+}
+
+// RunGraphQLQueryWithVariables executes a GraphQL query with variables using gh CLI
+func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
+	args := []string{"api", "graphql", "-f", "query=" + query}
+	
+	for key, value := range variables {
+		args = append(args, "-F", fmt.Sprintf("%s=%v", key, value))
+	}
+	
+	cmd := exec.Command("gh", args...)
 	return cmd.Output()
 }
 
@@ -101,10 +113,10 @@ type NodeInfo struct {
 
 // ResolveNumber determines if a number is an issue or PR and resolves accordingly
 func (c *GitHubClient) ResolveNumber(number int) (*NodeInfo, error) {
-	query := fmt.Sprintf(`
-	{
-	  repository(owner: "%s", name: "%s") {
-	    issueOrPullRequest(number: %d) {
+	query := `
+	query($owner: String!, $repo: String!, $number: Int!) {
+	  repository(owner: $owner, name: $repo) {
+	    issueOrPullRequest(number: $number) {
 	      __typename
 	      ... on Issue {
 	        number
@@ -118,9 +130,15 @@ func (c *GitHubClient) ResolveNumber(number int) (*NodeInfo, error) {
 	      }
 	    }
 	  }
-	}`, c.Owner, c.Repo, number)
+	}`
 
-	result, err := c.RunGraphQLQuery(query)
+	variables := map[string]interface{}{
+		"owner":  c.Owner,
+		"repo":   c.Repo,
+		"number": number,
+	}
+
+	result, err := c.RunGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve number: %w", err)
 	}

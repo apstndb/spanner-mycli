@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -474,11 +475,19 @@ func detectNeedsGeminiRequest(prNumber string) (bool, error) {
 	// Strategy: Compare PR creation time with the latest commit time
 	// If latest commit is significantly after PR creation, we likely need to request review
 	
+	// Convert PR number to integer for GraphQL
+	prNumberInt, err := strconv.Atoi(prNumber)
+	if err != nil {
+		return false, fmt.Errorf("invalid PR number format: %w", err)
+	}
+	
 	// Get PR creation time and latest commit
-	query := fmt.Sprintf(`
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    pullRequest(number: %s) {
+	client := shared.NewGitHubClient("apstndb", "spanner-mycli")
+	
+	query := `
+query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
       createdAt
       headRef {
         target {
@@ -495,10 +504,15 @@ func detectNeedsGeminiRequest(prNumber string) (bool, error) {
       }
     }
   }
-}`, prNumber)
+}`
 
-	cmd := exec.Command("gh", "api", "graphql", "-F", "query="+query)
-	output, err := cmd.Output()
+	variables := map[string]interface{}{
+		"owner":    "apstndb",
+		"repo":     "spanner-mycli",
+		"prNumber": prNumberInt,
+	}
+
+	output, err := client.RunGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch PR info: %w", err)
 	}

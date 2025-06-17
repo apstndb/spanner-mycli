@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -387,10 +388,10 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Checking reviews for PR #%s in %s/%s...\n", prNumberStr, owner, repo)
 
-	query := fmt.Sprintf(`
-query {
-  repository(owner: "%s", name: "%s") {
-    pullRequest(number: %s) {
+	query := `
+query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
       reviews(last: 15) {
         nodes {
           id
@@ -404,9 +405,13 @@ query {
       }
     }
   }
-}`, owner, repo, prNumber)
+}`
 
-	result, err := runGraphQLQuery(query)
+	result, err := client.RunGraphQLQueryWithVariables(query, map[string]interface{}{
+		"owner":    owner,
+		"repo":     repo,
+		"prNumber": prNumber,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to fetch reviews: %w", err)
 	}
@@ -577,6 +582,12 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 
 // waitForReviewsOnly waits specifically for new reviews without checking PR status
 func waitForReviewsOnly(prNumber string) error {
+	// Convert PR number to integer for GraphQL
+	prNumberInt, err := strconv.Atoi(prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid PR number format: %w", err)
+	}
+	
 	// Parse timeout duration
 	timeoutDuration, err := parseTimeout()
 	if err != nil {
@@ -620,10 +631,10 @@ func waitForReviewsOnly(prNumber string) error {
 		}
 		
 		// Query for reviews
-		query := fmt.Sprintf(`
-		{
-		  repository(owner: "%s", name: "%s") {
-		    pullRequest(number: %s) {
+		query := `
+		query($owner: String!, $repo: String!, $prNumber: Int!) {
+		  repository(owner: $owner, name: $repo) {
+		    pullRequest(number: $prNumber) {
 		      reviews(last: 15) {
 		        nodes {
 		          id
@@ -635,9 +646,15 @@ func waitForReviewsOnly(prNumber string) error {
 		      }
 		    }
 		  }
-		}`, owner, repo, prNumber)
+		}`
 		
-		result, err := runGraphQLQuery(query)
+		variables := map[string]interface{}{
+			"owner":    owner,
+			"repo":     repo,
+			"prNumber": prNumberInt,
+		}
+		
+		result, err := runGraphQLQueryWithVariables(query, variables)
 		if err != nil {
 			fmt.Printf("Error checking reviews: %v\n", err)
 			time.Sleep(30 * time.Second)
@@ -717,6 +734,12 @@ func waitForReviewsOnly(prNumber string) error {
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
+	
+	// Convert PR number to integer for GraphQL
+	prNumberInt, err := strconv.Atoi(prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid PR number format: %w", err)
+	}
 	
 	// Parse timeout duration with new flexible format
 	timeoutDuration, err := parseTimeout()
@@ -806,10 +829,10 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		}
 
 		// Combined GraphQL query for both reviews and checks
-		query := fmt.Sprintf(`
-{
-  repository(owner: "%s", name: "%s") {
-    pullRequest(number: %s) {
+		query := `
+query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
       mergeable
       mergeStateStatus
       reviews(last: 15) {
@@ -847,9 +870,15 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
       }
     }
   }
-}`, owner, repo, prNumber)
+}`
 
-		result, err := runGraphQLQuery(query)
+		variables := map[string]interface{}{
+			"owner":    owner,
+			"repo":     repo,
+			"prNumber": prNumberInt,
+		}
+
+		result, err := runGraphQLQueryWithVariables(query, variables)
 		if err != nil {
 			fmt.Printf("Error checking PR status: %v\n", err)
 			time.Sleep(30 * time.Second)
@@ -1034,13 +1063,19 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 
 func listThreads(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
+	
+	// Convert PR number to integer for GraphQL
+	prNumberInt, err := strconv.Atoi(prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid PR number format: %w", err)
+	}
 
 	fmt.Printf("🔍 Fetching review threads for PR #%s...\n", prNumber)
 
-	query := fmt.Sprintf(`
-{
-  repository(owner: "%s", name: "%s") {
-    pullRequest(number: %s) {
+	query := `
+query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
       reviewThreads(first: 20) {
         nodes {
           id
@@ -1062,9 +1097,15 @@ func listThreads(cmd *cobra.Command, args []string) error {
       }
     }
   }
-}`, owner, repo, prNumber)
+}`
 
-	result, err := runGraphQLQuery(query)
+	variables := map[string]interface{}{
+		"owner":    owner,
+		"repo":     repo,
+		"prNumber": prNumberInt,
+	}
+
+	result, err := runGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return fmt.Errorf("failed to fetch threads: %w", err)
 	}
@@ -1168,9 +1209,9 @@ func showThread(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("🔍 Fetching details for thread: %s\n", threadID)
 
-	query := fmt.Sprintf(`
-{
-  node(id: "%s") {
+	query := `
+query($threadID: ID!) {
+  node(id: $threadID) {
     ... on PullRequestReviewThread {
       id
       line
@@ -1194,9 +1235,13 @@ func showThread(cmd *cobra.Command, args []string) error {
       }
     }
   }
-}`, threadID)
+}`
 
-	result, err := runGraphQLQuery(query)
+	variables := map[string]interface{}{
+		"threadID": threadID,
+	}
+
+	result, err := runGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return fmt.Errorf("failed to fetch thread details: %w", err)
 	}
@@ -1324,16 +1369,11 @@ func replyWithCommit(cmd *cobra.Command, args []string) error {
 	// CRITICAL: Do NOT include pullRequestReviewId field - causes null responses
 	// despite being marked "optional" in GraphQL schema (discovered in #301)
 	
-	escapedText, err := jsonEscape(replyText)
-	if err != nil {
-		return fmt.Errorf("failed to escape reply text: %w", err)
-	}
-	
-	mutation := fmt.Sprintf(`
-mutation {
+	mutation := `
+mutation($threadID: ID!, $body: String!) {
   addPullRequestReviewThreadReply(input: {
-    pullRequestReviewThreadId: "%s"
-    body: %s
+    pullRequestReviewThreadId: $threadID
+    body: $body
   }) {
     comment {
       id
@@ -1341,9 +1381,14 @@ mutation {
       body
     }
   }
-}`, threadID, escapedText)
+}`
 
-	result, err := runGraphQLQuery(mutation)
+	variables := map[string]interface{}{
+		"threadID": threadID,
+		"body":     replyText,
+	}
+
+	result, err := runGraphQLQueryWithVariables(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("failed to post reply: %w", err)
 	}
@@ -1412,16 +1457,11 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
 	// This was discovered during AI-friendly tool development and is documented in dev-docs/development-insights.md
 	
-	escapedText, err := jsonEscape(replyText)
-	if err != nil {
-		return fmt.Errorf("failed to escape reply text: %w", err)
-	}
-	
-	mutation := fmt.Sprintf(`
-mutation {
+	mutation := `
+mutation($threadID: ID!, $body: String!) {
   addPullRequestReviewThreadReply(input: {
-    pullRequestReviewThreadId: "%s"
-    body: %s
+    pullRequestReviewThreadId: $threadID
+    body: $body
   }) {
     comment {
       id
@@ -1429,9 +1469,14 @@ mutation {
       body
     }
   }
-}`, threadID, escapedText)
+}`
 
-	result, err := runGraphQLQuery(mutation)
+	variables := map[string]interface{}{
+		"threadID": threadID,
+		"body":     replyText,
+	}
+
+	result, err := runGraphQLQueryWithVariables(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("failed to post reply: %w", err)
 	}
@@ -1467,7 +1512,46 @@ mutation {
 }
 
 func runGraphQLQuery(query string) ([]byte, error) {
-	cmd := exec.Command("gh", "api", "graphql", "-F", "query="+query)
+	cmd := exec.Command("gh", "api", "graphql", "--field", "query="+query)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// Try to extract meaningful error message from stderr
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "Could not resolve to a PullRequest") {
+			return nil, fmt.Errorf("PR not found - please check the PR number is correct\n💡 Tip: Use 'gh pr list --state open' to see available PR numbers")
+		}
+		if strings.Contains(stderrStr, "authentication") || strings.Contains(stderrStr, "token") {
+			return nil, fmt.Errorf("GitHub authentication failed\n💡 Tip: Run 'gh auth login' to authenticate")
+		}
+		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderrStr)
+	}
+
+	// Check for GraphQL errors in the response
+	var errorCheck struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	
+	result := stdout.Bytes()
+	if err := json.Unmarshal(result, &errorCheck); err == nil && len(errorCheck.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL error: %s", errorCheck.Errors[0].Message)
+	}
+
+	return result, nil
+}
+
+func runGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
+	args := []string{"api", "graphql", "-f", "query=" + query}
+	
+	for key, value := range variables {
+		args = append(args, "-F", fmt.Sprintf("%s=%v", key, value))
+	}
+	
+	cmd := exec.Command("gh", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

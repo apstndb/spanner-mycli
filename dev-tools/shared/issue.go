@@ -15,10 +15,10 @@ type IssueInfo struct {
 
 // FindPRsForIssue finds all PRs associated with an issue number
 func (c *GitHubClient) FindPRsForIssue(issueNumber int) ([]PRInfo, error) {
-	query := fmt.Sprintf(`
-	{
-	  repository(owner: "%s", name: "%s") {
-	    issue(number: %d) {
+	query := `
+	query($owner: String!, $repo: String!, $issueNumber: Int!) {
+	  repository(owner: $owner, name: $repo) {
+	    issue(number: $issueNumber) {
 	      number
 	      title
 	      timelineItems(itemTypes: CROSS_REFERENCED_EVENT, last: 20) {
@@ -36,9 +36,15 @@ func (c *GitHubClient) FindPRsForIssue(issueNumber int) ([]PRInfo, error) {
 	      }
 	    }
 	  }
-	}`, c.Owner, c.Repo, issueNumber)
+	}`
 
-	result, err := c.RunGraphQLQuery(query)
+	variables := map[string]interface{}{
+		"owner":       c.Owner,
+		"repo":        c.Repo,
+		"issueNumber": issueNumber,
+	}
+
+	result, err := c.RunGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch issue info: %w", err)
 	}
