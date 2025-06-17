@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -91,32 +93,86 @@ var geminiWorkflowCmd = &cobra.Command{
 	Short: "Complete Gemini Code Review workflow",
 	Long: `Execute the complete Gemini Code Review workflow for spanner-mycli.
 
-IMPORTANT: Only use this AFTER pushes made AFTER PR creation.
-Gemini automatically reviews the initial PR, so this is only needed for subsequent changes.
+This command automates the project-specific Gemini review process with smart detection:
+- Auto-detects if this is post-PR creation push (requests Gemini review)
+- Always waits for review feedback (15 min timeout)
+- Displays unresolved threads for manual handling
 
-This command automates the project-specific Gemini review process:
-1. Request Gemini review (/gemini review)
-2. Wait for review feedback (15 min timeout)
-3. Display unresolved threads for manual handling
+Usage scenarios:
+1. After initial PR creation: Waits for automatic Gemini review
+2. After pushes to existing PR: Requests /gemini review then waits
+
+Use --force-request to always request review regardless of detection.
 
 Designed for AI assistants to autonomously manage code review cycles.`,
 	Args: cobra.ExactArgs(1),
 	RunE: executeGeminiWorkflow,
 }
 
+var prWorkflowCmd = &cobra.Command{
+	Use:   "pr-workflow",
+	Short: "Complete PR creation and review workflow",
+	Long: `Complete end-to-end PR workflow with explicit scenarios.
+
+This command provides explicit control for different PR scenarios:
+
+Subcommands:
+  create - Create new PR from current branch
+  review - Handle post-creation review cycles
+
+This is more explicit than the auto-detecting 'gemini' command.`,
+}
+
+var createPRCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create new PR and wait for initial Gemini review",
+	Long: `Create a new pull request and wait for the automatic Gemini review.
+
+This command:
+1. Creates PR using gh pr create with title/body from stdin or flags
+2. Waits for automatic Gemini review (15 min timeout)
+3. Displays any review threads for handling
+
+For new PRs, Gemini automatically reviews so no manual trigger needed.`,
+	RunE: createPRAndWait,
+}
+
+var reviewPRCmd = &cobra.Command{
+	Use:   "review <pr-number>",
+	Short: "Handle review cycle for existing PR after pushes",
+	Long: `Handle review cycle for existing PR after making pushes.
+
+This command:
+1. Requests Gemini review (/gemini review)
+2. Waits for review feedback (15 min timeout)  
+3. Displays review threads for handling
+
+Use this after pushing fixes/changes to an existing PR.`,
+	Args: cobra.ExactArgs(1),
+	RunE: handlePRReview,
+}
+
 var (
-	forceDelete bool
-	tmuxMode    string
+	forceDelete  bool
+	tmuxMode     string
+	forceRequest bool
+	prTitle      string
+	prBody       string
 )
 
 func init() {
 	setupWorktreeCmd.Flags().StringVar(&tmuxMode, "tmux", "", "tmux mode for phantom shell (horizontal, vertical)")
 	deleteWorktreeCmd.Flags().BoolVar(&forceDelete, "force", false, "Force delete without safety checks")
+	geminiWorkflowCmd.Flags().BoolVar(&forceRequest, "force-request", false, "Always request Gemini review regardless of auto-detection")
+	
+	createPRCmd.Flags().StringVar(&prTitle, "title", "", "PR title (or use stdin)")
+	createPRCmd.Flags().StringVar(&prBody, "body", "", "PR body (or use stdin)")
 
 	worktreeCmd.AddCommand(setupWorktreeCmd, listWorktreesCmd, deleteWorktreeCmd)
 	docsCmd.AddCommand(updateHelpCmd)
 	reviewCmd.AddCommand(geminiWorkflowCmd)
-	rootCmd.AddCommand(worktreeCmd, docsCmd, reviewCmd)
+	prWorkflowCmd.AddCommand(createPRCmd, reviewPRCmd)
+	rootCmd.AddCommand(worktreeCmd, docsCmd, reviewCmd, prWorkflowCmd)
 }
 
 func main() {
@@ -324,21 +380,46 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 	
 	fmt.Printf("🤖 Starting Gemini Code Review workflow for PR #%s...\n", prNumber)
 	
-	// Step 1: Request Gemini review
-	fmt.Println("📝 Requesting Gemini code review...")
-	if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
-		return fmt.Errorf("failed to request Gemini review: %w", err)
-	}
-	fmt.Println("✅ Gemini review requested")
-	
-	// Step 2: Wait for review feedback using gh-helper
-	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
 	ghHelperPath := "./bin/gh-helper"
-	
-	// Check if gh-helper exists in current directory, otherwise use PATH
 	if !fileExists(ghHelperPath) {
 		ghHelperPath = "gh-helper"
 	}
+	
+	shouldRequestReview := forceRequest
+	
+	// Auto-detect if we should request review (unless forced)
+	if !forceRequest {
+		fmt.Println("🔍 Auto-detecting if Gemini review request is needed...")
+		
+		// Check if there are recent commits after PR creation
+		detected, err := detectNeedsGeminiRequest(prNumber)
+		if err != nil {
+			fmt.Printf("⚠️  Auto-detection failed: %v\n", err)
+			fmt.Println("💡 Use --force-request to skip detection and always request review")
+			return err
+		}
+		shouldRequestReview = detected
+		
+		if shouldRequestReview {
+			fmt.Println("✅ Detected: This appears to be after pushes to existing PR")
+		} else {
+			fmt.Println("✅ Detected: This appears to be initial PR creation (Gemini auto-reviews)")
+		}
+	}
+	
+	// Step 1: Request Gemini review if needed
+	if shouldRequestReview {
+		fmt.Println("📝 Requesting Gemini code review...")
+		if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+			return fmt.Errorf("failed to request Gemini review: %w", err)
+		}
+		fmt.Println("✅ Gemini review requested")
+	} else {
+		fmt.Println("⏭️  Skipping review request (waiting for automatic Gemini review)")
+	}
+	
+	// Step 2: Wait for review feedback using gh-helper
+	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
 	
 	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
 	waitCmd.Stdout = os.Stdout
@@ -366,6 +447,105 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   5. Request follow-up: gh pr comment %s --body \"/gemini review\"\n", prNumber)
 	
 	return nil
+}
+
+func detectNeedsGeminiRequest(prNumber string) (bool, error) {
+	// Strategy: Compare PR creation time with the latest commit time
+	// If latest commit is significantly after PR creation, we likely need to request review
+	
+	// Get PR creation time and latest commit
+	query := fmt.Sprintf(`
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    pullRequest(number: %s) {
+      createdAt
+      headRef {
+        target {
+          ... on Commit {
+            committedDate
+            history(first: 3) {
+              nodes {
+                committedDate
+                message
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`, prNumber)
+
+	cmd := exec.Command("gh", "api", "graphql", "-F", "query="+query)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch PR info: %w", err)
+	}
+
+	var response struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					CreatedAt string `json:"createdAt"`
+					HeadRef   struct {
+						Target struct {
+							CommittedDate string `json:"committedDate"`
+							History       struct {
+								Nodes []struct {
+									CommittedDate string `json:"committedDate"`
+									Message       string `json:"message"`
+								} `json:"nodes"`
+							} `json:"history"`
+						} `json:"target"`
+					} `json:"headRef"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(output, &response); err != nil {
+		return false, fmt.Errorf("failed to parse PR info: %w", err)
+	}
+
+	prCreatedAt := response.Data.Repository.PullRequest.CreatedAt
+	latestCommitTime := response.Data.Repository.PullRequest.HeadRef.Target.CommittedDate
+
+	// Parse times
+	prTime, err := time.Parse(time.RFC3339, prCreatedAt)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse PR creation time: %w", err)
+	}
+
+	commitTime, err := time.Parse(time.RFC3339, latestCommitTime)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse commit time: %w", err)
+	}
+
+	// If latest commit is more than 5 minutes after PR creation, assume we need to request review
+	// This accounts for the time it might take to create the PR after the initial commits
+	timeDiff := commitTime.Sub(prTime)
+	needsRequest := timeDiff > 5*time.Minute
+
+	fmt.Printf("   PR created: %s\n", prTime.Format("15:04:05"))
+	fmt.Printf("   Latest commit: %s\n", commitTime.Format("15:04:05"))
+	fmt.Printf("   Time difference: %v\n", timeDiff.Truncate(time.Second))
+
+	// Also check recent commit messages for hints
+	recentCommits := response.Data.Repository.PullRequest.HeadRef.Target.History.Nodes
+	for _, commit := range recentCommits {
+		commitMsg := strings.ToLower(commit.Message)
+		// Look for fix/address keywords that suggest this is addressing review feedback
+		if strings.Contains(commitMsg, "fix:") || 
+		   strings.Contains(commitMsg, "address") || 
+		   strings.Contains(commitMsg, "review") ||
+		   strings.Contains(commitMsg, "feedback") {
+			fmt.Printf("   Found review-related commit: %s\n", strings.Split(commit.Message, "\n")[0])
+			needsRequest = true
+			break
+		}
+	}
+
+	return needsRequest, nil
 }
 
 func fileExists(path string) bool {
@@ -407,4 +587,125 @@ func fileHasContent(path string) bool {
 		return false
 	}
 	return info.Size() > 0
+}
+
+func createPRAndWait(cmd *cobra.Command, args []string) error {
+	fmt.Println("🚀 Creating new PR and waiting for automatic Gemini review...")
+	
+	// Build gh pr create command
+	createArgs := []string{"pr", "create"}
+	
+	if prTitle != "" {
+		createArgs = append(createArgs, "--title", prTitle)
+	}
+	
+	if prBody != "" {
+		createArgs = append(createArgs, "--body", prBody)
+	}
+	
+	// If no flags provided, gh will prompt interactively or use stdin
+	fmt.Println("📝 Creating pull request...")
+	createCmd := exec.Command("gh", createArgs...)
+	createCmd.Stdout = os.Stdout
+	createCmd.Stderr = os.Stderr
+	createCmd.Stdin = os.Stdin
+	
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create PR: %w", err)
+	}
+	
+	fmt.Println("✅ PR created successfully!")
+	
+	// Get the PR number from the latest PR
+	fmt.Println("🔍 Getting PR number...")
+	getPRCmd := exec.Command("gh", "pr", "view", "--json", "number", "-q", ".number")
+	output, err := getPRCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get PR number: %w", err)
+	}
+	
+	prNumber := strings.TrimSpace(string(output))
+	fmt.Printf("📋 PR Number: #%s\n", prNumber)
+	
+	// Wait for automatic Gemini review (no manual trigger needed)
+	fmt.Println("⏳ Waiting for automatic Gemini review (15 minute timeout)...")
+	
+	ghHelperPath := "./bin/gh-helper"
+	if !fileExists(ghHelperPath) {
+		ghHelperPath = "gh-helper"
+	}
+	
+	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	waitCmd.Stdout = os.Stdout
+	waitCmd.Stderr = os.Stderr
+	
+	if err := waitCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+	}
+	
+	// Check for review threads
+	fmt.Println("\n🔍 Checking for review threads...")
+	listCmd := exec.Command(ghHelperPath, "threads", "list", prNumber)
+	listCmd.Stdout = os.Stdout
+	listCmd.Stderr = os.Stderr
+	
+	if err := listCmd.Run(); err != nil {
+		return fmt.Errorf("failed to list review threads: %w", err)
+	}
+	
+	fmt.Printf("\n💡 Next steps:\n")
+	fmt.Printf("   1. Review feedback above\n")
+	fmt.Printf("   2. Show details: %s threads show <THREAD_ID>\n", ghHelperPath)
+	fmt.Printf("   3. Make fixes and push changes\n")
+	fmt.Printf("   4. Use: spanner-mycli-dev pr-workflow review %s\n", prNumber)
+	
+	return nil
+}
+
+func handlePRReview(cmd *cobra.Command, args []string) error {
+	prNumber := args[0]
+	
+	fmt.Printf("🔄 Handling review cycle for PR #%s...\n", prNumber)
+	
+	// Request Gemini review
+	fmt.Println("📝 Requesting Gemini code review...")
+	if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+		return fmt.Errorf("failed to request Gemini review: %w", err)
+	}
+	fmt.Println("✅ Gemini review requested")
+	
+	// Wait for review feedback
+	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
+	
+	ghHelperPath := "./bin/gh-helper"
+	if !fileExists(ghHelperPath) {
+		ghHelperPath = "gh-helper"
+	}
+	
+	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	waitCmd.Stdout = os.Stdout
+	waitCmd.Stderr = os.Stderr
+	
+	if err := waitCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+	}
+	
+	// Check for review threads
+	fmt.Println("\n🔍 Checking for review threads...")
+	listCmd := exec.Command(ghHelperPath, "threads", "list", prNumber)
+	listCmd.Stdout = os.Stdout
+	listCmd.Stderr = os.Stderr
+	
+	if err := listCmd.Run(); err != nil {
+		return fmt.Errorf("failed to list review threads: %w", err)
+	}
+	
+	fmt.Printf("\n💡 Next steps:\n")
+	fmt.Printf("   1. Review feedback above\n")
+	fmt.Printf("   2. Show details: %s threads show <THREAD_ID>\n", ghHelperPath)
+	fmt.Printf("   3. Make fixes and push changes\n")
+	fmt.Printf("   4. Reply: %s threads reply-commit <THREAD_ID> <COMMIT_HASH>\n", ghHelperPath)
+	fmt.Printf("   5. Repeat: spanner-mycli-dev pr-workflow review %s\n", prNumber)
+	
+	return nil
 }
