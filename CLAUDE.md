@@ -89,13 +89,10 @@ phantom shell issue-123-feature --tmux-horizontal
 gh pr comment <PR-number> --body "Development insights..."
 ```
 
-#### Phantom Worktree Deletion Rules
-When using `phantom delete` (without `--force`):
-- **ALWAYS check `git status`** first - ensure no uncommitted changes exist
-- **Untracked files**: Check .gitignore comments for deletion safety rules:
-  - Files marked "safe to delete" can always be removed
-  - Files marked "safe to delete only in worktrees" can be removed from worktrees but not main workspace
-  - Files marked "DO NOT delete in main workspace" should never be removed from main workspace
+**IMPORTANT**: When working with phantom worktrees, **ALWAYS refer to** [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/issue-management.md#phantom-worktree-management) for detailed guidelines including:
+- AI assistant decision matrix for autonomous vs. user-permission operations
+- Comprehensive deletion safety rules
+- Worktree lifecycle management
 
 ### Knowledge Management
 **Best Practice**: Record development insights directly in PR descriptions and comments for searchability and persistence.

@@ -748,7 +748,8 @@ gh pr comment <PR-number> --body "/gemini review"
 - Operations that bypass standard workflow (emergency fixes)
 
 **Best Practices**:
-- **Check Status First**: Always run `git status` or equivalent before destructive operations
+- **Check Status First**: Always run `git status` before destructive operations
+- **Check File Safety**: Refer to `.gitignore` comments for file deletion safety rules
 - **Explain Impact**: When requesting permission, clearly state what will be lost or changed
 - **Offer Alternatives**: Suggest safer approaches when possible (e.g., commit changes before deletion)
 - **Preserve Context**: Prioritize preserving development work over convenience
