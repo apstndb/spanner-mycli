@@ -468,6 +468,59 @@ Thank you for the feedback!
 [Explanation of why current implementation is correct or why change isn't needed]
 ```
 
+### Gemini Code Review Integration (Project-Specific)
+
+**Complete Review Workflow with Gemini:**
+
+```bash
+# 1. Request initial Gemini review (if needed)
+gh pr comment <PR_NUMBER> --body "/gemini review"
+
+# 2. Wait for Gemini review with automated monitoring
+bin/gh-helper reviews wait <PR_NUMBER> --timeout 15
+
+# 3. Check specific review threads
+bin/gh-helper threads list <PR_NUMBER>
+
+# 4. Review detailed feedback
+bin/gh-helper threads show <THREAD_ID>
+
+# 5. Make fixes and push changes
+git add . && git commit -m "fix: address review feedback" && git push
+
+# 6. Reply with commit reference
+bin/gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH> --message "Addressed the issue as suggested"
+
+# 7. Request follow-up review if significant changes
+gh pr comment <PR_NUMBER> --body "/gemini review"
+
+# 8. Monitor for follow-up feedback
+bin/gh-helper reviews wait <PR_NUMBER> --timeout 10
+```
+
+**When to request Gemini review:**
+- Initial PR submission
+- After addressing major feedback with significant code changes
+- When adding new functionality or making architectural changes
+- Before final merge to ensure all concerns are addressed
+
+**Gemini-specific reply patterns:**
+```bash
+# For AI code review feedback
+bin/gh-helper threads reply-commit <THREAD_ID> <HASH> --mention gemini-code-assist
+
+# Multi-line response to AI suggestions
+bin/gh-helper threads reply <THREAD_ID> --mention gemini-code-assist <<EOF
+Thank you for the detailed analysis!
+
+I've implemented your suggestions:
+- [Specific change 1]
+- [Specific change 2]
+
+Fixed in commit abc1234.
+EOF
+```
+
 **Method 2: Manual GraphQL Mutation (For understanding the process)**
 
 ```bash

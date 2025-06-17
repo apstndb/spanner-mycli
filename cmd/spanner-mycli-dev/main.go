@@ -31,6 +31,11 @@ var docsCmd = &cobra.Command{
 	Short: "Documentation generation tools",
 }
 
+var reviewCmd = &cobra.Command{
+	Use:   "review",
+	Short: "Project-specific review workflows",
+}
+
 var setupWorktreeCmd = &cobra.Command{
 	Use:   "setup <worktree-name>",
 	Short: "Setup phantom worktree with Claude configuration",
@@ -81,6 +86,21 @@ The files are ready for manual integration into README.md.`,
 	RunE: updateHelp,
 }
 
+var geminiWorkflowCmd = &cobra.Command{
+	Use:   "gemini <pr-number>",
+	Short: "Complete Gemini Code Review workflow",
+	Long: `Execute the complete Gemini Code Review workflow for spanner-mycli.
+
+This command automates the project-specific Gemini review process:
+1. Request Gemini review (/gemini review)
+2. Wait for review feedback (15 min timeout)
+3. Display unresolved threads for manual handling
+
+Designed for AI assistants to autonomously manage code review cycles.`,
+	Args: cobra.ExactArgs(1),
+	RunE: executeGeminiWorkflow,
+}
+
 var (
 	forceDelete bool
 	tmuxMode    string
@@ -92,7 +112,8 @@ func init() {
 
 	worktreeCmd.AddCommand(setupWorktreeCmd, listWorktreesCmd, deleteWorktreeCmd)
 	docsCmd.AddCommand(updateHelpCmd)
-	rootCmd.AddCommand(worktreeCmd, docsCmd)
+	reviewCmd.AddCommand(geminiWorkflowCmd)
+	rootCmd.AddCommand(worktreeCmd, docsCmd, reviewCmd)
 }
 
 func main() {
@@ -293,6 +314,60 @@ func updateHelp(cmd *cobra.Command, args []string) error {
 	fmt.Println("   Consider adding automatic README.md update functionality")
 
 	return nil
+}
+
+func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
+	prNumber := args[0]
+	
+	fmt.Printf("🤖 Starting Gemini Code Review workflow for PR #%s...\n", prNumber)
+	
+	// Step 1: Request Gemini review
+	fmt.Println("📝 Requesting Gemini code review...")
+	if err := runCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+		return fmt.Errorf("failed to request Gemini review: %w", err)
+	}
+	fmt.Println("✅ Gemini review requested")
+	
+	// Step 2: Wait for review feedback using gh-helper
+	fmt.Println("⏳ Waiting for Gemini review feedback (15 minute timeout)...")
+	ghHelperPath := "./bin/gh-helper"
+	
+	// Check if gh-helper exists in current directory, otherwise use PATH
+	if !fileExists(ghHelperPath) {
+		ghHelperPath = "gh-helper"
+	}
+	
+	waitCmd := exec.Command(ghHelperPath, "reviews", "wait", prNumber, "--timeout", "15")
+	waitCmd.Stdout = os.Stdout
+	waitCmd.Stderr = os.Stderr
+	
+	if err := waitCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Review wait completed with issues (this may be normal): %v\n", err)
+	}
+	
+	// Step 3: Check for unresolved threads
+	fmt.Println("\n🔍 Checking for review threads that need attention...")
+	listCmd := exec.Command(ghHelperPath, "threads", "list", prNumber)
+	listCmd.Stdout = os.Stdout
+	listCmd.Stderr = os.Stderr
+	
+	if err := listCmd.Run(); err != nil {
+		return fmt.Errorf("failed to list review threads: %w", err)
+	}
+	
+	fmt.Printf("\n💡 Next steps:\n")
+	fmt.Printf("   1. Review feedback above\n")
+	fmt.Printf("   2. Show details: %s threads show <THREAD_ID>\n", ghHelperPath)
+	fmt.Printf("   3. Make fixes and push changes\n")
+	fmt.Printf("   4. Reply: %s threads reply-commit <THREAD_ID> <COMMIT_HASH>\n", ghHelperPath)
+	fmt.Printf("   5. Request follow-up: gh pr comment %s --body \"/gemini review\"\n", prNumber)
+	
+	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func commandExists(name string) bool {

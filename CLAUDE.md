@@ -50,10 +50,18 @@ go run . -p PROJECT -i INSTANCE -d DATABASE
 # Development tools (issue #301 - AI-friendly subcommands)
 make build-tools                               # Build development tools
 bin/gh-helper reviews check PR_NUMBER          # Check PR reviews with state tracking  
+bin/gh-helper reviews wait PR_NUMBER           # Wait for new reviews (with timeout)
 bin/gh-helper threads list PR_NUMBER           # List unresolved review threads
+bin/gh-helper threads show THREAD_ID           # Show detailed thread context
 bin/gh-helper threads reply THREAD_ID          # Reply to review thread (supports stdin)
+bin/gh-helper threads reply-commit THREAD_ID HASH  # Reply with commit reference
 bin/spanner-mycli-dev worktree setup NAME      # Setup phantom worktree
 bin/spanner-mycli-dev docs update-help         # Generate help output for README.md
+
+# Gemini Code Review workflow (project-specific)
+bin/spanner-mycli-dev review gemini PR_NUMBER      # Complete automated workflow
+gh pr comment PR_NUMBER --body "/gemini review"    # Manual review request
+bin/gh-helper reviews wait PR_NUMBER --timeout 15  # Manual review waiting
 ```
 
 ## Core Architecture Overview

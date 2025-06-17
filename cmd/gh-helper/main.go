@@ -106,6 +106,19 @@ Useful for getting complete thread history and comment details.`,
 	RunE: showThread,
 }
 
+var replyWithCommitCmd = &cobra.Command{
+	Use:   "reply-commit <thread-id> <commit-hash>",
+	Short: "Reply to a review thread with commit reference",
+	Long: `Reply to a review thread indicating that fixes were made in a specific commit.
+
+This command automatically formats the reply to include the commit hash,
+following best practices for review response traceability.
+
+The reply text can be provided via --message flag or stdin.`,
+	Args: cobra.ExactArgs(2),
+	RunE: replyWithCommit,
+}
+
 var (
 	owner       string
 	repo        string
@@ -124,7 +137,7 @@ func init() {
 	waitReviewsCmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
 
 	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd)
-	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd)
+	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd, replyWithCommitCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
 
@@ -713,6 +726,99 @@ func showThread(cmd *cobra.Command, args []string) error {
 			fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
 		}
 	}
+
+	return nil
+}
+
+func replyWithCommit(cmd *cobra.Command, args []string) error {
+	threadID := args[0]
+	commitHash := args[1]
+
+	var baseReplyText string
+	if message != "" {
+		baseReplyText = message
+	} else {
+		// Read from stdin - AI assistants prefer this over temporary files (Issue #301 insight)
+		scanner := bufio.NewScanner(os.Stdin)
+		var lines []string
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		baseReplyText = strings.Join(lines, "\n")
+	}
+
+	// Format reply with commit reference
+	var replyText string
+	if strings.TrimSpace(baseReplyText) == "" {
+		replyText = fmt.Sprintf("Thank you for the feedback! Fixed in commit %s.", commitHash)
+	} else {
+		replyText = fmt.Sprintf("%s\n\nFixed in commit %s.", strings.TrimSpace(baseReplyText), commitHash)
+	}
+
+	// Add mention if provided
+	if mentionUser != "" {
+		replyText = fmt.Sprintf("@%s %s", mentionUser, replyText)
+	}
+
+	fmt.Printf("🔄 Replying to review thread: %s (with commit %s)\n", threadID, commitHash)
+
+	// CRITICAL INSIGHT (Issue #301): GitHub GraphQL API quirk
+	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
+	// This was discovered during AI-friendly tool development and is documented in dev-docs/development-insights.md
+	
+	escapedText, err := jsonEscape(replyText)
+	if err != nil {
+		return fmt.Errorf("failed to escape reply text: %w", err)
+	}
+	
+	mutation := fmt.Sprintf(`
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "%s"
+    body: %s
+  }) {
+    comment {
+      id
+      url
+      body
+    }
+  }
+}`, threadID, escapedText)
+
+	result, err := runGraphQLQuery(mutation)
+	if err != nil {
+		return fmt.Errorf("failed to post reply: %w", err)
+	}
+
+	var response struct {
+		Data struct {
+			AddPullRequestReviewThreadReply struct {
+				Comment struct {
+					ID  string `json:"id"`
+					URL string `json:"url"`
+					Body string `json:"body"`
+				} `json:"comment"`
+			} `json:"addPullRequestReviewThreadReply"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(result, &response); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	comment := response.Data.AddPullRequestReviewThreadReply.Comment
+	if comment.ID == "" {
+		fmt.Println("❌ Failed to post reply. Response:")
+		fmt.Println(string(result))
+		return fmt.Errorf("reply posting failed")
+	}
+
+	fmt.Println("✅ Reply posted successfully!")
+	fmt.Printf("   Comment ID: %s\n", comment.ID)
+	fmt.Printf("   URL: %s\n", comment.URL)
 
 	return nil
 }
