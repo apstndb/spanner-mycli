@@ -211,6 +211,105 @@ func parseTimeout() (time.Duration, error) {
 	return time.ParseDuration(timeoutStr)
 }
 
+// getCurrentUser returns the current authenticated GitHub username
+func getCurrentUser() (string, error) {
+	query := `
+	{
+	  viewer {
+	    login
+	  }
+	}`
+	
+	result, err := runGraphQLQuery(query)
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %w", err)
+	}
+	
+	var response struct {
+		Data struct {
+			Viewer struct {
+				Login string `json:"login"`
+			} `json:"viewer"`
+		} `json:"data"`
+	}
+	
+	if err := json.Unmarshal(result, &response); err != nil {
+		return "", fmt.Errorf("failed to parse user response: %w", err)
+	}
+	
+	return response.Data.Viewer.Login, nil
+}
+
+// ReviewState represents the state of the last known review
+type ReviewState struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// loadReviewState loads the last known review state from cache
+func loadReviewState(prNumber string) (*ReviewState, error) {
+	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
+	lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
+	
+	data, err := os.ReadFile(lastReviewFile)
+	if err != nil {
+		return nil, err
+	}
+	
+	var state ReviewState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, err
+	}
+	
+	return &state, nil
+}
+
+// saveReviewState saves the review state to cache
+func saveReviewState(prNumber string, state ReviewState) error {
+	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
+	lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
+	
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return fmt.Errorf("failed to create state directory: %w", err)
+	}
+	
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+	
+	if err := os.WriteFile(lastReviewFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
+	
+	return nil
+}
+
+// hasNewReviews checks if there are new reviews since the last known state
+func hasNewReviews(reviews []struct {
+	ID        string `json:"id"`
+	Author    struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	CreatedAt string `json:"createdAt"`
+	State     string `json:"state"`
+	Body      string `json:"body"`
+}, lastState *ReviewState) bool {
+	if lastState == nil {
+		// No previous state, any review is "new"
+		return len(reviews) > 0
+	}
+	
+	for _, review := range reviews {
+		if review.CreatedAt > lastState.CreatedAt ||
+			(review.CreatedAt == lastState.CreatedAt && review.ID != lastState.ID) {
+			return true
+		}
+	}
+	
+	return false
+}
+
 // checkClaudeCodeEnvironment checks for Claude Code timeout environment variables
 // and provides guidance based on GitHub issues research.
 //
@@ -257,7 +356,6 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 
 	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
-	lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
 
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
@@ -322,26 +420,15 @@ query {
 	// Sort reviews by creation time (latest first)
 	// They should already be sorted, but let's be explicit
 
-	// Check for previous state
-	var lastKnownReview struct {
-		ID        string `json:"id"`
-		CreatedAt string `json:"createdAt"`
-	}
-
-	hasState := false
-	if data, err := os.ReadFile(lastReviewFile); err == nil {
-		if err := json.Unmarshal(data, &lastKnownReview); err == nil {
-			hasState = true
-		}
-	}
-
-	if hasState {
-		fmt.Printf("Last known review: %s at %s\n", lastKnownReview.ID, lastKnownReview.CreatedAt)
+	// Load existing state
+	lastState, err := loadReviewState(prNumber)
+	if err == nil {
+		fmt.Printf("Last known review: %s at %s\n", lastState.ID, lastState.CreatedAt)
 
 		newReviews := []interface{}{}
 		for _, review := range reviews {
-			if review.CreatedAt > lastKnownReview.CreatedAt ||
-				(review.CreatedAt == lastKnownReview.CreatedAt && review.ID != lastKnownReview.ID) {
+			if review.CreatedAt > lastState.CreatedAt ||
+				(review.CreatedAt == lastState.CreatedAt && review.ID != lastState.ID) {
 				newReviews = append(newReviews, review)
 			}
 		}
@@ -394,16 +481,14 @@ query {
 	// Update state with latest review (last element since we use GraphQL 'last: 15')
 	if len(reviews) > 0 {
 		latestReview := reviews[len(reviews)-1]  // Fix: use last element as latest
-		stateData := map[string]string{
-			"id":        latestReview.ID,
-			"createdAt": latestReview.CreatedAt,
+		newState := ReviewState{
+			ID:        latestReview.ID,
+			CreatedAt: latestReview.CreatedAt,
 		}
-		if data, err := json.Marshal(stateData); err == nil {
-			if err := os.WriteFile(lastReviewFile, data, 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to write state file %s: %v\n", lastReviewFile, err)
-			} else {
-				fmt.Printf("\n💾 Updated state: Latest review %s at %s\n", latestReview.ID, latestReview.CreatedAt)
-			}
+		if err := saveReviewState(prNumber, newState); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", err)
+		} else {
+			fmt.Printf("\n💾 Updated state: Latest review %s at %s\n", latestReview.ID, latestReview.CreatedAt)
 		}
 	}
 
@@ -466,27 +551,143 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// Simplified reviews-only wait function
+// waitForReviewsOnly waits specifically for new reviews without checking PR status
 func waitForReviewsOnly(prNumber string) error {
-	fmt.Printf("🔄 Waiting for reviews only on PR #%s (timeout: %d minutes)...\n", prNumber, timeout)
+	// Parse timeout duration
+	timeoutDuration, err := parseTimeout()
+	if err != nil {
+		return fmt.Errorf("invalid timeout format: %w", err)
+	}
 	
-	timeoutDuration := time.Duration(timeout) * time.Minute
+	// Apply Claude Code timeout constraints
+	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
+	var effectiveTimeout time.Duration
+	if hasClaudeCodeEnv {
+		effectiveTimeout = timeoutDuration
+		if timeoutDuration > claudeCodeEnvTimeout {
+			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
+				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
+			effectiveTimeout = claudeCodeEnvTimeout
+		}
+	} else {
+		claudeCodeLimit := 90 * time.Second
+		effectiveTimeout = timeoutDuration
+		if timeoutDuration > claudeCodeLimit {
+			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
+			effectiveTimeout = claudeCodeLimit
+		}
+	}
+	
+	fmt.Printf("🔄 Waiting for reviews only on PR #%s (timeout: %v)...\n", prNumber, effectiveTimeout)
+	fmt.Println("Press Ctrl+C to stop monitoring")
+	
+	// Load existing state
+	lastState, err := loadReviewState(prNumber)
+	if err == nil {
+		fmt.Printf("📊 Tracking reviews since: %s\n", lastState.CreatedAt)
+	}
+	
 	startTime := time.Now()
-	
 	for {
-		if time.Since(startTime) > timeoutDuration {
-			fmt.Printf("\n⏰ Timeout reached (%d minutes). No new reviews found.\n", timeout)
+		// Check timeout
+		if time.Since(startTime) > effectiveTimeout {
+			fmt.Printf("\n⏰ Timeout reached (%v). No new reviews found.\n", effectiveTimeout)
 			return nil
 		}
 		
-		// For simplicity, just wait and return success for reviews-only mode
-		// In the future, this can be enhanced with proper review detection
-		fmt.Printf("[%s] Reviews-only mode (simplified implementation)\n", time.Now().Format("15:04:05"))
-		time.Sleep(30 * time.Second)
+		// Query for reviews
+		query := fmt.Sprintf(`
+		{
+		  repository(owner: "%s", name: "%s") {
+		    pullRequest(number: %s) {
+		      reviews(last: 15) {
+		        nodes {
+		          id
+		          author { login }
+		          createdAt
+		          state
+		          body
+		        }
+		      }
+		    }
+		  }
+		}`, owner, repo, prNumber)
 		
-		// After one check, return success for now
-		fmt.Printf("✅ Reviews-only wait completed\n")
-		return nil
+		result, err := runGraphQLQuery(query)
+		if err != nil {
+			fmt.Printf("Error checking reviews: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+		
+		var response struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						Reviews struct {
+							Nodes []struct {
+								ID        string `json:"id"`
+								Author    struct {
+									Login string `json:"login"`
+								} `json:"author"`
+								CreatedAt string `json:"createdAt"`
+								State     string `json:"state"`
+								Body      string `json:"body"`
+							} `json:"nodes"`
+						} `json:"reviews"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		
+		if err := json.Unmarshal(result, &response); err != nil {
+			fmt.Printf("Error parsing response: %v\n", err)
+			time.Sleep(30 * time.Second)
+			continue
+		}
+		
+		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+		
+		if hasNewReviews(reviews, lastState) {
+			// Find and display new reviews
+			if lastState == nil {
+				fmt.Printf("\n🎉 Found %d review(s)\n", len(reviews))
+			} else {
+				// Show details of new reviews
+				for _, review := range reviews {
+					if review.CreatedAt > lastState.CreatedAt ||
+						(review.CreatedAt == lastState.CreatedAt && review.ID != lastState.ID) {
+						fmt.Printf("\n🎉 New review detected from %s at %s\n", review.Author.Login, review.CreatedAt)
+						if review.Body != "" && len(review.Body) > 100 {
+							fmt.Printf("Preview: %s...\n", review.Body[:100])
+						}
+						break // Show only the first new review for brevity
+					}
+				}
+			}
+			
+			// Update state with latest review
+			if len(reviews) > 0 {
+				latestReview := reviews[len(reviews)-1]
+				newState := ReviewState{
+					ID:        latestReview.ID,
+					CreatedAt: latestReview.CreatedAt,
+				}
+				saveReviewState(prNumber, newState)
+			}
+			
+			fmt.Println("\n✅ New reviews available!")
+			fmt.Printf("💡 To list unresolved threads: bin/gh-helper threads list %s\n", prNumber)
+			fmt.Println("⚠️  IMPORTANT: Please read the review feedback carefully before proceeding")
+			return nil
+		}
+		
+		elapsed := time.Since(startTime)
+		remaining := effectiveTimeout - elapsed
+		fmt.Printf("[%s] No new reviews yet (remaining: %v)\n",
+			time.Now().Format("15:04:05"), remaining.Truncate(time.Second))
+		
+		time.Sleep(30 * time.Second)
 	}
 }
 
@@ -671,37 +872,11 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check reviews status (same logic as waitForReviews)
+		// Check reviews status using common state tracking
 		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
 		if len(reviews) > 0 && !reviewsReady {
-			// Check for new reviews using same state tracking logic
-			stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
-			lastReviewFile := fmt.Sprintf("%s/pr-%s-last-review.json", stateDir, prNumber)
-
-			var lastKnownReview struct {
-				ID        string `json:"id"`
-				CreatedAt string `json:"createdAt"`
-			}
-
-			hasState := false
-			if data, err := os.ReadFile(lastReviewFile); err == nil {
-				if err := json.Unmarshal(data, &lastKnownReview); err == nil {
-					hasState = true
-				}
-			}
-
-			if hasState {
-				for _, review := range reviews {
-					if review.CreatedAt > lastKnownReview.CreatedAt ||
-						(review.CreatedAt == lastKnownReview.CreatedAt && review.ID != lastKnownReview.ID) {
-						reviewsReady = true
-						break
-					}
-				}
-			} else {
-				// No previous state, consider reviews ready
-				reviewsReady = true
-			}
+			lastState, _ := loadReviewState(prNumber)
+			reviewsReady = hasNewReviews(reviews, lastState)
 		}
 
 		// Check mergeable status first - if conflicting, stop immediately
@@ -924,11 +1099,13 @@ func listThreads(cmd *cobra.Command, args []string) error {
 				}
 				latestAuthor = last.Author.Login
 
-				// Check if author has replied
-				for _, comment := range thread.Comments.Nodes {
-					if comment.Author.Login == owner {
-						needsReply = false
-						break
+				// Check if current user has replied
+				if currentUser, err := getCurrentUser(); err == nil {
+					for _, comment := range thread.Comments.Nodes {
+						if comment.Author.Login == currentUser {
+							needsReply = false
+							break
+						}
 					}
 				}
 			}
@@ -1067,7 +1244,15 @@ func showThread(cmd *cobra.Command, args []string) error {
 
 	if !thread.IsResolved && len(thread.Comments.Nodes) > 0 {
 		lastComment := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
-		if lastComment.Author.Login != "apstndb" { // Assuming current user
+		// Check if the last comment is from the current user
+		if currentUser, err := getCurrentUser(); err == nil {
+			if lastComment.Author.Login != currentUser {
+				fmt.Printf("💡 To reply to this thread:\n")
+				fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
+				fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
+			}
+		} else {
+			// If we can't determine current user, show reply option anyway
 			fmt.Printf("💡 To reply to this thread:\n")
 			fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
 			fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
