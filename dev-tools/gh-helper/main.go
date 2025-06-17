@@ -196,7 +196,11 @@ func main() {
 func parseTimeout() (time.Duration, error) {
 	// If new timeout format is provided, use it
 	if timeoutStr != "" && timeoutStr != "5m" {
-		return time.ParseDuration(timeoutStr)
+		duration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			return 0, fmt.Errorf("invalid timeout format '%s'. Use formats like: 30s, 1.5m, 2m30s, 15m", timeoutStr)
+		}
+		return duration, nil
 	}
 	
 	// If deprecated timeout-minutes is used, convert to duration
@@ -206,7 +210,11 @@ func parseTimeout() (time.Duration, error) {
 	}
 	
 	// Default case: parse the default string
-	return time.ParseDuration(timeoutStr)
+	duration, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid default timeout format '%s': %w", timeoutStr, err)
+	}
+	return duration, nil
 }
 
 // getCurrentUser returns the current authenticated GitHub username
@@ -1427,7 +1435,10 @@ func runGraphQLQuery(query string) ([]byte, error) {
 		// Try to extract meaningful error message from stderr
 		stderrStr := stderr.String()
 		if strings.Contains(stderrStr, "Could not resolve to a PullRequest") {
-			return nil, fmt.Errorf("PR not found - please check the PR number is correct")
+			return nil, fmt.Errorf("PR not found - please check the PR number is correct\n💡 Tip: Use 'gh pr list --state open' to see available PR numbers")
+		}
+		if strings.Contains(stderrStr, "authentication") || strings.Contains(stderrStr, "token") {
+			return nil, fmt.Errorf("GitHub authentication failed\n💡 Tip: Run 'gh auth login' to authenticate")
 		}
 		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderrStr)
 	}

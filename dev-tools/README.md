@@ -91,6 +91,26 @@ bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 bin/spanner-mycli-dev worktree setup issue-123-feature
 ```
 
+### Error Prevention Tips
+
+**Always verify PR numbers before using commands:**
+```bash
+# Check available PRs first
+gh pr list --state open
+
+# Then use the correct PR number
+bin/gh-helper reviews wait 306 --timeout 15m  # ✅ Correct format
+# NOT: bin/gh-helper reviews wait 301 --timeout 15  # ❌ Wrong PR number and format
+```
+
+**Timeout format examples:**
+- `--timeout 15m` (15 minutes) ✅
+- `--timeout 30s` (30 seconds) ✅
+- `--timeout 1.5m` (1 minute 30 seconds) ✅
+- `--timeout 15` (invalid - missing unit) ❌
+
+Tools provide helpful error messages with suggestions for common mistakes.
+
 ## Future Considerations
 
 - **Shared utilities**: Can be extended for additional common operations
