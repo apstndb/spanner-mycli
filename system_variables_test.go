@@ -195,6 +195,8 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want: singletonMap("CLI_VERTEXAI_PROJECT", "example-project")},
 		{desc: "CLI_PROTO_DESCRIPTOR_FILE", name: "CLI_PROTO_DESCRIPTOR_FILE", value: "testdata/protos/order_descriptors.pb",
 			want: singletonMap("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb")},
+		{desc: "STATEMENT_TIMEOUT", name: "STATEMENT_TIMEOUT", value: "30s",
+			want: singletonMap("STATEMENT_TIMEOUT", "30s")},
 
 		// Java-spanner compatible integer variables
 		{desc: "MAX_PARTITIONED_PARALLELISM", name: "MAX_PARTITIONED_PARALLELISM", value: "10",
@@ -267,6 +269,63 @@ func TestSystemVariablesSetGet(t *testing.T) {
 				if !errors.As(err, &e) {
 					t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestSystemVariables_StatementTimeout(t *testing.T) {
+	tests := []struct {
+		desc        string
+		value       string
+		want        time.Duration
+		expectError bool
+	}{
+		{"valid_seconds", "30s", 30 * time.Second, false},
+		{"valid_minutes", "5m", 5 * time.Minute, false},
+		{"valid_hours", "1h", 1 * time.Hour, false},
+		{"valid_mixed", "1h30m", 90 * time.Minute, false},
+		{"valid_zero", "0s", 0, false},
+		{"invalid_format", "invalid", 0, true},
+		{"negative_value", "-30s", 0, true},
+		{"empty_string", "", 0, true},
+	}
+	
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			var sysVars systemVariables
+			err := sysVars.Set("STATEMENT_TIMEOUT", test.value)
+			
+			if test.expectError {
+				if err == nil {
+					t.Errorf("expected error for value %q, but got nil", test.value)
+				}
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("unexpected error for value %q: %v", test.value, err)
+				return
+			}
+			
+			if sysVars.StatementTimeout == nil || *sysVars.StatementTimeout != test.want {
+				var got time.Duration
+				if sysVars.StatementTimeout != nil {
+					got = *sysVars.StatementTimeout
+				}
+				t.Errorf("expected StatementTimeout %v, got %v", test.want, got)
+			}
+			
+			// Test getter
+			result, err := sysVars.Get("STATEMENT_TIMEOUT")
+			if err != nil {
+				t.Errorf("unexpected error getting STATEMENT_TIMEOUT: %v", err)
+				return
+			}
+			
+			expected := map[string]string{"STATEMENT_TIMEOUT": test.want.String()}
+			if diff := cmp.Diff(expected, result); diff != "" {
+				t.Errorf("STATEMENT_TIMEOUT getter mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

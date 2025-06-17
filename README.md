@@ -35,7 +35,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support mutations
 * Respects batch use cases as well as interactive use cases
 * More `gcloud spanner databases execute-sql` compatibilities
-  * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`)
+  * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`, `--timeout`)
 * More `gcloud spanner databases ddl update` compatibilities
   * Support [`--proto-descriptor-file`](#protocol-buffers-support) flag
 * Generalized concepts to extend without a lot of original syntax
@@ -132,7 +132,11 @@ spanner:
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
       --mcp                                               Run as MCP server
+
+Help Options:
+  -h, --help                                              Show this help message
 ```
 
 ### Authentication
@@ -246,6 +250,35 @@ $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 ```
 
+### Timeout support
+
+The `--timeout` flag allows you to set a timeout for SQL statement execution, compatible with `gcloud spanner databases execute-sql` behavior.
+
+```bash
+# Set 30 second timeout for queries
+$ spanner-mycli --timeout 30s -p myproject -i myinstance -d mydb -e 'SELECT * FROM large_table;'
+
+# Set 5 minute timeout for partitioned DML
+$ spanner-mycli --timeout 5m --enable-partitioned-dml -p myproject -i myinstance -d mydb -e 'UPDATE large_table SET status = "active";'
+
+# Use default timeout (10 minutes for queries, 24 hours for partitioned DML)
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
+```
+
+You can also configure timeout interactively using the `STATEMENT_TIMEOUT` system variable:
+
+```sql
+spanner> SET STATEMENT_TIMEOUT = '2m';
+Query OK, 0 rows affected (0.00 sec)
+
+spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
++-------------------+-------+
+| Variable_name     | Value |
++-------------------+-------+
+| STATEMENT_TIMEOUT | 2m0s  |
++-------------------+-------+
+1 rows in set (0.00 sec)
+```
 
 ### EXPLAIN
 
@@ -667,6 +700,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | AUTOCOMMIT_DML_MODE             | READ_WRITE | `"PARTITIONED_NON_ATOMIC"`                          |
 | MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
+| STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
 
 #### spanner-mycli original variables
 

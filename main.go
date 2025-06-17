@@ -54,47 +54,49 @@ type globalOptions struct {
 }
 
 // We can't use `default` because spanner-mycli uses multiple flags.NewParser() to process config files and flags.
+// All fields use `default-mask:"-"` to prevent struct field values from appearing in help output.
+// This is necessary because go-flags displays any non-zero struct field values as defaults in help text.
 type spannerOptions struct {
 	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID" default-mask:"-" description:"(required) GCP Project ID."`
 	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" default-mask:"-" description:"(required) Cloud Spanner Instance ID"`
 	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" default-mask:"-" description:"Cloud Spanner Database ID. Optional when --detached is used."`
-	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag"`
-	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias."`
-	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit."`
-	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode."`
-	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output."`
-	Credential                string            `long:"credential" description:"Use the specific credential file"`
+	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag" default-mask:"-"`
+	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias." default-mask:"-"`
+	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit." default-mask:"-"`
+	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode." default-mask:"-"`
+	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
+	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
 	Prompt2                   *string           `long:"prompt2" description:"Set the prompt2 to the specified format" default-mask:"%P%R> "`
 	HistoryFile               *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
-	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias."`
-	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
-	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
-	SQL                       string            `long:"sql" hidden:"true" description:"alias of --execute"`
-	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
-	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
-	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
-	Insecure                  bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
-	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true"`
-	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
-	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator"`
-	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)"`
-	Help                      bool              `long:"help" short:"h" hidden:"true"`
-	LogLevel                  string            `long:"log-level"`
-	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs"`
-	QueryMode                 string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
-	Strong                    bool              `long:"strong" description:"Perform a strong query."`
-	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp."`
-	VertexAIProject           string            `long:"vertexai-project" description:"Vertex AI project" ini-name:"vertexai_project"`
+	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)" default-mask:"-"`
+	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias." default-mask:"-"`
+	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)" default-mask:"-"`
+	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
+	SQL                       string            `long:"sql" hidden:"true" description:"alias of --execute" default-mask:"-"`
+	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
+	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64" default-mask:"-"`
+	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message." default-mask:"-"`
+	Insecure                  bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias." default-mask:"-"`
+	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true" default-mask:"-"`
+	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
+	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
+	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
+	LogLevel                  string            `long:"log-level" default-mask:"-"`
+	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs" default-mask:"-"`
+	QueryMode                 string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE" default-mask:"-"`
+	Strong                    bool              `long:"strong" description:"Perform a strong query." default-mask:"-"`
+	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp." default-mask:"-"`
+	VertexAIProject           string            `long:"vertexai-project" description:"Vertex AI project" ini-name:"vertexai_project" default-mask:"-"`
 	VertexAIModel             *string           `long:"vertexai-model" description:"Vertex AI model" ini-name:"vertexai_model" default-mask:"gemini-2.0-flash"`
-	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL"`
-	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email"`
-	Version                   bool              `long:"version" description:"Show version string."`
-	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true"`
-	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true"`
-	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	MCP                       bool              `long:"mcp" description:"Run as MCP server"`
+	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL" default-mask:"-"`
+	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email" default-mask:"-"`
+	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
+	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true" default-mask:"-"`
+	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true" default-mask:"-"`
+	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
+	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -176,9 +178,6 @@ func main() {
 		parser.WriteHelp(os.Stderr)
 		fmt.Fprintf(os.Stderr, "Invalid options: %v\n", err)
 		os.Exit(exitCodeError)
-		return
-	} else if gopts.Spanner.Help {
-		parser.WriteHelp(os.Stderr)
 		return
 	} else if gopts.Spanner.Version {
 		fmt.Printf("%v\n%v\n", getVersion(), installFrom)
@@ -409,6 +408,17 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		}
 	}
 
+	if opts.Timeout != "" {
+		// Validate timeout format before setting system variable for better error reporting
+		_, err := time.ParseDuration(opts.Timeout)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+		}
+		if err := sysVars.Set("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+		}
+	}
+
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
 		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
@@ -503,7 +513,7 @@ func parseFlags() (globalOptions, *flags.Parser, error) {
 
 	// then, process environment variables and command line options
 	// use another parser to process environment variables with higher precedence than configuration files
-	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash|flags.HelpFlag)
 
 	_, err := flagParser.Parse()
 	return gopts, flagParser, err

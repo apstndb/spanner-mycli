@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/apstndb/spanemuboost"
+	"github.com/samber/lo"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"cloud.google.com/go/spanner"
@@ -85,11 +86,12 @@ func TestRequestPriority(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:     project,
-				Instance:    instance,
-				Database:    database,
-				RPCPriority: test.sessionPriority,
-				Role:        "role",
+				Project:          project,
+				Instance:         instance,
+				Database:         database,
+				RPCPriority:      test.sessionPriority,
+				Role:             "role",
+				StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
@@ -215,6 +217,7 @@ func TestIsolationLevel(t *testing.T) {
 				Instance:              instance,
 				Database:              database,
 				DefaultIsolationLevel: test.defaultIsolationLevel,
+				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)

@@ -70,6 +70,21 @@ var defaultClientOpts = []option.ClientOption{
 // Use MEDIUM priority not to disturb regular workloads on the database.
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
+// getTimeoutForStatement returns the appropriate timeout for the given statement type
+func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
+	// For partitioned DML, use longer default if no custom timeout is set
+	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.StatementTimeout == nil {
+		return 24 * time.Hour // PDML default
+	}
+	
+	// Use custom timeout if set, otherwise default
+	if s.systemVariables.StatementTimeout != nil {
+		return *s.systemVariables.StatementTimeout
+	}
+	
+	return 10 * time.Minute // default timeout
+}
+
 type Session struct {
 	mode            SessionMode
 	client          *spanner.Client // can be nil in Detached mode
@@ -685,6 +700,7 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
+	
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
@@ -702,6 +718,7 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
+	
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -1123,6 +1140,11 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err
 	}
+	
+	// Apply statement timeout based on statement type
+	timeout := s.getTimeoutForStatement(stmt)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	
 	defer func() {
 		if result != nil {
