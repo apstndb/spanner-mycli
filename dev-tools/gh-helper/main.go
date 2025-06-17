@@ -66,7 +66,8 @@ Use --request-review to automatically request Gemini review before waiting.
 
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
-	Args: cobra.ExactArgs(1),
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: waitForReviews,
 }
 
