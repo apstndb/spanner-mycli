@@ -72,7 +72,7 @@ type spannerOptions struct {
 	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)"`
 	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE"`
 	SQL                       string            `long:"sql" hidden:"true" description:"alias of --execute"`
-	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
 	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
 	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure                  bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
@@ -80,7 +80,6 @@ type spannerOptions struct {
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)"`
-	Help                      bool              `long:"help" short:"h" hidden:"true"`
 	LogLevel                  string            `long:"log-level"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs"`
 	QueryMode                 string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
@@ -177,9 +176,6 @@ func main() {
 		parser.WriteHelp(os.Stderr)
 		fmt.Fprintf(os.Stderr, "Invalid options: %v\n", err)
 		os.Exit(exitCodeError)
-		return
-	} else if gopts.Spanner.Help {
-		parser.WriteHelp(os.Stderr)
 		return
 	} else if gopts.Spanner.Version {
 		fmt.Printf("%v\n%v\n", getVersion(), installFrom)
@@ -515,7 +511,7 @@ func parseFlags() (globalOptions, *flags.Parser, error) {
 
 	// then, process environment variables and command line options
 	// use another parser to process environment variables with higher precedence than configuration files
-	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash)
+	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash|flags.HelpFlag)
 
 	_, err := flagParser.Parse()
 	return gopts, flagParser, err

@@ -134,6 +134,9 @@ spanner:
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
       --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
       --mcp                                               Run as MCP server
+
+Help Options:
+  -h, --help                                              Show this help message
 ```
 
 ### Authentication
