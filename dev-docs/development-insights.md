@@ -141,6 +141,41 @@ make clean                 # Clean artifacts when needed
 scripts/docs/update-help-output.sh    # Generate help output for README.md
 ```
 
+## Go Coding Standards
+
+**Core Principle**: This project follows standard Go conventions. Any exceptions must have documented rationale.
+
+### Essential References
+- **[Effective Go](https://go.dev/doc/effective_go)** - Foundational guide for idiomatic Go
+- **[Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)** - Common review points
+- **[Go Proverbs](https://go-proverbs.github.io/)** - Design philosophy
+
+### Key Standards Applied
+- **Error handling**: Errors are values, handle them gracefully (no silent failures)
+- **Package design**: Clear package boundaries, minimal interfaces
+- **Testing**: Table-driven tests preferred, meaningful test names
+- **Documentation**: All exported items must have doc comments
+
+### Project-Specific Conventions
+- **Linting**: `make lint` enforces staticcheck rules (must pass before push)
+- **Error messages**: 
+  - Should not be capitalized (start with lowercase)
+  - No punctuation at the end
+  - Can contain uppercase words (e.g., SQL keywords)
+  - Good: `"unsupported by emulator: EXPLAIN"`
+  - Bad: `"EXPLAIN statement is not supported"`
+- **Imports**: Standard library → third-party → local packages
+- **Exceptions**: Any deviation from standard Go patterns should include comment explaining rationale
+
+### Known Deviations (Temporary)
+**Note**: These existing deviations are temporarily permitted but will be fixed. New code should follow standard Go conventions.
+
+- **Missing doc comments**: Some exported functions lack proper documentation (e.g., in `session.go`)
+- **Capitalized error messages**: Some errors start with uppercase (e.g., `"EXPLAIN statement is not supported"`)
+  - Should be: `"unsupported by emulator: EXPLAIN"`
+- **Internal-only exports**: Some functions are exported only for Go visibility rules, not for external use
+  - Future fix: Restructure packages to minimize unnecessary exports
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables

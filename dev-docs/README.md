@@ -10,6 +10,7 @@ dev-docs/
 ├── architecture-guide.md        # System architecture and code organization
 ├── development-insights.md      # Development patterns and best practices
 ├── issue-management.md          # GitHub workflow and PR processes
+├── coding-guidelines.md         # Coding standards and style guidelines
 └── patterns/                    # Specific implementation patterns
     └── system-variables.md      # System variable implementation patterns
 ```
@@ -36,6 +37,11 @@ dev-docs/
 - Code review strategies
 - Git best practices
 - Knowledge management through PR comments
+
+### [Coding Guidelines](coding-guidelines.md)
+- Go language standards and conventions
+- Project-specific coding rules
+- Current deviations and future improvements
 
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
