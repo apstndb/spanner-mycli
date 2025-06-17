@@ -681,6 +681,20 @@ gh pr comment <PR-number> --body "/gemini review"
 - Check `git status` before committing to verify only intended files are staged
 - Use `git show --name-only` to review committed files
 
+### Phantom Worktree Management
+
+**CRITICAL RULE**: Only delete phantom worktrees when their associated issue is completely resolved (PR merged + issue closed).
+
+#### Worktree Lifecycle
+- **Create**: Use `scripts/dev/setup-phantom-worktree.sh issue-123-feature`
+- **Work**: Develop in isolated environment with `phantom shell`
+- **Delete**: Only after issue resolution - never during active development
+
+#### AI Assistant Guidelines
+- **Never delete worktrees autonomously** - always request user permission
+- **Resolve conflicts** instead of deleting worktrees when technical issues arise
+- **Preserve development context** - worktrees contain valuable work-in-progress
+
 ### Linking Issues and Pull Requests
 
 Use GitHub's issue linking syntax in commit messages and PR descriptions:
