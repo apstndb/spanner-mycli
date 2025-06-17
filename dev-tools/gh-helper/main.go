@@ -1058,10 +1058,27 @@ func runGraphQLQuery(query string) ([]byte, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderr.String())
+		// Try to extract meaningful error message from stderr
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "Could not resolve to a PullRequest") {
+			return nil, fmt.Errorf("PR not found - please check the PR number is correct")
+		}
+		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderrStr)
 	}
 
-	return stdout.Bytes(), nil
+	// Check for GraphQL errors in the response
+	var errorCheck struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	
+	result := stdout.Bytes()
+	if err := json.Unmarshal(result, &errorCheck); err == nil && len(errorCheck.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL error: %s", errorCheck.Errors[0].Message)
+	}
+
+	return result, nil
 }
 
 func jsonEscape(s string) (string, error) {
