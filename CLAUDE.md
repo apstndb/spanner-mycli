@@ -81,8 +81,8 @@ bin/gh-helper reviews wait-all PR_NUMBER --request-review  # Legacy: explicit wa
 
 # 🚀 SMART FEATURES:
 # - No arguments: Tools auto-detect current branch PR (via gh pr view)
-# - Issue numbers: Automatically resolve to associated open PRs
-# - PR numbers: Use directly without conversion
+# - Plain numbers (301): Auto-detect issue vs PR, resolve automatically
+# - Explicit formats: issues/301, pull/306, pr/306 for forced resolution (faster)
 # - Timeout format: Use duration strings like --timeout 15m, 30s, 1.5m (not just numbers)
 # - Helpful error messages for common mistakes
 ```

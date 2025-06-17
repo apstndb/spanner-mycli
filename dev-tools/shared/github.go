@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 // GitHubClient provides common GitHub operations
@@ -154,52 +155,124 @@ func (c *GitHubClient) ResolveNumber(number int) (*NodeInfo, error) {
 	}, nil
 }
 
+// ParseInputFormat parses various input formats for issues/PRs
+type InputFormat struct {
+	Type   string // "issue", "pr", or "auto" 
+	Number int
+}
+
+// ParseInput parses input in various formats:
+// - "123" -> auto-detect
+// - "issues/123" or "issue/123" -> force issue
+// - "pull/123" or "pr/123" -> force PR
+// - "" -> current branch PR
+func ParseInput(input string) (*InputFormat, error) {
+	if input == "" {
+		return &InputFormat{Type: "current"}, nil
+	}
+
+	// Check for explicit path formats
+	if strings.HasPrefix(input, "issues/") || strings.HasPrefix(input, "issue/") {
+		numberStr := strings.Split(input, "/")[1]
+		number, err := strconv.Atoi(numberStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid issue number in '%s': %w", input, err)
+		}
+		return &InputFormat{Type: "issue", Number: number}, nil
+	}
+
+	if strings.HasPrefix(input, "pull/") || strings.HasPrefix(input, "pr/") {
+		numberStr := strings.Split(input, "/")[1]
+		number, err := strconv.Atoi(numberStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PR number in '%s': %w", input, err)
+		}
+		return &InputFormat{Type: "pr", Number: number}, nil
+	}
+
+	// Plain number - auto-detect
+	number, err := strconv.Atoi(input)
+	if err != nil {
+		return nil, fmt.Errorf("invalid number format: %s", input)
+	}
+	return &InputFormat{Type: "auto", Number: number}, nil
+}
+
 // ResolvePRNumber resolves PR number using multiple strategies:
 // 1. If empty input, use current branch's PR (via gh pr view)
-// 2. If number provided, check if it's issue or PR and resolve accordingly
+// 2. If explicit format (issues/N, pull/N), skip auto-detection
+// 3. If plain number, auto-detect issue vs PR
 func (c *GitHubClient) ResolvePRNumber(input string) (int, string, error) {
-	// Strategy 1: If no input, use current branch PR
-	if input == "" {
+	format, err := ParseInput(input)
+	if err != nil {
+		return 0, "", err
+	}
+
+	switch format.Type {
+	case "current":
+		// Strategy 1: Use current branch PR
 		pr, err := c.GetCurrentBranchPR()
 		if err != nil {
 			return 0, "", fmt.Errorf("no PR number provided and current branch has no associated PR: %w", err)
 		}
 		return pr.Number, fmt.Sprintf("Using current branch PR #%d: %s", pr.Number, pr.Title), nil
-	}
 
-	// Strategy 2: Parse number and determine if it's issue or PR
-	number, err := strconv.Atoi(input)
-	if err != nil {
-		return 0, "", fmt.Errorf("invalid number format: %s", input)
-	}
+	case "pr":
+		// Strategy 2a: Explicit PR format - skip auto-detection
+		return format.Number, fmt.Sprintf("Using explicit PR #%d", format.Number), nil
 
-	node, err := c.ResolveNumber(number)
-	if err != nil {
-		return 0, "", err
-	}
-
-	switch node.NodeType {
-	case "PullRequest":
-		return node.Number, fmt.Sprintf("Using PR #%d: %s", node.Number, node.Title), nil
-	case "Issue":
-		// Find associated open PR for this issue
-		prs, err := c.FindPRsForIssue(node.Number)
+	case "issue":
+		// Strategy 2b: Explicit issue format - directly find associated PRs
+		prs, err := c.FindPRsForIssue(format.Number)
 		if err != nil {
-			return 0, "", fmt.Errorf("failed to find PRs for issue #%d: %w", node.Number, err)
+			return 0, "", fmt.Errorf("failed to find PRs for explicit issue #%d: %w", format.Number, err)
 		}
 		
 		// Look for open PR
 		for _, pr := range prs {
 			if pr.State == "OPEN" {
-				return pr.Number, fmt.Sprintf("Resolved issue #%d to open PR #%d: %s", node.Number, pr.Number, pr.Title), nil
+				return pr.Number, fmt.Sprintf("Resolved explicit issue #%d to open PR #%d: %s", format.Number, pr.Number, pr.Title), nil
 			}
 		}
 		
 		if len(prs) > 0 {
-			return 0, "", fmt.Errorf("issue #%d has %d associated PR(s) but none are open", node.Number, len(prs))
+			return 0, "", fmt.Errorf("explicit issue #%d has %d associated PR(s) but none are open", format.Number, len(prs))
 		}
-		return 0, "", fmt.Errorf("issue #%d has no associated PRs", node.Number)
+		return 0, "", fmt.Errorf("explicit issue #%d has no associated PRs", format.Number)
+
+	case "auto":
+		// Strategy 3: Auto-detect for plain numbers
+		node, err := c.ResolveNumber(format.Number)
+		if err != nil {
+			return 0, "", err
+		}
+
+		switch node.NodeType {
+		case "PullRequest":
+			return node.Number, fmt.Sprintf("Auto-detected PR #%d: %s", node.Number, node.Title), nil
+		case "Issue":
+			// Find associated open PR for this issue
+			prs, err := c.FindPRsForIssue(node.Number)
+			if err != nil {
+				return 0, "", fmt.Errorf("failed to find PRs for auto-detected issue #%d: %w", node.Number, err)
+			}
+			
+			// Look for open PR
+			for _, pr := range prs {
+				if pr.State == "OPEN" {
+					return pr.Number, fmt.Sprintf("Auto-detected issue #%d → open PR #%d: %s", node.Number, pr.Number, pr.Title), nil
+				}
+			}
+			
+			if len(prs) > 0 {
+				return 0, "", fmt.Errorf("auto-detected issue #%d has %d associated PR(s) but none are open", node.Number, len(prs))
+			}
+			return 0, "", fmt.Errorf("auto-detected issue #%d has no associated PRs", node.Number)
+		default:
+			return 0, "", fmt.Errorf("unknown node type: %s", node.NodeType)
+		}
+
 	default:
-		return 0, "", fmt.Errorf("unknown node type: %s", node.NodeType)
+		return 0, "", fmt.Errorf("unknown input format type: %s", format.Type)
 	}
 }

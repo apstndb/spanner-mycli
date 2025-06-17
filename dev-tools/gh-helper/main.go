@@ -53,9 +53,10 @@ This command maintains state in ~/.cache/spanner-mycli-reviews/ to detect
 new reviews since the last check. Useful for monitoring PR activity.
 
 Arguments:
-- If no argument: Uses current branch's PR
-- If issue number: Finds associated open PR  
-- If PR number: Uses directly`,
+- No argument: Uses current branch's PR
+- Plain number (123): Auto-detects issue vs PR
+- Explicit issue (issues/123, issue/123): Forces issue resolution
+- Explicit PR (pull/123, pr/123): Forces PR usage`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: checkReviews,
 }
@@ -74,9 +75,10 @@ Use --exclude-checks to wait for reviews only.
 Use --request-review to automatically request Gemini review before waiting.
 
 Arguments:
-- If no argument: Uses current branch's PR
-- If issue number: Finds associated open PR  
-- If PR number: Uses directly
+- No argument: Uses current branch's PR
+- Plain number (123): Auto-detects issue vs PR
+- Explicit issue (issues/123, issue/123): Forces issue resolution
+- Explicit PR (pull/123, pr/123): Forces PR usage
 
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,

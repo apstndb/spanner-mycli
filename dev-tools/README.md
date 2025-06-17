@@ -93,22 +93,27 @@ bin/spanner-mycli-dev worktree setup issue-123-feature
 
 ### Smart Number Resolution
 
-**No more PR number confusion!** Tools now automatically resolve issue numbers to PRs:
+**No more PR number confusion!** Tools support multiple input formats with intelligent resolution:
 
 ```bash
 # All these work automatically:
-bin/gh-helper reviews wait              # Uses current branch PR
-bin/gh-helper reviews wait 301          # Issue #301 → finds open PR #306  
-bin/gh-helper reviews wait 306          # Direct PR #306
+bin/gh-helper reviews wait                    # Uses current branch PR
+bin/gh-helper reviews wait 301                # Auto-detects: Issue #301 → PR #306  
+bin/gh-helper reviews wait 306                # Auto-detects: Direct PR #306
+
+# Explicit formats skip auto-detection (faster):
+bin/gh-helper reviews wait issues/301         # Forces issue resolution
+bin/gh-helper reviews wait pull/306           # Forces PR usage
+bin/gh-helper reviews wait pr/306             # Alternative PR format
 
 # No need to manually check PR numbers anymore!
 ```
 
 **Resolution strategy:**
 1. **No argument**: Uses current branch's PR (via `gh pr view`)
-2. **Number provided**: Checks if it's issue or PR using GraphQL `issueOrPullRequest`
-3. **If issue**: Finds associated open PR automatically
-4. **If PR**: Uses directly
+2. **Explicit formats** (`issues/N`, `pull/N`, `pr/N`): Skip auto-detection for better performance
+3. **Plain numbers**: Auto-detect using GraphQL `issueOrPullRequest`
+4. **Issue resolution**: Automatically finds associated open PRs
 
 **Timeout format examples:**
 - `--timeout 15m` (15 minutes) ✅
