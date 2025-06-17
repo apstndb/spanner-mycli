@@ -196,6 +196,20 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowSchemaUpdateOperations{}, nil
 		},
 	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show specific operation`,
+				Syntax: `SHOW OPERATION <operation-id-or-name>`,
+				Note:   `Attach to and monitor a specific Long Running Operation by its operation ID or full operation name.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			operationId := unquoteString(matched[1])
+			return &ShowOperationStatement{OperationId: operationId}, nil
+		},
+	},
 	// Split Points
 	{
 		Descriptions: []clientSideStatementDescription{

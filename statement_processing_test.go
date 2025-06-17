@@ -541,6 +541,21 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowSchemaUpdateOperations{},
 		},
 		{
+			desc:  "SHOW OPERATION statement with operation ID",
+			input: "SHOW OPERATION auto_op_123456789",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with quoted operation ID",
+			input: "SHOW OPERATION 'auto_op_123456789'",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with full operation name",
+			input: "SHOW OPERATION 'projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789'",
+			want:  &ShowOperationStatement{OperationId: "projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789"},
+		},
+		{
 			desc:  "EXPLAIN SELECT statement",
 			input: "EXPLAIN SELECT * FROM t1",
 			want:  &ExplainStatement{Explain: "SELECT * FROM t1"},

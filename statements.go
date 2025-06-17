@@ -255,6 +255,76 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 	}, nil
 }
 
+type ShowOperationStatement struct {
+	OperationId string
+}
+
+func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	operationName := s.OperationId
+	
+	// If the operation ID doesn't contain a full path, construct the full operation name
+	if !strings.Contains(operationName, "/") {
+		operationName = session.DatabasePath() + "/operations/" + operationName
+	}
+	
+	// Get the specific operation
+	op, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		Name: operationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
+	}
+	
+	var rows []Row
+	
+	// Handle different operation types
+	switch op.GetMetadata().GetTypeUrl() {
+	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := op.GetMetadata().UnmarshalTo(&md); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
+		}
+		
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		
+		for i := range md.GetStatements() {
+			rows = append(rows, toRow(
+				lo.Ternary(i == 0, operationId, ""),
+				md.GetStatements()[i]+";",
+				lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
+				lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+					return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
+				}),
+				lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+					return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
+				}),
+				op.GetError().GetMessage(),
+			))
+		}
+	default:
+		// For other operation types, show basic information
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		rows = append(rows, toRow(
+			operationId,
+			"N/A (Non-DDL Operation)",
+			strconv.FormatBool(op.GetDone()),
+			"N/A",
+			"N/A",
+			op.GetError().GetMessage(),
+		))
+	}
+	
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("operation %q not found or has no statements", operationName)
+	}
+	
+	return &Result{
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+		Rows:         rows,
+		AffectedRows: 1, // We're showing one operation
+	}, nil
+}
+
 // Protocol Buffers related statements are defined in statements_proto.go
 
 // TRUNCATE TABLE
