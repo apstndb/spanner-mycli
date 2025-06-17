@@ -244,9 +244,9 @@ query {
 		}
 	}
 
-	// Update state with latest review
+	// Update state with latest review (last element since we use GraphQL 'last: 15')
 	if len(reviews) > 0 {
-		latestReview := reviews[0]
+		latestReview := reviews[len(reviews)-1]  // Fix: use last element as latest
 		stateData := map[string]string{
 			"id":        latestReview.ID,
 			"createdAt": latestReview.CreatedAt,
