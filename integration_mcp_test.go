@@ -1,5 +1,3 @@
-//go:build !skip_slow_test
-
 package main
 
 import (
@@ -249,6 +247,9 @@ func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Sessio
 }
 
 func TestRunMCP(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	tests := []struct {
 		desc       string
 		ddls, dmls []string

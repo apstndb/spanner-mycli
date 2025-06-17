@@ -14,13 +14,12 @@
 // limitations under the License.
 //
 
-//go:build !skip_slow_test
-
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -74,6 +73,13 @@ var testTableDDLs = sliceOf(testTableDDL)
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+
+	// Skip emulator setup in short mode
+	if testing.Short() {
+		os.Exit(m.Run())
+	}
+
 	emu, teardown, err := spanemuboost.NewEmulator(context.Background(),
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)
@@ -87,7 +93,7 @@ func TestMain(m *testing.M) {
 
 	emulator = emu
 
-	m.Run()
+	os.Exit(m.Run())
 }
 
 func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
@@ -240,6 +246,9 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 }
 
 func TestSelect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
@@ -365,6 +374,9 @@ func TestSystemVariables(t *testing.T) {
 }
 
 func TestStatements(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	tests := []struct {
 		desc        string
 		ddls, dmls  []string // initialize statements
@@ -1680,6 +1692,9 @@ func TestPartitionedDML(t *testing.T) {
 }
 
 func TestShowOperation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	ctx := context.Background()
 	emulator, session, teardown := initialize(t, nil, nil)
 	defer teardown()
