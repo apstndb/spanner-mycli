@@ -737,7 +737,7 @@ gh pr comment <PR-number> --body "/gemini review"
 
 **Autonomous Actions Allowed**:
 - Clean phantom worktree deletion (no uncommitted changes, issue resolved)
-- Standard git operations on feature branches
+- Standard git operations on feature branches (e.g., add, commit, push, pull), excluding history-altering operations like rebase which require permission
 - Documentation updates following established patterns
 - File reading and analysis operations
 - Test execution and linting
