@@ -425,11 +425,15 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	
 	// Claude Code has a 2-minute timeout limit. Adjust strategy accordingly.
 	// Issue: https://github.com/anthropics/claude-code/issues/1216
+	// Use 90 seconds to provide safety margin for cleanup and final output
 	effectiveTimeout := timeout
-	if effectiveTimeout > 2 {
-		fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to 2 minutes.\n", timeout)
-		fmt.Printf("💡 For longer waits, run this command again after 2 minutes.\n")
-		effectiveTimeout = 2
+	claudeCodeSafeTimeout := 1.5 // 90 seconds = 1.5 minutes
+	if float64(effectiveTimeout) > claudeCodeSafeTimeout {
+		fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to %.1f minutes for safety.\n", timeout, claudeCodeSafeTimeout)
+		fmt.Printf("💡 For longer waits, run this command again after %.1f minutes.\n", claudeCodeSafeTimeout)
+		effectiveTimeout = int(claudeCodeSafeTimeout * 60) // Convert to seconds for internal use
+	} else {
+		effectiveTimeout = effectiveTimeout * 60 // Convert minutes to seconds
 	}
 	
 	// Request Gemini review if flag is set
@@ -442,11 +446,11 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		fmt.Println("✅ Gemini review requested")
 	}
 	
-	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %d minutes)...\n", prNumber, effectiveTimeout)
+	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %.1f minutes)...\n", prNumber, float64(effectiveTimeout)/60)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
-	// Setup timeout
-	timeoutDuration := time.Duration(effectiveTimeout) * time.Minute
+	// Setup timeout (effectiveTimeout is now in seconds)
+	timeoutDuration := time.Duration(effectiveTimeout) * time.Second
 	startTime := time.Now()
 
 	// Get initial state
@@ -457,13 +461,13 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	for {
 		// Check timeout
 		if time.Since(startTime) > timeoutDuration {
-			fmt.Printf("\n⏰ Timeout reached (%d minutes).\n", effectiveTimeout)
+			fmt.Printf("\n⏰ Timeout reached (%.1f minutes).\n", float64(effectiveTimeout)/60)
 			if reviewsReady && checksComplete {
 				fmt.Println("✅ Both reviews and checks completed!")
 				return nil
 			} else {
 				fmt.Printf("Status: Reviews ready: %v, Checks complete: %v\n", reviewsReady, checksComplete)
-				if effectiveTimeout < timeout {
+				if effectiveTimeout < timeout*60 {
 					fmt.Printf("💡 To continue waiting, run: bin/gh-helper reviews wait %s\n", prNumber)
 				}
 				return nil
