@@ -173,7 +173,10 @@ func ParseInput(input string) (*InputFormat, error) {
 
 	// Check for explicit path formats
 	if strings.HasPrefix(input, "issues/") || strings.HasPrefix(input, "issue/") {
-		numberStr := strings.Split(input, "/")[1]
+		_, numberStr, found := strings.Cut(input, "/")
+		if !found {
+			return nil, fmt.Errorf("invalid issue format '%s': expected 'issues/NUMBER'", input)
+		}
 		number, err := strconv.Atoi(numberStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid issue number in '%s': %w", input, err)
@@ -182,7 +185,10 @@ func ParseInput(input string) (*InputFormat, error) {
 	}
 
 	if strings.HasPrefix(input, "pull/") || strings.HasPrefix(input, "pr/") {
-		numberStr := strings.Split(input, "/")[1]
+		_, numberStr, found := strings.Cut(input, "/")
+		if !found {
+			return nil, fmt.Errorf("invalid PR format '%s': expected 'pull/NUMBER' or 'pr/NUMBER'", input)
+		}
 		number, err := strconv.Atoi(numberStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid PR number in '%s': %w", input, err)
