@@ -479,6 +479,8 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 {
   repository(owner: "%s", name: "%s") {
     pullRequest(number: %s) {
+      mergeable
+      mergeStateStatus
       reviews(last: 15) {
         nodes {
           id
@@ -527,6 +529,8 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			Data struct {
 				Repository struct {
 					PullRequest struct {
+						Mergeable        string `json:"mergeable"`
+						MergeStateStatus string `json:"mergeStateStatus"`
 						Reviews struct {
 							Nodes []struct {
 								ID        string `json:"id"`
@@ -594,6 +598,17 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Check mergeable status first - if conflicting, stop immediately
+		mergeable := response.Data.Repository.PullRequest.Mergeable
+		mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
+		if mergeable == "CONFLICTING" {
+			fmt.Printf("\n❌ [%s] PR has merge conflicts (status: %s)\n", time.Now().Format("15:04:05"), mergeStatus)
+			fmt.Println("⚠️  CI checks will not run until conflicts are resolved")
+			fmt.Printf("💡 Resolve conflicts with: git rebase origin/main\n")
+			fmt.Printf("💡 Then push and run: bin/gh-helper reviews wait %s\n", prNumber)
+			return fmt.Errorf("merge conflicts prevent CI execution")
+		}
+
 		// Check PR checks status
 		commits := response.Data.Repository.PullRequest.Commits.Nodes
 		if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
@@ -608,6 +623,20 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		if initialCheck {
 			fmt.Printf("[%s] Monitoring started.\n", time.Now().Format("15:04:05"))
 			fmt.Printf("   Reviews: %d found, Ready: %v\n", len(reviews), reviewsReady)
+			
+			// Show mergeable status
+			mergeable := response.Data.Repository.PullRequest.Mergeable
+			mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
+			switch mergeable {
+			case "MERGEABLE":
+				fmt.Printf("   Merge: ✅ Ready to merge\n")
+			case "CONFLICTING":
+				fmt.Printf("   Merge: ❌ Has conflicts (status: %s)\n", mergeStatus)
+			case "UNKNOWN":
+				fmt.Printf("   Merge: ⏳ Checking...\n")
+			default:
+				fmt.Printf("   Merge: %s (status: %s)\n", mergeable, mergeStatus)
+			}
 			if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
 				rollupState := commits[0].Commit.StatusCheckRollup.State
 				statusMsg := rollupState
@@ -654,6 +683,13 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 				}
 				
 				fmt.Printf("\n💡 To list unresolved threads: bin/gh-helper threads list %s\n", prNumber)
+			}
+			
+			// Show merge conflicts warning if present
+			mergeable := response.Data.Repository.PullRequest.Mergeable
+			if mergeable == "CONFLICTING" {
+				fmt.Printf("\n⚠️  Merge conflicts detected - CI may not run until resolved\n")
+				fmt.Printf("💡 Resolve conflicts and push to trigger CI checks\n")
 			}
 			if checksComplete {
 				if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
