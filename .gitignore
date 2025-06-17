@@ -1,12 +1,24 @@
+# Build artifacts - generated during build process, safe to delete
 spanner-cli
 spanner-mycli
-credentials.json
 dist/
-.DS_Store
-.idea
-.cache/
-tmp/
+
+# Sensitive data - contains authentication secrets, must not be committed
+credentials.json
+
+# System files - safe to delete
+.DS_Store     # macOS system file
+
+# IDE and tool directories - DO NOT delete in main workspace, safe to delete only in worktrees
+.idea         # JetBrains IDE settings
+.claude       # Claude Code session data
+
+# Cache and temporary files - safe to delete
+.cache/       # Application cache directory
+tmp/          # Development temporary files
+
+# Configuration files with secrets - may contain sensitive connection info
 .*.cnf
 
-# Phantom worktree notes
+# Phantom worktree notes - temporary development notes, safe to delete
 .notes.md

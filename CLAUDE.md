@@ -32,8 +32,9 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 **Before ANY push to the repository**:
 1. **Always run `make test`** (not `make fasttest`) - all integration tests must pass
 2. **Always run `make lint`** - code quality and style compliance required
-3. **Never push directly to main branch** - always use Pull Requests
-4. **Never commit directly to main branch** - always use feature branches
+3. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
+4. **Never push directly to main branch** - always use Pull Requests
+5. **Never commit directly to main branch** - always use feature branches
 
 ## Essential Commands
 
@@ -88,6 +89,14 @@ phantom shell issue-123-feature --tmux-horizontal
 gh pr comment <PR-number> --body "Development insights..."
 ```
 
+#### Phantom Worktree Deletion Rules
+When using `phantom delete` (without `--force`):
+- **ALWAYS check `git status`** first - ensure no uncommitted changes exist
+- **Untracked files**: Check .gitignore comments for deletion safety rules:
+  - Files marked "safe to delete" can always be removed
+  - Files marked "safe to delete only in worktrees" can be removed from worktrees but not main workspace
+  - Files marked "DO NOT delete in main workspace" should never be removed from main workspace
+
 ### Knowledge Management
 **Best Practice**: Record development insights directly in PR descriptions and comments for searchability and persistence.
 
@@ -119,9 +128,10 @@ This is a simplified guide. For detailed information, refer to:
 
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
-2. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-3. **For review replies**: Use `scripts/dev/list-review-threads.sh` and `scripts/dev/review-reply.sh` - Automated thread replies
-4. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
+3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
+4. **For review replies**: Use `scripts/dev/list-review-threads.sh` and `scripts/dev/review-reply.sh` - Automated thread replies
+5. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions

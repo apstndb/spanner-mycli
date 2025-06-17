@@ -350,11 +350,27 @@ gh api graphql -f query='
 
 ## Pull Request Process
 
+### Pull Request Labels
+
+Pull requests should be labeled according to the repository's automatic release notes configuration (`.github/release.yml`). 
+
+#### **Release Notes Labels**
+- `breaking-change` - Categorized in "Breaking Changes" section
+- `bug` - Categorized in "Bug Fixes" section  
+- `enhancement` - Categorized in "New Features" section
+- `ignore-for-release` - Excluded from release notes entirely
+
+All other labels are categorized in "Misc" section automatically.
+
+#### **Additional Labels** (Optional)
+Any other repository labels can be applied as needed for categorization and filtering purposes.
+
 ### Creating Pull Requests
 
 - Link PRs to issues using "Fixes #issue-number" in commit messages and PR descriptions
 - Use descriptive commit messages following conventional format
 - Include clear description of changes and test plan
+- **Apply appropriate labels** for automatic release notes categorization
 - Ensure `make test && make lint` pass before creating PR
 
 ### PR Creation with Insights Template
