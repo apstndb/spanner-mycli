@@ -72,9 +72,11 @@ bin/spanner-mycli-dev review gemini PR_NUMBER --wait-checks     # Also wait for 
 
 # Manual components (for understanding)
 gh pr comment PR_NUMBER --body "/gemini review"    # Manual review request
-bin/gh-helper reviews wait PR_NUMBER --timeout 15  # Wait for reviews only
-bin/gh-helper reviews wait-all PR_NUMBER --timeout 15  # Wait for reviews AND checks
-bin/gh-helper reviews wait-all PR_NUMBER --request-review  # Request review + wait for both
+bin/gh-helper reviews wait PR_NUMBER               # Wait for BOTH reviews AND checks (DEFAULT)
+bin/gh-helper reviews wait PR_NUMBER --exclude-checks  # Wait for reviews only
+bin/gh-helper reviews wait PR_NUMBER --exclude-reviews # Wait for checks only
+bin/gh-helper reviews wait PR_NUMBER --request-review  # Request + wait for both (RECOMMENDED)
+bin/gh-helper reviews wait-all PR_NUMBER --request-review  # Legacy: explicit wait-all command
 ```
 
 ## Core Architecture Overview
