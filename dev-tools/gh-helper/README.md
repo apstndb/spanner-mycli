@@ -92,6 +92,56 @@ File format: `pr-{number}-last-review.json`
 
 **Historical note**: Originally 15 minutes, reduced based on 95th percentile real-world data.
 
+### Claude Code Timeout Configuration
+
+**IMPORTANT**: Claude Code has a default 2-minute timeout that affects all bash commands.
+
+#### Quick Setup for Extended Timeouts
+
+Add to your `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "BASH_MAX_TIMEOUT_MS": "900000",
+    "BASH_DEFAULT_TIMEOUT_MS": "900000"
+  }
+}
+```
+
+This extends timeouts to 15 minutes for operations that need longer execution times.
+
+#### Automatic Detection and Safety
+
+gh-helper automatically:
+- **Detects** `BASH_MAX_TIMEOUT_MS` and `BASH_DEFAULT_TIMEOUT_MS` environment variables
+- **Uses safe 90-second margin** when no environment config is detected
+- **Provides guidance** for extending timeouts when needed
+- **Shows continuation commands** when timeouts are reduced
+
+#### Environment Variable Behavior
+
+| Environment State | Timeout Behavior | Example Output |
+|------------------|------------------|----------------|
+| **No variables set** | Uses 90s safety margin | `⚠️ Claude Code has 2-minute timeout (no env config detected). Using 1m30s for safety.` |
+| **BASH_MAX_TIMEOUT_MS set** | Respects full configured timeout | `🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: 15m0s` |
+| **Requested > Available** | Uses available limit with warning | `⚠️ Requested timeout (20m) exceeds Claude Code limit (15m). Using 15m.` |
+
+#### Based on GitHub Issues Research
+
+This implementation addresses common timeout issues documented in:
+- [anthropics/claude-code#1039](https://github.com/anthropics/claude-code/issues/1039): Configurable timeout feature request (BASH_MAX_TIMEOUT_MS implemented)
+- [anthropics/claude-code#1216](https://github.com/anthropics/claude-code/issues/1216): Commands timeout at exactly 2m 0.0s (default behavior)
+- [anthropics/claude-code#1717](https://github.com/anthropics/claude-code/issues/1717): Environment variable configuration in ~/.claude/settings.json
+
+#### Key Implementation Details
+
+Based on extensive testing and research:
+
+1. **Claude Code auto-retry**: Claude Code automatically retries commands that approach the 2-minute limit
+2. **Safe margin strategy**: We use 90-second margin when no env config is detected to avoid relying on auto-retry
+3. **Environment variable precedence**: BASH_MAX_TIMEOUT_MS takes precedence for explicit timeout requests
+4. **Settings file location**: Project .claude/settings.json should be committed for team consistency
+
 ## Critical Implementation Insights
 
 ### GitHub statusCheckRollup vs Merge Conflicts

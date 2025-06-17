@@ -66,25 +66,53 @@ During development of `gh-helper`, we discovered that GitHub's GraphQL API retur
 
 ### Claude Code Environment Constraints
 
-**Discovery: Hard 2-Minute Timeout with No Grace Period**
+**Discovery: Configurable Timeout via Environment Variables**
 
-Claude Code enforces a hard 2-minute timeout on bash commands, but this creates challenges for long-running operations like CI waiting.
+While Claude Code defaults to a 2-minute timeout, it supports configuration through environment variables in `~/.claude/settings.json` or project `.claude/settings.json`.
 
-**Technical Implementation**:
+**Research Findings from GitHub Issues**:
+- anthropics/claude-code#1039: Feature request for configurable timeouts was implemented
+- anthropics/claude-code#1216: Default behavior shows "Command timed out after 2m 0.0s"
+- anthropics/claude-code#1717: User successfully configured 15-minute timeouts via settings.json
+
+**Environment Variable Configuration**:
+```json
+{
+  "env": {
+    "BASH_MAX_TIMEOUT_MS": "900000",    // 15 minutes - upper limit for explicit timeouts
+    "BASH_DEFAULT_TIMEOUT_MS": "900000"  // 15 minutes - default when no timeout specified
+  }
+}
+```
+
+**Implementation Strategy**:
 ```go
-// Use 90 seconds to provide 30-second safety margin
-claudeCodeSafeTimeout := 1.5 // 90 seconds
-if float64(effectiveTimeout) > claudeCodeSafeTimeout {
-    fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to %.1f minutes for safety.\n", 
-        timeout, claudeCodeSafeTimeout)
-    effectiveTimeout = int(claudeCodeSafeTimeout * 60)
+// Check for Claude Code environment variables
+claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
+
+if hasClaudeCodeEnv {
+    // Respect configured timeout limit
+    if timeoutDuration > claudeCodeEnvTimeout {
+        fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
+            timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
+        effectiveTimeout = claudeCodeEnvTimeout
+    }
+} else {
+    // Default: Use 90-second safety margin
+    claudeCodeLimit := 90 * time.Second
+    if timeoutDuration > claudeCodeLimit {
+        fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
+        fmt.Printf("💡 To extend timeout, set BASH_MAX_TIMEOUT_MS in ~/.claude/settings.json\n")
+    }
 }
 ```
 
 **Key Lessons**:
-- Environment detection enables adaptive behavior
-- Safety margins prevent mid-execution termination
-- Clear user communication about constraint reasoning builds trust
+- Environment detection enables adaptive behavior (fallback to safe defaults vs respecting user config)
+- Project settings (.claude/settings.json) should be committed for team consistency
+- Local settings (.claude/settings.local.json) should NOT be committed (personal preferences)
+- Clear guidance about configuration options builds user confidence
+- Claude Code does auto-retry on timeout, but relying on this behavior is not recommended
 
 ### Cobra CLI Framework Assumptions vs Reality
 

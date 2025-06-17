@@ -12,6 +12,7 @@ credentials.json
 # IDE and tool directories - DO NOT delete in main workspace, safe to delete ONLY in phantom worktrees
 .idea         # JetBrains IDE settings
 .claude       # Claude Code session data
+!.claude/settings.json  # Exception: project-wide Claude Code settings (team shared)
 
 # Cache and temporary files - safe to delete anywhere
 .cache/       # Application cache directory

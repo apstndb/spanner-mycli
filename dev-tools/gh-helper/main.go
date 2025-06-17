@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -28,6 +30,9 @@ COMMON PATTERNS:
 
 See cmd/gh-helper/README.md for detailed documentation, design rationale,
 and migration guide from shell scripts.`,
+	// Cobra assumes all errors are usage errors and shows help by default
+	// For operational tools, most errors are runtime issues (API failures, merge conflicts)
+	// not syntax errors, so we disable automatic error printing
 	SilenceErrors: true,
 }
 
@@ -68,7 +73,7 @@ Use --request-review to automatically request Gemini review before waiting.
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
 	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
+	SilenceUsage: true, // Don't show usage help for operational errors (timeouts, API failures)
 	RunE: waitForReviews,
 }
 
@@ -174,7 +179,8 @@ func init() {
 	waitReviewsCmd.Flags().BoolVar(&excludeChecks, "exclude-checks", false, "Exclude checks, wait for reviews only")
 	waitReviewsCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 	
-	waitAllCmd.Flags().IntVar(&timeout, "timeout", 5, "Timeout in minutes (default: 5)")
+	waitAllCmd.Flags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s) (default: 5m)")
+	waitAllCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 
 	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd, waitAllCmd)
@@ -203,6 +209,48 @@ func parseTimeout() (time.Duration, error) {
 	
 	// Default case: parse the default string
 	return time.ParseDuration(timeoutStr)
+}
+
+// checkClaudeCodeEnvironment checks for Claude Code timeout environment variables
+// and provides guidance based on GitHub issues research.
+//
+// Key findings from anthropics/claude-code#1039, anthropics/claude-code#1216, anthropics/claude-code#1717:
+// - BASH_MAX_TIMEOUT_MS: Upper limit for explicit timeout requests (our use case)
+// - BASH_DEFAULT_TIMEOUT_MS: Default timeout when no explicit timeout specified  
+// - Claude Code defaults to 2-minute hard limit when no env vars are set
+// - Environment variables are read from ~/.claude/settings.json or project .claude/settings.json
+// - Project settings should be committed, local settings (.claude/settings.local.json) should not
+func checkClaudeCodeEnvironment() (time.Duration, bool) {
+	var maxTimeout, defaultTimeout time.Duration
+	var hasMax, hasDefault bool
+	
+	// Check for BASH_MAX_TIMEOUT_MS (upper limit for explicit timeouts)
+	if maxTimeoutStr := os.Getenv("BASH_MAX_TIMEOUT_MS"); maxTimeoutStr != "" {
+		if maxTimeoutMs, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeoutMs)
+			maxTimeout = maxTimeoutMs
+			hasMax = true
+		}
+	}
+	
+	// Check for BASH_DEFAULT_TIMEOUT_MS (default when no timeout specified)
+	if defaultTimeoutStr := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); defaultTimeoutStr != "" {
+		if defaultTimeoutMs, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeoutMs)
+			defaultTimeout = defaultTimeoutMs
+			hasDefault = true
+		}
+	}
+	
+	// For explicit timeout requests (our use case), BASH_MAX_TIMEOUT_MS takes precedence
+	if hasMax {
+		return maxTimeout, true
+	}
+	if hasDefault {
+		return defaultTimeout, true
+	}
+	
+	return 0, false
 }
 
 func checkReviews(cmd *cobra.Command, args []string) error {
@@ -445,18 +493,38 @@ func waitForReviewsOnly(prNumber string) error {
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 	
-	// Claude Code has a 2-minute timeout limit. Adjust strategy accordingly.
-	// Issue: https://github.com/anthropics/claude-code/issues/1216
-	// CRITICAL INSIGHT: Use 90 seconds (not 120) to provide safety margin for cleanup and final output.
-	// Without this margin, processes get forcefully terminated mid-execution.
-	effectiveTimeout := timeout
-	claudeCodeSafeTimeout := 1.5 // 90 seconds = 1.5 minutes
-	if float64(effectiveTimeout) > claudeCodeSafeTimeout {
-		fmt.Printf("⚠️  Claude Code has 2-minute timeout. Adjusting from %d to %.1f minutes for safety.\n", timeout, claudeCodeSafeTimeout)
-		fmt.Printf("💡 For longer waits, run this command again after %.1f minutes.\n", claudeCodeSafeTimeout)
-		effectiveTimeout = int(claudeCodeSafeTimeout * 60) // Convert to seconds for internal use
+	// Parse timeout duration with new flexible format
+	timeoutDuration, err := parseTimeout()
+	if err != nil {
+		return fmt.Errorf("invalid timeout format: %w", err)
+	}
+	
+	// Check Claude Code environment and adjust timeout accordingly
+	// Based on anthropics/claude-code#1039, anthropics/claude-code#1216, anthropics/claude-code#1717
+	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
+	
+	var effectiveTimeout time.Duration
+	if hasClaudeCodeEnv {
+		// User has configured Claude Code environment variables
+		effectiveTimeout = timeoutDuration
+		if timeoutDuration > claudeCodeEnvTimeout {
+			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
+				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
+			effectiveTimeout = claudeCodeEnvTimeout
+		}
 	} else {
-		effectiveTimeout = effectiveTimeout * 60 // Convert minutes to seconds
+		// Default Claude Code 2-minute limit - use safe margin
+		// anthropics/claude-code#1216: Commands timeout at exactly 2m 0.0s
+		claudeCodeLimit := 90 * time.Second  // Safe margin
+		effectiveTimeout = timeoutDuration
+		
+		if timeoutDuration > claudeCodeLimit {
+			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
+			fmt.Printf("💡 To extend timeout, set BASH_MAX_TIMEOUT_MS in ~/.claude/settings.json\n")
+			fmt.Printf("💡 Example: {\"env\": {\"BASH_MAX_TIMEOUT_MS\": \"900000\"}} for 15 minutes\n")
+			fmt.Printf("💡 Manual retry: bin/gh-helper reviews wait %s --timeout=%v\n", prNumber, timeoutDuration)
+			effectiveTimeout = claudeCodeLimit
+		}
 	}
 	
 	// Request Gemini review if flag is set
@@ -469,11 +537,26 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		fmt.Println("✅ Gemini review requested")
 	}
 	
-	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %.1f minutes)...\n", prNumber, float64(effectiveTimeout)/60)
+	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %v)...\n", prNumber, effectiveTimeout)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
-	// Setup timeout (effectiveTimeout is now in seconds)
-	timeoutDuration := time.Duration(effectiveTimeout) * time.Second
+	// Setup signal handling for graceful termination with proper guidance
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	// Exit code 130 is standard for SIGINT (Ctrl+C)
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n🛑 Received signal %v - terminating gracefully\n", sig)
+		if effectiveTimeout < timeoutDuration {
+			fmt.Printf("💡 Claude Code timeout interrupted. To continue, run:\n")
+			fmt.Printf("    bin/gh-helper reviews wait %s --timeout=%v\n", prNumber, timeoutDuration)
+		}
+		os.Exit(130) // Standard exit code for SIGINT
+	}()
+
+	// Setup timeout (effectiveTimeout is already time.Duration)
+	// timeoutDuration := timeoutDuration  // Already defined above
 	startTime := time.Now()
 
 	// Get initial state
@@ -483,14 +566,14 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 
 	for {
 		// Check timeout
-		if time.Since(startTime) > timeoutDuration {
-			fmt.Printf("\n⏰ Timeout reached (%.1f minutes).\n", float64(effectiveTimeout)/60)
+		if time.Since(startTime) > effectiveTimeout {
+			fmt.Printf("\n⏰ Timeout reached (%v).\n", effectiveTimeout)
 			if reviewsReady && checksComplete {
 				fmt.Println("✅ Both reviews and checks completed!")
 				return nil
 			} else {
 				fmt.Printf("Status: Reviews ready: %v, Checks complete: %v\n", reviewsReady, checksComplete)
-				if effectiveTimeout < timeout*60 {
+				if effectiveTimeout < timeoutDuration {
 					fmt.Printf("💡 To continue waiting, run: bin/gh-helper reviews wait %s\n", prNumber)
 				}
 				return nil
@@ -1028,9 +1111,8 @@ func replyWithCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("🔄 Replying to review thread: %s (with commit %s)\n", threadID, commitHash)
 
-	// CRITICAL INSIGHT (Issue #301): GitHub GraphQL API quirk
-	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
-	// This was discovered during AI-friendly tool development and is documented in dev-docs/development-insights.md
+	// CRITICAL: Do NOT include pullRequestReviewId field - causes null responses
+	// despite being marked "optional" in GraphQL schema (discovered in #301)
 	
 	escapedText, err := jsonEscape(replyText)
 	if err != nil {
