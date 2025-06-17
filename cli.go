@@ -477,9 +477,11 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
+// Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
+// are excluded to avoid conflicting progress indicators.
 func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
 	switch stmt.(type) {
-	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement:
 		return func() {}
 	default:
 		return c.PrintProgressingMark(w)

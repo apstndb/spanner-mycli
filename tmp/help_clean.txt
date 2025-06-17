@@ -1,0 +1,44 @@
+Usage:
+  spanner-mycli [OPTIONS]
+
+spanner:
+  -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
+  -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
+  -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used. [$SPANNER_DATABASE_ID]
+      --detached                                          Start in detached mode, ignoring database env var/flag
+  -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
+  -f, --file=                                             Execute SQL statement from file and quit.
+  -t, --table                                             Display output in table format for batch mode.
+  -v, --verbose                                           Display verbose output.
+      --credential=                                       Use the specific credential file
+      --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
+      --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
+      --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
+      --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
+      --role=                                             Use the specific database role. --database-role is an alias.
+      --endpoint=                                         Set the Spanner API endpoint (host:port)
+      --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
+      --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
+      --param=                                            Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
+      --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
+      --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
+      --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=                                   container image for --embedded-emulator
+      --output-template=                                  Filepath of output template. (EXPERIMENTAL)
+      --log-level=
+      --log-grpc                                          Show gRPC logs
+      --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
+      --strong                                            Perform a strong query.
+      --read-timestamp=                                   Perform a query at the given timestamp.
+      --vertexai-project=                                 Vertex AI project
+      --vertexai-model=                                   Vertex AI model (default: gemini-2.0-flash)
+      --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
+      --impersonate-service-account=                      Impersonate service account email
+      --version                                           Show version string.
+      --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
+      --mcp                                               Run as MCP server
+
+Help Options:
+  -h, --help                                              Show this help message
+

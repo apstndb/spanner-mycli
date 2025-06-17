@@ -147,6 +147,20 @@ This systematic labeling approach enables owner and AI agent development:
 - **Progress Tracking**: Monitor implementation status across functional domains
 - **AI Context**: Provide structured context for AI agents to understand issue scope and requirements
 
+#### Label System Maintenance
+
+**Optimization Process**:
+- **Usage Analysis**: Review actual label usage patterns across all issues
+- **Owner + AI Focus**: Remove labels not aligned with "owner and AI agent development"
+- **Cognitive Load Reduction**: Eliminate redundant labels covered by GitHub standard features
+- **Maintenance Overhead**: Balance label granularity with practical management effort
+
+**Historical Optimization (2025-06-17)**:
+- **Removed Labels**: `good first issue`, `help wanted` (no external contributors expected)
+- **Removed Labels**: `duplicate`, `invalid` (GitHub provides built-in detection)
+- **Result**: 25 → 21 labels, reduced AI decision complexity while maintaining functional coverage
+- **Rationale**: Focus on actionable categorization for development prioritization
+
 ### Creating Issues
 
 Use `gh` CLI for better control over formatting:
@@ -336,11 +350,27 @@ gh api graphql -f query='
 
 ## Pull Request Process
 
+### Pull Request Labels
+
+Pull requests should be labeled according to the repository's automatic release notes configuration (`.github/release.yml`). 
+
+#### **Release Notes Labels**
+- `breaking-change` - Categorized in "Breaking Changes" section
+- `bug` - Categorized in "Bug Fixes" section  
+- `enhancement` - Categorized in "New Features" section
+- `ignore-for-release` - Excluded from release notes entirely
+
+All other labels are categorized in "Misc" section automatically.
+
+#### **Additional Labels** (Optional)
+Any other repository labels can be applied as needed for categorization and filtering purposes.
+
 ### Creating Pull Requests
 
 - Link PRs to issues using "Fixes #issue-number" in commit messages and PR descriptions
 - Use descriptive commit messages following conventional format
 - Include clear description of changes and test plan
+- **Apply appropriate labels** for automatic release notes categorization
 - Ensure `make test && make lint` pass before creating PR
 
 ### PR Creation with Insights Template
@@ -794,9 +824,34 @@ gh pr comment <PR-number> --body "/gemini review"
 - **Delete**: Use `phantom delete worktree-name` when no longer needed
 
 #### AI Assistant Guidelines
-- **Never use `--force` flag autonomously** - always request user permission for forced deletion
-- **Clean deletion preferred** - resolve uncommitted changes before deletion when possible
-- **User confirmation required** - ask before any worktree deletion, especially with uncommitted changes
+
+**Decision Matrix for Autonomous vs. User-Permission Operations**:
+
+**Always Request Permission**:
+- `phantom delete --force` (uncommitted changes present)
+- Any operation with `--force` flag
+- Destructive operations affecting work history
+- Git operations that could cause data loss
+- Repository structural changes (branch deletion, rebasing)
+
+**Autonomous Actions Allowed**:
+- Clean phantom worktree deletion (no uncommitted changes, issue resolved)
+- Standard git operations on feature branches (e.g., add, commit, push, pull), excluding history-altering operations like rebase which require permission
+- Documentation updates following established patterns
+- File reading and analysis operations
+- Test execution and linting
+
+**User Confirmation Required**:
+- Worktree deletion with uncommitted changes (explain what will be lost)
+- Branch operations affecting multiple commits
+- Operations that bypass standard workflow (emergency fixes)
+
+**Best Practices**:
+- **Check Status First**: Always run `git status` before destructive operations
+- **Check File Safety**: Refer to `.gitignore` comments for file deletion safety rules
+- **Explain Impact**: When requesting permission, clearly state what will be lost or changed
+- **Offer Alternatives**: Suggest safer approaches when possible (e.g., commit changes before deletion)
+- **Preserve Context**: Prioritize preserving development work over convenience
 
 ### Linking Issues and Pull Requests
 

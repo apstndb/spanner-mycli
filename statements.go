@@ -37,7 +37,10 @@ import (
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
+	"github.com/mattn/go-runewidth"
 	"github.com/samber/lo"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -263,9 +266,20 @@ type ShowOperationStatement struct {
 func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	// Check mode support
 	if s.Mode == "SYNC" {
-		return nil, fmt.Errorf("SYNC mode is not yet implemented. Use ASYNC mode (default) for current status check")
+		return s.executeSyncMode(ctx, session)
 	}
 	
+	operationName := s.OperationId
+	
+	// If the operation ID doesn't contain a full path, construct the full operation name
+	if !strings.Contains(operationName, "/") {
+		operationName = session.DatabasePath() + "/operations/" + operationName
+	}
+	
+	return s.executeAsyncMode(ctx, session, operationName)
+}
+
+func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *Session) (*Result, error) {
 	operationName := s.OperationId
 	
 	// If the operation ID doesn't contain a full path, construct the full operation name
@@ -281,14 +295,94 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
 	}
 	
+	// If operation is already done, return the status
+	if op.GetDone() {
+		return s.executeAsyncMode(ctx, session, operationName)
+	}
+	
+	// Start progress monitoring
+	var p *mpb.Progress
+	var bar *mpb.Bar
+	teardown := func() {
+		if bar != nil {
+			bar.Abort(true)
+		}
+		if p != nil {
+			p.Wait()
+		}
+	}
+	
+	// Extract operation description for progress bar
+	operationDesc := s.getOperationDescription(op)
+	
+	if session.systemVariables.EnableProgressBar {
+		p = mpb.NewWithContext(ctx)
+		bar = p.AddBar(int64(100),
+			mpb.PrependDecorators(
+				decor.Spinner(nil, decor.WCSyncSpaceR),
+				decor.Name(runewidth.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
+				decor.Percentage(decor.WCSyncSpace),
+				decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+			mpb.BarRemoveOnComplete(),
+		)
+		bar.EnableTriggerComplete()
+		defer teardown()
+	}
+	
+	// Update progress bar with initial status
+	if bar != nil && !bar.Completed() {
+		progressPercent := s.getOperationProgress(op)
+		bar.SetCurrent(int64(progressPercent))
+	}
+	
+	// Polling loop
+	for !op.GetDone() {
+		select {
+		case <-time.After(5 * time.Second):
+			// Continue polling
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		
+		// Poll the operation
+		op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+			Name: operationName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to poll operation %q: %w", operationName, err)
+		}
+		
+		// Update progress bar
+		if bar != nil && !bar.Completed() {
+			progressPercent := s.getOperationProgress(op)
+			bar.SetCurrent(int64(progressPercent))
+		}
+	}
+	
+	// Operation completed, update progress bar to 100%
+	if bar != nil && !bar.Completed() {
+		bar.SetCurrent(100)
+	}
+	
+	// Return final operation status
+	return s.executeAsyncMode(ctx, session, operationName)
+}
+
+func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *Session, operationName string) (*Result, error) {
+	// Get the specific operation
+	op, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		Name: operationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
+	}
+	
 	var rows []Row
 	
 	// Handle different operation types
 	metadata := op.GetMetadata()
 	if metadata == nil {
 		// Handle operations with no metadata
-		// Note: In Go, calling methods on nil receivers is safe and typically returns zero values,
-		// but we explicitly check for nil metadata to provide a clearer error message to users.
 		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 		rows = append(rows, toRow(
 			operationId,
@@ -300,40 +394,41 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 		))
 	} else {
 		switch metadata.GetTypeUrl() {
-	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
-		var md databasepb.UpdateDatabaseDdlMetadata
-		if err := metadata.UnmarshalTo(&md); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
-		}
-		
-		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
-		
-		for i := range md.GetStatements() {
+		case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+			var md databasepb.UpdateDatabaseDdlMetadata
+			if err := metadata.UnmarshalTo(&md); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
+			}
+			
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+			
+			for i := range md.GetStatements() {
+				rows = append(rows, toRow(
+					lo.Ternary(i == 0, operationId, ""),
+					md.GetStatements()[i]+";",
+					lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
+					lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+						return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
+					}),
+					lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+						return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
+					}),
+					op.GetError().GetMessage(),
+				))
+			}
+			
+		default:
+			// For other operation types, show basic information
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 			rows = append(rows, toRow(
-				lo.Ternary(i == 0, operationId, ""),
-				md.GetStatements()[i]+";",
-				lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
-				lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
-					return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
-				}),
-				lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
-					return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
-				}),
+				operationId,
+				"N/A (Non-DDL Operation)",
+				strconv.FormatBool(op.GetDone()),
+				"N/A",
+				"N/A",
 				op.GetError().GetMessage(),
 			))
 		}
-	default:
-		// For other operation types, show basic information
-		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
-		rows = append(rows, toRow(
-			operationId,
-			"N/A (Non-DDL Operation)",
-			strconv.FormatBool(op.GetDone()),
-			"N/A",
-			"N/A",
-			op.GetError().GetMessage(),
-		))
-	}
 	}
 	
 	if len(rows) == 0 {
@@ -345,6 +440,63 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 		Rows:         rows,
 		AffectedRows: 1, // We're showing one operation
 	}, nil
+}
+
+func (s *ShowOperationStatement) getOperationDescription(op *longrunningpb.Operation) string {
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("Operation %s", operationId)
+	}
+	
+	switch metadata.GetTypeUrl() {
+	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := metadata.UnmarshalTo(&md); err != nil {
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+			return fmt.Sprintf("Operation %s", operationId)
+		}
+		
+		if len(md.GetStatements()) > 0 {
+			return md.GetStatements()[0] // Use first statement as description
+		}
+		
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("DDL Operation %s", operationId)
+		
+	default:
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("Operation %s", operationId)
+	}
+}
+
+func (s *ShowOperationStatement) getOperationProgress(op *longrunningpb.Operation) float64 {
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		return 0.0
+	}
+	
+	switch metadata.GetTypeUrl() {
+	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := metadata.UnmarshalTo(&md); err != nil {
+			return 0.0
+		}
+		
+		if len(md.GetProgress()) > 0 {
+			// Return average progress if multiple statements
+			var total float64
+			for _, p := range md.GetProgress() {
+				total += float64(p.GetProgressPercent())
+			}
+			return total / float64(len(md.GetProgress()))
+		}
+		
+		return 0.0
+		
+	default:
+		return 0.0
+	}
 }
 
 // Protocol Buffers related statements are defined in statements_proto.go
