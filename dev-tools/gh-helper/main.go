@@ -154,7 +154,8 @@ var (
 	repo           string
 	message        string
 	mentionUser    string
-	timeout        int
+	timeoutStr     string
+	timeout        int  // Deprecated: for backward compatibility only
 	requestReview  bool
 	excludeReviews bool
 	excludeChecks  bool
@@ -167,7 +168,8 @@ func init() {
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
 
-	waitReviewsCmd.Flags().IntVar(&timeout, "timeout", 5, "Timeout in minutes (default: 5)")
+	waitReviewsCmd.Flags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s) (default: 5m)")
+	waitReviewsCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitReviewsCmd.Flags().BoolVar(&excludeReviews, "exclude-reviews", false, "Exclude reviews, wait for PR checks only")
 	waitReviewsCmd.Flags().BoolVar(&excludeChecks, "exclude-checks", false, "Exclude checks, wait for reviews only")
 	waitReviewsCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
@@ -184,6 +186,23 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// parseTimeout parses timeout from string format or falls back to deprecated minutes format
+func parseTimeout() (time.Duration, error) {
+	// If new timeout format is provided, use it
+	if timeoutStr != "" && timeoutStr != "5m" {
+		return time.ParseDuration(timeoutStr)
+	}
+	
+	// If deprecated timeout-minutes is used, convert to duration
+	if timeout > 0 {
+		fmt.Printf("⚠️  --timeout-minutes is deprecated. Use --timeout=%dm instead.\n", timeout)
+		return time.Duration(timeout) * time.Minute, nil
+	}
+	
+	// Default case: parse the default string
+	return time.ParseDuration(timeoutStr)
 }
 
 func checkReviews(cmd *cobra.Command, args []string) error {
