@@ -792,6 +792,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 				}
 				
 				fmt.Printf("\n💡 To list unresolved threads: bin/gh-helper threads list %s\n", prNumber)
+				fmt.Println("⚠️  IMPORTANT: Please read the review feedback carefully before proceeding")
 			}
 			
 			// Show merge conflicts warning if present
