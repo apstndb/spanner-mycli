@@ -78,7 +78,7 @@ For detailed implementation patterns, see [dev-docs/patterns/system-variables.md
 ### Phantom Worktree Usage
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-123-feature
+scripts/dev/setup-phantom-worktree.sh issue-123-feature  # Auto-fetches and bases on origin/main
 
 # Work in isolated environment
 phantom shell issue-123-feature --tmux-horizontal
