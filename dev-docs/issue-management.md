@@ -8,8 +8,144 @@ This document covers GitHub workflow, issue management, and code review processe
 
 - Issues managed through GitHub Issues with comprehensive labeling
 - All fixes must go through Pull Requests - never close issues manually
-- Use "claude-code" label for issues identified by automated code analysis
-- Additional labels: bug, enhancement, documentation, testing, tech-debt, performance, blocked, concurrency
+- Use systematic labeling approach for effective categorization and filtering
+
+### Label System and Guidelines
+
+spanner-mycli uses a systematic labeling approach to categorize and prioritize issues effectively.
+
+#### **Label Classification Framework**
+
+**🎯 Primary Classification Labels** (Choose One)
+- `enhancement` - New features or improvements
+- `bug` - Something isn't working
+- `documentation` - Documentation improvements
+- `tech-debt` - Technical debt and code quality
+
+**🔧 Functional Domain Labels** (Multiple Allowed)
+- `system variable` - System variable implementation/modification
+- `output-formatting` - Output format and display improvements
+- `operations` - Database operations and management features  
+- `postgresql` - PostgreSQL dialect support
+- `jdbc-compatibility` - Java Spanner JDBC driver compatibility features
+- `memefish` - Memefish parser utilization
+- `testing` - Testing improvements and coverage
+
+**⚙️ Technical Characteristics** (Multiple Allowed)
+- `performance` - Performance-related improvements
+- `concurrency` - Thread safety and concurrent access
+- `emulator-related` - Cloud Spanner emulator specific issues
+- `breaking-change` - Changes that break backward compatibility
+
+**📋 Work Status Labels** (Choose One)
+- `design-needed` - Requires architecture/design work before implementation
+- `blocked` - Blocked by external dependencies
+- `low hanging fruit` - Easy implementation with good value
+
+**🗂️ Issue Management Labels**
+- `claude-code` - Issues identified by Claude Code
+- `question` - Information requests from third parties
+- `wontfix` - Will not be implemented (policy decisions)
+
+#### **Labeling Best Practices**
+
+**Multi-Label Examples**:
+```
+enhancement + system variable + jdbc-compatibility
+bug + output-formatting + emulator-related
+enhancement + operations + design-needed
+testing + postgresql + low hanging fruit
+```
+
+**Issue Lifecycle Labeling**:
+1. **New Issues**: Start with primary classification
+2. **Analysis Phase**: Add functional domain labels
+3. **Planning Phase**: Add work status labels as needed
+4. **Implementation**: Update work status labels during development
+5. **Completion**: Remove work status labels before closing
+
+#### **Domain-Specific Guidelines**
+
+**JDBC Compatibility (`jdbc-compatibility`)**
+- Issues implementing features from java-spanner JDBC driver
+- Often combined with `system variable` for system variables
+- Reference issue #47 for comprehensive compatibility tracking
+- Maintain compatibility table updates in issue descriptions
+
+**Output Formatting (`output-formatting`)**
+- Display improvements, format options, table rendering
+- Often combined with `enhancement` or `performance`
+- Consider terminal width constraints and user experience
+- Examples: CSV/JSON output, table formatting, query plan display
+
+**Operations (`operations`)**
+- Database management features: backups, monitoring, administration
+- Distinguish from instance-level operations (out of scope)
+- Focus on development/testing value over pure operational features
+- Examples: database copy, session metrics, change streams
+
+**PostgreSQL Support (`postgresql`)**
+- PostgreSQL dialect specific issues
+- Parser improvements, system catalog support
+- Feature parity considerations with GoogleSQL
+- Testing with both dialects
+
+**Emulator-Related (`emulator-related`)**
+- Features that behave differently in emulator vs production
+- Emulator limitations that affect development workflow
+- Testing strategies for emulator environments
+- Documentation of emulator-specific behavior
+
+#### **Label Application Guidelines**
+
+**When to Use Multiple Labels**
+Most issues should have 2-4 labels:
+- Always: One primary classification (`enhancement`, `bug`, etc.)
+- Usually: One or more functional domain labels
+- Sometimes: Technical characteristic labels
+- As needed: Work status labels
+
+**Label Maintenance**
+- **Issue Creation**: Apply primary classification immediately
+- **Triage**: Add functional domain labels within 24-48 hours
+- **Planning**: Add work status labels before implementation begins
+- **Progress**: Update work status labels as issues move through workflow
+- **Completion**: Remove work status labels before closing
+
+**Quality Assurance**
+- Issues without functional domain labels should be rare
+- `design-needed` issues should have clear acceptance criteria before implementation
+- `blocked` issues should reference the blocking dependency
+
+#### **Common Label Combinations**
+
+**High-Value Development Features**
+```
+enhancement + system variable + jdbc-compatibility + low hanging fruit
+enhancement + output-formatting + performance
+enhancement + operations + design-needed
+```
+
+**Quality and Testing**
+```
+tech-debt + testing + low hanging fruit
+bug + concurrency + blocked
+enhancement + testing + postgresql
+```
+
+**Complex Features**
+```
+enhancement + operations + design-needed + performance
+enhancement + output-formatting + breaking-change
+enhancement + jdbc-compatibility + design-needed
+```
+
+This systematic labeling approach enables owner and AI agent development:
+- **Efficient Filtering**: Find issues by functional area or complexity
+- **Priority Assessment**: Identify high-value, implementable features for AI implementation
+- **Resource Planning**: Balance complex vs simple implementations across development sessions
+- **Progress Tracking**: Monitor implementation status across functional domains
+- **AI Context**: Provide structured context for AI agents to understand issue scope and requirements
 
 ### Creating Issues
 
