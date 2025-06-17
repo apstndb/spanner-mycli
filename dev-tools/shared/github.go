@@ -171,29 +171,28 @@ func ParseInput(input string) (*InputFormat, error) {
 		return &InputFormat{Type: "current"}, nil
 	}
 
-	// Check for explicit path formats
-	if strings.HasPrefix(input, "issues/") || strings.HasPrefix(input, "issue/") {
-		_, numberStr, found := strings.Cut(input, "/")
-		if !found {
-			return nil, fmt.Errorf("invalid issue format '%s': expected 'issues/NUMBER'", input)
+	// Check for explicit path formats using Cut
+	prefix, numberStr, found := strings.Cut(input, "/")
+	if found {
+		switch prefix {
+		case "issues", "issue":
+			number, err := strconv.Atoi(numberStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid issue number in '%s': %w", input, err)
+			}
+			return &InputFormat{Type: "issue", Number: number}, nil
+			
+		case "pull", "pr":
+			number, err := strconv.Atoi(numberStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid PR number in '%s': %w", input, err)
+			}
+			return &InputFormat{Type: "pr", Number: number}, nil
+			
+		default:
+			// Has "/" but unknown prefix - treat as invalid
+			return nil, fmt.Errorf("unknown format '%s': use 'issues/N', 'pull/N', 'pr/N', or plain number", input)
 		}
-		number, err := strconv.Atoi(numberStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid issue number in '%s': %w", input, err)
-		}
-		return &InputFormat{Type: "issue", Number: number}, nil
-	}
-
-	if strings.HasPrefix(input, "pull/") || strings.HasPrefix(input, "pr/") {
-		_, numberStr, found := strings.Cut(input, "/")
-		if !found {
-			return nil, fmt.Errorf("invalid PR format '%s': expected 'pull/NUMBER' or 'pr/NUMBER'", input)
-		}
-		number, err := strconv.Atoi(numberStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PR number in '%s': %w", input, err)
-		}
-		return &InputFormat{Type: "pr", Number: number}, nil
 	}
 
 	// Plain number - auto-detect
