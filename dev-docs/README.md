@@ -38,11 +38,14 @@ dev-docs/
 - Git best practices
 - Knowledge management through PR comments
 
+<<<<<<< HEAD
+=======
 ### [Coding Guidelines](coding-guidelines.md)
 - Go language standards and conventions
 - Project-specific coding rules
 - Current deviations and future improvements
 
+>>>>>>> origin/main
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
 
