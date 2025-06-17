@@ -18,7 +18,7 @@ Use the provided script for consistent worktree setup:
 
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
+bin/spanner-mycli-dev worktree setup issue-276-timeout-flag
 
 # Manual setup (for reference)
 phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude'
@@ -138,8 +138,64 @@ make fasttest              # Quick tests during development
 make clean                 # Clean artifacts when needed
 
 # Help documentation updates
-scripts/docs/update-help-output.sh    # Generate help output for README.md
+bin/spanner-mycli-dev docs update-help    # Generate help output for README.md
 ```
+
+## AI-Friendly Tool Development (Issue #301 Insights)
+
+### Key Design Principles Discovered
+
+**1. stdin/heredoc vs Temporary Files**
+AI assistants strongly prefer stdin input over temporary file creation:
+```bash
+# Preferred pattern (AI-friendly)
+echo "Multi-line content" | bin/gh-helper threads reply THREAD_ID
+
+# Avoid this pattern (requires file system operations)
+cat > /tmp/content.txt << EOF
+Content here
+EOF
+tool --file /tmp/content.txt
+rm /tmp/content.txt
+```
+
+**2. Self-Documenting Tool Design**
+Comprehensive `--help` output is critical for AI tool discovery and usage:
+- Include usage examples in help text
+- Document all input methods (stdin, flags, etc.)
+- Provide context about when to use each command
+
+**3. Module Organization Strategy**
+Unified Go module for development tools (`github.com/apstndb/spanner-mycli/dev-tools`) proved superior to separate modules:
+- Simplifies dependency management
+- Reduces build complexity
+- Enables easier cross-tool integration
+
+**4. Generic vs Project-Specific Separation**
+Clear separation between generic GitHub operations (`gh-helper`) and project-specific tools (`spanner-mycli-dev`) improves:
+- Code reusability across projects
+- Maintenance clarity  
+- AI assistant understanding of tool scope
+
+**5. Build System Integration**
+Makefile targets that wrap new tools maintain familiar workflows while leveraging modern tooling underneath.
+
+### Implementation Patterns
+
+**GraphQL Error Handling**
+When working with GitHub GraphQL API, avoid including optional fields that cause null responses:
+```go
+// CRITICAL: Do NOT include pullRequestReviewId - causes failures
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "$THREAD_ID"
+    body: "$REPLY_TEXT"
+  }) { ... }
+}
+```
+
+**State Management for Review Monitoring**
+Review state tracking in `~/.cache/spanner-mycli-reviews/` enables incremental monitoring without API rate limit issues.
 
 ## Related Documentation
 

@@ -47,15 +47,13 @@ make fasttest                 # Quick tests during development
 make run PROJECT=myproject INSTANCE=myinstance DATABASE=mydatabase
 go run . -p PROJECT -i INSTANCE -d DATABASE
 
-# Documentation updates
-scripts/docs/update-help-output.sh    # Update README.md help sections
-
-# Phantom worktree management (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
-
-# GitHub review replies (automated)
-scripts/dev/list-review-threads.sh 287         # Find threads needing replies
-scripts/dev/review-reply.sh THREAD_ID "reply"  # Reply to specific thread
+# Development tools (issue #301 - AI-friendly subcommands)
+make build-tools                               # Build development tools
+bin/gh-helper reviews check PR_NUMBER          # Check PR reviews with state tracking  
+bin/gh-helper threads list PR_NUMBER           # List unresolved review threads
+bin/gh-helper threads reply THREAD_ID          # Reply to review thread (supports stdin)
+bin/spanner-mycli-dev worktree setup NAME      # Setup phantom worktree
+bin/spanner-mycli-dev docs update-help         # Generate help output for README.md
 ```
 
 ## Core Architecture Overview
@@ -79,7 +77,7 @@ For detailed implementation patterns, see [dev-docs/patterns/system-variables.md
 ### Phantom Worktree Usage
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-123-feature  # Auto-fetches and bases on origin/main
+bin/spanner-mycli-dev worktree setup issue-123-feature  # Auto-fetches and bases on origin/main
 
 # Work in isolated environment
 phantom shell issue-123-feature --tmux-horizontal
@@ -106,9 +104,9 @@ This is a simplified guide. For detailed information, refer to:
 - **[query_plan.md](docs/query_plan.md)** - Query plan analysis features
 - **[system_variables.md](docs/system_variables.md)** - System variables reference
 
-### Automation Scripts (`scripts/`)
-- **[docs/update-help-output.sh](scripts/docs/update-help-output.sh)** - Update README help sections
-- **[dev/setup-phantom-worktree.sh](scripts/dev/setup-phantom-worktree.sh)** - Automated worktree setup
+### Development Tools (`bin/`)
+- **gh-helper** - Generic GitHub operations (reviews, threads)
+- **spanner-mycli-dev** - Project-specific tools (worktrees, docs)
 
 ## 🎯 Task-Specific Documentation Guide
 
@@ -120,7 +118,7 @@ This is a simplified guide. For detailed information, refer to:
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-3. **For review replies**: Use `scripts/dev/list-review-threads.sh` and `scripts/dev/review-reply.sh` - Automated thread replies
+3. **For review replies**: Use `bin/gh-helper threads list` and `bin/gh-helper threads reply` - Automated thread replies
 4. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 ### When encountering development problems:
@@ -129,11 +127,11 @@ This is a simplified guide. For detailed information, refer to:
 3. **For resource management**: [dev-docs/development-insights.md#resource-management-in-batch-processing](dev-docs/development-insights.md#resource-management-in-batch-processing)
 
 ### When setting up development environment:
-1. **Start here**: Use `scripts/dev/setup-phantom-worktree.sh` for worktree setup
+1. **Start here**: Use `bin/spanner-mycli-dev worktree setup` for worktree setup
 2. **For workflow details**: [dev-docs/development-insights.md#parallel-issue-development-with-phantom](dev-docs/development-insights.md#parallel-issue-development-with-phantom)
 
 ### When updating documentation:
-1. **README.md help updates**: Use `scripts/docs/update-help-output.sh`
+1. **README.md help updates**: Use `bin/spanner-mycli-dev docs update-help`
 2. **CLAUDE.md updates**: Follow the rules in this file (self-contained)
 3. **Other docs**: See [dev-docs/README.md](dev-docs/README.md) for structure guidance
 

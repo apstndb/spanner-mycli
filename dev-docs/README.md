@@ -71,7 +71,7 @@ dev-docs/
 
 ```bash
 # Generate help output files
-scripts/docs/update-help-output.sh
+bin/spanner-mycli-dev docs update-help
 
 # Files are generated in ./tmp/
 # - help_clean.txt: Content for README.md --help section (lines 97-135)

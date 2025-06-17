@@ -1,9 +1,15 @@
 build:
 	go build
 
+build-tools:
+	mkdir -p bin
+	cd cmd/gh-helper && go build -o ../../bin/gh-helper .
+	cd cmd/spanner-mycli-dev && go build -o ../../bin/spanner-mycli-dev .
+
 clean:
 	rm -f spanner-mycli
 	rm -rf dist/
+	rm -rf bin/
 	go clean -testcache
 
 run:
@@ -23,3 +29,53 @@ fasttest-verbose:
 
 lint:
 	golangci-lint run
+
+# Enhanced development targets (issue #301)
+.PHONY: test-quick check docs-update help-dev worktree-setup gh-review build-tools
+
+# Quick tests for development cycle
+test-quick:
+	go test -short ./...
+
+# Combined test and lint check (required before push)
+check: test lint
+
+# Update README.md help sections
+docs-update:
+	@bin/spanner-mycli-dev docs update-help
+
+# Show development help
+help-dev:
+	@echo "🛠️  Development Commands:"
+	@echo "  make build          - Build the application"
+	@echo "  make build-tools    - Build gh-helper and spanner-mycli-dev tools"
+	@echo "  make test           - Run full test suite (required before push)"
+	@echo "  make test-quick     - Run quick tests (go test -short)"
+	@echo "  make fasttest       - Run tests excluding slow ones"
+	@echo "  make lint           - Run linter (required before push)"
+	@echo "  make check          - Run test && lint (required before push)"
+	@echo "  make clean          - Clean build artifacts and test cache"
+	@echo "  make run            - Run with PROJECT/INSTANCE/DATABASE env vars"
+	@echo "  make docs-update    - Generate help output for README.md"
+	@echo "  make worktree-setup - Setup phantom worktree (requires WORKTREE_NAME)"
+	@echo "  make gh-review      - Check PR reviews (requires PR_NUMBER)"
+	@echo ""
+	@echo "🔧 New Development Tools (issue #301):"
+	@echo "  bin/gh-helper       - Generic GitHub operations (reviews, threads)"
+	@echo "  bin/spanner-mycli-dev - Project-specific tools (worktrees, docs)"
+
+# Phantom worktree setup (requires WORKTREE_NAME)
+worktree-setup:
+	@if [ -z "$(WORKTREE_NAME)" ]; then \
+		echo "❌ WORKTREE_NAME required. Usage: make worktree-setup WORKTREE_NAME=issue-123-feature"; \
+		exit 1; \
+	fi
+	@bin/spanner-mycli-dev worktree setup $(WORKTREE_NAME)
+
+# GitHub review monitoring (requires PR_NUMBER)
+gh-review:
+	@if [ -z "$(PR_NUMBER)" ]; then \
+		echo "❌ PR_NUMBER required. Usage: make gh-review PR_NUMBER=123"; \
+		exit 1; \
+	fi
+	@bin/gh-helper reviews check $(PR_NUMBER)

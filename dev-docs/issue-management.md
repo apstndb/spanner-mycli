@@ -416,13 +416,13 @@ EOF
 
 ```bash
 # List unresolved review threads that need replies
-scripts/dev/list-review-threads.sh 287
+bin/gh-helper threads list 287
 
 # Reply to a specific thread
-scripts/dev/review-reply.sh PRRT_kwDONC6gMM5SU-GH "Thank you for the feedback!"
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback!"
 
 # Reply with mention for AI reviews
-scripts/dev/review-reply.sh PRRT_kwDONC6gMM5SVHTH "Fixed as suggested!" gemini-code-assist
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SVHTH --message "Fixed as suggested!" --mention gemini-code-assist
 ```
 
 **Method 2: Manual GraphQL Mutation (For understanding the process)**
@@ -575,7 +575,7 @@ gh api graphql -F query=@/tmp/reply_mention.graphql
 **Quick Helper Script Template:**
 ```bash
 #!/bin/bash
-# scripts/dev/review-reply-helper.sh
+# bin/gh-helper threads reply
 PR_NUMBER=$1
 THREAD_ID=$2
 REVIEW_ID=$3
@@ -690,7 +690,7 @@ gh pr comment <PR-number> --body "/gemini review"
 ### Phantom Worktree Management
 
 #### Worktree Lifecycle
-- **Create**: Use `scripts/dev/setup-phantom-worktree.sh issue-123-feature` (automatically fetches and bases on `origin/main`)
+- **Create**: Use `bin/spanner-mycli-dev worktree setup issue-123-feature` (automatically fetches and bases on `origin/main`)
 - **Work**: Develop in isolated environment with `phantom shell`
 - **Delete**: Use `phantom delete worktree-name` when no longer needed
 

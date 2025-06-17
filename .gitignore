@@ -8,5 +8,8 @@ dist/
 tmp/
 .*.cnf
 
+# Development tools (built from cmd/)
+bin/
+
 # Phantom worktree notes
 .notes.md
