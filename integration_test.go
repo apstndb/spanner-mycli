@@ -1678,3 +1678,171 @@ func TestPartitionedDML(t *testing.T) {
 		t.Errorf("PARTITIONED UPDATE was executed, but rows were not updated")
 	}
 }
+
+func TestShowOperation(t *testing.T) {
+	ctx := context.Background()
+	emulator, session, teardown := initialize(t, nil, nil)
+	defer teardown()
+
+	// Execute a DDL operation to create an LRO
+	ddlStatement := "CREATE TABLE TestShowOperationTable (id INT64, name STRING(100)) PRIMARY KEY (id)"
+	stmt, err := BuildStatement(ddlStatement)
+	if err != nil {
+		t.Fatalf("invalid DDL statement: %v", err)
+	}
+
+	if _, err := stmt.Execute(ctx, session); err != nil {
+		t.Fatalf("DDL execution failed: %v", err)
+	}
+
+	// Get schema update operations to find our operation ID
+	showOpsStmt, err := BuildStatement("SHOW SCHEMA UPDATE OPERATIONS")
+	if err != nil {
+		t.Fatalf("invalid SHOW SCHEMA UPDATE OPERATIONS statement: %v", err)
+	}
+
+	result, err := showOpsStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW SCHEMA UPDATE OPERATIONS execution failed: %v", err)
+	}
+
+	// Verify we have at least one operation
+	if result.AffectedRows == 0 {
+		t.Fatal("Expected at least one schema update operation, but got none")
+	}
+
+	// Extract operation ID by matching the DDL statement
+	var operationID string
+	var foundOp bool
+	for _, row := range result.Rows {
+		// Assuming DDL statement is in the second column (index 1) and operation ID in the first (index 0)
+		if len(row) > 1 && strings.Contains(row[1], "CREATE TABLE TestShowOperationTable") {
+			if len(row[0]) > 0 {
+				operationID = row[0]
+				foundOp = true
+				break
+			}
+		}
+	}
+
+	if !foundOp {
+		t.Fatalf("Failed to find operation ID for DDL: %s in SHOW SCHEMA UPDATE OPERATIONS result", ddlStatement)
+	}
+
+	// Test SHOW OPERATION with the extracted operation ID
+	showOpStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s'", operationID))
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION statement: %v", err)
+	}
+
+	opResult, err := showOpStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW OPERATION execution failed: %v", err)
+	}
+
+	// Verify the result has the expected structure
+	expectedHeaders := []string{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"}
+	actualHeaders := renderTableHeader(opResult.TableHeader, false)
+	if len(actualHeaders) != len(expectedHeaders) {
+		t.Fatalf("Expected %d table headers, got %d", len(expectedHeaders), len(actualHeaders))
+	}
+
+	for i, expected := range expectedHeaders {
+		if actualHeaders[i] != expected {
+			t.Errorf("Expected header[%d] to be %s, got %s", i, expected, actualHeaders[i])
+		}
+	}
+
+	// Verify we have at least one row (our CREATE TABLE statement)
+	if len(opResult.Rows) == 0 {
+		t.Fatal("Expected at least one row in SHOW OPERATION result")
+	}
+
+	// Verify the operation ID matches what we requested
+	if len(opResult.Rows[0]) > 0 && opResult.Rows[0][0] != operationID {
+		t.Errorf("Expected operation ID %s, got %s", operationID, opResult.Rows[0][0])
+	}
+
+	// Verify the statement contains our DDL
+	if len(opResult.Rows[0]) > 1 {
+		statement := opResult.Rows[0][1]
+		if !strings.Contains(statement, "CREATE TABLE TestShowOperationTable") {
+			t.Errorf("Expected statement to contain CREATE TABLE TestShowOperationTable, got: %s", statement)
+		}
+	}
+
+	// Verify the operation is done (DDL should complete quickly in emulator)
+	if len(opResult.Rows[0]) > 2 {
+		done := opResult.Rows[0][2]
+		if done != "true" {
+			t.Logf("Note: Operation is not done yet: %s (this may be expected for slow operations)", done)
+		}
+	}
+
+	// Test SHOW OPERATION with full operation name format
+	fullOpName := fmt.Sprintf("projects/%s/instances/%s/databases/%s/operations/%s", 
+		session.systemVariables.Project, 
+		session.systemVariables.Instance, 
+		session.systemVariables.Database, 
+		operationID)
+	
+	showOpFullStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s'", fullOpName))
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION statement with full name: %v", err)
+	}
+
+	fullOpResult, err := showOpFullStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW OPERATION execution with full name failed: %v", err)
+	}
+
+	// Results should be identical whether using short ID or full name
+	if len(fullOpResult.Rows) != len(opResult.Rows) {
+		t.Errorf("Expected same number of rows for short ID (%d) and full name (%d)", 
+			len(opResult.Rows), len(fullOpResult.Rows))
+	}
+
+	// Test error case: non-existent operation
+	nonExistentStmt, err := BuildStatement("SHOW OPERATION 'non_existent_operation_id'")
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION statement for non-existent ID: %v", err)
+	}
+
+	_, err = nonExistentStmt.Execute(ctx, session)
+	if err == nil {
+		t.Error("Expected error for non-existent operation ID, but got none")
+	}
+
+	// Test SYNC mode error (not yet implemented)
+	syncStmt, err := BuildStatement("SHOW OPERATION 'auto_op_123456789' SYNC")
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION SYNC statement: %v", err)
+	}
+
+	_, err = syncStmt.Execute(ctx, session)
+	if err == nil {
+		t.Error("Expected error for SYNC mode (not implemented), but got none")
+	}
+	if !strings.Contains(err.Error(), "SYNC mode is not yet implemented") {
+		t.Errorf("Expected SYNC mode error message, got: %v", err)
+	}
+
+	// Test explicit ASYNC mode (should work same as default)
+	asyncStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s' ASYNC", operationID))
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION ASYNC statement: %v", err)
+	}
+
+	asyncResult, err := asyncStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW OPERATION ASYNC execution failed: %v", err)
+	}
+
+	// Results should be identical for default and explicit ASYNC mode
+	if len(asyncResult.Rows) != len(opResult.Rows) {
+		t.Errorf("Expected same number of rows for default (%d) and ASYNC mode (%d)", 
+			len(opResult.Rows), len(asyncResult.Rows))
+	}
+
+	_ = emulator // Ensure emulator is used to avoid unused variable
+}
