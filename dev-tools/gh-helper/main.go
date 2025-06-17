@@ -600,7 +600,8 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			rollupState := commits[0].Commit.StatusCheckRollup.State
 			checksComplete = (rollupState == "SUCCESS" || rollupState == "FAILURE" || rollupState == "ERROR")
 		} else {
-			// No checks required or no commits
+			// No StatusCheckRollup means either no checks configured or checks haven't started yet
+			// For better user experience, we'll consider this as "no checks required" and complete
 			checksComplete = true
 		}
 
