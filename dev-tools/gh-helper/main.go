@@ -608,7 +608,19 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			fmt.Printf("[%s] Monitoring started.\n", time.Now().Format("15:04:05"))
 			fmt.Printf("   Reviews: %d found, Ready: %v\n", len(reviews), reviewsReady)
 			if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
-				fmt.Printf("   Checks: %s, Complete: %v\n", commits[0].Commit.StatusCheckRollup.State, checksComplete)
+				rollupState := commits[0].Commit.StatusCheckRollup.State
+				statusMsg := rollupState
+				switch rollupState {
+				case "SUCCESS":
+					statusMsg = "All passed"
+				case "FAILURE": 
+					statusMsg = "Some failed"
+				case "ERROR":
+					statusMsg = "Error occurred"
+				case "PENDING":
+					statusMsg = "Still running"
+				}
+				fmt.Printf("   Checks: %s, Complete: %v\n", statusMsg, checksComplete)
 			} else {
 				fmt.Printf("   Checks: None required, Complete: %v\n", checksComplete)
 			}
@@ -643,11 +655,23 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 				fmt.Printf("\n💡 To list unresolved threads: bin/gh-helper threads list %s\n", prNumber)
 			}
 			if checksComplete {
-				rollupState := "UNKNOWN"
 				if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
-					rollupState = commits[0].Commit.StatusCheckRollup.State
+					rollupState := commits[0].Commit.StatusCheckRollup.State
+					switch rollupState {
+					case "SUCCESS":
+						fmt.Println("✅ Checks: All passed")
+					case "FAILURE":
+						fmt.Println("❌ Checks: Some failed")
+					case "ERROR":
+						fmt.Println("🚨 Checks: Error occurred")
+					case "PENDING":
+						fmt.Println("⏳ Checks: Still running")
+					default:
+						fmt.Printf("✅ Checks: Completed (%s)\n", rollupState)
+					}
+				} else {
+					fmt.Println("✅ Checks: No checks required")
 				}
-				fmt.Printf("✅ Checks: All completed (%s)\n", rollupState)
 			}
 			
 			return nil
