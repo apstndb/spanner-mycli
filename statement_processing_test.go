@@ -541,19 +541,34 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowSchemaUpdateOperations{},
 		},
 		{
-			desc:  "SHOW OPERATION statement with operation ID",
+			desc:  "SHOW OPERATION statement with operation ID (default ASYNC)",
 			input: "SHOW OPERATION auto_op_123456789",
-			want:  &ShowOperationStatement{OperationId: "auto_op_123456789"},
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
 		},
 		{
 			desc:  "SHOW OPERATION statement with quoted operation ID",
 			input: "SHOW OPERATION 'auto_op_123456789'",
-			want:  &ShowOperationStatement{OperationId: "auto_op_123456789"},
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
 		},
 		{
 			desc:  "SHOW OPERATION statement with full operation name",
 			input: "SHOW OPERATION 'projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789'",
-			want:  &ShowOperationStatement{OperationId: "projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789"},
+			want:  &ShowOperationStatement{OperationId: "projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with explicit ASYNC mode",
+			input: "SHOW OPERATION 'auto_op_123456789' ASYNC",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with SYNC mode",
+			input: "SHOW OPERATION 'auto_op_123456789' SYNC",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "SYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with case insensitive mode",
+			input: "SHOW OPERATION 'auto_op_123456789' sync",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "SYNC"},
 		},
 		{
 			desc:  "EXPLAIN SELECT statement",

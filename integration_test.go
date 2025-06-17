@@ -1809,5 +1809,36 @@ func TestShowOperation(t *testing.T) {
 		t.Error("Expected error for non-existent operation ID, but got none")
 	}
 
+	// Test SYNC mode error (not yet implemented)
+	syncStmt, err := BuildStatement("SHOW OPERATION 'auto_op_123456789' SYNC")
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION SYNC statement: %v", err)
+	}
+
+	_, err = syncStmt.Execute(ctx, session)
+	if err == nil {
+		t.Error("Expected error for SYNC mode (not implemented), but got none")
+	}
+	if !strings.Contains(err.Error(), "SYNC mode is not yet implemented") {
+		t.Errorf("Expected SYNC mode error message, got: %v", err)
+	}
+
+	// Test explicit ASYNC mode (should work same as default)
+	asyncStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s' ASYNC", operationID))
+	if err != nil {
+		t.Fatalf("invalid SHOW OPERATION ASYNC statement: %v", err)
+	}
+
+	asyncResult, err := asyncStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("SHOW OPERATION ASYNC execution failed: %v", err)
+	}
+
+	// Results should be identical for default and explicit ASYNC mode
+	if len(asyncResult.Rows) != len(opResult.Rows) {
+		t.Errorf("Expected same number of rows for default (%d) and ASYNC mode (%d)", 
+			len(opResult.Rows), len(asyncResult.Rows))
+	}
+
 	_ = emulator // Ensure emulator is used to avoid unused variable
 }

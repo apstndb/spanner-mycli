@@ -257,9 +257,15 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 
 type ShowOperationStatement struct {
 	OperationId string
+	Mode        string // "ASYNC" or "SYNC"
 }
 
 func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Check mode support
+	if s.Mode == "SYNC" {
+		return nil, fmt.Errorf("SYNC mode is not yet implemented. Use ASYNC mode (default) for current status check")
+	}
+	
 	operationName := s.OperationId
 	
 	// If the operation ID doesn't contain a full path, construct the full operation name

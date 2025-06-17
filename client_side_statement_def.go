@@ -199,15 +199,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
-				Usage:  `Show specific operation`,
-				Syntax: `SHOW OPERATION <operation-id-or-name>`,
-				Note:   `Attach to and monitor a specific Long Running Operation by its operation ID or full operation name.`,
+				Usage:  `Show specific operation (async)`,
+				Syntax: `SHOW OPERATION <operation-id-or-name> [ASYNC|SYNC]`,
+				Note:   `Attach to and monitor a specific Long Running Operation by its operation ID or full operation name. ASYNC (default) returns current status, SYNC provides real-time monitoring (planned).`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(.+?)(?:\s+(SYNC|ASYNC))?$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			operationId := unquoteString(matched[1])
-			return &ShowOperationStatement{OperationId: operationId}, nil
+			mode := strings.ToUpper(matched[2])
+			if mode == "" {
+				mode = "ASYNC" // Default to ASYNC mode
+			}
+			return &ShowOperationStatement{OperationId: operationId, Mode: mode}, nil
 		},
 	},
 	// Split Points
