@@ -30,7 +30,7 @@ fasttest:
 fasttest-verbose:
 	go test -short -v ./...
 
-# Test both main project and dev-tools
+# Test both main project and dev-tools (comprehensive testing)
 test-all:
 	go test ./...
 	cd dev-tools && go test ./...
@@ -38,7 +38,7 @@ test-all:
 lint:
 	golangci-lint run
 
-# Lint both main project and dev-tools
+# Lint both main project and dev-tools (comprehensive linting)
 lint-all:
 	golangci-lint run
 	cd dev-tools && golangci-lint run
@@ -55,7 +55,7 @@ test-quick:
 # Combined test and lint check (required before push)
 check: test lint
 
-# Combined test and lint check for both main project and dev-tools
+# Combined test and lint check for both main project and dev-tools (full validation)
 check-all: test-all lint-all
 
 # Update README.md help sections
