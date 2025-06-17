@@ -252,7 +252,9 @@ query {
 			"createdAt": latestReview.CreatedAt,
 		}
 		if data, err := json.Marshal(stateData); err == nil {
-			if err := os.WriteFile(lastReviewFile, data, 0644); err == nil {
+			if err := os.WriteFile(lastReviewFile, data, 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to write state file %s: %v\n", lastReviewFile, err)
+			} else {
 				fmt.Printf("\n💾 Updated state: Latest review %s at %s\n", latestReview.ID, latestReview.CreatedAt)
 			}
 		}
