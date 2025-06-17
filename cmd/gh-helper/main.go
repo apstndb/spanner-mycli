@@ -75,6 +75,9 @@ This command polls every 30 seconds and waits until BOTH conditions are met:
 This is useful for waiting until both Gemini review feedback AND CI checks
 are complete before proceeding with next steps.
 
+Use --request-review to automatically request Gemini review before waiting.
+This is useful for post-push scenarios where you need to trigger review.
+
 AI-FRIENDLY: Designed for autonomous workflows that need both review and CI feedback.
 Default timeout is 15 minutes, configurable with --timeout flag.`,
 	Args: cobra.ExactArgs(1),
@@ -138,11 +141,12 @@ The reply text can be provided via --message flag or stdin.`,
 }
 
 var (
-	owner       string
-	repo        string
-	message     string
-	mentionUser string
-	timeout     int
+	owner         string
+	repo          string
+	message       string
+	mentionUser   string
+	timeout       int
+	requestReview bool
 )
 
 func init() {
@@ -154,6 +158,7 @@ func init() {
 
 	waitReviewsCmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
 	waitAllCmd.Flags().IntVar(&timeout, "timeout", 15, "Timeout in minutes (default: 15)")
+	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 
 	reviewsCmd.AddCommand(checkReviewsCmd, waitReviewsCmd, waitAllCmd)
 	threadsCmd.AddCommand(listThreadsCmd, replyThreadsCmd, showThreadCmd, replyWithCommitCmd)
@@ -507,6 +512,17 @@ query {
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
+	
+	// Request Gemini review if flag is set
+	if requestReview {
+		fmt.Printf("📝 Requesting Gemini review for PR #%s...\n", prNumber)
+		ghCmd := exec.Command("gh", "pr", "comment", prNumber, "--body", "/gemini review")
+		if err := ghCmd.Run(); err != nil {
+			return fmt.Errorf("failed to request Gemini review: %w", err)
+		}
+		fmt.Println("✅ Gemini review requested")
+	}
+	
 	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %d minutes)...\n", prNumber, timeout)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
