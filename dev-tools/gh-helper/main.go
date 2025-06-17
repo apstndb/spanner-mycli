@@ -621,6 +621,26 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			
 			if reviewsReady {
 				fmt.Println("✅ Reviews: New reviews available")
+				
+				// Output review details to reduce subsequent API calls
+				fmt.Println("\n📋 Recent Reviews:")
+				for i, review := range reviews {
+					if i >= 5 { // Limit to 5 most recent reviews
+						break
+					}
+					fmt.Printf("   • %s by %s (%s) - %s\n", 
+						review.ID, 
+						review.Author.Login, 
+						review.State,
+						review.CreatedAt)
+					if review.Body != "" && len(review.Body) > 100 {
+						fmt.Printf("     Preview: %s...\n", review.Body[:100])
+					} else if review.Body != "" {
+						fmt.Printf("     Preview: %s\n", review.Body)
+					}
+				}
+				
+				fmt.Printf("\n💡 To list unresolved threads: bin/gh-helper threads list %s\n", prNumber)
 			}
 			if checksComplete {
 				rollupState := "UNKNOWN"
