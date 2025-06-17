@@ -418,11 +418,54 @@ EOF
 # List unresolved review threads that need replies
 bin/gh-helper threads list 287
 
-# Reply to a specific thread
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback!"
+# Show detailed thread context before replying
+bin/gh-helper threads show PRRT_kwDONC6gMM5SU-GH
+
+# Reply to a specific thread (code changes made)
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
+
+# Reply to a specific thread (no code changes needed)
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! This is working as intended."
 
 # Reply with mention for AI reviews
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SVHTH --message "Fixed as suggested!" --mention gemini-code-assist
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SVHTH --message "Fixed as suggested in commit def5678!" --mention gemini-code-assist
+
+# Multi-line reply with stdin (AI-friendly)
+bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
+Thank you for the detailed review!
+
+I've addressed the issue in commit abc1234:
+- Improved error handling as suggested
+- Added proper validation
+- Updated tests to cover edge cases
+
+The implementation now handles all the scenarios you mentioned.
+EOF
+```
+
+### Review Response Best Practices
+
+**For code changes:**
+1. Make the necessary fixes
+2. Push the commit
+3. Reply with commit hash reference: `Fixed in commit abc1234`
+
+**For explanations without code changes:**
+1. Reply with explanation
+2. No commit hash needed
+
+**Template for code fix responses:**
+```
+Thank you for the feedback! Fixed in commit [hash].
+
+[Brief explanation of what was changed]
+```
+
+**Template for explanation responses:**
+```
+Thank you for the feedback! 
+
+[Explanation of why current implementation is correct or why change isn't needed]
 ```
 
 **Method 2: Manual GraphQL Mutation (For understanding the process)**
