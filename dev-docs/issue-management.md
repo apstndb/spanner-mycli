@@ -677,9 +677,15 @@ gh pr comment <PR-number> --body "/gemini review"
 ### Important Git Practices
 
 - **CRITICAL**: Never push directly to main branch - always use Pull Requests
+- **CRITICAL**: Never commit directly to main branch - always use feature branches
 - Always use `git add <specific-files>` instead of `git add .`
 - Check `git status` before committing to verify only intended files are staged
 - Use `git show --name-only` to review committed files
+
+#### Branch Workflow
+- **Feature Development**: Always create branches from `origin/main` using phantom worktrees
+- **Main Branch**: Reserved for merged PR content only - no direct commits
+- **No Hotfixes**: spanner-mycli is not a service - all changes go through feature branch → PR workflow
 
 ### Phantom Worktree Management
 
