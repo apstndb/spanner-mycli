@@ -33,26 +33,8 @@ type BatchThreadsResponse struct {
 	TotalCount  int          `json:"totalCount"`
 }
 
-// ListReviewThreads fetches all review threads for a PR with advanced filtering and batch optimization
-//
-// BATCH OPTIMIZATION STRATEGY:
-// This implementation demonstrates GraphQL's strength for batch operations:
-//
-// 1. Single Query for Complete Data:
-//    - Fetches ALL thread metadata, comments, and viewer info in one request
-//    - Eliminates need for separate API calls per thread (N+1 query problem)
-//    - Includes viewer info to avoid separate getCurrentUser() call
-//
-// 2. Smart Filtering Options:
-//    - needsReplyOnly: filters threads where current user hasn't replied
-//    - unresolvedOnly: filters only unresolved threads
-//    - Server-side pagination with configurable limits
-//
-// 3. Performance Benefits vs Individual Calls:
-//    - Reduces API calls from O(n) to O(1) where n = number of threads
-//    - HTTP/2 connection reuse for single request
-//    - Compressed response payload vs multiple small responses
-//    - Token validation overhead amortized across batch operation
+// ListReviewThreads fetches all review threads for a PR with filtering and batch optimization  
+// Eliminates N+1 query problem with single GraphQL request
 func (c *GitHubClient) ListReviewThreads(prNumber string, needsReplyOnly, unresolvedOnly bool, limit int) (*BatchThreadsResponse, error) {
 	prNumberInt, err := strconv.Atoi(prNumber)
 	if err != nil {

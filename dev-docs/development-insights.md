@@ -340,6 +340,20 @@ mutation {
 **State Management for Review Monitoring**
 Review state tracking in `~/.cache/spanner-mycli-reviews/` enables incremental monitoring without API rate limit issues.
 
+**Critical Review Analysis Pattern**
+
+**Key principle**: Different review mechanisms capture different types of feedback:
+- **Inline threads**: Specific implementation details, syntax issues
+- **General review comments**: Architecture concerns, design patterns, critical system behavior
+
+**AI Assistant workflow for comprehensive feedback analysis**:
+1. Use `bin/gh-helper reviews analyze <PR>` for complete review analysis (not just threads)
+2. Look for severity indicators: "critical", "high-severity", "panic", "error" in review bodies
+3. Don't assume all important feedback appears in threaded comments
+4. Always analyze review summaries after responding to individual threads
+
+**Technical implementation**: Unified GraphQL query (`shared/unified_review.go`) fetches both review bodies and threads simultaneously, with automatic severity detection and actionable item extraction.
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables

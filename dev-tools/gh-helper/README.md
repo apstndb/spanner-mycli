@@ -9,7 +9,7 @@ Generic GitHub operations tool optimized for AI assistants.
 gh-helper reviews wait <PR> --request-review
 
 # Handle review feedback
-gh-helper threads list <PR>
+gh-helper reviews fetch <PR> --list-threads
 gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 ```
 
@@ -53,8 +53,14 @@ reviews check <PR>                    # One-time check with state tracking
 **Purpose**: Handle review thread conversations
 
 ```bash
-# List unresolved threads
-threads list <PR>
+# List thread IDs needing replies (most efficient)
+reviews fetch <PR> --list-threads
+
+# Get full thread data needing replies (JSON)
+reviews fetch <PR> --threads-only
+
+# Filter all data to only threads needing replies
+reviews fetch <PR> --needs-reply-only
 
 # Show detailed thread context
 threads show <THREAD_ID>
@@ -287,7 +293,7 @@ gh-helper is called by spanner-mycli-dev for:
 gh-helper reviews wait 306 --request-review
 
 # 2. If there are review threads, handle them
-gh-helper threads list 306
+gh-helper reviews fetch 306 --list-threads
 
 # 3. Show detailed context for a specific thread
 gh-helper threads show PRRT_kwDONC6gMM5SU-GH
@@ -323,9 +329,62 @@ EOF
 
 | Old Script | New Command |
 |------------|-------------|
-| `scripts/dev/list-review-threads.sh` | `gh-helper threads list` |
+| `scripts/dev/list-review-threads.sh` | `gh-helper reviews fetch <PR> --list-threads` |
 | `scripts/dev/review-reply.sh` | `gh-helper threads reply` |
 | Custom review waiting scripts | `gh-helper reviews wait` |
+
+## JSON Output and Programmatic Usage
+
+### JSON Output Modes
+
+All commands support `--json` for structured output:
+
+```bash
+# Full review and thread data
+gh-helper reviews fetch 306 --json
+
+# Analysis with actionable items and severity detection
+gh-helper reviews analyze 306 --json
+
+# Thread-focused outputs
+gh-helper reviews fetch 306 --list-threads        # Thread IDs only (one per line)
+gh-helper reviews fetch 306 --threads-only        # Threads needing replies (JSON array)
+```
+
+### JSON Output Structure
+
+All JSON outputs are derived from GitHub's GraphQL API with additional processing for actionable insights.
+
+**analyze command** - Comprehensive analysis combining reviews and threads:
+- **Source**: GraphQL query fetching `pullRequest { reviews { nodes { id, author, body, state } } }` and review threads
+- **Processing**: Severity detection, keyword extraction, actionable item identification
+- **Output structure**:
+  - `pr`: Basic PR metadata from GitHub GraphQL
+  - `currentUser`: Current authenticated user from GitHub API
+  - `summary`: Computed statistics (actionable counts, severity distribution, thread states)
+  - `actionableItems`: Extracted from review bodies and comments using severity/keyword analysis
+  - `threads`: Full thread data with `needsReply` and `isResolved` computed from comment patterns
+  - `reviews`: Raw review data with computed severity and action items
+
+**fetch command modes**:
+- `--json`: Complete unified data from single GraphQL query (reviews + threads + PR metadata)
+- `--threads-only`: Filtered subset showing only threads where `needsReply=true` and `isResolved=false`
+- `--list-threads`: Plain text IDs of threads needing replies (one per line, for shell processing)
+
+### Programmatic Usage
+
+```bash
+# Get thread IDs for automated replies
+for thread_id in $(gh-helper reviews fetch 306 --list-threads 2>/dev/null); do
+  echo "Processing thread: $thread_id"
+done
+
+# Check for critical issues
+critical_count=$(gh-helper reviews analyze 306 --json | jq '.summary.critical')
+if [ "$critical_count" -gt 0 ]; then
+  echo "⚠️ Critical issues found: $critical_count"
+fi
+```
 
 ## Configuration
 

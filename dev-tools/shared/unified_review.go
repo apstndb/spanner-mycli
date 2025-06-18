@@ -87,6 +87,7 @@ type UnifiedReviewOptions struct {
 	ReviewAfterCursor    string // Pagination cursor for reviews (for next page)
 	ReviewBeforeCursor   string // Pagination cursor for reviews (for previous page)
 	ThreadAfterCursor    string // Pagination cursor for threads
+	NeedsReplyOnly       bool   // Filter to only unresolved threads (GraphQL optimization)
 }
 
 // DefaultUnifiedReviewOptions returns sensible defaults
@@ -100,21 +101,9 @@ func DefaultUnifiedReviewOptions() UnifiedReviewOptions {
 }
 
 // GetUnifiedReviewData fetches all review data in a single optimized GraphQL query
-//
-// DESIGN RATIONALE: Unified Fetching Strategy with GraphQL Directives
-// This approach addresses the lesson learned from PR #306 where we missed critical
-// review feedback because we fetched reviews and threads separately. By combining:
 // 
-// 1. Single GraphQL query fetches everything: reviews, review comments, threads
-// 2. Uses GraphQL @include directive for conditional field fetching
-// 3. Includes viewer info to avoid separate getCurrentUser() call
-// 4. Analyzes review bodies for severity and action items
-// 5. Provides unified view preventing oversight of important feedback
-//
-// The directive-based approach allows flexible data fetching:
-// - Lightweight queries when only basic review info needed
-// - Comprehensive queries when full analysis required
-// - Reduces bandwidth and processing for simple checks
+// CRITICAL LESSON: Unified fetching prevents missing feedback (review bodies contain architecture insights)
+// Uses GraphQL @include directives for flexible data fetching and parameterized queries for safety
 func (c *GitHubClient) GetUnifiedReviewData(prNumber string, opts UnifiedReviewOptions) (*UnifiedReviewData, error) {
 	prNumberInt, err := strconv.Atoi(prNumber)
 	if err != nil {
@@ -571,6 +560,10 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 	// Process threads with reply status
 	var threads []ThreadData
 	for _, thread := range pr.ReviewThreads.Nodes {
+		// Apply NeedsReplyOnly filter if requested
+		if opts.NeedsReplyOnly && thread.IsResolved {
+			continue  // Skip resolved threads when only needs-reply is requested
+		}
 		var comments []ThreadComment
 		needsReply := !thread.IsResolved
 		lastReplier := ""
@@ -590,6 +583,13 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 			lastReplier = comment.Author.Login
 		}
 
+		actualNeedsReply := needsReply && !thread.IsResolved
+		
+		// Apply additional NeedsReplyOnly filter at the thread level
+		if opts.NeedsReplyOnly && !actualNeedsReply {
+			continue  // Skip threads that don't need replies
+		}
+
 		threads = append(threads, ThreadData{
 			ID:          thread.ID,
 			Path:        thread.Path,
@@ -597,7 +597,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 			IsResolved:  thread.IsResolved,
 			IsOutdated:  thread.IsOutdated,
 			Comments:    comments,
-			NeedsReply:  needsReply && !thread.IsResolved,
+			NeedsReply:  actualNeedsReply,
 			LastReplier: lastReplier,
 		})
 	}

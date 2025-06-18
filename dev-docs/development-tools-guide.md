@@ -45,8 +45,10 @@ gh-helper reviews wait 306 --exclude-reviews   # Checks only
 # Review monitoring with automatic detection
 reviews wait <PR> [--request-review] [--exclude-checks|--exclude-reviews]
 
-# Thread management with stdin support
-threads list <PR>
+# Thread management with built-in filtering
+reviews fetch <PR> --list-threads        # List thread IDs needing replies (most efficient)
+reviews fetch <PR> --threads-only        # JSON output of threads needing replies
+reviews fetch <PR> --needs-reply-only    # Include only unresolved threads in full data
 threads show <THREAD_ID>
 threads reply <THREAD_ID> [--message "text" | via stdin]
 threads reply-commit <THREAD_ID> <COMMIT_HASH>
@@ -80,44 +82,29 @@ review gemini <PR> [--force-request] [--wait-checks]  # Auto-detection
 
 ## Performance Data and Timeouts
 
-Based on real usage data:
+Data-driven timeout optimization (detailed analysis in `dev-docs/lessons-learned/shell-to-go-migration.md:110-120`):
 
-| Operation | Typical Time | Default Timeout | Rationale |
-|-----------|-------------|----------------|-----------|
-| Gemini Review | 1-3 minutes | 5 minutes | 95th percentile coverage |
-| CI Checks | 2-5 minutes | 5 minutes | Includes build + test |
-| Combined | 3-6 minutes | 5 minutes | Parallel execution |
+| Operation | 95th Percentile | Default Timeout |
+|-----------|----------------|-----------------|
+| Gemini Review | 4 minutes | 5 minutes |
+| CI Checks | 6 minutes | 5 minutes |
+| Combined Workflow | 6 minutes | 5 minutes |
 
-**Historical Context**: Original 15-minute timeout was overly conservative. Real-world data shows 5 minutes covers 95% of cases while providing faster feedback for failures.
+## Key Features
 
-## Migration from Shell Scripts
+### Unified Review Analysis 
 
-### What Was Replaced
-
-| Old Script | New Command | Improvements |
-|------------|-------------|-------------|
-| `scripts/dev/setup-phantom-worktree.sh` | `spanner-mycli-dev worktree setup` | Structured flags, better error handling |
-| `scripts/dev/list-review-threads.sh` | `gh-helper threads list` | JSON output, filtering |
-| `scripts/dev/review-reply.sh` | `gh-helper threads reply` | stdin support, mentions |
-| `scripts/docs/update-help-output.sh` | `spanner-mycli-dev docs update-help` | Integrated workflow |
-
-### Migration Commands
+**Critical advancement**: Single GraphQL query fetches reviews + threads to prevent missing feedback (review bodies often contain architecture concerns not found in inline threads).
 
 ```bash
-# OLD → NEW equivalents
-scripts/dev/setup-phantom-worktree.sh issue-123 \
-  → spanner-mycli-dev worktree setup issue-123
-
-scripts/dev/list-review-threads.sh 306 \
-  → gh-helper threads list 306
-
-scripts/dev/review-reply.sh THREAD_ID "message" \
-  → gh-helper threads reply THREAD_ID --message "message"
-  → echo "message" | gh-helper threads reply THREAD_ID
-
-scripts/docs/update-help-output.sh \
-  → spanner-mycli-dev docs update-help
+# Comprehensive analysis in one command
+gh-helper reviews analyze 306    # Shows all actionable items with severity
 ```
+
+### GitHub API Optimization
+
+**88% reduction in API calls**: From 17 individual `gh` commands to 2 GraphQL queries.
+Technical details: `dev-docs/lessons-learned/shell-to-go-migration.md#github-api-optimization-strategy`
 
 ## Integration Patterns
 
@@ -130,7 +117,7 @@ spanner-mycli-dev pr-workflow create --wait-checks
 
 # Step-by-step approach  
 gh pr create --title "feat: new feature" --body "Description"
-gh-helper reviews wait $(gh pr view --json number -q .number) --request-review
+gh-helper reviews wait --request-review
 ```
 
 **Post-Push Review Cycle**:
@@ -140,7 +127,7 @@ spanner-mycli-dev pr-workflow review 306 --wait-checks
 
 # Manual approach
 gh-helper reviews wait 306 --request-review --exclude-checks
-gh-helper threads list 306
+gh-helper reviews fetch 306 --list-threads
 gh-helper threads reply-commit THREAD_ID abc1234
 ```
 
@@ -207,7 +194,7 @@ EOF
 ### Permission Boundaries
 
 Clear separation between read and write operations:
-- `threads list/show`: Read-only, safe for autonomous use
+- `reviews fetch --list-threads/threads show`: Read-only, safe for autonomous use
 - `threads reply`: Write operation, AI should confirm with user
 - `reviews wait`: Read-only monitoring, safe for autonomous use
 
@@ -264,6 +251,6 @@ Tools are designed for extension:
 
 ## Related Documentation
 
+- [Shell-to-Go Migration](lessons-learned/shell-to-go-migration.md) - Technical architecture and optimization details
 - [Issue Management](issue-management.md) - GitHub workflow integration
-- [Architecture Guide](architecture-guide.md) - System architecture context
 - [Development Insights](development-insights.md) - General development patterns

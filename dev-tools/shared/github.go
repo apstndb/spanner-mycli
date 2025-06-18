@@ -28,13 +28,6 @@ var (
 	clientOnce       sync.Once
 )
 
-// Token cache to avoid repeated gh auth token calls
-var (
-	cachedToken     string
-	tokenCacheTime  time.Time
-	tokenCacheMutex sync.RWMutex
-	tokenCacheTTL   = 10 * time.Minute // Cache token for 10 minutes
-)
 
 // Repository IDs are immutable for the lifetime of a repository
 // - Renaming a repo preserves the ID
@@ -90,25 +83,9 @@ func NewGitHubClient(owner, repo string) *GitHubClient {
 	}
 }
 
-// getToken retrieves and caches GitHub token from gh CLI
+// getToken retrieves GitHub token from gh CLI  
+// No caching needed - auth tokens don't invalidate during single command execution
 func getToken() (string, error) {
-	tokenCacheMutex.RLock()
-	if cachedToken != "" && time.Since(tokenCacheTime) < tokenCacheTTL {
-		defer tokenCacheMutex.RUnlock()
-		return cachedToken, nil
-	}
-	tokenCacheMutex.RUnlock()
-
-	// Need to refresh token
-	tokenCacheMutex.Lock()
-	defer tokenCacheMutex.Unlock()
-
-	// Double-check after acquiring write lock
-	if cachedToken != "" && time.Since(tokenCacheTime) < tokenCacheTTL {
-		return cachedToken, nil
-	}
-
-	// Get token from gh CLI
 	cmd := exec.Command("gh", "auth", "token")
 	output, err := cmd.Output()
 	if err != nil {
@@ -119,10 +96,6 @@ func getToken() (string, error) {
 	if token == "" {
 		return "", fmt.Errorf("empty token returned from gh auth token")
 	}
-
-	// Cache the token
-	cachedToken = token
-	tokenCacheTime = time.Now()
 
 	return token, nil
 }
@@ -146,31 +119,8 @@ func (c *GitHubClient) RunGraphQLQuery(query string) ([]byte, error) {
 	return c.RunGraphQLQueryWithVariables(query, nil)
 }
 
-// RunGraphQLQueryWithVariables executes a GraphQL query with variables using HTTP client
-//
-// OPTIMIZATION STRATEGY OVERVIEW:
-// This implementation combines several optimization techniques for GitHub API efficiency:
-//
-// 1. HTTP/2 with Connection Reuse:
-//    - Global shared http.Client with HTTP/2 support and connection pooling
-//    - MaxIdleConns: 100, MaxIdleConnsPerHost: 10 for api.github.com
-//    - 90-second keep-alive reduces TCP handshake overhead
-//    - Header compression (HPACK) for Authorization tokens
-//
-// 2. Token Caching:
-//    - 10-minute TTL eliminates repeated 'gh auth token' subprocess calls
-//    - Thread-safe caching with sync.RWMutex for concurrent access
-//
-// 3. GraphQL Query Optimization:
-//    - Single endpoint (api.github.com/graphql) vs multiple REST endpoints
-//    - Combined operations where possible (e.g., listThreads includes viewer info)
-//    - Parameterized queries prevent SQL-injection-style issues
-//    - Field selection reduces payload size vs REST's fixed response structure
-//
-// 4. Instance-level Repository ID Caching:
-//    - Simple per-client caching avoids repository ID re-lookup in CreatePR
-//    - Repository IDs are immutable for lifetime (no TTL needed)
-//    - Follows YAGNI principle - single repo usage pattern doesn't need global cache
+// RunGraphQLQueryWithVariables executes a GraphQL query with variables using optimized HTTP client
+// Optimization details documented in dev-docs/lessons-learned/shell-to-go-migration.md
 func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
 	token, err := getToken()
 	if err != nil {

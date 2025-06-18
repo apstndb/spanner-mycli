@@ -122,7 +122,7 @@ This is a simplified guide. For detailed information, refer to:
 5. **For thread replies**: Use `bin/gh-helper threads reply` - Automated thread replies
 6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
-**⚠️ CRITICAL: Use `bin/gh-helper reviews wait` to avoid CI confusion from merge conflicts**
+**⚠️ CRITICAL: Use `bin/gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions

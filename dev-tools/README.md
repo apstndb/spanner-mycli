@@ -84,7 +84,7 @@ Both tools are designed with AI-friendly interfaces:
 bin/spanner-mycli-dev pr-workflow create --wait-checks
 
 # Review thread management  
-bin/gh-helper threads list <PR>
+bin/gh-helper reviews fetch <PR> --list-threads
 bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 
 # Worktree development

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -70,6 +71,9 @@ func init() {
 	fetchReviewsCmd.Flags().IntVar(&threadLimit, "thread-limit", 50, "Maximum threads to fetch")
 	fetchReviewsCmd.Flags().IntVar(&reviewLimit, "review-limit", 20, "Maximum reviews to fetch")
 	fetchReviewsCmd.Flags().BoolVar(&outputJSON, "json", false, "Output raw JSON data")
+	fetchReviewsCmd.Flags().Bool("threads-only", false, "Output only threads that need replies (implies --no-bodies --json)")
+	fetchReviewsCmd.Flags().Bool("list-threads", false, "List thread IDs only, one per line (implies --threads-only)")
+	fetchReviewsCmd.Flags().Bool("needs-reply-only", false, "Include only threads that need replies (filters at data level)")
 
 	// Pagination flags
 	fetchReviewsCmd.Flags().StringVar(&reviewAfterCursor, "reviews-after", "", "Reviews pagination: fetch after this cursor")
@@ -84,12 +88,27 @@ func init() {
 func fetchReviews(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 
-	// Handle convenience flags
+	// Handle convenience and specialized flags
 	if noThreads, _ := cmd.Flags().GetBool("no-threads"); noThreads {
 		includeThreads = false
 	}
 	if noBodies, _ := cmd.Flags().GetBool("no-bodies"); noBodies {
 		includeReviewBodies = false
+	}
+	
+	// Check for specialized thread modes
+	threadsOnly, _ := cmd.Flags().GetBool("threads-only")
+	listThreads, _ := cmd.Flags().GetBool("list-threads")
+	needsReplyOnly, _ := cmd.Flags().GetBool("needs-reply-only")
+	
+	// Adjust flags for thread-focused modes
+	if listThreads || threadsOnly {
+		outputJSON = true
+		includeReviewBodies = false
+		needsReplyOnly = true  // Implied for thread-focused modes
+		if listThreads {
+			threadsOnly = true
+		}
 	}
 
 	client := shared.NewGitHubClient(owner, repo)
@@ -99,11 +118,23 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 		IncludeReviewBodies: includeReviewBodies,
 		ThreadLimit:         threadLimit,
 		ReviewLimit:         reviewLimit,
+		NeedsReplyOnly:      needsReplyOnly,
 	}
 
-	fmt.Printf("🔄 Fetching unified review data for PR #%s...\n", prNumber)
-	fmt.Printf("   Options: threads=%v, bodies=%v, limits=[reviews:%d, threads:%d]\n",
-		opts.IncludeThreads, opts.IncludeReviewBodies, opts.ReviewLimit, opts.ThreadLimit)
+	if outputJSON {
+		// JSON mode: structured logging, data to stdout
+		slog.Info("Fetching unified review data",
+			"pr", prNumber,
+			"threads", opts.IncludeThreads,
+			"bodies", opts.IncludeReviewBodies,
+			"reviewLimit", opts.ReviewLimit,
+			"threadLimit", opts.ThreadLimit)
+	} else {
+		// Human mode: friendly output to stdout
+		fmt.Printf("🔄 Fetching unified review data for PR #%s...\n", prNumber)
+		fmt.Printf("   Options: threads=%v, bodies=%v, limits=[reviews:%d, threads:%d]\n",
+			opts.IncludeThreads, opts.IncludeReviewBodies, opts.ReviewLimit, opts.ThreadLimit)
+	}
 
 	data, err := client.GetUnifiedReviewData(prNumber, opts)
 	if err != nil {
@@ -111,10 +142,31 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	}
 
 	if outputJSON {
-		// Output raw JSON for processing
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(data)
+		if listThreads {
+			// Output only thread IDs that need replies, one per line
+			for _, thread := range data.Threads {
+				if thread.NeedsReply && !thread.IsResolved {
+					fmt.Println(thread.ID)
+				}
+			}
+			return nil
+		} else if threadsOnly {
+			// Output only threads that need replies
+			threadsNeedingReply := []shared.ThreadData{}
+			for _, thread := range data.Threads {
+				if thread.NeedsReply && !thread.IsResolved {
+					threadsNeedingReply = append(threadsNeedingReply, thread)
+				}
+			}
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(threadsNeedingReply)
+		} else {
+			// Output raw JSON for processing
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(data)
+		}
 	}
 
 	// Human-readable output
@@ -203,11 +255,19 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 func analyzeReviews(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 	client := shared.NewGitHubClient(owner, repo)
+	
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	// Always fetch everything for analysis
 	opts := shared.DefaultUnifiedReviewOptions()
 
-	fmt.Printf("🔍 Analyzing all review feedback for PR #%s...\n", prNumber)
+	if jsonOutput {
+		// JSON mode: structured logging
+		slog.Info("Analyzing review feedback", "pr", prNumber)
+	} else {
+		// Human mode: friendly output
+		fmt.Printf("🔍 Analyzing all review feedback for PR #%s...\n", prNumber)
+	}
 
 	data, err := client.GetUnifiedReviewData(prNumber, opts)
 	if err != nil {
@@ -216,6 +276,10 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 
 	// Get all actionable items
 	items := data.GetActionableItems()
+
+	if jsonOutput {
+		return outputAnalysisJSON(data, items)
+	}
 
 	if len(items) == 0 {
 		fmt.Println("\n✅ No actionable items found!")
@@ -313,4 +377,57 @@ func getSeverityIcon(severity shared.ReviewSeverity) string {
 	default:
 		return "ℹ️"
 	}
+}
+
+// outputAnalysisJSON outputs analysis results in JSON format for programmatic use
+func outputAnalysisJSON(data *shared.UnifiedReviewData, items []shared.ActionableItem) error {
+	// Create structured output for easy parsing
+	output := struct {
+		PR          shared.PRMetadata           `json:"pr"`
+		CurrentUser string                      `json:"currentUser"`
+		FetchedAt   string                      `json:"fetchedAt"`
+		Summary     map[string]int              `json:"summary"`
+		Items       []shared.ActionableItem     `json:"actionableItems"`
+		Threads     []shared.ThreadData         `json:"threads"`
+		Reviews     []shared.ReviewData         `json:"reviews"`
+	}{
+		PR:          data.PR,
+		CurrentUser: data.CurrentUser,
+		FetchedAt:   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Items:       items,
+		Threads:     data.Threads,
+		Reviews:     data.Reviews,
+	}
+
+	// Calculate summary
+	severityCounts := make(map[string]int)
+	for _, item := range items {
+		severityCounts[string(item.Severity)]++
+	}
+	
+	threadCounts := make(map[string]int)
+	for _, thread := range data.Threads {
+		if thread.NeedsReply && !thread.IsResolved {
+			threadCounts["needsReply"]++
+		}
+		if !thread.IsResolved {
+			threadCounts["unresolved"]++
+		}
+		threadCounts["total"]++
+	}
+
+	output.Summary = map[string]int{
+		"actionableItems": len(items),
+		"critical":        severityCounts["critical"],
+		"high":           severityCounts["high"], 
+		"medium":         severityCounts["medium"],
+		"low":            severityCounts["low"],
+		"threadsTotal":   threadCounts["total"],
+		"threadsNeedReply": threadCounts["needsReply"],
+		"threadsUnresolved": threadCounts["unresolved"],
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
 }

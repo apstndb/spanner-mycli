@@ -446,7 +446,7 @@ EOF
 
 ```bash
 # List unresolved review threads that need replies
-bin/gh-helper threads list 287
+bin/gh-helper reviews fetch 287 --list-threads
 
 # Show detailed thread context before replying
 bin/gh-helper threads show PRRT_kwDONC6gMM5SU-GH
@@ -510,7 +510,7 @@ gh pr comment <PR_NUMBER> --body "/gemini review"
 bin/gh-helper reviews wait <PR_NUMBER> --timeout 15
 
 # 3. Check specific review threads
-bin/gh-helper threads list <PR_NUMBER>
+bin/gh-helper reviews fetch <PR_NUMBER> --list-threads
 
 # 4. Review detailed feedback
 bin/gh-helper threads show <THREAD_ID>

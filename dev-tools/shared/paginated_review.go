@@ -24,17 +24,8 @@ type PaginatedReviewResponse struct {
 	FetchedAt    time.Time     `json:"fetchedAt"`
 }
 
-// GetPaginatedReviews fetches reviews with safe pagination using GraphQL variables
-//
-// DESIGN RATIONALE: Separate Pagination Approach
-// Instead of using fmt.Sprintf which can be unsafe, this function uses:
-// 1. Separate, focused GraphQL queries for each pagination direction
-// 2. Proper variable binding for all parameters
-// 3. Conditional logic in Go rather than complex GraphQL directives
-// 4. Clear separation of concerns (reviews only, no threads)
-//
-// This addresses the lesson learned from PR #306 where critical review feedback
-// was missed because it was in review bodies, not thread comments.
+// GetPaginatedReviews fetches reviews with safe parameterized pagination
+// Design rationale documented in dev-docs/lessons-learned/shell-to-go-migration.md
 func (c *GitHubClient) GetPaginatedReviews(prNumber string, opts PaginatedReviewOptions) (*PaginatedReviewResponse, error) {
 	prNumberInt, err := strconv.Atoi(prNumber)
 	if err != nil {

@@ -163,7 +163,7 @@ phantom shell issue-123-feature --tmux-horizontal
 spanner-mycli-dev pr-workflow create --wait-checks
 
 # After review feedback, handle responses
-gh-helper threads list $(gh pr view --json number -q .number)
+gh-helper reviews fetch --list-threads
 gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH>
 
 # Clean up when done
@@ -316,7 +316,7 @@ spanner-mycli-dev pr-workflow create \
   --wait-checks
 
 # 4. Handle review feedback
-gh-helper threads list $(gh pr view --json number -q .number)
+gh-helper reviews fetch --list-threads
 gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH>
 
 # 5. Continue review cycles as needed

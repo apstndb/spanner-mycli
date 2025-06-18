@@ -34,7 +34,7 @@ var rootCmd = &cobra.Command{
 
 COMMON PATTERNS:
   gh-helper reviews wait <PR> --request-review     # Complete review workflow
-  gh-helper threads list <PR>                      # Show review threads
+  gh-helper reviews fetch <PR> --list-threads      # List thread IDs needing replies
   gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 
 See dev-tools/gh-helper/README.md for detailed documentation, design rationale,
@@ -115,15 +115,6 @@ Default timeout is 5 minutes, configurable with --timeout flag.`,
 	waitForReviewsAndChecks,
 )
 
-var listThreadsCmd = newOperationalCommand(
-	"list <pr-number>",
-	"List unresolved review threads",
-	`List unresolved review threads that may need replies.
-
-Shows thread IDs for use with the reply command, along with
-file locations and latest comments.`,
-	listThreads,
-)
 
 var replyThreadsCmd = newOperationalCommand(
 	"reply <thread-id>",
@@ -184,7 +175,6 @@ func init() {
 	checkReviewsCmd.Args = cobra.MaximumNArgs(1)
 	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
 	waitAllCmd.Args = cobra.ExactArgs(1)
-	listThreadsCmd.Args = cobra.ExactArgs(1)
 	replyThreadsCmd.Args = cobra.ExactArgs(1)
 	showThreadCmd.Args = cobra.ExactArgs(1)
 	replyWithCommitCmd.Args = cobra.ExactArgs(2)
@@ -205,6 +195,9 @@ func init() {
 	waitAllCmd.Flags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s) (default: 5m)")
 	waitAllCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
+
+	// Add flags to analyze command
+	analyzeReviewsCmd.Flags().Bool("json", false, "Output structured JSON for programmatic use")
 
 	// Add subcommands
 	reviewsCmd.AddCommand(analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd, waitAllCmd)
@@ -1101,56 +1094,6 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 	}
 }
 
-func listThreads(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
-	
-	// Create GitHub client once for better performance (token caching)
-	client := shared.NewGitHubClient(owner, repo)
-
-	fmt.Printf("🔍 Fetching review threads for PR #%s using batch optimization...\n", prNumber)
-	
-	// Use the new batch threads functionality from shared package
-	response, err := client.ListReviewThreads(prNumber, true, true, 50) // needsReplyOnly=true, unresolvedOnly=true
-	if err != nil {
-		return fmt.Errorf("failed to fetch threads: %w", err)
-	}
-
-	if len(response.Threads) == 0 {
-		fmt.Println("✅ No unresolved review threads requiring replies found")
-		return nil
-	}
-
-	fmt.Printf("📋 Found %d unresolved thread(s) needing replies (total: %d):\n\n", 
-		len(response.Threads), response.TotalCount)
-	
-	for _, thread := range response.Threads {
-		var location string
-		if thread.Line != nil {
-			location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-		} else {
-			location = fmt.Sprintf("%s:file", thread.Path)
-		}
-
-		latestComment := ""
-		latestAuthor := ""
-		if len(thread.Comments) > 0 {
-			last := thread.Comments[len(thread.Comments)-1]
-			latestComment = last.Body
-			if len(latestComment) > 100 {
-				latestComment = latestComment[:100] + "..."
-			}
-			latestAuthor = last.Author
-		}
-
-		fmt.Printf("Thread ID: %s\n", thread.ID)
-		fmt.Printf("Location: %s\n", location)
-		fmt.Printf("Author: %s\n", latestAuthor)
-		fmt.Printf("Preview: %s\n", latestComment)
-		fmt.Printf("Needs Reply: %v\n\n", thread.NeedsReply)
-	}
-
-	return nil
-}
 
 func showThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
