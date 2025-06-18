@@ -163,7 +163,7 @@ func (c *GitHubClient) RunGraphQLQuery(query string) ([]byte, error) {
 //
 // 3. GraphQL Query Optimization:
 //    - Single endpoint (api.github.com/graphql) vs multiple REST endpoints
-//    - Combined operations reduce request count (e.g., CreatePRComment: 2→1 requests)
+//    - Combined operations where possible (e.g., listThreads includes viewer info)
 //    - Parameterized queries prevent SQL-injection-style issues
 //    - Field selection reduces payload size vs REST's fixed response structure
 //
@@ -228,35 +228,23 @@ func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[
 	return buf.Bytes(), nil
 }
 
-// CreatePRComment creates a comment on a pull request using optimized single GraphQL call
+// CreatePRComment creates a comment on a pull request using GraphQL mutation
 // 
-// OPTIMIZATION: Single-request mutation (2→1 requests, 50% reduction)
-// - Before: query PR ID → mutation addComment  
-// - After:  mutation within repository context combines both operations
-// This pattern works because GraphQL mutations can include queries within nested contexts
+// NOTE: Attempted single-request optimization, but addComment is a root-level mutation
+// that requires a node ID, not accessible via nested repository context.
+// Keeping the 2-step approach: query PR ID → mutation addComment
 func (c *GitHubClient) CreatePRComment(prNumber, body string) error {
 	prNumberInt, err := strconv.Atoi(prNumber)
 	if err != nil {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
 
-	// Single optimized mutation that finds PR and creates comment in one request
-	// Uses nested mutation within repository context to avoid separate ID lookup
-	mutation := `
-	mutation($owner: String!, $repo: String!, $prNumber: Int!, $body: String!) {
+	// First get the PR ID
+	prIDQuery := `
+	query($owner: String!, $repo: String!, $prNumber: Int!) {
 	  repository(owner: $owner, name: $repo) {
 	    pullRequest(number: $prNumber) {
 	      id
-	      addComment(input: {
-	        body: $body
-	      }) {
-	        commentEdge {
-	          node {
-	            id
-	            url
-	          }
-	        }
-	      }
 	    }
 	  }
 	}`
@@ -265,10 +253,51 @@ func (c *GitHubClient) CreatePRComment(prNumber, body string) error {
 		"owner":    c.Owner,
 		"repo":     c.Repo,
 		"prNumber": prNumberInt,
-		"body":     body,
 	}
 
-	_, err = c.RunGraphQLQueryWithVariables(mutation, variables)
+	result, err := c.RunGraphQLQueryWithVariables(prIDQuery, variables)
+	if err != nil {
+		return fmt.Errorf("failed to get PR ID: %w", err)
+	}
+
+	var prResponse struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ID string `json:"id"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(result, &prResponse); err != nil {
+		return fmt.Errorf("failed to parse PR ID response: %w", err)
+	}
+
+	prID := prResponse.Data.Repository.PullRequest.ID
+
+	// Now create the comment
+	commentMutation := `
+	mutation($subjectId: ID!, $body: String!) {
+	  addComment(input: {
+	    subjectId: $subjectId
+	    body: $body
+	  }) {
+	    commentEdge {
+	      node {
+	        id
+	        url
+	      }
+	    }
+	  }
+	}`
+
+	commentVariables := map[string]interface{}{
+		"subjectId": prID,
+		"body":      body,
+	}
+
+	_, err = c.RunGraphQLQueryWithVariables(commentMutation, commentVariables)
 	if err != nil {
 		return fmt.Errorf("failed to create PR comment: %w", err)
 	}
