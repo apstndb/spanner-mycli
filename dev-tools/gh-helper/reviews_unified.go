@@ -132,13 +132,16 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 		NeedsReplyOnly:      needsReplyOnly,
 	}
 
-	// Always log fetching info in structured format
-	slog.Info("Fetching unified review data",
+	// Use structured logging (slog) for consistent format with JSON/YAML output
+	slog.Info("fetching review data",
 		"pr", prNumber,
-		"threads", opts.IncludeThreads,
-		"bodies", opts.IncludeReviewBodies,
-		"reviewLimit", opts.ReviewLimit,
-		"threadLimit", opts.ThreadLimit)
+		"options", map[string]interface{}{
+			"threads": opts.IncludeThreads,
+			"bodies": opts.IncludeReviewBodies,
+			"review_limit": opts.ReviewLimit,
+			"thread_limit": opts.ThreadLimit,
+			"needs_reply_only": opts.NeedsReplyOnly,
+		})
 
 	data, err := client.GetUnifiedReviewData(prNumber, opts)
 	if err != nil {

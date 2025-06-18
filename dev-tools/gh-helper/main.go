@@ -27,14 +27,13 @@ func resolvePRNumberFromArgs(args []string, client *shared.GitHubClient) (string
 		input = args[0]
 	}
 	
-	prNumberInt, message, err := client.ResolvePRNumber(input)
+	prNumberInt, _, err := client.ResolvePRNumber(input)
 	if err != nil {
 		return "", shared.FetchError("PR number", err)
 	}
 	
-	if message != "" {
-		shared.InfoMsg(message).Print()
-	}
+	// Suppress informational messages for structured output (YAML/JSON by default)
+	// These messages are for human-readable context only
 	
 	return fmt.Sprintf("%d", prNumberInt), nil
 }
