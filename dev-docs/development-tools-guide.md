@@ -4,7 +4,7 @@ This document covers the AI-friendly development tools created as part of issue 
 
 ## Overview
 
-The tools in `cmd/` replace scattered shell scripts with structured Go commands optimized for AI assistant usage:
+The tools in `dev-tools/` replace scattered shell scripts with structured Go commands optimized for AI assistant usage:
 
 - **gh-helper**: Generic GitHub operations (reviews, threads)
 - **spanner-mycli-dev**: Project-specific workflows (worktrees, docs, Gemini integration)

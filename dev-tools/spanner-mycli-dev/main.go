@@ -24,7 +24,7 @@ COMMON PATTERNS:
   spanner-mycli-dev worktree setup issue-123-feature   # Setup phantom worktree
   spanner-mycli-dev review gemini <PR> --wait-checks   # Smart review workflow
 
-See cmd/spanner-mycli-dev/README.md for detailed documentation, phantom
+See dev-tools/spanner-mycli-dev/README.md for detailed documentation, phantom
 worktree conventions, and Gemini Code Review integration patterns.
 
 TIP: Use 'make build-tools' to build both spanner-mycli-dev and gh-helper.`,

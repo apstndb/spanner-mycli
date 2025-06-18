@@ -39,52 +39,14 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 ## Essential Commands
 
 ```bash
-# Development cycle
+# Development cycle (CRITICAL)
+make test && make lint        # REQUIRED before ANY push
 make build                    # Build the application
-make test && make lint        # Required before push
 make fasttest                 # Quick tests during development
 
-# Running the application
-make run PROJECT=myproject INSTANCE=myinstance DATABASE=mydatabase
-go run . -p PROJECT -i INSTANCE -d DATABASE
-
-# Development tools (issue #301 - AI-friendly subcommands)
-make build-tools                               # Build development tools
-bin/gh-helper reviews check PR_NUMBER          # Check PR reviews with state tracking  
-bin/gh-helper reviews wait PR_NUMBER           # Wait for reviews + checks (auto-detects conflicts)
-bin/gh-helper threads list PR_NUMBER           # List unresolved review threads
-bin/gh-helper threads show THREAD_ID           # Show detailed thread context
-bin/gh-helper threads reply THREAD_ID          # Reply to review thread (supports stdin)
-bin/gh-helper threads reply-commit THREAD_ID HASH  # Reply with commit reference
-bin/spanner-mycli-dev worktree setup NAME      # Setup phantom worktree
-bin/spanner-mycli-dev docs update-help         # Generate help output for README.md
-
-# Gemini Code Review workflow (project-specific)
-# Explicit scenario commands (recommended for clarity)
-bin/spanner-mycli-dev pr-workflow create           # Create PR + wait for auto Gemini review
-bin/spanner-mycli-dev pr-workflow create --wait-checks  # Also wait for CI checks
-bin/spanner-mycli-dev pr-workflow review PR_NUMBER # Request review + wait (for existing PRs)
-bin/spanner-mycli-dev pr-workflow review PR_NUMBER --wait-checks  # Also wait for CI checks
-
-# Smart auto-detection command (alternative)
-bin/spanner-mycli-dev review gemini PR_NUMBER      # Auto-detects scenario + runs workflow
-bin/spanner-mycli-dev review gemini PR_NUMBER --force-request  # Always request review
-bin/spanner-mycli-dev review gemini PR_NUMBER --wait-checks     # Also wait for CI checks
-
-# Manual components (for understanding)
-gh pr comment PR_NUMBER --body "/gemini review"    # Manual review request
-bin/gh-helper reviews wait PR_NUMBER               # Wait for BOTH reviews AND checks (DEFAULT)
-bin/gh-helper reviews wait PR_NUMBER --exclude-checks  # Wait for reviews only
-bin/gh-helper reviews wait PR_NUMBER --exclude-reviews # Wait for checks only
-bin/gh-helper reviews wait PR_NUMBER --request-review  # Request + wait for both (RECOMMENDED)
-bin/gh-helper reviews wait-all PR_NUMBER --request-review  # Legacy: explicit wait-all command
-
-# 🚀 SMART FEATURES:
-# - No arguments: Tools auto-detect current branch PR (via gh pr view)
-# - Plain numbers (301): Auto-detect issue vs PR, resolve automatically
-# - Explicit formats: issues/301, pull/306, pr/306 for forced resolution (faster)
-# - Timeout format: Use duration strings like --timeout 15m, 30s, 1.5m (not just numbers)
-# - Helpful error messages for common mistakes
+# Development tools (build with: make build-tools)
+bin/gh-helper reviews wait [PR]        # Wait for reviews + checks
+bin/spanner-mycli-dev review gemini [PR]  # Complete review workflow
 ```
 
 ## Core Architecture Overview
@@ -140,7 +102,7 @@ This is a simplified guide. For detailed information, refer to:
 - **[query_plan.md](docs/query_plan.md)** - Query plan analysis features
 - **[system_variables.md](docs/system_variables.md)** - System variables reference
 
-### Development Tools (`bin/`)
+### Development Tools (`bin/`) **Build Required: `make build-tools`**
 - **gh-helper** - Generic GitHub operations (reviews, threads)
 - **spanner-mycli-dev** - Project-specific tools (worktrees, docs)
 

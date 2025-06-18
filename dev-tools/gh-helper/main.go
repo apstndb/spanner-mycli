@@ -37,7 +37,7 @@ COMMON PATTERNS:
   gh-helper threads list <PR>                      # Show review threads
   gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 
-See cmd/gh-helper/README.md for detailed documentation, design rationale,
+See dev-tools/gh-helper/README.md for detailed documentation, design rationale,
 and migration guide from shell scripts.`,
 	// Cobra assumes all errors are usage errors and shows help by default
 	// For operational tools, most errors are runtime issues (API failures, merge conflicts)
@@ -975,9 +975,26 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 			rollupState := commits[0].Commit.StatusCheckRollup.State
 			checksComplete = (rollupState == "SUCCESS" || rollupState == "FAILURE" || rollupState == "ERROR")
 		} else {
-			// No StatusCheckRollup means either no checks configured or checks haven't started yet
-			// For better user experience, we'll consider this as "no checks required" and complete
-			checksComplete = true
+			// StatusCheckRollup is nil - this can mean:
+			// 1. No checks are configured for this repository (truly complete)
+			// 2. Checks are configured but haven't started yet (not complete)
+			// 3. PR was just created or pushed (checks pending)
+			
+			// Check merge status for better determination
+			mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
+			mergeable := response.Data.Repository.PullRequest.Mergeable
+			
+			// If PR has conflicts, checks won't run until resolved
+			if mergeable == "CONFLICTING" {
+				checksComplete = true // No point waiting for checks that won't run
+			} else if mergeStatus == "CLEAN" || mergeStatus == "HAS_HOOKS" {
+				// CLEAN: No checks configured, ready to merge
+				// HAS_HOOKS: Only merge hooks configured, no status checks
+				checksComplete = true
+			} else {
+				// PENDING, BLOCKED, DIRTY, UNKNOWN, etc. - checks may still be starting
+				checksComplete = false
+			}
 		}
 
 		if initialCheck {
@@ -1087,152 +1104,49 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 func listThreads(cmd *cobra.Command, args []string) error {
 	prNumber := args[0]
 	
-	// Convert PR number to integer for GraphQL
-	prNumberInt, err := strconv.Atoi(prNumber)
-	if err != nil {
-		return fmt.Errorf("invalid PR number format: %w", err)
-	}
-	
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 
-	fmt.Printf("🔍 Fetching review threads for PR #%s...\n", prNumber)
-
-	// OPTIMIZATION: Include viewer info to eliminate separate getCurrentUser() API call
-	// This demonstrates GraphQL's strength: fetching related data in single request
-	query := `
-query($owner: String!, $repo: String!, $prNumber: Int!) {
-  viewer {
-    login
-  }
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      reviewThreads(first: 20) {
-        nodes {
-          id
-          line
-          path
-          isResolved
-          subjectType
-          comments(first: 10) {
-            nodes {
-              id
-              body
-              author {
-                login
-              }
-              createdAt
-            }
-          }
-        }
-      }
-    }
-  }
-}`
-
-	variables := map[string]interface{}{
-		"owner":    owner,
-		"repo":     repo,
-		"prNumber": prNumberInt,
-	}
-
-	result, err := client.RunGraphQLQueryWithVariables(query, variables)
+	fmt.Printf("🔍 Fetching review threads for PR #%s using batch optimization...\n", prNumber)
+	
+	// Use the new batch threads functionality from shared package
+	response, err := client.ListReviewThreads(prNumber, true, true, 50) // needsReplyOnly=true, unresolvedOnly=true
 	if err != nil {
 		return fmt.Errorf("failed to fetch threads: %w", err)
 	}
 
-	var response struct {
-		Data struct {
-			Viewer struct {
-				Login string `json:"login"`
-			} `json:"viewer"`
-			Repository struct {
-				PullRequest struct {
-					ReviewThreads struct {
-						Nodes []struct {
-							ID          string `json:"id"`
-							Line        *int   `json:"line"`
-							Path        string `json:"path"`
-							IsResolved  bool   `json:"isResolved"`
-							SubjectType string `json:"subjectType"`
-							Comments    struct {
-								Nodes []struct {
-									ID     string `json:"id"`
-									Body   string `json:"body"`
-									Author struct {
-										Login string `json:"login"`
-									} `json:"author"`
-									CreatedAt string `json:"createdAt"`
-								} `json:"nodes"`
-							} `json:"comments"`
-						} `json:"nodes"`
-					} `json:"reviewThreads"`
-				} `json:"pullRequest"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(result, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	unresolvedThreads := []interface{}{}
-	currentUser := response.Data.Viewer.Login // Using optimized viewer data from same query
-	
-	for _, thread := range response.Data.Repository.PullRequest.ReviewThreads.Nodes {
-		if !thread.IsResolved {
-			var location string
-			if thread.Line != nil {
-				location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-			} else {
-				location = fmt.Sprintf("%s:file", thread.Path)
-			}
-
-			latestComment := ""
-			latestAuthor := ""
-			needsReply := true
-
-			if len(thread.Comments.Nodes) > 0 {
-				last := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
-				latestComment = last.Body
-				if len(latestComment) > 100 {
-					latestComment = latestComment[:100]
-				}
-				latestAuthor = last.Author.Login
-
-				// Check if current user has replied using optimized viewer data
-				for _, comment := range thread.Comments.Nodes {
-					if comment.Author.Login == currentUser {
-						needsReply = false
-						break
-					}
-				}
-			}
-
-			unresolvedThreads = append(unresolvedThreads, map[string]interface{}{
-				"thread_id":      thread.ID,
-				"location":       location,
-				"subject_type":   thread.SubjectType,
-				"latest_comment": latestComment,
-				"latest_author":  latestAuthor,
-				"needs_reply":    needsReply,
-			})
-		}
-	}
-
-	if len(unresolvedThreads) == 0 {
-		fmt.Println("✅ No unresolved review threads found")
+	if len(response.Threads) == 0 {
+		fmt.Println("✅ No unresolved review threads requiring replies found")
 		return nil
 	}
 
-	fmt.Printf("📋 Found %d unresolved review thread(s):\n\n", len(unresolvedThreads))
-	for _, thread := range unresolvedThreads {
-		t := thread.(map[string]interface{})
-		fmt.Printf("Thread ID: %s\n", t["thread_id"])
-		fmt.Printf("Location: %s\n", t["location"])
-		fmt.Printf("Author: %s\n", t["latest_author"])
-		fmt.Printf("Preview: %s\n", t["latest_comment"])
-		fmt.Printf("Needs Reply: %v\n\n", t["needs_reply"])
+	fmt.Printf("📋 Found %d unresolved thread(s) needing replies (total: %d):\n\n", 
+		len(response.Threads), response.TotalCount)
+	
+	for _, thread := range response.Threads {
+		var location string
+		if thread.Line != nil {
+			location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
+		} else {
+			location = fmt.Sprintf("%s:file", thread.Path)
+		}
+
+		latestComment := ""
+		latestAuthor := ""
+		if len(thread.Comments) > 0 {
+			last := thread.Comments[len(thread.Comments)-1]
+			latestComment = last.Body
+			if len(latestComment) > 100 {
+				latestComment = latestComment[:100] + "..."
+			}
+			latestAuthor = last.Author
+		}
+
+		fmt.Printf("Thread ID: %s\n", thread.ID)
+		fmt.Printf("Location: %s\n", location)
+		fmt.Printf("Author: %s\n", latestAuthor)
+		fmt.Printf("Preview: %s\n", latestComment)
+		fmt.Printf("Needs Reply: %v\n\n", thread.NeedsReply)
 	}
 
 	return nil

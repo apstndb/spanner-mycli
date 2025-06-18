@@ -261,7 +261,7 @@ spanner-mycli/
 ├── testdata/                        # Test fixtures
 ├── docs/                            # User documentation
 ├── dev-docs/                        # Developer documentation
-├── cmd/                             # Development tools source
+├── dev-tools/                       # Development tools source
 │   ├── gh-helper/                   # Generic GitHub operations
 │   └── spanner-mycli-dev/           # Project-specific tools
 ├── bin/                             # Built development tools
