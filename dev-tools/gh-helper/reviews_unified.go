@@ -75,7 +75,6 @@ var (
 	reviewAfterCursor     string
 	reviewBeforeCursor    string
 	threadAfterCursor     string
-	outputJSON            bool
 )
 
 func init() {
@@ -84,7 +83,6 @@ func init() {
 	fetchReviewsCmd.Flags().BoolVar(&includeReviewBodies, "bodies", true, "Include review bodies")
 	fetchReviewsCmd.Flags().IntVar(&threadLimit, "thread-limit", 50, "Maximum threads to fetch")
 	fetchReviewsCmd.Flags().IntVar(&reviewLimit, "review-limit", 20, "Maximum reviews to fetch")
-	fetchReviewsCmd.Flags().BoolVar(&outputJSON, "json", false, "Output raw JSON data")
 	fetchReviewsCmd.Flags().Bool("threads-only", false, "Output only threads that need replies (implies --no-bodies --json)")
 	fetchReviewsCmd.Flags().Bool("list-threads", false, "List thread IDs only, one per line (implies --threads-only)")
 	fetchReviewsCmd.Flags().Bool("needs-reply-only", false, "Include only threads that need replies (filters at data level)")
@@ -118,6 +116,9 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	threadsOnly, _ := cmd.Flags().GetBool("threads-only")
 	listThreads, _ := cmd.Flags().GetBool("list-threads")
 	needsReplyOnly, _ := cmd.Flags().GetBool("needs-reply-only")
+	
+	// Get JSON flag from persistent flags
+	outputJSON, _ := cmd.Flags().GetBool("json")
 	
 	// Adjust flags for thread-focused modes
 	if listThreads || threadsOnly {

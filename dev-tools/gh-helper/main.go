@@ -223,7 +223,6 @@ var (
 	message        string
 	mentionUser    string
 	timeoutStr     string
-	timeout        int  // Deprecated: for backward compatibility only
 	requestReview  bool
 	excludeReviews bool
 	excludeChecks  bool
@@ -241,22 +240,17 @@ func init() {
 	// Configure flags
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
 	rootCmd.PersistentFlags().StringVar(&repo, "repo", shared.DefaultRepo, "GitHub repository name")
+	rootCmd.PersistentFlags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s, 15m)")
+	rootCmd.PersistentFlags().Bool("json", false, "Output structured JSON for programmatic use")
 
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
 
-	waitReviewsCmd.Flags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s) (default: 5m)")
-	waitReviewsCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitReviewsCmd.Flags().BoolVar(&excludeReviews, "exclude-reviews", false, "Exclude reviews, wait for PR checks only")
 	waitReviewsCmd.Flags().BoolVar(&excludeChecks, "exclude-checks", false, "Exclude checks, wait for reviews only")
 	waitReviewsCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 	
-	waitAllCmd.Flags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s) (default: 5m)")
-	waitAllCmd.Flags().IntVar(&timeout, "timeout-minutes", 0, "Deprecated: use --timeout with duration format")
 	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
-
-	// Add flags to analyze command
-	analyzeReviewsCmd.Flags().Bool("json", false, "Output structured JSON for programmatic use")
 
 	// Add subcommands
 	reviewsCmd.AddCommand(analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd, waitAllCmd)
@@ -273,25 +267,10 @@ func main() {
 
 // parseTimeout parses timeout from string format or falls back to deprecated minutes format
 func parseTimeout() (time.Duration, error) {
-	// If new timeout format is provided, use it
-	if timeoutStr != "" && timeoutStr != "5m" {
-		duration, err := time.ParseDuration(timeoutStr)
-		if err != nil {
-			return 0, fmt.Errorf("invalid timeout format '%s'. Use formats like: 30s, 1.5m, 2m30s, 15m", timeoutStr)
-		}
-		return duration, nil
-	}
-	
-	// If deprecated timeout-minutes is used, convert to duration
-	if timeout > 0 {
-		fmt.Printf("⚠️  --timeout-minutes is deprecated. Use --timeout=%dm instead.\n", timeout)
-		return time.Duration(timeout) * time.Minute, nil
-	}
-	
-	// Default case: parse the default string
+	// Parse timeout duration from string format
 	duration, err := time.ParseDuration(timeoutStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid default timeout format '%s': %w", timeoutStr, err)
+		return 0, fmt.Errorf("invalid timeout format '%s'. Use formats like: 30s, 1.5m, 2m30s, 15m", timeoutStr)
 	}
 	return duration, nil
 }
