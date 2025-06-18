@@ -352,20 +352,31 @@ Review state tracking in `~/.cache/spanner-mycli-reviews/` enables incremental m
 
 **Critical Pattern**: Proper thread resolution workflow prevents confusion about feedback status:
 
-1. **Reply first**: Address reviewer feedback with explanation or code changes  
-2. **Commit changes**: Make actual code modifications if needed
-3. **Resolve thread**: Mark as addressed using `bin/gh-helper threads resolve <ID>`
+1. **Make changes**: Address reviewer feedback with code modifications
+2. **Commit changes**: Create commit with proper message
+3. **Push changes**: Ensure commit is available on GitHub
+4. **Reply with reference**: Reply to thread with commit hash reference
+5. **Resolve thread**: Mark as addressed (can be combined with reply)
 
 **Why this order matters**:
-- Shows reviewer that feedback was read and considered
-- Provides commit reference for code changes
-- Resolves only after complete response (not prematurely)
+- Commit hash is available only after committing
+- GitHub can display commit references only after push
+- Shows reviewer that feedback was implemented, not just acknowledged
+- Provides verifiable evidence of changes
 
 ```bash
 # Complete workflow example
-bin/gh-helper threads reply PRRT_xyz --commit-hash abc123 --message "Fixed as suggested"
-git add . && git commit -m "fix: address review feedback"  
-bin/gh-helper threads resolve PRRT_xyz
+# 1-2. Make changes and commit
+git add . && git commit -m "fix: address review feedback"
+COMMIT_HASH=$(git rev-parse HEAD)  # Capture the fixing commit hash
+# 3. Push to make commit available on GitHub  
+git push
+# 4-5. Reply with commit reference and resolve (can be combined)
+bin/gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "Fixed as suggested" --resolve
+
+# Alternative: Find commit by message or content
+# git log --oneline --grep="review feedback" -1 --format="%H"
+# git log --oneline -S "specific code change" -1 --format="%H"
 ```
 
 **Thread Resolution Detection Logic** (Fixed in Issue #306):

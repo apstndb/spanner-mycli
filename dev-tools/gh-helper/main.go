@@ -132,13 +132,14 @@ AI-FRIENDLY DESIGN (Issue #301): The reply text can be provided via:
 - --message flag for single-line responses
 - stdin for multi-line content or heredoc (preferred by AI assistants)
 - --commit-hash for standardized commit references
+- --resolve to automatically resolve thread after replying
 
 Examples:
-  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Fixed as suggested"
-  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123 --message "Addressed all feedback"
-  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123  # Uses default message
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Fixed as suggested" --resolve
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123 --message "Addressed all feedback" --resolve
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123 --resolve  # Uses default message
   echo "Thank you for the feedback!" | gh-helper threads reply PRRT_kwDONC6gMM5SU-GH
-  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --resolve <<EOF
   Fixed the issue. The implementation now:
   - Handles edge cases properly
   - Includes proper error handling
@@ -181,6 +182,7 @@ var (
 	requestReview  bool
 	excludeReviews bool
 	excludeChecks  bool
+	autoResolve    bool
 )
 
 // Common help text for PR number arguments
@@ -206,6 +208,7 @@ func init() {
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
 	replyThreadsCmd.Flags().StringVar(&commitHash, "commit-hash", "", "Commit hash to reference in reply")
+	replyThreadsCmd.Flags().BoolVar(&autoResolve, "resolve", false, "Automatically resolve thread after replying")
 
 	waitReviewsCmd.Flags().BoolVar(&excludeReviews, "exclude-reviews", false, "Exclude reviews, wait for PR checks only")
 	waitReviewsCmd.Flags().BoolVar(&excludeChecks, "exclude-checks", false, "Exclude checks, wait for reviews only")
@@ -1014,6 +1017,17 @@ mutation($threadID: ID!, $body: String!) {
 	fmt.Println("✅ Reply posted successfully!")
 	fmt.Printf("   Comment ID: %s\n", comment.ID)
 	fmt.Printf("   URL: %s\n", comment.URL)
+
+	// Auto-resolve thread if requested
+	if autoResolve {
+		fmt.Printf("🔄 Auto-resolving thread: %s\n", threadID)
+		if err := client.ResolveThread(threadID); err != nil {
+			fmt.Printf("⚠️  Failed to auto-resolve thread: %v\n", err)
+			// Don't return error - reply succeeded, resolution failed
+		} else {
+			fmt.Println("✅ Thread resolved successfully!")
+		}
+	}
 
 	return nil
 }

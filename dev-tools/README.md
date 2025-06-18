@@ -85,8 +85,10 @@ bin/spanner-mycli-dev pr-workflow create --wait-checks
 
 # Review thread management  
 bin/gh-helper reviews fetch <PR> --list-threads
+bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123" --resolve
+# Or separate operations:
 bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
-bin/gh-helper threads resolve <THREAD_ID>    # Mark as addressed
+bin/gh-helper threads resolve <THREAD_ID>
 
 # Worktree development
 bin/spanner-mycli-dev worktree setup issue-123-feature
