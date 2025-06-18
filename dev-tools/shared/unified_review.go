@@ -644,12 +644,7 @@ func analyzeReviewSeverity(body string) ReviewSeverity {
 		strings.Contains(bodyLower, "high-priority") {
 		return SeverityHigh
 	}
-	if strings.Contains(body, "![medium]") || strings.Contains(bodyLower, "medium-severity") {
-		return SeverityMedium
-	}
-	if strings.Contains(body, "![low]") || strings.Contains(bodyLower, "low-severity") {
-		return SeverityLow
-	}
+	// Removed medium/low levels for simplification
 
 	// Check for critical keywords
 	criticalPatterns := []string{
@@ -760,7 +755,7 @@ func (data *UnifiedReviewData) GetActionableItems() []ActionableItem {
 				items = append(items, ActionableItem{
 					Type:     "review_comment",
 					ID:       comment.ID,
-					Severity: SeverityMedium,
+					Severity: SeverityHigh,
 					Author:   review.Author,
 					Summary:  truncateString(comment.Body, 100),
 					Location: location,
@@ -788,7 +783,7 @@ func (data *UnifiedReviewData) GetActionableItems() []ActionableItem {
 			items = append(items, ActionableItem{
 				Type:     "thread",
 				ID:       thread.ID,
-				Severity: SeverityMedium,
+				Severity: SeverityHigh,
 				Author:   thread.LastReplier,
 				Summary:  summary,
 				Location: location,

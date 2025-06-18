@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/apstndb/spanner-mycli/dev-tools/shared"
+	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 )
 
@@ -204,6 +205,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&repo, "repo", shared.DefaultRepo, "GitHub repository name")
 	rootCmd.PersistentFlags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s, 15m)")
 	rootCmd.PersistentFlags().Bool("json", false, "Output structured JSON for programmatic use")
+	rootCmd.PersistentFlags().Bool("yaml", false, "Output structured YAML for AI tools")
 
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
@@ -837,7 +839,9 @@ func showThread(cmd *cobra.Command, args []string) error {
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 
-	fmt.Printf("🔍 Fetching details for thread: %s\n", threadID)
+	// Get output format flags
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	yamlOutput, _ := cmd.Flags().GetBool("yaml")
 
 	// Use unified node query system
 	config := shared.NewNodeQueryConfig(threadID).ForThreadDetails()
@@ -851,61 +855,74 @@ func showThread(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("thread not found or invalid thread ID")
 	}
 
-	// Display thread header
-	fmt.Printf("\n📋 Thread Details\n")
-	fmt.Printf("Thread ID: %s\n", thread.ID)
+	// Build output structure
+	output := map[string]interface{}{
+		"thread_id": thread.ID,
+		"resolved":  thread.IsResolved,
+	}
 	
 	if thread.PullRequest != nil {
-		fmt.Printf("PR: #%d - %s\n", thread.PullRequest.Number, thread.PullRequest.Title)
+		output["pr"] = map[string]interface{}{
+			"number": thread.PullRequest.Number,
+			"title":  thread.PullRequest.Title,
+		}
 	}
 	
 	location := thread.Path
 	if thread.Line != nil {
 		location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
 	}
-	fmt.Printf("Location: %s\n", location)
+	output["location"] = location
 	
 	if thread.SubjectType != nil {
-		fmt.Printf("Subject Type: %s\n", *thread.SubjectType)
+		output["subject_type"] = *thread.SubjectType
 	}
-	fmt.Printf("Resolved: %v\n", thread.IsResolved)
-	fmt.Printf("Comments: %d\n\n", len(thread.Comments.Nodes))
-
-	// Display diff context if available
-	if len(thread.Comments.Nodes) > 0 && thread.Comments.Nodes[0].DiffHunk != nil {
-		fmt.Printf("📄 Code Context:\n")
-		fmt.Printf("```diff\n%s\n```\n\n", *thread.Comments.Nodes[0].DiffHunk)
-	}
-
-	// Display all comments
-	fmt.Printf("💬 Comments:\n")
+	
+	// Comments
+	comments := []map[string]interface{}{}
 	for i, comment := range thread.Comments.Nodes {
-		fmt.Printf("─────────────────────────────────────────────────────────────\n")
-		fmt.Printf("%d. %s (%s)\n", i+1, comment.Author.Login, comment.CreatedAt)
-		fmt.Printf("─────────────────────────────────────────────────────────────\n")
-		fmt.Printf("%s\n\n", comment.Body)
+		commentData := map[string]interface{}{
+			"index":      i + 1,
+			"author":     comment.Author.Login,
+			"created_at": comment.CreatedAt,
+			"body":       comment.Body,
+		}
+		
+		if i == 0 && comment.DiffHunk != nil {
+			commentData["diff_hunk"] = *comment.DiffHunk
+		}
+		
+		comments = append(comments, commentData)
 	}
-
+	output["comments"] = comments
+	output["comments_count"] = len(comments)
+	
+	// Check if needs reply
 	if !thread.IsResolved && len(thread.Comments.Nodes) > 0 {
 		lastComment := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
-		// Check if the last comment is from the current user
 		if currentUser, err := getCurrentUser(); err == nil {
 			if lastComment.Author.Login != currentUser {
-				fmt.Printf("💡 To reply to this thread:\n")
-				fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
-				fmt.Printf("   gh-helper threads reply %s --commit-hash abc123 --message \"Fixed as suggested\"\n", threadID)
-				fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
+				output["needs_reply"] = true
+				output["last_comment_by"] = lastComment.Author.Login
 			}
-		} else {
-			// If we can't determine current user, show reply option anyway
-			fmt.Printf("💡 To reply to this thread:\n")
-			fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
-			fmt.Printf("   gh-helper threads reply %s --commit-hash abc123 --message \"Fixed as suggested\"\n", threadID)
-			fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
 		}
 	}
-
-	return nil
+	
+	// Output based on format
+	if jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(output)
+	}
+	
+	if yamlOutput {
+		encoder := yaml.NewEncoder(os.Stdout)
+		return encoder.Encode(output)
+	}
+	
+	// Default to YAML
+	encoder := yaml.NewEncoder(os.Stdout)
+	return encoder.Encode(output)
 }
 
 func resolveThread(cmd *cobra.Command, args []string) error {
@@ -913,15 +930,36 @@ func resolveThread(cmd *cobra.Command, args []string) error {
 	
 	// Create GitHub client
 	client := shared.NewGitHubClient(owner, repo)
-
-	fmt.Printf("🔄 Resolving review thread: %s\n", threadID)
+	
+	// Get output format flags
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	yamlOutput, _ := cmd.Flags().GetBool("yaml")
 	
 	if err := client.ResolveThread(threadID); err != nil {
 		return fmt.Errorf("failed to resolve thread: %w", err)
 	}
 
-	fmt.Printf("✅ Thread resolved successfully!\n")
-	return nil
+	// Output result
+	result := map[string]interface{}{
+		"thread_id": threadID,
+		"resolved":  true,
+		"timestamp": time.Now().Format("2006-01-02T15:04:05Z07:00"),
+	}
+	
+	if jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+	
+	if yamlOutput {
+		encoder := yaml.NewEncoder(os.Stdout)
+		return encoder.Encode(result)
+	}
+	
+	// Default to YAML
+	encoder := yaml.NewEncoder(os.Stdout)
+	return encoder.Encode(result)
 }
 
 func replyToThread(cmd *cobra.Command, args []string) error {
@@ -961,7 +999,9 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 		replyText = fmt.Sprintf("@%s %s", mentionUser, replyText)
 	}
 
-	fmt.Printf("🔄 Replying to review thread: %s\n", threadID)
+	// Get output format flags
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	yamlOutput, _ := cmd.Flags().GetBool("yaml")
 
 	// CRITICAL INSIGHT (Issue #301): GitHub GraphQL API quirk
 	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
@@ -1009,26 +1049,42 @@ mutation($threadID: ID!, $body: String!) {
 
 	comment := response.Data.AddPullRequestReviewThreadReply.Comment
 	if comment.ID == "" {
-		fmt.Println("❌ Failed to post reply. Response:")
-		fmt.Println(string(result))
-		return fmt.Errorf("reply posting failed")
+		return fmt.Errorf("reply posting failed: empty response")
 	}
 
-	fmt.Println("✅ Reply posted successfully!")
-	fmt.Printf("   Comment ID: %s\n", comment.ID)
-	fmt.Printf("   URL: %s\n", comment.URL)
+	// Build result structure
+	outputData := map[string]interface{}{
+		"thread_id":  threadID,
+		"comment_id": comment.ID,
+		"url":        comment.URL,
+		"timestamp":  time.Now().Format("2006-01-02T15:04:05Z07:00"),
+	}
 
 	// Auto-resolve thread if requested
 	if autoResolve {
-		fmt.Printf("🔄 Auto-resolving thread: %s\n", threadID)
 		if err := client.ResolveThread(threadID); err != nil {
-			fmt.Printf("⚠️  Failed to auto-resolve thread: %v\n", err)
 			// Don't return error - reply succeeded, resolution failed
+			outputData["resolved"] = false
+			outputData["resolve_error"] = err.Error()
 		} else {
-			fmt.Println("✅ Thread resolved successfully!")
+			outputData["resolved"] = true
 		}
 	}
 
-	return nil
+	// Output result
+	if jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(outputData)
+	}
+	
+	if yamlOutput {
+		encoder := yaml.NewEncoder(os.Stdout)
+		return encoder.Encode(outputData)
+	}
+	
+	// Default to YAML
+	encoder := yaml.NewEncoder(os.Stdout)
+	return encoder.Encode(result)
 }
 

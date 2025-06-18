@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
-	"strings"
 
 	"github.com/apstndb/spanner-mycli/dev-tools/shared"
+	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 )
 
@@ -111,8 +110,9 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	listThreads, _ := cmd.Flags().GetBool("list-threads")
 	needsReplyOnly, _ := cmd.Flags().GetBool("needs-reply-only")
 	
-	// Get JSON flag from persistent flags
+	// Get output format flags from persistent flags
 	outputJSON, _ := cmd.Flags().GetBool("json")
+	outputYAML, _ := cmd.Flags().GetBool("yaml")
 	
 	// Adjust flags for thread-focused modes
 	if listThreads || threadsOnly {
@@ -132,127 +132,65 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 		NeedsReplyOnly:      needsReplyOnly,
 	}
 
-	if outputJSON {
-		// JSON mode: structured logging, data to stdout
-		slog.Info("Fetching unified review data",
-			"pr", prNumber,
-			"threads", opts.IncludeThreads,
-			"bodies", opts.IncludeReviewBodies,
-			"reviewLimit", opts.ReviewLimit,
-			"threadLimit", opts.ThreadLimit)
-	} else {
-		// Human mode: friendly output to stdout
-		fmt.Printf("🔄 Fetching unified review data for PR #%s...\n", prNumber)
-		fmt.Printf("   Options: threads=%v, bodies=%v, limits=[reviews:%d, threads:%d]\n",
-			opts.IncludeThreads, opts.IncludeReviewBodies, opts.ReviewLimit, opts.ThreadLimit)
-	}
+	// Always log fetching info in structured format
+	slog.Info("Fetching unified review data",
+		"pr", prNumber,
+		"threads", opts.IncludeThreads,
+		"bodies", opts.IncludeReviewBodies,
+		"reviewLimit", opts.ReviewLimit,
+		"threadLimit", opts.ThreadLimit)
 
 	data, err := client.GetUnifiedReviewData(prNumber, opts)
 	if err != nil {
 		return fmt.Errorf("failed to fetch unified data: %w", err)
 	}
 
-	if outputJSON {
-		if listThreads {
-			// Output only thread IDs that need replies, one per line
-			for _, thread := range data.Threads {
-				if thread.NeedsReply && !thread.IsResolved {
-					fmt.Println(thread.ID)
-				}
+	// Handle specialized modes
+	if listThreads {
+		// Simple list mode: just thread IDs
+		for _, thread := range data.Threads {
+			if thread.NeedsReply && !thread.IsResolved {
+				fmt.Println(thread.ID)
 			}
-			return nil
-		} else if threadsOnly {
-			// Output only threads that need replies
-			threadsNeedingReply := []shared.ThreadData{}
-			for _, thread := range data.Threads {
-				if thread.NeedsReply && !thread.IsResolved {
-					threadsNeedingReply = append(threadsNeedingReply, thread)
-				}
+		}
+		return nil
+	}
+	
+	if threadsOnly {
+		// Filter to only threads needing replies
+		threadsNeedingReply := []shared.ThreadData{}
+		for _, thread := range data.Threads {
+			if thread.NeedsReply && !thread.IsResolved {
+				threadsNeedingReply = append(threadsNeedingReply, thread)
 			}
+		}
+		if outputJSON {
 			encoder := json.NewEncoder(os.Stdout)
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(threadsNeedingReply)
-		} else {
-			// Output raw JSON for processing
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "  ")
-			return encoder.Encode(data)
 		}
+		if outputYAML {
+			encoder := yaml.NewEncoder(os.Stdout)
+			return encoder.Encode(threadsNeedingReply)
+		}
+		// Default to YAML
+		encoder := yaml.NewEncoder(os.Stdout)
+		return encoder.Encode(threadsNeedingReply)
 	}
-
-	// Human-readable output
-	fmt.Printf("\n📋 PR #%d: %s (%s)\n", data.PR.Number, data.PR.Title, data.PR.State)
-	fmt.Printf("   Mergeable: %s, Status: %s\n", data.PR.Mergeable, data.PR.MergeStatus)
-	fmt.Printf("   Current User: %s\n", data.CurrentUser)
-
-	if includeReviewBodies {
-		fmt.Printf("\n📝 Reviews (%d):\n", len(data.Reviews))
-		for _, review := range data.Reviews {
-			severityIcon := getSeverityIcon(review.Severity)
-
-			fmt.Printf("\n   %s Review %s by %s (%s)\n", 
-				severityIcon, review.ID, review.Author, review.State)
-			
-			if review.Body != "" {
-				preview := strings.TrimSpace(review.Body)
-				if len(preview) > 150 {
-					preview = preview[:150] + "..."
-				}
-				fmt.Printf("   Body: %s\n", preview)
-			}
-
-			if len(review.ActionItems) > 0 {
-				fmt.Printf("   Action Items:\n")
-				for _, item := range review.ActionItems {
-					fmt.Printf("     • %s\n", item)
-				}
-			}
-
-			if len(review.Comments) > 0 {
-				fmt.Printf("   Inline Comments: %d\n", len(review.Comments))
-			}
-		}
-	} else {
-		fmt.Printf("\n📝 Reviews (%d) - bodies not fetched\n", len(data.Reviews))
-		for _, review := range data.Reviews {
-			fmt.Printf("   • %s by %s (%s) at %s\n", 
-				review.ID, review.Author, review.State, review.CreatedAt)
-		}
+	
+	// Full data output
+	if outputJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(data)
 	}
-
-	if includeThreads {
-		unresolvedCount := 0
-		needsReplyCount := 0
-		for _, thread := range data.Threads {
-			if !thread.IsResolved {
-				unresolvedCount++
-			}
-			if thread.NeedsReply {
-				needsReplyCount++
-			}
-		}
-
-		fmt.Printf("\n💬 Threads (%d total, %d unresolved, %d need reply):\n", 
-			len(data.Threads), unresolvedCount, needsReplyCount)
-
-		// Show threads needing replies
-		for _, thread := range data.Threads {
-			if thread.NeedsReply && !thread.IsResolved {
-				location := thread.Path
-				if thread.Line != nil {
-					location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-				}
-				
-				fmt.Printf("\n   🔴 Thread %s at %s\n", thread.ID, location)
-				if len(thread.Comments) > 0 {
-					last := thread.Comments[len(thread.Comments)-1]
-					fmt.Printf("   Last comment by %s\n", last.Author)
-				}
-			}
-		}
+	
+	if outputYAML {
+		return outputFetchYAML(data, includeReviewBodies, includeThreads)
 	}
-
-	return nil
+	
+	// Default to YAML
+	return outputFetchYAML(data, includeReviewBodies, includeThreads)
 }
 
 func analyzeReviews(cmd *cobra.Command, args []string) error {
@@ -263,17 +201,10 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 	}
 	
 	jsonOutput, _ := cmd.Flags().GetBool("json")
+	yamlOutput, _ := cmd.Flags().GetBool("yaml")
 
 	// Always fetch everything for analysis
 	opts := shared.DefaultUnifiedReviewOptions()
-
-	if jsonOutput {
-		// JSON mode: structured logging
-		slog.Info("Analyzing review feedback", "pr", prNumber)
-	} else {
-		// Human mode: friendly output
-		fmt.Printf("🔍 Analyzing all review feedback for PR #%s...\n", prNumber)
-	}
 
 	data, err := client.GetUnifiedReviewData(prNumber, opts)
 	if err != nil {
@@ -286,103 +217,13 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 	if jsonOutput {
 		return outputAnalysisJSON(data, items)
 	}
-
-	if len(items) == 0 {
-		fmt.Println("\n✅ No actionable items found!")
-		return nil
+	
+	if yamlOutput {
+		return outputAnalysisYAML(data, items)
 	}
 
-	// Sort by severity
-	sort.Slice(items, func(i, j int) bool {
-		severityOrder := map[shared.ReviewSeverity]int{
-			shared.SeverityCritical: 0,
-			shared.SeverityHigh:     1,
-			shared.SeverityMedium:   2,
-			shared.SeverityLow:      3,
-			shared.SeverityInfo:     4,
-		}
-		return severityOrder[items[i].Severity] < severityOrder[items[j].Severity]
-	})
-
-	fmt.Printf("\n🎯 Found %d actionable item(s):\n", len(items))
-
-	// Group by type
-	byType := make(map[string][]shared.ActionableItem)
-	for _, item := range items {
-		byType[item.Type] = append(byType[item.Type], item)
-	}
-
-	// Show review issues first (these are often missed!)
-	if reviews, ok := byType["review"]; ok && len(reviews) > 0 {
-		fmt.Printf("\n📝 REVIEW BODY ISSUES (Often Missed!):\n")
-		for _, item := range reviews {
-			severityIcon := getSeverityIcon(item.Severity)
-			fmt.Printf("\n%s %s - %s\n", severityIcon, item.Severity, item.ID)
-			fmt.Printf("   Author: %s\n", item.Author)
-			fmt.Printf("   Summary: %s\n", item.Summary)
-			if len(item.ActionItems) > 0 {
-				fmt.Printf("   Actions Required:\n")
-				for _, action := range item.ActionItems {
-					fmt.Printf("     • %s\n", action)
-				}
-			}
-		}
-	}
-
-	// Show review comment issues
-	if comments, ok := byType["review_comment"]; ok && len(comments) > 0 {
-		fmt.Printf("\n💭 REVIEW COMMENT ISSUES:\n")
-		for _, item := range comments {
-			fmt.Printf("\n• %s at %s\n", item.ID, item.Location)
-			fmt.Printf("  %s\n", item.Summary)
-		}
-	}
-
-	// Show threads needing replies
-	if threads, ok := byType["thread"]; ok && len(threads) > 0 {
-		fmt.Printf("\n💬 THREADS NEEDING REPLIES:\n")
-		for _, item := range threads {
-			fmt.Printf("\n• %s at %s\n", item.ID, item.Location)
-			fmt.Printf("  %s\n", item.Summary)
-		}
-	}
-
-	// Summary
-	criticalCount := 0
-	highCount := 0
-	for _, item := range items {
-		switch item.Severity {
-		case shared.SeverityCritical:
-			criticalCount++
-		case shared.SeverityHigh:
-			highCount++
-		}
-	}
-
-	if criticalCount > 0 || highCount > 0 {
-		fmt.Printf("\n⚠️  ATTENTION REQUIRED: %d critical, %d high priority issues\n", 
-			criticalCount, highCount)
-	}
-
-	fmt.Println("\n💡 This unified view helps prevent missing important feedback that")
-	fmt.Println("   appears in review bodies but not in thread comments.")
-
-	return nil
-}
-
-// Severity icon mapping for consistent display
-var severityIconMap = map[shared.ReviewSeverity]string{
-	shared.SeverityCritical: "🚨",
-	shared.SeverityHigh:     "⚠️",
-	shared.SeverityMedium:   "⚡",
-	shared.SeverityLow:      "💡",
-}
-
-func getSeverityIcon(severity shared.ReviewSeverity) string {
-	if icon, exists := severityIconMap[severity]; exists {
-		return icon
-	}
-	return "ℹ️" // default for unknown severities
+	// Default to YAML for simplicity
+	return outputAnalysisYAML(data, items)
 }
 
 // outputAnalysisJSON outputs analysis results in JSON format for programmatic use
@@ -435,5 +276,219 @@ func outputAnalysisJSON(data *shared.UnifiedReviewData, items []shared.Actionabl
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
+}
+
+// outputAnalysisYAML outputs analysis results in YAML format for AI tools
+func outputAnalysisYAML(data *shared.UnifiedReviewData, items []shared.ActionableItem) error {
+	// Calculate severity counts
+	severityCounts := make(map[string]int)
+	for _, item := range items {
+		severityCounts[string(item.Severity)]++
+	}
+	
+	// Calculate thread counts
+	threadsNeedReply := 0
+	threadsUnresolved := 0
+	for _, thread := range data.Threads {
+		if thread.NeedsReply && !thread.IsResolved {
+			threadsNeedReply++
+		}
+		if !thread.IsResolved {
+			threadsUnresolved++
+		}
+	}
+	
+	// Build simplified items for YAML output
+	type SimpleItem struct {
+		ID       string `yaml:"id"`
+		Author   string `yaml:"author"`
+		Location string `yaml:"location"`
+		Summary  string `yaml:"summary"`
+		Type     string `yaml:"type,omitempty"`
+	}
+	
+	criticalItems := []SimpleItem{}
+	highItems := []SimpleItem{}
+	infoItems := []SimpleItem{}
+	
+	for _, item := range items {
+		simpleItem := SimpleItem{
+			ID:       item.ID,
+			Author:   item.Author,
+			Location: item.Location,
+			Summary:  item.Summary,
+			Type:     item.Type,
+		}
+		
+		switch item.Severity {
+		case shared.SeverityCritical:
+			criticalItems = append(criticalItems, simpleItem)
+		case shared.SeverityHigh:
+			highItems = append(highItems, simpleItem)
+		default:
+			infoItems = append(infoItems, simpleItem)
+		}
+	}
+	
+	// Build threads needing reply
+	type SimpleThread struct {
+		ID           string `yaml:"id"`
+		Location     string `yaml:"location"`
+		LastReplier  string `yaml:"last_replier"`
+	}
+	
+	threadsNeedingReply := []SimpleThread{}
+	for _, thread := range data.Threads {
+		if thread.NeedsReply && !thread.IsResolved {
+			location := thread.Path
+			if thread.Line != nil {
+				location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
+			}
+			threadsNeedingReply = append(threadsNeedingReply, SimpleThread{
+				ID:          thread.ID,
+				Location:    location,
+				LastReplier: thread.LastReplier,
+			})
+		}
+	}
+	
+	// Create structured output for YAML
+	output := map[string]interface{}{
+		"pr_number": data.PR.Number,
+		"title":     data.PR.Title,
+		"state":     data.PR.State,
+		"mergeable": data.PR.Mergeable == "MERGEABLE",
+		"action_required": len(criticalItems) > 0 || len(highItems) > 0 || threadsNeedReply > 0,
+		"summary": map[string]int{
+			"critical": severityCounts["CRITICAL"],
+			"high":     severityCounts["HIGH"],
+			"info":     severityCounts["INFO"],
+			"threads_need_reply":   threadsNeedReply,
+			"threads_unresolved":   threadsUnresolved,
+		},
+	}
+	
+	// Only include non-empty sections
+	if len(criticalItems) > 0 {
+		output["critical_items"] = criticalItems
+	}
+	if len(highItems) > 0 {
+		output["high_priority_items"] = highItems
+	}
+	if len(infoItems) > 0 {
+		output["info_items"] = infoItems
+	}
+	if len(threadsNeedingReply) > 0 {
+		output["threads_needing_reply"] = threadsNeedingReply
+	}
+	
+	// Output YAML
+	encoder := yaml.NewEncoder(os.Stdout)
+	return encoder.Encode(output)
+}
+
+// outputFetchYAML outputs fetch results in YAML format preserving all information
+func outputFetchYAML(data *shared.UnifiedReviewData, includeReviewBodies bool, includeThreads bool) error {
+	// Build output structure
+	output := map[string]interface{}{
+		"pr": map[string]interface{}{
+			"number":       data.PR.Number,
+			"title":        data.PR.Title,
+			"state":        data.PR.State,
+			"mergeable":    data.PR.Mergeable,
+			"merge_status": data.PR.MergeStatus,
+		},
+		"current_user": data.CurrentUser,
+		"fetched_at":   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+	
+	// Reviews section
+	if includeReviewBodies {
+		// Full review data with bodies
+		reviews := []map[string]interface{}{}
+		for _, review := range data.Reviews {
+			reviewData := map[string]interface{}{
+				"id":           review.ID,
+				"author":       review.Author,
+				"state":        review.State,
+				"created_at":   review.CreatedAt,
+				"severity":     string(review.Severity),
+			}
+			
+			if review.Body != "" {
+				reviewData["body"] = review.Body
+			}
+			
+			if len(review.ActionItems) > 0 {
+				reviewData["action_items"] = review.ActionItems
+			}
+			
+			if len(review.Comments) > 0 {
+				reviewData["inline_comments_count"] = len(review.Comments)
+			}
+			
+			reviews = append(reviews, reviewData)
+		}
+		output["reviews"] = reviews
+	} else {
+		// Minimal review data without bodies
+		reviews := []map[string]interface{}{}
+		for _, review := range data.Reviews {
+			reviews = append(reviews, map[string]interface{}{
+				"id":         review.ID,
+				"author":     review.Author,
+				"state":      review.State,
+				"created_at": review.CreatedAt,
+			})
+		}
+		output["reviews"] = reviews
+		output["reviews_bodies_fetched"] = false
+	}
+	
+	// Threads section
+	if includeThreads {
+		unresolvedCount := 0
+		needsReplyCount := 0
+		threadsNeedingReply := []map[string]interface{}{}
+		
+		for _, thread := range data.Threads {
+			if !thread.IsResolved {
+				unresolvedCount++
+			}
+			if thread.NeedsReply {
+				needsReplyCount++
+			}
+			
+			if thread.NeedsReply && !thread.IsResolved {
+				location := thread.Path
+				if thread.Line != nil {
+					location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
+				}
+				
+				threadData := map[string]interface{}{
+					"id":       thread.ID,
+					"location": location,
+				}
+				
+				if len(thread.Comments) > 0 {
+					last := thread.Comments[len(thread.Comments)-1]
+					threadData["last_comment_by"] = last.Author
+				}
+				
+				threadsNeedingReply = append(threadsNeedingReply, threadData)
+			}
+		}
+		
+		output["threads"] = map[string]interface{}{
+			"total":         len(data.Threads),
+			"unresolved":    unresolvedCount,
+			"needs_reply":   needsReplyCount,
+			"needing_reply": threadsNeedingReply,
+		}
+	}
+	
+	// Output YAML
+	encoder := yaml.NewEncoder(os.Stdout)
 	return encoder.Encode(output)
 }
