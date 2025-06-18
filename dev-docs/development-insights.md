@@ -347,6 +347,33 @@ Review state tracking in `~/.cache/spanner-mycli-reviews/` enables incremental m
 - **General review comments**: Architecture concerns, design patterns, critical system behavior
 
 **AI Assistant workflow for comprehensive feedback analysis**:
+
+## Review Thread Resolution Workflow (Issue #306 Enhancement)
+
+**Critical Pattern**: Proper thread resolution workflow prevents confusion about feedback status:
+
+1. **Reply first**: Address reviewer feedback with explanation or code changes  
+2. **Commit changes**: Make actual code modifications if needed
+3. **Resolve thread**: Mark as addressed using `bin/gh-helper threads resolve <ID>`
+
+**Why this order matters**:
+- Shows reviewer that feedback was read and considered
+- Provides commit reference for code changes
+- Resolves only after complete response (not prematurely)
+
+```bash
+# Complete workflow example
+bin/gh-helper threads reply PRRT_xyz --commit-hash abc123 --message "Fixed as suggested"
+git add . && git commit -m "fix: address review feedback"  
+bin/gh-helper threads resolve PRRT_xyz
+```
+
+**Thread Resolution Detection Logic** (Fixed in Issue #306):
+- **Previous (incorrect)**: Thread needs reply if ANY user comment exists
+- **Current (correct)**: Thread needs reply if LAST comment is from external user
+- **Implication**: More accurate "needs reply" detection prevents missed feedback
+
+**AI Assistant workflow for comprehensive feedback analysis**:
 1. Use `bin/gh-helper reviews analyze <PR>` for complete review analysis (not just threads)
 2. Look for severity indicators: "critical", "high-severity", "panic", "error" in review bodies
 3. Don't assume all important feedback appears in threaded comments

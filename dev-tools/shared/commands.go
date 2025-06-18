@@ -162,6 +162,9 @@ func init() {
 
 // initializeDefaults sets up default values from git remote
 // Returns error instead of panicking for better error handling
+//
+// CRITICAL FIX (Issue #306 review): Changed from panic() to structured error
+// to prevent CLI tools from crashing during package initialization
 func initializeDefaults() error {
 	owner, repo, err := GetOwnerRepo()
 	if err != nil {

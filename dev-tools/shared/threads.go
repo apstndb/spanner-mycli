@@ -160,6 +160,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 		// 1. It has comments AND
 		// 2. The last comment is NOT from the current user AND
 		// 3. The thread is not resolved
+		//
+		// NOTE: Fixed logic (Issue #306 review): Previously checked if ANY user comment
+		// existed, now correctly checks if LAST comment is from external user
 		if len(comments) > 0 && lastCommentAuthor != currentUser && !thread.IsResolved {
 			needsReply = true
 		}
@@ -329,6 +332,9 @@ mutation($threadID: ID!, $body: String!) {
 }
 
 // ResolveThread resolves a review thread using GraphQL mutation
+// 
+// IMPORTANT: Thread resolution should only be used after addressing the feedback.
+// Common workflow: reply to thread → make code changes → resolve thread
 func (c *GitHubClient) ResolveThread(threadID string) error {
 	mutation := `
 mutation($threadID: ID!) {

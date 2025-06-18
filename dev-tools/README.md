@@ -7,7 +7,7 @@ This directory contains AI-friendly development tools created as part of issue #
 ### gh-helper
 Generic GitHub operations optimized for AI assistants:
 - **reviews**: PR review state tracking and waiting
-- **threads**: Review thread management and replies
+- **threads**: Review thread management and replies (reply + resolve)
 - **Purpose**: Reusable across any GitHub repository
 
 ### spanner-mycli-dev  
@@ -86,6 +86,7 @@ bin/spanner-mycli-dev pr-workflow create --wait-checks
 # Review thread management  
 bin/gh-helper reviews fetch <PR> --list-threads
 bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
+bin/gh-helper threads resolve <THREAD_ID>    # Mark as addressed
 
 # Worktree development
 bin/spanner-mycli-dev worktree setup issue-123-feature
