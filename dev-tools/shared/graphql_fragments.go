@@ -227,13 +227,7 @@ func (rf ReviewFields) ToReviewData() ReviewData {
 	// Convert comments
 	var comments []ReviewComment
 	for _, comment := range rf.Comments.Nodes {
-		comments = append(comments, ReviewComment{
-			ID:        comment.ID,
-			Body:      comment.Body,
-			Path:      comment.Path,
-			Line:      comment.Line,
-			CreatedAt: comment.CreatedAt,
-		})
+		comments = append(comments, ReviewComment(comment))
 	}
 
 	// Analyze review content
@@ -343,7 +337,7 @@ func (fbr FragmentBasedResponse) ToUnifiedReviewData() *UnifiedReviewData {
 	}
 
 	return &UnifiedReviewData{
-		PR:             pr.PRMetadataFields.ToPRMetadata(),
+		PR:             pr.ToPRMetadata(),
 		Reviews:        reviews,
 		Threads:        threads,
 		CurrentUser:    currentUser,

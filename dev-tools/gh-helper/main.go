@@ -500,6 +500,9 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	originalRequestReview := requestReview
 	defer func() { requestReview = originalRequestReview }()
 	
+	// Disable review request in delegated function since we already handled it above
+	requestReview = false
+	
 	// If we're only waiting for reviews, use the original simpler logic
 	if waitForReviews && !waitForChecks {
 		fmt.Printf("⚠️  Reviews-only mode: Using simplified wait logic\n")
@@ -705,7 +708,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		}
 
 		// Combined GraphQL query for both reviews and checks using fragments
-		query := shared.AllReviewFragments + shared.AllStatusFragments + `
+		query := shared.ReviewFragment + shared.AllStatusFragments + `
 query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $prNumber) {
