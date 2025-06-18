@@ -44,8 +44,9 @@ reviews wait <PR> --request-review
 reviews wait <PR> --exclude-checks    # Reviews only
 reviews wait <PR> --exclude-reviews   # Checks only
 
-# Monitoring
+# Monitoring and checking
 reviews check <PR>                    # One-time check with state tracking
+reviews check                         # Check current branch's PR
 ```
 
 ### threads
@@ -293,17 +294,20 @@ gh-helper is called by spanner-mycli-dev for:
 # 1. Request Gemini review and wait for both reviews + checks
 gh-helper reviews wait 306 --request-review
 
-# 2. If there are review threads, handle them
+# 2. Or just check current status without waiting
+gh-helper reviews check 306
+
+# 3. If there are review threads, handle them
 gh-helper reviews fetch 306 --list-threads
 
-# 3. Show detailed context for a specific thread
+# 4. Show detailed context for a specific thread
 gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
-# 4. Reply with fixes
+# 5. Reply with fixes
 gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc1234 \
   --message "Fixed the error handling as suggested"
 
-# 5. Request follow-up review if needed
+# 6. Request follow-up review if needed
 gh pr comment 306 --body "/gemini review"
 ```
 
@@ -385,6 +389,24 @@ critical_count=$(gh-helper reviews analyze 306 --json | jq '.summary.critical')
 if [ "$critical_count" -gt 0 ]; then
   echo "⚠️ Critical issues found: $critical_count"
 fi
+```
+
+## Shell Completion
+
+gh-helper supports shell completion for bash, zsh, fish, and PowerShell:
+
+```bash
+# Bash completion (add to ~/.bashrc)
+source <(gh-helper completion bash)
+
+# Zsh completion (add to ~/.zshrc)
+source <(gh-helper completion zsh)
+
+# Fish completion
+gh-helper completion fish | source
+
+# PowerShell completion
+gh-helper completion powershell | Out-String | Invoke-Expression
 ```
 
 ## Configuration

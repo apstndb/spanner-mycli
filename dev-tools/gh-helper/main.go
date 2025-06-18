@@ -200,7 +200,7 @@ func init() {
 	waitReviewsCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 
 	// Add subcommands
-	reviewsCmd.AddCommand(analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd)
+	reviewsCmd.AddCommand(checkReviewsCmd, analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd)
 	threadsCmd.AddCommand(showThreadCmd, replyThreadsCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
