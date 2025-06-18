@@ -315,8 +315,12 @@ gh pr comment 306 --body "/gemini review"
 ### AI Assistant Usage
 
 ```bash
-# AI can run autonomously
+# AI can run autonomously with structured output
 gh-helper reviews wait 306 --request-review --timeout 8
+
+# AI can analyze results programmatically
+action_needed=$(gh-helper reviews analyze 306 | gojq --yaml-input '.action_required')
+critical_count=$(gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical')
 
 # AI can provide complex responses via stdin
 gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
@@ -339,45 +343,97 @@ EOF
 | `scripts/dev/review-reply.sh` | `gh-helper threads reply` |
 | Custom review waiting scripts | `gh-helper reviews wait` |
 
-## JSON Output and Programmatic Usage
+## Output Format and Programmatic Usage
 
-### JSON Output Modes
+### Structured Output Modes
 
-All commands support `--json` for structured output:
+All commands default to YAML output with JSON available via `--json`:
 
 ```bash
-# Full review and thread data
-gh-helper reviews fetch 306 --json
+# YAML output (default)
+gh-helper reviews analyze 306
 
-# Analysis with actionable items and severity detection
+# JSON output
 gh-helper reviews analyze 306 --json
 
 # Thread-focused outputs
 gh-helper reviews fetch 306 --list-threads        # Thread IDs only (one per line)
-gh-helper reviews fetch 306 --threads-only        # Threads needing replies (JSON array)
+gh-helper reviews fetch 306 --threads-only        # Threads needing replies (YAML/JSON)
 ```
 
-### JSON Output Structure
+### YAML Output Example
 
-All JSON outputs are derived from GitHub's GraphQL API with additional processing for actionable insights.
+```yaml
+# gh-helper reviews analyze 306
+pr_number: 306
+title: "feat: reorganize scripts into AI-friendly development tools"
+state: OPEN
+mergeable: true
+action_required: true
+critical_items:
+  - id: PRR_kwDONC6gMM6vI3tk
+    author: gemini-code-assist
+    location: General Review
+    summary: "Review requires attention: ## Code Review..."
+    type: review
+high_priority_items:
+  - id: PRRC_kwDONC6gMM6AZCa3
+    author: gemini-code-assist
+    location: dev-tools/shared/commands.go
+    summary: "![critical] The initializeDefaults function..."
+    type: review_comment
+summary:
+  critical: 3
+  high: 11
+  info: 2
+  threads_need_reply: 0
+  threads_unresolved: 25
+```
 
-**analyze command** - Comprehensive analysis combining reviews and threads:
-- **Source**: GraphQL query fetching `pullRequest { reviews { nodes { id, author, body, state } } }` and review threads
-- **Processing**: Severity detection, keyword extraction, actionable item identification
-- **Output structure**:
-  - `pr`: Basic PR metadata from GitHub GraphQL
-  - `currentUser`: Current authenticated user from GitHub API
-  - `summary`: Computed statistics (actionable counts, severity distribution, thread states)
-  - `actionableItems`: Extracted from review bodies and comments using severity/keyword analysis
-  - `threads`: Full thread data with `needsReply` and `isResolved` computed from comment patterns
-  - `reviews`: Raw review data with computed severity and action items
+### Processing with gojq
+
+```bash
+# Get critical items only
+gh-helper reviews analyze 306 | gojq --yaml-input '.critical_items[].id'
+
+# Check if action is required
+if [[ $(gh-helper reviews analyze 306 | gojq --yaml-input '.action_required') == "true" ]]; then
+  echo "Action needed!"
+fi
+
+# Count threads needing reply
+gh-helper reviews analyze 306 | gojq --yaml-input '.summary.threads_need_reply'
+
+# Get PR state
+gh-helper reviews fetch 306 | gojq --yaml-input '.pr.state'
+
+# Filter high priority items by author
+gh-helper reviews analyze 306 | gojq --yaml-input '.high_priority_items[] | select(.author == "gemini-code-assist")'
+
+# Get all locations with issues
+gh-helper reviews analyze 306 | gojq --yaml-input '[.critical_items[], .high_priority_items[]] | .[].location' | sort -u
+```
+
+### Output Structure
+
+All outputs are derived from GitHub's GraphQL API with additional processing:
+
+**analyze command** - Comprehensive analysis:
+- **Source**: GraphQL query fetching reviews + threads with full metadata
+- **Processing**: Simplified 3-level severity detection (CRITICAL/HIGH/INFO) using Gemini markers only
+- **Structure**:
+  - `pr_number`, `title`, `state`, `mergeable`: Basic PR metadata
+  - `action_required`: Boolean indicating if any action is needed
+  - `critical_items`, `high_priority_items`, `info_items`: Items grouped by severity
+  - `threads_needing_reply`: Threads requiring responses
+  - `summary`: Computed statistics
 
 **fetch command modes**:
-- `--json`: Complete unified data from single GraphQL query (reviews + threads + PR metadata)
-- `--threads-only`: Filtered subset showing only threads where `needsReply=true` and `isResolved=false`
-- `--list-threads`: Plain text IDs of threads needing replies (one per line, for shell processing)
+- Default: Complete unified data (reviews + threads + PR metadata)
+- `--threads-only`: Filtered subset showing only threads needing replies
+- `--list-threads`: Plain text IDs (one per line, for shell processing)
 
-### Programmatic Usage
+### Programmatic Usage Examples
 
 ```bash
 # Get thread IDs for automated replies
@@ -386,10 +442,30 @@ for thread_id in $(gh-helper reviews fetch 306 --list-threads 2>/dev/null); do
 done
 
 # Check for critical issues
-critical_count=$(gh-helper reviews analyze 306 --json | jq '.summary.critical')
+critical_count=$(gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical')
 if [ "$critical_count" -gt 0 ]; then
   echo "⚠️ Critical issues found: $critical_count"
 fi
+
+# List all files with issues
+gh-helper reviews analyze 306 | gojq --yaml-input '
+  [.critical_items[], .high_priority_items[], .info_items[]] 
+  | map(.location) 
+  | unique 
+  | map(select(. != "General Review"))
+  | .[]
+'
+
+# Generate report for CI
+gh-helper reviews analyze 306 | gojq --yaml-input '
+  {
+    pr: .pr_number,
+    action_required: .action_required,
+    critical: .summary.critical,
+    high: .summary.high,
+    status: (if .action_required then "FAILED" else "PASSED" end)
+  }
+'
 ```
 
 ## Shell Completion
