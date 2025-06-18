@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -537,8 +536,8 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	// Request Gemini review if flag is set
 	if requestReview && waitForReviews {
 		fmt.Printf("📝 Requesting Gemini review for PR #%s...\n", prNumber)
-		ghCmd := exec.Command("gh", "pr", "comment", prNumber, "--body", "/gemini review")
-		if err := ghCmd.Run(); err != nil {
+		client := shared.NewGitHubClient(owner, repo)
+		if err := client.CreatePRComment(prNumber, "/gemini review"); err != nil {
 			return fmt.Errorf("failed to request Gemini review: %w", err)
 		}
 		fmt.Println("✅ Gemini review requested")
@@ -781,8 +780,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	// Request Gemini review if flag is set
 	if requestReview {
 		fmt.Printf("📝 Requesting Gemini review for PR #%s...\n", prNumber)
-		ghCmd := exec.Command("gh", "pr", "comment", prNumber, "--body", "/gemini review")
-		if err := ghCmd.Run(); err != nil {
+		if err := client.CreatePRComment(prNumber, "/gemini review"); err != nil {
 			return fmt.Errorf("failed to request Gemini review: %w", err)
 		}
 		fmt.Println("✅ Gemini review requested")

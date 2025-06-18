@@ -426,7 +426,8 @@ func executeGeminiWorkflow(cmd *cobra.Command, args []string) error {
 	// Step 1: Request Gemini review if needed
 	if shouldRequestReview {
 		fmt.Println("📝 Requesting Gemini code review...")
-		if err := shared.RunCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+		client := shared.NewGitHubClient("apstndb", "spanner-mycli")
+		if err := client.CreatePRComment(prNumber, "/gemini review"); err != nil {
 			return fmt.Errorf("failed to request Gemini review: %w", err)
 		}
 		fmt.Println("✅ Gemini review requested")
@@ -614,6 +615,8 @@ func createPRAndWait(cmd *cobra.Command, args []string) error {
 	}
 	
 	// If no flags provided, gh will prompt interactively or use stdin
+	// NOTE: This could be replaced with shared.GitHubClient.CreatePR() for better performance,
+	// but would require implementing interactive title/body prompting logic
 	fmt.Println("📝 Creating pull request...")
 	createCmd := exec.Command("gh", createArgs...)
 	createCmd.Stdout = os.Stdout
@@ -626,15 +629,15 @@ func createPRAndWait(cmd *cobra.Command, args []string) error {
 	
 	fmt.Println("✅ PR created successfully!")
 	
-	// Get the PR number from the latest PR
+	// Get the PR number from the current branch
 	fmt.Println("🔍 Getting PR number...")
-	getPRCmd := exec.Command("gh", "pr", "view", "--json", "number", "-q", ".number")
-	output, err := getPRCmd.Output()
+	client := shared.NewGitHubClient("apstndb", "spanner-mycli")
+	pr, err := client.GetCurrentBranchPR()
 	if err != nil {
 		return fmt.Errorf("failed to get PR number: %w", err)
 	}
 	
-	prNumber := strings.TrimSpace(string(output))
+	prNumber := fmt.Sprintf("%d", pr.Number)
 	fmt.Printf("📋 PR Number: #%s\n", prNumber)
 	
 	// Wait for automatic Gemini review (and optionally checks)
@@ -685,7 +688,8 @@ func handlePRReview(cmd *cobra.Command, args []string) error {
 	
 	// Request Gemini review
 	fmt.Println("📝 Requesting Gemini code review...")
-	if err := shared.RunCommand("gh", "pr", "comment", prNumber, "--body", "/gemini review"); err != nil {
+	client := shared.NewGitHubClient("apstndb", "spanner-mycli")
+	if err := client.CreatePRComment(prNumber, "/gemini review"); err != nil {
 		return fmt.Errorf("failed to request Gemini review: %w", err)
 	}
 	fmt.Println("✅ Gemini review requested")

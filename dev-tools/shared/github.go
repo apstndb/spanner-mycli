@@ -167,9 +167,99 @@ func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[
 	return buf.Bytes(), nil
 }
 
-// CreatePRComment creates a comment on a pull request
+// RunRESTAPI executes a REST API request with authentication
+func (c *GitHubClient) RunRESTAPI(method, endpoint string, payload []byte) ([]byte, error) {
+	token, err := getToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GitHub token: %w", err)
+	}
+
+	url := "https://api.github.com" + endpoint
+	var req *http.Request
+	
+	if payload != nil {
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(payload))
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "spanner-mycli-dev-tools/1.0")
+	
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute REST API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check HTTP status
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("REST API request failed with status %d: %s", resp.StatusCode, buf.String())
+	}
+
+	return buf.Bytes(), nil
+}
+
+// CreatePRComment creates a comment on a pull request using REST API
 func (c *GitHubClient) CreatePRComment(prNumber, body string) error {
-	return RunCommand("gh", "pr", "comment", prNumber, "--body", body)
+	payload := map[string]string{"body": body}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal comment payload: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues/%s/comments", c.Owner, c.Repo, prNumber)
+	_, err = c.RunRESTAPI("POST", endpoint, jsonData)
+	if err != nil {
+		return fmt.Errorf("failed to create PR comment: %w", err)
+	}
+
+	return nil
+}
+
+// PRCreateOptions represents options for creating a pull request
+type PRCreateOptions struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Head  string `json:"head"`
+	Base  string `json:"base"`
+	Draft bool   `json:"draft,omitempty"`
+}
+
+// CreatePR creates a pull request using REST API
+func (c *GitHubClient) CreatePR(opts PRCreateOptions) (*PRInfo, error) {
+	jsonData, err := json.Marshal(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal PR payload: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls", c.Owner, c.Repo)
+	data, err := c.RunRESTAPI("POST", endpoint, jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PR: %w", err)
+	}
+
+	var pr PRInfo
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to parse PR response: %w", err)
+	}
+
+	return &pr, nil
 }
 
 // GetCurrentUser returns the current authenticated GitHub username
@@ -201,20 +291,41 @@ func (c *GitHubClient) GetCurrentUser() (string, error) {
 	return response.Data.Viewer.Login, nil
 }
 
-// GetCurrentBranchPR gets the PR associated with the current branch using gh CLI
+// GetCurrentBranchPR gets the PR associated with the current branch using REST API
 func (c *GitHubClient) GetCurrentBranchPR() (*PRInfo, error) {
-	cmd := exec.Command("gh", "pr", "view", "--json", "number,title,state")
+	// First get current branch name
+	branch, err := getCurrentBranch()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Search for PR by head branch using REST API
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls?head=%s:%s&state=open", c.Owner, c.Repo, c.Owner, branch)
+	data, err := c.RunRESTAPI("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search for PR: %w", err)
+	}
+
+	var prs []PRInfo
+	if err := json.Unmarshal(data, &prs); err != nil {
+		return nil, fmt.Errorf("failed to parse PR search results: %w", err)
+	}
+
+	if len(prs) == 0 {
+		return nil, fmt.Errorf("no PR found for current branch '%s'", branch)
+	}
+
+	return &prs[0], nil
+}
+
+// getCurrentBranch gets the current git branch name
+func getCurrentBranch() (string, error) {
+	cmd := exec.Command("git", "branch", "--show-current")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("no PR found for current branch or gh command failed: %w", err)
+		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
-
-	var pr PRInfo
-	if err := json.Unmarshal(output, &pr); err != nil {
-		return nil, fmt.Errorf("failed to parse PR info: %w", err)
-	}
-
-	return &pr, nil
+	return strings.TrimSpace(string(output)), nil
 }
 
 // NodeInfo represents a GitHub issue or PR
