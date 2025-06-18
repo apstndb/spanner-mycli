@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -77,11 +76,4 @@ func (c *WorkflowCache) GetBranchPRMapping(branch string) (*BranchPRMapping, err
 	return &mapping, nil
 }
 
-// GetCurrentBranch returns the current git branch name
-func GetCurrentBranch() (string, error) {
-	data, err := RunCommandOutput("git", "branch", "--show-current")
-	if err != nil {
-		return "", fmt.Errorf("failed to get current branch: %w", err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
+// GetCurrentBranch is now defined in git_remote.go

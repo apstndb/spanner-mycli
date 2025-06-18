@@ -70,7 +70,8 @@ threads reply <THREAD_ID> --message "text"
 echo "multi-line reply" | threads reply <THREAD_ID>
 
 # Reply with commit reference (best practice)
-threads reply-commit <THREAD_ID> <COMMIT_HASH> --message "Fixed as suggested"
+threads reply <THREAD_ID> --commit-hash abc123 --message "Fixed as suggested"
+threads reply <THREAD_ID> --commit-hash abc123  # Uses default message
 ```
 
 ## State Management
@@ -299,7 +300,7 @@ gh-helper reviews fetch 306 --list-threads
 gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
 # 4. Reply with fixes
-gh-helper threads reply-commit PRRT_kwDONC6gMM5SU-GH abc1234 \
+gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc1234 \
   --message "Fixed the error handling as suggested"
 
 # 5. Request follow-up review if needed

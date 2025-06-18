@@ -15,49 +15,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newOperationalCommand creates a command optimized for operational tasks
-// All operational commands should silence usage help since most errors are runtime issues
-func newOperationalCommand(use, short, long string, runE func(*cobra.Command, []string) error) *cobra.Command {
-	return &cobra.Command{
-		Use:          use,
-		Short:        short,
-		Long:         long,
-		SilenceUsage: true, // Don't show usage help for operational errors (API failures, etc.)
-		RunE:         runE,
-	}
-}
 
-// resolvePRNumberFromArgs handles the common pattern of PR number resolution from command arguments
-// Supports auto-detection when no args provided, or explicit number/issue resolution
+
+// Helper functions for common patterns
+
+// resolvePRNumberFromArgs provides backwards compatibility wrapper
 func resolvePRNumberFromArgs(args []string, client *shared.GitHubClient) (string, error) {
 	var input string
-	if len(args) == 0 {
-		input = "" // Auto-detect from current branch
-	} else {
+	if len(args) > 0 {
 		input = args[0]
 	}
 	
 	prNumberInt, message, err := client.ResolvePRNumber(input)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve PR number: %w", err)
+		return "", shared.FetchError("PR number", err)
 	}
 	
 	if message != "" {
-		fmt.Printf("🔍 %s\n", message)
+		shared.InfoMsg(message).Print()
 	}
 	
 	return fmt.Sprintf("%d", prNumberInt), nil
 }
 
+// parseTimeout provides backwards compatibility wrapper  
+func parseTimeout() (time.Duration, error) {
+	return shared.ParseTimeoutString(timeoutStr)
+}
+
 // calculateEffectiveTimeout handles timeout calculation with Claude Code constraints consistently
 // Returns the effective timeout and a user-friendly display string
 func calculateEffectiveTimeout() (time.Duration, string, error) {
-	requested, err := parseTimeout()
-	if err != nil {
-		return 0, "", err
-	}
-	
-	result, err := shared.CalculateEffectiveTimeout(requested)
+	result, err := shared.CalculateTimeoutFromString(timeoutStr)
 	if err != nil {
 		return 0, "", err
 	}
@@ -79,7 +68,7 @@ var rootCmd = &cobra.Command{
 COMMON PATTERNS:
   gh-helper reviews wait <PR> --request-review     # Complete review workflow
   gh-helper reviews fetch <PR> --list-threads      # List thread IDs needing replies
-  gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
+  gh-helper threads reply <THREAD_ID> --commit-hash abc123 --message "Fixed as suggested"
 
 See dev-tools/gh-helper/README.md for detailed documentation, design rationale,
 and migration guide from shell scripts.`,
@@ -115,7 +104,7 @@ Arguments:
 	checkReviews,
 )
 
-var waitReviewsCmd = newOperationalCommand(
+var waitReviewsCmd = shared.NewOperationalCommand(
 	"wait [pr-number-or-issue]",
 	"Wait for both reviews and PR checks (default behavior)",
 	`Continuously monitor for both new reviews AND PR checks completion by default.
@@ -139,28 +128,10 @@ Default timeout is 5 minutes, configurable with --timeout flag.`,
 	waitForReviews,
 )
 
-var waitAllCmd = newOperationalCommand(
-	"wait-all <pr-number>",
-	"Wait for both reviews and PR checks completion",
-	`Continuously monitor for both new reviews AND PR check completion.
-
-This command polls every 30 seconds and waits until BOTH conditions are met:
-1. New reviews are available (same as 'reviews wait')
-2. All PR checks have completed (success, failure, or cancelled)
-
-This is useful for waiting until both Gemini review feedback AND CI checks
-are complete before proceeding with next steps.
-
-Use --request-review to automatically request Gemini review before waiting.
-This is useful for post-push scenarios where you need to trigger review.
-
-AI-FRIENDLY: Designed for autonomous workflows that need both review and CI feedback.
-Default timeout is 5 minutes, configurable with --timeout flag.`,
-	waitForReviewsAndChecks,
-)
+// waitAllCmd removed - redundant with waitReviewsCmd which supports the same functionality
 
 
-var replyThreadsCmd = newOperationalCommand(
+var replyThreadsCmd = shared.NewOperationalCommand(
 	"reply <thread-id>",
 	"Reply to a review thread",
 	`Reply to a GitHub pull request review thread.
@@ -168,9 +139,12 @@ var replyThreadsCmd = newOperationalCommand(
 AI-FRIENDLY DESIGN (Issue #301): The reply text can be provided via:
 - --message flag for single-line responses
 - stdin for multi-line content or heredoc (preferred by AI assistants)
+- --commit-hash for standardized commit references
 
 Examples:
   gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Fixed as suggested"
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123 --message "Addressed all feedback"
+  gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --commit-hash abc123  # Uses default message
   echo "Thank you for the feedback!" | gh-helper threads reply PRRT_kwDONC6gMM5SU-GH
   gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
   Fixed the issue. The implementation now:
@@ -180,7 +154,7 @@ Examples:
 	replyToThread,
 )
 
-var showThreadCmd = newOperationalCommand(
+var showThreadCmd = shared.NewOperationalCommand(
 	"show <thread-id>",
 	"Show detailed view of a review thread",
 	`Show detailed view of a specific review thread including all comments.
@@ -190,23 +164,14 @@ Useful for getting complete thread history and comment details.`,
 	showThread,
 )
 
-var replyWithCommitCmd = newOperationalCommand(
-	"reply-commit <thread-id> <commit-hash>",
-	"Reply to a review thread with commit reference",
-	`Reply to a review thread indicating that fixes were made in a specific commit.
-
-This command automatically formats the reply to include the commit hash,
-following best practices for review response traceability.
-
-The reply text can be provided via --message flag or stdin.`,
-	replyWithCommit,
-)
+// replyWithCommitCmd removed - use 'threads reply' with --message for commit references
 
 var (
 	owner          string
 	repo           string
 	message        string
 	mentionUser    string
+	commitHash     string
 	timeoutStr     string
 	requestReview  bool
 	excludeReviews bool
@@ -214,13 +179,11 @@ var (
 )
 
 func init() {
-	// Configure Args for operational commands (using newOperationalCommand)
+	// Configure Args for operational commands (using shared.NewOperationalCommand)
 	checkReviewsCmd.Args = cobra.MaximumNArgs(1)
 	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
-	waitAllCmd.Args = cobra.ExactArgs(1)
 	replyThreadsCmd.Args = cobra.ExactArgs(1)
 	showThreadCmd.Args = cobra.ExactArgs(1)
-	replyWithCommitCmd.Args = cobra.ExactArgs(2)
 	
 	// Configure flags
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
@@ -230,16 +193,15 @@ func init() {
 
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
+	replyThreadsCmd.Flags().StringVar(&commitHash, "commit-hash", "", "Commit hash to reference in reply")
 
 	waitReviewsCmd.Flags().BoolVar(&excludeReviews, "exclude-reviews", false, "Exclude reviews, wait for PR checks only")
 	waitReviewsCmd.Flags().BoolVar(&excludeChecks, "exclude-checks", false, "Exclude checks, wait for reviews only")
 	waitReviewsCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
-	
-	waitAllCmd.Flags().BoolVar(&requestReview, "request-review", false, "Request Gemini review before waiting")
 
 	// Add subcommands
-	reviewsCmd.AddCommand(analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd, waitAllCmd)
-	threadsCmd.AddCommand(showThreadCmd, replyThreadsCmd, replyWithCommitCmd)
+	reviewsCmd.AddCommand(analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd)
+	threadsCmd.AddCommand(showThreadCmd, replyThreadsCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
 
@@ -250,15 +212,6 @@ func main() {
 	}
 }
 
-// parseTimeout parses timeout from string format or falls back to deprecated minutes format
-func parseTimeout() (time.Duration, error) {
-	// Parse timeout duration from string format
-	duration, err := time.ParseDuration(timeoutStr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid timeout format '%s'. Use formats like: 30s, 1.5m, 2m30s, 15m", timeoutStr)
-	}
-	return duration, nil
-}
 
 // getCurrentUser returns the current authenticated GitHub username
 func getCurrentUser() (string, error) {
@@ -372,10 +325,22 @@ func checkClaudeCodeEnvironment() (time.Duration, bool) {
 
 func checkReviews(cmd *cobra.Command, args []string) error {
 	client := shared.NewGitHubClient(owner, repo)
-	prNumberStr, err := resolvePRNumberFromArgs(args, client)
-	if err != nil {
-		return err
+	
+	var input string
+	if len(args) > 0 {
+		input = args[0]
 	}
+	
+	prNumberInt, message, err := client.ResolvePRNumber(input)
+	if err != nil {
+		return shared.FetchError("PR number", err)
+	}
+	
+	if message != "" {
+		shared.InfoMsg(message).Print()
+	}
+	
+	prNumberStr := fmt.Sprintf("%d", prNumberInt)
 
 	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
 
@@ -1050,12 +1015,14 @@ query($threadID: ID!) {
 			if lastComment.Author.Login != currentUser {
 				fmt.Printf("💡 To reply to this thread:\n")
 				fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
+				fmt.Printf("   gh-helper threads reply %s --commit-hash abc123 --message \"Fixed as suggested\"\n", threadID)
 				fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
 			}
 		} else {
 			// If we can't determine current user, show reply option anyway
 			fmt.Printf("💡 To reply to this thread:\n")
 			fmt.Printf("   gh-helper threads reply %s --message \"Your reply\"\n", threadID)
+			fmt.Printf("   gh-helper threads reply %s --commit-hash abc123 --message \"Fixed as suggested\"\n", threadID)
 			fmt.Printf("   echo \"Your reply\" | gh-helper threads reply %s\n", threadID)
 		}
 	}
@@ -1063,100 +1030,6 @@ query($threadID: ID!) {
 	return nil
 }
 
-func replyWithCommit(cmd *cobra.Command, args []string) error {
-	threadID := args[0]
-	commitHash := args[1]
-	
-	// Create GitHub client once for better performance (token caching)
-	client := shared.NewGitHubClient(owner, repo)
-
-	var baseReplyText string
-	if message != "" {
-		baseReplyText = message
-	} else {
-		// Read from stdin - AI assistants prefer this over temporary files (Issue #301 insight)
-		scanner := bufio.NewScanner(os.Stdin)
-		var lines []string
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("failed to read from stdin: %w", err)
-		}
-		baseReplyText = strings.Join(lines, "\n")
-	}
-
-	// Format reply with commit reference
-	var replyText string
-	if strings.TrimSpace(baseReplyText) == "" {
-		replyText = fmt.Sprintf("Thank you for the feedback! Fixed in commit %s.", commitHash)
-	} else {
-		replyText = fmt.Sprintf("%s\n\nFixed in commit %s.", strings.TrimSpace(baseReplyText), commitHash)
-	}
-
-	// Add mention if provided
-	if mentionUser != "" {
-		replyText = fmt.Sprintf("@%s %s", mentionUser, replyText)
-	}
-
-	fmt.Printf("🔄 Replying to review thread: %s (with commit %s)\n", threadID, commitHash)
-
-	// CRITICAL: Do NOT include pullRequestReviewId field - causes null responses
-	// despite being marked "optional" in GraphQL schema (discovered in #301)
-	
-	mutation := `
-mutation($threadID: ID!, $body: String!) {
-  addPullRequestReviewThreadReply(input: {
-    pullRequestReviewThreadId: $threadID
-    body: $body
-  }) {
-    comment {
-      id
-      url
-      body
-    }
-  }
-}`
-
-	variables := map[string]interface{}{
-		"threadID": threadID,
-		"body":     replyText,
-	}
-
-	result, err := client.RunGraphQLQueryWithVariables(mutation, variables)
-	if err != nil {
-		return fmt.Errorf("failed to post reply: %w", err)
-	}
-
-	var response struct {
-		Data struct {
-			AddPullRequestReviewThreadReply struct {
-				Comment struct {
-					ID  string `json:"id"`
-					URL string `json:"url"`
-					Body string `json:"body"`
-				} `json:"comment"`
-			} `json:"addPullRequestReviewThreadReply"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(result, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	comment := response.Data.AddPullRequestReviewThreadReply.Comment
-	if comment.ID == "" {
-		fmt.Println("❌ Failed to post reply. Response:")
-		fmt.Println(string(result))
-		return fmt.Errorf("reply posting failed")
-	}
-
-	fmt.Println("✅ Reply posted successfully!")
-	fmt.Printf("   Comment ID: %s\n", comment.ID)
-	fmt.Printf("   URL: %s\n", comment.URL)
-
-	return nil
-}
 
 func replyToThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
@@ -1181,7 +1054,17 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 	}
 
 	if strings.TrimSpace(replyText) == "" {
-		return fmt.Errorf("reply text cannot be empty (use --message or pipe content to stdin)")
+		// If no message but commit hash is provided, use default message
+		if commitHash != "" {
+			replyText = "Thank you for the feedback!"
+		} else {
+			return fmt.Errorf("reply text cannot be empty (use --message or pipe content to stdin)")
+		}
+	}
+
+	// Add commit reference if provided
+	if commitHash != "" {
+		replyText = fmt.Sprintf("%s\n\nFixed in commit %s.", strings.TrimSpace(replyText), commitHash)
 	}
 
 	// Add mention if provided

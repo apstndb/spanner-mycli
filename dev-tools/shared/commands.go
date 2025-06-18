@@ -48,7 +48,7 @@ type CommandConfig struct {
 
 // NewOperationalCommand creates a command optimized for GitHub operations
 func NewOperationalCommand(use, short, long string, runE func(*cobra.Command, []string) error) *cobra.Command {
-	return NewCommandWithConfig(CommandConfig{
+	cmd := NewCommandWithConfig(CommandConfig{
 		Use:   use,
 		Short: short,
 		Long:  long,
@@ -56,6 +56,11 @@ func NewOperationalCommand(use, short, long string, runE func(*cobra.Command, []
 		RunE:  runE,
 		Flags: []string{"owner", "repo", "timeout", "json"}, // Standard operational flags
 	})
+	
+	// Operational commands silence usage help since most errors are runtime issues
+	cmd.SilenceUsage = true
+	
+	return cmd
 }
 
 // NewWorkflowCommand creates a command for workflow management
@@ -138,11 +143,47 @@ func AddPersistentFlags(cmd *cobra.Command, flagNames ...string) {
 // GlobalFlags holds shared flag values across commands
 var GlobalFlags = &StandardFlags{}
 
-// DefaultOwner and DefaultRepo should be set by the main package
+// DefaultOwner and DefaultRepo are dynamically initialized from git remotes
 var (
-	DefaultOwner = "apstndb"
-	DefaultRepo  = "spanner-mycli"
+	DefaultOwner string
+	DefaultRepo  string
 )
+
+func init() {
+	// Initialize defaults from git remote during package initialization
+	// This happens automatically when the shared package is imported
+	initializeDefaults()
+}
+
+// initializeDefaults sets up default values from git remote
+func initializeDefaults() {
+	owner, repo, err := GetOwnerRepo()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to detect git remote: %v. Please ensure you're in a git repository with remotes configured.", err))
+	}
+	DefaultOwner = owner
+	DefaultRepo = repo
+}
+
+// InitializeDefaults sets up default values from git remote (public API for manual initialization)
+func InitializeDefaults() {
+	initializeDefaults()
+}
+
+// InitializeDefaultsWithConfig sets up defaults using configuration
+func InitializeDefaultsWithConfig(config *GitRemoteConfig) {
+	if config == nil {
+		config = DefaultGitRemoteConfig()
+	}
+	
+	owner, repo, err := GetOwnerRepoWithConfig(config)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to detect git remote with config: %v", err))
+	}
+	DefaultOwner = owner
+	DefaultRepo = repo
+}
+
 
 // Timeout parsing helper
 func ParseTimeoutFlag() (time.Duration, error) {
