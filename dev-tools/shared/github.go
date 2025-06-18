@@ -83,6 +83,28 @@ func NewGitHubClient(owner, repo string) *GitHubClient {
 	}
 }
 
+// ValidateClient checks if the client has valid owner/repo configuration
+// Returns error with actionable guidance if configuration is invalid
+func (c *GitHubClient) ValidateClient() error {
+	if c.Owner == "" && c.Repo == "" {
+		return fmt.Errorf("GitHub owner and repository not configured. Solutions:\n" +
+			"  1. Run from a git repository with configured remotes\n" +
+			"  2. Use --owner and --repo flags\n" +
+			"  3. Ensure git remote origin points to a GitHub repository")
+	}
+	if c.Owner == "" {
+		return fmt.Errorf("GitHub owner not configured. Solutions:\n" +
+			"  1. Run from a git repository with configured remotes\n" +
+			"  2. Use --owner flag to specify repository owner")
+	}
+	if c.Repo == "" {
+		return fmt.Errorf("GitHub repository not configured. Solutions:\n" +
+			"  1. Run from a git repository with configured remotes\n" +
+			"  2. Use --repo flag to specify repository name")
+	}
+	return nil
+}
+
 // getToken retrieves GitHub token from gh CLI  
 // No caching needed - auth tokens don't invalidate during single command execution
 func getToken() (string, error) {
@@ -122,6 +144,11 @@ func (c *GitHubClient) RunGraphQLQuery(query string) ([]byte, error) {
 // RunGraphQLQueryWithVariables executes a GraphQL query with variables using optimized HTTP client
 // Optimization details documented in dev-docs/lessons-learned/shell-to-go-migration.md
 func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
+	// Validate client configuration before making API calls
+	if err := c.ValidateClient(); err != nil {
+		return nil, err
+	}
+
 	token, err := getToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub token: %w", err)
