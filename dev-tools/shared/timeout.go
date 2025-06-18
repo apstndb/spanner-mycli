@@ -39,22 +39,26 @@ func GetClaudeCodeTimeout(requested time.Duration) time.Duration {
 
 // Helper functions for Claude Code environment variables
 
-func getClaudeCodeMaxTimeout() time.Duration {
-	if ms := os.Getenv("BASH_MAX_TIMEOUT_MS"); ms != "" {
+// ParseClaudeCodeTimeoutEnv parses a Claude Code timeout environment variable
+// Returns the duration and whether the variable exists and is valid
+func ParseClaudeCodeTimeoutEnv(envVarName string) (time.Duration, bool) {
+	if ms := os.Getenv(envVarName); ms != "" {
 		if parsed, err := strconv.Atoi(ms); err == nil {
-			return time.Duration(parsed) * time.Millisecond
+			return time.Duration(parsed) * time.Millisecond, true
 		}
+		// Invalid format is treated as if the variable doesn't exist
 	}
-	return 0
+	return 0, false
+}
+
+func getClaudeCodeMaxTimeout() time.Duration {
+	timeout, _ := ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS")
+	return timeout
 }
 
 func getClaudeCodeDefaultTimeout() time.Duration {
-	if ms := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
-			return time.Duration(parsed) * time.Millisecond
-		}
-	}
-	return 0
+	timeout, _ := ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS")
+	return timeout
 }
 
 // Legacy compatibility functions

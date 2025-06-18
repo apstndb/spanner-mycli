@@ -289,32 +289,15 @@ func hasNewReviews(reviews []shared.ReviewFields, lastState *ReviewState) bool {
 // - Environment variables are read from ~/.claude/settings.json or project .claude/settings.json
 // - Project settings should be committed, local settings (.claude/settings.local.json) should not
 func checkClaudeCodeEnvironment() (time.Duration, bool) {
-	var maxTimeout, defaultTimeout time.Duration
-	var hasMax, hasDefault bool
-	
 	// Check for BASH_MAX_TIMEOUT_MS (upper limit for explicit timeouts)
-	if maxTimeoutStr := os.Getenv("BASH_MAX_TIMEOUT_MS"); maxTimeoutStr != "" {
-		if parsedTimeout, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", parsedTimeout)
-			maxTimeout = parsedTimeout
-			hasMax = true
-		}
+	if maxTimeout, hasMax := shared.ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS"); hasMax {
+		fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeout)
+		return maxTimeout, true
 	}
 	
 	// Check for BASH_DEFAULT_TIMEOUT_MS (default when no timeout specified)
-	if defaultTimeoutStr := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); defaultTimeoutStr != "" {
-		if parsedTimeout, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", parsedTimeout)
-			defaultTimeout = parsedTimeout
-			hasDefault = true
-		}
-	}
-	
-	// For explicit timeout requests (our use case), BASH_MAX_TIMEOUT_MS takes precedence
-	if hasMax {
-		return maxTimeout, true
-	}
-	if hasDefault {
+	if defaultTimeout, hasDefault := shared.ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS"); hasDefault {
+		fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeout)
 		return defaultTimeout, true
 	}
 	
@@ -835,72 +818,11 @@ func showThread(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("🔍 Fetching details for thread: %s\n", threadID)
 
-	query := `
-query($threadID: ID!) {
-  node(id: $threadID) {
-    ... on PullRequestReviewThread {
-      id
-      line
-      path
-      isResolved
-      subjectType
-      pullRequest {
-        number
-        title
-      }
-      comments(first: 20) {
-        nodes {
-          id
-          body
-          author {
-            login
-          }
-          createdAt
-          diffHunk
-        }
-      }
-    }
-  }
-}`
-
-	variables := map[string]interface{}{
-		"threadID": threadID,
-	}
-
-	result, err := client.RunGraphQLQueryWithVariables(query, variables)
+	// Use unified node query system
+	config := shared.NewNodeQueryConfig(threadID).ForThreadDetails()
+	response, err := client.FetchNodeData(config)
 	if err != nil {
-		return fmt.Errorf("failed to fetch thread details: %w", err)
-	}
-
-	var response struct {
-		Data struct {
-			Node struct {
-				ID          string `json:"id"`
-				Line        *int   `json:"line"`
-				Path        string `json:"path"`
-				IsResolved  bool   `json:"isResolved"`
-				SubjectType string `json:"subjectType"`
-				PullRequest struct {
-					Number int    `json:"number"`
-					Title  string `json:"title"`
-				} `json:"pullRequest"`
-				Comments struct {
-					Nodes []struct {
-						ID       string `json:"id"`
-						Body     string `json:"body"`
-						Author   struct {
-							Login string `json:"login"`
-						} `json:"author"`
-						CreatedAt string    `json:"createdAt"`
-						DiffHunk  *string   `json:"diffHunk"`
-					} `json:"nodes"`
-				} `json:"comments"`
-			} `json:"node"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(result, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return err
 	}
 
 	thread := response.Data.Node
@@ -911,14 +833,20 @@ query($threadID: ID!) {
 	// Display thread header
 	fmt.Printf("\n📋 Thread Details\n")
 	fmt.Printf("Thread ID: %s\n", thread.ID)
-	fmt.Printf("PR: #%d - %s\n", thread.PullRequest.Number, thread.PullRequest.Title)
+	
+	if thread.PullRequest != nil {
+		fmt.Printf("PR: #%d - %s\n", thread.PullRequest.Number, thread.PullRequest.Title)
+	}
 	
 	location := thread.Path
 	if thread.Line != nil {
 		location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
 	}
 	fmt.Printf("Location: %s\n", location)
-	fmt.Printf("Subject Type: %s\n", thread.SubjectType)
+	
+	if thread.SubjectType != nil {
+		fmt.Printf("Subject Type: %s\n", *thread.SubjectType)
+	}
 	fmt.Printf("Resolved: %v\n", thread.IsResolved)
 	fmt.Printf("Comments: %d\n\n", len(thread.Comments.Nodes))
 
