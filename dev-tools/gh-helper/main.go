@@ -595,21 +595,14 @@ var (
 		"UNKNOWN":     "⏳ Checking...",
 	}
 	
-	// Unified check status messages with formatting variants
-	checkStatusMessages = map[string]string{
-		"SUCCESS": "All passed",
-		"FAILURE": "Some failed", 
-		"ERROR":   "Error occurred",
-		"PENDING": "Still running",
-	}
-	
-	checkStatusIconMessages = map[string]string{
-		"SUCCESS": "✅ Checks: All passed",
-		"FAILURE": "❌ Checks: Some failed",
-		"ERROR":   "🚨 Checks: Error occurred",
-		"PENDING": "⏳ Checks: Still running",
-	}
+	// Note: StatusState/CheckStatusState formatting moved to shared.FormatStatusState()
+	// for reuse across dev-tools
 )
+
+// getStatusMessage is a local wrapper for shared.FormatStatusState
+func getStatusMessage(state string, withIcon bool) string {
+	return shared.FormatStatusState(state, withIcon)
+}
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	// Create GitHub client once for better performance (token caching)
@@ -767,10 +760,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			if statusCheckRollup != nil {
 				rollupState := statusCheckRollup.State
 				
-				statusMsg := checkStatusMessages[rollupState]
-				if statusMsg == "" {
-					statusMsg = rollupState // fallback to raw state
-				}
+				statusMsg := getStatusMessage(rollupState, false)
 				fmt.Printf("   Checks: %s, Complete: %v\n", statusMsg, checksComplete)
 			} else {
 				fmt.Printf("   Checks: None required, Complete: %v\n", checksComplete)
@@ -817,11 +807,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 				if statusCheckRollup != nil {
 					rollupState := statusCheckRollup.State
 					
-					if msg, exists := checkStatusIconMessages[rollupState]; exists {
-						fmt.Println(msg)
-					} else {
-						fmt.Printf("✅ Checks: Completed (%s)\n", rollupState)
-					}
+					fmt.Printf("Checks: %s\n", getStatusMessage(rollupState, true))
 				} else {
 					fmt.Println("✅ Checks: No checks required")
 				}
