@@ -52,7 +52,7 @@ func calculateEffectiveTimeout() (time.Duration, string, error) {
 	}
 	
 	// Show warning if timeout was constrained
-	if result.IsConstrained {
+	if result.Requested > 0 && result.Effective != result.Requested {
 		shared.WarningMsg("Requested timeout (%v) exceeds Claude Code limit. Using %v.", 
 			result.Requested, result.Effective).Print()
 	}

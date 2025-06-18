@@ -39,9 +39,9 @@ func TestParseTimeout(t *testing.T) {
 			expected: time.Hour,
 		},
 		{
-			name:     "numeric only - assumes minutes",
-			input:    "30",
-			expected: 30 * time.Minute,
+			name:        "numeric only - no unit (invalid for Go duration)",
+			input:       "30",
+			expectError: true,
 		},
 		{
 			name:        "invalid format - bad unit",
@@ -97,43 +97,37 @@ func TestCalculateEffectiveTimeout(t *testing.T) {
 		expectedDisplay     string
 	}{
 		{
-			name:             "normal timeout without env vars within safety limit",
+			name:             "normal timeout without env vars",
 			requestedTimeout: "1m",
 			expectedTimeout:  1 * time.Minute,
-			expectedDisplay:  "1m",
+			expectedDisplay:  "1m0s", // Go's standard duration string
 		},
 		{
-			name:             "timeout exceeds safety limit without env vars",
-			requestedTimeout: "5m",
-			expectedTimeout:  5 * time.Minute, // No safety limit logic in current implementation
-			expectedDisplay:  "5m",
-		},
-		{
-			name:             "timeout exactly at safety limit without env vars",
-			requestedTimeout: "90s",
-			expectedTimeout:  90 * time.Second,
-			expectedDisplay:  "1.5m",
+			name:             "zero timeout uses default",
+			requestedTimeout: "",
+			expectedTimeout:  5 * time.Minute, // Fallback default
+			expectedDisplay:  "5m0s",
 		},
 		{
 			name:                "timeout within Claude Code limit",
 			requestedTimeout:    "10m",
 			bashMaxTimeoutMS:    "900000", // 15 minutes
 			expectedTimeout:     10 * time.Minute,
-			expectedDisplay:     "10m",
+			expectedDisplay:     "10m0s",
 		},
 		{
 			name:                "timeout exceeds Claude Code limit",
 			requestedTimeout:    "20m",
 			bashMaxTimeoutMS:    "900000", // 15 minutes
 			expectedTimeout:     15 * time.Minute,
-			expectedDisplay:     "15m",
+			expectedDisplay:     "15m0s",
 		},
 		{
-			name:                 "default timeout used",
-			requestedTimeout:     "10m",
+			name:                 "default timeout from environment",
+			requestedTimeout:     "",
 			bashDefaultTimeoutMS: "600000", // 10 minutes
 			expectedTimeout:      10 * time.Minute,
-			expectedDisplay:      "10m",
+			expectedDisplay:      "10m0s",
 		},
 	}
 
