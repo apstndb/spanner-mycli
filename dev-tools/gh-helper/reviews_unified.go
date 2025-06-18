@@ -188,15 +188,7 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	if includeReviewBodies {
 		fmt.Printf("\n📝 Reviews (%d):\n", len(data.Reviews))
 		for _, review := range data.Reviews {
-			severityIcon := "ℹ️"
-			switch review.Severity {
-			case shared.SeverityCritical:
-				severityIcon = "🚨"
-			case shared.SeverityHigh:
-				severityIcon = "⚠️"
-			case shared.SeverityMedium:
-				severityIcon = "⚡"
-			}
+			severityIcon := getSeverityIcon(review.Severity)
 
 			fmt.Printf("\n   %s Review %s by %s (%s)\n", 
 				severityIcon, review.ID, review.Author, review.State)
@@ -378,19 +370,19 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// Severity icon mapping for consistent display
+var severityIconMap = map[shared.ReviewSeverity]string{
+	shared.SeverityCritical: "🚨",
+	shared.SeverityHigh:     "⚠️",
+	shared.SeverityMedium:   "⚡",
+	shared.SeverityLow:      "💡",
+}
+
 func getSeverityIcon(severity shared.ReviewSeverity) string {
-	switch severity {
-	case shared.SeverityCritical:
-		return "🚨"
-	case shared.SeverityHigh:
-		return "⚠️"
-	case shared.SeverityMedium:
-		return "⚡"
-	case shared.SeverityLow:
-		return "💡"
-	default:
-		return "ℹ️"
+	if icon, exists := severityIconMap[severity]; exists {
+		return icon
 	}
+	return "ℹ️" // default for unknown severities
 }
 
 // outputAnalysisJSON outputs analysis results in JSON format for programmatic use

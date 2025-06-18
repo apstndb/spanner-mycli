@@ -587,6 +587,30 @@ func waitForReviewsOnly(prNumber string) error {
 	}
 }
 
+// Status message maps for consistent display formatting
+var (
+	mergeStatusMessages = map[string]string{
+		"MERGEABLE":   "✅ Ready to merge",
+		"CONFLICTING": "❌ Has conflicts",
+		"UNKNOWN":     "⏳ Checking...",
+	}
+	
+	// Unified check status messages with formatting variants
+	checkStatusMessages = map[string]string{
+		"SUCCESS": "All passed",
+		"FAILURE": "Some failed", 
+		"ERROR":   "Error occurred",
+		"PENDING": "Still running",
+	}
+	
+	checkStatusIconMessages = map[string]string{
+		"SUCCESS": "✅ Checks: All passed",
+		"FAILURE": "❌ Checks: Some failed",
+		"ERROR":   "🚨 Checks: Error occurred",
+		"PENDING": "⏳ Checks: Still running",
+	}
+)
+
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
@@ -730,28 +754,22 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			
 			// Show mergeable status
 			mergeable, mergeStatus := response.GetMergeStatus()
-			switch mergeable {
-			case "MERGEABLE":
-				fmt.Printf("   Merge: ✅ Ready to merge\n")
-			case "CONFLICTING":
-				fmt.Printf("   Merge: ❌ Has conflicts (status: %s)\n", mergeStatus)
-			case "UNKNOWN":
-				fmt.Printf("   Merge: ⏳ Checking...\n")
-			default:
+			
+			if msg, exists := mergeStatusMessages[mergeable]; exists {
+				if mergeable == "CONFLICTING" {
+					fmt.Printf("   Merge: %s (status: %s)\n", msg, mergeStatus)
+				} else {
+					fmt.Printf("   Merge: %s\n", msg)
+				}
+			} else {
 				fmt.Printf("   Merge: %s (status: %s)\n", mergeable, mergeStatus)
 			}
 			if statusCheckRollup != nil {
 				rollupState := statusCheckRollup.State
-				statusMsg := rollupState
-				switch rollupState {
-				case "SUCCESS":
-					statusMsg = "All passed"
-				case "FAILURE": 
-					statusMsg = "Some failed"
-				case "ERROR":
-					statusMsg = "Error occurred"
-				case "PENDING":
-					statusMsg = "Still running"
+				
+				statusMsg := checkStatusMessages[rollupState]
+				if statusMsg == "" {
+					statusMsg = rollupState // fallback to raw state
 				}
 				fmt.Printf("   Checks: %s, Complete: %v\n", statusMsg, checksComplete)
 			} else {
@@ -798,16 +816,10 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			if checksComplete {
 				if statusCheckRollup != nil {
 					rollupState := statusCheckRollup.State
-					switch rollupState {
-					case "SUCCESS":
-						fmt.Println("✅ Checks: All passed")
-					case "FAILURE":
-						fmt.Println("❌ Checks: Some failed")
-					case "ERROR":
-						fmt.Println("🚨 Checks: Error occurred")
-					case "PENDING":
-						fmt.Println("⏳ Checks: Still running")
-					default:
+					
+					if msg, exists := checkStatusIconMessages[rollupState]; exists {
+						fmt.Println(msg)
+					} else {
 						fmt.Printf("✅ Checks: Completed (%s)\n", rollupState)
 					}
 				} else {
