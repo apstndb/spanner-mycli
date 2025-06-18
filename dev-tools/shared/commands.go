@@ -152,22 +152,29 @@ var (
 func init() {
 	// Initialize defaults from git remote during package initialization
 	// This happens automatically when the shared package is imported
-	initializeDefaults()
+	if err := initializeDefaults(); err != nil {
+		// Log error but don't panic during package initialization
+		// Applications can call InitializeDefaults() explicitly if needed
+		DefaultOwner = ""
+		DefaultRepo = ""
+	}
 }
 
 // initializeDefaults sets up default values from git remote
-func initializeDefaults() {
+// Returns error instead of panicking for better error handling
+func initializeDefaults() error {
 	owner, repo, err := GetOwnerRepo()
 	if err != nil {
-		panic(fmt.Sprintf("Failed to detect git remote: %v. Please ensure you're in a git repository with remotes configured.", err))
+		return fmt.Errorf("failed to detect git remote: %w. Please ensure you're in a git repository with remotes configured", err)
 	}
 	DefaultOwner = owner
 	DefaultRepo = repo
+	return nil
 }
 
 // InitializeDefaults sets up default values from git remote (public API for manual initialization)
-func InitializeDefaults() {
-	initializeDefaults()
+func InitializeDefaults() error {
+	return initializeDefaults()
 }
 
 // InitializeDefaultsWithConfig sets up defaults using configuration

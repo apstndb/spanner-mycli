@@ -156,6 +156,19 @@ Useful for getting complete thread history and comment details.`,
 	showThread,
 )
 
+var resolveThreadCmd = shared.NewOperationalCommand(
+	"resolve <thread-id>",
+	"Resolve a review thread",
+	`Resolve a GitHub pull request review thread.
+
+This marks the thread as resolved, indicating that the feedback has been addressed.
+Use this after making the requested changes or providing sufficient response.
+
+Examples:
+  gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2`,
+	resolveThread,
+)
+
 // replyWithCommitCmd removed - use 'threads reply' with --message for commit references
 
 var (
@@ -182,6 +195,7 @@ func init() {
 	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
 	replyThreadsCmd.Args = cobra.ExactArgs(1)
 	showThreadCmd.Args = cobra.ExactArgs(1)
+	resolveThreadCmd.Args = cobra.ExactArgs(1)
 	
 	// Configure flags
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
@@ -199,7 +213,7 @@ func init() {
 
 	// Add subcommands
 	reviewsCmd.AddCommand(checkReviewsCmd, analyzeReviewsCmd, fetchReviewsCmd, waitReviewsCmd)
-	threadsCmd.AddCommand(showThreadCmd, replyThreadsCmd)
+	threadsCmd.AddCommand(showThreadCmd, replyThreadsCmd, resolveThreadCmd)
 	rootCmd.AddCommand(reviewsCmd, threadsCmd)
 }
 
@@ -891,6 +905,21 @@ func showThread(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func resolveThread(cmd *cobra.Command, args []string) error {
+	threadID := args[0]
+	
+	// Create GitHub client
+	client := shared.NewGitHubClient(owner, repo)
+
+	fmt.Printf("🔄 Resolving review thread: %s\n", threadID)
+	
+	if err := client.ResolveThread(threadID); err != nil {
+		return fmt.Errorf("failed to resolve thread: %w", err)
+	}
+
+	fmt.Printf("✅ Thread resolved successfully!\n")
+	return nil
+}
 
 func replyToThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]

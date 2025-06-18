@@ -140,7 +140,8 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 
 		// Process comments and determine reply status
 		var comments []CommentInfo
-		needsReply := true
+		needsReply := false // Default to false
+		lastCommentAuthor := ""
 		
 		for _, comment := range thread.Comments.Nodes {
 			comments = append(comments, CommentInfo{
@@ -151,10 +152,16 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 				DiffHunk:  comment.DiffHunk,
 			})
 
-			// Check if current user has replied (for needsReply determination)
-			if comment.Author.Login == currentUser {
-				needsReply = false
-			}
+			// Track last comment author for proper reply detection
+			lastCommentAuthor = comment.Author.Login
+		}
+		
+		// A thread needs reply if:
+		// 1. It has comments AND
+		// 2. The last comment is NOT from the current user AND
+		// 3. The thread is not resolved
+		if len(comments) > 0 && lastCommentAuthor != currentUser && !thread.IsResolved {
+			needsReply = true
 		}
 
 		// Apply needs reply filter
@@ -316,6 +323,32 @@ mutation($threadID: ID!, $body: String!) {
 	_, err := c.RunGraphQLQueryWithVariables(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("failed to reply to thread: %w", err)
+	}
+
+	return nil
+}
+
+// ResolveThread resolves a review thread using GraphQL mutation
+func (c *GitHubClient) ResolveThread(threadID string) error {
+	mutation := `
+mutation($threadID: ID!) {
+  resolveReviewThread(input: {
+    threadId: $threadID
+  }) {
+    thread {
+      id
+      isResolved
+    }
+  }
+}`
+
+	variables := map[string]interface{}{
+		"threadID": threadID,
+	}
+
+	_, err := c.RunGraphQLQueryWithVariables(mutation, variables)
+	if err != nil {
+		return fmt.Errorf("failed to resolve thread: %w", err)
 	}
 
 	return nil

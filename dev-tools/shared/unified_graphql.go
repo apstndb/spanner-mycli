@@ -13,12 +13,14 @@ type PRQueryConfig struct {
 	PRNumber int
 
 	// Feature flags for conditional data fetching
-	IncludeReviews      bool
-	IncludeThreads      bool
-	IncludeStatus       bool
-	IncludeMetadata     bool
-	IncludeReviewBodies bool
-	IncludePagination   bool
+	IncludeReviews        bool
+	IncludeThreads        bool
+	IncludeStatus         bool
+	IncludeMetadata       bool
+	IncludeReviewBodies   bool
+	IncludePagination     bool
+	IncludeThreadMetadata bool // For isOutdated, subjectType, pullRequest
+	IncludeCommentDetails bool // For diffHunk in comments
 
 	// Limits for data fetching
 	ReviewLimit int
@@ -77,6 +79,15 @@ func (c *PRQueryConfig) ForThreadsOnly() *PRQueryConfig {
 	return c
 }
 
+// ForSingleThread configures for detailed single thread display
+func (c *PRQueryConfig) ForSingleThread() *PRQueryConfig {
+	c.IncludeThreads = true
+	c.IncludeThreadMetadata = true
+	c.IncludeCommentDetails = true
+	c.ThreadLimit = 1
+	return c
+}
+
 // ToGraphQLVariables converts config to GraphQL variables
 func (c *PRQueryConfig) ToGraphQLVariables() map[string]interface{} {
 	return map[string]interface{}{
@@ -87,10 +98,12 @@ func (c *PRQueryConfig) ToGraphQLVariables() map[string]interface{} {
 		"includeThreads":      c.IncludeThreads,
 		"includeStatus":       c.IncludeStatus,
 		"includeMetadata":     c.IncludeMetadata,
-		"includeReviewBodies": c.IncludeReviewBodies,
-		"includePagination":   c.IncludePagination,
-		"reviewLimit":         c.ReviewLimit,
-		"threadLimit":         c.ThreadLimit,
+		"includeReviewBodies":   c.IncludeReviewBodies,
+		"includePagination":     c.IncludePagination,
+		"includeThreadMetadata": c.IncludeThreadMetadata,
+		"includeCommentDetails": c.IncludeCommentDetails,
+		"reviewLimit":           c.ReviewLimit,
+		"threadLimit":           c.ThreadLimit,
 	}
 }
 
@@ -129,6 +142,7 @@ fragment ThreadCommentFields on PullRequestReviewComment {
   body
   author { login }
   createdAt
+  diffHunk @include(if: $includeCommentDetails)
 }
 
 fragment ThreadFields on PullRequestReviewThread {
@@ -136,7 +150,12 @@ fragment ThreadFields on PullRequestReviewThread {
   path
   line
   isResolved
-  isOutdated
+  isOutdated @include(if: $includeThreadMetadata)
+  subjectType @include(if: $includeThreadMetadata)
+  pullRequest @include(if: $includeThreadMetadata) {
+    number
+    title
+  }
   comments(first: 20) {
     nodes {
       ...ThreadCommentFields
@@ -166,6 +185,8 @@ query UniversalPRQuery(
   $includeMetadata: Boolean! = false
   $includeReviewBodies: Boolean! = false
   $includePagination: Boolean! = false
+  $includeThreadMetadata: Boolean! = false
+  $includeCommentDetails: Boolean! = false
   
   # Limits with defaults
   $reviewLimit: Int = 15
