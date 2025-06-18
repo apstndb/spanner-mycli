@@ -49,7 +49,7 @@ func getToken() (string, error) {
 **Measured Performance Impact**:
 - Header compression (HPACK) reduces Authorization header overhead
 - Connection multiplexing eliminates TCP handshake per request
-- 88% API call reduction: 17 individual `gh` commands → 2 GraphQL queries
+- 88% code line reduction: Shell script implementations reduced through unified Go approach
 
 ### GraphQL Query Patterns
 
