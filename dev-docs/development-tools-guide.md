@@ -103,7 +103,7 @@ gh-helper reviews analyze 306    # Shows all actionable items with severity
 
 ### GitHub API Optimization
 
-**Significant code reduction**: 88% fewer lines of code through Go implementation vs shell scripts.
+**Optimized GitHub interactions**: 88% reduction in `gh` CLI invocations (17 → 2) through GraphQL consolidation.
 Technical details: `dev-docs/lessons-learned/shell-to-go-migration.md#github-api-optimization-strategy`
 
 ## Integration Patterns
