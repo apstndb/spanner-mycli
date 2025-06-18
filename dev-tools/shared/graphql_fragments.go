@@ -81,6 +81,19 @@ type ThreadConnectionFields struct {
 	Nodes      []ThreadFields   `json:"nodes"`
 }
 
+// StatusCheckRollupFields corresponds to fragment StatusCheckRollupFields on StatusCheckRollup
+type StatusCheckRollupFields struct {
+	State    string `json:"state"`
+	Contexts struct {
+		Nodes []interface{} `json:"nodes"`
+	} `json:"contexts"`
+}
+
+// CommitWithStatusFields corresponds to fragment CommitWithStatusFields on Commit
+type CommitWithStatusFields struct {
+	StatusCheckRollup *StatusCheckRollupFields `json:"statusCheckRollup"`
+}
+
 // GraphQL Fragment definitions as constants
 // These correspond exactly to the Go types above for consistency
 const (
@@ -168,13 +181,43 @@ fragment ThreadConnectionFields on PullRequestReviewThreadConnection {
   }
 }`
 
+	StatusCheckRollupFragment = `
+fragment StatusCheckRollupFields on StatusCheckRollup {
+  state
+  contexts(first: 50) {
+    nodes {
+      ... on StatusContext {
+        context
+        state
+        targetUrl
+      }
+      ... on CheckRun {
+        name
+        status
+        conclusion
+        detailsUrl
+      }
+    }
+  }
+}`
+
+	CommitWithStatusFragment = `
+fragment CommitWithStatusFields on Commit {
+  statusCheckRollup {
+    ...StatusCheckRollupFields
+  }
+}`
+
 	// Combined fragments for reuse
 	AllReviewFragments = PageInfoFragment + ReviewCommentFragment + ReviewFragment + ReviewConnectionFragment + PRMetadataFragment
 
 	AllThreadFragments = PageInfoFragment + ThreadCommentFragment + ThreadFragment + ThreadConnectionFragment
 
+	AllStatusFragments = StatusCheckRollupFragment + CommitWithStatusFragment
+
 	AllFragments = PageInfoFragment + ReviewCommentFragment + ReviewFragment + ReviewConnectionFragment + 
-		PRMetadataFragment + ThreadCommentFragment + ThreadFragment + ThreadConnectionFragment
+		PRMetadataFragment + ThreadCommentFragment + ThreadFragment + ThreadConnectionFragment + 
+		StatusCheckRollupFragment + CommitWithStatusFragment
 )
 
 // Conversion functions between fragment types and domain types

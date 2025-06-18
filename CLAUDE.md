@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Why this rule is critical**: CLAUDE.md is read by AI assistants for every development task. Including verbose content creates cognitive overload and buries essential requirements like `make test && make lint`.
 
 ### What belongs in CLAUDE.md
-- Critical requirements (e.g., `make test && make lint` before push)
+- Critical requirements (e.g., `make check` before push)
 - Essential commands for daily development
 - Brief architecture overview with links to details
 - Documentation structure navigation
@@ -30,8 +30,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 ## 🚨 CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
-1. **Always run `make test`** (not `make fasttest`) - all integration tests must pass
-2. **Always run `make lint`** - code quality and style compliance required
+1. **Always run `make check`** - runs test && lint (required for quality assurance)
 3. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
 4. **Never push directly to main branch** - always use Pull Requests
 5. **Never commit directly to main branch** - always use feature branches
@@ -40,9 +39,9 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 
 ```bash
 # Development cycle (CRITICAL)
-make test && make lint        # REQUIRED before ANY push
+make check                    # REQUIRED before ANY push (runs test && lint)
 make build                    # Build the application
-make fasttest                 # Quick tests during development
+make test-quick               # Quick tests during development
 
 # Development tools (build with: make build-tools)
 bin/gh-helper reviews analyze [PR]     # Comprehensive review analysis (prevents missing feedback)

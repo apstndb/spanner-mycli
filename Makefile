@@ -24,11 +24,6 @@ test:
 test-verbose:
 	go test -v ./...
 
-fasttest:
-	go test -short ./...
-
-fasttest-verbose:
-	go test -short -v ./...
 
 # Test both main project and dev-tools (comprehensive testing)
 test-all:
@@ -70,7 +65,6 @@ help-dev:
 	@echo "  make test           - Run full test suite (required before push)"
 	@echo "  make test-all       - Run tests for main project and dev-tools"
 	@echo "  make test-quick     - Run quick tests (go test -short)"
-	@echo "  make fasttest       - Run tests excluding slow ones"
 	@echo "  make lint           - Run linter (required before push)"
 	@echo "  make lint-all       - Run linter for main project and dev-tools"
 	@echo "  make check          - Run test && lint (required before push)"

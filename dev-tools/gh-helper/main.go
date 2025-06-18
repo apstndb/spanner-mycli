@@ -327,15 +327,7 @@ func saveReviewState(prNumber string, state ReviewState) error {
 }
 
 // hasNewReviews checks if there are new reviews since the last known state
-func hasNewReviews(reviews []struct {
-	ID        string `json:"id"`
-	Author    struct {
-		Login string `json:"login"`
-	} `json:"author"`
-	CreatedAt string `json:"createdAt"`
-	State     string `json:"state"`
-	Body      string `json:"body"`
-}, lastState *ReviewState) bool {
+func hasNewReviews(reviews []shared.ReviewFields, lastState *ReviewState) bool {
 	if lastState == nil {
 		// No previous state, any review is "new"
 		return len(reviews) > 0
@@ -414,19 +406,13 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
 
-	query := `
-query($owner: String!, $repo: String!, $prNumber: Int!) {
+	query := shared.AllReviewFragments + `
+query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $prNumber) {
       reviews(last: 15) {
         nodes {
-          id
-          author {
-            login
-          }
-          createdAt
-          state
-          body
+          ...ReviewFields
         }
       }
     }
@@ -434,9 +420,10 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 }`
 
 	result, err := client.RunGraphQLQueryWithVariables(query, map[string]interface{}{
-		"owner":    owner,
-		"repo":     repo,
-		"prNumber": prNumber,
+		"owner":               owner,
+		"repo":                repo,
+		"prNumber":            prNumber,
+		"includeReviewBodies": true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to fetch reviews: %w", err)
@@ -447,15 +434,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 			Repository struct {
 				PullRequest struct {
 					Reviews struct {
-						Nodes []struct {
-							ID        string `json:"id"`
-							Author    struct {
-								Login string `json:"login"`
-							} `json:"author"`
-							CreatedAt string `json:"createdAt"`
-							State     string `json:"state"`
-							Body      string `json:"body"`
-						} `json:"nodes"`
+						Nodes []shared.ReviewFields `json:"nodes"`
 					} `json:"reviews"`
 				} `json:"pullRequest"`
 			} `json:"repository"`
@@ -480,7 +459,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 	if err == nil {
 		fmt.Printf("Last known review: %s at %s\n", lastState.ID, lastState.CreatedAt)
 
-		newReviews := []interface{}{}
+		var newReviews []shared.ReviewFields
 		for _, review := range reviews {
 			if review.CreatedAt > lastState.CreatedAt ||
 				(review.CreatedAt == lastState.CreatedAt && review.ID != lastState.ID) {
@@ -491,36 +470,18 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 		if len(newReviews) > 0 {
 			fmt.Printf("\n🆕 Found %d new review(s):\n", len(newReviews))
 			for _, review := range newReviews {
-				r := review.(struct {
-					ID        string `json:"id"`
-					Author    struct {
-						Login string `json:"login"`
-					} `json:"author"`
-					CreatedAt string `json:"createdAt"`
-					State     string `json:"state"`
-					Body      string `json:"body"`
-				})
-				fmt.Printf("  - %s at %s (%s)\n", r.Author.Login, r.CreatedAt, r.State)
+				fmt.Printf("  - %s at %s (%s)\n", review.Author.Login, review.CreatedAt, review.State)
 			}
 			fmt.Println()
 
 			fmt.Println("📝 New review details:")
 			for _, review := range newReviews {
-				r := review.(struct {
-					ID        string `json:"id"`
-					Author    struct {
-						Login string `json:"login"`
-					} `json:"author"`
-					CreatedAt string `json:"createdAt"`
-					State     string `json:"state"`
-					Body      string `json:"body"`
-				})
-				body := r.Body
+				body := review.Body
 				if body == "" {
 					body = "No body"
 				}
 				fmt.Printf("Author: %s\nTime: %s\nState: %s\nBody: %s\n---\n",
-					r.Author.Login, r.CreatedAt, r.State, body)
+					review.Author.Login, review.CreatedAt, review.State, body)
 			}
 		} else {
 			fmt.Println("✓ No new reviews since last check")
@@ -649,18 +610,14 @@ func waitForReviewsOnly(prNumber string) error {
 			return nil
 		}
 		
-		// Query for reviews
-		query := `
-		query($owner: String!, $repo: String!, $prNumber: Int!) {
+		// Query for reviews using fragments
+		query := shared.AllReviewFragments + `
+		query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
 		  repository(owner: $owner, name: $repo) {
 		    pullRequest(number: $prNumber) {
 		      reviews(last: 15) {
 		        nodes {
-		          id
-		          author { login }
-		          createdAt
-		          state
-		          body
+		          ...ReviewFields
 		        }
 		      }
 		    }
@@ -668,9 +625,10 @@ func waitForReviewsOnly(prNumber string) error {
 		}`
 		
 		variables := map[string]interface{}{
-			"owner":    owner,
-			"repo":     repo,
-			"prNumber": prNumberInt,
+			"owner":               owner,
+			"repo":                repo,
+			"prNumber":            prNumberInt,
+			"includeReviewBodies": true,
 		}
 		
 		result, err := client.RunGraphQLQueryWithVariables(query, variables)
@@ -685,15 +643,7 @@ func waitForReviewsOnly(prNumber string) error {
 				Repository struct {
 					PullRequest struct {
 						Reviews struct {
-							Nodes []struct {
-								ID        string `json:"id"`
-								Author    struct {
-									Login string `json:"login"`
-								} `json:"author"`
-								CreatedAt string `json:"createdAt"`
-								State     string `json:"state"`
-								Body      string `json:"body"`
-							} `json:"nodes"`
+							Nodes []shared.ReviewFields `json:"nodes"`
 						} `json:"reviews"`
 					} `json:"pullRequest"`
 				} `json:"repository"`
@@ -832,43 +782,22 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Combined GraphQL query for both reviews and checks
-		query := `
-query($owner: String!, $repo: String!, $prNumber: Int!) {
+		// Combined GraphQL query for both reviews and checks using fragments
+		query := shared.AllReviewFragments + shared.AllStatusFragments + `
+query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $prNumber) {
       mergeable
       mergeStateStatus
       reviews(last: 15) {
         nodes {
-          id
-          author { login }
-          createdAt
-          state
-          body
+          ...ReviewFields
         }
       }
       commits(last: 1) {
         nodes {
           commit {
-            statusCheckRollup {
-              state
-              contexts(first: 50) {
-                nodes {
-                  ... on StatusContext {
-                    context
-                    state
-                    targetUrl
-                  }
-                  ... on CheckRun {
-                    name
-                    status
-                    conclusion
-                    detailsUrl
-                  }
-                }
-              }
-            }
+            ...CommitWithStatusFields
           }
         }
       }
@@ -877,9 +806,10 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 }`
 
 		variables := map[string]interface{}{
-			"owner":    owner,
-			"repo":     repo,
-			"prNumber": prNumberInt,
+			"owner":               owner,
+			"repo":                repo,
+			"prNumber":            prNumberInt,
+			"includeReviewBodies": true,
 		}
 
 		result, err := client.RunGraphQLQueryWithVariables(query, variables)
@@ -896,26 +826,11 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 						Mergeable        string `json:"mergeable"`
 						MergeStateStatus string `json:"mergeStateStatus"`
 						Reviews struct {
-							Nodes []struct {
-								ID        string `json:"id"`
-								Author    struct {
-									Login string `json:"login"`
-								} `json:"author"`
-								CreatedAt string `json:"createdAt"`
-								State     string `json:"state"`
-								Body      string `json:"body"`
-							} `json:"nodes"`
+							Nodes []shared.ReviewFields `json:"nodes"`
 						} `json:"reviews"`
 						Commits struct {
 							Nodes []struct {
-								Commit struct {
-									StatusCheckRollup *struct {
-										State    string `json:"state"`
-										Contexts struct {
-											Nodes []interface{} `json:"nodes"`
-										} `json:"contexts"`
-									} `json:"statusCheckRollup"`
-								} `json:"commit"`
+								Commit shared.CommitWithStatusFields `json:"commit"`
 							} `json:"nodes"`
 						} `json:"commits"`
 					} `json:"pullRequest"`
