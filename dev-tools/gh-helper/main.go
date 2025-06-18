@@ -595,13 +595,13 @@ var (
 		"UNKNOWN":     "⏳ Checking...",
 	}
 	
-	// Note: All status formatting moved to shared.FormatStatus()
-	// for unified handling across dev-tools
+	// Note: Status formatting moved to shared.FormatStatusState()
+	// for reuse across dev-tools
 )
 
-// getStatusMessage is a local wrapper for shared.FormatStatus
+// getStatusMessage is a local wrapper for shared.FormatStatusState
 func getStatusMessage(state string, withIcon bool) string {
-	return shared.FormatStatus(state, withIcon)
+	return shared.FormatStatusState(state, withIcon)
 }
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
@@ -748,14 +748,15 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			// Show mergeable status
 			mergeable, mergeStatus := response.GetMergeStatus()
 			
-			if msg, exists := mergeStatusMessages[mergeable]; exists {
-				if mergeable == "CONFLICTING" {
-					fmt.Printf("   Merge: %s (status: %s)\n", msg, mergeStatus)
-				} else {
-					fmt.Printf("   Merge: %s\n", msg)
-				}
+			msg, exists := mergeStatusMessages[mergeable]
+			if !exists {
+				msg = mergeable // Use raw value for unknown states
+			}
+			
+			if mergeable == "CONFLICTING" {
+				fmt.Printf("   Merge: %s (status: %s)\n", msg, mergeStatus)
 			} else {
-				fmt.Printf("   Merge: %s (status: %s)\n", mergeable, mergeStatus)
+				fmt.Printf("   Merge: %s\n", msg)
 			}
 			if statusCheckRollup != nil {
 				rollupState := statusCheckRollup.State

@@ -14,26 +14,32 @@ type StatusInfo struct {
 	Icon    string
 }
 
-// Unified status information for all GitHub status enums
-// Values with the same meaning across different enums are shared
-var UnifiedStatusInfo = map[string]StatusInfo{
-	// Common success states
-	"SUCCESS":   {Message: "Success", Icon: "✅"},
-	"COMPLETED": {Message: "Completed", Icon: "✅"},
-	
-	// Common failure states  
-	"FAILURE": {Message: "Failure", Icon: "❌"},
-	"ERROR":   {Message: "Error", Icon: "🚨"},
-	
-	// Common pending/waiting states
-	"PENDING":     {Message: "Pending", Icon: "⏳"},
+// StatusStateInfo provides message and icon information for StatusState enum
+// StatusState: EXPECTED, ERROR, FAILURE, PENDING, SUCCESS (commit status contexts)
+var StatusStateInfo = map[string]StatusInfo{
+	"SUCCESS":  {Message: "Success", Icon: "✅"},
+	"FAILURE":  {Message: "Failure", Icon: "❌"},
+	"ERROR":    {Message: "Error", Icon: "🚨"},
+	"PENDING":  {Message: "Pending", Icon: "⏳"},
+	"EXPECTED": {Message: "Expected", Icon: "⏳"},
+}
+
+// CheckStatusStateInfo provides message and icon information for CheckStatusState enum
+// CheckStatusState: REQUESTED, QUEUED, IN_PROGRESS, COMPLETED, WAITING, PENDING (check run status)
+var CheckStatusStateInfo = map[string]StatusInfo{
+	"COMPLETED":   {Message: "Completed", Icon: "✅"},
 	"IN_PROGRESS": {Message: "In progress", Icon: "⏳"},
+	"PENDING":     {Message: "Pending", Icon: "⏳"},
 	"QUEUED":      {Message: "Queued", Icon: "⏳"},
 	"REQUESTED":   {Message: "Requested", Icon: "⏳"},
 	"WAITING":     {Message: "Waiting", Icon: "⏳"},
-	"EXPECTED":    {Message: "Expected", Icon: "⏳"},
-	
-	// Check conclusion specific states
+}
+
+// CheckConclusionStateInfo provides message and icon information for CheckConclusionState enum  
+// CheckConclusionState: ACTION_REQUIRED, TIMED_OUT, CANCELLED, FAILURE, SUCCESS, NEUTRAL, SKIPPED, STARTUP_FAILURE, STALE (check run conclusion)
+var CheckConclusionStateInfo = map[string]StatusInfo{
+	"SUCCESS":         {Message: "Success", Icon: "✅"},
+	"FAILURE":         {Message: "Failure", Icon: "❌"},
 	"NEUTRAL":         {Message: "Neutral", Icon: "❔"},
 	"CANCELLED":       {Message: "Cancelled", Icon: "🚫"},
 	"SKIPPED":         {Message: "Skipped", Icon: "⏭️"},
@@ -59,52 +65,31 @@ func formatStatus(state string, statusMap map[string]StatusInfo, withIcon bool) 
 	return fmt.Sprintf("Unknown (%s)", state)
 }
 
-// FormatStatus returns a formatted status message for any GitHub status enum
-// This unified function works with StatusState, CheckStatusState, and CheckConclusionState
-func FormatStatus(state string, withIcon bool) string {
-	return formatStatus(state, UnifiedStatusInfo, withIcon)
+// FormatStatusState returns a formatted status message for StatusState enum
+func FormatStatusState(state string, withIcon bool) string {
+	return formatStatus(state, StatusStateInfo, withIcon)
 }
 
-// FormatStatusWithPrefix returns a formatted status message with a custom prefix
-func FormatStatusWithPrefix(state, prefix string, withIcon bool) string {
-	baseMessage := FormatStatus(state, withIcon)
+// FormatCheckStatusState returns a formatted status message for CheckStatusState enum
+func FormatCheckStatusState(state string, withIcon bool) string {
+	return formatStatus(state, CheckStatusStateInfo, withIcon)
+}
+
+// FormatCheckConclusionState returns a formatted status message for CheckConclusionState enum
+func FormatCheckConclusionState(state string, withIcon bool) string {
+	return formatStatus(state, CheckConclusionStateInfo, withIcon)
+}
+
+// FormatStatusStateWithPrefix returns a formatted StatusState message with a custom prefix
+func FormatStatusStateWithPrefix(state, prefix string, withIcon bool) string {
+	baseMessage := FormatStatusState(state, withIcon)
 	if prefix == "" {
 		return baseMessage
 	}
 	return fmt.Sprintf("%s: %s", prefix, baseMessage)
 }
 
-// Unified status checking functions that work across all enum types
-
-// IsStatusComplete checks if any status represents a completed/final state
-func IsStatusComplete(state string) bool {
-	// Success states
-	if state == "SUCCESS" || state == "COMPLETED" {
-		return true
-	}
-	// Failure/error states
-	if state == "FAILURE" || state == "ERROR" || state == "STARTUP_FAILURE" || state == "TIMED_OUT" {
-		return true
-	}
-	// Other final states
-	if state == "CANCELLED" || state == "SKIPPED" || state == "NEUTRAL" {
-		return true
-	}
-	return false
-}
-
-// IsStatusSuccess checks if any status represents a successful state
-func IsStatusSuccess(state string) bool {
-	return state == "SUCCESS" || state == "COMPLETED"
-}
-
-// IsStatusFailure checks if any status represents a failure/error state
-func IsStatusFailure(state string) bool {
-	return state == "FAILURE" || state == "ERROR" || state == "STARTUP_FAILURE" || state == "TIMED_OUT"
-}
-
-// IsStatusPending checks if any status represents a pending/in-progress state
-func IsStatusPending(state string) bool {
-	return state == "PENDING" || state == "IN_PROGRESS" || state == "QUEUED" || 
-		   state == "REQUESTED" || state == "WAITING" || state == "EXPECTED"
-}
+// Note: Status checking can be done with map existence checks:
+// _, exists := StatusStateInfo[state]         // Check if valid StatusState
+// _, exists := CheckStatusStateInfo[state]    // Check if valid CheckStatusState  
+// _, exists := CheckConclusionStateInfo[state] // Check if valid CheckConclusionState
