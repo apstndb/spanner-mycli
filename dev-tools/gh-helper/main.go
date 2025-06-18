@@ -1076,8 +1076,13 @@ func listThreads(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("🔍 Fetching review threads for PR #%s...\n", prNumber)
 
+	// OPTIMIZATION: Include viewer info to eliminate separate getCurrentUser() API call
+	// This demonstrates GraphQL's strength: fetching related data in single request
 	query := `
 query($owner: String!, $repo: String!, $prNumber: Int!) {
+  viewer {
+    login
+  }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $prNumber) {
       reviewThreads(first: 20) {
@@ -1116,6 +1121,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 
 	var response struct {
 		Data struct {
+			Viewer struct {
+				Login string `json:"login"`
+			} `json:"viewer"`
 			Repository struct {
 				PullRequest struct {
 					ReviewThreads struct {
@@ -1147,6 +1155,8 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 	}
 
 	unresolvedThreads := []interface{}{}
+	currentUser := response.Data.Viewer.Login // Using optimized viewer data from same query
+	
 	for _, thread := range response.Data.Repository.PullRequest.ReviewThreads.Nodes {
 		if !thread.IsResolved {
 			var location string
@@ -1168,13 +1178,11 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 				}
 				latestAuthor = last.Author.Login
 
-				// Check if current user has replied
-				if currentUser, err := getCurrentUser(); err == nil {
-					for _, comment := range thread.Comments.Nodes {
-						if comment.Author.Login == currentUser {
-							needsReply = false
-							break
-						}
+				// Check if current user has replied using optimized viewer data
+				for _, comment := range thread.Comments.Nodes {
+					if comment.Author.Login == currentUser {
+						needsReply = false
+						break
 					}
 				}
 			}
