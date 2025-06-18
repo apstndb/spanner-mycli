@@ -595,13 +595,13 @@ var (
 		"UNKNOWN":     "⏳ Checking...",
 	}
 	
-	// Note: StatusState/CheckStatusState formatting moved to shared.FormatStatusState()
-	// for reuse across dev-tools
+	// Note: All status formatting moved to shared.FormatStatus()
+	// for unified handling across dev-tools
 )
 
-// getStatusMessage is a local wrapper for shared.FormatStatusState
+// getStatusMessage is a local wrapper for shared.FormatStatus
 func getStatusMessage(state string, withIcon bool) string {
-	return shared.FormatStatusState(state, withIcon)
+	return shared.FormatStatus(state, withIcon)
 }
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
