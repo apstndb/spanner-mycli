@@ -24,11 +24,19 @@ test:
 test-verbose:
 	go test -v ./...
 
+# Test with coverage profile (for CI)
+test-coverage:
+	go test ./... -coverprofile=coverage.out
 
 # Test both main project and dev-tools (comprehensive testing)
 test-all:
 	go test ./...
 	cd dev-tools && go test ./...
+
+# Test both main project and dev-tools with coverage (for CI)
+test-all-coverage:
+	go test ./... -coverprofile=coverage.out
+	cd dev-tools && go test ./... -coverprofile=coverage-dev-tools.out
 
 lint:
 	golangci-lint run
@@ -53,6 +61,9 @@ check: test lint
 # Combined test and lint check for both main project and dev-tools (full validation)
 check-all: test-all lint-all
 
+# Combined test with coverage and lint check for both main project and dev-tools (CI validation)
+check-all-coverage: test-all-coverage lint-all
+
 # Update README.md help sections
 docs-update:
 	@bin/spanner-mycli-dev docs update-help
@@ -60,15 +71,18 @@ docs-update:
 # Show development help
 help-dev:
 	@echo "🛠️  Development Commands:"
-	@echo "  make build          - Build the application"
-	@echo "  make build-tools    - Build gh-helper and spanner-mycli-dev tools"
-	@echo "  make test           - Run full test suite (required before push)"
-	@echo "  make test-all       - Run tests for main project and dev-tools"
-	@echo "  make test-quick     - Run quick tests (go test -short)"
-	@echo "  make lint           - Run linter (required before push)"
-	@echo "  make lint-all       - Run linter for main project and dev-tools"
-	@echo "  make check          - Run test && lint (required before push)"
-	@echo "  make check-all      - Run test-all && lint-all (comprehensive check)"
+	@echo "  make build            - Build the application"
+	@echo "  make build-tools      - Build gh-helper and spanner-mycli-dev tools"
+	@echo "  make test             - Run full test suite (required before push)"
+	@echo "  make test-coverage    - Run tests with coverage profile (for CI)"
+	@echo "  make test-all         - Run tests for main project and dev-tools"
+	@echo "  make test-all-coverage - Run tests with coverage for main project and dev-tools (for CI)"
+	@echo "  make test-quick       - Run quick tests (go test -short)"
+	@echo "  make lint             - Run linter (required before push)"
+	@echo "  make lint-all         - Run linter for main project and dev-tools"
+	@echo "  make check            - Run test && lint (required before push)"
+	@echo "  make check-all        - Run test-all && lint-all (comprehensive check)"
+	@echo "  make check-all-coverage - Run test-all-coverage && lint-all (for CI)"
 	@echo "  make clean          - Clean build artifacts and test cache"
 	@echo "  make run            - Run with PROJECT/INSTANCE/DATABASE env vars"
 	@echo "  make docs-update    - Generate help output for README.md"
