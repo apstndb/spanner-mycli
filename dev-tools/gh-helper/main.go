@@ -49,6 +49,43 @@ func resolvePRNumberFromArgs(args []string, client *shared.GitHubClient) (string
 	return fmt.Sprintf("%d", prNumberInt), nil
 }
 
+// calculateEffectiveTimeout handles timeout calculation with Claude Code constraints consistently
+// Returns the effective timeout and a user-friendly display string
+func calculateEffectiveTimeout() (time.Duration, string, error) {
+	timeoutDuration, err := parseTimeout()
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid timeout format: %w", err)
+	}
+	
+	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
+	var effectiveTimeout time.Duration
+	var timeoutDisplay string
+	
+	if hasClaudeCodeEnv {
+		if timeoutDuration > claudeCodeEnvTimeout {
+			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
+				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
+			effectiveTimeout = claudeCodeEnvTimeout
+			timeoutDisplay = fmt.Sprintf("%v (limited by Claude Code)", claudeCodeEnvTimeout)
+		} else {
+			effectiveTimeout = timeoutDuration
+			timeoutDisplay = fmt.Sprintf("%v", timeoutDuration)
+		}
+	} else {
+		claudeCodeLimit := 90 * time.Second
+		if timeoutDuration > claudeCodeLimit {
+			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
+			effectiveTimeout = claudeCodeLimit
+			timeoutDisplay = fmt.Sprintf("%v (default safety limit)", claudeCodeLimit)
+		} else {
+			effectiveTimeout = timeoutDuration
+			timeoutDisplay = fmt.Sprintf("%v (no env config)", timeoutDuration)
+		}
+	}
+	
+	return effectiveTimeout, timeoutDisplay, nil
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "gh-helper",
 	Short: "Generic GitHub operations helper",
@@ -350,16 +387,18 @@ func checkClaudeCodeEnvironment() (time.Duration, bool) {
 	
 	// Check for BASH_MAX_TIMEOUT_MS (upper limit for explicit timeouts)
 	if maxTimeoutStr := os.Getenv("BASH_MAX_TIMEOUT_MS"); maxTimeoutStr != "" {
-		if maxTimeout, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeout)
+		if parsedTimeout, err := time.ParseDuration(maxTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", parsedTimeout)
+			maxTimeout = parsedTimeout
 			hasMax = true
 		}
 	}
 	
 	// Check for BASH_DEFAULT_TIMEOUT_MS (default when no timeout specified)
 	if defaultTimeoutStr := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); defaultTimeoutStr != "" {
-		if defaultTimeout, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
-			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeout)
+		if parsedTimeout, err := time.ParseDuration(defaultTimeoutStr + "ms"); err == nil {
+			fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", parsedTimeout)
+			defaultTimeout = parsedTimeout
 			hasDefault = true
 		}
 	}
@@ -567,8 +606,14 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 		waitingFor = append(waitingFor, "PR checks")
 	}
 	
-	fmt.Printf("🔄 Waiting for %s on PR #%s (timeout: %d minutes)...\n", 
-		strings.Join(waitingFor, " and "), prNumber, timeout)
+	// Calculate timeout with Claude Code constraints
+	_, timeoutDisplay, err := calculateEffectiveTimeout()
+	if err != nil {
+		return err
+	}
+	
+	fmt.Printf("🔄 Waiting for %s on PR #%s (timeout: %s)...\n", 
+		strings.Join(waitingFor, " and "), prNumber, timeoutDisplay)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
 	// For now, simply delegate to waitForReviewsAndChecks with appropriate flags
@@ -602,32 +647,13 @@ func waitForReviewsOnly(prNumber string) error {
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 	
-	// Parse timeout duration
-	timeoutDuration, err := parseTimeout()
-	if err != nil {
-		return fmt.Errorf("invalid timeout format: %w", err)
-	}
-	
 	// Apply Claude Code timeout constraints
-	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
-	var effectiveTimeout time.Duration
-	if hasClaudeCodeEnv {
-		effectiveTimeout = timeoutDuration
-		if timeoutDuration > claudeCodeEnvTimeout {
-			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
-				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
-			effectiveTimeout = claudeCodeEnvTimeout
-		}
-	} else {
-		claudeCodeLimit := 90 * time.Second
-		effectiveTimeout = timeoutDuration
-		if timeoutDuration > claudeCodeLimit {
-			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
-			effectiveTimeout = claudeCodeLimit
-		}
+	effectiveTimeout, timeoutDisplay, err := calculateEffectiveTimeout()
+	if err != nil {
+		return err
 	}
 	
-	fmt.Printf("🔄 Waiting for reviews only on PR #%s (timeout: %v)...\n", prNumber, effectiveTimeout)
+	fmt.Printf("🔄 Waiting for reviews only on PR #%s (timeout: %s)...\n", prNumber, timeoutDisplay)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 	
 	// Load existing state
@@ -761,38 +787,18 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
 	
-	// Parse timeout duration with new flexible format
-	timeoutDuration, err := parseTimeout()
+	// Calculate timeout with Claude Code constraints
+	effectiveTimeout, timeoutDisplay, err := calculateEffectiveTimeout()
 	if err != nil {
-		return fmt.Errorf("invalid timeout format: %w", err)
+		return err
 	}
 	
-	// Check Claude Code environment and adjust timeout accordingly
-	// Based on anthropics/claude-code#1039, anthropics/claude-code#1216, anthropics/claude-code#1717
-	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
-	
-	var effectiveTimeout time.Duration
-	if hasClaudeCodeEnv {
-		// User has configured Claude Code environment variables
-		effectiveTimeout = timeoutDuration
-		if timeoutDuration > claudeCodeEnvTimeout {
-			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
-				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
-			effectiveTimeout = claudeCodeEnvTimeout
-		}
-	} else {
-		// Default Claude Code 2-minute limit - use safe margin
-		// anthropics/claude-code#1216: Commands timeout at exactly 2m 0.0s
-		claudeCodeLimit := 90 * time.Second  // Safe margin
-		effectiveTimeout = timeoutDuration
-		
-		if timeoutDuration > claudeCodeLimit {
-			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
-			fmt.Printf("💡 To extend timeout, set BASH_MAX_TIMEOUT_MS in ~/.claude/settings.json\n")
-			fmt.Printf("💡 Example: {\"env\": {\"BASH_MAX_TIMEOUT_MS\": \"900000\"}} for 15 minutes\n")
-			fmt.Printf("💡 Manual retry: bin/gh-helper reviews wait %s --timeout=%v\n", prNumber, timeoutDuration)
-			effectiveTimeout = claudeCodeLimit
-		}
+	// Show additional guidance for extending timeout if needed
+	timeoutDuration, parseErr := parseTimeout()
+	if parseErr == nil && effectiveTimeout < timeoutDuration {
+		fmt.Printf("💡 To extend timeout, set BASH_MAX_TIMEOUT_MS in ~/.claude/settings.json\n")
+		fmt.Printf("💡 Example: {\"env\": {\"BASH_MAX_TIMEOUT_MS\": \"900000\"}} for 15 minutes\n")
+		fmt.Printf("💡 Manual retry: bin/gh-helper reviews wait %s --timeout=%v\n", prNumber, timeoutDuration)
 	}
 	
 	// Request Gemini review if flag is set
@@ -804,7 +810,7 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 		fmt.Println("✅ Gemini review requested")
 	}
 	
-	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %v)...\n", prNumber, effectiveTimeout)
+	fmt.Printf("🔄 Waiting for both reviews AND PR checks for PR #%s (timeout: %s)...\n", prNumber, timeoutDisplay)
 	fmt.Println("Press Ctrl+C to stop monitoring")
 
 	// Setup signal handling for graceful termination with proper guidance
