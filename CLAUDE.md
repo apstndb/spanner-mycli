@@ -45,6 +45,7 @@ make build                    # Build the application
 make fasttest                 # Quick tests during development
 
 # Development tools (build with: make build-tools)
+bin/gh-helper reviews analyze [PR]     # Comprehensive review analysis (prevents missing feedback)
 bin/gh-helper reviews wait [PR]        # Wait for reviews + checks
 bin/spanner-mycli-dev review gemini [PR]  # Complete review workflow
 ```
@@ -117,8 +118,9 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-4. **For review replies**: Use `bin/gh-helper threads list` and `bin/gh-helper threads reply` - Automated thread replies
-5. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+4. **For review analysis**: Use `bin/gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
+5. **For thread replies**: Use `bin/gh-helper threads reply` - Automated thread replies
+6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 **⚠️ CRITICAL: Use `bin/gh-helper reviews wait` to avoid CI confusion from merge conflicts**
 
