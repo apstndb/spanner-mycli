@@ -130,19 +130,22 @@ func (c *GitHubClient) GetUnifiedReviewData(prNumber string, opts UnifiedReviewO
 	}
 
 	// Determine pagination strategy based on provided cursors
-	// We'll need to make separate calls if we need different pagination modes
 	useReviewsAfter := opts.ReviewAfterCursor != ""
 	useReviewsBefore := opts.ReviewBeforeCursor != ""
 	useThreadsAfter := opts.ThreadAfterCursor != ""
+	useDefaultReviews := !useReviewsAfter && !useReviewsBefore
+	useDefaultThreads := opts.IncludeThreads && !useThreadsAfter
 
 	// GraphQL query with safe parameterized pagination
 	// Uses variables and conditional directives for safety
 	query := `
 query($owner: String!, $repo: String!, $prNumber: Int!, 
-      $includeThreads: Boolean!, $includeReviewBodies: Boolean!,
+      $includeReviewBodies: Boolean!,
       $reviewLimit: Int!, $threadLimit: Int!,
+      $useDefaultReviews: Boolean!,
       $useReviewsAfter: Boolean!, $reviewAfterCursor: String!,
       $useReviewsBefore: Boolean!, $reviewBeforeCursor: String!,
+      $useDefaultThreads: Boolean!,
       $useThreadsAfter: Boolean!, $threadAfterCursor: String!) {
   viewer {
     login
@@ -156,7 +159,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
       mergeStateStatus
       
       # Default reviews (latest)
-      reviews(last: $reviewLimit) @skip(if: $useReviewsAfter) @skip(if: $useReviewsBefore) {
+      reviews(last: $reviewLimit) @include(if: $useDefaultReviews) {
         totalCount
         pageInfo {
           hasNextPage
@@ -237,7 +240,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
       }
       
       # Default threads
-      reviewThreads(first: $threadLimit) @include(if: $includeThreads) @skip(if: $useThreadsAfter) {
+      reviewThreads(first: $threadLimit) @include(if: $useDefaultThreads) {
         totalCount
         pageInfo {
           hasNextPage
@@ -295,14 +298,15 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 		"owner":               c.Owner,
 		"repo":                c.Repo,
 		"prNumber":            prNumberInt,
-		"includeThreads":      opts.IncludeThreads,
 		"includeReviewBodies": opts.IncludeReviewBodies,
 		"reviewLimit":         opts.ReviewLimit,
 		"threadLimit":         opts.ThreadLimit,
+		"useDefaultReviews":   useDefaultReviews,
 		"useReviewsAfter":     useReviewsAfter,
 		"reviewAfterCursor":   opts.ReviewAfterCursor,
 		"useReviewsBefore":    useReviewsBefore,
 		"reviewBeforeCursor":  opts.ReviewBeforeCursor,
+		"useDefaultThreads":   useDefaultThreads,
 		"useThreadsAfter":     useThreadsAfter,
 		"threadAfterCursor":   opts.ThreadAfterCursor,
 	}
