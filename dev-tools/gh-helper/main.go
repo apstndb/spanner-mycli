@@ -522,7 +522,22 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 }
 
 func waitForReviews(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
+	// Resolve PR number with auto-detection for current branch if no args provided
+	input := ""
+	if len(args) > 0 {
+		input = args[0]
+	}
+	
+	client := shared.NewGitHubClient(owner, repo)
+	prNumberInt, message, err := client.ResolvePRNumber(input)
+	if err != nil {
+		return fmt.Errorf("failed to resolve PR number: %w", err)
+	}
+	prNumber := fmt.Sprintf("%d", prNumberInt)
+	
+	if message != "" {
+		fmt.Printf("🔍 %s\n", message)
+	}
 	
 	// Validate flags
 	if excludeReviews && excludeChecks {
@@ -536,7 +551,6 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	// Request Gemini review if flag is set
 	if requestReview && waitForReviews {
 		fmt.Printf("📝 Requesting Gemini review for PR #%s...\n", prNumber)
-		client := shared.NewGitHubClient(owner, repo)
 		if err := client.CreatePRComment(prNumber, "/gemini review"); err != nil {
 			return fmt.Errorf("failed to request Gemini review: %w", err)
 		}
@@ -571,7 +585,7 @@ func waitForReviews(cmd *cobra.Command, args []string) error {
 	}
 	
 	// For all other cases (checks-only or both), delegate to the full implementation
-	err := waitForReviewsAndChecks(cmd, args)
+	err = waitForReviewsAndChecks(cmd, args)
 	// Don't wrap the error to avoid double error messages
 	return err
 }
@@ -732,16 +746,24 @@ func waitForReviewsOnly(prNumber string) error {
 }
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
-	
-	// Convert PR number to integer for GraphQL
-	prNumberInt, err := strconv.Atoi(prNumber)
-	if err != nil {
-		return fmt.Errorf("invalid PR number format: %w", err)
+	// Resolve PR number with auto-detection for current branch if no args provided
+	input := ""
+	if len(args) > 0 {
+		input = args[0]
 	}
 	
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
+	
+	prNumberInt, message, err := client.ResolvePRNumber(input)
+	if err != nil {
+		return fmt.Errorf("failed to resolve PR number: %w", err)
+	}
+	prNumber := fmt.Sprintf("%d", prNumberInt)
+	
+	if message != "" {
+		fmt.Printf("🔍 %s\n", message)
+	}
 	
 	// Parse timeout duration with new flexible format
 	timeoutDuration, err := parseTimeout()
