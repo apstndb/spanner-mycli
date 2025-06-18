@@ -27,6 +27,28 @@ func newOperationalCommand(use, short, long string, runE func(*cobra.Command, []
 	}
 }
 
+// resolvePRNumberFromArgs handles the common pattern of PR number resolution from command arguments
+// Supports auto-detection when no args provided, or explicit number/issue resolution
+func resolvePRNumberFromArgs(args []string, client *shared.GitHubClient) (string, error) {
+	var input string
+	if len(args) == 0 {
+		input = "" // Auto-detect from current branch
+	} else {
+		input = args[0]
+	}
+	
+	prNumberInt, message, err := client.ResolvePRNumber(input)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve PR number: %w", err)
+	}
+	
+	if message != "" {
+		fmt.Printf("🔍 %s\n", message)
+	}
+	
+	return fmt.Sprintf("%d", prNumberInt), nil
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "gh-helper",
 	Short: "Generic GitHub operations helper",
@@ -354,20 +376,11 @@ func checkClaudeCodeEnvironment() (time.Duration, bool) {
 }
 
 func checkReviews(cmd *cobra.Command, args []string) error {
-	// Resolve PR number using smart resolution
-	var input string
-	if len(args) > 0 {
-		input = args[0]
-	}
-	
 	client := shared.NewGitHubClient(owner, repo)
-	prNumber, resolveMessage, err := client.ResolvePRNumber(input)
+	prNumberStr, err := resolvePRNumberFromArgs(args, client)
 	if err != nil {
-		return fmt.Errorf("failed to resolve PR number: %w", err)
+		return err
 	}
-	
-	fmt.Printf("🔍 %s\n", resolveMessage)
-	prNumberStr := fmt.Sprintf("%d", prNumber)
 
 	stateDir := fmt.Sprintf("%s/.cache/spanner-mycli-reviews", os.Getenv("HOME"))
 
@@ -376,6 +389,12 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Checking reviews for PR #%s in %s/%s...\n", prNumberStr, owner, repo)
+
+	// Convert to int for GraphQL
+	prNumber, err := strconv.Atoi(prNumberStr)
+	if err != nil {
+		return fmt.Errorf("invalid PR number format: %w", err)
+	}
 
 	query := `
 query($owner: String!, $repo: String!, $prNumber: Int!) {
@@ -515,21 +534,10 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 }
 
 func waitForReviews(cmd *cobra.Command, args []string) error {
-	// Resolve PR number with auto-detection for current branch if no args provided
-	input := ""
-	if len(args) > 0 {
-		input = args[0]
-	}
-	
 	client := shared.NewGitHubClient(owner, repo)
-	prNumberInt, message, err := client.ResolvePRNumber(input)
+	prNumber, err := resolvePRNumberFromArgs(args, client)
 	if err != nil {
-		return fmt.Errorf("failed to resolve PR number: %w", err)
-	}
-	prNumber := fmt.Sprintf("%d", prNumberInt)
-	
-	if message != "" {
-		fmt.Printf("🔍 %s\n", message)
+		return err
 	}
 	
 	// Validate flags
@@ -739,23 +747,18 @@ func waitForReviewsOnly(prNumber string) error {
 }
 
 func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
-	// Resolve PR number with auto-detection for current branch if no args provided
-	input := ""
-	if len(args) > 0 {
-		input = args[0]
-	}
-	
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 	
-	prNumberInt, message, err := client.ResolvePRNumber(input)
+	prNumber, err := resolvePRNumberFromArgs(args, client)
 	if err != nil {
-		return fmt.Errorf("failed to resolve PR number: %w", err)
+		return err
 	}
-	prNumber := fmt.Sprintf("%d", prNumberInt)
-	
-	if message != "" {
-		fmt.Printf("🔍 %s\n", message)
+
+	// Convert to int for GraphQL
+	prNumberInt, err := strconv.Atoi(prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid PR number format: %w", err)
 	}
 	
 	// Parse timeout duration with new flexible format

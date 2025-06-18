@@ -91,29 +91,38 @@ bin/gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 bin/spanner-mycli-dev worktree setup issue-123-feature
 ```
 
-### Smart Number Resolution
+### Universal Number Resolution
 
-**No more PR number confusion!** Tools support multiple input formats with intelligent resolution:
+**Consistent across all commands!** All gh-helper commands that work with PRs support the same intelligent resolution pattern:
 
 ```bash
-# All these work automatically:
+# All commands support these patterns:
 bin/gh-helper reviews wait                    # Uses current branch PR
+bin/gh-helper reviews fetch                   # Auto-detect current branch PR  
+bin/gh-helper reviews analyze                 # Auto-detect current branch PR
+
 bin/gh-helper reviews wait 301                # Auto-detects: Issue #301 → PR #306  
-bin/gh-helper reviews wait 306                # Auto-detects: Direct PR #306
+bin/gh-helper reviews fetch 301               # Same auto-detection
+bin/gh-helper reviews analyze 301             # Same auto-detection
 
 # Explicit formats skip auto-detection (faster):
 bin/gh-helper reviews wait issues/301         # Forces issue resolution
-bin/gh-helper reviews wait pull/306           # Forces PR usage
-bin/gh-helper reviews wait pr/306             # Alternative PR format
+bin/gh-helper reviews fetch pull/306          # Forces PR usage
+bin/gh-helper reviews analyze pr/306          # Alternative PR format
 
 # No need to manually check PR numbers anymore!
 ```
 
-**Resolution strategy:**
+**Universal Resolution Strategy** (implemented in `resolvePRNumberFromArgs`):
 1. **No argument**: Uses current branch's PR (via `gh pr view`)
 2. **Explicit formats** (`issues/N`, `pull/N`, `pr/N`): Skip auto-detection for better performance
 3. **Plain numbers**: Auto-detect using GraphQL `issueOrPullRequest`
 4. **Issue resolution**: Automatically finds associated open PRs
+
+**Commands with universal support:**
+- `reviews wait [pr-number-or-issue]` 
+- `reviews fetch [pr-number-or-issue]`
+- `reviews analyze [pr-number-or-issue]`
 
 **Timeout format examples:**
 - `--timeout 15m` (15 minutes) ✅

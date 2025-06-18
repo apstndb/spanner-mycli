@@ -13,7 +13,7 @@ import (
 )
 
 var analyzeReviewsCmd = &cobra.Command{
-	Use:   "analyze <pr-number>",
+	Use:   "analyze [pr-number-or-issue]",
 	Short: "Analyze all review feedback for actionable items",
 	Long: `Comprehensive analysis of all review feedback including severity detection.
 
@@ -21,24 +21,38 @@ This command addresses the lesson learned from PR #306 where critical feedback
 in review bodies (like statusCheckRollup nil handling) was missed because
 reviews and threads were fetched separately.
 
+Arguments:
+- No argument: Uses current branch's PR
+- Plain number (123): Auto-detects issue vs PR
+- Explicit issue (issues/123, issue/123): Forces issue resolution
+- Explicit PR (pull/123, pr/123): Forces PR usage
+
 Examples:
   # Complete analysis (reviews + threads)
   gh-helper reviews analyze 306
+  gh-helper reviews analyze        # Auto-detect current branch PR
 
   # Focus on specific types
   gh-helper reviews analyze 306 --json | jq '.reviews[]'`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: analyzeReviews,
 }
 
 var fetchReviewsCmd = &cobra.Command{
-	Use:   "fetch <pr-number>",
+	Use:   "fetch [pr-number-or-issue]",
 	Short: "Fetch review data with configurable options",
 	Long: `Fetch reviews and threads in a single optimized GraphQL query.
+
+Arguments:
+- No argument: Uses current branch's PR
+- Plain number (123): Auto-detects issue vs PR
+- Explicit issue (issues/123, issue/123): Forces issue resolution
+- Explicit PR (pull/123, pr/123): Forces PR usage
 
 Examples:
   # Full fetch (reviews + threads + bodies)
   gh-helper reviews fetch 306
+  gh-helper reviews fetch        # Auto-detect current branch PR
 
   # Reviews only (no threads)
   gh-helper reviews fetch 306 --no-threads
@@ -49,7 +63,7 @@ Examples:
   # Custom limits and pagination
   gh-helper reviews fetch 306 --review-limit 10 --thread-limit 30
   gh-helper reviews fetch 306 --reviews-after CURSOR`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: fetchReviews,
 }
 
@@ -86,7 +100,11 @@ func init() {
 }
 
 func fetchReviews(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
+	client := shared.NewGitHubClient(owner, repo)
+	prNumber, err := resolvePRNumberFromArgs(args, client)
+	if err != nil {
+		return err
+	}
 
 	// Handle convenience and specialized flags
 	if noThreads, _ := cmd.Flags().GetBool("no-threads"); noThreads {
@@ -110,8 +128,6 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 			threadsOnly = true
 		}
 	}
-
-	client := shared.NewGitHubClient(owner, repo)
 	
 	opts := shared.UnifiedReviewOptions{
 		IncludeThreads:      includeThreads,
@@ -253,8 +269,11 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 }
 
 func analyzeReviews(cmd *cobra.Command, args []string) error {
-	prNumber := args[0]
 	client := shared.NewGitHubClient(owner, repo)
+	prNumber, err := resolvePRNumberFromArgs(args, client)
+	if err != nil {
+		return err
+	}
 	
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
