@@ -398,12 +398,12 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
-	fmt.Printf("Checking reviews for PR #%s in %s/%s...\n", prNumberStr, owner, repo)
+	fmt.Println(shared.FormatCheckingReviews(prNumberStr, owner, repo))
 
 	// Convert to int for GraphQL
 	prNumber, err := strconv.Atoi(prNumberStr)
 	if err != nil {
-		return fmt.Errorf("invalid PR number format: %w", err)
+		return shared.FormatError("PR number", err)
 	}
 
 	query := shared.AllReviewFragments + `
@@ -419,35 +419,20 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
   }
 }`
 
-	result, err := client.RunGraphQLQueryWithVariables(query, map[string]interface{}{
-		"owner":               owner,
-		"repo":                repo,
-		"prNumber":            prNumber,
-		"includeReviewBodies": true,
-	})
+	result, err := client.RunGraphQLQueryWithVariables(query, shared.BasicPRVariablesWithBodies(owner, repo, prNumber, true))
 	if err != nil {
-		return fmt.Errorf("failed to fetch reviews: %w", err)
+		return shared.FetchError("reviews", err)
 	}
 
-	var response struct {
-		Data struct {
-			Repository struct {
-				PullRequest struct {
-					Reviews struct {
-						Nodes []shared.ReviewFields `json:"nodes"`
-					} `json:"reviews"`
-				} `json:"pullRequest"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
+	var response shared.ReviewsResponse
 
 	if err := json.Unmarshal(result, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return shared.ParseError("response", err)
 	}
 
-	reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+	reviews := response.GetReviews()
 	if len(reviews) == 0 {
-		fmt.Println("No reviews found")
+		fmt.Println(shared.MsgNoReviewsFound)
 		return nil
 	}
 
@@ -468,7 +453,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 		}
 
 		if len(newReviews) > 0 {
-			fmt.Printf("\n🆕 Found %d new review(s):\n", len(newReviews))
+			fmt.Printf("\n%s\n", shared.FormatNewReviewsFound(len(newReviews)))
 			for _, review := range newReviews {
 				fmt.Printf("  - %s at %s (%s)\n", review.Author.Login, review.CreatedAt, review.State)
 			}
@@ -484,11 +469,11 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 					review.Author.Login, review.CreatedAt, review.State, body)
 			}
 		} else {
-			fmt.Println("✓ No new reviews since last check")
+			fmt.Println(shared.MsgNoNewReviews)
 		}
 	} else {
 		fmt.Printf("No previous state found, showing all recent reviews...\n\n")
-		fmt.Printf("📋 Found %d review(s) total:\n", len(reviews))
+		fmt.Println(shared.FormatFoundReviews(len(reviews)))
 		for _, review := range reviews {
 			fmt.Printf("  - %s at %s (%s)\n", review.Author.Login, review.CreatedAt, review.State)
 		}
@@ -624,12 +609,7 @@ func waitForReviewsOnly(prNumber string) error {
 		  }
 		}`
 		
-		variables := map[string]interface{}{
-			"owner":               owner,
-			"repo":                repo,
-			"prNumber":            prNumberInt,
-			"includeReviewBodies": true,
-		}
+		variables := shared.BasicPRVariablesWithBodies(owner, repo, prNumberInt, true)
 		
 		result, err := client.RunGraphQLQueryWithVariables(query, variables)
 		if err != nil {
@@ -638,17 +618,7 @@ func waitForReviewsOnly(prNumber string) error {
 			continue
 		}
 		
-		var response struct {
-			Data struct {
-				Repository struct {
-					PullRequest struct {
-						Reviews struct {
-							Nodes []shared.ReviewFields `json:"nodes"`
-						} `json:"reviews"`
-					} `json:"pullRequest"`
-				} `json:"repository"`
-			} `json:"data"`
-		}
+		var response shared.ReviewsResponse
 		
 		if err := json.Unmarshal(result, &response); err != nil {
 			fmt.Printf("Error parsing response: %v\n", err)
@@ -656,7 +626,7 @@ func waitForReviewsOnly(prNumber string) error {
 			continue
 		}
 		
-		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+		reviews := response.GetReviews()
 		
 		if hasNewReviews(reviews, lastState) {
 			// Find and display new reviews
@@ -805,12 +775,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
   }
 }`
 
-		variables := map[string]interface{}{
-			"owner":               owner,
-			"repo":                repo,
-			"prNumber":            prNumberInt,
-			"includeReviewBodies": true,
-		}
+		variables := shared.BasicPRVariablesWithBodies(owner, repo, prNumberInt, true)
 
 		result, err := client.RunGraphQLQueryWithVariables(query, variables)
 		if err != nil {
@@ -819,24 +784,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 			continue
 		}
 
-		var response struct {
-			Data struct {
-				Repository struct {
-					PullRequest struct {
-						Mergeable        string `json:"mergeable"`
-						MergeStateStatus string `json:"mergeStateStatus"`
-						Reviews struct {
-							Nodes []shared.ReviewFields `json:"nodes"`
-						} `json:"reviews"`
-						Commits struct {
-							Nodes []struct {
-								Commit shared.CommitWithStatusFields `json:"commit"`
-							} `json:"nodes"`
-						} `json:"commits"`
-					} `json:"pullRequest"`
-				} `json:"repository"`
-			} `json:"data"`
-		}
+		var response shared.ReviewsWithStatusResponse
 
 		if err := json.Unmarshal(result, &response); err != nil {
 			fmt.Printf("Error parsing response: %v\n", err)
@@ -845,7 +793,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 		}
 
 		// Check reviews status using common state tracking
-		reviews := response.Data.Repository.PullRequest.Reviews.Nodes
+		reviews := response.GetReviews()
 		if len(reviews) > 0 && !reviewsReady {
 			lastState, _ := loadReviewState(prNumber)
 			reviewsReady = hasNewReviews(reviews, lastState)
@@ -855,8 +803,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 		// CRITICAL INSIGHT: statusCheckRollup is null when PR has merge conflicts,
 		// which prevents CI from running. This is GitHub's intentional behavior.
 		// Must check mergeable before assuming "no checks required" scenario.
-		mergeable := response.Data.Repository.PullRequest.Mergeable
-		mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
+		mergeable, mergeStatus := response.GetMergeStatus()
 		if mergeable == "CONFLICTING" {
 			fmt.Printf("\n❌ [%s] PR has merge conflicts (status: %s)\n", time.Now().Format("15:04:05"), mergeStatus)
 			fmt.Println("⚠️  CI checks will not run until conflicts are resolved")
@@ -866,9 +813,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 		}
 
 		// Check PR checks status
-		commits := response.Data.Repository.PullRequest.Commits.Nodes
-		if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
-			rollupState := commits[0].Commit.StatusCheckRollup.State
+		statusCheckRollup := response.GetStatusCheckRollup()
+		if statusCheckRollup != nil {
+			rollupState := statusCheckRollup.State
 			checksComplete = (rollupState == "SUCCESS" || rollupState == "FAILURE" || rollupState == "ERROR")
 		} else {
 			// StatusCheckRollup is nil - this can mean:
@@ -877,8 +824,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 			// 3. PR was just created or pushed (checks pending)
 			
 			// Check merge status for better determination
-			mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
-			mergeable := response.Data.Repository.PullRequest.Mergeable
+			mergeable, mergeStatus := response.GetMergeStatus()
 			
 			// If PR has conflicts, checks won't run until resolved
 			if mergeable == "CONFLICTING" {
@@ -910,8 +856,8 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 			default:
 				fmt.Printf("   Merge: %s (status: %s)\n", mergeable, mergeStatus)
 			}
-			if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
-				rollupState := commits[0].Commit.StatusCheckRollup.State
+			if statusCheckRollup != nil {
+				rollupState := statusCheckRollup.State
 				statusMsg := rollupState
 				switch rollupState {
 				case "SUCCESS":
@@ -966,8 +912,8 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 				fmt.Printf("💡 Resolve conflicts and push to trigger CI checks\n")
 			}
 			if checksComplete {
-				if len(commits) > 0 && commits[0].Commit.StatusCheckRollup != nil {
-					rollupState := commits[0].Commit.StatusCheckRollup.State
+				if statusCheckRollup != nil {
+					rollupState := statusCheckRollup.State
 					switch rollupState {
 					case "SUCCESS":
 						fmt.Println("✅ Checks: All passed")
