@@ -5,11 +5,7 @@ import (
 	"os/exec"
 )
 
-// Default GitHub repository constants
-const (
-	DefaultOwner = "apstndb"
-	DefaultRepo  = "spanner-mycli"
-)
+// Default GitHub repository constants are now defined in commands.go
 
 // FileExists checks if a file exists at the given path
 func FileExists(path string) bool {

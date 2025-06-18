@@ -52,38 +52,23 @@ func resolvePRNumberFromArgs(args []string, client *shared.GitHubClient) (string
 // calculateEffectiveTimeout handles timeout calculation with Claude Code constraints consistently
 // Returns the effective timeout and a user-friendly display string
 func calculateEffectiveTimeout() (time.Duration, string, error) {
-	timeoutDuration, err := parseTimeout()
+	requested, err := parseTimeout()
 	if err != nil {
-		return 0, "", fmt.Errorf("invalid timeout format: %w", err)
+		return 0, "", err
 	}
 	
-	claudeCodeEnvTimeout, hasClaudeCodeEnv := checkClaudeCodeEnvironment()
-	var effectiveTimeout time.Duration
-	var timeoutDisplay string
-	
-	if hasClaudeCodeEnv {
-		if timeoutDuration > claudeCodeEnvTimeout {
-			fmt.Printf("⚠️  Requested timeout (%v) exceeds Claude Code limit (%v). Using %v.\n", 
-				timeoutDuration, claudeCodeEnvTimeout, claudeCodeEnvTimeout)
-			effectiveTimeout = claudeCodeEnvTimeout
-			timeoutDisplay = fmt.Sprintf("%v (limited by Claude Code)", claudeCodeEnvTimeout)
-		} else {
-			effectiveTimeout = timeoutDuration
-			timeoutDisplay = fmt.Sprintf("%v", timeoutDuration)
-		}
-	} else {
-		claudeCodeLimit := 90 * time.Second
-		if timeoutDuration > claudeCodeLimit {
-			fmt.Printf("⚠️  Claude Code has 2-minute timeout (no env config detected). Using %v for safety.\n", claudeCodeLimit)
-			effectiveTimeout = claudeCodeLimit
-			timeoutDisplay = fmt.Sprintf("%v (default safety limit)", claudeCodeLimit)
-		} else {
-			effectiveTimeout = timeoutDuration
-			timeoutDisplay = fmt.Sprintf("%v (no env config)", timeoutDuration)
-		}
+	result, err := shared.CalculateEffectiveTimeout(requested)
+	if err != nil {
+		return 0, "", err
 	}
 	
-	return effectiveTimeout, timeoutDisplay, nil
+	// Show warning if timeout was constrained
+	if result.IsConstrained {
+		shared.WarningMsg("Requested timeout (%v) exceeds Claude Code limit. Using %v.", 
+			result.Requested, result.Effective).Print()
+	}
+	
+	return result.Effective, result.Display, nil
 }
 
 var rootCmd = &cobra.Command{
@@ -114,7 +99,7 @@ var threadsCmd = &cobra.Command{
 	Short: "GitHub review thread operations",
 }
 
-var checkReviewsCmd = newOperationalCommand(
+var checkReviewsCmd = shared.NewOperationalCommand(
 	"check [pr-number-or-issue]",
 	"Check for new PR reviews with state tracking",
 	`Check for new pull request reviews, tracking state to identify updates.
@@ -398,7 +383,7 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
-	fmt.Println(shared.FormatCheckingReviews(prNumberStr, owner, repo))
+	shared.StatusMsg("Checking reviews for PR #%s in %s/%s...", prNumberStr, owner, repo).Print()
 
 	// Convert to int for GraphQL
 	prNumber, err := strconv.Atoi(prNumberStr)
@@ -432,7 +417,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 
 	reviews := response.GetReviews()
 	if len(reviews) == 0 {
-		fmt.Println(shared.MsgNoReviewsFound)
+		shared.InfoMsg("No reviews found").Print()
 		return nil
 	}
 
@@ -453,7 +438,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 		}
 
 		if len(newReviews) > 0 {
-			fmt.Printf("\n%s\n", shared.FormatNewReviewsFound(len(newReviews)))
+			fmt.Println() // Add newline
+			summary := &shared.ReviewSummary{NewCount: len(newReviews), IsNew: true}
+			summary.Print()
 			for _, review := range newReviews {
 				fmt.Printf("  - %s at %s (%s)\n", review.Author.Login, review.CreatedAt, review.State)
 			}
@@ -469,11 +456,13 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 					review.Author.Login, review.CreatedAt, review.State, body)
 			}
 		} else {
-			fmt.Println(shared.MsgNoNewReviews)
+			shared.SuccessMsg("No new reviews since last check").Print()
 		}
 	} else {
-		fmt.Printf("No previous state found, showing all recent reviews...\n\n")
-		fmt.Println(shared.FormatFoundReviews(len(reviews)))
+		shared.InfoMsg("No previous state found, showing all recent reviews...").Print()
+		fmt.Println() // Add spacing
+		summary := &shared.ReviewSummary{Count: len(reviews), IsNew: false}
+		summary.Print()
 		for _, review := range reviews {
 			fmt.Printf("  - %s at %s (%s)\n", review.Author.Login, review.CreatedAt, review.State)
 		}
