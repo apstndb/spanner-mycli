@@ -12,8 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// prNumberArgsHelp is defined in main.go and used here for consistency
+
 var analyzeReviewsCmd = &cobra.Command{
-	Use:   "analyze [pr-number-or-issue]",
+	Use:   "analyze [pr-number]",
 	Short: "Analyze all review feedback for actionable items",
 	Long: `Comprehensive analysis of all review feedback including severity detection.
 
@@ -21,11 +23,7 @@ This command addresses the lesson learned from PR #306 where critical feedback
 in review bodies (like statusCheckRollup nil handling) was missed because
 reviews and threads were fetched separately.
 
-Arguments:
-- No argument: Uses current branch's PR
-- Plain number (123): Auto-detects issue vs PR
-- Explicit issue (issues/123, issue/123): Forces issue resolution
-- Explicit PR (pull/123, pr/123): Forces PR usage
+`+prNumberArgsHelp+`
 
 Examples:
   # Complete analysis (reviews + threads)
@@ -39,15 +37,11 @@ Examples:
 }
 
 var fetchReviewsCmd = &cobra.Command{
-	Use:   "fetch [pr-number-or-issue]",
+	Use:   "fetch [pr-number]",
 	Short: "Fetch review data with configurable options",
 	Long: `Fetch reviews and threads in a single optimized GraphQL query.
 
-Arguments:
-- No argument: Uses current branch's PR
-- Plain number (123): Auto-detects issue vs PR
-- Explicit issue (issues/123, issue/123): Forces issue resolution
-- Explicit PR (pull/123, pr/123): Forces PR usage
+`+prNumberArgsHelp+`
 
 Examples:
   # Full fetch (reviews + threads + bodies)

@@ -89,23 +89,19 @@ var threadsCmd = &cobra.Command{
 }
 
 var checkReviewsCmd = shared.NewOperationalCommand(
-	"check [pr-number-or-issue]",
+	"check [pr-number]",
 	"Check for new PR reviews with state tracking",
 	`Check for new pull request reviews, tracking state to identify updates.
 
 This command maintains state in ~/.cache/spanner-mycli-reviews/ to detect
 new reviews since the last check. Useful for monitoring PR activity.
 
-Arguments:
-- No argument: Uses current branch's PR
-- Plain number (123): Auto-detects issue vs PR
-- Explicit issue (issues/123, issue/123): Forces issue resolution
-- Explicit PR (pull/123, pr/123): Forces PR usage`,
+`+prNumberArgsHelp,
 	checkReviews,
 )
 
 var waitReviewsCmd = shared.NewOperationalCommand(
-	"wait [pr-number-or-issue]",
+	"wait [pr-number]",
 	"Wait for both reviews and PR checks (default behavior)",
 	`Continuously monitor for both new reviews AND PR checks completion by default.
 
@@ -117,11 +113,7 @@ Use --exclude-reviews to wait for PR checks only.
 Use --exclude-checks to wait for reviews only.
 Use --request-review to automatically request Gemini review before waiting.
 
-Arguments:
-- No argument: Uses current branch's PR
-- Plain number (123): Auto-detects issue vs PR
-- Explicit issue (issues/123, issue/123): Forces issue resolution
-- Explicit PR (pull/123, pr/123): Forces PR usage
+`+prNumberArgsHelp+`
 
 AI-FRIENDLY: Designed for autonomous workflows that need complete feedback.
 Default timeout is 5 minutes, configurable with --timeout flag.`,
@@ -177,6 +169,12 @@ var (
 	excludeReviews bool
 	excludeChecks  bool
 )
+
+// Common help text for PR number arguments
+const prNumberArgsHelp = `Arguments:
+- No argument: Uses current branch's PR
+- Plain number (123): PR number
+- Explicit PR (pull/123, pr/123): PR reference`
 
 func init() {
 	// Configure Args for operational commands (using shared.NewOperationalCommand)
