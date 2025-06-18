@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -290,13 +290,17 @@ func hasNewReviews(reviews []shared.ReviewFields, lastState *ReviewState) bool {
 // - Project settings should be committed, local settings (.claude/settings.local.json) should not
 func checkClaudeCodeEnvironment() (time.Duration, bool) {
 	// Check for BASH_MAX_TIMEOUT_MS (upper limit for explicit timeouts)
-	if maxTimeout, hasMax := shared.ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS"); hasMax {
+	if maxTimeout, err := shared.ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS"); err != nil {
+		fmt.Printf("⚠️  %v\n", err)
+	} else if maxTimeout > 0 {
 		fmt.Printf("🔧 Claude Code BASH_MAX_TIMEOUT_MS detected: %v\n", maxTimeout)
 		return maxTimeout, true
 	}
 	
 	// Check for BASH_DEFAULT_TIMEOUT_MS (default when no timeout specified)
-	if defaultTimeout, hasDefault := shared.ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS"); hasDefault {
+	if defaultTimeout, err := shared.ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS"); err != nil {
+		fmt.Printf("⚠️  %v\n", err)
+	} else if defaultTimeout > 0 {
 		fmt.Printf("🔧 Claude Code BASH_DEFAULT_TIMEOUT_MS detected: %v\n", defaultTimeout)
 		return defaultTimeout, true
 	}
@@ -899,18 +903,14 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 		replyText = message
 	} else {
 		// Read from stdin - AI assistants prefer this over temporary files (Issue #301 insight)
-		scanner := bufio.NewScanner(os.Stdin)
-		var lines []string
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
 			return fmt.Errorf("failed to read from stdin: %w", err)
 		}
-		replyText = strings.Join(lines, "\n")
+		replyText = strings.TrimSpace(string(stdinBytes))
 	}
 
-	if strings.TrimSpace(replyText) == "" {
+	if replyText == "" {
 		// If no message but commit hash is provided, use default message
 		if commitHash != "" {
 			replyText = "Thank you for the feedback!"

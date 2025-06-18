@@ -3,7 +3,6 @@ package shared
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -23,14 +22,14 @@ func ParseTimeout(timeoutStr string) (time.Duration, error) {
 func GetClaudeCodeTimeout(requested time.Duration) time.Duration {
 	if requested == 0 {
 		// Handle zero value - use environment default or fallback
-		if defaultTimeout := getClaudeCodeDefaultTimeout(); defaultTimeout > 0 {
+		if defaultTimeout, _ := ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS"); defaultTimeout > 0 {
 			return defaultTimeout
 		}
 		return 5 * time.Minute // Fallback default
 	}
 	
 	// Apply Claude Code maximum if configured
-	if maxTimeout := getClaudeCodeMaxTimeout(); maxTimeout > 0 && requested > maxTimeout {
+	if maxTimeout, _ := ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS"); maxTimeout > 0 && requested > maxTimeout {
 		return maxTimeout
 	}
 	
@@ -40,26 +39,26 @@ func GetClaudeCodeTimeout(requested time.Duration) time.Duration {
 // Helper functions for Claude Code environment variables
 
 // ParseClaudeCodeTimeoutEnv parses a Claude Code timeout environment variable
-// Returns the duration and whether the variable exists and is valid
-func ParseClaudeCodeTimeoutEnv(envVarName string) (time.Duration, bool) {
-	if ms := os.Getenv(envVarName); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
-			return time.Duration(parsed) * time.Millisecond, true
-		}
-		// Invalid format is treated as if the variable doesn't exist
+// Returns the duration and any parsing error. Returns 0, nil if variable is not set.
+func ParseClaudeCodeTimeoutEnv(envVarName string) (time.Duration, error) {
+	ms := os.Getenv(envVarName)
+	if ms == "" {
+		return 0, nil // Variable not set
 	}
-	return 0, false
+	
+	// Use time.ParseDuration for consistent parsing
+	duration, err := time.ParseDuration(ms + "ms")
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q: %w", envVarName, ms, err)
+	}
+	
+	if duration < 0 {
+		return 0, fmt.Errorf("invalid %s value %v: must be non-negative", envVarName, duration)
+	}
+	
+	return duration, nil
 }
 
-func getClaudeCodeMaxTimeout() time.Duration {
-	timeout, _ := ParseClaudeCodeTimeoutEnv("BASH_MAX_TIMEOUT_MS")
-	return timeout
-}
-
-func getClaudeCodeDefaultTimeout() time.Duration {
-	timeout, _ := ParseClaudeCodeTimeoutEnv("BASH_DEFAULT_TIMEOUT_MS")
-	return timeout
-}
 
 // Legacy compatibility functions
 
