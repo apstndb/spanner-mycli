@@ -1,18 +1,31 @@
 package shared
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
-// GitHubClient provides common GitHub operations
+// GitHubClient provides common GitHub operations with token caching
 type GitHubClient struct {
-	Owner string
-	Repo  string
+	Owner      string
+	Repo       string
+	httpClient *http.Client
 }
+
+// Token cache to avoid repeated gh auth token calls
+var (
+	cachedToken     string
+	tokenCacheTime  time.Time
+	tokenCacheMutex sync.RWMutex
+	tokenCacheTTL   = 10 * time.Minute // Cache token for 10 minutes
+)
 
 // PRInfo represents basic PR information  
 type PRInfo struct {
@@ -30,27 +43,128 @@ func NewGitHubClient(owner, repo string) *GitHubClient {
 		repo = DefaultRepo
 	}
 	return &GitHubClient{
-		Owner: owner,
-		Repo:  repo,
+		Owner:      owner,
+		Repo:       repo,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// RunGraphQLQuery executes a GraphQL query using gh CLI
+// getToken retrieves and caches GitHub token from gh CLI
+func getToken() (string, error) {
+	tokenCacheMutex.RLock()
+	if cachedToken != "" && time.Since(tokenCacheTime) < tokenCacheTTL {
+		defer tokenCacheMutex.RUnlock()
+		return cachedToken, nil
+	}
+	tokenCacheMutex.RUnlock()
+
+	// Need to refresh token
+	tokenCacheMutex.Lock()
+	defer tokenCacheMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if cachedToken != "" && time.Since(tokenCacheTime) < tokenCacheTTL {
+		return cachedToken, nil
+	}
+
+	// Get token from gh CLI
+	cmd := exec.Command("gh", "auth", "token")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get GitHub token: %w\n💡 Tip: Run 'gh auth login' to authenticate", err)
+	}
+
+	token := strings.TrimSpace(string(output))
+	if token == "" {
+		return "", fmt.Errorf("empty token returned from gh auth token")
+	}
+
+	// Cache the token
+	cachedToken = token
+	tokenCacheTime = time.Now()
+
+	return token, nil
+}
+
+// GraphQLRequest represents a GraphQL request payload
+type GraphQLRequest struct {
+	Query     string                 `json:"query"`
+	Variables map[string]interface{} `json:"variables,omitempty"`
+}
+
+// GraphQLResponse represents a GraphQL response
+type GraphQLResponse struct {
+	Data   json.RawMessage `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// RunGraphQLQuery executes a GraphQL query using HTTP client (legacy compatibility)
 func (c *GitHubClient) RunGraphQLQuery(query string) ([]byte, error) {
-	cmd := exec.Command("gh", "api", "graphql", "-f", "query="+query)
-	return cmd.Output()
+	return c.RunGraphQLQueryWithVariables(query, nil)
 }
 
-// RunGraphQLQueryWithVariables executes a GraphQL query with variables using gh CLI
+// RunGraphQLQueryWithVariables executes a GraphQL query with variables using HTTP client
+// Performance benefits vs gh command:
+// - Token caching (10min TTL) eliminates repeated 'gh auth token' calls
+// - Direct HTTP requests reduce process overhead from spawning gh CLI
+// - Single HTTP client with connection reuse for multiple requests
 func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
-	args := []string{"api", "graphql", "-f", "query=" + query}
-	
-	for key, value := range variables {
-		args = append(args, "-F", fmt.Sprintf("%s=%v", key, value))
+	token, err := getToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GitHub token: %w", err)
 	}
-	
-	cmd := exec.Command("gh", args...)
-	return cmd.Output()
+
+	// Prepare GraphQL request
+	reqPayload := GraphQLRequest{
+		Query:     query,
+		Variables: variables,
+	}
+
+	jsonData, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://api.github.com/graphql", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "spanner-mycli-dev-tools/1.0")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute GraphQL request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check HTTP status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GraphQL request failed with status %d: %s", resp.StatusCode, buf.String())
+	}
+
+	// Parse GraphQL response for errors
+	var graphqlResp GraphQLResponse
+	if err := json.Unmarshal(buf.Bytes(), &graphqlResp); err == nil {
+		if len(graphqlResp.Errors) > 0 {
+			return nil, fmt.Errorf("GraphQL error: %s", graphqlResp.Errors[0].Message)
+		}
+	}
+
+	return buf.Bytes(), nil
 }
 
 // CreatePRComment creates a comment on a pull request

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -586,6 +585,9 @@ func waitForReviewsOnly(prNumber string) error {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
 	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
+	
 	// Parse timeout duration
 	timeoutDuration, err := parseTimeout()
 	if err != nil {
@@ -652,7 +654,7 @@ func waitForReviewsOnly(prNumber string) error {
 			"prNumber": prNumberInt,
 		}
 		
-		result, err := runGraphQLQueryWithVariables(query, variables)
+		result, err := client.RunGraphQLQueryWithVariables(query, variables)
 		if err != nil {
 			fmt.Printf("Error checking reviews: %v\n", err)
 			time.Sleep(30 * time.Second)
@@ -738,6 +740,9 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
+	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
 	
 	// Parse timeout duration with new flexible format
 	timeoutDuration, err := parseTimeout()
@@ -876,7 +881,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 			"prNumber": prNumberInt,
 		}
 
-		result, err := runGraphQLQueryWithVariables(query, variables)
+		result, err := client.RunGraphQLQueryWithVariables(query, variables)
 		if err != nil {
 			fmt.Printf("Error checking PR status: %v\n", err)
 			time.Sleep(30 * time.Second)
@@ -1067,6 +1072,9 @@ func listThreads(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid PR number format: %w", err)
 	}
+	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
 
 	fmt.Printf("🔍 Fetching review threads for PR #%s...\n", prNumber)
 
@@ -1103,7 +1111,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 		"prNumber": prNumberInt,
 	}
 
-	result, err := runGraphQLQueryWithVariables(query, variables)
+	result, err := client.RunGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return fmt.Errorf("failed to fetch threads: %w", err)
 	}
@@ -1204,6 +1212,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 
 func showThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
+	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
 
 	fmt.Printf("🔍 Fetching details for thread: %s\n", threadID)
 
@@ -1239,7 +1250,7 @@ query($threadID: ID!) {
 		"threadID": threadID,
 	}
 
-	result, err := runGraphQLQueryWithVariables(query, variables)
+	result, err := client.RunGraphQLQueryWithVariables(query, variables)
 	if err != nil {
 		return fmt.Errorf("failed to fetch thread details: %w", err)
 	}
@@ -1332,6 +1343,9 @@ query($threadID: ID!) {
 func replyWithCommit(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
 	commitHash := args[1]
+	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
 
 	var baseReplyText string
 	if message != "" {
@@ -1386,7 +1400,7 @@ mutation($threadID: ID!, $body: String!) {
 		"body":     replyText,
 	}
 
-	result, err := runGraphQLQueryWithVariables(mutation, variables)
+	result, err := client.RunGraphQLQueryWithVariables(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("failed to post reply: %w", err)
 	}
@@ -1423,6 +1437,9 @@ mutation($threadID: ID!, $body: String!) {
 
 func replyToThread(cmd *cobra.Command, args []string) error {
 	threadID := args[0]
+	
+	// Create GitHub client once for better performance (token caching)
+	client := shared.NewGitHubClient(owner, repo)
 
 	var replyText string
 	if message != "" {
@@ -1474,7 +1491,7 @@ mutation($threadID: ID!, $body: String!) {
 		"body":     replyText,
 	}
 
-	result, err := runGraphQLQueryWithVariables(mutation, variables)
+	result, err := client.RunGraphQLQueryWithVariables(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("failed to post reply: %w", err)
 	}
@@ -1509,41 +1526,3 @@ mutation($threadID: ID!, $body: String!) {
 	return nil
 }
 
-func runGraphQLQueryWithVariables(query string, variables map[string]interface{}) ([]byte, error) {
-	args := []string{"api", "graphql", "-f", "query=" + query}
-	
-	for key, value := range variables {
-		args = append(args, "-F", fmt.Sprintf("%s=%v", key, value))
-	}
-	
-	cmd := exec.Command("gh", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		// Try to extract meaningful error message from stderr
-		stderrStr := stderr.String()
-		if strings.Contains(stderrStr, "Could not resolve to a PullRequest") {
-			return nil, fmt.Errorf("PR not found - please check the PR number is correct\n💡 Tip: Use 'gh pr list --state open' to see available PR numbers")
-		}
-		if strings.Contains(stderrStr, "authentication") || strings.Contains(stderrStr, "token") {
-			return nil, fmt.Errorf("GitHub authentication failed\n💡 Tip: Run 'gh auth login' to authenticate")
-		}
-		return nil, fmt.Errorf("gh api failed: %w, stderr: %s", err, stderrStr)
-	}
-
-	// Check for GraphQL errors in the response
-	var errorCheck struct {
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	
-	result := stdout.Bytes()
-	if err := json.Unmarshal(result, &errorCheck); err == nil && len(errorCheck.Errors) > 0 {
-		return nil, fmt.Errorf("GraphQL error: %s", errorCheck.Errors[0].Message)
-	}
-
-	return result, nil
-}
