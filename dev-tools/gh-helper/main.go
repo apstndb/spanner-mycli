@@ -348,34 +348,17 @@ func checkReviews(cmd *cobra.Command, args []string) error {
 
 	shared.StatusMsg("Checking reviews for PR #%s in %s/%s...", prNumberStr, owner, repo).Print()
 
-	// Convert to int for GraphQL
+	// Convert to int for unified query
 	prNumber, err := strconv.Atoi(prNumberStr)
 	if err != nil {
 		return shared.FormatError("PR number", err)
 	}
 
-	query := shared.AllReviewFragments + `
-query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      reviews(last: 15) {
-        nodes {
-          ...ReviewFields
-        }
-      }
-    }
-  }
-}`
-
-	result, err := client.RunGraphQLQueryWithVariables(query, shared.BasicPRVariablesWithBodies(owner, repo, prNumber, true))
+	// Use unified architecture for review checking
+	config := shared.NewPRQueryConfig(owner, repo, prNumber).ForReviewsOnly()
+	response, err := client.FetchPRData(config)
 	if err != nil {
-		return shared.FetchError("reviews", err)
-	}
-
-	var response shared.ReviewsResponse
-
-	if err := json.Unmarshal(result, &response); err != nil {
-		return shared.ParseError("response", err)
+		return err
 	}
 
 	reviews := response.GetReviews()
@@ -550,33 +533,11 @@ func waitForReviewsOnly(prNumber string) error {
 			return nil
 		}
 		
-		// Query for reviews using fragments
-		query := shared.AllReviewFragments + `
-		query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
-		  repository(owner: $owner, name: $repo) {
-		    pullRequest(number: $prNumber) {
-		      reviews(last: 15) {
-		        nodes {
-		          ...ReviewFields
-		        }
-		      }
-		    }
-		  }
-		}`
-		
-		variables := shared.BasicPRVariablesWithBodies(owner, repo, prNumberInt, true)
-		
-		result, err := client.RunGraphQLQueryWithVariables(query, variables)
+		// Use unified architecture for review polling
+		config := shared.NewPRQueryConfig(owner, repo, prNumberInt).ForReviewsOnly()
+		response, err := client.FetchPRData(config)
 		if err != nil {
-			fmt.Printf("Error checking reviews: %v\n", err)
-			time.Sleep(30 * time.Second)
-			continue
-		}
-		
-		var response shared.ReviewsResponse
-		
-		if err := json.Unmarshal(result, &response); err != nil {
-			fmt.Printf("Error parsing response: %v\n", err)
+			fmt.Printf("Error fetching reviews: %v\n", err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
@@ -707,42 +668,11 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Combined GraphQL query for both reviews and checks using fragments
-		query := shared.ReviewFragment + shared.AllStatusFragments + `
-query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Boolean!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      mergeable
-      mergeStateStatus
-      reviews(last: 15) {
-        nodes {
-          ...ReviewFields
-        }
-      }
-      commits(last: 1) {
-        nodes {
-          commit {
-            ...CommitWithStatusFields
-          }
-        }
-      }
-    }
-  }
-}`
-
-		variables := shared.BasicPRVariablesWithBodies(owner, repo, prNumberInt, true)
-
-		result, err := client.RunGraphQLQueryWithVariables(query, variables)
+		// Use unified architecture for reviews + status monitoring
+		config := shared.NewPRQueryConfig(owner, repo, prNumberInt).ForReviewsAndStatus()
+		response, err := client.FetchPRData(config)
 		if err != nil {
-			fmt.Printf("Error checking PR status: %v\n", err)
-			time.Sleep(30 * time.Second)
-			continue
-		}
-
-		var response shared.ReviewsWithStatusResponse
-
-		if err := json.Unmarshal(result, &response); err != nil {
-			fmt.Printf("Error parsing response: %v\n", err)
+			fmt.Printf("Error fetching PR data: %v\n", err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
@@ -799,8 +729,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 			fmt.Printf("   Reviews: %d found, Ready: %v\n", len(reviews), reviewsReady)
 			
 			// Show mergeable status
-			mergeable := response.Data.Repository.PullRequest.Mergeable
-			mergeStatus := response.Data.Repository.PullRequest.MergeStateStatus
+			mergeable, mergeStatus := response.GetMergeStatus()
 			switch mergeable {
 			case "MERGEABLE":
 				fmt.Printf("   Merge: ✅ Ready to merge\n")
@@ -861,7 +790,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $includeReviewBodies: Bo
 			}
 			
 			// Show merge conflicts warning if present
-			mergeable := response.Data.Repository.PullRequest.Mergeable
+			mergeable, _ := response.GetMergeStatus()
 			if mergeable == "CONFLICTING" {
 				fmt.Printf("\n⚠️  Merge conflicts detected - CI may not run until resolved\n")
 				fmt.Printf("💡 Resolve conflicts and push to trigger CI checks\n")
