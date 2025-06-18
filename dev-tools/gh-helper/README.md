@@ -6,10 +6,10 @@ Generic GitHub operations tool optimized for AI assistants.
 
 ```bash
 # Most common: Complete review workflow
-gh-helper reviews wait <PR> --request-review
+gh-helper reviews wait [PR] --request-review
 
 # Handle review feedback
-gh-helper reviews fetch <PR> --list-threads
+gh-helper reviews fetch [PR] --list-threads
 gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
 ```
 
@@ -32,21 +32,22 @@ Making this the default reduces cognitive load. Individual exclusion available f
 
 ## Commands Overview
 
+**PR Number Resolution**: `[PR]` is optional in all commands. When omitted, uses current branch's associated PR. Supports plain numbers (123) and explicit PR references (pull/123, pr/123). Issue references are not supported.
+
 ### reviews
 
 **Default behavior**: Wait for both reviews AND PR checks
 
 ```bash
 # Complete workflow (recommended)
-reviews wait <PR> --request-review
+reviews wait [PR] --request-review
 
 # Edge cases
-reviews wait <PR> --exclude-checks    # Reviews only
-reviews wait <PR> --exclude-reviews   # Checks only
+reviews wait [PR] --exclude-checks    # Reviews only
+reviews wait [PR] --exclude-reviews   # Checks only
 
 # Monitoring and checking
-reviews check <PR>                    # One-time check with state tracking
-reviews check                         # Check current branch's PR
+reviews check [PR]                    # One-time check (uses current branch if omitted)
 ```
 
 ### threads
@@ -55,13 +56,13 @@ reviews check                         # Check current branch's PR
 
 ```bash
 # List thread IDs needing replies (most efficient)
-reviews fetch <PR> --list-threads
+reviews fetch [PR] --list-threads
 
 # Get full thread data needing replies (JSON)
-reviews fetch <PR> --threads-only
+reviews fetch [PR] --threads-only
 
 # Filter all data to only threads needing replies
-reviews fetch <PR> --needs-reply-only
+reviews fetch [PR] --needs-reply-only
 
 # Show detailed thread context
 threads show <THREAD_ID>
@@ -334,7 +335,7 @@ EOF
 
 | Old Script | New Command |
 |------------|-------------|
-| `scripts/dev/list-review-threads.sh` | `gh-helper reviews fetch <PR> --list-threads` |
+| `scripts/dev/list-review-threads.sh` | `gh-helper reviews fetch [PR] --list-threads` |
 | `scripts/dev/review-reply.sh` | `gh-helper threads reply` |
 | Custom review waiting scripts | `gh-helper reviews wait` |
 
