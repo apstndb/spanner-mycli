@@ -393,21 +393,7 @@ fi
 
 ## Shell Completion
 
-gh-helper supports shell completion for bash, zsh, fish, and PowerShell:
-
-```bash
-# Bash completion (add to ~/.bashrc)
-source <(gh-helper completion bash)
-
-# Zsh completion (add to ~/.zshrc)
-source <(gh-helper completion zsh)
-
-# Fish completion
-gh-helper completion fish | source
-
-# PowerShell completion
-gh-helper completion powershell | Out-String | Invoke-Expression
-```
+Shell completion is available via standard Cobra `completion` command for bash, zsh, fish, and PowerShell.
 
 ## Configuration
 
