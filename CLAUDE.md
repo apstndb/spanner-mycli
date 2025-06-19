@@ -193,6 +193,7 @@ make lint              # Code quality checks (required before push)
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
 - **Reason**: Prevents accidental commits of untracked files (.claude, .idea/, tmp/, etc.)
+- **CRITICAL**: Never rewrite pushed commits without explicit permission - preserves review history
 - Link PRs to issues: "Fixes #issue-number"
 - Check `git status` before committing to verify only intended files are staged
 
