@@ -147,9 +147,9 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 
 	// Handle specialized modes
 	if listThreads {
-		// Simple list mode: just thread IDs
+		// Simple list mode: just unresolved thread IDs
 		for _, thread := range data.Threads {
-			if thread.NeedsReply && !thread.IsResolved {
+			if !thread.IsResolved {
 				fmt.Println(thread.ID)
 			}
 		}
@@ -157,14 +157,14 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	}
 	
 	if threadsOnly {
-		// Filter to only threads needing replies
-		threadsNeedingReply := []shared.ThreadData{}
+		// Filter to only unresolved threads
+		unresolvedThreads := []shared.ThreadData{}
 		for _, thread := range data.Threads {
-			if thread.NeedsReply && !thread.IsResolved {
-				threadsNeedingReply = append(threadsNeedingReply, thread)
+			if !thread.IsResolved {
+				unresolvedThreads = append(unresolvedThreads, thread)
 			}
 		}
-		return shared.EncodeOutput(os.Stdout, format, threadsNeedingReply)
+		return shared.EncodeOutput(os.Stdout, format, unresolvedThreads)
 	}
 	
 	// Full data output
@@ -255,22 +255,26 @@ func outputAnalysis(data *shared.UnifiedReviewData, items []shared.ActionableIte
 		}
 	}
 	
-	// Build threads needing reply using GitHub GraphQL thread structure
-	type ThreadReply struct {
+	// Build unresolved threads using GitHub GraphQL thread structure
+	type ThreadSummary struct {
 		ID          string `json:"id" yaml:"id"`
 		Path        string `json:"path" yaml:"path"`
 		Line        *int   `json:"line,omitempty" yaml:"line,omitempty"`
 		LastReplier string `json:"lastReplier" yaml:"lastReplier"`
+		IsResolved  bool   `json:"isResolved" yaml:"isResolved"`
+		IsOutdated  bool   `json:"isOutdated" yaml:"isOutdated"`
 	}
 	
-	threadsNeedingReply := []ThreadReply{}
+	unresolvedThreads := []ThreadSummary{}
 	for _, thread := range data.Threads {
-		if thread.NeedsReply && !thread.IsResolved {
-			threadsNeedingReply = append(threadsNeedingReply, ThreadReply{
+		if !thread.IsResolved {
+			unresolvedThreads = append(unresolvedThreads, ThreadSummary{
 				ID:          thread.ID,
 				Path:        thread.Path,
 				Line:        thread.Line,
 				LastReplier: thread.LastReplier,
+				IsResolved:  thread.IsResolved,
+				IsOutdated:  thread.IsOutdated,
 			})
 		}
 	}
@@ -285,13 +289,12 @@ func outputAnalysis(data *shared.UnifiedReviewData, items []shared.ActionableIte
 		"mergeStateStatus": data.PR.MergeStatus,
 		
 		// Analysis summary
-		"actionRequired": len(criticalItems) > 0 || len(highItems) > 0 || threadsNeedReply > 0,
+		"actionRequired": len(criticalItems) > 0 || len(highItems) > 0 || len(unresolvedThreads) > 0,
 		"summary": map[string]int{
 			"critical":           severityCounts["CRITICAL"],
 			"high":               severityCounts["HIGH"],
 			"info":               severityCounts["INFO"],
-			"threadsNeedReply":   threadsNeedReply,
-			"threadsUnresolved":  threadsUnresolved,
+			"threadsUnresolved":  len(unresolvedThreads),
 			"actionableItems":    len(items),
 		},
 		
@@ -310,8 +313,8 @@ func outputAnalysis(data *shared.UnifiedReviewData, items []shared.ActionableIte
 	if len(infoItems) > 0 {
 		output["infoItems"] = infoItems
 	}
-	if len(threadsNeedingReply) > 0 {
-		output["threadsNeedingReply"] = threadsNeedingReply
+	if len(unresolvedThreads) > 0 {
+		output["unresolvedThreads"] = unresolvedThreads
 	}
 	
 	// Output using unified encoder
@@ -380,18 +383,12 @@ func outputFetch(data *shared.UnifiedReviewData, includeReviewBodies bool, inclu
 	// Threads section using GitHub GraphQL ReviewThread structure
 	if includeThreads {
 		unresolvedCount := 0
-		needsReplyCount := 0
-		threadsNeedingReply := []map[string]interface{}{}
+		unresolvedThreads := []map[string]interface{}{}
 		
 		for _, thread := range data.Threads {
 			if !thread.IsResolved {
 				unresolvedCount++
-			}
-			if thread.NeedsReply {
-				needsReplyCount++
-			}
-			
-			if thread.NeedsReply && !thread.IsResolved {
+				
 				threadData := map[string]interface{}{
 					"id":         thread.ID,
 					"path":       thread.Path,
@@ -400,20 +397,32 @@ func outputFetch(data *shared.UnifiedReviewData, includeReviewBodies bool, inclu
 					"isOutdated": thread.IsOutdated,
 				}
 				
+				// Add comment information
 				if len(thread.Comments) > 0 {
 					last := thread.Comments[len(thread.Comments)-1]
 					threadData["lastCommentBy"] = last.Author
+					
+					// Include all comments with author information
+					comments := []map[string]interface{}{}
+					for _, comment := range thread.Comments {
+						comments = append(comments, map[string]interface{}{
+							"id":        comment.ID,
+							"author":    comment.Author,
+							"createdAt": comment.CreatedAt,
+							"body":      comment.Body,
+						})
+					}
+					threadData["comments"] = comments
 				}
 				
-				threadsNeedingReply = append(threadsNeedingReply, threadData)
+				unresolvedThreads = append(unresolvedThreads, threadData)
 			}
 		}
 		
 		output["reviewThreads"] = map[string]interface{}{
 			"totalCount":       len(data.Threads),
 			"unresolvedCount":  unresolvedCount,
-			"needsReplyCount":  needsReplyCount,
-			"needingReply":     threadsNeedingReply,
+			"needingReply":     unresolvedThreads, // Now simply unresolved threads
 		}
 	}
 	

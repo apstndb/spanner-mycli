@@ -137,10 +137,8 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 			continue
 		}
 
-		// Process comments and determine reply status
+		// Process comments
 		var comments []CommentInfo
-		needsReply := false // Default to false
-		lastCommentAuthor := ""
 		
 		for _, comment := range thread.Comments.Nodes {
 			comments = append(comments, CommentInfo{
@@ -150,21 +148,11 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 				CreatedAt: comment.CreatedAt,
 				DiffHunk:  comment.DiffHunk,
 			})
-
-			// Track last comment author for proper reply detection
-			lastCommentAuthor = comment.Author.Login
 		}
 		
-		// A thread needs reply if:
-		// 1. It has comments AND
-		// 2. The last comment is NOT from the current user AND
-		// 3. The thread is not resolved
-		//
-		// NOTE: Fixed logic (Issue #306 review): Previously checked if ANY user comment
-		// existed, now correctly checks if LAST comment is from external user
-		if len(comments) > 0 && lastCommentAuthor != currentUser && !thread.IsResolved {
-			needsReply = true
-		}
+		// Simplified logic: unresolved threads need attention
+		// Workflow: reply with fix/explanation → resolve thread
+		needsReply := !thread.IsResolved
 
 		// Apply needs reply filter
 		if needsReplyOnly && !needsReply {

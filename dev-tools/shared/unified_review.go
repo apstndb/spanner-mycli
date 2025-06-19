@@ -556,15 +556,15 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 		})
 	}
 
-	// Process threads with reply status
+	// Process threads - focus on resolved status only
 	var threads []ThreadData
 	for _, thread := range pr.ReviewThreads.Nodes {
-		// Apply NeedsReplyOnly filter if requested
+		// Apply NeedsReplyOnly filter - simply means unresolved threads
 		if opts.NeedsReplyOnly && thread.IsResolved {
-			continue  // Skip resolved threads when only needs-reply is requested
+			continue  // Skip resolved threads when only unresolved threads are requested
 		}
+		
 		var comments []ThreadComment
-		needsReply := !thread.IsResolved
 		lastReplier := ""
 
 		for _, comment := range thread.Comments.Nodes {
@@ -575,19 +575,13 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 				CreatedAt: comment.CreatedAt,
 			})
 
-			// Update reply status
-			if comment.Author.Login == currentUser {
-				needsReply = false
-			}
 			lastReplier = comment.Author.Login
 		}
 
-		actualNeedsReply := needsReply && !thread.IsResolved
-		
-		// Apply additional NeedsReplyOnly filter at the thread level
-		if opts.NeedsReplyOnly && !actualNeedsReply {
-			continue  // Skip threads that don't need replies
-		}
+		// Simplified: NeedsReply = !IsResolved
+		// The workflow is: reply with fix/explanation → resolve thread
+		// So unresolved threads are the ones that need attention
+		needsReply := !thread.IsResolved
 
 		threads = append(threads, ThreadData{
 			ID:          thread.ID,
@@ -596,7 +590,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 			IsResolved:  thread.IsResolved,
 			IsOutdated:  thread.IsOutdated,
 			Comments:    comments,
-			NeedsReply:  actualNeedsReply,
+			NeedsReply:  needsReply,
 			LastReplier: lastReplier,
 		})
 	}
