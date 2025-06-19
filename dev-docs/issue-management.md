@@ -402,6 +402,8 @@ Pull requests should be labeled according to the repository's automatic release 
 - `bug` - Categorized in "Bug Fixes" section  
 - `enhancement` - Categorized in "New Features" section
 - `ignore-for-release` - Excluded from release notes entirely
+  - **Use for**: CLAUDE.md updates, dev-docs updates, internal tooling changes
+  - **Criteria**: Changes that don't affect spanner-mycli functionality
 
 All other labels are categorized in "Misc" section automatically.
 

@@ -34,6 +34,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
 3. **Never push directly to main branch** - always use Pull Requests
 4. **Never commit directly to main branch** - always use feature branches
+5. **Repository merge policy**: This repository enforces **squash merge only** via Repository Ruleset - AI assistants must use `squash` method for all automated merges
 
 ## Essential Commands
 
@@ -132,7 +133,32 @@ This is a simplified guide. For detailed information, refer to:
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
 4. **For review analysis**: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
 5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
-6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+6. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
+7. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+
+**⚠️ CRITICAL: Safe handling of special characters in shell commands**
+```bash
+# Method 1: Variable + stdin (RECOMMENDED - no temp files)
+content='Line 1 with `backticks`
+Line 2 with '\''single quotes'\''  
+Line 3 with "double quotes"'
+echo "$content" | gh issue create --title "Title" --body-file -
+
+# Method 2: Heredoc with stdin (for inline content)
+cat <<'EOF' | gh issue create --title "Title" --body-file -
+Content with `backticks` and "quotes"
+EOF
+
+# Method 3: Variable for command-line args
+some_command --message "$content"  # Safe: special chars not evaluated
+
+# If temp files needed, use tmp/ directory
+echo "$content" > tmp/issue_body.md
+gh issue create --body-file tmp/issue_body.md
+
+# AVOID: Direct strings with special characters
+# command --message "Content with `backticks`"  # UNSAFE - backticks execute
+```
 
 **⚠️ CRITICAL: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
 **⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
@@ -167,6 +193,7 @@ make lint              # Code quality checks (required before push)
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
 - **Reason**: Prevents accidental commits of untracked files (.claude, .idea/, tmp/, etc.)
+- **CRITICAL**: Never rewrite pushed commits without explicit permission - preserves review history
 - Link PRs to issues: "Fixes #issue-number"
 - Check `git status` before committing to verify only intended files are staged
 
