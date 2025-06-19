@@ -819,7 +819,7 @@ gh pr comment <PR-number> --body "/gemini review"
 ### Phantom Worktree Management
 
 #### Worktree Lifecycle
-- **Create**: Use `bin/spanner-mycli-dev worktree setup issue-123-feature` (automatically fetches and bases on `origin/main`)
+- **Create**: Use `make worktree-setup WORKTREE_NAME=issue-123-feature` (automatically fetches and bases on `origin/main`)
 - **Work**: Develop in isolated environment with `phantom shell`
 - **Delete**: Use `phantom delete worktree-name` when no longer needed
 

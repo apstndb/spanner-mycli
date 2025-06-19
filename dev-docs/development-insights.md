@@ -18,7 +18,7 @@ Use the provided script for consistent worktree setup:
 
 ```bash
 # Automated setup (recommended)
-bin/spanner-mycli-dev worktree setup issue-276-timeout-flag
+make worktree-setup WORKTREE_NAME=issue-276-timeout-flag
 
 # Manual setup (for reference)
 phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude'
@@ -281,7 +281,7 @@ make fasttest              # Quick tests during development
 make clean                 # Clean artifacts when needed
 
 # Help documentation updates
-bin/spanner-mycli-dev docs update-help    # Generate help output for README.md
+make docs-update    # Generate help output for README.md
 ```
 
 ## AI-Friendly Tool Development (Issue #301 Insights)

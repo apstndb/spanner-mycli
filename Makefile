@@ -2,12 +2,19 @@ build:
 	go build
 
 build-tools:
-	# Build development tools from issue #301 script reorganization
-	# gh-helper: Generic GitHub operations (reviews, threads)
-	# spanner-mycli-dev: Project-specific workflows (worktrees, docs, Gemini integration)
+	# Install development tools from gh-dev-tools repository
+	# gh-helper: Generic GitHub operations (reviews, threads) - now standalone
+	# Project-specific workflows moved to Makefile targets (worktree-setup, docs-update)
 	mkdir -p bin
-	cd dev-tools/gh-helper && go build -o ../../bin/gh-helper .
-	cd dev-tools/spanner-mycli-dev && go build -o ../../bin/spanner-mycli-dev .
+	@echo "📦 Installing gh-helper from gh-dev-tools repository..."
+	go install github.com/apstndb/gh-dev-tools/gh-helper@latest
+	@if [ -n "$$(which gh-helper)" ]; then \
+		ln -sf "$$(which gh-helper)" bin/gh-helper; \
+		echo "✅ gh-helper installed and linked to bin/gh-helper"; \
+	else \
+		echo "❌ gh-helper installation failed"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -f spanner-mycli
@@ -28,28 +35,14 @@ test-verbose:
 test-coverage:
 	go test ./... -coverprofile=coverage.out
 
-# Test both main project and dev-tools (comprehensive testing)
-test-all:
-	go test ./...
-	cd dev-tools && go test ./...
-
-# Test both main project and dev-tools with coverage (for CI)
-test-all-coverage:
-	go test ./... -coverprofile=coverage.out
-	cd dev-tools && go test ./... -coverprofile=coverage-dev-tools.out
 
 lint:
 	golangci-lint run
 
-# Lint both main project and dev-tools (comprehensive linting)
-lint-all:
-	golangci-lint run
-	cd dev-tools && golangci-lint run
 
-# Enhanced development targets (issue #301 - AI-friendly script reorganization)
-# These targets integrate the new Go-based development tools (gh-helper, spanner-mycli-dev)
-# replacing scattered shell scripts with structured, maintainable commands.
-.PHONY: test-quick check docs-update help-dev worktree-setup gh-review build-tools
+# Enhanced development targets (issue #301 - script reorganization)
+# Replaced complex spanner-mycli-dev with simple Makefile targets and gh-helper from gh-dev-tools
+.PHONY: test-quick check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools
 
 # Quick tests for development cycle
 test-quick:
@@ -58,52 +51,68 @@ test-quick:
 # Combined test and lint check (required before push)
 check: test lint
 
-# Combined test and lint check for both main project and dev-tools (full validation)
-check-all: test-all lint-all
 
-# Combined test with coverage and lint check for both main project and dev-tools (CI validation)
-check-all-coverage: test-all-coverage lint-all
-
-# Update README.md help sections
+# Update README.md help sections (replacing spanner-mycli-dev)
 docs-update:
-	@bin/spanner-mycli-dev docs update-help
+	@echo "📝 Updating help output for README.md..."
+	@mkdir -p tmp
+	@script -q tmp/help_output.txt sh -c "stty cols 200; go run . --help"
+	@go run . --statement-help > tmp/statement_help.txt
+	@sed '1s/^...//' tmp/help_output.txt > tmp/help_clean.txt
+	@echo "✅ Help output files generated successfully in ./tmp/"
+	@echo "📋 Generated files:"
+	@echo "   - help_clean.txt: --help output for README.md"
+	@echo "   - statement_help.txt: --statement-help output for README.md"
 
 # Show development help
 help-dev:
 	@echo "🛠️  Development Commands:"
 	@echo "  make build            - Build the application"
-	@echo "  make build-tools      - Build gh-helper and spanner-mycli-dev tools"
+	@echo "  make build-tools      - Install gh-helper from gh-dev-tools repository"
 	@echo "  make test             - Run full test suite (required before push)"
 	@echo "  make test-coverage    - Run tests with coverage profile (for CI)"
-	@echo "  make test-all         - Run tests for main project and dev-tools"
-	@echo "  make test-all-coverage - Run tests with coverage for main project and dev-tools (for CI)"
 	@echo "  make test-quick       - Run quick tests (go test -short)"
 	@echo "  make lint             - Run linter (required before push)"
-	@echo "  make lint-all         - Run linter for main project and dev-tools"
 	@echo "  make check            - Run test && lint (required before push)"
-	@echo "  make check-all        - Run test-all && lint-all (comprehensive check)"
-	@echo "  make check-all-coverage - Run test-all-coverage && lint-all (for CI)"
-	@echo "  make clean          - Clean build artifacts and test cache"
-	@echo "  make run            - Run with PROJECT/INSTANCE/DATABASE env vars"
-	@echo "  make docs-update    - Generate help output for README.md"
-	@echo "  make worktree-setup - Setup phantom worktree (requires WORKTREE_NAME)"
-	@echo "  make gh-review      - Check PR reviews (requires PR_NUMBER)"
+	@echo "  make clean            - Clean build artifacts and test cache"
+	@echo "  make run              - Run with PROJECT/INSTANCE/DATABASE env vars"
+	@echo "  make docs-update      - Generate help output for README.md"
+	@echo "  make worktree-setup   - Setup phantom worktree (requires WORKTREE_NAME)"
+	@echo "  make worktree-list    - List existing phantom worktrees"
+	@echo "  make worktree-delete  - Delete phantom worktree (requires WORKTREE_NAME)"
 	@echo ""
-	@echo "🔧 Development Tools (issue #301 - AI-friendly script reorganization):"
-	@echo "  bin/gh-helper       - Generic GitHub operations (reviews, threads)"
-	@echo "  bin/spanner-mycli-dev - Project-specific tools (worktrees, docs, Gemini)"
+	@echo "🔧 Development Tools:"
+	@echo "  bin/gh-helper         - Generic GitHub operations (reviews, threads)"
 	@echo ""
 	@echo "🚀 Quick Start for AI Assistants:"
-	@echo "  bin/gh-helper reviews wait <PR> --request-review  # Complete review workflow"
-	@echo "  bin/spanner-mycli-dev pr-workflow create --wait-checks  # Full PR creation"
+	@echo "  gh pr create && gh-helper reviews wait  # Create PR + wait for review"
+	@echo "  gh-helper reviews wait <PR> --request-review  # Request Gemini review + wait"
 
-# Phantom worktree setup (requires WORKTREE_NAME)
+# Phantom worktree management (replacing spanner-mycli-dev)
 worktree-setup:
 	@if [ -z "$(WORKTREE_NAME)" ]; then \
 		echo "❌ WORKTREE_NAME required. Usage: make worktree-setup WORKTREE_NAME=issue-123-feature"; \
 		exit 1; \
 	fi
-	@bin/spanner-mycli-dev worktree setup $(WORKTREE_NAME)
+	@echo "🔧 Creating phantom worktree: $(WORKTREE_NAME)"
+	@git fetch origin
+	@phantom create $(WORKTREE_NAME) --base origin/main --exec "ln -sf ../../../../.claude .claude"
+	@echo "✅ Worktree created successfully!"
+	@echo "📋 Next: phantom shell $(WORKTREE_NAME) --tmux-horizontal"
+
+worktree-list:
+	@phantom list
+
+worktree-delete:
+	@if [ -z "$(WORKTREE_NAME)" ]; then \
+		echo "❌ WORKTREE_NAME required. Usage: make worktree-delete WORKTREE_NAME=issue-123-feature"; \
+		exit 1; \
+	fi
+	@echo "🔍 Checking status of worktree: $(WORKTREE_NAME)"
+	@phantom exec $(WORKTREE_NAME) git status --porcelain
+	@echo "🗑️  Deleting worktree: $(WORKTREE_NAME)"
+	@phantom delete $(WORKTREE_NAME)
+	@echo "✅ Worktree deleted successfully"
 
 # GitHub review monitoring (requires PR_NUMBER)
 gh-review:

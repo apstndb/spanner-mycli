@@ -46,7 +46,12 @@ make test-quick               # Quick tests during development
 # Development tools (build with: make build-tools)
 bin/gh-helper reviews analyze [PR]     # Comprehensive review analysis (prevents missing feedback)
 bin/gh-helper reviews wait [PR]        # Wait for reviews + checks
-bin/spanner-mycli-dev review gemini [PR]  # Complete review workflow
+bin/gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
+
+# Workflow examples
+gh pr create                            # Create PR (interactive for title/body)
+bin/gh-helper reviews wait             # Wait for automatic Gemini review (initial PR)
+bin/gh-helper reviews wait --request-review  # Request + wait (after pushes)
 
 # Output format examples (YAML default, JSON with --json)
 bin/gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
@@ -74,7 +79,7 @@ For detailed implementation patterns, see [dev-docs/patterns/system-variables.md
 ### Phantom Worktree Usage
 ```bash
 # Automated setup (recommended)
-bin/spanner-mycli-dev worktree setup issue-123-feature  # Auto-fetches and bases on origin/main
+make worktree-setup WORKTREE_NAME=issue-123-feature  # Auto-fetches and bases on origin/main
 
 # Work in isolated environment
 phantom shell issue-123-feature --tmux-horizontal
@@ -134,11 +139,11 @@ This is a simplified guide. For detailed information, refer to:
 3. **For resource management**: [dev-docs/development-insights.md#resource-management-in-batch-processing](dev-docs/development-insights.md#resource-management-in-batch-processing)
 
 ### When setting up development environment:
-1. **Start here**: Use `bin/spanner-mycli-dev worktree setup` for worktree setup
+1. **Start here**: Use `make worktree-setup WORKTREE_NAME=issue-123-feature` for worktree setup
 2. **For workflow details**: [dev-docs/development-insights.md#parallel-issue-development-with-phantom](dev-docs/development-insights.md#parallel-issue-development-with-phantom)
 
 ### When updating documentation:
-1. **README.md help updates**: Use `bin/spanner-mycli-dev docs update-help`
+1. **README.md help updates**: Use `make docs-update`
 2. **CLAUDE.md updates**: Follow the rules in this file (self-contained)
 3. **Other docs**: See [dev-docs/README.md](dev-docs/README.md) for structure guidance
 

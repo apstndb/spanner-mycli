@@ -7,7 +7,7 @@ This document covers the AI-friendly development tools created as part of issue 
 The tools in `dev-tools/` replace scattered shell scripts with structured Go commands optimized for AI assistant usage:
 
 - **gh-helper**: Generic GitHub operations (reviews, threads)
-- **spanner-mycli-dev**: Project-specific workflows (worktrees, docs, Gemini integration)
+- **Makefile targets**: Project-specific workflows (worktrees, docs) using simple shell commands
 
 ## Design Principles
 
@@ -59,26 +59,29 @@ threads reply-commit <THREAD_ID> <COMMIT_HASH>
 - Tracks last review state in `~/.cache/spanner-mycli-reviews/`
 - Enables incremental monitoring without API spam
 
-### spanner-mycli-dev (Project-Specific)
+### Makefile Targets (Project-Specific)
 
-**Purpose**: spanner-mycli specific workflows and integrations.
+**Purpose**: Simple spanner-mycli specific workflows using standard tools.
 
-**Key Commands**:
+**Key Targets**:
 ```bash
-# Complete PR workflows
-pr-workflow create [--wait-checks]     # Create + wait for initial review
-pr-workflow review <PR> [--wait-checks] # Handle post-push review cycle
-
 # Phantom worktree management
-worktree setup <NAME>                  # Auto-fetch, create, configure
-worktree list                          # Show existing worktrees
-worktree delete <NAME> [--force]       # Safe deletion with checks
+make worktree-setup WORKTREE_NAME=issue-123     # Auto-fetch, create, configure
+make worktree-list                               # Show existing worktrees
+make worktree-delete WORKTREE_NAME=issue-123    # Safe deletion with checks
 
 # Documentation maintenance
-docs update-help                       # Generate README.md help sections
+make docs-update                                 # Generate README.md help sections
+```
 
-# Smart review workflows
-review gemini <PR> [--force-request] [--wait-checks]  # Auto-detection
+**PR Workflows** (use tools directly):
+```bash
+# Initial PR creation
+gh pr create                                     # Interactive title/body input
+gh-helper reviews wait --timeout 15m            # Wait for automatic review
+
+# Post-push review cycles  
+gh-helper reviews wait <PR> --request-review --timeout 15m  # Request + wait
 ```
 
 ## Performance Data and Timeouts
@@ -113,21 +116,23 @@ Technical details: `dev-docs/lessons-learned/shell-to-go-migration.md#github-api
 
 **New PR Creation**:
 ```bash
-# All-in-one approach
-spanner-mycli-dev pr-workflow create --wait-checks
+# Interactive PR creation + wait for automatic review
+gh pr create
+gh-helper reviews wait --timeout 15m
 
-# Step-by-step approach  
+# Alternative: specify title/body via flags
 gh pr create --title "feat: new feature" --body "Description"
-gh-helper reviews wait --request-review
+gh-helper reviews wait --timeout 15m
 ```
 
 **Post-Push Review Cycle**:
 ```bash
-# After pushing fixes
-spanner-mycli-dev pr-workflow review 306 --wait-checks
+# Request Gemini review + wait
+gh-helper reviews wait 306 --request-review --timeout 15m
 
-# Manual approach
-gh-helper reviews wait 306 --request-review --exclude-checks
+# Manual step-by-step approach
+gh pr comment 306 --body "/gemini review"
+gh-helper reviews wait 306 --timeout 15m
 gh-helper reviews fetch 306 --list-threads
 gh-helper threads reply-commit THREAD_ID abc1234
 ```
