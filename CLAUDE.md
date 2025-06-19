@@ -160,9 +160,10 @@ make lint              # Code quality checks (required before push)
 ```
 
 ### Git Practices
-- Always use `git add <specific-files>` (never `git add .`)
+- **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
+- **Reason**: Prevents accidental commits of untracked files (.claude, .idea/, tmp/, etc.)
 - Link PRs to issues: "Fixes #issue-number"
-- Check `git status` before committing
+- Check `git status` before committing to verify only intended files are staged
 
 
 ## Important Notes
