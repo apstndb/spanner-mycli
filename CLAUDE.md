@@ -126,7 +126,7 @@ This is a simplified guide. For detailed information, refer to:
 6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 **⚠️ CRITICAL: Use `bin/gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
-**⚠️ WORKFLOW: Reply to threads → resolve threads with `bin/gh-helper threads resolve <ID1> <ID2>...` after addressing feedback**
+**⚠️ WORKFLOW: Reply to threads → resolve threads with `bin/gh-helper threads resolve <thread-id> [<thread-id>...]` after addressing feedback**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions

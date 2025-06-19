@@ -148,15 +148,25 @@ Examples:
 )
 
 var showThreadCmd = &cobra.Command{
-	Use:   "show <thread-id>...",
-	Short: "Show detailed view of review threads", 
+	Use:   "show <thread-id> [<thread-id>...]",
+	Short: "Show detailed view of one or more review threads", 
 	Long: `Show detailed view of review threads including all comments.
+
+This command accepts one or more thread IDs, allowing you to inspect multiple
+threads in a single operation. When showing a single thread, the output is a
+single object. When showing multiple threads, the output is an array.
 
 This provides full context for understanding review feedback before replying.
 Useful for getting complete thread history and comment details.
 
 Examples:
+  # Show a single thread
   gh-helper threads show PRRT_kwDONC6gMM5SgXT2
+  
+  # Show multiple threads at once
+  gh-helper threads show PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3
+  
+  # Show many threads (useful for batch inspection)
   gh-helper threads show PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3 PRRT_kwDONC6gMM5SgXT4`,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
@@ -164,15 +174,25 @@ Examples:
 }
 
 var resolveThreadCmd = shared.NewOperationalCommand(
-	"resolve <thread-id>...",
+	"resolve <thread-id> [<thread-id>...]",
 	"Resolve one or more review threads",
 	`Resolve GitHub pull request review threads.
+
+This command accepts one or more thread IDs, allowing you to resolve multiple
+threads in a single operation. This is useful after addressing feedback from
+multiple reviewers or when cleaning up several related discussions.
 
 This marks the threads as resolved, indicating that the feedback has been addressed.
 Use this after making the requested changes or providing sufficient response.
 
 Examples:
+  # Resolve a single thread
   gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2
+  
+  # Resolve multiple threads at once
+  gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3
+  
+  # Resolve many threads after addressing all feedback
   gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3 PRRT_kwDONC6gMM5SgXT4`,
 	resolveThread,
 )
