@@ -157,15 +157,16 @@ Useful for getting complete thread history and comment details.`,
 )
 
 var resolveThreadCmd = shared.NewOperationalCommand(
-	"resolve <thread-id>",
-	"Resolve a review thread",
-	`Resolve a GitHub pull request review thread.
+	"resolve <thread-id>...",
+	"Resolve one or more review threads",
+	`Resolve GitHub pull request review threads.
 
-This marks the thread as resolved, indicating that the feedback has been addressed.
+This marks the threads as resolved, indicating that the feedback has been addressed.
 Use this after making the requested changes or providing sufficient response.
 
 Examples:
-  gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2`,
+  gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2
+  gh-helper threads resolve PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3 PRRT_kwDONC6gMM5SgXT4`,
 	resolveThread,
 )
 
@@ -196,7 +197,7 @@ func init() {
 	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
 	replyThreadsCmd.Args = cobra.ExactArgs(1)
 	showThreadCmd.Args = cobra.ExactArgs(1)
-	resolveThreadCmd.Args = cobra.ExactArgs(1)
+	resolveThreadCmd.Args = cobra.MinimumNArgs(1)
 	
 	// Configure flags
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
@@ -915,27 +916,36 @@ func showThread(cmd *cobra.Command, args []string) error {
 }
 
 func resolveThread(cmd *cobra.Command, args []string) error {
-	threadID := args[0]
-	
 	// Create GitHub client
 	client := shared.NewGitHubClient(owner, repo)
 	
 	// Get output format using unified resolver
 	format := shared.ResolveFormat(cmd)
 	
-	if err := client.ResolveThread(threadID); err != nil {
-		return fmt.Errorf("failed to resolve thread: %w", err)
-	}
+	resolvedAt := time.Now().Format("2006-01-02T15:04:05Z07:00")
+	results := []map[string]interface{}{}
+	
+	// Process each thread ID
+	for _, threadID := range args {
+		if err := client.ResolveThread(threadID); err != nil {
+			return fmt.Errorf("failed to resolve thread %s: %w", threadID, err)
+		}
 
-	// Output result using GitHub GraphQL field names
-	result := map[string]interface{}{
-		"id":         threadID,
-		"isResolved": true,
-		"resolvedAt": time.Now().Format("2006-01-02T15:04:05Z07:00"),
+		// Collect result for this thread
+		results = append(results, map[string]interface{}{
+			"id":         threadID,
+			"isResolved": true,
+			"resolvedAt": resolvedAt,
+		})
 	}
 	
-	// Output using unified encoder
-	return shared.EncodeOutput(os.Stdout, format, result)
+	// Output single result for backward compatibility when only one thread
+	if len(results) == 1 {
+		return shared.EncodeOutput(os.Stdout, format, results[0])
+	}
+	
+	// Output array for multiple threads
+	return shared.EncodeOutput(os.Stdout, format, results)
 }
 
 func replyToThread(cmd *cobra.Command, args []string) error {
