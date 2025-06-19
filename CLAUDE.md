@@ -31,9 +31,9 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 
 **Before ANY push to the repository**:
 1. **Always run `make check`** - runs test && lint (required for quality assurance)
-3. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
-4. **Never push directly to main branch** - always use Pull Requests
-5. **Never commit directly to main branch** - always use feature branches
+2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
+3. **Never push directly to main branch** - always use Pull Requests
+4. **Never commit directly to main branch** - always use feature branches
 
 ## Essential Commands
 

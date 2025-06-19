@@ -42,8 +42,8 @@ go tool gh-helper reviews wait <PR> --request-review --timeout 15m
 
 **Gemini Review Rules:**
 - ✅ Initial PR creation: Automatic review (no flag needed)
-- ⚠️ All subsequent pushes: MUST use `--request-review` flag
-- 🔄 Always wait for review completion before proceeding
+- ✅ All subsequent pushes: MUST use `--request-review` flag
+- ✅ Always wait for review completion before proceeding
 
 ## Issue Management
 
