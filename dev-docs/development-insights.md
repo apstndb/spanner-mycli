@@ -18,7 +18,7 @@ Use the provided script for consistent worktree setup:
 
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
+make worktree-setup WORKTREE_NAME=issue-276-timeout-flag
 
 # Manual setup (for reference)
 phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude'
@@ -41,6 +41,8 @@ phantom create issue-276-timeout-flag --exec 'ln -sf ../../../../.claude .claude
 - `../../../../.claude` → `/home/user/spanner-mycli/.claude/`
 phantom shell issue-276-timeout-flag --tmux-horizontal
 ```
+
+
 
 ## Error Handling Architecture Evolution
 
@@ -138,8 +140,53 @@ make fasttest              # Quick tests during development
 make clean                 # Clean artifacts when needed
 
 # Help documentation updates
-scripts/docs/update-help-output.sh    # Generate help output for README.md
+make docs-update    # Generate help output for README.md
 ```
+
+
+## Review Thread Resolution Workflow (Issue #306 Enhancement)
+
+**Critical Pattern**: Proper thread resolution workflow prevents confusion about feedback status:
+
+1. **Make changes**: Address reviewer feedback with code modifications
+2. **Commit changes**: Create commit with proper message
+3. **Push changes**: Ensure commit is available on GitHub
+4. **Reply with reference**: Reply to thread with commit hash reference
+5. **Resolve thread**: Mark as addressed (can be combined with reply)
+
+**Why this order matters**:
+- Commit hash is available only after committing
+- GitHub can display commit references only after push
+- Shows reviewer that feedback was implemented, not just acknowledged
+- Provides verifiable evidence of changes
+
+```bash
+# Complete workflow example
+# 1-2. Make changes and commit
+git add . && git commit -m "fix: address review feedback"
+COMMIT_HASH=$(git rev-parse HEAD)  # Capture the fixing commit hash
+# 3. Push to make commit available on GitHub  
+git push
+# 4-5. Reply with commit reference and resolve (can be combined)
+go tool gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "Fixed as suggested" --resolve
+
+# Alternative: Find commit by message or content
+# git log --oneline --grep="review feedback" -1 --format="%H"
+# git log --oneline -S "specific code change" -1 --format="%H"
+```
+
+**Thread Resolution Detection Logic** (Fixed in Issue #306):
+- **Previous (incorrect)**: Thread needs reply if ANY user comment exists
+- **Current (correct)**: Thread needs reply if LAST comment is from external user
+- **Implication**: More accurate "needs reply" detection prevents missed feedback
+
+**AI Assistant workflow for comprehensive feedback analysis**:
+1. Use `go tool gh-helper reviews analyze <PR>` for complete review analysis (not just threads)
+2. Look for severity indicators: "critical", "high-severity", "panic", "error" in review bodies
+3. Don't assume all important feedback appears in threaded comments
+4. Always analyze review summaries after responding to individual threads
+
+**Technical implementation**: Unified GraphQL query (`shared/unified_review.go`) fetches both review bodies and threads simultaneously, with automatic severity detection and actionable item extraction.
 
 ## Related Documentation
 

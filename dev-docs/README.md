@@ -32,20 +32,17 @@ dev-docs/
 - Context and session management
 
 ### [Issue Management](issue-management.md)
-- GitHub issue workflow
-- Pull request process
-- Code review strategies
-- Git best practices
+- Development tools usage (Go 1.24 tool management)
+- GitHub issue workflow and labeling
+- Pull request process and code review
+- Gemini AI review integration
+- Git best practices and phantom worktree management
 - Knowledge management through PR comments
 
-<<<<<<< HEAD
-=======
 ### [Coding Guidelines](coding-guidelines.md)
 - Go language standards and conventions
 - Project-specific coding rules
 - Current deviations and future improvements
-
->>>>>>> origin/main
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
 
@@ -71,7 +68,7 @@ dev-docs/
 
 ```bash
 # Generate help output files
-scripts/docs/update-help-output.sh
+make docs-update
 
 # Files are generated in ./tmp/
 # - help_clean.txt: Content for README.md --help section (lines 97-135)

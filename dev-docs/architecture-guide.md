@@ -261,7 +261,7 @@ spanner-mycli/
 ├── testdata/                        # Test fixtures
 ├── docs/                            # User documentation
 ├── dev-docs/                        # Developer documentation
-├── scripts/                         # Automation scripts
+├── bin/                             # Development tool symlinks (created by make build-tools)
 └── official_docs/                   # Upstream documentation
 ```
 

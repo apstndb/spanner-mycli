@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Why this rule is critical**: CLAUDE.md is read by AI assistants for every development task. Including verbose content creates cognitive overload and buries essential requirements like `make test && make lint`.
 
 ### What belongs in CLAUDE.md
-- Critical requirements (e.g., `make test && make lint` before push)
+- Critical requirements (e.g., `make check` before push)
 - Essential commands for daily development
 - Brief architecture overview with links to details
 - Documentation structure navigation
@@ -30,33 +30,37 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 ## 🚨 CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
-1. **Always run `make test`** (not `make fasttest`) - all integration tests must pass
-2. **Always run `make lint`** - code quality and style compliance required
-3. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
-4. **Never push directly to main branch** - always use Pull Requests
-5. **Never commit directly to main branch** - always use feature branches
+1. **Always run `make check`** - runs test && lint (required for quality assurance)
+2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
+3. **Never push directly to main branch** - always use Pull Requests
+4. **Never commit directly to main branch** - always use feature branches
 
 ## Essential Commands
 
 ```bash
-# Development cycle
+# Development cycle (CRITICAL)
+make check                    # REQUIRED before ANY push (runs test && lint)
 make build                    # Build the application
-make test && make lint        # Required before push
-make fasttest                 # Quick tests during development
+make test-quick               # Quick tests during development
 
-# Running the application
-make run PROJECT=myproject INSTANCE=myinstance DATABASE=mydatabase
-go run . -p PROJECT -i INSTANCE -d DATABASE
+# Development tools (Go 1.24 tool management: make build-tools)
+go tool gh-helper reviews analyze [PR]      # Comprehensive review analysis (prevents missing feedback)
+go tool gh-helper reviews wait [PR]         # Wait for reviews + checks
+go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
 
-# Documentation updates
-scripts/docs/update-help-output.sh    # Update README.md help sections
+# Workflow examples  
+gh pr create                                 # Create PR (interactive for title/body)
+go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
 
-# Phantom worktree management (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-276-timeout-flag
+# Review response workflow (for subsequent pushes)
+go tool gh-helper reviews analyze <PR> > tmp/review-analysis.yaml  # Analyze all feedback
+# Create fix plan in tmp/fix-plan.md, make changes, commit & push
+go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
+# Reply to threads with commit hash and --resolve flag
 
-# GitHub review replies (automated)
-scripts/dev/list-review-threads.sh 287         # Find threads needing replies
-scripts/dev/review-reply.sh THREAD_ID "reply"  # Reply to specific thread
+# Output format examples (YAML default, JSON with --json)
+go tool gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
+go tool gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
 ```
 
 ## Core Architecture Overview
@@ -80,7 +84,7 @@ For detailed implementation patterns, see [dev-docs/patterns/system-variables.md
 ### Phantom Worktree Usage
 ```bash
 # Automated setup (recommended)
-scripts/dev/setup-phantom-worktree.sh issue-123-feature  # Auto-fetches and bases on origin/main
+make worktree-setup WORKTREE_NAME=issue-123-feature  # Auto-fetches and bases on origin/main
 
 # Work in isolated environment
 phantom shell issue-123-feature --tmux-horizontal
@@ -112,9 +116,8 @@ This is a simplified guide. For detailed information, refer to:
 - **[query_plan.md](docs/query_plan.md)** - Query plan analysis features
 - **[system_variables.md](docs/system_variables.md)** - System variables reference
 
-### Automation Scripts (`scripts/`)
-- **[docs/update-help-output.sh](scripts/docs/update-help-output.sh)** - Update README help sections
-- **[dev/setup-phantom-worktree.sh](scripts/dev/setup-phantom-worktree.sh)** - Automated worktree setup
+### Development Tools **Go 1.24 Tool Management: `make build-tools`**
+- **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
 
 ## 🎯 Task-Specific Documentation Guide
 
@@ -127,8 +130,12 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-4. **For review replies**: Use `scripts/dev/list-review-threads.sh` and `scripts/dev/review-reply.sh` - Automated thread replies
-5. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+4. **For review analysis**: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
+5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
+6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+
+**⚠️ CRITICAL: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
+**⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
@@ -136,11 +143,11 @@ This is a simplified guide. For detailed information, refer to:
 3. **For resource management**: [dev-docs/development-insights.md#resource-management-in-batch-processing](dev-docs/development-insights.md#resource-management-in-batch-processing)
 
 ### When setting up development environment:
-1. **Start here**: Use `scripts/dev/setup-phantom-worktree.sh` for worktree setup
+1. **Start here**: Use `make worktree-setup WORKTREE_NAME=issue-123-feature` for worktree setup
 2. **For workflow details**: [dev-docs/development-insights.md#parallel-issue-development-with-phantom](dev-docs/development-insights.md#parallel-issue-development-with-phantom)
 
 ### When updating documentation:
-1. **README.md help updates**: Use `scripts/docs/update-help-output.sh`
+1. **README.md help updates**: Use `make docs-update`
 2. **CLAUDE.md updates**: Follow the rules in this file (self-contained)
 3. **Other docs**: See [dev-docs/README.md](dev-docs/README.md) for structure guidance
 
@@ -158,9 +165,11 @@ make lint              # Code quality checks (required before push)
 ```
 
 ### Git Practices
-- Always use `git add <specific-files>` (never `git add .`)
+- **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
+- **Reason**: Prevents accidental commits of untracked files (.claude, .idea/, tmp/, etc.)
 - Link PRs to issues: "Fixes #issue-number"
-- Check `git status` before committing
+- Check `git status` before committing to verify only intended files are staged
+
 
 ## Important Notes
 
