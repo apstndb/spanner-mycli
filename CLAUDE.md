@@ -44,18 +44,18 @@ make build                    # Build the application
 make test-quick               # Quick tests during development
 
 # Development tools (Go 1.24 tool management: make build-tools)
-gh-helper reviews analyze [PR]         # Comprehensive review analysis (prevents missing feedback)
-gh-helper reviews wait [PR]            # Wait for reviews + checks
-gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
+go tool gh-helper reviews analyze [PR]      # Comprehensive review analysis (prevents missing feedback)
+go tool gh-helper reviews wait [PR]         # Wait for reviews + checks
+go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
 
 # Workflow examples  
 gh pr create                                 # Create PR (interactive for title/body)
-gh-helper reviews wait                       # Wait for automatic Gemini review (initial PR only)
-gh-helper reviews wait <PR> --request-review # REQUIRED for subsequent pushes
+go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
+go tool gh-helper reviews wait <PR> --request-review # REQUIRED for subsequent pushes
 
 # Output format examples (YAML default, JSON with --json)
-gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
-gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
+go tool gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
+go tool gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
 ```
 
 ## Core Architecture Overview

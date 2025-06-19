@@ -177,7 +177,7 @@ Implementing incremental review state tracking in `~/.cache/spanner-mycli-review
 ❌ [04:07:27] PR has merge conflicts (status: DIRTY)
 ⚠️  CI checks will not run until conflicts are resolved
 💡 Resolve conflicts with: git rebase origin/main
-💡 Then push and run: bin/gh-helper reviews wait 306
+💡 Then push and run: go tool gh-helper reviews wait 306
 ```
 
 **Benefits**:
@@ -292,7 +292,7 @@ make docs-update    # Generate help output for README.md
 AI assistants strongly prefer stdin input over temporary file creation:
 ```bash
 # Preferred pattern (AI-friendly)
-echo "Multi-line content" | bin/gh-helper threads reply THREAD_ID
+echo "Multi-line content" | go tool gh-helper threads reply THREAD_ID
 
 # Avoid this pattern (requires file system operations)
 cat > /tmp/content.txt << EOF
@@ -372,7 +372,7 @@ COMMIT_HASH=$(git rev-parse HEAD)  # Capture the fixing commit hash
 # 3. Push to make commit available on GitHub  
 git push
 # 4-5. Reply with commit reference and resolve (can be combined)
-bin/gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "Fixed as suggested" --resolve
+go tool gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "Fixed as suggested" --resolve
 
 # Alternative: Find commit by message or content
 # git log --oneline --grep="review feedback" -1 --format="%H"
@@ -385,7 +385,7 @@ bin/gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "Fixed
 - **Implication**: More accurate "needs reply" detection prevents missed feedback
 
 **AI Assistant workflow for comprehensive feedback analysis**:
-1. Use `bin/gh-helper reviews analyze <PR>` for complete review analysis (not just threads)
+1. Use `go tool gh-helper reviews analyze <PR>` for complete review analysis (not just threads)
 2. Look for severity indicators: "critical", "high-severity", "panic", "error" in review bodies
 3. Don't assume all important feedback appears in threaded comments
 4. Always analyze review summaries after responding to individual threads

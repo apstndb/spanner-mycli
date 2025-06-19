@@ -2,8 +2,7 @@
 coverage:
   if: true
   paths:
-    - coverage.out
-    - dev-tools/coverage-dev-tools.out
+    - tmp/coverage.out
 codeToTestRatio:
   code:
     - '**/*.go'

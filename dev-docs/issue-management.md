@@ -1,6 +1,50 @@
 # Issue and Code Review Management
 
-This document covers GitHub workflow, issue management, and code review processes for spanner-mycli.
+This document covers GitHub workflow, issue management, code review processes, and development tools usage for spanner-mycli.
+
+## Development Tools Usage
+
+### Tool Installation
+
+```bash
+# Install all development tools using Go 1.24 tool management
+make build-tools
+
+# This runs: go install tool
+# Creates symlinks in bin/ directory for convenience
+```
+
+### gh-helper Usage
+
+**Basic Commands:**
+```bash
+# Review operations
+go tool gh-helper reviews analyze <PR>     # Comprehensive review analysis
+go tool gh-helper reviews wait <PR>        # Wait for reviews and checks
+go tool gh-helper reviews fetch <PR>       # Get review data
+
+# Thread operations  
+go tool gh-helper threads show <THREAD_ID>
+go tool gh-helper threads reply <THREAD_ID>
+```
+
+**Gemini Review Workflow:**
+```bash
+# 1. Create PR (Gemini automatically reviews initial creation)
+gh pr create --title "feat: new feature" --body "Description"
+
+# 2. Wait for automatic Gemini review (initial PR only)
+go tool gh-helper reviews wait --timeout 15m
+
+# 3. For subsequent pushes: ALWAYS request Gemini review
+git add . && git commit -m "fix: address feedback" && git push
+go tool gh-helper reviews wait <PR> --request-review --timeout 15m
+```
+
+**Gemini Review Rules:**
+- ✅ Initial PR creation: Automatic review (no flag needed)
+- ⚠️ All subsequent pushes: MUST use `--request-review` flag
+- 🔄 Always wait for review completion before proceeding
 
 ## Issue Management
 

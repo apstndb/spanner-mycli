@@ -21,7 +21,7 @@ tmp/          # Development temporary files (e.g., help output generation)
 # Configuration files with secrets - may contain sensitive connection info, check before deleting
 .*.cnf
 
-# Development tools (built from dev-tools/)
+# Development tools (symlinks created by make build-tools)
 bin/
 
 # Phantom worktree notes - temporary development notes, safe to delete anywhere

@@ -41,7 +41,7 @@ lint:
 
 
 # Enhanced development targets (issue #301 - script reorganization)
-# Replaced complex spanner-mycli-dev with simple Makefile targets and gh-helper from gh-dev-tools
+# Development targets using Go 1.24 tool management and simple Makefile workflows
 .PHONY: test-quick check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools
 
 # Quick tests for development cycle
@@ -82,11 +82,12 @@ help-dev:
 	@echo "  make worktree-delete  - Delete phantom worktree (requires WORKTREE_NAME)"
 	@echo ""
 	@echo "🔧 Development Tools:"
-	@echo "  bin/gh-helper         - Generic GitHub operations (reviews, threads)"
+	@echo "  go tool gh-helper     - GitHub operations (managed via go.mod tool directive)"
+	@echo "  bin/gh-helper         - Convenience symlink (created by make build-tools)"
 	@echo ""
 	@echo "🚀 Quick Start for AI Assistants:"
-	@echo "  gh pr create && gh-helper reviews wait  # Create PR + wait for review"
-	@echo "  gh-helper reviews wait <PR> --request-review  # Request Gemini review + wait"
+	@echo "  gh pr create && go tool gh-helper reviews wait  # Create PR + wait for review"
+	@echo "  go tool gh-helper reviews wait <PR> --request-review  # Request Gemini review + wait"
 
 # Phantom worktree management (replacing spanner-mycli-dev)
 worktree-setup:
@@ -120,4 +121,4 @@ gh-review:
 		echo "❌ PR_NUMBER required. Usage: make gh-review PR_NUMBER=123"; \
 		exit 1; \
 	fi
-	@bin/gh-helper reviews check $(PR_NUMBER)
+	@go tool gh-helper reviews analyze $(PR_NUMBER)
