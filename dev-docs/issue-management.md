@@ -446,22 +446,22 @@ EOF
 
 ```bash
 # List unresolved review threads that need replies
-bin/gh-helper reviews fetch 287 --list-threads
+go tool gh-helper reviews fetch 287 --list-threads
 
 # Show detailed thread context before replying
-bin/gh-helper threads show PRRT_kwDONC6gMM5SU-GH
+go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
 # Reply to a specific thread (code changes made)
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
 
 # Reply to a specific thread (no code changes needed)
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! This is working as intended."
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! This is working as intended."
 
 # Reply with mention for AI reviews
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SVHTH --message "Fixed as suggested in commit def5678!" --mention gemini-code-assist
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SVHTH --message "Fixed as suggested in commit def5678!" --mention gemini-code-assist
 
 # Multi-line reply with stdin (AI-friendly)
-bin/gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH <<EOF
 Thank you for the detailed review!
 
 I've addressed the issue in commit abc1234:
@@ -503,29 +503,28 @@ Thank you for the feedback!
 **Complete Review Workflow with Gemini:**
 
 ```bash
-# 1. Request initial Gemini review (if needed)
-gh pr comment <PR_NUMBER> --body "/gemini review"
+# 1. Create PR (Gemini automatically reviews initial creation)
+gh pr create --title "feat: implement feature" --body "Description"
 
-# 2. Wait for Gemini review with automated monitoring
-bin/gh-helper reviews wait <PR_NUMBER> --timeout 15
+# 2. Wait for automatic Gemini review (initial PR only)
+go tool gh-helper reviews wait <PR_NUMBER> --timeout 15
 
 # 3. Check specific review threads
-bin/gh-helper reviews fetch <PR_NUMBER> --list-threads
+go tool gh-helper reviews fetch <PR_NUMBER> --list-threads
 
 # 4. Review detailed feedback
-bin/gh-helper threads show <THREAD_ID>
+go tool gh-helper threads show <THREAD_ID>
 
 # 5. Make fixes and push changes
 git add . && git commit -m "fix: address review feedback" && git push
 
-# 6. Reply with commit reference
-bin/gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH> --message "Addressed the issue as suggested"
+# 6. Request Gemini review for subsequent pushes (REQUIRED)
+go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15
 
-# 7. Request follow-up review if significant changes
-gh pr comment <PR_NUMBER> --body "/gemini review"
+# 7. Reply with commit reference
+go tool gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH> --message "Addressed the issue as suggested"
 
-# 8. Monitor for follow-up feedback
-bin/gh-helper reviews wait <PR_NUMBER> --timeout 10
+# 8. Repeat steps 5-7 as needed (always use --request-review after initial PR)
 ```
 
 **When to request Gemini review:**
@@ -540,10 +539,10 @@ bin/gh-helper reviews wait <PR_NUMBER> --timeout 10
 **Gemini-specific reply patterns:**
 ```bash
 # For AI code review feedback
-bin/gh-helper threads reply-commit <THREAD_ID> <HASH> --mention gemini-code-assist
+go tool gh-helper threads reply-commit <THREAD_ID> <HASH> --mention gemini-code-assist
 
 # Multi-line response to AI suggestions
-bin/gh-helper threads reply <THREAD_ID> --mention gemini-code-assist <<EOF
+go tool gh-helper threads reply <THREAD_ID> --mention gemini-code-assist <<EOF
 Thank you for the detailed analysis!
 
 I've implemented your suggestions:
@@ -783,9 +782,11 @@ Commit: [commit-hash]
 For automated reviews using Gemini Code Assist:
 
 ```bash
-# Trigger re-review after addressing comments
-gh pr comment <PR-number> --body "/gemini review"
+# Request Gemini review after addressing comments (recommended method)
+go tool gh-helper reviews wait <PR-number> --request-review --timeout 15m
 ```
+
+**Note**: Use `--request-review` flag instead of manual comment posting for consistent review workflow.
 
 ## Knowledge Management
 

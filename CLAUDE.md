@@ -49,9 +49,9 @@ gh-helper reviews wait [PR]            # Wait for reviews + checks
 gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
 
 # Workflow examples  
-gh pr create                            # Create PR (interactive for title/body)
-gh-helper reviews wait                  # Wait for automatic Gemini review (initial PR)
-gh-helper reviews wait --request-review      # Request + wait (after pushes)
+gh pr create                                 # Create PR (interactive for title/body)
+gh-helper reviews wait                       # Wait for automatic Gemini review (initial PR only)
+gh-helper reviews wait <PR> --request-review # REQUIRED for subsequent pushes
 
 # Output format examples (YAML default, JSON with --json)
 gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'

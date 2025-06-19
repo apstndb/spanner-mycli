@@ -38,13 +38,16 @@ go tool gh-helper threads reply <THREAD_ID>
 
 **PR Review Workflow:**
 ```bash
-# Create PR and wait for automatic review
+# 1. Create PR and wait for automatic Gemini review (initial PR only)
 gh pr create
 go tool gh-helper reviews wait --timeout 15m
 
-# Request additional review after changes
+# 2. For subsequent pushes: ALWAYS request Gemini review
+git add . && git commit -m "fix: address feedback" && git push
 go tool gh-helper reviews wait <PR> --request-review --timeout 15m
 ```
+
+**IMPORTANT**: Gemini automatically reviews initial PR creation. For any pushes after PR creation, you MUST use `--request-review` flag to trigger Gemini review.
 
 **Thread Reply Workflow:**
 ```bash
@@ -108,20 +111,27 @@ bin/gh-helper reviews analyze 306   # Same as: go tool gh-helper reviews analyze
 
 **Complete PR Workflow:**
 ```bash
-# 1. Create PR
+# 1. Create PR (Gemini automatically reviews initial creation)
 gh pr create --title "feat: new feature" --body "Description"
 
-# 2. Wait for automatic review
+# 2. Wait for automatic Gemini review (initial PR only)
 go tool gh-helper reviews wait --timeout 15m
 
-# 3. Address feedback and request re-review
+# 3. Address feedback and request re-review (REQUIRED for subsequent pushes)
 git add . && git commit -m "fix: address review feedback" && git push
 go tool gh-helper reviews wait <PR> --request-review --timeout 15m
 
 # 4. Handle thread replies
 go tool gh-helper reviews fetch <PR> --list-threads
 go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --message "Fixed as suggested"
+
+# 5. Repeat steps 3-4 as needed (always use --request-review after initial PR)
 ```
+
+**Gemini Review Rules:**
+- ✅ Initial PR creation: Automatic review (no flag needed)
+- ⚠️ All subsequent pushes: MUST use `--request-review` flag
+- 🔄 Always wait for review completion before proceeding
 
 ## Troubleshooting
 
