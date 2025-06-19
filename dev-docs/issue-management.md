@@ -11,7 +11,6 @@ This document covers GitHub workflow, issue management, code review processes, a
 make build-tools
 
 # This runs: go install tool
-# Creates symlinks in bin/ directory for convenience
 ```
 
 ### gh-helper Usage
@@ -747,7 +746,7 @@ gh api graphql -F query=@/tmp/reply_mention.graphql
 **Quick Helper Script Template:**
 ```bash
 #!/bin/bash
-# bin/gh-helper threads reply
+# go tool gh-helper threads reply
 PR_NUMBER=$1
 THREAD_ID=$2
 REVIEW_ID=$3

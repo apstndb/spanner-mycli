@@ -4,21 +4,14 @@ build:
 build-tools:
 	# Install development tools using Go 1.24 tool management
 	# gh-helper: Generic GitHub operations (reviews, threads) - managed via go.mod tool directive
-	mkdir -p bin
-	@echo "📦 Installing gh-helper using go tool management..."
+	@echo "📦 Installing tools from go.mod tool directive..."
 	go install tool
-	@if [ -n "$$(which gh-helper)" ]; then \
-		ln -sf "$$(which gh-helper)" bin/gh-helper; \
-		echo "✅ gh-helper installed and linked to bin/gh-helper"; \
-	else \
-		echo "❌ gh-helper installation failed"; \
-		exit 1; \
-	fi
+	@echo "✅ Tools installed successfully"
+	@echo "💡 Use: go tool gh-helper --help"
 
 clean:
 	rm -f spanner-mycli
 	rm -rf dist/
-	rm -rf bin/
 	go clean -testcache
 
 run:
@@ -83,7 +76,6 @@ help-dev:
 	@echo ""
 	@echo "🔧 Development Tools:"
 	@echo "  go tool gh-helper     - GitHub operations (managed via go.mod tool directive)"
-	@echo "  bin/gh-helper         - Convenience symlink (created by make build-tools)"
 	@echo ""
 	@echo "🚀 Quick Start for AI Assistants:"
 	@echo "  gh pr create && go tool gh-helper reviews wait  # Create PR + wait for review"
