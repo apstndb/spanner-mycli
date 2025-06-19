@@ -160,11 +160,6 @@ make lint              # Code quality checks (required before push)
 - Link PRs to issues: "Fixes #issue-number"
 - Check `git status` before committing
 
-### gh-dev-tools Development
-- **Repository**: [github.com/apstndb/gh-dev-tools](https://github.com/apstndb/gh-dev-tools)
-- **Development Guidelines**: Same as spanner-mycli - **never push directly to main branch**
-- **All changes require Pull Requests** - never commit directly to main branch
-- Use feature branches for all development work
 
 ## Important Notes
 
