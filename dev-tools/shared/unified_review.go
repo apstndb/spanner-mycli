@@ -1,7 +1,6 @@
 package shared
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -456,7 +455,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!,
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse unified review response: %w", err)
 	}
 

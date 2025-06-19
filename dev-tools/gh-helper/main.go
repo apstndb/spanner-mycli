@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -203,8 +202,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&owner, "owner", shared.DefaultOwner, "GitHub repository owner")
 	rootCmd.PersistentFlags().StringVar(&repo, "repo", shared.DefaultRepo, "GitHub repository name")
 	rootCmd.PersistentFlags().StringVar(&timeoutStr, "timeout", "5m", "Timeout duration (e.g., 90s, 1.5m, 2m30s, 15m)")
-	rootCmd.PersistentFlags().Bool("json", false, "Output structured JSON for programmatic use")
-	rootCmd.PersistentFlags().Bool("yaml", false, "Output structured YAML for AI tools")
+	rootCmd.PersistentFlags().String("format", "yaml", "Output format (yaml|json)")
+	rootCmd.PersistentFlags().Bool("json", false, "Output JSON format (alias for --format=json)")
+	rootCmd.PersistentFlags().Bool("yaml", false, "Output YAML format (alias for --format=yaml)")
+	
+	// Mark all format flags as mutually exclusive
+	rootCmd.MarkFlagsMutuallyExclusive("format", "json")
+	rootCmd.MarkFlagsMutuallyExclusive("format", "yaml")
+	rootCmd.MarkFlagsMutuallyExclusive("json", "yaml")
 
 	replyThreadsCmd.Flags().StringVar(&message, "message", "", "Reply message (or use stdin)")
 	replyThreadsCmd.Flags().StringVar(&mentionUser, "mention", "", "Username to mention (without @)")
@@ -252,7 +257,7 @@ func loadReviewState(prNumber string) (*ReviewState, error) {
 	}
 	
 	var state ReviewState
-	if err := json.Unmarshal(data, &state); err != nil {
+	if err := shared.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
 	
@@ -268,7 +273,7 @@ func saveReviewState(prNumber string, state ReviewState) error {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 	
-	data, err := json.Marshal(state)
+	data, err := yaml.MarshalWithOptions(state, yaml.UseJSONMarshaler())
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
@@ -838,9 +843,8 @@ func showThread(cmd *cobra.Command, args []string) error {
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 
-	// Get output format flags
-	jsonOutput, _ := cmd.Flags().GetBool("json")
-	yamlOutput, _ := cmd.Flags().GetBool("yaml")
+	// Get output format using unified resolver
+	format := shared.ResolveFormat(cmd)
 
 	// Use unified node query system
 	config := shared.NewNodeQueryConfig(threadID).ForThreadDetails()
@@ -854,74 +858,60 @@ func showThread(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("thread not found or invalid thread ID")
 	}
 
-	// Build output structure
+	// Build output structure using GitHub GraphQL API field names
 	output := map[string]interface{}{
-		"thread_id": thread.ID,
-		"resolved":  thread.IsResolved,
+		"id":         thread.ID,
+		"isResolved": thread.IsResolved,
+		"path":       thread.Path,
+		"line":       thread.Line,
 	}
 	
 	if thread.PullRequest != nil {
-		output["pr"] = map[string]interface{}{
+		output["pullRequest"] = map[string]interface{}{
 			"number": thread.PullRequest.Number,
 			"title":  thread.PullRequest.Title,
 		}
 	}
 	
-	location := thread.Path
-	if thread.Line != nil {
-		location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-	}
-	output["location"] = location
-	
 	if thread.SubjectType != nil {
-		output["subject_type"] = *thread.SubjectType
+		output["subjectType"] = *thread.SubjectType
 	}
 	
-	// Comments
+	// Comments using GitHub GraphQL structure
 	comments := []map[string]interface{}{}
 	for i, comment := range thread.Comments.Nodes {
 		commentData := map[string]interface{}{
-			"index":      i + 1,
-			"author":     comment.Author.Login,
-			"created_at": comment.CreatedAt,
-			"body":       comment.Body,
+			"id":        comment.ID,
+			"author":    map[string]string{"login": comment.Author.Login},
+			"createdAt": comment.CreatedAt,
+			"body":      comment.Body,
 		}
 		
 		if i == 0 && comment.DiffHunk != nil {
-			commentData["diff_hunk"] = *comment.DiffHunk
+			commentData["diffHunk"] = *comment.DiffHunk
 		}
 		
 		comments = append(comments, commentData)
 	}
-	output["comments"] = comments
-	output["comments_count"] = len(comments)
+	
+	output["comments"] = map[string]interface{}{
+		"nodes":      comments,
+		"totalCount": len(comments),
+	}
 	
 	// Check if needs reply
 	if !thread.IsResolved && len(thread.Comments.Nodes) > 0 {
 		lastComment := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
 		if currentUser, err := getCurrentUser(); err == nil {
 			if lastComment.Author.Login != currentUser {
-				output["needs_reply"] = true
-				output["last_comment_by"] = lastComment.Author.Login
+				output["needsReply"] = true
+				output["lastCommentBy"] = lastComment.Author.Login
 			}
 		}
 	}
 	
-	// Output based on format
-	if jsonOutput {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(output)
-	}
-	
-	if yamlOutput {
-		encoder := yaml.NewEncoder(os.Stdout)
-		return encoder.Encode(output)
-	}
-	
-	// Default to YAML
-	encoder := yaml.NewEncoder(os.Stdout)
-	return encoder.Encode(output)
+	// Output using unified encoder
+	return shared.EncodeOutput(os.Stdout, format, output)
 }
 
 func resolveThread(cmd *cobra.Command, args []string) error {
@@ -930,35 +920,22 @@ func resolveThread(cmd *cobra.Command, args []string) error {
 	// Create GitHub client
 	client := shared.NewGitHubClient(owner, repo)
 	
-	// Get output format flags
-	jsonOutput, _ := cmd.Flags().GetBool("json")
-	yamlOutput, _ := cmd.Flags().GetBool("yaml")
+	// Get output format using unified resolver
+	format := shared.ResolveFormat(cmd)
 	
 	if err := client.ResolveThread(threadID); err != nil {
 		return fmt.Errorf("failed to resolve thread: %w", err)
 	}
 
-	// Output result
+	// Output result using GitHub GraphQL field names
 	result := map[string]interface{}{
-		"thread_id": threadID,
-		"resolved":  true,
-		"timestamp": time.Now().Format("2006-01-02T15:04:05Z07:00"),
+		"id":         threadID,
+		"isResolved": true,
+		"resolvedAt": time.Now().Format("2006-01-02T15:04:05Z07:00"),
 	}
 	
-	if jsonOutput {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(result)
-	}
-	
-	if yamlOutput {
-		encoder := yaml.NewEncoder(os.Stdout)
-		return encoder.Encode(result)
-	}
-	
-	// Default to YAML
-	encoder := yaml.NewEncoder(os.Stdout)
-	return encoder.Encode(result)
+	// Output using unified encoder
+	return shared.EncodeOutput(os.Stdout, format, result)
 }
 
 func replyToThread(cmd *cobra.Command, args []string) error {
@@ -998,9 +975,8 @@ func replyToThread(cmd *cobra.Command, args []string) error {
 		replyText = fmt.Sprintf("@%s %s", mentionUser, replyText)
 	}
 
-	// Get output format flags
-	jsonOutput, _ := cmd.Flags().GetBool("json")
-	yamlOutput, _ := cmd.Flags().GetBool("yaml")
+	// Get output format using unified resolver
+	format := shared.ResolveFormat(cmd)
 
 	// CRITICAL INSIGHT (Issue #301): GitHub GraphQL API quirk
 	// Do NOT include pullRequestReviewId field - causes null responses despite being marked "optional" in schema
@@ -1042,7 +1018,7 @@ mutation($threadID: ID!, $body: String!) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := shared.Unmarshal(result, &response); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -1051,39 +1027,26 @@ mutation($threadID: ID!, $body: String!) {
 		return fmt.Errorf("reply posting failed: empty response")
 	}
 
-	// Build result structure
+	// Build result structure using GitHub GraphQL field names
 	outputData := map[string]interface{}{
-		"thread_id":  threadID,
-		"comment_id": comment.ID,
+		"threadId":   threadID,
+		"commentId":  comment.ID,
 		"url":        comment.URL,
-		"timestamp":  time.Now().Format("2006-01-02T15:04:05Z07:00"),
+		"repliedAt":  time.Now().Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	// Auto-resolve thread if requested
 	if autoResolve {
 		if err := client.ResolveThread(threadID); err != nil {
 			// Don't return error - reply succeeded, resolution failed
-			outputData["resolved"] = false
-			outputData["resolve_error"] = err.Error()
+			outputData["isResolved"] = false
+			outputData["resolveError"] = err.Error()
 		} else {
-			outputData["resolved"] = true
+			outputData["isResolved"] = true
 		}
 	}
 
-	// Output result
-	if jsonOutput {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(outputData)
-	}
-	
-	if yamlOutput {
-		encoder := yaml.NewEncoder(os.Stdout)
-		return encoder.Encode(outputData)
-	}
-	
-	// Default to YAML
-	encoder := yaml.NewEncoder(os.Stdout)
-	return encoder.Encode(result)
+	// Output using unified encoder
+	return shared.EncodeOutput(os.Stdout, format, outputData)
 }
 

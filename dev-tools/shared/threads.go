@@ -1,7 +1,6 @@
 package shared
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 )
@@ -124,7 +123,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $limit: Int!) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse threads batch response: %w", err)
 	}
 
@@ -268,7 +267,7 @@ query($ids: [ID!]!) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse thread batch response: %w", err)
 	}
 

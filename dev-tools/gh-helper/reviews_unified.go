@@ -1,13 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/apstndb/spanner-mycli/dev-tools/shared"
-	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 )
 
@@ -110,13 +108,12 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 	listThreads, _ := cmd.Flags().GetBool("list-threads")
 	needsReplyOnly, _ := cmd.Flags().GetBool("needs-reply-only")
 	
-	// Get output format flags from persistent flags
-	outputJSON, _ := cmd.Flags().GetBool("json")
-	outputYAML, _ := cmd.Flags().GetBool("yaml")
+	// Get output format using unified resolver
+	format := shared.ResolveFormat(cmd)
 	
 	// Adjust flags for thread-focused modes
 	if listThreads || threadsOnly {
-		outputJSON = true
+		format = shared.FormatJSON // Force JSON for thread-focused modes
 		includeReviewBodies = false
 		needsReplyOnly = true  // Implied for thread-focused modes
 		if listThreads {
@@ -167,33 +164,16 @@ func fetchReviews(cmd *cobra.Command, args []string) error {
 				threadsNeedingReply = append(threadsNeedingReply, thread)
 			}
 		}
-		if outputJSON {
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "  ")
-			return encoder.Encode(threadsNeedingReply)
-		}
-		if outputYAML {
-			encoder := yaml.NewEncoder(os.Stdout)
-			return encoder.Encode(threadsNeedingReply)
-		}
-		// Default to YAML
-		encoder := yaml.NewEncoder(os.Stdout)
-		return encoder.Encode(threadsNeedingReply)
+		return shared.EncodeOutput(os.Stdout, format, threadsNeedingReply)
 	}
 	
 	// Full data output
-	if outputJSON {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(data)
+	if format == shared.FormatJSON {
+		return shared.EncodeOutput(os.Stdout, format, data)
 	}
 	
-	if outputYAML {
-		return outputFetchYAML(data, includeReviewBodies, includeThreads)
-	}
-	
-	// Default to YAML
-	return outputFetchYAML(data, includeReviewBodies, includeThreads)
+	// Use specialized output function for better structure
+	return outputFetch(data, includeReviewBodies, includeThreads, format)
 }
 
 func analyzeReviews(cmd *cobra.Command, args []string) error {
@@ -203,8 +183,8 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	
-	jsonOutput, _ := cmd.Flags().GetBool("json")
-	yamlOutput, _ := cmd.Flags().GetBool("yaml")
+	// Get output format using unified resolver
+	format := shared.ResolveFormat(cmd)
 
 	// Always fetch everything for analysis
 	opts := shared.DefaultUnifiedReviewOptions()
@@ -217,73 +197,12 @@ func analyzeReviews(cmd *cobra.Command, args []string) error {
 	// Get all actionable items
 	items := data.GetActionableItems()
 
-	if jsonOutput {
-		return outputAnalysisJSON(data, items)
-	}
-	
-	if yamlOutput {
-		return outputAnalysisYAML(data, items)
-	}
-
-	// Default to YAML for simplicity
-	return outputAnalysisYAML(data, items)
+	// Use unified analysis output
+	return outputAnalysis(data, items, format)
 }
 
-// outputAnalysisJSON outputs analysis results in JSON format for programmatic use
-func outputAnalysisJSON(data *shared.UnifiedReviewData, items []shared.ActionableItem) error {
-	// Create structured output for easy parsing
-	output := struct {
-		PR          shared.PRMetadata           `json:"pr"`
-		CurrentUser string                      `json:"currentUser"`
-		FetchedAt   string                      `json:"fetchedAt"`
-		Summary     map[string]int              `json:"summary"`
-		Items       []shared.ActionableItem     `json:"actionableItems"`
-		Threads     []shared.ThreadData         `json:"threads"`
-		Reviews     []shared.ReviewData         `json:"reviews"`
-	}{
-		PR:          data.PR,
-		CurrentUser: data.CurrentUser,
-		FetchedAt:   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Items:       items,
-		Threads:     data.Threads,
-		Reviews:     data.Reviews,
-	}
-
-	// Calculate summary
-	severityCounts := make(map[string]int)
-	for _, item := range items {
-		severityCounts[string(item.Severity)]++
-	}
-	
-	threadCounts := make(map[string]int)
-	for _, thread := range data.Threads {
-		if thread.NeedsReply && !thread.IsResolved {
-			threadCounts["needsReply"]++
-		}
-		if !thread.IsResolved {
-			threadCounts["unresolved"]++
-		}
-		threadCounts["total"]++
-	}
-
-	output.Summary = map[string]int{
-		"actionableItems": len(items),
-		"critical":        severityCounts["critical"],
-		"high":           severityCounts["high"], 
-		"medium":         severityCounts["medium"],
-		"low":            severityCounts["low"],
-		"threadsTotal":   threadCounts["total"],
-		"threadsNeedReply": threadCounts["needsReply"],
-		"threadsUnresolved": threadCounts["unresolved"],
-	}
-
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(output)
-}
-
-// outputAnalysisYAML outputs analysis results in YAML format for AI tools
-func outputAnalysisYAML(data *shared.UnifiedReviewData, items []shared.ActionableItem) error {
+// outputAnalysis creates unified analysis output using GitHub GraphQL API types
+func outputAnalysis(data *shared.UnifiedReviewData, items []shared.ActionableItem, format shared.OutputFormat) error {
 	// Calculate severity counts
 	severityCounts := make(map[string]int)
 	for _, item := range items {
@@ -302,121 +221,130 @@ func outputAnalysisYAML(data *shared.UnifiedReviewData, items []shared.Actionabl
 		}
 	}
 	
-	// Build simplified items for YAML output
-	type SimpleItem struct {
-		ID       string `yaml:"id"`
-		Author   string `yaml:"author"`
-		Location string `yaml:"location"`
-		Summary  string `yaml:"summary"`
-		Type     string `yaml:"type,omitempty"`
+	// Build actionable items using consistent structure
+	type ActionItem struct {
+		ID       string `json:"id" yaml:"id"`
+		Type     string `json:"type" yaml:"type"`
+		Author   string `json:"author" yaml:"author"`
+		Location string `json:"location" yaml:"location"`
+		Summary  string `json:"summary" yaml:"summary"`
+		Severity string `json:"severity" yaml:"severity"`
 	}
 	
-	criticalItems := []SimpleItem{}
-	highItems := []SimpleItem{}
-	infoItems := []SimpleItem{}
+	criticalItems := []ActionItem{}
+	highItems := []ActionItem{}
+	infoItems := []ActionItem{}
 	
 	for _, item := range items {
-		simpleItem := SimpleItem{
+		actionItem := ActionItem{
 			ID:       item.ID,
+			Type:     item.Type,
 			Author:   item.Author,
 			Location: item.Location,
 			Summary:  item.Summary,
-			Type:     item.Type,
+			Severity: string(item.Severity),
 		}
 		
 		switch item.Severity {
 		case shared.SeverityCritical:
-			criticalItems = append(criticalItems, simpleItem)
+			criticalItems = append(criticalItems, actionItem)
 		case shared.SeverityHigh:
-			highItems = append(highItems, simpleItem)
+			highItems = append(highItems, actionItem)
 		default:
-			infoItems = append(infoItems, simpleItem)
+			infoItems = append(infoItems, actionItem)
 		}
 	}
 	
-	// Build threads needing reply
-	type SimpleThread struct {
-		ID           string `yaml:"id"`
-		Location     string `yaml:"location"`
-		LastReplier  string `yaml:"last_replier"`
+	// Build threads needing reply using GitHub GraphQL thread structure
+	type ThreadReply struct {
+		ID          string `json:"id" yaml:"id"`
+		Path        string `json:"path" yaml:"path"`
+		Line        *int   `json:"line,omitempty" yaml:"line,omitempty"`
+		LastReplier string `json:"lastReplier" yaml:"lastReplier"`
 	}
 	
-	threadsNeedingReply := []SimpleThread{}
+	threadsNeedingReply := []ThreadReply{}
 	for _, thread := range data.Threads {
 		if thread.NeedsReply && !thread.IsResolved {
-			location := thread.Path
-			if thread.Line != nil {
-				location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-			}
-			threadsNeedingReply = append(threadsNeedingReply, SimpleThread{
+			threadsNeedingReply = append(threadsNeedingReply, ThreadReply{
 				ID:          thread.ID,
-				Location:    location,
+				Path:        thread.Path,
+				Line:        thread.Line,
 				LastReplier: thread.LastReplier,
 			})
 		}
 	}
 	
-	// Create structured output for YAML
+	// Create unified output structure using GitHub GraphQL PR metadata
 	output := map[string]interface{}{
-		"pr_number": data.PR.Number,
+		// Use GitHub GraphQL PR fields directly
+		"number":    data.PR.Number,
 		"title":     data.PR.Title,
 		"state":     data.PR.State,
-		"mergeable": data.PR.Mergeable == "MERGEABLE",
-		"action_required": len(criticalItems) > 0 || len(highItems) > 0 || threadsNeedReply > 0,
+		"mergeable": data.PR.Mergeable,
+		"mergeStateStatus": data.PR.MergeStatus,
+		
+		// Analysis summary
+		"actionRequired": len(criticalItems) > 0 || len(highItems) > 0 || threadsNeedReply > 0,
 		"summary": map[string]int{
-			"critical": severityCounts["CRITICAL"],
-			"high":     severityCounts["HIGH"],
-			"info":     severityCounts["INFO"],
-			"threads_need_reply":   threadsNeedReply,
-			"threads_unresolved":   threadsUnresolved,
+			"critical":           severityCounts["CRITICAL"],
+			"high":               severityCounts["HIGH"],
+			"info":               severityCounts["INFO"],
+			"threadsNeedReply":   threadsNeedReply,
+			"threadsUnresolved":  threadsUnresolved,
+			"actionableItems":    len(items),
 		},
+		
+		// Current user from GitHub GraphQL viewer
+		"currentUser": data.CurrentUser,
+		"fetchedAt":   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	
 	// Only include non-empty sections
 	if len(criticalItems) > 0 {
-		output["critical_items"] = criticalItems
+		output["criticalItems"] = criticalItems
 	}
 	if len(highItems) > 0 {
-		output["high_priority_items"] = highItems
+		output["highPriorityItems"] = highItems
 	}
 	if len(infoItems) > 0 {
-		output["info_items"] = infoItems
+		output["infoItems"] = infoItems
 	}
 	if len(threadsNeedingReply) > 0 {
-		output["threads_needing_reply"] = threadsNeedingReply
+		output["threadsNeedingReply"] = threadsNeedingReply
 	}
 	
-	// Output YAML
-	encoder := yaml.NewEncoder(os.Stdout)
-	return encoder.Encode(output)
+	// Output using unified encoder
+	return shared.EncodeOutput(os.Stdout, format, output)
 }
 
-// outputFetchYAML outputs fetch results in YAML format preserving all information
-func outputFetchYAML(data *shared.UnifiedReviewData, includeReviewBodies bool, includeThreads bool) error {
-	// Build output structure
+// outputFetch creates unified fetch output using GitHub GraphQL API types
+func outputFetch(data *shared.UnifiedReviewData, includeReviewBodies bool, includeThreads bool, format shared.OutputFormat) error {
+	// Use GitHub GraphQL PR metadata structure directly
 	output := map[string]interface{}{
-		"pr": map[string]interface{}{
-			"number":       data.PR.Number,
-			"title":        data.PR.Title,
-			"state":        data.PR.State,
-			"mergeable":    data.PR.Mergeable,
-			"merge_status": data.PR.MergeStatus,
-		},
-		"current_user": data.CurrentUser,
-		"fetched_at":   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
+		// GitHub GraphQL PullRequest fields
+		"number":           data.PR.Number,
+		"title":            data.PR.Title,
+		"state":            data.PR.State,
+		"mergeable":        data.PR.Mergeable,
+		"mergeStateStatus": data.PR.MergeStatus,
+		
+		// GitHub GraphQL Viewer field
+		"currentUser": data.CurrentUser,
+		"fetchedAt":   data.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	
-	// Reviews section
+	// Reviews section using GitHub GraphQL Review structure
 	if includeReviewBodies {
 		// Full review data with bodies
 		reviews := []map[string]interface{}{}
 		for _, review := range data.Reviews {
 			reviewData := map[string]interface{}{
-				"id":           review.ID,
-				"author":       review.Author,
-				"state":        review.State,
-				"created_at":   review.CreatedAt,
-				"severity":     string(review.Severity),
+				"id":        review.ID,
+				"author":    map[string]string{"login": review.Author},
+				"state":     review.State,
+				"createdAt": review.CreatedAt,
+				"severity":  string(review.Severity),
 			}
 			
 			if review.Body != "" {
@@ -424,11 +352,11 @@ func outputFetchYAML(data *shared.UnifiedReviewData, includeReviewBodies bool, i
 			}
 			
 			if len(review.ActionItems) > 0 {
-				reviewData["action_items"] = review.ActionItems
+				reviewData["actionItems"] = review.ActionItems
 			}
 			
 			if len(review.Comments) > 0 {
-				reviewData["inline_comments_count"] = len(review.Comments)
+				reviewData["commentsCount"] = len(review.Comments)
 			}
 			
 			reviews = append(reviews, reviewData)
@@ -439,17 +367,17 @@ func outputFetchYAML(data *shared.UnifiedReviewData, includeReviewBodies bool, i
 		reviews := []map[string]interface{}{}
 		for _, review := range data.Reviews {
 			reviews = append(reviews, map[string]interface{}{
-				"id":         review.ID,
-				"author":     review.Author,
-				"state":      review.State,
-				"created_at": review.CreatedAt,
+				"id":        review.ID,
+				"author":    map[string]string{"login": review.Author},
+				"state":     review.State,
+				"createdAt": review.CreatedAt,
 			})
 		}
 		output["reviews"] = reviews
-		output["reviews_bodies_fetched"] = false
+		output["reviewBodiesFetched"] = false
 	}
 	
-	// Threads section
+	// Threads section using GitHub GraphQL ReviewThread structure
 	if includeThreads {
 		unresolvedCount := 0
 		needsReplyCount := 0
@@ -464,34 +392,31 @@ func outputFetchYAML(data *shared.UnifiedReviewData, includeReviewBodies bool, i
 			}
 			
 			if thread.NeedsReply && !thread.IsResolved {
-				location := thread.Path
-				if thread.Line != nil {
-					location = fmt.Sprintf("%s:%d", thread.Path, *thread.Line)
-				}
-				
 				threadData := map[string]interface{}{
-					"id":       thread.ID,
-					"location": location,
+					"id":         thread.ID,
+					"path":       thread.Path,
+					"line":       thread.Line,
+					"isResolved": thread.IsResolved,
+					"isOutdated": thread.IsOutdated,
 				}
 				
 				if len(thread.Comments) > 0 {
 					last := thread.Comments[len(thread.Comments)-1]
-					threadData["last_comment_by"] = last.Author
+					threadData["lastCommentBy"] = last.Author
 				}
 				
 				threadsNeedingReply = append(threadsNeedingReply, threadData)
 			}
 		}
 		
-		output["threads"] = map[string]interface{}{
-			"total":         len(data.Threads),
-			"unresolved":    unresolvedCount,
-			"needs_reply":   needsReplyCount,
-			"needing_reply": threadsNeedingReply,
+		output["reviewThreads"] = map[string]interface{}{
+			"totalCount":       len(data.Threads),
+			"unresolvedCount":  unresolvedCount,
+			"needsReplyCount":  needsReplyCount,
+			"needingReply":     threadsNeedingReply,
 		}
 	}
 	
-	// Output YAML
-	encoder := yaml.NewEncoder(os.Stdout)
-	return encoder.Encode(output)
+	// Output using unified encoder
+	return shared.EncodeOutput(os.Stdout, format, output)
 }

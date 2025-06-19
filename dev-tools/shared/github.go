@@ -3,7 +3,7 @@ package shared
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json" // Still needed for json.RawMessage type
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	
 	"golang.org/x/net/http2"
 )
 
@@ -160,7 +161,8 @@ func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[
 		Variables: variables,
 	}
 
-	jsonData, err := json.Marshal(reqPayload)
+	// Use unified JSON marshaling for GitHub API
+	jsonData, err := FormatJSON.Marshal(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
 	}
@@ -194,9 +196,9 @@ func (c *GitHubClient) RunGraphQLQueryWithVariables(query string, variables map[
 		return nil, fmt.Errorf("GraphQL request failed with status %d: %s", resp.StatusCode, buf.String())
 	}
 
-	// Parse GraphQL response for errors
+	// Parse GraphQL response for errors (with JSON marshaler support for json.RawMessage)
 	var graphqlResp GraphQLResponse
-	if err := json.Unmarshal(buf.Bytes(), &graphqlResp); err == nil {
+	if err := Unmarshal(buf.Bytes(), &graphqlResp); err == nil {
 		if len(graphqlResp.Errors) > 0 {
 			return nil, fmt.Errorf("GraphQL error: %s", graphqlResp.Errors[0].Message)
 		}
@@ -247,7 +249,7 @@ func (c *GitHubClient) CreatePRComment(prNumber, body string) error {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &prResponse); err != nil {
+	if err := Unmarshal(result, &prResponse); err != nil {
 		return fmt.Errorf("failed to parse PR ID response: %w", err)
 	}
 
@@ -330,7 +332,7 @@ func (c *GitHubClient) getRepositoryID() (string, error) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &repoResponse); err != nil {
+	if err := Unmarshal(result, &repoResponse); err != nil {
 		return "", fmt.Errorf("failed to parse repository ID response: %w", err)
 	}
 
@@ -389,7 +391,7 @@ func (c *GitHubClient) CreatePR(opts PRCreateOptions) (*PRInfo, error) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(data, &response); err != nil {
+	if err := Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse PR response: %w", err)
 	}
 
@@ -418,7 +420,7 @@ func (c *GitHubClient) GetCurrentUser() (string, error) {
 		} `json:"data"`
 	}
 	
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return "", fmt.Errorf("failed to parse user response: %w", err)
 	}
 	
@@ -468,7 +470,7 @@ func (c *GitHubClient) GetCurrentBranchPR() (*PRInfo, error) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(data, &response); err != nil {
+	if err := Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse PR search results: %w", err)
 	}
 
@@ -543,7 +545,7 @@ func (c *GitHubClient) ResolveNumber(number int) (*NodeInfo, error) {
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 

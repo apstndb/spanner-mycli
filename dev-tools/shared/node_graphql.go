@@ -1,7 +1,6 @@
 package shared
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -115,7 +114,7 @@ func (client *GitHubClient) FetchNodeData(config *NodeQueryConfig) (*NodeRespons
 	}
 
 	var response NodeResponse
-	if err := json.Unmarshal(result, &response); err != nil {
+	if err := Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse node response: %w", err)
 	}
 
