@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -146,15 +147,21 @@ Examples:
 	replyToThread,
 )
 
-var showThreadCmd = shared.NewOperationalCommand(
-	"show <thread-id>",
-	"Show detailed view of a review thread",
-	`Show detailed view of a specific review thread including all comments.
+var showThreadCmd = &cobra.Command{
+	Use:   "show <thread-id>...",
+	Short: "Show detailed view of review threads", 
+	Long: `Show detailed view of review threads including all comments.
 
 This provides full context for understanding review feedback before replying.
-Useful for getting complete thread history and comment details.`,
-	showThread,
-)
+Useful for getting complete thread history and comment details.
+
+Examples:
+  gh-helper threads show PRRT_kwDONC6gMM5SgXT2
+  gh-helper threads show PRRT_kwDONC6gMM5SgXT2 PRRT_kwDONC6gMM5SgXT3 PRRT_kwDONC6gMM5SgXT4`,
+	Args:         cobra.MinimumNArgs(1),
+	SilenceUsage: true,
+	RunE:         showThread,
+}
 
 var resolveThreadCmd = shared.NewOperationalCommand(
 	"resolve <thread-id>...",
@@ -196,7 +203,7 @@ func init() {
 	checkReviewsCmd.Args = cobra.MaximumNArgs(1)
 	waitReviewsCmd.Args = cobra.MaximumNArgs(1)
 	replyThreadsCmd.Args = cobra.ExactArgs(1)
-	showThreadCmd.Args = cobra.ExactArgs(1)
+	// showThreadCmd already configured with MinimumNArgs(1) in command definition
 	resolveThreadCmd.Args = cobra.MinimumNArgs(1)
 	
 	// Configure flags
@@ -228,6 +235,11 @@ func init() {
 }
 
 func main() {
+	// Set log level to WARN by default (suppress INFO logs)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+	
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -839,80 +851,83 @@ func waitForReviewsAndChecks(cmd *cobra.Command, args []string) error {
 
 
 func showThread(cmd *cobra.Command, args []string) error {
-	threadID := args[0]
-	
 	// Create GitHub client once for better performance (token caching)
 	client := shared.NewGitHubClient(owner, repo)
 
 	// Get output format using unified resolver
 	format := shared.ResolveFormat(cmd)
 
-	// Use unified node query system
-	config := shared.NewNodeQueryConfig(threadID).ForThreadDetails()
-	response, err := client.FetchNodeData(config)
+	// Use batch query for multiple threads or single thread
+	threadsMap, err := client.GetThreadBatch(args)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch threads: %w", err)
 	}
 
-	thread := response.Data.Node
-	if thread.ID == "" {
-		return fmt.Errorf("thread not found or invalid thread ID")
-	}
+	// Get current user for reply detection
+	currentUser, _ := getCurrentUser()
+	
+	results := []map[string]interface{}{}
+	
+	// Process each thread ID in order
+	for _, threadID := range args {
+		thread, exists := threadsMap[threadID]
+		if !exists {
+			return fmt.Errorf("thread not found: %s", threadID)
+		}
 
-	// Build output structure using GitHub GraphQL API field names
-	output := map[string]interface{}{
-		"id":         thread.ID,
-		"isResolved": thread.IsResolved,
-		"path":       thread.Path,
-		"line":       thread.Line,
-	}
-	
-	if thread.PullRequest != nil {
-		output["pullRequest"] = map[string]interface{}{
-			"number": thread.PullRequest.Number,
-			"title":  thread.PullRequest.Title,
-		}
-	}
-	
-	if thread.SubjectType != nil {
-		output["subjectType"] = *thread.SubjectType
-	}
-	
-	// Comments using GitHub GraphQL structure
-	comments := []map[string]interface{}{}
-	for i, comment := range thread.Comments.Nodes {
-		commentData := map[string]interface{}{
-			"id":        comment.ID,
-			"author":    map[string]string{"login": comment.Author.Login},
-			"createdAt": comment.CreatedAt,
-			"body":      comment.Body,
+		// Build output structure using GitHub GraphQL API field names
+		output := map[string]interface{}{
+			"id":         thread.ID,
+			"isResolved": thread.IsResolved,
+			"path":       thread.Path,
+			"line":       thread.Line,
 		}
 		
-		if i == 0 && comment.DiffHunk != nil {
-			commentData["diffHunk"] = *comment.DiffHunk
+		if thread.SubjectType != "" {
+			output["subjectType"] = thread.SubjectType
 		}
 		
-		comments = append(comments, commentData)
-	}
-	
-	output["comments"] = map[string]interface{}{
-		"nodes":      comments,
-		"totalCount": len(comments),
-	}
-	
-	// Check if needs reply
-	if !thread.IsResolved && len(thread.Comments.Nodes) > 0 {
-		lastComment := thread.Comments.Nodes[len(thread.Comments.Nodes)-1]
-		if currentUser, err := getCurrentUser(); err == nil {
-			if lastComment.Author.Login != currentUser {
+		// Comments using GitHub GraphQL structure
+		comments := []map[string]interface{}{}
+		for i, comment := range thread.Comments {
+			commentData := map[string]interface{}{
+				"id":        comment.ID,
+				"author":    map[string]string{"login": comment.Author},
+				"createdAt": comment.CreatedAt,
+				"body":      comment.Body,
+			}
+			
+			if i == 0 && comment.DiffHunk != "" {
+				commentData["diffHunk"] = comment.DiffHunk
+			}
+			
+			comments = append(comments, commentData)
+		}
+		
+		output["comments"] = map[string]interface{}{
+			"nodes":      comments,
+			"totalCount": len(comments),
+		}
+		
+		// Check if needs reply
+		if !thread.IsResolved && len(thread.Comments) > 0 {
+			lastComment := thread.Comments[len(thread.Comments)-1]
+			if currentUser != "" && lastComment.Author != currentUser {
 				output["needsReply"] = true
-				output["lastCommentBy"] = lastComment.Author.Login
+				output["lastCommentBy"] = lastComment.Author
 			}
 		}
+		
+		results = append(results, output)
 	}
 	
-	// Output using unified encoder
-	return shared.EncodeOutput(os.Stdout, format, output)
+	// Output single result for backward compatibility when only one thread
+	if len(results) == 1 {
+		return shared.EncodeOutput(os.Stdout, format, results[0])
+	}
+	
+	// Output array for multiple threads
+	return shared.EncodeOutput(os.Stdout, format, results)
 }
 
 func resolveThread(cmd *cobra.Command, args []string) error {

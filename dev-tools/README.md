@@ -38,6 +38,7 @@ make build-tools
 # Basic usage
 ./bin/gh-helper reviews wait [PR] --request-review
 ./bin/gh-helper threads resolve <ID1> <ID2>
+./bin/gh-helper threads show <ID1> <ID2> <ID3>
 ./bin/spanner-mycli-dev worktree setup issue-123
 
 # Structured output processing
