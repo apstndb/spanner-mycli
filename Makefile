@@ -33,7 +33,8 @@ test-verbose:
 
 # Test with coverage profile (for CI)
 test-coverage:
-	go test ./... -coverprofile=coverage.out
+	@mkdir -p tmp
+	go test ./... -coverprofile=tmp/coverage.out
 
 
 lint:
