@@ -9,7 +9,6 @@ dev-docs/
 ├── README.md                    # This file - overview and navigation
 ├── architecture-guide.md        # System architecture and code organization
 ├── development-insights.md      # Development patterns and best practices
-├── development-tools-guide.md   # AI-friendly development tools (issue #301)
 ├── issue-management.md          # GitHub workflow and PR processes
 ├── coding-guidelines.md         # Coding standards and style guidelines
 └── patterns/                    # Specific implementation patterns
@@ -32,18 +31,12 @@ dev-docs/
 - Code quality improvement techniques
 - Context and session management
 
-### [Development Tools Guide](development-tools-guide.md)
-- AI-friendly development tools (issue #301)
-- gh-helper and spanner-mycli-dev architecture
-- Migration from shell scripts
-- Performance data and timeout rationale
-- Integration patterns and workflows
-
 ### [Issue Management](issue-management.md)
-- GitHub issue workflow
-- Pull request process
-- Code review strategies
-- Git best practices
+- Development tools usage (Go 1.24 tool management)
+- GitHub issue workflow and labeling
+- Pull request process and code review
+- Gemini AI review integration
+- Git best practices and phantom worktree management
 - Knowledge management through PR comments
 
 ### [Coding Guidelines](coding-guidelines.md)
@@ -75,7 +68,7 @@ dev-docs/
 
 ```bash
 # Generate help output files
-bin/spanner-mycli-dev docs update-help
+make docs-update
 
 # Files are generated in ./tmp/
 # - help_clean.txt: Content for README.md --help section (lines 97-135)
