@@ -518,10 +518,10 @@ EOF
 
 ### Review Response Best Practices
 
-**For code changes:**
+**For code changes (recommended workflow):**
 1. Make the necessary fixes
-2. Push the commit
-3. Reply with commit hash reference: `Fixed in commit abc1234`
+2. Commit and push the changes
+3. Reply with commit hash and resolve: `go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --message "Fixed as suggested" --resolve`
 
 **For explanations without code changes:**
 1. Reply with explanation
@@ -552,22 +552,51 @@ gh pr create --title "feat: implement feature" --body "Description"
 # 2. Wait for automatic Gemini review (initial PR only)
 go tool gh-helper reviews wait <PR_NUMBER> --timeout 15
 
-# 3. Check specific review threads
-go tool gh-helper reviews fetch <PR_NUMBER> --list-threads
+# 3. Comprehensive review analysis
+go tool gh-helper reviews analyze <PR_NUMBER> > tmp/review-analysis.yaml
 
-# 4. Review detailed feedback
-go tool gh-helper threads show <THREAD_ID>
+# 4. Create fix plan based on all feedback
+mkdir -p tmp
+cat > tmp/fix-plan.md << 'EOF'
+# Fix Plan for PR <PR_NUMBER>
 
-# 5. Make fixes and push changes
-git add . && git commit -m "fix: address review feedback" && git push
+## Review Comments Summary
+[Analysis of all critical/high priority items]
 
-# 6. Request Gemini review for subsequent pushes (REQUIRED)
+## Planned Changes
+1. **Fix A**: Description and affected files
+   - Files: file1.go, file2.md
+   - Approach: Specific implementation plan
+   
+2. **Fix B**: Description and affected files
+   - Files: file3.go
+   - Approach: Specific implementation plan
+
+## Thread Resolution Plan
+- THREAD_ID_1: Fix A addresses this
+- THREAD_ID_2: Fix B addresses this
+- THREAD_ID_3: Explanation only (no code change)
+EOF
+
+# 5. Execute fixes according to plan
+# [Make all planned changes]
+
+# 6. Commit and push all related fixes together
+git add <specific-files>
+git commit -m "fix: address review feedback - implement fixes A, B, C"
+git push
+
+# 7. Request Gemini review for subsequent pushes (REQUIRED)
 go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15
 
-# 7. Reply with commit reference
-go tool gh-helper threads reply-commit <THREAD_ID> <COMMIT_HASH> --message "Addressed the issue as suggested"
+# 8. Reply to threads with commit hash and resolve immediately
+COMMIT_HASH=$(git rev-parse HEAD)
+go tool gh-helper threads reply <THREAD_ID_1> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix A" --resolve
+go tool gh-helper threads reply <THREAD_ID_2> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix B" --resolve
+go tool gh-helper threads reply <THREAD_ID_3> --message "This works as intended because..." --resolve
 
-# 8. Repeat steps 5-7 as needed (always use --request-review after initial PR)
+# 9. Clean up planning files
+rm tmp/review-analysis.yaml tmp/fix-plan.md
 ```
 
 **When to request Gemini review:**

@@ -51,7 +51,12 @@ go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + 
 # Workflow examples  
 gh pr create                                 # Create PR (interactive for title/body)
 go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
-go tool gh-helper reviews wait <PR> --request-review # REQUIRED for subsequent pushes
+
+# Review response workflow (for subsequent pushes)
+go tool gh-helper reviews analyze <PR> > tmp/review-analysis.yaml  # Analyze all feedback
+# Create fix plan in tmp/fix-plan.md, make changes, commit & push
+go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
+# Reply to threads with commit hash and --resolve flag
 
 # Output format examples (YAML default, JSON with --json)
 go tool gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
@@ -130,7 +135,7 @@ This is a simplified guide. For detailed information, refer to:
 6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 **⚠️ CRITICAL: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
-**⚠️ WORKFLOW: Reply to threads → resolve threads with `go tool gh-helper threads resolve <thread-id> [<thread-id>...]` after addressing feedback**
+**⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
