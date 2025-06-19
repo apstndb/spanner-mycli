@@ -43,19 +43,19 @@ make check                    # REQUIRED before ANY push (runs test && lint)
 make build                    # Build the application
 make test-quick               # Quick tests during development
 
-# Development tools (build with: make build-tools)
-bin/gh-helper reviews analyze [PR]     # Comprehensive review analysis (prevents missing feedback)
-bin/gh-helper reviews wait [PR]        # Wait for reviews + checks
-bin/gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
+# Development tools (Go 1.24 tool management: make build-tools)
+gh-helper reviews analyze [PR]         # Comprehensive review analysis (prevents missing feedback)
+gh-helper reviews wait [PR]            # Wait for reviews + checks
+gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
 
-# Workflow examples
+# Workflow examples  
 gh pr create                            # Create PR (interactive for title/body)
-bin/gh-helper reviews wait             # Wait for automatic Gemini review (initial PR)
-bin/gh-helper reviews wait --request-review  # Request + wait (after pushes)
+gh-helper reviews wait                  # Wait for automatic Gemini review (initial PR)
+gh-helper reviews wait --request-review      # Request + wait (after pushes)
 
 # Output format examples (YAML default, JSON with --json)
-bin/gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
-bin/gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
+gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
+gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
 ```
 
 ## Core Architecture Overview
@@ -111,9 +111,8 @@ This is a simplified guide. For detailed information, refer to:
 - **[query_plan.md](docs/query_plan.md)** - Query plan analysis features
 - **[system_variables.md](docs/system_variables.md)** - System variables reference
 
-### Development Tools (`bin/`) **Build Required: `make build-tools`**
-- **gh-helper** - Generic GitHub operations (reviews, threads)
-- **spanner-mycli-dev** - Project-specific tools (worktrees, docs)
+### Development Tools **Go 1.24 Tool Management: `make build-tools`**
+- **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
 
 ## 🎯 Task-Specific Documentation Guide
 
@@ -126,12 +125,12 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-4. **For review analysis**: Use `bin/gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
-5. **For thread replies**: Use `bin/gh-helper threads reply` - Automated thread replies
+4. **For review analysis**: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
+5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
 6. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
-**⚠️ CRITICAL: Use `bin/gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
-**⚠️ WORKFLOW: Reply to threads → resolve threads with `bin/gh-helper threads resolve <thread-id> [<thread-id>...]` after addressing feedback**
+**⚠️ CRITICAL: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
+**⚠️ WORKFLOW: Reply to threads → resolve threads with `go tool gh-helper threads resolve <thread-id> [<thread-id>...]` after addressing feedback**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions

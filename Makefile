@@ -2,12 +2,11 @@ build:
 	go build
 
 build-tools:
-	# Install development tools from gh-dev-tools repository
-	# gh-helper: Generic GitHub operations (reviews, threads) - now standalone
-	# Project-specific workflows moved to Makefile targets (worktree-setup, docs-update)
+	# Install development tools using Go 1.24 tool management
+	# gh-helper: Generic GitHub operations (reviews, threads) - managed via go.mod tool directive
 	mkdir -p bin
-	@echo "📦 Installing gh-helper from gh-dev-tools repository..."
-	go install github.com/apstndb/gh-dev-tools/gh-helper@latest
+	@echo "📦 Installing gh-helper using go tool management..."
+	go install tool
 	@if [ -n "$$(which gh-helper)" ]; then \
 		ln -sf "$$(which gh-helper)" bin/gh-helper; \
 		echo "✅ gh-helper installed and linked to bin/gh-helper"; \
@@ -69,7 +68,7 @@ docs-update:
 help-dev:
 	@echo "🛠️  Development Commands:"
 	@echo "  make build            - Build the application"
-	@echo "  make build-tools      - Install gh-helper from gh-dev-tools repository"
+	@echo "  make build-tools      - Install gh-helper using Go 1.24 tool management"
 	@echo "  make test             - Run full test suite (required before push)"
 	@echo "  make test-coverage    - Run tests with coverage profile (for CI)"
 	@echo "  make test-quick       - Run quick tests (go test -short)"
