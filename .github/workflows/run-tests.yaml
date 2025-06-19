@@ -36,6 +36,6 @@ jobs:
         with:
           version: v2.1
           args: --timeout=5m
-      - name: run comprehensive checks with coverage (test + lint for main project and dev-tools)
-        run: make check-all-coverage
+      - name: run tests with coverage
+        run: make test-coverage
       - uses: k1LoW/octocov-action@v1
