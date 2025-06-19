@@ -113,4 +113,4 @@ gh-review:
 		echo "❌ PR_NUMBER required. Usage: make gh-review PR_NUMBER=123"; \
 		exit 1; \
 	fi
-	@go tool gh-helper reviews analyze $(PR_NUMBER)
+	@go tool gh-helper reviews analyze $(PR_NUMBER) --timeout 15m
