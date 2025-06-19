@@ -47,6 +47,10 @@ make test-quick               # Quick tests during development
 bin/gh-helper reviews analyze [PR]     # Comprehensive review analysis (prevents missing feedback)
 bin/gh-helper reviews wait [PR]        # Wait for reviews + checks
 bin/spanner-mycli-dev review gemini [PR]  # Complete review workflow
+
+# Output format examples (YAML default, JSON with --json)
+bin/gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
+bin/gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
 ```
 
 ## Core Architecture Overview

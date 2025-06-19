@@ -20,6 +20,7 @@ Based on extensive AI assistant testing, these patterns work best:
 3. **Predictable timeouts**: Default 5 minutes based on real Gemini/CI performance data
 4. **Separable concerns**: Reviews vs checks can be controlled independently
 5. **No interactive prompts**: All input via flags or stdin
+6. **Unified output formats**: YAML default with JSON support for all structured data
 
 ### Default Behavior Philosophy
 
@@ -231,6 +232,91 @@ All tools support verbose output via environment:
 # Enable debug output
 export DEBUG=1
 gh-helper reviews wait 306
+```
+
+## Unified Output Format System
+
+### Architecture Overview
+
+All dev-tools implement a **unified output format system** that eliminates inconsistencies and provides AI-friendly structured data:
+
+```go
+// shared/output_format.go - Central format handling
+type OutputFormat string
+
+const (
+    FormatYAML OutputFormat = "yaml"  // Default for AI tools
+    FormatJSON OutputFormat = "json"  // Programmatic integration
+)
+
+// Format-specific marshaling
+func (f OutputFormat) Marshal(data interface{}) ([]byte, error)
+
+// Format-agnostic unmarshaling  
+func Unmarshal(data []byte, v interface{}) error
+```
+
+### Key Design Decisions
+
+**YAML as Default**: Chosen over JSON for AI tool integration because:
+- More readable for humans and AI assistants
+- Superset of JSON (compatible with both processing tools)
+- Direct `gojq --yaml-input` support without conversion
+- Cleaner diff output in version control
+
+**GitHub GraphQL API Compliance**: All field names match GitHub's GraphQL API exactly:
+```yaml
+# Example output structure
+number: 306
+title: "PR Title"
+isResolved: true          # Not "resolved"
+createdAt: "2025-06-19"   # Not "created_at"
+pullRequest:              # Nested structure matches API
+  number: 306
+  title: "Title"
+```
+
+### Implementation Benefits
+
+1. **Zero Redundancy**: Eliminated 288 lines of duplicate output handling
+2. **Type Safety**: `OutputFormat.Marshal()` prevents format-specific bugs
+3. **Extensibility**: New formats can be added without touching existing code
+4. **Consistency**: All commands use identical output patterns
+
+### Usage Examples
+
+```bash
+# Default YAML output for AI processing
+gh-helper reviews analyze 306 | gojq --yaml-input '.criticalItems[]'
+
+# JSON for traditional tools  
+gh-helper reviews analyze 306 --json | jq '.summary.critical'
+
+# Thread analysis with structured data
+gh-helper threads show THREAD_ID --format yaml | gojq --yaml-input '.comments.nodes[]'
+```
+
+### Processing Patterns
+
+**AI Tool Integration**:
+```bash
+# Extract all high-priority items
+gh-helper reviews analyze 306 | gojq --yaml-input '.highPriorityItems[] | .summary'
+
+# Count critical issues by type
+gh-helper reviews analyze 306 | gojq --yaml-input '[.criticalItems[] | .type] | group_by(.) | map({type: .[0], count: length})'
+
+# Get threads needing replies with location
+gh-helper reviews fetch 306 | gojq --yaml-input '.reviewThreads.needingReply[] | {id, path, line}'
+```
+
+**CI/CD Pipeline Integration**:
+```bash
+# Check if PR is ready for merge (no critical issues)
+CRITICAL_COUNT=$(gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical')
+if [ "$CRITICAL_COUNT" -eq 0 ]; then
+  echo "PR ready for merge"
+fi
 ```
 
 ## Future Enhancements

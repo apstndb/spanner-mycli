@@ -8,9 +8,12 @@ Generic GitHub operations tool optimized for AI assistants.
 # Most common: Complete review workflow
 gh-helper reviews wait [PR] --request-review
 
-# Handle review feedback
-gh-helper reviews fetch [PR] --list-threads
+# Handle review feedback with structured output
+gh-helper reviews analyze [PR] | gojq --yaml-input '.threadsNeedingReply[]'
 gh-helper threads reply <THREAD_ID> --message "Fixed in commit abc123"
+
+# JSON output for programmatic processing
+gh-helper reviews fetch [PR] --json | jq '.reviewThreads.needingReply[]'
 ```
 
 ## Design Philosophy
@@ -29,6 +32,41 @@ Based on real development workflows, developers typically need:
 2. CI status (tests, linting, security checks)
 
 Making this the default reduces cognitive load. Individual exclusion available for edge cases.
+
+### Unified Output Format System
+
+**YAML Default**: All commands output structured YAML by default for optimal AI tool integration:
+
+```bash
+# YAML output (default) - gojq compatible
+gh-helper reviews analyze 306
+gh-helper reviews analyze 306 --yaml
+
+# JSON output - jq compatible  
+gh-helper reviews analyze 306 --json
+
+# Explicit format specification
+gh-helper reviews analyze 306 --format yaml
+gh-helper reviews analyze 306 --format json
+```
+
+**Key Benefits**:
+- **GitHub GraphQL Compliance**: Field names match GitHub API exactly (`isResolved`, `createdAt`, `pullRequest.number`)
+- **Clean Data**: No decorative text, pure structured output
+- **AI Processing**: Direct piping to `gojq --yaml-input` or `jq`
+- **Type Safety**: Format-specific marshal methods prevent inconsistencies
+
+**Processing Examples**:
+```bash
+# Extract critical issues with gojq
+gh-helper reviews analyze 306 | gojq --yaml-input '.criticalItems[]'
+
+# Count threads needing replies
+gh-helper reviews fetch 306 | gojq --yaml-input '.reviewThreads.needsReplyCount'
+
+# JSON for traditional jq processing
+gh-helper reviews analyze 306 --json | jq '.summary.critical'
+```
 
 ## Commands Overview
 
@@ -83,13 +121,15 @@ Review state tracking in `~/.cache/spanner-mycli-reviews/`:
 - Prevents API rate limiting
 - Survives tool restarts
 
-File format: `pr-{number}-last-review.json`
+File format: `pr-{number}-last-review.json` (uses unified YAML marshaling internally)
 ```json
 {
   "id": "PRR_kwDONC6gMM6vB1Fv",
   "createdAt": "2025-06-17T17:20:47Z"
 }
 ```
+
+**Note**: State files use JSON format for compatibility, but all command output uses the unified YAML/JSON system with `--format` controls.
 
 ## Performance and Timeouts
 

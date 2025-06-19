@@ -28,8 +28,11 @@ dev-tools/
 ├── go.mod                    # Single module for all tools
 ├── go.sum                    # Shared dependencies
 ├── shared/                   # Common utilities package
-│   ├── utils.go             # File operations, command execution
-│   └── github.go            # GitHub API helpers
+│   ├── github.go            # GitHub API helpers
+│   ├── output_format.go     # Unified YAML/JSON output system
+│   ├── unified_review.go    # Review data structures
+│   ├── threads.go           # Thread management
+│   └── ...                  # Other shared utilities
 ├── gh-helper/
 │   └── main.go              # Generic GitHub tool
 └── spanner-mycli-dev/
@@ -75,13 +78,37 @@ go build -o ../bin/spanner-mycli-dev ./spanner-mycli-dev
 Both tools are designed with AI-friendly interfaces:
 - Clear subcommand structure
 - Comprehensive help text
-- Predictable JSON output where applicable
+- **Unified output format system** with YAML default and JSON support
 - Timeout handling for long-running operations
+
+#### Output Format System
+All tools support standardized output formats:
+```bash
+# YAML output (default) - optimal for AI processing
+gh-helper reviews analyze 306
+
+# JSON output - programmatic integration
+gh-helper reviews analyze 306 --json
+
+# Explicit format specification
+gh-helper reviews analyze 306 --format yaml
+gh-helper reviews analyze 306 --format json
+```
+
+**Design Benefits:**
+- **YAML default**: More readable, gojq compatible (`gojq --yaml-input`)
+- **GitHub GraphQL compliance**: Field names match GitHub API exactly
+- **Structured data**: No decorative text, pure data output
+- **AI-friendly**: Clean piping to data processing tools
 
 ### Common Workflows
 ```bash
 # Complete PR workflow
 bin/spanner-mycli-dev pr-workflow create --wait-checks
+
+# Review analysis with structured output
+bin/gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
+bin/gh-helper reviews analyze 306 --json | jq '.actionableItems[] | select(.severity == "critical")'
 
 # Review thread management  
 bin/gh-helper reviews fetch <PR> --list-threads
@@ -135,11 +162,28 @@ bin/gh-helper reviews analyze pr/306          # Alternative PR format
 
 Tools provide helpful error messages with suggestions for common mistakes.
 
+## Architecture Achievements
+
+### Unified Output Format System
+- **Single source of truth**: All marshal/unmarshal operations use `goccy/go-yaml` 
+- **Format methods**: `OutputFormat.Marshal()` for type-safe format-specific operations
+- **Centralized unmarshaling**: `Unmarshal()` function handles both JSON and YAML input
+- **Zero redundancy**: Eliminated 288 lines of duplicate output handling code
+
+### Key Design Decisions
+```go
+// Format-specific marshaling with method
+func (f OutputFormat) Marshal(data interface{}) ([]byte, error)
+
+// Format-agnostic unmarshaling with function  
+func Unmarshal(data []byte, v interface{}) error
+```
+
 ## Future Considerations
 
-- **Shared utilities**: Can be extended for additional common operations
+- **Output format expansion**: New formats (XML, protobuf) can be added easily
 - **Tool expansion**: New tools can be added under the unified module
 - **API evolution**: GitHub API helpers in shared/ can be enhanced
-- **Testing**: Unit tests can be added for shared utilities
+- **Testing**: Comprehensive tests for unified output system
 
-The unified module approach provides a solid foundation for continued development tool evolution while maintaining simplicity and avoiding over-engineering.
+The unified module approach with centralized output formatting provides a solid foundation for continued development tool evolution while maintaining simplicity and avoiding over-engineering.
