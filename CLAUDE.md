@@ -35,6 +35,8 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 3. **Never push directly to main branch** - always use Pull Requests
 4. **Never commit directly to main branch** - always use feature branches
 5. **Repository merge policy**: This repository enforces **squash merge only** via Repository Ruleset - AI assistants must use `squash` method for all automated merges
+6. **PR merge process**: Before merging, comment `/gemini summary` then use `go tool gh-helper reviews wait` (NO --request-review)
+7. **Squash merge commits**: MUST include descriptive summary of PR changes in squash commit message
 
 ## Essential Commands
 
@@ -133,8 +135,9 @@ This is a simplified guide. For detailed information, refer to:
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
 4. **For review analysis**: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
 5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
-6. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
-7. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+6. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
+7. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
+8. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
 
 **⚠️ CRITICAL: Safe handling of special characters in shell commands**
 ```bash
@@ -176,6 +179,10 @@ gh issue create --body-file tmp/issue_body.md
 1. **README.md help updates**: Use `make docs-update`
 2. **CLAUDE.md updates**: Follow the rules in this file (self-contained)
 3. **Other docs**: See [dev-docs/README.md](dev-docs/README.md) for structure guidance
+4. **Documentation labels**: 
+   - Use `docs-user` for user-facing docs (README.md, docs/)
+   - Use `docs-dev` for internal docs (dev-docs/, CLAUDE.md)
+   - Apply `ignore-for-release` to PRs with only dev-docs changes
 
 ## Quick Reference
 
