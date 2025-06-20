@@ -176,6 +176,26 @@ func (sv *systemVariables) ProjectPath() string {
 	return projectPath(sv.Project)
 }
 
+// newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
+// This function ensures consistency between initialization and test expectations.
+func newSystemVariablesWithDefaults() systemVariables {
+	return systemVariables{
+		// Java-spanner compatible defaults
+		ReturnCommitStats: true,
+		RPCPriority:       defaultPriority,
+		
+		// CLI defaults
+		EnableADCPlus:        true,
+		AnalyzeColumns:       DefaultAnalyzeColumns,
+		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+		Prompt:               defaultPrompt,
+		Prompt2:              defaultPrompt2,
+		HistoryFile:          defaultHistoryFile,
+		VertexAIModel:        defaultVertexAIModel,
+		OutputTemplate:       defaultOutputFormat,
+	}
+}
+
 type errSetterUnimplemented struct {
 	Name string
 }
