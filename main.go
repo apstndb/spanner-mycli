@@ -367,6 +367,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		VertexAIProject:           opts.VertexAIProject,
 		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
 		EnableADCPlus:             true,
+		ReturnCommitStats:         true, // Default to true to maintain current behavior
 		AnalyzeColumns:            DefaultAnalyzeColumns,
 		ParsedAnalyzeColumns:      DefaultParsedAnalyzeColumns,
 	}
