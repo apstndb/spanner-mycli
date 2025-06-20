@@ -325,11 +325,10 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	return nil
 }
 
-// initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
-// It extracts the logic for setting default values and applying flag values.
-func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
+// parseParams converts command-line parameters to AST nodes for queries.
+func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 	params := make(map[string]ast.Node)
-	for k, v := range opts.Param {
+	for k, v := range paramMap {
 		if typ, err := memefish.ParseType("", v); err == nil {
 			params[k] = typ
 			continue
@@ -337,10 +336,19 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 
 		// ignore ParseType error
 		if expr, err := memefish.ParseExpr("", v); err != nil {
-			return systemVariables{}, fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
+			return nil, fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
 		} else {
 			params[k] = expr
 		}
+	}
+	return params, nil
+}
+
+// createSystemVariablesFromOptions creates a systemVariables instance from spannerOptions.
+func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, error) {
+	params, err := parseParams(opts.Param)
+	if err != nil {
+		return systemVariables{}, err
 	}
 
 	l, err := SetLogLevel(cmp.Or(opts.LogLevel, "WARN"))
@@ -348,27 +356,49 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		return systemVariables{}, fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
 	}
 
-	sysVars := systemVariables{
-		Project:                   opts.ProjectId,
-		Instance:                  opts.InstanceId,
-		Database:                  determineInitialDatabase(opts),
-		Verbose:                   opts.Verbose || opts.MCP, // Set Verbose to true when MCP is true
-		MCP:                       opts.MCP,                 // Set MCP field for CLI_MCP system variable
-		Prompt:                    lo.FromPtrOr(opts.Prompt, defaultPrompt),
-		Prompt2:                   lo.FromPtrOr(opts.Prompt2, defaultPrompt2),
-		HistoryFile:               lo.FromPtrOr(opts.HistoryFile, defaultHistoryFile),
-		Role:                      cmp.Or(opts.Role, opts.DatabaseRole),
-		Endpoint:                  opts.Endpoint,
-		Insecure:                  opts.Insecure || opts.SkipTlsVerify,
-		Params:                    params,
-		LogGrpc:                   opts.LogGrpc,
-		LogLevel:                  l,
-		ImpersonateServiceAccount: opts.ImpersonateServiceAccount,
-		VertexAIProject:           opts.VertexAIProject,
-		VertexAIModel:             lo.FromPtrOr(opts.VertexAIModel, defaultVertexAIModel),
-		EnableADCPlus:             true,
-		AnalyzeColumns:            DefaultAnalyzeColumns,
-		ParsedAnalyzeColumns:      DefaultParsedAnalyzeColumns,
+	// Start with defaults and override with options
+	sysVars := newSystemVariablesWithDefaults()
+	
+	// Override with command-line options (only when explicitly provided)
+	sysVars.Project = opts.ProjectId
+	sysVars.Instance = opts.InstanceId
+	sysVars.Database = determineInitialDatabase(opts)
+	sysVars.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
+	sysVars.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
+	
+	// Override defaults only if explicitly provided
+	if opts.Prompt != nil {
+		sysVars.Prompt = *opts.Prompt
+	}
+	if opts.Prompt2 != nil {
+		sysVars.Prompt2 = *opts.Prompt2
+	}
+	if opts.HistoryFile != nil {
+		sysVars.HistoryFile = *opts.HistoryFile
+	}
+	if opts.VertexAIModel != nil {
+		sysVars.VertexAIModel = *opts.VertexAIModel
+	}
+	
+	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
+	sysVars.Endpoint = opts.Endpoint
+	sysVars.Insecure = opts.Insecure || opts.SkipTlsVerify
+	sysVars.Params = params
+	sysVars.LogGrpc = opts.LogGrpc
+	sysVars.LogLevel = l
+	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
+	sysVars.VertexAIProject = opts.VertexAIProject
+
+	return sysVars, nil
+}
+
+// initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
+// It extracts the logic for setting default values and applying flag values.
+func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
+	// Create basic system variables from options
+	sysVars, err := createSystemVariablesFromOptions(opts)
+	if err != nil {
+		return systemVariables{}, err
 	}
 
 	// initialize default value

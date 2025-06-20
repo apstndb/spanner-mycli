@@ -45,6 +45,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -108,6 +109,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				VertexAIProject:           "vertex-project",
 				VertexAIModel:             "gemini-1.0-pro",
 				EnableADCPlus:             true,
+				ReturnCommitStats:         true,
 				AnalyzeColumns:            DefaultAnalyzeColumns,
 				ParsedAnalyzeColumns:      DefaultParsedAnalyzeColumns,
 				RPCPriority:               sppb.RequestOptions_PRIORITY_HIGH,
@@ -161,6 +163,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -199,6 +202,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -229,6 +233,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -289,6 +294,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -311,6 +317,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
 				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
 				RPCPriority:          defaultPriority,
@@ -331,6 +338,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:           slog.LevelWarn,
 				VertexAIModel:      defaultVertexAIModel,
 				EnableADCPlus:      true,
+				ReturnCommitStats:  true,
 				AnalyzeColumns:     DefaultAnalyzeColumns,
 				RPCPriority:        defaultPriority,
 				OutputTemplateFile: "output_full.tmpl",
@@ -353,6 +361,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -375,6 +384,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				LogLevel:             slog.LevelWarn,
 				VertexAIModel:        defaultVertexAIModel,
 				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
 				AnalyzeColumns:       DefaultAnalyzeColumns,
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
@@ -425,6 +435,176 @@ func Test_initializeSystemVariables(t *testing.T) {
 
 			if diff := cmp.Diff(wantParamsStr, gotParamsStr, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("initializeSystemVariables() Params mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func Test_newSystemVariablesWithDefaults(t *testing.T) {
+	got := newSystemVariablesWithDefaults()
+	
+	want := systemVariables{
+		ReturnCommitStats:    true,
+		RPCPriority:          defaultPriority,
+		EnableADCPlus:        true,
+		AnalyzeColumns:       DefaultAnalyzeColumns,
+		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+		Prompt:               defaultPrompt,
+		Prompt2:              defaultPrompt2,
+		HistoryFile:          defaultHistoryFile,
+		VertexAIModel:        defaultVertexAIModel,
+	}
+	
+	if diff := cmp.Diff(want, got, 
+		cmpopts.EquateEmpty(),
+		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns"), // Ignore template and function pointer comparisons
+	); diff != "" {
+		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
+	}
+	
+	// Separately check OutputTemplate is not nil
+	if got.OutputTemplate == nil {
+		t.Errorf("newSystemVariablesWithDefaults() OutputTemplate should not be nil")
+	}
+	
+	// Separately check ParsedAnalyzeColumns is not nil
+	if got.ParsedAnalyzeColumns == nil {
+		t.Errorf("newSystemVariablesWithDefaults() ParsedAnalyzeColumns should not be nil")
+	}
+}
+
+func Test_parseParams(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  map[string]string
+		want    map[string]ast.Node
+		wantErr bool
+	}{
+		{
+			name:   "empty params",
+			params: map[string]string{},
+			want:   map[string]ast.Node{},
+		},
+		{
+			name: "valid string param",
+			params: map[string]string{
+				"p1": "'hello'",
+			},
+			want: map[string]ast.Node{
+				"p1": lo.Must(memefish.ParseExpr("", "'hello'")),
+			},
+		},
+		{
+			name: "valid type param",
+			params: map[string]string{
+				"p1": "STRING",
+			},
+			want: map[string]ast.Node{
+				"p1": lo.Must(memefish.ParseType("", "STRING")),
+			},
+		},
+		{
+			name: "invalid param",
+			params: map[string]string{
+				"p1": "invalid syntax",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseParams(test.params)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("parseParams() expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("parseParams() error = %v, wantErr %v", err, test.wantErr)
+				return
+			}
+			
+			// Compare using string representation since AST nodes are complex
+			if len(got) != len(test.want) {
+				t.Errorf("parseParams() got %d params, want %d", len(got), len(test.want))
+				return
+			}
+			
+			for k, wantNode := range test.want {
+				gotNode, exists := got[k]
+				if !exists {
+					t.Errorf("parseParams() missing key %s", k)
+					continue
+				}
+				if gotNode.SQL() != wantNode.SQL() {
+					t.Errorf("parseParams() key %s = %v, want %v", k, gotNode.SQL(), wantNode.SQL())
+				}
+			}
+		})
+	}
+}
+
+func Test_createSystemVariablesFromOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    *spannerOptions
+		want    systemVariables
+		wantErr bool
+	}{
+		{
+			name: "empty options preserve defaults",
+			opts: &spannerOptions{},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.LogLevel = slog.LevelWarn
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
+		{
+			name: "override specific values",
+			opts: &spannerOptions{
+				ProjectId:  "test-project",
+				InstanceId: "test-instance",
+				DatabaseId: "test-database",
+				Prompt:     lo.ToPtr("custom> "),
+				LogLevel:   "INFO",
+			},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.Project = "test-project"
+				sv.Instance = "test-instance"
+				sv.Database = "test-database"
+				sv.Prompt = "custom> "
+				sv.LogLevel = slog.LevelInfo
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := createSystemVariablesFromOptions(test.opts)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("createSystemVariablesFromOptions() expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("createSystemVariablesFromOptions() error = %v, wantErr %v", err, test.wantErr)
+				return
+			}
+
+			// Compare key fields
+			if diff := cmp.Diff(test.want, got,
+				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate"), // Ignore complex fields for this test
+				cmpopts.EquateEmpty(),
+			); diff != "" {
+				t.Errorf("createSystemVariablesFromOptions() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

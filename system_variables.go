@@ -75,6 +75,7 @@ type systemVariables struct {
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
 	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
 	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
+	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
 
 	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
 
@@ -173,6 +174,26 @@ func (sv *systemVariables) DatabasePath() string {
 
 func (sv *systemVariables) ProjectPath() string {
 	return projectPath(sv.Project)
+}
+
+// newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
+// This function ensures consistency between initialization and test expectations.
+func newSystemVariablesWithDefaults() systemVariables {
+	return systemVariables{
+		// Java-spanner compatible defaults
+		ReturnCommitStats: true,
+		RPCPriority:       defaultPriority,
+		
+		// CLI defaults
+		EnableADCPlus:        true,
+		AnalyzeColumns:       DefaultAnalyzeColumns,
+		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+		Prompt:               defaultPrompt,
+		Prompt2:              defaultPrompt2,
+		HistoryFile:          defaultHistoryFile,
+		VertexAIModel:        defaultVertexAIModel,
+		OutputTemplate:       defaultOutputFormat,
+	}
 }
 
 type errSetterUnimplemented struct {
@@ -484,7 +505,13 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			return &sysVars.OptimizerStatisticsPackage
 		})},
 	"RETURN_COMMIT_STATS": {
-		Description: "(NOT IMPLEMENTED) A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+		Description: "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+		Accessor: accessor{
+			Getter: boolGetter(func(variables *systemVariables) *bool {
+				return &variables.ReturnCommitStats
+			}),
+			// Setter will be implemented in issue #310
+		},
 	},
 	"AUTO_BATCH_DML": {
 		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
