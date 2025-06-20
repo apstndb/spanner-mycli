@@ -408,7 +408,7 @@ Pull requests should be labeled according to the repository's automatic release 
 - `ignore-for-release` - Excluded from release notes entirely
   - **Use for**: dev-docs updates (including CLAUDE.md), internal tooling changes
   - **Criteria**: Changes that don't affect spanner-mycli functionality
-  - **Note**: User-facing documentation (README.md, docs/) must NOT have this label
+  - **Note**: User-facing documentation (README.md, docs/) MUST NOT have this label
 
 All other labels are categorized in "Misc" section automatically.
 
