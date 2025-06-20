@@ -90,6 +90,10 @@ spanner-mycli uses a systematic labeling approach to categorize and prioritize i
 - `question` - Information requests from third parties
 - `wontfix` - Will not be implemented (policy decisions)
 
+**📖 Documentation Labels**
+- `docs-user` - User-facing documentation (README.md, docs/)
+- `docs-dev` - Developer/internal documentation (dev-docs/, CLAUDE.md)
+
 #### **Labeling Best Practices**
 
 **Multi-Label Examples**:
@@ -402,8 +406,9 @@ Pull requests should be labeled according to the repository's automatic release 
 - `bug` - Categorized in "Bug Fixes" section  
 - `enhancement` - Categorized in "New Features" section
 - `ignore-for-release` - Excluded from release notes entirely
-  - **Use for**: CLAUDE.md updates, dev-docs updates, internal tooling changes
+  - **Use for**: dev-docs updates (including CLAUDE.md), internal tooling changes
   - **Criteria**: Changes that don't affect spanner-mycli functionality
+  - **Note**: User-facing documentation (README.md, docs/) MUST NOT have this label
 
 All other labels are categorized in "Misc" section automatically.
 
