@@ -100,6 +100,7 @@ gh pr comment <PR-number> --body "Development insights..."
 **IMPORTANT**: When working with phantom worktrees, **ALWAYS refer to** [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/issue-management.md#phantom-worktree-management) for detailed guidelines including:
 - AI assistant decision matrix for autonomous vs. user-permission operations
 - Comprehensive deletion safety rules
+- **CRITICAL**: Never delete worktrees without explicit user permission
 - Worktree lifecycle management
 
 ### Knowledge Management
