@@ -486,7 +486,12 @@ func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, err
 	operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
 	
 	// Use the same formatting logic as SHOW OPERATION statement
-	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), "")
+	// Include any error from the operation
+	errorMessage := ""
+	if err := op.Err(); err != nil {
+		errorMessage = err.Error()
+	}
+	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), errorMessage)
 
 	return &Result{
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
