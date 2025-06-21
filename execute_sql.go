@@ -486,10 +486,10 @@ func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, err
 	operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
 	
 	// Use the same formatting logic as SHOW OPERATION statement
-	// Include any error from the operation
+	// Include any error from the operation (same pattern as SHOW OPERATION)
 	errorMessage := ""
-	if err := op.Err(); err != nil {
-		errorMessage = err.Error()
+	if opError := op.GetError(); opError != nil {
+		errorMessage = opError.GetMessage()
 	}
 	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), errorMessage)
 
