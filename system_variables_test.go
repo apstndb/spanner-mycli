@@ -441,9 +441,10 @@ func TestParseTimestampBound(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc:  "MAX_STALENESS with negative duration",
-			input: "MAX_STALENESS -30s",
-			want:  spanner.MaxStaleness(-30 * time.Second),
+			desc:        "MAX_STALENESS with negative duration",
+			input:       "MAX_STALENESS -30s",
+			expectError: true,
+			errorMsg:    "staleness duration must be non-negative",
 		},
 		{
 			desc:        "EXACT_STALENESS with invalid duration",
@@ -451,9 +452,10 @@ func TestParseTimestampBound(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc:  "EXACT_STALENESS with negative duration",
-			input: "EXACT_STALENESS -1h",
-			want:  spanner.ExactStaleness(-1 * time.Hour),
+			desc:        "EXACT_STALENESS with negative duration",
+			input:       "EXACT_STALENESS -1h",
+			expectError: true,
+			errorMsg:    "staleness duration must be non-negative",
 		},
 		
 		// Error cases - unknown staleness types
@@ -478,40 +480,44 @@ func TestParseTimestampBound(t *testing.T) {
 		
 		// Edge cases
 		{
-			desc:  "STRONG with extra text (ignored)",
-			input: "STRONG extra text",
-			want:  spanner.StrongRead(),
+			desc:        "STRONG with extra text should fail",
+			input:       "STRONG extra text",
+			expectError: true,
+			errorMsg:    "STRONG does not accept any parameters",
 		},
 		{
 			desc:        "MIN_READ_TIMESTAMP missing timestamp",
 			input:       "MIN_READ_TIMESTAMP",
 			expectError: true,
+			errorMsg:    "MIN_READ_TIMESTAMP requires a timestamp parameter",
 		},
 		{
 			desc:        "READ_TIMESTAMP missing timestamp",
 			input:       "READ_TIMESTAMP",
 			expectError: true,
+			errorMsg:    "READ_TIMESTAMP requires a timestamp parameter",
 		},
 		{
 			desc:        "MAX_STALENESS missing duration",
 			input:       "MAX_STALENESS",
 			expectError: true,
+			errorMsg:    "MAX_STALENESS requires a duration parameter",
 		},
 		{
 			desc:        "EXACT_STALENESS missing duration",
 			input:       "EXACT_STALENESS",
 			expectError: true,
+			errorMsg:    "EXACT_STALENESS requires a duration parameter",
 		},
 		{
-			desc:        "extra whitespace before timestamp",
-			input:       "MIN_READ_TIMESTAMP   " + validTimeStr,
-			expectError: true,
+			desc:  "extra whitespace before timestamp",
+			input: "MIN_READ_TIMESTAMP   " + validTimeStr,
+			want:  spanner.MinReadTimestamp(validTime),
 		},
 		{
-			desc:        "tabs instead of spaces",
-			input:       "MAX_STALENESS	60s",
-			expectError: true,
-			errorMsg:    "unknown staleness: MAX_STALENESS	60s",
+			desc:  "tabs instead of spaces",
+			input: "MAX_STALENESS	60s",
+			want:  spanner.MaxStaleness(60 * time.Second),
 		},
 		{
 			desc:  "zero duration for MAX_STALENESS",

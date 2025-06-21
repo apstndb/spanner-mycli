@@ -1270,36 +1270,67 @@ func stringAccessor(f func(sysVars *systemVariables) *string) accessor {
 }
 
 func parseTimestampBound(s string) (spanner.TimestampBound, error) {
-	first, second, _ := strings.Cut(s, " ")
+	// Use strings.Fields for more robust whitespace handling
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return spanner.StrongRead(), fmt.Errorf("unknown staleness: ")
+	}
+
+	first := fields[0]
+	var second string
+	if len(fields) > 1 {
+		second = fields[1]
+	}
 
 	// only for error result
 	nilStaleness := spanner.StrongRead()
 
 	switch strings.ToUpper(first) {
 	case "STRONG":
+		if strings.TrimSpace(second) != "" {
+			return nilStaleness, fmt.Errorf("STRONG does not accept any parameters")
+		}
 		return spanner.StrongRead(), nil
 	case "MIN_READ_TIMESTAMP":
+		if second == "" {
+			return nilStaleness, fmt.Errorf("MIN_READ_TIMESTAMP requires a timestamp parameter")
+		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
 		if err != nil {
 			return nilStaleness, err
 		}
 		return spanner.MinReadTimestamp(ts), nil
 	case "READ_TIMESTAMP":
+		if second == "" {
+			return nilStaleness, fmt.Errorf("READ_TIMESTAMP requires a timestamp parameter")
+		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
 		if err != nil {
 			return nilStaleness, err
 		}
 		return spanner.ReadTimestamp(ts), nil
 	case "MAX_STALENESS":
+		if second == "" {
+			return nilStaleness, fmt.Errorf("MAX_STALENESS requires a duration parameter")
+		}
 		ts, err := time.ParseDuration(second)
 		if err != nil {
 			return nilStaleness, err
 		}
+		if ts < 0 {
+			return nilStaleness, fmt.Errorf("staleness duration must be non-negative")
+		}
 		return spanner.MaxStaleness(ts), nil
 	case "EXACT_STALENESS":
+		if second == "" {
+			return nilStaleness, fmt.Errorf("EXACT_STALENESS requires a duration parameter")
+		}
 		ts, err := time.ParseDuration(second)
 		if err != nil {
 			return nilStaleness, err
+		}
+		if ts < 0 {
+			return nilStaleness, fmt.Errorf("staleness duration must be non-negative")
 		}
 		return spanner.ExactStaleness(ts), nil
 	default:
