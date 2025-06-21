@@ -190,6 +190,56 @@ func TestIntegration_LongRunningQuery(t *testing.T) {
 }
 ```
 
+## Async DDL System Variable Patterns (Issue #277)
+
+**Discovery**: System variable integration with operation control patterns
+
+### System Variable Integration with Operation Control
+
+**Pattern**: Use system variables to control DDL execution behavior without breaking existing workflows
+
+```go
+// In executeDdlStatements function
+if session.systemVariables.AsyncDDL {
+    return formatAsyncDdlResult(op)
+}
+// Continue with synchronous execution...
+```
+
+**Implementation Template**:
+```go
+// System variable definition
+"CLI_ASYNC_DDL": {
+    Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
+    Accessor: boolAccessor(func(variables *systemVariables) *bool {
+        return &variables.AsyncDDL
+    }),
+},
+
+// CLI flag mapping in createSystemVariablesFromOptions
+sysVars.AsyncDDL = opts.Async
+```
+
+### CLI Flag Integration Best Practices
+
+**Location**: Process CLI flags in `createSystemVariablesFromOptions()` function
+
+**Pattern for Boolean Flags**:
+```go
+// Direct mapping approach
+sysVars.AsyncDDL = opts.Async
+```
+
+**Pattern for Complex Flags** (reference from timeout implementation):
+```go
+// Validation before system variable assignment
+if opts.ComplexFlag != "" {
+    if err := sysVars.Set("CLI_COMPLEX_FLAG", opts.ComplexFlag); err != nil {
+        return systemVariables{}, fmt.Errorf("invalid value of --complex-flag: %v: %w", opts.ComplexFlag, err)
+    }
+}
+```
+
 ## Related Documentation
 
 - [Development Insights](../development-insights.md) - General development patterns

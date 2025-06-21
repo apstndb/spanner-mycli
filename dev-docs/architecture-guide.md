@@ -123,6 +123,67 @@ The `client_side_statement_def.go` file is the heart of spanner-mycli's extended
 - **Error Handling**: Provide clear error messages for invalid syntax
 - **Consistency**: Follow existing patterns for similar statements
 
+## Operation Handling Patterns
+
+### Long-Running Operation Metadata Access
+
+**Pattern**: Spanner operation objects provide immediate metadata access without additional API calls
+
+```go
+// Pattern for accessing operation metadata immediately after creation
+func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, error) {
+    // Get metadata immediately - no polling required
+    metadata, err := op.Metadata()
+    if err != nil {
+        return nil, fmt.Errorf("failed to get operation metadata: %w", err)
+    }
+    
+    // Operation state is immediately available
+    operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
+    done := op.Done()
+    
+    // Process metadata...
+}
+```
+
+**Key Insights**:
+- `UpdateDatabaseDdlOperation.Metadata()` provides immediate access to operation state
+- No additional API calls needed for basic operation information
+- Operation name, completion status, and metadata are instantly available
+- In embedded emulator environments, operations complete very quickly
+
+### Code Reuse Through Shared Formatting
+
+**Pattern**: Extract common formatting logic into shared functions to ensure consistency between features
+
+```go
+// Shared function pattern for operation result formatting
+func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDatabaseDdlMetadata, done bool, errorMessage string) []Row {
+    var rows []Row
+    for i := range md.GetStatements() {
+        rows = append(rows, toRow(
+            lo.Ternary(i == 0, operationId, ""), // Operation ID only on first row
+            md.GetStatements()[i]+";",           // Statement with semicolon
+            lox.IfOrEmpty(i == 0, strconv.FormatBool(done)), // Status on first row only
+            // ... progress and timestamp formatting
+            errorMessage,
+        ))
+    }
+    return rows
+}
+```
+
+**Benefits**:
+- Single source of truth for operation result formatting
+- Eliminates code duplication between async DDL and SHOW OPERATION features
+- Ensures format consistency across related features
+- Simplifies maintenance and reduces chance of format divergence
+
+**Usage Examples**:
+- Async DDL execution: Returns immediate operation status
+- SHOW OPERATION statement: Displays operation details
+- Both use identical formatting logic for consistency
+
 ## Configuration Management
 
 ### Configuration Sources (Priority Order)

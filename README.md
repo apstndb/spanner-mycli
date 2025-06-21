@@ -27,6 +27,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * Interactive DDL batching
+  * Async DDL execution support (`--async` flag and `CLI_ASYNC_DDL` system variable)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
   * Run as MCP (Model Context Protocol) server (EXPERIMENTAL, `--mcp`). See [Model Context Protocol](https://modelcontextprotocol.io/introduction) for more information.
@@ -119,7 +120,7 @@ spanner:
       --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.34)
+      --emulator-image=                                   container image for --embedded-emulator
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
       --log-grpc                                          Show gRPC logs
@@ -133,6 +134,7 @@ spanner:
       --version                                           Show version string.
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
       --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
+      --async                                             Return immediately, without waiting for the operation in progress to complete
       --mcp                                               Run as MCP server
 
 Help Options:

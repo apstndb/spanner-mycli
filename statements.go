@@ -401,21 +401,7 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 			}
 			
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
-			
-			for i := range md.GetStatements() {
-				rows = append(rows, toRow(
-					lo.Ternary(i == 0, operationId, ""),
-					md.GetStatements()[i]+";",
-					lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
-					lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
-						return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
-					}),
-					lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
-						return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
-					}),
-					op.GetError().GetMessage(),
-				))
-			}
+			rows = append(rows, formatUpdateDatabaseDdlRows(operationId, &md, op.GetDone(), op.GetError().GetMessage())...)
 			
 		default:
 			// For other operation types, show basic information
@@ -803,6 +789,26 @@ func extractSchemaAndName(s string) (string, string) {
 		return "", unquoteIdentifier(s)
 	}
 	return unquoteIdentifier(schema), unquoteIdentifier(name)
+}
+
+// formatUpdateDatabaseDdlRows formats UpdateDatabaseDdlMetadata into rows for SHOW OPERATION format
+func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDatabaseDdlMetadata, done bool, errorMessage string) []Row {
+	var rows []Row
+	for i := range md.GetStatements() {
+		rows = append(rows, toRow(
+			lo.Ternary(i == 0, operationId, ""),
+			md.GetStatements()[i]+";",
+			lox.IfOrEmpty(i == 0, strconv.FormatBool(done)),
+			lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+				return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
+			}),
+			lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+				return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
+			}),
+			errorMessage,
+		))
+	}
+	return rows
 }
 
 func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {
