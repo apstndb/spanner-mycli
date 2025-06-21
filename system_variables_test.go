@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cloud.google.com/go/spanner"
 	"errors"
 	"testing"
 	"time"
@@ -333,4 +334,226 @@ func TestSystemVariables_StatementTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseTimestampBound(t *testing.T) {
+	// Test valid timestamp bounds
+	validTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	validTimeStr := "2024-01-01T00:00:00Z"
+	
+	tests := []struct {
+		desc        string
+		input       string
+		want        spanner.TimestampBound
+		expectError bool
+		errorMsg    string
+	}{
+		// Valid cases - all 5 timestamp bound types
+		{
+			desc:  "STRONG read",
+			input: "STRONG",
+			want:  spanner.StrongRead(),
+		},
+		{
+			desc:  "MIN_READ_TIMESTAMP with valid timestamp",
+			input: "MIN_READ_TIMESTAMP " + validTimeStr,
+			want:  spanner.MinReadTimestamp(validTime),
+		},
+		{
+			desc:  "READ_TIMESTAMP with valid timestamp",
+			input: "READ_TIMESTAMP " + validTimeStr,
+			want:  spanner.ReadTimestamp(validTime),
+		},
+		{
+			desc:  "MAX_STALENESS with valid duration",
+			input: "MAX_STALENESS 30s",
+			want:  spanner.MaxStaleness(30 * time.Second),
+		},
+		{
+			desc:  "EXACT_STALENESS with valid duration",
+			input: "EXACT_STALENESS 1h30m",
+			want:  spanner.ExactStaleness(90 * time.Minute),
+		},
+		
+		// Case insensitivity tests
+		{
+			desc:  "lowercase strong",
+			input: "strong",
+			want:  spanner.StrongRead(),
+		},
+		{
+			desc:  "mixed case Strong",
+			input: "Strong",
+			want:  spanner.StrongRead(),
+		},
+		{
+			desc:  "lowercase min_read_timestamp",
+			input: "min_read_timestamp " + validTimeStr,
+			want:  spanner.MinReadTimestamp(validTime),
+		},
+		{
+			desc:  "mixed case Min_Read_Timestamp",
+			input: "Min_Read_Timestamp " + validTimeStr,
+			want:  spanner.MinReadTimestamp(validTime),
+		},
+		{
+			desc:  "lowercase read_timestamp",
+			input: "read_timestamp " + validTimeStr,
+			want:  spanner.ReadTimestamp(validTime),
+		},
+		{
+			desc:  "lowercase max_staleness",
+			input: "max_staleness 15s",
+			want:  spanner.MaxStaleness(15 * time.Second),
+		},
+		{
+			desc:  "lowercase exact_staleness",
+			input: "exact_staleness 45m",
+			want:  spanner.ExactStaleness(45 * time.Minute),
+		},
+		
+		// Error cases - invalid timestamps
+		{
+			desc:        "MIN_READ_TIMESTAMP with invalid timestamp format",
+			input:       "MIN_READ_TIMESTAMP invalid-date",
+			expectError: true,
+		},
+		{
+			desc:        "MIN_READ_TIMESTAMP with invalid month",
+			input:       "MIN_READ_TIMESTAMP 2024-13-01T00:00:00Z",
+			expectError: true,
+		},
+		{
+			desc:        "READ_TIMESTAMP with invalid timestamp format",
+			input:       "READ_TIMESTAMP not-a-timestamp",
+			expectError: true,
+		},
+		{
+			desc:        "READ_TIMESTAMP with malformed RFC3339",
+			input:       "READ_TIMESTAMP 2024-01-01",
+			expectError: true,
+		},
+		
+		// Error cases - invalid durations
+		{
+			desc:        "MAX_STALENESS with invalid duration",
+			input:       "MAX_STALENESS invalid-duration",
+			expectError: true,
+		},
+		{
+			desc:  "MAX_STALENESS with negative duration",
+			input: "MAX_STALENESS -30s",
+			want:  spanner.MaxStaleness(-30 * time.Second),
+		},
+		{
+			desc:        "EXACT_STALENESS with invalid duration",
+			input:       "EXACT_STALENESS not-a-duration",
+			expectError: true,
+		},
+		{
+			desc:  "EXACT_STALENESS with negative duration",
+			input: "EXACT_STALENESS -1h",
+			want:  spanner.ExactStaleness(-1 * time.Hour),
+		},
+		
+		// Error cases - unknown staleness types
+		{
+			desc:        "unknown staleness type",
+			input:       "UNKNOWN_TYPE 30s",
+			expectError: true,
+			errorMsg:    "unknown staleness: UNKNOWN_TYPE",
+		},
+		{
+			desc:        "empty string",
+			input:       "",
+			expectError: true,
+			errorMsg:    "unknown staleness: ",
+		},
+		{
+			desc:        "random text",
+			input:       "some random text",
+			expectError: true,
+			errorMsg:    "unknown staleness: some",
+		},
+		
+		// Edge cases
+		{
+			desc:  "STRONG with extra text (ignored)",
+			input: "STRONG extra text",
+			want:  spanner.StrongRead(),
+		},
+		{
+			desc:        "MIN_READ_TIMESTAMP missing timestamp",
+			input:       "MIN_READ_TIMESTAMP",
+			expectError: true,
+		},
+		{
+			desc:        "READ_TIMESTAMP missing timestamp",
+			input:       "READ_TIMESTAMP",
+			expectError: true,
+		},
+		{
+			desc:        "MAX_STALENESS missing duration",
+			input:       "MAX_STALENESS",
+			expectError: true,
+		},
+		{
+			desc:        "EXACT_STALENESS missing duration",
+			input:       "EXACT_STALENESS",
+			expectError: true,
+		},
+		{
+			desc:        "extra whitespace before timestamp",
+			input:       "MIN_READ_TIMESTAMP   " + validTimeStr,
+			expectError: true,
+		},
+		{
+			desc:        "tabs instead of spaces",
+			input:       "MAX_STALENESS	60s",
+			expectError: true,
+			errorMsg:    "unknown staleness: MAX_STALENESS	60s",
+		},
+		{
+			desc:  "zero duration for MAX_STALENESS",
+			input: "MAX_STALENESS 0s",
+			want:  spanner.MaxStaleness(0),
+		},
+		{
+			desc:  "very large duration",
+			input: "EXACT_STALENESS 999999h",
+			want:  spanner.ExactStaleness(999999 * time.Hour),
+		},
+	}
+	
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			got, err := parseTimestampBound(test.input)
+			
+			if test.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if test.errorMsg != "" && err.Error() != test.errorMsg {
+					t.Errorf("expected error message %q, got %q", test.errorMsg, err.Error())
+				}
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			
+			// Compare the timestamp bounds
+			if !timestampBoundsEqual(got, test.want) {
+				t.Errorf("expected %v, got %v", test.want, got)
+			}
+		})
+	}
+}
+
+// Helper function to compare TimestampBound values
+func timestampBoundsEqual(a, b spanner.TimestampBound) bool {
+	// Since TimestampBound doesn't have an exported comparison method,
+	// we compare their string representations as a workaround
+	return a.String() == b.String()
 }
