@@ -233,9 +233,10 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{desc: "CLI_MCP", name: "CLI_MCP", unimplementedSet: true,
 			sysVars: &systemVariables{MCP: true},
 			want:    singletonMap("CLI_MCP", "TRUE")},
-		{desc: "RETURN_COMMIT_STATS", name: "RETURN_COMMIT_STATS", unimplementedSet: true,
-			sysVars: &systemVariables{ReturnCommitStats: true},
-			want:    singletonMap("RETURN_COMMIT_STATS", "TRUE")},
+		{desc: "RETURN_COMMIT_STATS true", name: "RETURN_COMMIT_STATS", value: "TRUE",
+			want: singletonMap("RETURN_COMMIT_STATS", "TRUE")},
+		{desc: "RETURN_COMMIT_STATS false", name: "RETURN_COMMIT_STATS", value: "FALSE",
+			want: singletonMap("RETURN_COMMIT_STATS", "FALSE")},
 	}
 
 	for _, test := range tests {
