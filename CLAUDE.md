@@ -164,7 +164,7 @@ gh issue create --body-file tmp/issue_body.md
 # command --message "Content with `backticks`"  # UNSAFE - backticks execute
 ```
 
-**⚠️ CRITICAL: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (review bodies + threads)**
+**⚠️ CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
 **⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
