@@ -676,7 +676,7 @@ func TestStatements(t *testing.T) {
 			stmt: sliceOf("HELP"),
 			wantResults: []*Result{
 				// It should be safe because HELP doesn't depend on ctx and session.
-				lo.Must((&HelpStatement{}).Execute(context.TODO(), nil)),
+				lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
 			},
 		},
 		{
@@ -928,7 +928,7 @@ func TestStatements(t *testing.T) {
 			desc: "HELP VARIABLES",
 			stmt: sliceOf("HELP VARIABLES"),
 			wantResults: []*Result{
-				lo.Must((&HelpVariablesStatement{}).Execute(context.TODO(), nil)),
+				lo.Must((&HelpVariablesStatement{}).Execute(t.Context(), nil)),
 			},
 		},
 		{
