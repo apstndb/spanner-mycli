@@ -1270,36 +1270,72 @@ func stringAccessor(f func(sysVars *systemVariables) *string) accessor {
 }
 
 func parseTimestampBound(s string) (spanner.TimestampBound, error) {
-	first, second, _ := strings.Cut(s, " ")
+	// Use strings.Fields for more robust whitespace handling
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return spanner.StrongRead(), fmt.Errorf("unknown staleness: %q", s)
+	}
+
+	first := fields[0]
+	
+	// All timestamp bounds accept at most 2 fields (type + parameter)
+	if len(fields) > 2 {
+		return spanner.StrongRead(), fmt.Errorf("%s accepts at most one parameter", first)
+	}
+	var second string
+	if len(fields) > 1 {
+		second = fields[1]
+	}
 
 	// only for error result
 	nilStaleness := spanner.StrongRead()
 
 	switch strings.ToUpper(first) {
 	case "STRONG":
+		if len(fields) > 1 {
+			return nilStaleness, fmt.Errorf("STRONG does not accept any parameters")
+		}
 		return spanner.StrongRead(), nil
 	case "MIN_READ_TIMESTAMP":
+		if len(fields) < 2 {
+			return nilStaleness, fmt.Errorf("MIN_READ_TIMESTAMP requires a timestamp parameter")
+		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
 		if err != nil {
 			return nilStaleness, err
 		}
 		return spanner.MinReadTimestamp(ts), nil
 	case "READ_TIMESTAMP":
+		if len(fields) < 2 {
+			return nilStaleness, fmt.Errorf("READ_TIMESTAMP requires a timestamp parameter")
+		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
 		if err != nil {
 			return nilStaleness, err
 		}
 		return spanner.ReadTimestamp(ts), nil
 	case "MAX_STALENESS":
+		if len(fields) < 2 {
+			return nilStaleness, fmt.Errorf("MAX_STALENESS requires a duration parameter")
+		}
 		ts, err := time.ParseDuration(second)
 		if err != nil {
 			return nilStaleness, err
 		}
+		if ts < 0 {
+			return nilStaleness, fmt.Errorf("staleness duration %q must be non-negative", second)
+		}
 		return spanner.MaxStaleness(ts), nil
 	case "EXACT_STALENESS":
+		if len(fields) < 2 {
+			return nilStaleness, fmt.Errorf("EXACT_STALENESS requires a duration parameter")
+		}
 		ts, err := time.ParseDuration(second)
 		if err != nil {
 			return nilStaleness, err
+		}
+		if ts < 0 {
+			return nilStaleness, fmt.Errorf("staleness duration %q must be non-negative", second)
 		}
 		return spanner.ExactStaleness(ts), nil
 	default:
