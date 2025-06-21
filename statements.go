@@ -405,7 +405,11 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 			}
 			
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
-			rows = append(rows, formatUpdateDatabaseDdlRows(operationId, &md, op.GetDone(), op.GetError().GetMessage())...)
+			errorMessage := ""
+			if opError := op.GetError(); opError != nil {
+				errorMessage = opError.GetMessage()
+			}
+			rows = append(rows, formatUpdateDatabaseDdlRows(operationId, &md, op.GetDone(), errorMessage)...)
 			
 		default:
 			// For other operation types, show basic information

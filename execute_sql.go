@@ -161,6 +161,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 	// If async mode is enabled, return operation info immediately
 	// This allows the client to continue without waiting for the DDL operation to complete.
+	// In async DDL, errors are reported when polling, not immediately available.
 	if session.systemVariables.AsyncDDL {
 		return formatAsyncDdlResult(op)
 	}
