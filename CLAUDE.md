@@ -54,13 +54,27 @@ go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + 
 # Workflow examples  
 gh pr create                                 # Create PR (interactive for title/body)
 go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
+go tool gh-helper reviews wait --async      # Check reviews once (non-blocking)
+go tool gh-helper reviews wait --timeout 15m # Wait with custom timeout
+
+# Issue management with gh-helper
+go tool gh-helper issues create --title "Title" --body "Body"  # Create issue
+go tool gh-helper issues create --parent 123 --title "Sub-task"  # Create sub-issue
+go tool gh-helper issues link-parent 456 --parent 123  # Link existing issue as sub-issue
 
 # Review response workflow (for subsequent pushes)
 go tool gh-helper reviews fetch <PR> > tmp/review-data.yaml  # Fetch all review data
+go tool gh-helper reviews fetch <PR> --threads-only          # Only fetch thread data
+go tool gh-helper reviews fetch <PR> --needs-reply-only      # Only threads needing replies
+go tool gh-helper reviews fetch <PR> --exclude-urls          # Exclude URLs from output
 # Create fix plan in tmp/fix-plan.md, make changes, commit & push
 go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
 # Reply to threads with commit hash and --resolve flag
+go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve  # Standard workflow
 # Or use new batch resolve: go tool gh-helper threads resolve THREAD_ID1 THREAD_ID2
+# Show multiple threads at once: go tool gh-helper threads show THREAD_ID1 THREAD_ID2
+# Show thread details (supports multiple threads)
+go tool gh-helper threads show THREAD_ID1 THREAD_ID2 THREAD_ID3
 
 # Output format examples (YAML default, JSON with --json)
 go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'

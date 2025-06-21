@@ -19,12 +19,21 @@ make build-tools
 ```bash
 # Review operations
 go tool gh-helper reviews fetch <PR>       # Fetch review data including threads
+go tool gh-helper reviews fetch <PR> --threads-only     # Only fetch thread data (lightweight)
+go tool gh-helper reviews fetch <PR> --needs-reply-only # Only threads needing replies
+go tool gh-helper reviews fetch <PR> --no-bodies        # Exclude review bodies (lightweight)
+go tool gh-helper reviews fetch <PR> --list-threads     # List thread IDs only
 go tool gh-helper reviews wait <PR>        # Wait for reviews and checks
 go tool gh-helper reviews wait <PR> --async # Check reviews once (non-blocking)
+go tool gh-helper reviews wait <PR> --exclude-checks    # Wait for reviews only
+go tool gh-helper reviews wait <PR> --exclude-reviews   # Wait for PR checks only
 
 # Thread operations  
-go tool gh-helper threads show <THREAD_ID>
-go tool gh-helper threads reply <THREAD_ID>
+go tool gh-helper threads show <THREAD_ID>              # Show single thread
+go tool gh-helper threads show <ID1> <ID2> <ID3>       # Show multiple threads
+go tool gh-helper threads reply <THREAD_ID>             # Reply to thread
+go tool gh-helper threads reply <ID> --commit-hash <HASH> --resolve  # Reply with commit
+go tool gh-helper threads resolve <ID1> <ID2> <ID3>    # Batch resolve threads
 ```
 
 **Gemini Review Workflow:**
@@ -274,6 +283,11 @@ GitHub sub-issues provide a native way to break down large issues into smaller, 
 - Automatically track completion status in parent issue
 - Different from simple issue references (e.g., "Related to #123")
 
+**Visibility:**
+- GitHub Web UI: Shows sub-issues in parent issue view
+- `gh issue` CLI: Does not support viewing sub-issues (use GraphQL API)
+- GraphQL API: Full access to sub-issue relationships
+
 **When to use sub-issues:**
 - Breaking down large features into independently implementable tasks
 - Organizing test coverage improvements by component
@@ -282,7 +296,34 @@ GitHub sub-issues provide a native way to break down large issues into smaller, 
 
 ### Creating Sub-Issues with Proper Hierarchy
 
-**Complete workflow for creating linked sub-issues:**
+**Simple workflow using gh-helper:**
+
+```bash
+# Method 1: Create sub-issue directly
+go tool gh-helper issues create \
+  --title "[Test Coverage] Add comprehensive tests for component X" \
+  --body "Part of #248 - Parent issue description..." \
+  --label "testing,test-coverage-improvement" \
+  --parent 248
+
+# Method 2: Link existing issue as sub-issue
+go tool gh-helper issues link-parent 318 --parent 248
+
+# Verify the sub-issue was properly linked
+gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    issue(number: 248) {
+      subIssues(first: 10) {
+        totalCount
+        nodes { number title }
+      }
+    }
+  }
+}'
+```
+
+**Complete workflow for manual GraphQL approach (if gh-helper not available):**
 
 ```bash
 # 1. Create the sub-issues first (using standard gh issue create)
@@ -317,24 +358,6 @@ mutation {
     subIssue { number }
   }
 }"
-
-# 5. CRITICAL: Verify the sub-issue was properly linked
-# This verification step is essential to ensure the workflow completed successfully.
-# Without verification, you may incorrectly assume the relationship exists.
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      subIssues(first: 10) {
-        totalCount
-        nodes { number title }
-      }
-    }
-  }
-}'
-
-# Expected output should include the newly linked sub-issue #318
-# If the sub-issue doesn't appear, the linking failed and needs to be retried
 ```
 
 ### Batch Sub-Issue Creation Script
@@ -348,7 +371,48 @@ For creating multiple sub-issues efficiently:
 PARENT_ISSUE=$1
 shift
 
-# Get parent issue ID
+echo "Creating sub-issues for parent #$PARENT_ISSUE"
+
+# Create each sub-issue directly as a child
+for title in "$@"; do
+  ISSUE_NUM=$(go tool gh-helper issues create \
+    --parent $PARENT_ISSUE \
+    --title "$title" \
+    --body "Part of #$PARENT_ISSUE" \
+    --label "testing" \
+    --json | jq -r '.number')
+  
+  echo "✓ Created sub-issue #$ISSUE_NUM: $title"
+done
+
+# Verify all sub-issues were properly linked
+echo "Verifying sub-issue linkage..."
+gh api graphql -f query="
+{
+  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
+    issue(number: $PARENT_ISSUE) {
+      subIssues(first: 20) {
+        totalCount
+        nodes {
+          number
+          title
+        }
+      }
+    }
+  }
+}" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
+```
+
+**Alternative: Manual GraphQL approach for batch creation:**
+
+```bash
+#!/bin/bash
+# For environments without gh-helper
+
+PARENT_ISSUE=$1
+shift
+
+# Get parent issue ID once
 PARENT_ID=$(gh api graphql -f query="
 {
   repository(owner: \"apstndb\", name: \"spanner-mycli\") {
@@ -387,27 +451,6 @@ for title in "$@"; do
   
   echo "✓ Created and linked #$ISSUE_NUM: $title"
 done
-
-# CRITICAL: Verify all sub-issues were properly linked
-# This final verification ensures all sub-issues are correctly associated
-echo "Verifying sub-issue linkage..."
-gh api graphql -f query="
-{
-  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
-    issue(number: $PARENT_ISSUE) {
-      subIssues(first: 20) {
-        totalCount
-        nodes {
-          number
-          title
-        }
-      }
-    }
-  }
-}" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
-
-# The count should match the number of sub-issues created
-# If it doesn't, some linkages may have failed
 ```
 
 ### Managing Sub-Issues
@@ -678,6 +721,9 @@ go tool gh-helper reviews fetch 287 --list-threads
 # Show detailed thread context before replying
 go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
+# Show multiple threads at once (new feature)
+go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH PRRT_kwDONC6gMM5SU-GI
+
 # Reply to a specific thread (code changes made) - standard workflow
 go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234." --resolve
 
@@ -709,6 +755,8 @@ EOF
 1. Make the necessary fixes
 2. Commit and push the changes
 3. Reply with commit hash and resolve: `go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --message "Fixed as suggested" --resolve`
+   - Quick commit reference: `go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --resolve` (uses default message)
+   - The --commit-hash flag automatically includes the hash in the reply message
 
 **For explanations without code changes:**
 1. Reply with explanation
@@ -737,7 +785,7 @@ Thank you for the feedback!
 gh pr create --title "feat: implement feature" --body "Description"
 
 # 2. Wait for automatic Gemini review (initial PR only)
-go tool gh-helper reviews wait <PR_NUMBER> --timeout 15
+go tool gh-helper reviews wait <PR_NUMBER> --timeout 15m
 
 # 3. Fetch all review data
 go tool gh-helper reviews fetch <PR_NUMBER> > tmp/review-data.yaml
@@ -774,7 +822,7 @@ git commit -m "fix: address review feedback - implement fixes A, B, C"
 git push
 
 # 7. Request Gemini review for subsequent pushes (REQUIRED)
-go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15
+go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15m
 
 # 8. Reply to threads with commit hash and resolve immediately
 COMMIT_HASH=$(git rev-parse HEAD)
