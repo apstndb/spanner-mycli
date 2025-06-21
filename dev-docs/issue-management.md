@@ -504,6 +504,9 @@ go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 # Reply to a specific thread (code changes made)
 go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
 
+# NEW: Resolve multiple threads at once after addressing feedback
+go tool gh-helper threads resolve PRRT_kwDONC6gMM5SU-GH PRRT_kwDONC6gMM5SU-GI PRRT_kwDONC6gMM5SU-GJ
+
 # Reply to a specific thread (no code changes needed)
 go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! This is working as intended."
 
@@ -601,6 +604,9 @@ COMMIT_HASH=$(git rev-parse HEAD)
 go tool gh-helper threads reply <THREAD_ID_1> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix A" --resolve
 go tool gh-helper threads reply <THREAD_ID_2> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix B" --resolve
 go tool gh-helper threads reply <THREAD_ID_3> --message "This works as intended because..." --resolve
+
+# Alternative: Batch resolve threads after replying (NEW)
+go tool gh-helper threads resolve <THREAD_ID_1> <THREAD_ID_2> <THREAD_ID_3>
 
 # 9. Clean up planning files
 rm tmp/review-analysis.yaml tmp/fix-plan.md
