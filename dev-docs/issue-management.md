@@ -18,9 +18,9 @@ make build-tools
 **Basic Commands:**
 ```bash
 # Review operations
-go tool gh-helper reviews analyze <PR>     # Comprehensive review analysis
+go tool gh-helper reviews fetch <PR>       # Fetch review data including threads
 go tool gh-helper reviews wait <PR>        # Wait for reviews and checks
-go tool gh-helper reviews fetch <PR>       # Get review data
+go tool gh-helper reviews wait <PR> --async # Check reviews once (non-blocking)
 
 # Thread operations  
 go tool gh-helper threads show <THREAD_ID>
@@ -501,8 +501,11 @@ go tool gh-helper reviews fetch 287 --list-threads
 # Show detailed thread context before replying
 go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
-# Reply to a specific thread (code changes made)
-go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
+# Reply to a specific thread (code changes made) - standard workflow
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234." --resolve
+
+# Batch resolve multiple threads (if you forgot to use --resolve earlier)
+go tool gh-helper threads resolve PRRT_kwDONC6gMM5SU-GH PRRT_kwDONC6gMM5SU-GI PRRT_kwDONC6gMM5SU-GJ
 
 # Reply to a specific thread (no code changes needed)
 go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! This is working as intended."
@@ -559,8 +562,8 @@ gh pr create --title "feat: implement feature" --body "Description"
 # 2. Wait for automatic Gemini review (initial PR only)
 go tool gh-helper reviews wait <PR_NUMBER> --timeout 15
 
-# 3. Comprehensive review analysis
-go tool gh-helper reviews analyze <PR_NUMBER> > tmp/review-analysis.yaml
+# 3. Fetch all review data
+go tool gh-helper reviews fetch <PR_NUMBER> > tmp/review-data.yaml
 
 # 4. Create fix plan based on all feedback
 mkdir -p tmp
@@ -602,8 +605,15 @@ go tool gh-helper threads reply <THREAD_ID_1> --commit-hash $COMMIT_HASH --messa
 go tool gh-helper threads reply <THREAD_ID_2> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix B" --resolve
 go tool gh-helper threads reply <THREAD_ID_3> --message "This works as intended because..." --resolve
 
+# 8a. Verify all threads are resolved (new reviews may arrive after push)
+go tool gh-helper reviews fetch <PR_NUMBER> --list-threads
+
+# Alternative: Batch resolve threads (useful for resolving forgotten threads)
+# If you forgot to use --resolve flag, you can resolve multiple threads at once:
+go tool gh-helper threads resolve <THREAD_ID_1> <THREAD_ID_2> <THREAD_ID_3>
+
 # 9. Clean up planning files
-rm tmp/review-analysis.yaml tmp/fix-plan.md
+rm tmp/review-data.yaml tmp/fix-plan.md
 ```
 
 **When to request Gemini review:**

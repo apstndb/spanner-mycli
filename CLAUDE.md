@@ -47,7 +47,7 @@ make build                    # Build the application
 make test-quick               # Quick tests during development
 
 # Development tools (Go 1.24 tool management: make build-tools)
-go tool gh-helper reviews analyze [PR]      # Comprehensive review analysis (prevents missing feedback)
+go tool gh-helper reviews fetch [PR]        # Fetch review data including threads
 go tool gh-helper reviews wait [PR]         # Wait for reviews + checks
 go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + wait
 
@@ -56,14 +56,15 @@ gh pr create                                 # Create PR (interactive for title/
 go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
 
 # Review response workflow (for subsequent pushes)
-go tool gh-helper reviews analyze <PR> > tmp/review-analysis.yaml  # Analyze all feedback
+go tool gh-helper reviews fetch <PR> > tmp/review-data.yaml  # Fetch all review data
 # Create fix plan in tmp/fix-plan.md, make changes, commit & push
 go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
 # Reply to threads with commit hash and --resolve flag
+# Or use new batch resolve: go tool gh-helper threads resolve THREAD_ID1 THREAD_ID2
 
 # Output format examples (YAML default, JSON with --json)
-go tool gh-helper reviews analyze 306 | gojq --yaml-input '.summary.critical'
-go tool gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
+go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'
+go tool gh-helper reviews fetch 306 --json | jq '.threads[] | select(.needsReply) | .id'
 ```
 
 ## Core Architecture Overview
@@ -133,7 +134,7 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
 2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
 3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-4. **For review analysis**: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (prevents missing critical issues)
+4. **For review analysis**: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (prevents missing critical issues)
 5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
 6. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
 7. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
@@ -163,7 +164,7 @@ gh issue create --body-file tmp/issue_body.md
 # command --message "Content with `backticks`"  # UNSAFE - backticks execute
 ```
 
-**⚠️ CRITICAL: Use `go tool gh-helper reviews analyze` for comprehensive feedback analysis (review bodies + threads)**
+**⚠️ CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
 **⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
