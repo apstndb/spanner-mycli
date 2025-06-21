@@ -1276,6 +1276,11 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 		return spanner.StrongRead(), fmt.Errorf("unknown staleness: ")
 	}
 
+	// All timestamp bounds accept at most 2 fields (type + parameter)
+	if len(fields) > 2 {
+		return spanner.StrongRead(), fmt.Errorf("%s accepts at most one parameter", fields[0])
+	}
+
 	first := fields[0]
 	var second string
 	if len(fields) > 1 {
@@ -1287,12 +1292,12 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 
 	switch strings.ToUpper(first) {
 	case "STRONG":
-		if strings.TrimSpace(second) != "" {
+		if len(fields) > 1 {
 			return nilStaleness, fmt.Errorf("STRONG does not accept any parameters")
 		}
 		return spanner.StrongRead(), nil
 	case "MIN_READ_TIMESTAMP":
-		if second == "" {
+		if len(fields) < 2 {
 			return nilStaleness, fmt.Errorf("MIN_READ_TIMESTAMP requires a timestamp parameter")
 		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
@@ -1301,7 +1306,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 		}
 		return spanner.MinReadTimestamp(ts), nil
 	case "READ_TIMESTAMP":
-		if second == "" {
+		if len(fields) < 2 {
 			return nilStaleness, fmt.Errorf("READ_TIMESTAMP requires a timestamp parameter")
 		}
 		ts, err := time.Parse(time.RFC3339Nano, second)
@@ -1310,7 +1315,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 		}
 		return spanner.ReadTimestamp(ts), nil
 	case "MAX_STALENESS":
-		if second == "" {
+		if len(fields) < 2 {
 			return nilStaleness, fmt.Errorf("MAX_STALENESS requires a duration parameter")
 		}
 		ts, err := time.ParseDuration(second)
@@ -1322,7 +1327,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 		}
 		return spanner.MaxStaleness(ts), nil
 	case "EXACT_STALENESS":
-		if second == "" {
+		if len(fields) < 2 {
 			return nilStaleness, fmt.Errorf("EXACT_STALENESS requires a duration parameter")
 		}
 		ts, err := time.ParseDuration(second)

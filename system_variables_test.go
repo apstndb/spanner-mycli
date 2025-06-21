@@ -475,7 +475,7 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:        "random text",
 			input:       "some random text",
 			expectError: true,
-			errorMsg:    "unknown staleness: some",
+			errorMsg:    "some accepts at most one parameter",
 		},
 		
 		// Edge cases
@@ -483,7 +483,7 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:        "STRONG with extra text should fail",
 			input:       "STRONG extra text",
 			expectError: true,
-			errorMsg:    "STRONG does not accept any parameters",
+			errorMsg:    "STRONG accepts at most one parameter",
 		},
 		{
 			desc:        "MIN_READ_TIMESTAMP missing timestamp",
@@ -528,6 +528,32 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:  "very large duration",
 			input: "EXACT_STALENESS 999999h",
 			want:  spanner.ExactStaleness(999999 * time.Hour),
+		},
+		
+		// Extra parameter validation tests
+		{
+			desc:        "MIN_READ_TIMESTAMP with extra parameters",
+			input:       "MIN_READ_TIMESTAMP " + validTimeStr + " extra",
+			expectError: true,
+			errorMsg:    "MIN_READ_TIMESTAMP accepts at most one parameter",
+		},
+		{
+			desc:        "READ_TIMESTAMP with extra parameters",
+			input:       "READ_TIMESTAMP " + validTimeStr + " extra param",
+			expectError: true,
+			errorMsg:    "READ_TIMESTAMP accepts at most one parameter",
+		},
+		{
+			desc:        "MAX_STALENESS with extra parameters",
+			input:       "MAX_STALENESS 30s extra",
+			expectError: true,
+			errorMsg:    "MAX_STALENESS accepts at most one parameter",
+		},
+		{
+			desc:        "EXACT_STALENESS with extra parameters",
+			input:       "EXACT_STALENESS 1h extra param",
+			expectError: true,
+			errorMsg:    "EXACT_STALENESS accepts at most one parameter",
 		},
 	}
 	
