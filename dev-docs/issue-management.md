@@ -501,10 +501,10 @@ go tool gh-helper reviews fetch 287 --list-threads
 # Show detailed thread context before replying
 go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
-# Reply to a specific thread (code changes made)
-go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234."
+# Reply to a specific thread (code changes made) - standard workflow
+go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234." --resolve
 
-# NEW: Resolve multiple threads at once after addressing feedback
+# Batch resolve multiple threads (if you forgot to use --resolve earlier)
 go tool gh-helper threads resolve PRRT_kwDONC6gMM5SU-GH PRRT_kwDONC6gMM5SU-GI PRRT_kwDONC6gMM5SU-GJ
 
 # Reply to a specific thread (no code changes needed)
@@ -605,7 +605,8 @@ go tool gh-helper threads reply <THREAD_ID_1> --commit-hash $COMMIT_HASH --messa
 go tool gh-helper threads reply <THREAD_ID_2> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix B" --resolve
 go tool gh-helper threads reply <THREAD_ID_3> --message "This works as intended because..." --resolve
 
-# Alternative: Batch resolve threads after replying (NEW)
+# Alternative: Batch resolve threads (useful for resolving forgotten threads)
+# If you forgot to use --resolve flag, you can resolve multiple threads at once:
 go tool gh-helper threads resolve <THREAD_ID_1> <THREAD_ID_2> <THREAD_ID_3>
 
 # 9. Clean up planning files
