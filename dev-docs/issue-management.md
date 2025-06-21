@@ -605,6 +605,9 @@ go tool gh-helper threads reply <THREAD_ID_1> --commit-hash $COMMIT_HASH --messa
 go tool gh-helper threads reply <THREAD_ID_2> --commit-hash $COMMIT_HASH --message "Fixed as planned in fix B" --resolve
 go tool gh-helper threads reply <THREAD_ID_3> --message "This works as intended because..." --resolve
 
+# 8a. Verify all threads are resolved (new reviews may arrive after push)
+go tool gh-helper reviews fetch <PR_NUMBER> --list-threads
+
 # Alternative: Batch resolve threads (useful for resolving forgotten threads)
 # If you forgot to use --resolve flag, you can resolve multiple threads at once:
 go tool gh-helper threads resolve <THREAD_ID_1> <THREAD_ID_2> <THREAD_ID_3>
