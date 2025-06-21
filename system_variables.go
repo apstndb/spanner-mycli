@@ -1273,15 +1273,15 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 	// Use strings.Fields for more robust whitespace handling
 	fields := strings.Fields(s)
 	if len(fields) == 0 {
-		return spanner.StrongRead(), fmt.Errorf("unknown staleness: ")
-	}
-
-	// All timestamp bounds accept at most 2 fields (type + parameter)
-	if len(fields) > 2 {
-		return spanner.StrongRead(), fmt.Errorf("%s accepts at most one parameter", fields[0])
+		return spanner.StrongRead(), fmt.Errorf("unknown staleness: %q", s)
 	}
 
 	first := fields[0]
+	
+	// All timestamp bounds accept at most 2 fields (type + parameter)
+	if len(fields) > 2 {
+		return spanner.StrongRead(), fmt.Errorf("%s accepts at most one parameter", first)
+	}
 	var second string
 	if len(fields) > 1 {
 		second = fields[1]
@@ -1323,7 +1323,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 			return nilStaleness, err
 		}
 		if ts < 0 {
-			return nilStaleness, fmt.Errorf("staleness duration must be non-negative")
+			return nilStaleness, fmt.Errorf("staleness duration %q must be non-negative", second)
 		}
 		return spanner.MaxStaleness(ts), nil
 	case "EXACT_STALENESS":
@@ -1335,7 +1335,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 			return nilStaleness, err
 		}
 		if ts < 0 {
-			return nilStaleness, fmt.Errorf("staleness duration must be non-negative")
+			return nilStaleness, fmt.Errorf("staleness duration %q must be non-negative", second)
 		}
 		return spanner.ExactStaleness(ts), nil
 	default:

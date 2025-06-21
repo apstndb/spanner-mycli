@@ -444,7 +444,7 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:        "MAX_STALENESS with negative duration",
 			input:       "MAX_STALENESS -30s",
 			expectError: true,
-			errorMsg:    "staleness duration must be non-negative",
+			errorMsg:    "staleness duration \"-30s\" must be non-negative",
 		},
 		{
 			desc:        "EXACT_STALENESS with invalid duration",
@@ -455,7 +455,7 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:        "EXACT_STALENESS with negative duration",
 			input:       "EXACT_STALENESS -1h",
 			expectError: true,
-			errorMsg:    "staleness duration must be non-negative",
+			errorMsg:    "staleness duration \"-1h\" must be non-negative",
 		},
 		
 		// Error cases - unknown staleness types
@@ -469,7 +469,7 @@ func TestParseTimestampBound(t *testing.T) {
 			desc:        "empty string",
 			input:       "",
 			expectError: true,
-			errorMsg:    "unknown staleness: ",
+			errorMsg:    "unknown staleness: \"\"",
 		},
 		{
 			desc:        "random text",
