@@ -561,7 +561,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 
 	opts := spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: true, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: s.systemVariables.ReturnCommitStats, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
 		CommitPriority:              resolvedPriority,
 		TransactionTag:              tag,
 		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,

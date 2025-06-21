@@ -506,12 +506,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		})},
 	"RETURN_COMMIT_STATS": {
 		Description: "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
-		Accessor: accessor{
-			Getter: boolGetter(func(variables *systemVariables) *bool {
-				return &variables.ReturnCommitStats
-			}),
-			// Setter will be implemented in issue #310
-		},
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.ReturnCommitStats
+		}),
 	},
 	"AUTO_BATCH_DML": {
 		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
