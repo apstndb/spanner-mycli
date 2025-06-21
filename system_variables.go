@@ -1277,6 +1277,9 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 
 	switch strings.ToUpper(first) {
 	case "STRONG":
+		if strings.TrimSpace(second) != "" {
+			return nilStaleness, fmt.Errorf("STRONG does not accept any parameters")
+		}
 		return spanner.StrongRead(), nil
 	case "MIN_READ_TIMESTAMP":
 		ts, err := time.Parse(time.RFC3339Nano, second)

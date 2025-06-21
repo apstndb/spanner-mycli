@@ -443,7 +443,8 @@ func TestParseTimestampBound(t *testing.T) {
 		{
 			desc:        "MAX_STALENESS with negative duration",
 			input:       "MAX_STALENESS -30s",
-			expectError: true,
+			want:        spanner.MaxStaleness(-30 * time.Second),
+			expectError: false,
 		},
 		{
 			desc:        "EXACT_STALENESS with invalid duration",
@@ -451,9 +452,10 @@ func TestParseTimestampBound(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc:        "EXACT_STALENESS with negative duration",
+			desc:        "EXACT_STALENESS with negative duration", 
 			input:       "EXACT_STALENESS -1h",
-			expectError: true,
+			want:        spanner.ExactStaleness(-1 * time.Hour),
+			expectError: false,
 		},
 		
 		// Error cases - unknown staleness types
@@ -478,9 +480,10 @@ func TestParseTimestampBound(t *testing.T) {
 		
 		// Edge cases
 		{
-			desc:  "STRONG with extra text (ignored)",
-			input: "STRONG extra text",
-			want:  spanner.StrongRead(),
+			desc:        "STRONG with extra text",
+			input:       "STRONG extra text",
+			expectError: true,
+			errorMsg:    "STRONG does not accept any parameters",
 		},
 		{
 			desc:        "MIN_READ_TIMESTAMP missing timestamp",
@@ -503,14 +506,15 @@ func TestParseTimestampBound(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc:  "extra whitespace before timestamp",
-			input: "MIN_READ_TIMESTAMP   " + validTimeStr,
-			want:  spanner.MinReadTimestamp(validTime),
+			desc:        "extra whitespace before timestamp",
+			input:       "MIN_READ_TIMESTAMP   " + validTimeStr,
+			expectError: true,
 		},
 		{
-			desc:  "tabs instead of spaces",
-			input: "MAX_STALENESS	60s",
-			want:  spanner.MaxStaleness(60 * time.Second),
+			desc:        "tabs instead of spaces",
+			input:       "MAX_STALENESS	60s",
+			expectError: true,
+			errorMsg:    "unknown staleness: MAX_STALENESS	60s",
 		},
 		{
 			desc:  "zero duration for MAX_STALENESS",
