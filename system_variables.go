@@ -105,6 +105,7 @@ type systemVariables struct {
 	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
 
 	QueryMode *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
+	TryPartitionQuery bool                       // CLI_TRY_PARTITION_QUERY
 
 	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
@@ -1041,6 +1042,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 		},
+	},
+	"CLI_TRY_PARTITION_QUERY": {
+		Description: "A boolean indicating whether to test query for partition compatibility instead of executing it.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.TryPartitionQuery
+		}),
 	},
 	"CLI_VERSION": {
 		Description: "",

@@ -97,6 +97,7 @@ type spannerOptions struct {
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
 	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
 	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
+	TryPartitionQuery         bool              `long:"try-partition-query" description:"Test whether the query can be executed as partition query without execution" default-mask:"-"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
 }
 
@@ -323,6 +324,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		return fmt.Errorf("--execute and --sql are mutually exclusive")
 	}
 
+	if opts.TryPartitionQuery {
+		hasInput := opts.Execute != "" || opts.SQL != "" || opts.File != ""
+		if !hasInput {
+			return fmt.Errorf("--try-partition-query requires SQL input via --execute, --file, or --sql")
+		}
+	}
+
 	return nil
 }
 
@@ -471,6 +479,12 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	if opts.QueryMode != "" {
 		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
+		}
+	}
+
+	if opts.TryPartitionQuery {
+		if err := sysVars.Set("CLI_TRY_PARTITION_QUERY", "TRUE"); err != nil {
+			return systemVariables{}, fmt.Errorf("failed to set CLI_TRY_PARTITION_QUERY: %w", err)
 		}
 	}
 
