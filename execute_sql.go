@@ -23,6 +23,7 @@ import (
 	"github.com/go-json-experiment/json"
 
 	"cloud.google.com/go/spanner"
+	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/mattn/go-runewidth"
@@ -156,6 +157,13 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if err != nil {
 		teardown()
 		return nil, fmt.Errorf("error on create op: %w", err)
+	}
+
+	// If async mode is enabled, return operation info immediately
+	// This allows the client to continue without waiting for the DDL operation to complete.
+	// In async DDL, errors are reported when polling, not immediately available.
+	if session.systemVariables.AsyncDDL {
+		return formatAsyncDdlResult(op)
 	}
 
 	for !op.Done() {
@@ -465,5 +473,27 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 		IsMutation:       true,
 		AffectedRows:     int(count),
 		AffectedRowsType: rowCountTypeLowerBound,
+	}, nil
+}
+
+// formatAsyncDdlResult formats the async DDL operation result in the same format as SHOW OPERATION
+func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, error) {
+	// Get the metadata from the operation
+	metadata, err := op.Metadata()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation metadata: %w", err)
+	}
+
+	operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
+	
+	// Use the same formatting logic as SHOW OPERATION statement
+	// For async DDL, errors are reported when polling, not immediately available
+	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), "")
+
+	return &Result{
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+		Rows:         rows,
+		AffectedRows: 1,
+		IsMutation:   true,
 	}, nil
 }

@@ -144,6 +144,7 @@ type systemVariables struct {
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
 	MCP                       bool // CLI_MCP (read-only)
+	AsyncDDL                  bool // CLI_ASYNC_DDL
 }
 
 var errIgnored = errors.New("ignored")
@@ -1084,6 +1085,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return &variables.EnableADCPlus
 			}),
 		},
+	},
+	"CLI_ASYNC_DDL": {
+		Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AsyncDDL
+		}),
 	},
 }
 

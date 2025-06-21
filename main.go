@@ -96,6 +96,7 @@ type spannerOptions struct {
 	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true" default-mask:"-"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
 	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
 	TryPartitionQuery         bool              `long:"try-partition-query" description:"Test whether the query can be executed as partition query without execution" default-mask:"-"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
 }
@@ -396,6 +397,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.LogLevel = l
 	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.VertexAIProject = opts.VertexAIProject
+	sysVars.AsyncDDL = opts.Async
 
 	return sysVars, nil
 }

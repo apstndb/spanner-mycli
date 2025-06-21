@@ -188,6 +188,68 @@ go tool gh-helper threads reply PRRT_xyz --commit-hash $COMMIT_HASH --message "F
 
 **Technical implementation**: Unified GraphQL query (`shared/unified_review.go`) fetches both review bodies and threads simultaneously, with automatic severity detection and actionable item extraction.
 
+## Embedded Emulator Testing Strategies (Issue #277)
+
+**Discovery**: Embedded emulator enables comprehensive feature testing without external dependencies
+
+### Setup and Configuration
+
+**Key Pattern**: No project/instance/database parameters needed for embedded emulator testing
+
+```bash
+# Standard embedded emulator testing setup
+./spanner-mycli --embedded-emulator --async -t
+
+# No need for:
+# --project=test-project --instance=test-instance --database=test-db
+```
+
+### Testing Output and Documentation
+
+**Pattern**: Use `-t` (table mode) for clean, readable output suitable for documentation
+
+```bash
+# Table mode provides clean output for PR documentation
+./spanner-mycli --embedded-emulator -t --file=test-script.sql
+```
+
+**Benefits**:
+- Clean, formatted output for documentation inclusion
+- Consistent formatting across different environments
+- Easy to copy-paste results into PR descriptions and documentation
+
+### Feature Testing Patterns
+
+**Multi-approach Testing**: Test both CLI flags and system variables for comprehensive coverage
+
+```sql
+-- Test 1: System variable approach
+SHOW VARIABLE CLI_ASYNC_DDL;  -- Verify default (FALSE)
+SET CLI_ASYNC_DDL = true;      -- Enable via system variable
+CREATE TABLE test1 (id INT64) PRIMARY KEY (id);
+
+-- Test 2: CLI flag approach (with --async)
+SHOW VARIABLE CLI_ASYNC_DDL;  -- Should show TRUE with --async flag
+CREATE TABLE test2 (id INT64) PRIMARY KEY (id);
+```
+
+### Environment Behavior Insights
+
+**Discovery**: Embedded emulator operations complete immediately
+- DDL operations show `DONE=true` instantly in embedded emulator
+- Real production environments will show `DONE=false` initially
+- Test format consistency, not timing behavior
+- Focus on operation metadata structure and formatting
+
+### Integration with CI/Testing
+
+**Pattern**: Embedded emulator ideal for automated testing scenarios
+- No external dependencies or authentication required
+- Consistent behavior across different environments
+- Fast execution suitable for CI pipelines
+- Enables comprehensive feature testing without Spanner project costs
+
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables
