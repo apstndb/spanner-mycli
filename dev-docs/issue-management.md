@@ -264,43 +264,157 @@ EOF
 
 ## Sub-Issue Management
 
-GitHub sub-issues can be managed using GraphQL mutations (REST API POST endpoints return 404).
+GitHub sub-issues provide a native way to break down large issues into smaller, manageable tasks. This is different from simple issue references and creates a true parent-child relationship in GitHub's issue hierarchy.
 
-### Adding Sub-Issues
+### Understanding GitHub Sub-Issues
+
+**What are sub-issues?**
+- Native GitHub feature for creating hierarchical issue relationships
+- Visible in the GitHub UI with special sub-issue indicators
+- Automatically track completion status in parent issue
+- Different from simple issue references (e.g., "Related to #123")
+
+**When to use sub-issues:**
+- Breaking down large features into independently implementable tasks
+- Organizing test coverage improvements by component
+- Managing phased rollouts of complex features
+- Tracking parallel work streams that contribute to a larger goal
+
+### Creating Sub-Issues with Proper Hierarchy
+
+**Complete workflow for creating linked sub-issues:**
 
 ```bash
-# First get the node IDs for parent and child issues
+# 1. Create the sub-issues first (using standard gh issue create)
+gh issue create --title "[Test Coverage] Add comprehensive tests for component X" \
+  --body "Part of #248 - Parent issue description..." \
+  --label "testing,test-coverage-improvement"
+
+# 2. Get the parent issue's node ID
+PARENT_ID=$(gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    issue(number: 248) { id }
+  }
+}' --jq '.data.repository.issue.id')
+
+# 3. Get the sub-issue's node ID
+SUB_ISSUE_ID=$(gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    issue(number: 318) { id }
+  }
+}' --jq '.data.repository.issue.id')
+
+# 4. Link as sub-issue using GraphQL mutation
+gh api graphql -f query="
+mutation {
+  addSubIssue(input: {
+    issueId: \"$PARENT_ID\",
+    subIssueId: \"$SUB_ISSUE_ID\"
+  }) {
+    issue { number }
+    subIssue { number }
+  }
+}"
+
+# 5. CRITICAL: Verify the sub-issue was properly linked
+# This verification step is essential to ensure the workflow completed successfully.
+# Without verification, you may incorrectly assume the relationship exists.
 gh api graphql -f query='
 {
   repository(owner: "apstndb", name: "spanner-mycli") {
-    parentIssue: issue(number: 5) { id title }
-    childIssue: issue(number: 276) { id title }
+    issue(number: 248) {
+      subIssues(first: 10) {
+        totalCount
+        nodes { number title }
+      }
+    }
   }
 }'
 
-# Add sub-issue using GraphQL mutation (requires GraphQL-Features header)
-gh api graphql -H "GraphQL-Features: sub_issues" -f query='
-mutation {
-  addSubIssue(input: { 
-    issueId: "I_kwDONC6gMM6a-_9T",     # Parent issue node ID
-    subIssueId: "I_kwDONC6gMM67riuz"   # Child issue node ID
-  }) {
-    issue { title }
-    subIssue { title }
-  }
-}'
+# Expected output should include the newly linked sub-issue #318
+# If the sub-issue doesn't appear, the linking failed and needs to be retried
+```
 
-# Verify sub-issues were added
-gh api /repos/apstndb/spanner-mycli/issues/5/sub_issues
+### Batch Sub-Issue Creation Script
+
+For creating multiple sub-issues efficiently:
+
+```bash
+#!/bin/bash
+# create-sub-issues.sh - Create and link multiple sub-issues
+
+PARENT_ISSUE=$1
+shift
+
+# Get parent issue ID
+PARENT_ID=$(gh api graphql -f query="
+{
+  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
+    issue(number: $PARENT_ISSUE) { id }
+  }
+}" --jq '.data.repository.issue.id')
+
+echo "Parent issue #$PARENT_ISSUE ID: $PARENT_ID"
+
+# Create each sub-issue and link it
+for title in "$@"; do
+  # Create the issue
+  ISSUE_NUM=$(gh issue create --title "$title" \
+    --body "Part of #$PARENT_ISSUE" \
+    --label "testing" \
+    --json number --jq '.number')
+  
+  # Get its ID
+  SUB_ID=$(gh api graphql -f query="
+  {
+    repository(owner: \"apstndb\", name: \"spanner-mycli\") {
+      issue(number: $ISSUE_NUM) { id }
+    }
+  }" --jq '.data.repository.issue.id')
+  
+  # Link as sub-issue
+  gh api graphql -f query="
+  mutation {
+    addSubIssue(input: {
+      issueId: \"$PARENT_ID\",
+      subIssueId: \"$SUB_ID\"
+    }) {
+      subIssue { number }
+    }
+  }" > /dev/null
+  
+  echo "✓ Created and linked #$ISSUE_NUM: $title"
+done
+
+# CRITICAL: Verify all sub-issues were properly linked
+# This final verification ensures all sub-issues are correctly associated
+echo "Verifying sub-issue linkage..."
+gh api graphql -f query="
+{
+  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
+    issue(number: $PARENT_ISSUE) {
+      subIssues(first: 20) {
+        totalCount
+        nodes {
+          number
+          title
+        }
+      }
+    }
+  }
+}" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
+
+# The count should match the number of sub-issues created
+# If it doesn't, some linkages may have failed
 ```
 
 ### Managing Sub-Issues
 
 ```bash
-# Other useful GraphQL mutations for sub-issue management:
-
-# Remove a sub-issue from parent
-gh api graphql -H "GraphQL-Features: sub_issues" -f query='
+# Remove a sub-issue from parent (keeps the issue, just removes relationship)
+gh api graphql -f query='
 mutation {
   removeSubIssue(input: {
     issueId: "PARENT_ISSUE_NODE_ID",
@@ -310,8 +424,8 @@ mutation {
   }
 }'
 
-# Change sub-issue position in parent's list
-gh api graphql -H "GraphQL-Features: sub_issues" -f query='
+# Reorder sub-issues in parent's list
+gh api graphql -f query='
 mutation {
   reprioritizeSubIssue(input: {
     issueId: "PARENT_ISSUE_NODE_ID",
@@ -321,46 +435,109 @@ mutation {
     issue { title }
   }
 }'
+
+# Replace parent (move sub-issue to different parent)
+gh api graphql -f query='
+mutation {
+  addSubIssue(input: {
+    issueId: "NEW_PARENT_ID",
+    subIssueId: "CHILD_ID",
+    replaceParent: true
+  }) {
+    issue { number }
+    subIssue { number }
+  }
+}'
 ```
 
 ### Efficient Sub-Issue Verification
 
-To minimize token usage, request only needed fields when checking sub-issues:
+**Best practices for checking sub-issue status:**
 
 ```bash
-# Get only sub-issue numbers (minimal token usage)
-gh api /repos/apstndb/spanner-mycli/issues/5/sub_issues --jq '.[].number'
-
-# Get number and title (moderate token usage)
-gh api /repos/apstndb/spanner-mycli/issues/5/sub_issues --jq '.[] | {number, title}'
-
-# Count sub-issues
-gh api /repos/apstndb/spanner-mycli/issues/5/sub_issues --jq 'length'
-
-# Check if specific sub-issue exists
-gh api /repos/apstndb/spanner-mycli/issues/5/sub_issues --jq 'map(.number) | contains([276])'
-
-# GraphQL approach (more efficient for multiple operations)
+# Verify specific sub-issue linkage (one at a time)
 gh api graphql -f query='
 {
   repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 5) {
+    issue(number: 248) {
       subIssues(first: 10) {
-        nodes { number title }
+        totalCount
+        nodes { number }
       }
     }
   }
-}' --jq '.data.repository.issue.subIssues.nodes[]'
+}' --jq '.data.repository.issue.subIssues | 
+  if .nodes | map(.number) | contains([318]) 
+  then "✓ #318 is a sub-issue (total: \(.totalCount))" 
+  else "✗ #318 is NOT a sub-issue" end'
+
+# Get completion status of all sub-issues
+gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    issue(number: 248) {
+      title
+      subIssues(first: 20) {
+        totalCount
+        nodes {
+          number
+          title
+          state
+          closed
+        }
+      }
+    }
+  }
+}' --jq '.data.repository.issue | 
+  {
+    parent: .title,
+    total: .subIssues.totalCount,
+    completed: [.subIssues.nodes[] | select(.closed)] | length,
+    open: [.subIssues.nodes[] | select(.closed | not)] | map(.number)
+  }'
 ```
 
-**Avoid**: Using full REST API response without `--jq` filtering as it returns extensive metadata and wastes tokens.
+### Important Technical Details
 
-### Key Points
+**GraphQL API Requirements:**
+- **No special header needed** - The `GraphQL-Features: sub_issues` header mentioned in some docs is not required
+- Use standard `gh api graphql` commands
+- Node IDs are required (not issue numbers) for mutations
 
-- REST API endpoints (`POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues`) return 404
-- GraphQL mutations work with `GraphQL-Features: sub_issues` header
-- Use `addSubIssue` mutation with issue node IDs (not issue numbers)
-- Sub-issues can be verified using REST API GET endpoint
+**Common Pitfalls and Solutions:**
+1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use GraphQL
+2. **"Field does not exist" errors**: Ensure you're using the correct GraphQL schema
+3. **Silent failures**: Always check the mutation response to verify success
+4. **Wrong ID format**: Use node IDs (e.g., `I_kwDONC6gMM...`) not issue numbers
+
+**Node ID Discovery Methods:**
+```bash
+# Method 1: Direct GraphQL query
+gh api graphql -f query='{ repository(owner: "apstndb", name: "spanner-mycli") { issue(number: 248) { id } } }'
+
+# Method 2: From issue URL (if you have the full GitHub URL)
+gh api /repos/apstndb/spanner-mycli/issues/248 --jq '.node_id'
+
+# Method 3: Batch retrieval for multiple issues
+gh api graphql -f query='
+{
+  repository(owner: "apstndb", name: "spanner-mycli") {
+    issue1: issue(number: 318) { id }
+    issue2: issue(number: 319) { id }
+    issue3: issue(number: 320) { id }
+  }
+}'
+```
+
+### AI Assistant Guidelines for Sub-Issues
+
+When working with sub-issues:
+
+1. **Always verify linkage after creation** - Don't assume the mutation succeeded
+2. **Use descriptive titles** - Sub-issue titles should clearly indicate their relationship
+3. **Include "Part of #X" in body** - Makes the relationship clear even without the sub-issue link
+4. **Check for existing sub-issues** - Avoid creating duplicates
+5. **Batch operations when possible** - Create all sub-issues together for better organization
 
 ## Issue Review Workflow
 
