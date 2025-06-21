@@ -778,6 +778,46 @@ func TestStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "CLI_TRY_PARTITION_QUERY system variable",
+			stmt: sliceOf(
+				"SET CLI_TRY_PARTITION_QUERY = TRUE",
+				"SELECT 1",
+			),
+			wantResults: []*Result{
+				{
+					KeepVariables: true,
+				},
+				{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY with parameters",
+			stmt: sliceOf(
+				"SET CLI_TRY_PARTITION_QUERY = TRUE",
+				"SET PARAM n = 1",
+				"SELECT @n",
+			),
+			wantResults: []*Result{
+				{
+					KeepVariables: true,
+				},
+				{
+					KeepVariables: true,
+				},
+				{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				},
+			},
+		},
+		{
 			desc: "mutation, pdml, partitioned query",
 			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
 			stmt: sliceOf(
