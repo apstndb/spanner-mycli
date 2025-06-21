@@ -63,8 +63,8 @@ go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
 # Or use new batch resolve: go tool gh-helper threads resolve THREAD_ID1 THREAD_ID2
 
 # Output format examples (YAML default, JSON with --json)
-go tool gh-helper reviews fetch 306 | gojq --yaml-input '.reviewThreads.needingReply[]'
-go tool gh-helper reviews fetch 306 --json | jq '.reviewThreads.needingReply[]'
+go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'
+go tool gh-helper reviews fetch 306 --json | jq '.threads[] | select(.needsReply) | .id'
 ```
 
 ## Core Architecture Overview
