@@ -318,7 +318,9 @@ mutation {
   }
 }"
 
-# 5. Verify the sub-issue was properly linked
+# 5. CRITICAL: Verify the sub-issue was properly linked
+# This verification step is essential to ensure the workflow completed successfully.
+# Without verification, you may incorrectly assume the relationship exists.
 gh api graphql -f query='
 {
   repository(owner: "apstndb", name: "spanner-mycli") {
@@ -330,6 +332,9 @@ gh api graphql -f query='
     }
   }
 }'
+
+# Expected output should include the newly linked sub-issue #318
+# If the sub-issue doesn't appear, the linking failed and needs to be retried
 ```
 
 ### Batch Sub-Issue Creation Script
@@ -383,17 +388,26 @@ for title in "$@"; do
   echo "✓ Created and linked #$ISSUE_NUM: $title"
 done
 
-# Show final status
+# CRITICAL: Verify all sub-issues were properly linked
+# This final verification ensures all sub-issues are correctly associated
+echo "Verifying sub-issue linkage..."
 gh api graphql -f query="
 {
   repository(owner: \"apstndb\", name: \"spanner-mycli\") {
     issue(number: $PARENT_ISSUE) {
       subIssues(first: 20) {
         totalCount
+        nodes {
+          number
+          title
+        }
       }
     }
   }
 }" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
+
+# The count should match the number of sub-issues created
+# If it doesn't, some linkages may have failed
 ```
 
 ### Managing Sub-Issues

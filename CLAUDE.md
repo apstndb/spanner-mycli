@@ -100,7 +100,9 @@ gh pr comment <PR-number> --body "Development insights..."
 **IMPORTANT**: When working with phantom worktrees, **ALWAYS refer to** [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/issue-management.md#phantom-worktree-management) for detailed guidelines including:
 - AI assistant decision matrix for autonomous vs. user-permission operations
 - Comprehensive deletion safety rules
-- **CRITICAL**: Never delete worktrees without explicit user permission
+
+⚠️ **CRITICAL RULE - WORKTREE DELETION**: 
+**NEVER delete a worktree without explicit user permission** - This is non-negotiable. Unauthorized deletion can result in permanent loss of uncommitted work. Always use `git status` to check for changes and ask: "Issue #X worktree exists. Should I delete it? (Note: uncommitted changes will be lost)"
 - Worktree lifecycle management
 
 ### Knowledge Management
