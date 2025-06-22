@@ -1,7 +1,9 @@
 package main
 
 import (
+	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/samber/lo"
@@ -724,6 +727,117 @@ func TestValidateSpannerOptions(t *testing.T) {
 			err := ValidateSpannerOptions(tt.opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateSpannerOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDetermineInputAndMode(t *testing.T) {
+	// Helper to create stdin based on usePTY flag
+	type stdinProvider func() (io.Reader, func(), error)
+	
+	nonPTYStdin := func(content string) stdinProvider {
+		return func() (io.Reader, func(), error) {
+			return strings.NewReader(content), func() {}, nil
+		}
+	}
+	
+	ptyStdin := func() stdinProvider {
+		return func() (io.Reader, func(), error) {
+			pty, tty, err := pty.Open()
+			if err != nil {
+				return nil, nil, err
+			}
+			cleanup := func() {
+				pty.Close()
+				tty.Close()
+			}
+			return tty, cleanup, nil
+		}
+	}
+
+	tests := []struct {
+		name            string
+		opts            *spannerOptions
+		stdinProvider   stdinProvider
+		wantInput       string
+		wantInteractive bool
+		wantErr         bool
+	}{
+		// Command line options tests (non-PTY)
+		{
+			name:            "SQL option",
+			opts:            &spannerOptions{SQL: "SELECT 1"},
+			stdinProvider:   nonPTYStdin(""),
+			wantInput:       "SELECT 1",
+			wantInteractive: false,
+		},
+		{
+			name:            "Execute option",
+			opts:            &spannerOptions{Execute: "SELECT 2"},
+			stdinProvider:   nonPTYStdin(""),
+			wantInput:       "SELECT 2",
+			wantInteractive: false,
+		},
+		{
+			name:            "File option from stdin",
+			opts:            &spannerOptions{File: "-"},
+			stdinProvider:   nonPTYStdin("SELECT 3;"),
+			wantInput:       "SELECT 3;",
+			wantInteractive: false,
+		},
+		// Piped input tests (non-PTY)
+		{
+			name:            "No options with piped input",
+			opts:            &spannerOptions{},
+			stdinProvider:   nonPTYStdin("SELECT 4;"),
+			wantInput:       "SELECT 4;",
+			wantInteractive: false,
+		},
+		{
+			name:            "Empty stdin (like /dev/null)",
+			opts:            &spannerOptions{},
+			stdinProvider:   nonPTYStdin(""),
+			wantInput:       "",
+			wantInteractive: false,
+		},
+		// PTY tests
+		{
+			name:            "No options with terminal (PTY)",
+			opts:            &spannerOptions{},
+			stdinProvider:   ptyStdin(),
+			wantInput:       "",
+			wantInteractive: true,
+		},
+		// PTY with command line options should still use batch mode
+		{
+			name:            "SQL option with terminal (PTY)",
+			opts:            &spannerOptions{SQL: "SELECT 5"},
+			stdinProvider:   ptyStdin(),
+			wantInput:       "SELECT 5",
+			wantInteractive: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdin, cleanup, err := tt.stdinProvider()
+			if err != nil {
+				t.Skipf("Failed to create stdin: %v", err)
+			}
+			defer cleanup()
+			
+			input, interactive, err := determineInputAndMode(tt.opts, stdin)
+			
+			if (err != nil) != tt.wantErr {
+				t.Errorf("determineInputAndMode() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if input != tt.wantInput {
+				t.Errorf("determineInputAndMode() input = %v, want %v", input, tt.wantInput)
+			}
+			if interactive != tt.wantInteractive {
+				t.Errorf("determineInputAndMode() interactive = %v, want %v", interactive, tt.wantInteractive)
 			}
 		})
 	}

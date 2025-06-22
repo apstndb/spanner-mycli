@@ -270,7 +270,7 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 	lines, err := ed.Read(ctx)
 	if err != nil {
 		if len(lines) == 0 {
-			return nil, err
+			return nil, fmt.Errorf("failed to read input: %w", err)
 		}
 
 		str := strings.Join(lines, "\n")
