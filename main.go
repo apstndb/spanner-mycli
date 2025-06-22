@@ -47,6 +47,7 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 	"spheric.cloud/xiter"
+	"golang.org/x/term"
 )
 
 type globalOptions struct {
@@ -254,31 +255,10 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return cli.RunMCP(ctx)
 	}
 
-	var input string
-	if opts.Execute != "" {
-		input = opts.Execute
-	} else if opts.SQL != "" {
-		input = opts.SQL
-	} else if opts.File == "-" {
-		b, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read from stdin failed: %w", err)
-		}
-		input = string(b)
-	} else if opts.File != "" {
-		b, err := os.ReadFile(opts.File)
-		if err != nil {
-			return fmt.Errorf("read from file %v failed: %w", opts.File, err)
-		}
-		input = string(b)
-	} else {
-		input, err = readStdin()
-		if err != nil {
-			return fmt.Errorf("read from stdin failed: %w", err)
-		}
+	input, interactive, err := determineInputAndMode(opts, os.Stdin)
+	if err != nil {
+		return err
 	}
-
-	interactive := input == ""
 
 	// CLI_FORMAT is set in initializeSystemVariables from opts.Set,
 	// but if not set there, it's set here based on interactive mode or --table flag.
@@ -599,17 +579,44 @@ func readCredentialFile(filepath string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
-func readStdin() (string, error) {
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		b, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	} else {
-		return "", nil
+// determineInputAndMode decides whether to run in interactive or batch mode
+// and returns the input string, interactive flag, and any error
+func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
+	// Check command line options first
+	if opts.Execute != "" {
+		return opts.Execute, false, nil
 	}
+	if opts.SQL != "" {
+		return opts.SQL, false, nil
+	}
+	if opts.File == "-" {
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+		}
+		return string(b), false, nil
+	}
+	if opts.File != "" {
+		b, err := os.ReadFile(opts.File)
+		if err != nil {
+			return "", false, fmt.Errorf("read from file %v failed: %w", opts.File, err)
+		}
+		return string(b), false, nil
+	}
+	
+	// No command line options - check if terminal is available
+	// Check if stdin is an *os.File to determine if it's a terminal
+	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		// Terminal available - run interactively
+		return "", true, nil
+	}
+	
+	// No terminal - read from stdin for batch mode
+	b, err := io.ReadAll(stdin)
+	if err != nil {
+		return "", false, fmt.Errorf("read from stdin failed: %w", err)
+	}
+	return string(b), false, nil
 }
 
 // Functions used by multiple files. e.g. system variable, command line flags, client side statements.
