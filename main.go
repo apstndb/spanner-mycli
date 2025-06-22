@@ -583,40 +583,38 @@ func readCredentialFile(filepath string) ([]byte, error) {
 // and returns the input string, interactive flag, and any error
 func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
 	// Check command line options first
-	if opts.Execute != "" {
+	switch {
+	case opts.Execute != "":
 		return opts.Execute, false, nil
-	}
-	if opts.SQL != "" {
+	case opts.SQL != "":
 		return opts.SQL, false, nil
-	}
-	if opts.File == "-" {
+	case opts.File == "-":
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+		}
+		return string(b), false, nil
+	case opts.File != "":
+		b, err := os.ReadFile(opts.File)
+		if err != nil {
+			return "", false, fmt.Errorf("read from file %v failed: %w", opts.File, err)
+		}
+		return string(b), false, nil
+	default:
+		// No command line options - check if terminal is available
+		// Check if stdin is an *os.File to determine if it's a terminal
+		if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+			// Terminal available - run interactively
+			return "", true, nil
+		}
+		
+		// No terminal - read from stdin for batch mode
 		b, err := io.ReadAll(stdin)
 		if err != nil {
 			return "", false, fmt.Errorf("read from stdin failed: %w", err)
 		}
 		return string(b), false, nil
 	}
-	if opts.File != "" {
-		b, err := os.ReadFile(opts.File)
-		if err != nil {
-			return "", false, fmt.Errorf("read from file %v failed: %w", opts.File, err)
-		}
-		return string(b), false, nil
-	}
-	
-	// No command line options - check if terminal is available
-	// Check if stdin is an *os.File to determine if it's a terminal
-	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		// Terminal available - run interactively
-		return "", true, nil
-	}
-	
-	// No terminal - read from stdin for batch mode
-	b, err := io.ReadAll(stdin)
-	if err != nil {
-		return "", false, fmt.Errorf("read from stdin failed: %w", err)
-	}
-	return string(b), false, nil
 }
 
 // Functions used by multiple files. e.g. system variable, command line flags, client side statements.
