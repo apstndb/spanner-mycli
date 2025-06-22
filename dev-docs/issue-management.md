@@ -306,21 +306,11 @@ go tool gh-helper issues create \
   --label "testing,test-coverage-improvement" \
   --parent 248
 
-# Method 2: Link existing issue as sub-issue
-go tool gh-helper issues link-parent 318 --parent 248
+# Method 2: Link existing issue as sub-issue (deprecated: use edit --parent)
+go tool gh-helper issues edit 318 --parent 248
 
 # Verify the sub-issue was properly linked
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      subIssues(first: 10) {
-        totalCount
-        nodes { number title }
-      }
-    }
-  }
-}'
+go tool gh-helper issues show 248 --include-sub
 ```
 
 **Complete workflow for manual GraphQL approach (if gh-helper not available):**
@@ -457,17 +447,12 @@ done
 
 ```bash
 # Remove a sub-issue from parent (keeps the issue, just removes relationship)
-gh api graphql -f query='
-mutation {
-  removeSubIssue(input: {
-    issueId: "PARENT_ISSUE_NODE_ID",
-    subIssueId: "CHILD_ISSUE_NODE_ID"
-  }) {
-    issue { title }
-  }
-}'
+go tool gh-helper issues edit 318 --unlink-parent
 
-# Reorder sub-issues in parent's list
+# Move sub-issue to different parent
+go tool gh-helper issues edit 318 --parent 250 --overwrite
+
+# Reorder sub-issues in parent's list (still requires GraphQL)
 gh api graphql -f query='
 mutation {
   reprioritizeSubIssue(input: {
@@ -478,19 +463,6 @@ mutation {
     issue { title }
   }
 }'
-
-# Replace parent (move sub-issue to different parent)
-gh api graphql -f query='
-mutation {
-  addSubIssue(input: {
-    issueId: "NEW_PARENT_ID",
-    subIssueId: "CHILD_ID",
-    replaceParent: true
-  }) {
-    issue { number }
-    subIssue { number }
-  }
-}'
 ```
 
 ### Efficient Sub-Issue Verification
@@ -498,60 +470,48 @@ mutation {
 **Best practices for checking sub-issue status:**
 
 ```bash
-# Verify specific sub-issue linkage (one at a time)
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      subIssues(first: 10) {
-        totalCount
-        nodes { number }
-      }
-    }
-  }
-}' --jq '.data.repository.issue.subIssues | 
-  if .nodes | map(.number) | contains([318]) 
-  then "✓ #318 is a sub-issue (total: \(.totalCount))" 
+# Get issue information with sub-issues list and completion stats
+go tool gh-helper issues show 248 --include-sub
+
+# Get detailed information for each sub-issue
+go tool gh-helper issues show 248 --include-sub --detailed
+
+# JSON output for programmatic use
+go tool gh-helper issues show 248 --include-sub --json | jq '.issueShow.subIssues'
+
+# Check specific sub-issue linkage
+go tool gh-helper issues show 248 --include-sub --json | jq '
+  .issueShow.subIssues.items | 
+  map(.number) | 
+  if contains([318]) 
+  then "✓ #318 is a sub-issue" 
   else "✗ #318 is NOT a sub-issue" end'
 
-# Get completion status of all sub-issues
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      title
-      subIssues(first: 20) {
-        totalCount
-        nodes {
-          number
-          title
-          state
-          closed
-        }
-      }
-    }
-  }
-}' --jq '.data.repository.issue | 
+# Get completion statistics
+go tool gh-helper issues show 248 --include-sub --json | jq '
+  .issueShow.subIssues | 
   {
-    parent: .title,
-    total: .subIssues.totalCount,
-    completed: [.subIssues.nodes[] | select(.closed)] | length,
-    open: [.subIssues.nodes[] | select(.closed | not)] | map(.number)
+    total: .totalCount,
+    completed: .completedCount,
+    percentage: .completionPercentage,
+    open: [.items[] | select(.state == "OPEN") | .number]
   }'
 ```
 
 ### Important Technical Details
 
-**GraphQL API Requirements:**
-- **No special header needed** - The `GraphQL-Features: sub_issues` header mentioned in some docs is not required
-- Use standard `gh api graphql` commands
-- Node IDs are required (not issue numbers) for mutations
+**gh-helper vs GraphQL:**
+- **Most operations now use gh-helper** - Simple issue numbers work, no node IDs needed
+- **GraphQL still required for**:
+  - Reordering sub-issues within a parent
+  - Complex schema introspection
+  - Custom field selections beyond what gh-helper provides
 
 **Common Pitfalls and Solutions:**
-1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use GraphQL
-2. **"Field does not exist" errors**: Ensure you're using the correct GraphQL schema
-3. **Silent failures**: Always check the mutation response to verify success
-4. **Wrong ID format**: Use node IDs (e.g., `I_kwDONC6gMM...`) not issue numbers
+1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use gh-helper or GraphQL
+2. **"Field does not exist" errors**: Ensure you're using the correct GraphQL schema (when using GraphQL)
+3. **Silent failures**: Always check the response to verify success
+4. **Wrong ID format**: When using GraphQL, use node IDs (e.g., `I_kwDONC6gMM...`) not issue numbers
 
 **Node ID Discovery Methods:**
 ```bash
@@ -576,11 +536,12 @@ gh api graphql -f query='
 
 When working with sub-issues:
 
-1. **Always verify linkage after creation** - Don't assume the mutation succeeded
+1. **Always verify linkage after creation** - Use `gh-helper issues show <parent> --include-sub`
 2. **Use descriptive titles** - Sub-issue titles should clearly indicate their relationship
 3. **Include "Part of #X" in body** - Makes the relationship clear even without the sub-issue link
-4. **Check for existing sub-issues** - Avoid creating duplicates
+4. **Check for existing sub-issues** - Use `gh-helper issues show <parent> --include-sub` before creating
 5. **Batch operations when possible** - Create all sub-issues together for better organization
+6. **Use gh-helper for all sub-issue operations** - Avoid GraphQL unless absolutely necessary
 
 ## Issue Review Workflow
 
@@ -634,6 +595,92 @@ All other labels are categorized in "Misc" section automatically.
 
 #### **Additional Labels** (Optional)
 Any other repository labels can be applied as needed for categorization and filtering purposes.
+
+### Label Management with gh-helper
+
+**Bulk label operations for efficient management:**
+
+```bash
+# Add labels to multiple items (auto-detects PR vs Issue)
+go tool gh-helper labels add bug,high-priority --items 254,267,238,245
+
+# Remove labels from specific items
+go tool gh-helper labels remove needs-review,waiting-on-author --items pull/302,issue/301
+
+# Pattern-based labeling
+go tool gh-helper labels add enhancement --title-pattern "^feat:"
+
+# Dry-run to preview changes
+go tool gh-helper labels add tech-debt --items 100,101,102 --dry-run
+
+# Interactive confirmation for safety
+go tool gh-helper labels remove breaking-change --items 200,201,202 --confirm
+```
+
+**PR label inheritance from linked issues:**
+
+```bash
+# Automatically inherit labels from issues that a PR closes
+go tool gh-helper labels add-from-issues --pr 254
+
+# Preview what would be added
+go tool gh-helper labels add-from-issues --pr 254 --dry-run
+```
+
+**Common label management workflows:**
+
+```bash
+# Label all test-related PRs
+go tool gh-helper labels add testing --title-pattern "test:|tests:"
+
+# Remove outdated status labels
+go tool gh-helper labels remove needs-review,in-progress --items 100,101,102,103,104
+
+# Bulk categorize documentation PRs
+go tool gh-helper labels add docs-user --title-pattern "docs.*README"
+go tool gh-helper labels add docs-dev --title-pattern "docs.*dev-docs"
+```
+
+### Release Notes Analysis
+
+**Analyze PRs for proper release notes categorization:**
+
+```bash
+# Analyze by milestone
+go tool gh-helper releases analyze --milestone v0.19.0
+
+# Analyze by date range
+go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31
+
+# Analyze specific PR range
+go tool gh-helper releases analyze --pr-range 250-300
+
+# Include draft PRs in analysis
+go tool gh-helper releases analyze --milestone v0.19.0 --include-drafts
+```
+
+**Release analysis outputs:**
+- PRs missing classification labels (bug, enhancement, feature)
+- PRs that should have 'ignore-for-release' label
+- Inconsistent labeling patterns
+- Release readiness status
+
+**Common release preparation workflow:**
+
+```bash
+# 1. Analyze current milestone
+go tool gh-helper releases analyze --milestone v0.19.0 > tmp/release-analysis.yaml
+
+# 2. Fix missing labels based on analysis
+go tool gh-helper labels add enhancement --items 301,302,303
+go tool gh-helper labels add ignore-for-release --items 310,311  # dev-docs only PRs
+
+# 3. Re-analyze to verify
+go tool gh-helper releases analyze --milestone v0.19.0
+
+# 4. Generate release notes preview
+gh release create v0.19.0 --generate-notes --draft
+```
 
 ### Creating Pull Requests
 

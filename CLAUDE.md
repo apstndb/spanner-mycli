@@ -60,7 +60,9 @@ go tool gh-helper reviews wait --timeout 15m # Wait with custom timeout
 # Issue management with gh-helper
 go tool gh-helper issues create --title "Title" --body "Body"  # Create issue
 go tool gh-helper issues create --parent 123 --title "Sub-task"  # Create sub-issue
-go tool gh-helper issues link-parent 456 --parent 123  # Link existing issue as sub-issue
+go tool gh-helper issues edit 456 --parent 123  # Link existing issue as sub-issue
+go tool gh-helper issues edit 456 --unlink-parent  # Remove parent relationship
+go tool gh-helper issues show 248 --include-sub  # Show issue with sub-issues stats
 
 # Review response workflow (for subsequent pushes)
 go tool gh-helper reviews fetch <PR> > tmp/review-data.yaml  # Fetch all review data
@@ -75,6 +77,15 @@ go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve  # Stan
 # Show multiple threads at once: go tool gh-helper threads show THREAD_ID1 THREAD_ID2
 # Show thread details (supports multiple threads)
 go tool gh-helper threads show THREAD_ID1 THREAD_ID2 THREAD_ID3
+
+# Label management (bulk operations)
+go tool gh-helper labels add bug,enhancement --items 254,267,238,245  # Add to multiple items
+go tool gh-helper labels remove needs-review --items pull/302,issue/301  # Remove from items
+go tool gh-helper labels add-from-issues --pr 254  # Inherit labels from linked issues
+
+# Release notes analysis
+go tool gh-helper releases analyze --milestone v0.19.0  # Analyze by milestone
+go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31  # By date range
 
 # Output format examples (YAML default, JSON with --json)
 go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'
