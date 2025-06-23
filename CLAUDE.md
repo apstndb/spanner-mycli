@@ -169,8 +169,8 @@ This is a simplified guide. For detailed information, refer to:
 7. **Sub-issue operations**: Use `gh-helper issues` commands instead of GraphQL:
    - `issues show <parent> --include-sub` - List sub-issues and check completion
    - `issues edit <issue> --parent <parent>` - Link as sub-issue (replaces deprecated `link-parent`)
-   - `issues edit <issue> --unlink-parent` - Remove parent relationship
    - `issues edit <issue> --parent <new> --overwrite` - Move to different parent
+   - Note: `--unlink-parent` currently has issues - use GraphQL if needed
 8. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
 9. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Still needed for:
    - Reordering sub-issues within a parent

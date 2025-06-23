@@ -446,11 +446,21 @@ done
 ### Managing Sub-Issues
 
 ```bash
-# Remove a sub-issue from parent (keeps the issue, just removes relationship)
-go tool gh-helper issues edit 318 --unlink-parent
-
-# Move sub-issue to different parent
+# Move sub-issue to different parent (verified working)
 go tool gh-helper issues edit 318 --parent 250 --overwrite
+
+# Remove a sub-issue from parent (currently has issues, use GraphQL as fallback)
+# go tool gh-helper issues edit 318 --unlink-parent  # Not working as of latest version
+# Fallback: Use GraphQL mutation for now
+gh api graphql -f query='
+mutation {
+  removeSubIssue(input: {
+    issueId: "PARENT_ISSUE_NODE_ID",
+    subIssueId: "CHILD_ISSUE_NODE_ID"
+  }) {
+    issue { title }
+  }
+}'
 
 # Reorder sub-issues in parent's list (still requires GraphQL)
 gh api graphql -f query='
@@ -503,9 +513,16 @@ go tool gh-helper issues show 248 --include-sub --json | jq '
 **gh-helper vs GraphQL:**
 - **Most operations now use gh-helper** - Simple issue numbers work, no node IDs needed
 - **GraphQL still required for**:
+  - Removing sub-issue relationships (--unlink-parent has issues)
   - Reordering sub-issues within a parent
-  - Complex schema introspection
   - Custom field selections beyond what gh-helper provides
+
+**Tested and Working gh-helper Commands:**
+- ✅ `issues create --parent` - Create new sub-issue
+- ✅ `issues edit --parent` - Link existing issue as sub-issue
+- ✅ `issues edit --parent --overwrite` - Move sub-issue to different parent
+- ✅ `issues show --include-sub` - List sub-issues with stats
+- ❌ `issues edit --unlink-parent` - Currently returns error
 
 **Common Pitfalls and Solutions:**
 1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use gh-helper or GraphQL
