@@ -2469,6 +2469,8 @@ github.com/apstndb/gh-dev-tools v0.0.0-20250623052729-3371d6b65060 h1:8PVLvROHw1
 github.com/apstndb/gh-dev-tools v0.0.0-20250623052729-3371d6b65060/go.mod h1:RAxBN8d2WKmjE2Yv3qTOKwJy5cLWOIQYcu/PgAACRzQ=
 github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d h1:H50kN+FQB3/pk9dRLXFaXwDBQNBFFV0KXmR+VjVAYOg=
 github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d/go.mod h1:4xU4lejA6zmr3FFKGHhw5fMOfTTtJ1LBe+mf6IkcYIY=
+github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 h1:bVqVe2veNMY8HK1YM3nhDhXTdVRGJVlEO9VUpK/3poA=
+github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90/go.mod h1:4xU4lejA6zmr3FFKGHhw5fMOfTTtJ1LBe+mf6IkcYIY=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-runewidthex v0.1.0 h1:BTROSb06XZLb4hz5PC5i+3o/BBNhXS5QW6a6S/f1NTU=
