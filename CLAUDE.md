@@ -150,6 +150,7 @@ This is a simplified guide. For detailed information, refer to:
 
 ### Development Tools **Go 1.24 Tool Management: `make build-tools`**
 - **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
+- **github-schema** - GitHub GraphQL schema introspection (managed via go.mod tool directive)
 
 ## 🎯 Task-Specific Documentation Guide
 
@@ -173,8 +174,11 @@ This is a simplified guide. For detailed information, refer to:
 8. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
 9. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Still needed for:
    - Reordering sub-issues within a parent
-   - Schema introspection (`__type`, `__schema` queries)
    - Complex custom field selections beyond gh-helper's output
+10. **Schema introspection**: Use `go tool github-schema` instead of GraphQL:
+   - `go tool github-schema type <TypeName>` - Show type fields and descriptions
+   - `go tool github-schema mutation <MutationName>` - Show mutation requirements
+   - `go tool github-schema search <pattern>` - Search for types/fields
 
 **⚠️ CRITICAL: Safe handling of special characters in shell commands**
 ```bash

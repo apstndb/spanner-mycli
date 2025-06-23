@@ -2465,6 +2465,8 @@ github.com/apstndb/gh-dev-tools v0.0.0-20250622011548-7465a4bd3f45 h1:SUOP69Qnre
 github.com/apstndb/gh-dev-tools v0.0.0-20250622011548-7465a4bd3f45/go.mod h1:vCY+WO4EZHR2ha+9C++DJX34wH4Dmb7LeBuYmsBGV0c=
 github.com/apstndb/gh-dev-tools v0.0.0-20250622153213-17d16070f86f h1:4jX99i6ZNpcYiaOMnG/CnhXQ3Yk1AyB17hKbUQN9hTQ=
 github.com/apstndb/gh-dev-tools v0.0.0-20250622153213-17d16070f86f/go.mod h1:vCY+WO4EZHR2ha+9C++DJX34wH4Dmb7LeBuYmsBGV0c=
+github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d h1:H50kN+FQB3/pk9dRLXFaXwDBQNBFFV0KXmR+VjVAYOg=
+github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d/go.mod h1:4xU4lejA6zmr3FFKGHhw5fMOfTTtJ1LBe+mf6IkcYIY=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-runewidthex v0.1.0 h1:BTROSb06XZLb4hz5PC5i+3o/BBNhXS5QW6a6S/f1NTU=
@@ -2844,6 +2846,10 @@ github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:
 github.com/ianlancetaylor/demangle v0.0.0-20220319035150-800ac71e25c2/go.mod h1:aYm2/VgdVmcIU8iMfdMvDMsRAQjcfZSKFby6HOFvi/w=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
+github.com/itchyny/gojq v0.12.14 h1:6k8vVtsrhQSYgSGg827AD+PVVaB1NLXEdX+dda2oZCc=
+github.com/itchyny/gojq v0.12.14/go.mod h1:y1G7oO7XkcR1LPZO59KyoCRy08T3j9vDYRV0GgYSS+s=
+github.com/itchyny/timefmt-go v0.1.5 h1:G0INE2la8S6ru/ZI5JecgyzbbJNs5lG1RcBqa7Jm6GE=
+github.com/itchyny/timefmt-go v0.1.5/go.mod h1:nEP7L+2YmAbT2kZ2HfSs1d8Xtw9LY8D2stDBckWakZ8=
 github.com/jessevdk/go-flags v1.6.1 h1:Cvu5U8UGrLay1rZfv/zP7iLpSHGUZ/Ou68T0iX1bBK4=
 github.com/jessevdk/go-flags v1.6.1/go.mod h1:Mk8T1hIAWpOiJiHa9rJASDK2UGWji0EuPGBnNLMooyc=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
