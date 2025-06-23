@@ -165,8 +165,16 @@ This is a simplified guide. For detailed information, refer to:
 4. **For review analysis**: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (prevents missing critical issues)
 5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
 6. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
-7. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
-8. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+7. **Sub-issue operations**: Use `gh-helper issues` commands instead of GraphQL:
+   - `issues show <parent> --include-sub` - List sub-issues and check completion
+   - `issues edit <issue> --parent <parent>` - Link as sub-issue (replaces deprecated `link-parent`)
+   - `issues edit <issue> --unlink-parent` - Remove parent relationship
+   - `issues edit <issue> --parent <new> --overwrite` - Move to different parent
+8. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
+9. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Still needed for:
+   - Reordering sub-issues within a parent
+   - Schema introspection (`__type`, `__schema` queries)
+   - Complex custom field selections beyond gh-helper's output
 
 **⚠️ CRITICAL: Safe handling of special characters in shell commands**
 ```bash
