@@ -2465,6 +2465,8 @@ github.com/apstndb/gh-dev-tools v0.0.0-20250622011548-7465a4bd3f45 h1:SUOP69Qnre
 github.com/apstndb/gh-dev-tools v0.0.0-20250622011548-7465a4bd3f45/go.mod h1:vCY+WO4EZHR2ha+9C++DJX34wH4Dmb7LeBuYmsBGV0c=
 github.com/apstndb/gh-dev-tools v0.0.0-20250622153213-17d16070f86f h1:4jX99i6ZNpcYiaOMnG/CnhXQ3Yk1AyB17hKbUQN9hTQ=
 github.com/apstndb/gh-dev-tools v0.0.0-20250622153213-17d16070f86f/go.mod h1:vCY+WO4EZHR2ha+9C++DJX34wH4Dmb7LeBuYmsBGV0c=
+github.com/apstndb/gh-dev-tools v0.0.0-20250623052729-3371d6b65060 h1:8PVLvROHw1I2goyaJq/NMCrp0GVR+R2xNqbLUgV4xaw=
+github.com/apstndb/gh-dev-tools v0.0.0-20250623052729-3371d6b65060/go.mod h1:RAxBN8d2WKmjE2Yv3qTOKwJy5cLWOIQYcu/PgAACRzQ=
 github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d h1:H50kN+FQB3/pk9dRLXFaXwDBQNBFFV0KXmR+VjVAYOg=
 github.com/apstndb/github-schema-go v0.0.0-20250623021209-4b27beacd35d/go.mod h1:4xU4lejA6zmr3FFKGHhw5fMOfTTtJ1LBe+mf6IkcYIY=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
