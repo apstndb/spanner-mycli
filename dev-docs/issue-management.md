@@ -495,18 +495,19 @@ go tool gh-helper issues show 248 --include-sub --json | jq '
 ### Important Technical Details
 
 **gh-helper vs GraphQL:**
-- **Most operations now use gh-helper** - Simple issue numbers work, no node IDs needed
-- **GraphQL still required for**:
-  - Removing sub-issue relationships (--unlink-parent has issues)
-  - Reordering sub-issues within a parent
+- **All sub-issue operations now use gh-helper** - Simple issue numbers work, no node IDs needed
+- **GraphQL only needed for**:
   - Custom field selections beyond what gh-helper provides
+  - Complex queries with specific field combinations
 
 **Tested and Working gh-helper Commands:**
 - ✅ `issues create --parent` - Create new sub-issue
 - ✅ `issues edit --parent` - Link existing issue as sub-issue
 - ✅ `issues edit --parent --overwrite` - Move sub-issue to different parent
+- ✅ `issues edit --unlink-parent` - Remove parent relationship
+- ✅ `issues edit --after/--before` - Reorder sub-issues
+- ✅ `issues edit --position first/last` - Move to beginning/end
 - ✅ `issues show --include-sub` - List sub-issues with stats
-- ❌ `issues edit --unlink-parent` - Currently returns error
 
 **Common Pitfalls and Solutions:**
 1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use gh-helper or GraphQL
