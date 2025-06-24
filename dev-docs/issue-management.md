@@ -449,30 +449,14 @@ done
 # Move sub-issue to different parent (verified working)
 go tool gh-helper issues edit 318 --parent 250 --overwrite
 
-# Remove a sub-issue from parent (currently has issues, use GraphQL as fallback)
-# go tool gh-helper issues edit 318 --unlink-parent  # Not working as of latest version
-# Fallback: Use GraphQL mutation for now
-gh api graphql -f query='
-mutation {
-  removeSubIssue(input: {
-    issueId: "PARENT_ISSUE_NODE_ID",
-    subIssueId: "CHILD_ISSUE_NODE_ID"
-  }) {
-    issue { title }
-  }
-}'
+# Remove a sub-issue from parent (verified working)
+go tool gh-helper issues edit 318 --unlink-parent
 
-# Reorder sub-issues in parent's list (still requires GraphQL)
-gh api graphql -f query='
-mutation {
-  reprioritizeSubIssue(input: {
-    issueId: "PARENT_ISSUE_NODE_ID",
-    subIssueId: "CHILD_ISSUE_NODE_ID",
-    afterId: "ANOTHER_CHILD_ISSUE_NODE_ID"
-  }) {
-    issue { title }
-  }
-}'
+# Reorder sub-issues in parent's list (verified working)
+go tool gh-helper issues edit 318 --after 319  # Place #318 after #319
+go tool gh-helper issues edit 318 --before 319  # Place #318 before #319
+go tool gh-helper issues edit 318 --position first  # Move to beginning
+go tool gh-helper issues edit 318 --position last   # Move to end
 ```
 
 ### Efficient Sub-Issue Verification
