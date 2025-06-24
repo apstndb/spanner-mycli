@@ -30,7 +30,6 @@ func TestSystemVariables_ErrorTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.err.Error()
 			if got != tt.want {
@@ -118,7 +117,6 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			sv := &systemVariables{}
 			err := sv.Set(tt.varName, tt.value)
@@ -147,7 +145,6 @@ func TestSystemVariables_Get_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			sv := &systemVariables{}
 			_, err := sv.Get(tt.varName)
@@ -184,7 +181,6 @@ func TestSystemVariables_Add_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			sv := &systemVariables{}
 			err := sv.Add(tt.varName, tt.value)
@@ -203,7 +199,6 @@ func TestSystemVariables_CaseInsensitive(t *testing.T) {
 	// Test Set with various cases
 	testCases := []string{"cli_verbose", "CLI_VERBOSE", "Cli_Verbose", "cLi_VeRbOsE"}
 	for _, varName := range testCases {
-		varName := varName // capture range variable
 		t.Run("Set_"+varName, func(t *testing.T) {
 			sv := &systemVariables{}
 			err := sv.Set(varName, "true")
