@@ -168,6 +168,11 @@ func ConvertRulesToReadlineHighlights(rules []HighlightRule) []readline.Highligh
 }
 
 // createHighlighterFunc creates a highlighter function from a TokenMatcher
+// Note: This is a simplified abstraction that doesn't yet handle all highlighting scenarios:
+// - Comment highlighting needs to extract specific ranges within tokens
+// - Error highlighting requires lexer error handling, not token matching
+// A complete refactoring would require extending this abstraction or creating
+// specialized highlighter types. This is left for future enhancement.
 func createHighlighterFunc(matcher TokenMatcher) highlighterFunc {
 	return tokenHighlighter(matcher)
 }
