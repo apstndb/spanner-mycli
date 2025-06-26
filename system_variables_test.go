@@ -97,18 +97,23 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 	
 	// Create a test file with permission issues
 	permissionTestFile := "testdata/test_fixtures/permission_test.pb"
-	if err := os.WriteFile(permissionTestFile, []byte("test"), 0000); err == nil {
-		defer func() {
-			err := os.Chmod(permissionTestFile, 0644) // Reset permissions
-			if err != nil {
-				t.Errorf("failed to reset permissions for %s: %v", permissionTestFile, err)
-			}
-			err = os.Remove(permissionTestFile)
-			if err != nil {
-				t.Errorf("failed to remove %s: %v", permissionTestFile, err)
-			}
-		}()
+	if err := os.WriteFile(permissionTestFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create permission test file: %v", err)
 	}
+	// Change permissions to 0000 after creation
+	if err := os.Chmod(permissionTestFile, 0000); err != nil {
+		t.Fatalf("Failed to change permissions for test file: %v", err)
+	}
+	defer func() {
+		err := os.Chmod(permissionTestFile, 0644) // Reset permissions
+		if err != nil {
+			t.Errorf("failed to reset permissions for %s: %v", permissionTestFile, err)
+		}
+		err = os.Remove(permissionTestFile)
+		if err != nil {
+			t.Errorf("failed to remove %s: %v", permissionTestFile, err)
+		}
+	}()
 
 	// Create a large descriptor file for testing
 	largeFile := "testdata/test_fixtures/large_test.pb"
@@ -181,12 +186,16 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 			filename:  "http://example.com/non_existent.pb",
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
+			// NOTE: This test relies on external network, but tests error path only.
+			// Real HTTP functionality should be tested with mock/test server.
 		},
 		{
 			desc:      "HTTPS URL - non-existent",
 			filename:  "https://example.com/non_existent.pb",
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
+			// NOTE: This test relies on external network, but tests error path only.
+			// Real HTTPS functionality should be tested with mock/test server.
 		},
 	}
 
@@ -237,7 +246,8 @@ func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
 			// Add descriptor files
 			for _, file := range test.descriptorFiles {
 				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
-					t.Fatalf("Failed to add descriptor file %s: %v", file, err)
+					t.Errorf("Failed to add descriptor file %s: %v", file, err)
+					return // Skip verification if any file fails
 				}
 			}
 			
