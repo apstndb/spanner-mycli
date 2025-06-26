@@ -66,6 +66,9 @@ func isParameter(tok token.Token) bool {
 }
 
 // isKeyword checks if a token is a keyword
+// In the memefish lexer, keywords are represented as TokenKind values with alphanumeric strings
+// (e.g., "SELECT", "WHERE", "FROM"), while non-keywords use special characters (e.g., "(", ")", ",")
+// or predefined constants (e.g., TokenIdent, TokenParam). This regex correctly identifies only keywords.
 func isKeyword(tok token.Token) bool {
 	return alnumRe.MatchString(string(tok.Kind))
 }
@@ -114,6 +117,8 @@ func CreateColorSequence(attrs ...color.Attribute) string {
 }
 
 // CreateHighlightRules creates default highlight rules
+// This abstraction provides a clean, testable interface for syntax highlighting configuration.
+// It is used in tests and provides a foundation for future customization and enhancements.
 func CreateHighlightRules() []HighlightRule {
 	return []HighlightRule{
 		// Comments
@@ -150,6 +155,7 @@ func CreateHighlightRules() []HighlightRule {
 }
 
 // ConvertRulesToReadlineHighlights converts highlight rules to readline.Highlight format
+// This is part of the highlighting abstraction that enables testable and extensible syntax highlighting.
 func ConvertRulesToReadlineHighlights(rules []HighlightRule) []readline.Highlight {
 	highlights := make([]readline.Highlight, len(rules))
 	for i, rule := range rules {
