@@ -116,11 +116,6 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		t.Fatalf("Failed to call execute_statement tool: %v", err)
 	}
 
-	// If we got an error but didn't expect one, fail
-	if err != nil && !wantError {
-		t.Fatalf("Tool execution failed: %v", err)
-	}
-
 	if wantError {
 		t.Errorf("Expected error but tool executed successfully")
 		return
