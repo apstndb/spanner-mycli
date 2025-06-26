@@ -54,13 +54,38 @@ go tool gh-helper reviews wait [PR] --request-review  # Request Gemini review + 
 # Workflow examples  
 gh pr create                                 # Create PR (interactive for title/body)
 go tool gh-helper reviews wait              # Wait for automatic Gemini review (initial PR only)
+go tool gh-helper reviews wait --async      # Check reviews once (non-blocking)
+go tool gh-helper reviews wait --timeout 15m # Wait with custom timeout
+
+# Issue management with gh-helper
+go tool gh-helper issues create --title "Title" --body "Body"  # Create issue
+go tool gh-helper issues create --parent 123 --title "Sub-task"  # Create sub-issue
+go tool gh-helper issues edit 456 --parent 123  # Link existing issue as sub-issue
+go tool gh-helper issues edit 456 --unlink-parent  # Remove parent relationship
+go tool gh-helper issues show 248 --include-sub  # Show issue with sub-issues stats
 
 # Review response workflow (for subsequent pushes)
 go tool gh-helper reviews fetch <PR> > tmp/review-data.yaml  # Fetch all review data
+go tool gh-helper reviews fetch <PR> --threads-only          # Only fetch thread data
+go tool gh-helper reviews fetch <PR> --needs-reply-only      # Only threads needing replies
+go tool gh-helper reviews fetch <PR> --exclude-urls          # Exclude URLs from output
 # Create fix plan in tmp/fix-plan.md, make changes, commit & push
 go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
 # Reply to threads with commit hash and --resolve flag
+go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve  # Standard workflow
 # Or use new batch resolve: go tool gh-helper threads resolve THREAD_ID1 THREAD_ID2
+# Show multiple threads at once: go tool gh-helper threads show THREAD_ID1 THREAD_ID2
+# Show thread details (supports multiple threads)
+go tool gh-helper threads show THREAD_ID1 THREAD_ID2 THREAD_ID3
+
+# Label management (bulk operations)
+go tool gh-helper labels add bug,enhancement --items 254,267,238,245  # Add to multiple items
+go tool gh-helper labels remove needs-review --items pull/302,issue/301  # Remove from items
+go tool gh-helper labels add-from-issues --pr 254  # Inherit labels from linked issues
+
+# Release notes analysis
+go tool gh-helper releases analyze --milestone v0.19.0  # Analyze by milestone
+go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31  # By date range
 
 # Output format examples (YAML default, JSON with --json)
 go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'
@@ -125,6 +150,7 @@ This is a simplified guide. For detailed information, refer to:
 
 ### Development Tools **Go 1.24 Tool Management: `make build-tools`**
 - **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
+- **github-schema** - GitHub GraphQL schema introspection (managed via go.mod tool directive)
 
 ## 🎯 Task-Specific Documentation Guide
 
@@ -140,8 +166,21 @@ This is a simplified guide. For detailed information, refer to:
 4. **For review analysis**: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (prevents missing critical issues)
 5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
 6. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
-7. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
-8. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Official API documentation
+7. **Sub-issue operations**: Use `gh-helper issues` commands instead of GraphQL:
+   - `issues show <parent> --include-sub` - List sub-issues and check completion
+   - `issues edit <issue> --parent <parent>` - Link as sub-issue (replaces deprecated `link-parent`)
+   - `issues edit <issue> --parent <new> --overwrite` - Move to different parent
+   - `issues edit <issue> --unlink-parent` - Remove parent relationship
+   - `issues edit <issue> --after <other>` - Reorder sub-issue after another
+   - `issues edit <issue> --position first` - Move sub-issue to beginning
+8. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
+9. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Now only needed for:
+   - Complex custom field selections beyond gh-helper's output
+   - Advanced queries requiring specific field combinations
+10. **Schema introspection**: Use `go tool github-schema` instead of GraphQL:
+   - `go tool github-schema type <TypeName>` - Show type fields and descriptions
+   - `go tool github-schema mutation <MutationName>` - Show mutation requirements
+   - `go tool github-schema search <pattern>` - Search for types/fields
 
 **⚠️ CRITICAL: Safe handling of special characters in shell commands**
 ```bash

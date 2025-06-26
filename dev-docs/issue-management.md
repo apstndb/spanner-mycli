@@ -19,12 +19,21 @@ make build-tools
 ```bash
 # Review operations
 go tool gh-helper reviews fetch <PR>       # Fetch review data including threads
+go tool gh-helper reviews fetch <PR> --threads-only     # Only fetch thread data (lightweight)
+go tool gh-helper reviews fetch <PR> --needs-reply-only # Only threads needing replies
+go tool gh-helper reviews fetch <PR> --no-bodies        # Exclude review bodies (lightweight)
+go tool gh-helper reviews fetch <PR> --list-threads     # List thread IDs only
 go tool gh-helper reviews wait <PR>        # Wait for reviews and checks
 go tool gh-helper reviews wait <PR> --async # Check reviews once (non-blocking)
+go tool gh-helper reviews wait <PR> --exclude-checks    # Wait for reviews only
+go tool gh-helper reviews wait <PR> --exclude-reviews   # Wait for PR checks only
 
 # Thread operations  
-go tool gh-helper threads show <THREAD_ID>
-go tool gh-helper threads reply <THREAD_ID>
+go tool gh-helper threads show <THREAD_ID>              # Show single thread
+go tool gh-helper threads show <ID1> <ID2> <ID3>       # Show multiple threads
+go tool gh-helper threads reply <THREAD_ID>             # Reply to thread
+go tool gh-helper threads reply <ID> --commit-hash <HASH> --resolve  # Reply with commit
+go tool gh-helper threads resolve <ID1> <ID2> <ID3>    # Batch resolve threads
 ```
 
 **Gemini Review Workflow:**
@@ -274,6 +283,11 @@ GitHub sub-issues provide a native way to break down large issues into smaller, 
 - Automatically track completion status in parent issue
 - Different from simple issue references (e.g., "Related to #123")
 
+**Visibility:**
+- GitHub Web UI: Shows sub-issues in parent issue view
+- `gh issue` CLI: Does not support viewing sub-issues (use GraphQL API)
+- GraphQL API: Full access to sub-issue relationships
+
 **When to use sub-issues:**
 - Breaking down large features into independently implementable tasks
 - Organizing test coverage improvements by component
@@ -282,7 +296,24 @@ GitHub sub-issues provide a native way to break down large issues into smaller, 
 
 ### Creating Sub-Issues with Proper Hierarchy
 
-**Complete workflow for creating linked sub-issues:**
+**Simple workflow using gh-helper:**
+
+```bash
+# Method 1: Create sub-issue directly
+go tool gh-helper issues create \
+  --title "[Test Coverage] Add comprehensive tests for component X" \
+  --body "Part of #248 - Parent issue description..." \
+  --label "testing,test-coverage-improvement" \
+  --parent 248
+
+# Method 2: Link existing issue as sub-issue (deprecated: use edit --parent)
+go tool gh-helper issues edit 318 --parent 248
+
+# Verify the sub-issue was properly linked
+go tool gh-helper issues show 248 --include-sub
+```
+
+**Complete workflow for manual GraphQL approach (if gh-helper not available):**
 
 ```bash
 # 1. Create the sub-issues first (using standard gh issue create)
@@ -317,24 +348,6 @@ mutation {
     subIssue { number }
   }
 }"
-
-# 5. CRITICAL: Verify the sub-issue was properly linked
-# This verification step is essential to ensure the workflow completed successfully.
-# Without verification, you may incorrectly assume the relationship exists.
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      subIssues(first: 10) {
-        totalCount
-        nodes { number title }
-      }
-    }
-  }
-}'
-
-# Expected output should include the newly linked sub-issue #318
-# If the sub-issue doesn't appear, the linking failed and needs to be retried
 ```
 
 ### Batch Sub-Issue Creation Script
@@ -348,7 +361,48 @@ For creating multiple sub-issues efficiently:
 PARENT_ISSUE=$1
 shift
 
-# Get parent issue ID
+echo "Creating sub-issues for parent #$PARENT_ISSUE"
+
+# Create each sub-issue directly as a child
+for title in "$@"; do
+  ISSUE_NUM=$(go tool gh-helper issues create \
+    --parent $PARENT_ISSUE \
+    --title "$title" \
+    --body "Part of #$PARENT_ISSUE" \
+    --label "testing" \
+    --json | jq -r '.number')
+  
+  echo "✓ Created sub-issue #$ISSUE_NUM: $title"
+done
+
+# Verify all sub-issues were properly linked
+echo "Verifying sub-issue linkage..."
+gh api graphql -f query="
+{
+  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
+    issue(number: $PARENT_ISSUE) {
+      subIssues(first: 20) {
+        totalCount
+        nodes {
+          number
+          title
+        }
+      }
+    }
+  }
+}" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
+```
+
+**Alternative: Manual GraphQL approach for batch creation:**
+
+```bash
+#!/bin/bash
+# For environments without gh-helper
+
+PARENT_ISSUE=$1
+shift
+
+# Get parent issue ID once
 PARENT_ID=$(gh api graphql -f query="
 {
   repository(owner: \"apstndb\", name: \"spanner-mycli\") {
@@ -387,67 +441,22 @@ for title in "$@"; do
   
   echo "✓ Created and linked #$ISSUE_NUM: $title"
 done
-
-# CRITICAL: Verify all sub-issues were properly linked
-# This final verification ensures all sub-issues are correctly associated
-echo "Verifying sub-issue linkage..."
-gh api graphql -f query="
-{
-  repository(owner: \"apstndb\", name: \"spanner-mycli\") {
-    issue(number: $PARENT_ISSUE) {
-      subIssues(first: 20) {
-        totalCount
-        nodes {
-          number
-          title
-        }
-      }
-    }
-  }
-}" --jq '.data.repository.issue.subIssues.totalCount as $count | "Total sub-issues: \($count)"'
-
-# The count should match the number of sub-issues created
-# If it doesn't, some linkages may have failed
 ```
 
 ### Managing Sub-Issues
 
 ```bash
-# Remove a sub-issue from parent (keeps the issue, just removes relationship)
-gh api graphql -f query='
-mutation {
-  removeSubIssue(input: {
-    issueId: "PARENT_ISSUE_NODE_ID",
-    subIssueId: "CHILD_ISSUE_NODE_ID"
-  }) {
-    issue { title }
-  }
-}'
+# Move sub-issue to different parent (verified working)
+go tool gh-helper issues edit 318 --parent 250 --overwrite
 
-# Reorder sub-issues in parent's list
-gh api graphql -f query='
-mutation {
-  reprioritizeSubIssue(input: {
-    issueId: "PARENT_ISSUE_NODE_ID",
-    subIssueId: "CHILD_ISSUE_NODE_ID",
-    afterId: "ANOTHER_CHILD_ISSUE_NODE_ID"
-  }) {
-    issue { title }
-  }
-}'
+# Remove a sub-issue from parent (verified working)
+go tool gh-helper issues edit 318 --unlink-parent
 
-# Replace parent (move sub-issue to different parent)
-gh api graphql -f query='
-mutation {
-  addSubIssue(input: {
-    issueId: "NEW_PARENT_ID",
-    subIssueId: "CHILD_ID",
-    replaceParent: true
-  }) {
-    issue { number }
-    subIssue { number }
-  }
-}'
+# Reorder sub-issues in parent's list (verified working)
+go tool gh-helper issues edit 318 --after 319  # Place #318 after #319
+go tool gh-helper issues edit 318 --before 319  # Place #318 before #319
+go tool gh-helper issues edit 318 --position first  # Move to beginning
+go tool gh-helper issues edit 318 --position last   # Move to end
 ```
 
 ### Efficient Sub-Issue Verification
@@ -455,60 +464,56 @@ mutation {
 **Best practices for checking sub-issue status:**
 
 ```bash
-# Verify specific sub-issue linkage (one at a time)
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      subIssues(first: 10) {
-        totalCount
-        nodes { number }
-      }
-    }
-  }
-}' --jq '.data.repository.issue.subIssues | 
-  if .nodes | map(.number) | contains([318]) 
-  then "✓ #318 is a sub-issue (total: \(.totalCount))" 
+# Get issue information with sub-issues list and completion stats
+go tool gh-helper issues show 248 --include-sub
+
+# Get detailed information for each sub-issue
+go tool gh-helper issues show 248 --include-sub --detailed
+
+# JSON output for programmatic use
+go tool gh-helper issues show 248 --include-sub --json | jq '.issueShow.subIssues'
+
+# Check specific sub-issue linkage
+go tool gh-helper issues show 248 --include-sub --json | jq '
+  .issueShow.subIssues.items | 
+  map(.number) | 
+  if contains([318]) 
+  then "✓ #318 is a sub-issue" 
   else "✗ #318 is NOT a sub-issue" end'
 
-# Get completion status of all sub-issues
-gh api graphql -f query='
-{
-  repository(owner: "apstndb", name: "spanner-mycli") {
-    issue(number: 248) {
-      title
-      subIssues(first: 20) {
-        totalCount
-        nodes {
-          number
-          title
-          state
-          closed
-        }
-      }
-    }
-  }
-}' --jq '.data.repository.issue | 
+# Get completion statistics
+go tool gh-helper issues show 248 --include-sub --json | jq '
+  .issueShow.subIssues | 
   {
-    parent: .title,
-    total: .subIssues.totalCount,
-    completed: [.subIssues.nodes[] | select(.closed)] | length,
-    open: [.subIssues.nodes[] | select(.closed | not)] | map(.number)
+    total: .totalCount,
+    completed: .completedCount,
+    percentage: .completionPercentage,
+    open: [.items[] | select(.state == "OPEN") | .number]
   }'
 ```
 
 ### Important Technical Details
 
-**GraphQL API Requirements:**
-- **No special header needed** - The `GraphQL-Features: sub_issues` header mentioned in some docs is not required
-- Use standard `gh api graphql` commands
-- Node IDs are required (not issue numbers) for mutations
+**gh-helper vs GraphQL:**
+- **All sub-issue operations now use gh-helper** - Simple issue numbers work, no node IDs needed
+- **GraphQL only needed for**:
+  - Custom field selections beyond what gh-helper provides
+  - Complex queries with specific field combinations
+
+**Tested and Working gh-helper Commands:**
+- ✅ `issues create --parent` - Create new sub-issue
+- ✅ `issues edit --parent` - Link existing issue as sub-issue
+- ✅ `issues edit --parent --overwrite` - Move sub-issue to different parent
+- ✅ `issues edit --unlink-parent` - Remove parent relationship
+- ✅ `issues edit --after/--before` - Reorder sub-issues
+- ✅ `issues edit --position first/last` - Move to beginning/end
+- ✅ `issues show --include-sub` - List sub-issues with stats
 
 **Common Pitfalls and Solutions:**
-1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use GraphQL
-2. **"Field does not exist" errors**: Ensure you're using the correct GraphQL schema
-3. **Silent failures**: Always check the mutation response to verify success
-4. **Wrong ID format**: Use node IDs (e.g., `I_kwDONC6gMM...`) not issue numbers
+1. **REST API returns 404**: The REST API POST endpoint doesn't exist - use gh-helper or GraphQL
+2. **"Field does not exist" errors**: Ensure you're using the correct GraphQL schema (when using GraphQL)
+3. **Silent failures**: Always check the response to verify success
+4. **Wrong ID format**: When using GraphQL, use node IDs (e.g., `I_kwDONC6gMM...`) not issue numbers
 
 **Node ID Discovery Methods:**
 ```bash
@@ -533,11 +538,12 @@ gh api graphql -f query='
 
 When working with sub-issues:
 
-1. **Always verify linkage after creation** - Don't assume the mutation succeeded
+1. **Always verify linkage after creation** - Use `gh-helper issues show <parent> --include-sub`
 2. **Use descriptive titles** - Sub-issue titles should clearly indicate their relationship
 3. **Include "Part of #X" in body** - Makes the relationship clear even without the sub-issue link
-4. **Check for existing sub-issues** - Avoid creating duplicates
+4. **Check for existing sub-issues** - Use `gh-helper issues show <parent> --include-sub` before creating
 5. **Batch operations when possible** - Create all sub-issues together for better organization
+6. **Use gh-helper for all sub-issue operations** - Avoid GraphQL unless absolutely necessary
 
 ## Issue Review Workflow
 
@@ -591,6 +597,92 @@ All other labels are categorized in "Misc" section automatically.
 
 #### **Additional Labels** (Optional)
 Any other repository labels can be applied as needed for categorization and filtering purposes.
+
+### Label Management with gh-helper
+
+**Bulk label operations for efficient management:**
+
+```bash
+# Add labels to multiple items (auto-detects PR vs Issue)
+go tool gh-helper labels add bug,high-priority --items 254,267,238,245
+
+# Remove labels from specific items
+go tool gh-helper labels remove needs-review,waiting-on-author --items pull/302,issue/301
+
+# Pattern-based labeling
+go tool gh-helper labels add enhancement --title-pattern "^feat:"
+
+# Dry-run to preview changes
+go tool gh-helper labels add tech-debt --items 100,101,102 --dry-run
+
+# Interactive confirmation for safety
+go tool gh-helper labels remove breaking-change --items 200,201,202 --confirm
+```
+
+**PR label inheritance from linked issues:**
+
+```bash
+# Automatically inherit labels from issues that a PR closes
+go tool gh-helper labels add-from-issues --pr 254
+
+# Preview what would be added
+go tool gh-helper labels add-from-issues --pr 254 --dry-run
+```
+
+**Common label management workflows:**
+
+```bash
+# Label all test-related PRs
+go tool gh-helper labels add testing --title-pattern "test:|tests:"
+
+# Remove outdated status labels
+go tool gh-helper labels remove needs-review,in-progress --items 100,101,102,103,104
+
+# Bulk categorize documentation PRs
+go tool gh-helper labels add docs-user --title-pattern "docs.*README"
+go tool gh-helper labels add docs-dev --title-pattern "docs.*dev-docs"
+```
+
+### Release Notes Analysis
+
+**Analyze PRs for proper release notes categorization:**
+
+```bash
+# Analyze by milestone
+go tool gh-helper releases analyze --milestone v0.19.0
+
+# Analyze by date range
+go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31
+
+# Analyze specific PR range
+go tool gh-helper releases analyze --pr-range 250-300
+
+# Include draft PRs in analysis
+go tool gh-helper releases analyze --milestone v0.19.0 --include-drafts
+```
+
+**Release analysis outputs:**
+- PRs missing classification labels (bug, enhancement, feature)
+- PRs that should have 'ignore-for-release' label
+- Inconsistent labeling patterns
+- Release readiness status
+
+**Common release preparation workflow:**
+
+```bash
+# 1. Analyze current milestone
+go tool gh-helper releases analyze --milestone v0.19.0 > tmp/release-analysis.yaml
+
+# 2. Fix missing labels based on analysis
+go tool gh-helper labels add enhancement --items 301,302,303
+go tool gh-helper labels add ignore-for-release --items 310,311  # dev-docs only PRs
+
+# 3. Re-analyze to verify
+go tool gh-helper releases analyze --milestone v0.19.0
+
+# 4. Generate release notes preview
+gh release create v0.19.0 --generate-notes --draft
+```
 
 ### Creating Pull Requests
 
@@ -678,6 +770,9 @@ go tool gh-helper reviews fetch 287 --list-threads
 # Show detailed thread context before replying
 go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH
 
+# Show multiple threads at once (new feature)
+go tool gh-helper threads show PRRT_kwDONC6gMM5SU-GH PRRT_kwDONC6gMM5SU-GI
+
 # Reply to a specific thread (code changes made) - standard workflow
 go tool gh-helper threads reply PRRT_kwDONC6gMM5SU-GH --message "Thank you for the feedback! Fixed in commit abc1234." --resolve
 
@@ -709,6 +804,8 @@ EOF
 1. Make the necessary fixes
 2. Commit and push the changes
 3. Reply with commit hash and resolve: `go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --message "Fixed as suggested" --resolve`
+   - Quick commit reference: `go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --resolve` (uses default message)
+   - The --commit-hash flag automatically includes the hash in the reply message
 
 **For explanations without code changes:**
 1. Reply with explanation
@@ -737,7 +834,7 @@ Thank you for the feedback!
 gh pr create --title "feat: implement feature" --body "Description"
 
 # 2. Wait for automatic Gemini review (initial PR only)
-go tool gh-helper reviews wait <PR_NUMBER> --timeout 15
+go tool gh-helper reviews wait <PR_NUMBER> --timeout 15m
 
 # 3. Fetch all review data
 go tool gh-helper reviews fetch <PR_NUMBER> > tmp/review-data.yaml
@@ -774,7 +871,7 @@ git commit -m "fix: address review feedback - implement fixes A, B, C"
 git push
 
 # 7. Request Gemini review for subsequent pushes (REQUIRED)
-go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15
+go tool gh-helper reviews wait <PR_NUMBER> --request-review --timeout 15m
 
 # 8. Reply to threads with commit hash and resolve immediately
 COMMIT_HASH=$(git rev-parse HEAD)
