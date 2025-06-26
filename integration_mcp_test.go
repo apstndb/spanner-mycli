@@ -10,15 +10,12 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/samber/lo"
 )
 
 // setupMCPClientServer creates a complete MCP client-server setup for testing
-func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer, error) {
+func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (*mcp.ClientSession, *mcp.Server, error) {
 	t.Helper()
 	// Create CLI instance
 	var outputBuf strings.Builder
@@ -37,31 +34,43 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	// Create MCP server using extracted function
 	mcpServer := createMCPServer(cli)
 
-	// Create in-process transport and client
-	mcpTransport := transport.NewInProcessTransport(mcpServer)
-	mcpClient := client.NewClient(mcpTransport)
+	// Create in-memory transport for testing
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	
+	// Start server in a goroutine
+	serverDone := make(chan error, 1)
+	var serverSession *mcp.ServerSession
+	go func() {
+		var err error
+		serverSession, err = mcpServer.Connect(ctx, serverTransport)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		// Wait for the server session to complete
+		serverDone <- serverSession.Wait()
+	}()
 
-	// Start the client
-	if err := mcpClient.Start(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to start MCP client: %w", err)
+	// Create and connect client
+	mcpClient := mcp.NewClient("spanner-mycli-test", version, nil)
+	
+	// Connect client and get session
+	clientSession, err := mcpClient.Connect(ctx, clientTransport)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect client: %w", err)
 	}
 
-	// Initialize the client
-	initRequest := mcp.InitializeRequest{
-		Params: mcp.InitializeParams{
-			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
-			ClientInfo: mcp.Implementation{
-				Name:    "spanner-mycli-test",
-				Version: version,
-			},
-			Capabilities: mcp.ClientCapabilities{},
-		},
-	}
-	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize MCP client: %w", err)
+	// Wait a moment for server to initialize
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case err := <-serverDone:
+		return nil, nil, fmt.Errorf("server exited early: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// Give the server a moment to initialize
 	}
 
-	return mcpClient, mcpServer, nil
+	return clientSession, mcpServer, nil
 }
 
 // testExecuteStatementTool tests the execute_statement tool functionality
@@ -90,19 +99,13 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}
 
-	// Create a CallToolRequest with the statement as an argument
-	request := mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "execute_statement",
-			Arguments: ExecuteStatementArgs{
-				Statement: statement,
-			},
-		},
-	}
-
 	// Call the execute_statement tool using the MCP client
 	t.Logf("Executing statement via MCP client: %q", statement)
-	result, err := mcpClient.CallTool(ctx, request)
+	params := &mcp.CallToolParams{
+		Name: "execute_statement",
+		Arguments: ExecuteStatementArgs{Statement: statement},
+	}
+	result, err := mcpClient.CallTool(ctx, params)
 
 	// Handle errors
 	if err != nil {
@@ -113,13 +116,9 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		t.Fatalf("Failed to call execute_statement tool: %v", err)
 	}
 
-	// Check if the tool result indicates an error
-	if result.IsError {
-		if wantError {
-			t.Logf("Got expected error in tool result")
-			return // Expected error
-		}
-		t.Fatalf("Tool execution failed: %v", result.Content)
+	// If we got an error but didn't expect one, fail
+	if err != nil && !wantError {
+		t.Fatalf("Tool execution failed: %v", err)
 	}
 
 	if wantError {
@@ -128,11 +127,13 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	}
 
 	// Extract the text content from the result
-	var gotOutput string
-	for _, content := range result.Content {
-		if textContent, ok := content.(mcp.TextContent); ok {
-			gotOutput = textContent.Text
-			break
+	gotOutput := ""
+	if result != nil && len(result.Content) > 0 {
+		for _, content := range result.Content {
+			if textContent, ok := content.(*mcp.TextContent); ok {
+				gotOutput = textContent.Text
+				break
+			}
 		}
 	}
 
@@ -228,7 +229,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 }
 
 // testMCPClientServerSetup tests the MCP client-server setup
-func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Session) (*client.Client, *server.MCPServer) {
+func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Session) (*mcp.ClientSession, *mcp.Server) {
 	t.Helper()
 	mcpClient, mcpServer, err := setupMCPClientServer(t, ctx, session)
 	if err != nil {

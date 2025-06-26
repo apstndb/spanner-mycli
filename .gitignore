@@ -17,6 +17,7 @@ credentials.json
 # Cache and temporary files - safe to delete anywhere
 .cache/       # Application cache directory
 tmp/          # Development temporary files (e.g., help output generation)
+.tmp/         # Temporary directory for cloning external repos (hidden from go test)
 
 # Configuration files with secrets - may contain sensitive connection info, check before deleting
 .*.cnf
