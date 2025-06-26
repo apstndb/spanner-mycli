@@ -40,6 +40,10 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 
 ## Essential Commands
 
+> [!NOTE]
+> **Note for Human Developers**: The `go tool gh-helper` and its associated workflows are primarily designed for automation by AI assistants to ensure consistent and error-free execution of repository management tasks. While human developers can use these tools, they are not a strict requirement for manual contributions.
+
+
 ```bash
 # Development cycle (CRITICAL)
 make check                    # REQUIRED before ANY push (runs test && lint)
