@@ -94,15 +94,26 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 	permissionTestFile := "testdata/test_fixtures/permission_test.pb"
 	if err := os.WriteFile(permissionTestFile, []byte("test"), 0000); err == nil {
 		defer func() {
-			_ = os.Chmod(permissionTestFile, 0644) // Reset permissions
-			_ = os.Remove(permissionTestFile)
+			err := os.Chmod(permissionTestFile, 0644) // Reset permissions
+			if err != nil {
+				t.Errorf("failed to reset permissions for %s: %v", permissionTestFile, err)
+			}
+			err = os.Remove(permissionTestFile)
+			if err != nil {
+				t.Errorf("failed to remove %s: %v", permissionTestFile, err)
+			}
 		}()
 	}
 
 	// Create a large descriptor file for testing
 	largeFile := "testdata/test_fixtures/large_test.pb"
 	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err == nil {
-		defer func() { _ = os.Remove(largeFile) }()
+		defer func() {
+			err := os.Remove(largeFile)
+			if err != nil {
+				t.Errorf("failed to remove %s: %v", largeFile, err)
+			}
+		}()
 	}
 
 	tests := []struct {
