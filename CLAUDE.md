@@ -195,6 +195,7 @@ Line 3 with "double quotes"'
 echo "$content" | gh issue create --title "Title" --body-file -
 
 # Method 2: Heredoc with stdin (for inline content)
+# IMPORTANT: EOF must be on its own line with no trailing characters
 cat <<'EOF' | gh issue create --title "Title" --body-file -
 Content with `backticks` and "quotes"
 EOF
