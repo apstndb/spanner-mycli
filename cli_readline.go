@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -183,15 +182,9 @@ func tokenHighlighter(pred func(tok token.Token) bool) highlighterFunc {
 	})
 }
 
-func kindHighlighter(kinds ...token.TokenKind) highlighterFunc {
-	return tokenHighlighter(func(tok token.Token) bool {
-		return slices.Contains(kinds, tok.Kind)
-	})
-}
+// kindHighlighter replaced by direct usage of tokenHighlighter with pure functions
 
-const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
-const errMessageUnclosedStringLiteral = `unclosed string literal`
-const errMessageUnclosedComment = `unclosed comment`
+// Error constants moved to cli_readline_highlight.go
 
 func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
@@ -199,45 +192,39 @@ func commentHighlighter() highlighterFunc {
 			return sliceOf(int(comment.Pos), int(comment.End))
 		}, slices.Values(tok.Comments)))
 	}, func(me *memefish.Error) bool {
-		return me.Message == errMessageUnclosedComment
+		return IsErrorUnclosedComment(me.Message)
 	})
 }
 
-func colorToSequence(attr ...color.Attribute) string {
-	var sb strings.Builder
-	color.New(attr...).SetWriter(&sb)
-	return sb.String()
-}
+// colorToSequence removed - use CreateColorSequence from cli_readline_highlight.go
 
 var (
-	alnumRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	// alnumRe moved to cli_readline_highlight.go
 
 	defaultHighlights = []readline.Highlight{
 		// Note: multiline comments break highlight because of restriction of go-multiline-ny
-		{Pattern: commentHighlighter(), Sequence: colorToSequence(color.FgWhite, color.Faint)},
+		{Pattern: commentHighlighter(), Sequence: CreateColorSequence(color.FgWhite, color.Faint)},
 
 		// string literals(including string-based literals like timestamp literals) and byte literals
-		{Pattern: kindHighlighter(token.TokenString, token.TokenBytes), Sequence: colorToSequence(color.FgGreen, color.Bold)},
+		{Pattern: tokenHighlighter(isStringLiteral), Sequence: CreateColorSequence(color.FgGreen, color.Bold)},
 
 		// unclosed string literals
 		// Note: multiline literals break highlight because of restriction of go-multiline-ny
 		{Pattern: errorHighlighter(func(me *memefish.Error) bool {
-			return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
-		}), Sequence: colorToSequence(color.FgHiGreen, color.Bold)},
+			return IsErrorUnclosedString(me.Message)
+		}), Sequence: CreateColorSequence(color.FgHiGreen, color.Bold)},
 
 		// numbers
-		{Pattern: kindHighlighter(token.TokenFloat, token.TokenInt), Sequence: colorToSequence(color.FgHiBlue, color.Bold)},
+		{Pattern: tokenHighlighter(isNumericLiteral), Sequence: CreateColorSequence(color.FgHiBlue, color.Bold)},
 
 		// params
-		{Pattern: kindHighlighter(token.TokenParam), Sequence: colorToSequence(color.FgMagenta, color.Bold)},
+		{Pattern: tokenHighlighter(isParameter), Sequence: CreateColorSequence(color.FgMagenta, color.Bold)},
 
 		// keywords
-		{Pattern: tokenHighlighter(func(tok token.Token) bool {
-			return alnumRe.MatchString(string(tok.Kind))
-		}), Sequence: colorToSequence(color.FgHiYellow, color.Bold)},
+		{Pattern: tokenHighlighter(isKeyword), Sequence: CreateColorSequence(color.FgHiYellow, color.Bold)},
 
 		// idents
-		{Pattern: kindHighlighter(token.TokenIdent), Sequence: colorToSequence(color.FgHiWhite)},
+		{Pattern: tokenHighlighter(isIdentifier), Sequence: CreateColorSequence(color.FgHiWhite)},
 	}
 )
 
@@ -250,8 +237,8 @@ func setLineEditor(ed *multiline.Editor, enableHighlight bool) {
 	}
 
 	ed.Highlight = defaultHighlights
-	ed.ResetColor = colorToSequence(color.Reset)
-	ed.DefaultColor = colorToSequence(color.Reset)
+	ed.ResetColor = CreateColorSequence(color.Reset)
+	ed.DefaultColor = CreateColorSequence(color.Reset)
 }
 
 func setupHistory(ed *multiline.Editor, historyFileName string) (History, error) {
