@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+// This proto file has syntax errors
+message InvalidMessage {
+  optional string field = 1; // proto3 doesn't support optional in this way
+  required string field2 = 2; // proto3 doesn't support required
+  invalid_type field3 = 3; // invalid type
+}

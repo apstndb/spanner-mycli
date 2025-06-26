@@ -13,33 +13,6 @@ import (
 )
 
 func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
-	// Ensure test fixtures directory exists
-	if err := os.MkdirAll("testdata/test_fixtures", 0755); err != nil {
-		t.Fatalf("Failed to create test fixtures directory: %v", err)
-	}
-	
-	// Create test fixture files
-	testFiles := map[string][]byte{
-		"testdata/test_fixtures/invalid.txt": []byte("This is not a valid protobuf file.\nIt contains plain text instead of binary protobuf data."),
-		"testdata/test_fixtures/empty.pb":    []byte{},
-		"testdata/test_fixtures/invalid_proto.proto": []byte(`syntax = "proto3";
-
-// This proto file has syntax errors
-message InvalidMessage {
-  optional string field = 1; // proto3 doesn't support optional in this way
-  required string field2 = 2; // proto3 doesn't support required
-  invalid_type field3 = 3; // invalid type
-}`),
-	}
-	
-	for filename, content := range testFiles {
-		if err := os.WriteFile(filename, content, 0644); err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filename, err)
-		}
-		defer func(f string) {
-			_ = os.Remove(f)
-		}(filename)
-	}
 	tests := []struct {
 		desc      string
 		values    []string
@@ -66,13 +39,13 @@ message InvalidMessage {
 		},
 		{
 			desc:      "invalid proto file",
-			values:    []string{"testdata/test_fixtures/invalid.txt"},
+			values:    []string{"testdata/invalid_protos/invalid.txt"},
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
 		},
 		{
 			desc:   "empty file",
-			values: []string{"testdata/test_fixtures/empty.pb"},
+			values: []string{"testdata/invalid_protos/empty.pb"},
 			// Empty files unmarshal successfully to empty FileDescriptorSet
 		},
 		{
@@ -81,7 +54,7 @@ message InvalidMessage {
 		},
 		{
 			desc:      "invalid proto source file",
-			values:    []string{"testdata/test_fixtures/invalid_proto.proto"},
+			values:    []string{"testdata/invalid_protos/invalid_proto.proto"},
 			wantError: true,
 			errorMsg:  "invalid_proto.proto:",
 		},
@@ -117,32 +90,9 @@ message InvalidMessage {
 }
 
 func TestReadFileDescriptorProtoFromFile(t *testing.T) {
-	// Ensure test fixtures directory exists
+	// Ensure test fixtures directory exists for dynamic files
 	if err := os.MkdirAll("testdata/test_fixtures", 0755); err != nil {
 		t.Fatalf("Failed to create test fixtures directory: %v", err)
-	}
-	
-	// Create test fixture files
-	testFiles := map[string][]byte{
-		"testdata/test_fixtures/invalid.txt": []byte("This is not a valid protobuf file.\nIt contains plain text instead of binary protobuf data."),
-		"testdata/test_fixtures/empty.pb":    []byte{},
-		"testdata/test_fixtures/invalid_proto.proto": []byte(`syntax = "proto3";
-
-// This proto file has syntax errors
-message InvalidMessage {
-  optional string field = 1; // proto3 doesn't support optional in this way
-  required string field2 = 2; // proto3 doesn't support required
-  invalid_type field3 = 3; // invalid type
-}`),
-	}
-	
-	for filename, content := range testFiles {
-		if err := os.WriteFile(filename, content, 0644); err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filename, err)
-		}
-		defer func(f string) {
-			_ = os.Remove(f)
-		}(filename)
 	}
 	
 	// Create a test file with permission issues
@@ -199,18 +149,18 @@ message InvalidMessage {
 		},
 		{
 			desc:      "invalid proto binary file",
-			filename:  "testdata/test_fixtures/invalid.txt",
+			filename:  "testdata/invalid_protos/invalid.txt",
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
 		},
 		{
 			desc:     "empty file",
-			filename: "testdata/test_fixtures/empty.pb",
+			filename: "testdata/invalid_protos/empty.pb",
 			// Empty files unmarshal successfully to empty FileDescriptorSet
 		},
 		{
 			desc:      "invalid proto source file",
-			filename:  "testdata/test_fixtures/invalid_proto.proto",
+			filename:  "testdata/invalid_protos/invalid_proto.proto",
 			wantError: true,
 			errorMsg:  "invalid_proto.proto:",
 		},
