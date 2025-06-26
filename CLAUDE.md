@@ -35,10 +35,14 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 3. **Never push directly to main branch** - always use Pull Requests
 4. **Never commit directly to main branch** - always use feature branches
 5. **Repository merge policy**: This repository enforces **squash merge only** via Repository Ruleset - AI assistants must use `squash` method for all automated merges
-6. **PR merge process**: Before merging, comment `/gemini summary` in the PR, then use `go tool gh-helper reviews wait` (**DO NOT** use `--request-review`)
+6. **PR merge process**: Before merging, if additional commits have been pushed since the initial review, request an updated summary by commenting `/gemini summary`. An initial summary is generated automatically, so this is only for updates. Then, use `go tool gh-helper reviews wait` (**DO NOT** use `--request-review`)
 7. **Squash merge commits**: MUST include descriptive summary of PR changes in squash commit message
 
 ## Essential Commands
+
+> [!NOTE]
+> **Note for Human Developers**: The `go tool gh-helper` and its associated workflows are primarily designed for automation by AI assistants to ensure consistent and error-free execution of repository management tasks. While human developers can use these tools, they are not a strict requirement for manual contributions.
+
 
 ```bash
 # Development cycle (CRITICAL)

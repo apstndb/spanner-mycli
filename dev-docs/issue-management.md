@@ -4,6 +4,10 @@ This document covers GitHub workflow, issue management, code review processes, a
 
 ## Development Tools Usage
 
+> [!NOTE]
+> **This tooling is primarily intended for use by AI assistants.** The commands and workflows described here are designed for programmatic execution to maintain consistency. Human developers should refer to these sections to understand the automation process but are not required to follow it manually for their own contributions.
+
+
 ### Tool Installation
 
 ```bash
