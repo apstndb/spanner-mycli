@@ -22,8 +22,7 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ExecuteStatementArgs represents the arguments for the execute_statement tool
@@ -31,31 +30,11 @@ type ExecuteStatementArgs struct {
 	Statement string `json:"statement" description:"Valid spanner-mycli statement. It can be SQL(Query, DML, DDL), GQL, and spanner-mycli client-side statements"`
 }
 
-// createMCPServer creates a new MCP server with the execute_statement tool
-func createMCPServer(cli *Cli) *server.MCPServer {
-	s := server.NewMCPServer("spanner-mycli", version,
-		server.WithToolCapabilities(false))
-
-	tool := mcp.NewTool("execute_statement",
-		mcp.WithDescription(heredoc.Doc(
-			`Execute any spanner-mycli statement.
-If you want to check valid statements, see "HELP".
-Result is ASCII table rendered, so you need to print as code block`)),
-		mcp.WithString("statement",
-			mcp.Required(),
-			mcp.Description("Valid spanner-mycli statement. It can be SQL(Query, DML, DDL), GQL, and spanner-mycli client-side statements"),
-		),
-		// Add tool annotations to provide hints about the tool's behavior
-		mcp.WithTitleAnnotation("Execute Spanner SQL Statement"),
-		mcp.WithReadOnlyHintAnnotation(false),   // Can modify the database
-		mcp.WithDestructiveHintAnnotation(true), // Can perform destructive operations
-		mcp.WithIdempotentHintAnnotation(false), // Repeated calls can have different effects
-		mcp.WithOpenWorldHintAnnotation(true),   // Interacts with external entities (the database)
-	)
-
-	s.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, request mcp.CallToolRequest, args ExecuteStatementArgs) (*mcp.CallToolResult, error) {
+// executeStatementHandler handles the execute_statement tool
+func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+	return func(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
 		// Parse the statement
-		statement := strings.TrimSuffix(args.Statement, ";")
+		statement := strings.TrimSuffix(params.Arguments.Statement, ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
 			return nil, err
@@ -70,10 +49,38 @@ Result is ASCII table rendered, so you need to print as code block`)),
 			return nil, err
 		}
 
-		return mcp.NewToolResultText(sb.String()), nil
-	}))
+		return &mcp.CallToolResultFor[struct{}]{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: sb.String()},
+			},
+		}, nil
+	}
+}
 
-	return s
+// createMCPServer creates a new MCP server with the execute_statement tool
+func createMCPServer(cli *Cli) *mcp.Server {
+	server := mcp.NewServer("spanner-mycli", version, nil)
+
+	// Note: Tool annotations (Title, ReadOnly, Destructive, etc.) are not directly supported in the official SDK
+	// The description now includes all relevant information
+	description := heredoc.Doc(
+		`Execute any spanner-mycli statement.
+If you want to check valid statements, see "HELP".
+Result is ASCII table rendered, so you need to print as code block
+
+Note: This tool can modify the database and perform destructive operations.`)
+
+	tool := mcp.NewServerTool("execute_statement", description, executeStatementHandler(cli),
+		mcp.Input(
+			mcp.Property("statement",
+				mcp.Description("Valid spanner-mycli statement. It can be SQL(Query, DML, DDL), GQL, and spanner-mycli client-side statements"),
+			),
+		),
+	)
+
+	server.AddTools(tool)
+
+	return server
 }
 
 // RunMCP runs the MCP server
@@ -87,10 +94,13 @@ func (c *Cli) RunMCP(ctx context.Context) error {
 		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
 	}
 
-	s := createMCPServer(c)
+	server := createMCPServer(c)
 
-	if err := server.ServeStdio(s); err != nil {
+	transport := mcp.NewStdioTransport()
+	session, err := server.Connect(ctx, transport)
+	if err != nil {
 		return fmt.Errorf("failed to serve mcp: %w", err)
 	}
-	return nil
+	// Wait for the session to complete
+	return session.Wait()
 }
