@@ -13,6 +13,33 @@ import (
 )
 
 func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
+	// Ensure test fixtures directory exists
+	if err := os.MkdirAll("testdata/test_fixtures", 0755); err != nil {
+		t.Fatalf("Failed to create test fixtures directory: %v", err)
+	}
+	
+	// Create test fixture files
+	testFiles := map[string][]byte{
+		"testdata/test_fixtures/invalid.txt": []byte("This is not a valid protobuf file.\nIt contains plain text instead of binary protobuf data."),
+		"testdata/test_fixtures/empty.pb":    []byte{},
+		"testdata/test_fixtures/invalid_proto.proto": []byte(`syntax = "proto3";
+
+// This proto file has syntax errors
+message InvalidMessage {
+  optional string field = 1; // proto3 doesn't support optional in this way
+  required string field2 = 2; // proto3 doesn't support required
+  invalid_type field3 = 3; // invalid type
+}`),
+	}
+	
+	for filename, content := range testFiles {
+		if err := os.WriteFile(filename, content, 0644); err != nil {
+			t.Fatalf("Failed to create test file %s: %v", filename, err)
+		}
+		defer func(f string) {
+			_ = os.Remove(f)
+		}(filename)
+	}
 	tests := []struct {
 		desc      string
 		values    []string
@@ -90,6 +117,34 @@ func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
 }
 
 func TestReadFileDescriptorProtoFromFile(t *testing.T) {
+	// Ensure test fixtures directory exists
+	if err := os.MkdirAll("testdata/test_fixtures", 0755); err != nil {
+		t.Fatalf("Failed to create test fixtures directory: %v", err)
+	}
+	
+	// Create test fixture files
+	testFiles := map[string][]byte{
+		"testdata/test_fixtures/invalid.txt": []byte("This is not a valid protobuf file.\nIt contains plain text instead of binary protobuf data."),
+		"testdata/test_fixtures/empty.pb":    []byte{},
+		"testdata/test_fixtures/invalid_proto.proto": []byte(`syntax = "proto3";
+
+// This proto file has syntax errors
+message InvalidMessage {
+  optional string field = 1; // proto3 doesn't support optional in this way
+  required string field2 = 2; // proto3 doesn't support required
+  invalid_type field3 = 3; // invalid type
+}`),
+	}
+	
+	for filename, content := range testFiles {
+		if err := os.WriteFile(filename, content, 0644); err != nil {
+			t.Fatalf("Failed to create test file %s: %v", filename, err)
+		}
+		defer func(f string) {
+			_ = os.Remove(f)
+		}(filename)
+	}
+	
 	// Create a test file with permission issues
 	permissionTestFile := "testdata/test_fixtures/permission_test.pb"
 	if err := os.WriteFile(permissionTestFile, []byte("test"), 0000); err == nil {
