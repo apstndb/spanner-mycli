@@ -74,9 +74,18 @@ func TestSession_ConcurrentQueries(t *testing.T) { }
 - Consider using `testify/mock` for complex mocks
 
 ### Integration Tests
-- Use build tags for integration tests: `// +build integration`
+- Integration tests are skipped when using `go test -short` (no build tags needed)
 - Mock Google Cloud Spanner client for most tests
 - Use emulator for integration tests when necessary
+- Mark integration tests with `t.Skip()` when `testing.Short()` is true:
+  ```go
+  func TestIntegration(t *testing.T) {
+      if testing.Short() {
+          t.Skip("skipping integration test in short mode")
+      }
+      // integration test code here
+  }
+  ```
 
 ## Priority Areas for Coverage Improvement
 
@@ -172,7 +181,7 @@ func TestParseQuery(t *testing.T) {
                 t.Errorf("ParseQuery() error = %v, wantErr %v", err, tt.wantErr)
                 return
             }
-            if !reflect.DeepEqual(got, tt.want) {
+            if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
                 t.Errorf("ParseQuery() = %v, want %v", got, tt.want)
             }
         })
