@@ -4,12 +4,13 @@ This document outlines the testing standards and coverage goals for spanner-mycl
 
 ## Coverage Goals
 
-### Current Status
-- **Overall Coverage**: 65.3%
-- **Main Package**: 68.6%
-- **Internal Packages**: 
-  - `internal/proto/zetasql`: 0.0% (generated code, low priority)
-  - `internal/protostruct`: 0.0% (needs improvement)
+### Checking Current Status
+To check the current coverage status, run:
+```bash
+make test-coverage
+```
+
+This will display the overall coverage percentage and generate a detailed HTML report.
 
 ### Target Coverage
 - **Short-term Goal (3 months)**: 70% overall coverage
@@ -90,7 +91,11 @@ func TestSession_ConcurrentQueries(t *testing.T) { }
    - Transaction handling
    - Concurrent operations
 
-3. **System Variables** (`system_variables.go`)
+3. **Internal Packages**
+   - `internal/protostruct` - Protocol buffer utilities
+   - Other internal utilities (excluding generated code)
+
+4. **System Variables** (`system_variables.go`)
    - Variable validation
    - Type conversions
    - Default value handling
