@@ -68,6 +68,21 @@ func TestSession_ExecuteQuery(t *testing.T) { }
 func TestSession_ConcurrentQueries(t *testing.T) { }
 ```
 
+### Comparison and Assertions
+- **Prefer `google/go-cmp`** over `reflect.DeepEqual` for comparing complex structures
+  - Provides better diff output on failures
+  - Handles unexported fields and custom comparisons
+  - Example:
+    ```go
+    import "github.com/google/go-cmp/cmp"
+    
+    if diff := cmp.Diff(want, got); diff != "" {
+        t.Errorf("ParseQuery() mismatch (-want +got):\n%s", diff)
+    }
+    ```
+- Use `reflect.DeepEqual` only for simple comparisons
+- Consider `testify/assert` for more readable assertions
+
 ### Mock Guidelines
 - Use interfaces for external dependencies
 - Create test doubles in `*_test.go` files
@@ -155,6 +170,8 @@ Currently, we don't enforce minimum coverage thresholds. Instead, we:
 
 ### Table-Driven Tests
 ```go
+import "github.com/google/go-cmp/cmp"
+
 func TestParseQuery(t *testing.T) {
     tests := []struct {
         name    string
@@ -181,8 +198,10 @@ func TestParseQuery(t *testing.T) {
                 t.Errorf("ParseQuery() error = %v, wantErr %v", err, tt.wantErr)
                 return
             }
-            if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-                t.Errorf("ParseQuery() = %v, want %v", got, tt.want)
+            if !tt.wantErr {
+                if diff := cmp.Diff(tt.want, got); diff != "" {
+                    t.Errorf("ParseQuery() mismatch (-want +got):\n%s", diff)
+                }
             }
         })
     }
