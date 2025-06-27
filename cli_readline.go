@@ -91,6 +91,25 @@ func newPersistentHistoryWithFS(filename string, h *simplehistory.Container, fs 
 	return &persistentHistory{filename: filename, history: h, fs: fs}, nil
 }
 
+// shouldSubmitStatement determines if the input should be submitted based on statements and errors
+func shouldSubmitStatement(statements []inputStatement, err error) (shouldSubmit bool, waitingStatus string) {
+	// Continue with waiting prompt if there is an error with waiting status
+	if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
+		return false, e.WaitingString
+	}
+
+	// Submit if there is an error or completed statement.
+	shouldSubmit = err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+	return shouldSubmit, ""
+}
+
+// generatePS2Prompt generates the continuation prompt (PS2) based on PS1 and PS2 template
+func generatePS2Prompt(ps1 string, ps2Template string, ps2Interpolated string) string {
+	lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
+	_, needPadding := strings.CutPrefix(ps2Template, "%P")
+	return lo.Ternary(needPadding, runewidth.FillLeft(ps2Interpolated, runewidth.StringWidth(lastLineOfPrompt)), ps2Interpolated)
+}
+
 func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	ed := &multiline.Editor{}
 
@@ -106,18 +125,9 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 
 	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
 		statements, err := separateInput(strings.Join(lines, "\n"))
-
-		// Continue with waiting prompt if there is an error with waiting status
-		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
-			c.waitingStatus = e.WaitingString
-			return false
-		}
-
-		// reset waitingStatus
-		c.waitingStatus = ""
-
-		// Submit if there is an error or completed statement.
-		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+		shouldSubmit, newWaitingStatus := shouldSubmitStatement(statements, err)
+		c.waitingStatus = newWaitingStatus
+		return shouldSubmit
 	})
 
 	ed.SetPrompt(PS1PS2FuncToPromptFunc(
@@ -125,11 +135,9 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
 		},
 		func(ps1 string) string {
-			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
-
-			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			prompt2, _ := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
 			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
-			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
+			return generatePS2Prompt(ps1, c.SystemVariables.Prompt2, interpolatedPrompt2)
 		}))
 
 	return ed, history, nil
@@ -272,11 +280,11 @@ func setupHistory(ed *multiline.Editor, historyFileName string) (History, error)
 	return history, nil
 }
 
-func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
-	lines, err := ed.Read(ctx)
-	if err != nil {
+// processInputLines converts lines and read error into an inputStatement
+func processInputLines(lines []string, readErr error) (*inputStatement, error) {
+	if readErr != nil {
 		if len(lines) == 0 {
-			return nil, fmt.Errorf("failed to read input: %w", err)
+			return nil, fmt.Errorf("failed to read input: %w", readErr)
 		}
 
 		str := strings.Join(lines, "\n")
@@ -284,7 +292,29 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 			statement:                str,
 			statementWithoutComments: str,
 			delim:                    "",
-		}, err
+		}, readErr
+	}
+	return nil, nil
+}
+
+// validateInteractiveInput validates that input contains at most one statement for interactive mode
+func validateInteractiveInput(statements []inputStatement) (*inputStatement, error) {
+	switch len(statements) {
+	case 0:
+		return nil, errors.New("no input")
+	case 1:
+		return &statements[0], nil
+	default:
+		return nil, errors.New("sql queries are limited to single statements in interactive mode")
+	}
+}
+
+func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	lines, err := ed.Read(ctx)
+	
+	// Handle read errors
+	if stmt, procErr := processInputLines(lines, err); procErr != nil || stmt != nil {
+		return stmt, procErr
 	}
 
 	input := strings.Join(lines, "\n") + "\n"
@@ -294,14 +324,7 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 		return nil, err
 	}
 
-	switch len(statements) {
-	case 0:
-		return nil, errors.New("no input")
-	case 1:
-		return &statements[0], nil
-	default:
-		return nil, errors.New("sql queries are limited to single statements in interactive mode")
-	}
+	return validateInteractiveInput(statements)
 }
 
 func isInterrupted(err error) bool {
