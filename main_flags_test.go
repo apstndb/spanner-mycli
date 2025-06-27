@@ -97,6 +97,12 @@ func TestParseFlagsCombinations(t *testing.T) {
 			errContains: "--try-partition-query requires SQL input",
 		},
 		{
+			name:        "table flag without SQL input in batch mode",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
+			// Table flag is valid without SQL input - it affects output format
+			wantErr:     false,
+		},
+		{
 			name: "try-partition-query with execute is valid",
 			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
 			wantErr: false,
@@ -109,6 +115,23 @@ func TestParseFlagsCombinations(t *testing.T) {
 		{
 			name: "try-partition-query with file is valid",
 			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--file", "query.sql"},
+			wantErr: false,
+		},
+
+		// Embedded emulator tests
+		{
+			name: "embedded-emulator without connection params",
+			args: []string{"--embedded-emulator"},
+			wantErr: false,
+		},
+		{
+			name: "embedded-emulator with custom image",
+			args: []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
+			wantErr: false,
+		},
+		{
+			name: "embedded-emulator ignores connection params",
+			args: []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
 			wantErr: false,
 		},
 
@@ -372,6 +395,60 @@ func TestParseFlagsValidation(t *testing.T) {
 			name: "valid log level",
 			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--log-level", "INFO"},
 			wantErr: false,
+		},
+		
+		// Credential file tests
+		{
+			name: "valid credential file",
+			args: func() []string {
+				f, err := os.CreateTemp("", "cred-*.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.Close()
+				t.Cleanup(func() { _ = os.Remove(f.Name()) })
+				return []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", f.Name()}
+			}(),
+			wantErr: false,
+		},
+		{
+			name: "non-existent credential file",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "/non/existent/cred.json"},
+			// Note: This won't fail during flag parsing/validation, only during run()
+			wantErr: false,
+		},
+		
+		// MCP mode tests  
+		{
+			name: "mcp mode with all required params",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--mcp"},
+			wantErr: false,
+		},
+		{
+			name: "mcp mode with embedded emulator",
+			args: []string{"--embedded-emulator", "--mcp"},
+			wantErr: false,
+		},
+		
+		// Complex flag combinations
+		{
+			name: "multiple set flags",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", 
+				"--set", "CLI_FORMAT=VERTICAL", "--set", "READONLY=true", "--set", "AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC"},
+			wantErr: false,
+		},
+		{
+			name: "multiple param flags",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d",
+				"--param", "p1='value1'", "--param", "p2=INT64", "--param", "p3=ARRAY<STRING>"},
+			wantErr: false,
+		},
+		{
+			name: "invalid param syntax",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d",
+				"--param", "p1=@{invalid}"},
+			wantErr: true,
+			errContains: "error on parsing --param",
 		},
 	}
 
@@ -1500,6 +1577,75 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 }
 
 // TestBatchModeTableFormatLogic tests the complex logic for determining CLI_FORMAT
+// TestReadCredentialFile tests the readCredentialFile function
+func TestReadCredentialFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupFile   func() (string, func())
+		wantContent string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid credential file",
+			setupFile: func() (string, func()) {
+				f, err := os.CreateTemp("", "cred-*.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				content := `{"type": "service_account", "project_id": "test"}`
+				if _, err := f.WriteString(content); err != nil {
+					t.Fatal(err)
+				}
+				f.Close()
+				return f.Name(), func() { _ = os.Remove(f.Name()) }
+			},
+			wantContent: `{"type": "service_account", "project_id": "test"}`,
+			wantErr:     false,
+		},
+		{
+			name: "non-existent file",
+			setupFile: func() (string, func()) {
+				return "/non/existent/file.json", func() {}
+			},
+			wantErr:     true,
+			errContains: "no such file",
+		},
+		{
+			name: "empty file",
+			setupFile: func() (string, func()) {
+				f, err := os.CreateTemp("", "cred-*.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.Close()
+				return f.Name(), func() { _ = os.Remove(f.Name()) }
+			},
+			wantContent: "",
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filepath, cleanup := tt.setupFile()
+			defer cleanup()
+
+			got, err := readCredentialFile(filepath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readCredentialFile() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("readCredentialFile() error = %v, does not contain %v", err, tt.errContains)
+			}
+			if !tt.wantErr && string(got) != tt.wantContent {
+				t.Errorf("readCredentialFile() = %v, want %v", string(got), tt.wantContent)
+			}
+		})
+	}
+}
+
 func TestBatchModeTableFormatLogic(t *testing.T) {
 	tests := []struct {
 		name          string
