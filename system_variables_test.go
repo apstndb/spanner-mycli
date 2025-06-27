@@ -3,8 +3,11 @@ package main
 import (
 	"cloud.google.com/go/spanner"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +110,13 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 		t.Fatalf("Failed to change permissions for test file: %v", err)
 	}
 
+	// Create a test HTTP server for URL tests
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("this is not a valid proto"))
+	}))
+	defer httpServer.Close()
+
 	// Create a large descriptor file for testing
 	largeFile := filepath.Join(tempDir, "large_test.pb")
 	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err != nil {
@@ -169,25 +179,28 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 			errorMsg:  "error on unmarshal proto descriptor-file",
 		},
 		{
-			desc:      "HTTP URL - non-existent",
-			filename:  "http://example.com/non_existent.pb",
+			desc:      "HTTP URL - invalid proto",
+			filename:  httpServer.URL + "/invalid.pb",
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
-			// NOTE: This test relies on external network, but tests error path only.
-			// Real HTTP functionality should be tested with mock/test server.
 		},
 		{
 			desc:      "HTTPS URL - non-existent",
 			filename:  "https://example.com/non_existent.pb",
 			wantError: true,
 			errorMsg:  "error on unmarshal proto descriptor-file",
-			// NOTE: This test relies on external network, but tests error path only.
-			// Real HTTPS functionality should be tested with mock/test server.
+			// NOTE: This still relies on external network for HTTPS, but tests error path only.
+			// A full solution would require setting up an HTTPS test server.
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
+			// Skip permission test on Windows as os.Chmod is not effective
+			if test.desc == "permission denied file" && runtime.GOOS == "windows" {
+				t.Skip("Skipping permission test on Windows as os.Chmod is not effective")
+			}
+			
 			fds, err := readFileDescriptorProtoFromFile(test.filename)
 
 			if test.wantError {
