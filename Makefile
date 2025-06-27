@@ -23,10 +23,27 @@ test:
 test-verbose:
 	go test -v ./...
 
-# Test with coverage profile (for CI)
+# Test with coverage profile
 test-coverage:
 	@mkdir -p tmp
-	go test ./... -coverprofile=tmp/coverage.out
+	@echo "🧪 Running tests with coverage..."
+	@go test ./... -coverprofile=tmp/coverage.out
+	@echo "📊 Generating coverage report..."
+	@go tool cover -html=tmp/coverage.out -o tmp/coverage.html
+	@echo "📈 Coverage summary:"
+	@go tool cover -func=tmp/coverage.out | tail -1
+	@echo "✅ Coverage report generated: tmp/coverage.html"
+
+# Open coverage report in browser
+test-coverage-open: test-coverage
+	@echo "🌐 Opening coverage report in browser..."
+	@if command -v open >/dev/null 2>&1; then \
+		open tmp/coverage.html; \
+	elif command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open tmp/coverage.html; \
+	else \
+		echo "⚠️  Please open tmp/coverage.html manually"; \
+	fi
 
 
 lint:
@@ -35,7 +52,7 @@ lint:
 
 # Enhanced development targets (issue #301 - script reorganization)
 # Development targets using Go 1.24 tool management and simple Makefile workflows
-.PHONY: test-quick check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools
+.PHONY: test-quick test-coverage test-coverage-open check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools
 
 # Quick tests for development cycle
 test-quick:
@@ -63,7 +80,8 @@ help-dev:
 	@echo "  make build            - Build the application"
 	@echo "  make build-tools      - Install gh-helper using Go 1.24 tool management"
 	@echo "  make test             - Run full test suite (required before push)"
-	@echo "  make test-coverage    - Run tests with coverage profile (for CI)"
+	@echo "  make test-coverage    - Run tests with coverage report"
+	@echo "  make test-coverage-open - Run coverage and open HTML report in browser"
 	@echo "  make test-quick       - Run quick tests (go test -short)"
 	@echo "  make lint             - Run linter (required before push)"
 	@echo "  make check            - Run test && lint (required before push)"

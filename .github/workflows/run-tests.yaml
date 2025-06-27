@@ -38,4 +38,12 @@ jobs:
           args: --timeout=5m
       - name: run tests with coverage
         run: make test-coverage
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: tmp/coverage.html
+          retention-days: 7
       - uses: k1LoW/octocov-action@v1
+        env:
+          COVERAGE_ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
