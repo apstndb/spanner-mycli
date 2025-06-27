@@ -3,6 +3,12 @@ package main
 import (
 	"cloud.google.com/go/spanner"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,21 +17,310 @@ import (
 )
 
 func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
-	// TODO: More test
 	tests := []struct {
-		desc   string
-		values []string
+		desc      string
+		values    []string
+		wantError bool
+		errorMsg  string
 	}{
-		{"single", []string{"testdata/protos/order_descriptors.pb"}},
-		{"repeated", []string{"testdata/protos/order_descriptors.pb", "testdata/protos/order_descriptors.pb"}},
-		{"multiple", []string{"testdata/protos/order_descriptors.pb", "testdata/protos/query_plan_descriptors.pb"}},
+		{
+			desc:   "single valid descriptor",
+			values: []string{"testdata/protos/order_descriptors.pb"},
+		},
+		{
+			desc:   "repeated same descriptor",
+			values: []string{"testdata/protos/order_descriptors.pb", "testdata/protos/order_descriptors.pb"},
+		},
+		{
+			desc:   "multiple different descriptors",
+			values: []string{"testdata/protos/order_descriptors.pb", "testdata/protos/query_plan_descriptors.pb"},
+		},
+		{
+			desc:      "non-existent file",
+			values:    []string{"testdata/protos/non_existent.pb"},
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
+		{
+			desc:      "invalid proto file",
+			values:    []string{"testdata/invalid_protos/invalid.txt"},
+			wantError: true,
+			errorMsg:  "error on unmarshal proto descriptor-file",
+		},
+		{
+			desc:   "empty file",
+			values: []string{"testdata/invalid_protos/empty.pb"},
+			// Empty files unmarshal successfully to empty FileDescriptorSet
+		},
+		{
+			desc:   "proto source file",
+			values: []string{"testdata/protos/singer.proto"},
+		},
+		{
+			desc:      "invalid proto source file",
+			values:    []string{"testdata/invalid_protos/invalid_proto.proto"},
+			wantError: true,
+			errorMsg:  "invalid_proto.proto:",
+		},
+		{
+			desc:      "mix of valid and invalid files",
+			values:    []string{"testdata/protos/order_descriptors.pb", "testdata/protos/non_existent.pb"},
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			var sysVars systemVariables
+			var lastErr error
 			for _, value := range test.values {
 				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
-					t.Errorf("should success, but failed, value: %v, err: %v", value, err)
+					lastErr = err
+					if !test.wantError {
+						t.Errorf("unexpected error for value %q: %v", value, err)
+					}
+					if test.wantError {
+						break // Exit the loop immediately when expecting an error
+					}
+				}
+			}
+			
+			if test.wantError {
+				if lastErr == nil {
+					t.Errorf("expected error but got none")
+				} else if !strings.Contains(lastErr.Error(), test.errorMsg) {
+					t.Errorf("expected error containing %q, got %v", test.errorMsg, lastErr)
+				}
+			}
+		})
+	}
+}
+
+func TestReadFileDescriptorProtoFromFile(t *testing.T) {
+	// Use t.TempDir() for dynamic test files - automatically cleaned up
+	tempDir := t.TempDir()
+	
+	// Create a test file with permission issues
+	permissionTestFile := filepath.Join(tempDir, "permission_test.pb")
+	if err := os.WriteFile(permissionTestFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create permission test file: %v", err)
+	}
+	// Change permissions to 0000 after creation
+	if err := os.Chmod(permissionTestFile, 0000); err != nil {
+		t.Fatalf("Failed to change permissions for test file: %v", err)
+	}
+
+	// Create a test HTTP server for URL tests
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("this is not a valid proto"))
+	}))
+	defer httpServer.Close()
+
+	// Create a large descriptor file for testing
+	largeFile := filepath.Join(tempDir, "large_test.pb")
+	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err != nil {
+		t.Fatalf("Failed to create large test file: %v", err)
+	}
+
+	tests := []struct {
+		desc      string
+		filename  string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			desc:     "valid descriptor file",
+			filename: "testdata/protos/order_descriptors.pb",
+		},
+		{
+			desc:     "valid proto source file",
+			filename: "testdata/protos/singer.proto",
+		},
+		{
+			desc:      "non-existent file",
+			filename:  "testdata/protos/non_existent.pb",
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
+		{
+			desc:      "permission denied file",
+			filename:  permissionTestFile,
+			wantError: true,
+			errorMsg:  "permission denied",
+		},
+		{
+			desc:      "invalid proto binary file",
+			filename:  "testdata/invalid_protos/invalid.txt",
+			wantError: true,
+			errorMsg:  "error on unmarshal proto descriptor-file",
+		},
+		{
+			desc:     "empty file",
+			filename: "testdata/invalid_protos/empty.pb",
+			// Empty files unmarshal successfully to empty FileDescriptorSet
+		},
+		{
+			desc:      "invalid proto source file",
+			filename:  "testdata/invalid_protos/invalid_proto.proto",
+			wantError: true,
+			errorMsg:  "invalid_proto.proto:",
+		},
+		{
+			desc:      "directory instead of file",
+			filename:  "testdata/protos/",
+			wantError: true,
+			errorMsg:  "is a directory",
+		},
+		{
+			desc:      "large invalid binary file",
+			filename:  largeFile,
+			wantError: true,
+			errorMsg:  "error on unmarshal proto descriptor-file",
+		},
+		{
+			desc:      "HTTP URL - invalid proto",
+			filename:  httpServer.URL + "/invalid.pb",
+			wantError: true,
+			errorMsg:  "error on unmarshal proto descriptor-file",
+		},
+		{
+			desc:      "HTTPS URL - non-existent",
+			filename:  "https://example.com/non_existent.pb",
+			wantError: true,
+			errorMsg:  "error on unmarshal proto descriptor-file",
+			// NOTE: This still relies on external network for HTTPS, but tests error path only.
+			// A full solution would require setting up an HTTPS test server.
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			// Skip permission test on Windows as os.Chmod is not effective
+			if test.desc == "permission denied file" && runtime.GOOS == "windows" {
+				t.Skip("Skipping permission test on Windows as os.Chmod is not effective")
+			}
+			
+			fds, err := readFileDescriptorProtoFromFile(test.filename)
+
+			if test.wantError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if !strings.Contains(err.Error(), test.errorMsg) {
+					t.Errorf("expected error containing %q, got %v", test.errorMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if fds == nil {
+					t.Errorf("expected non-nil FileDescriptorSet")
+				}
+			}
+		})
+	}
+}
+
+func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
+	tests := []struct {
+		desc             string
+		descriptorFiles  []string
+		verifyDescriptor bool
+	}{
+		{
+			desc:             "verify descriptors are loaded and usable",
+			descriptorFiles:  []string{"testdata/protos/order_descriptors.pb", "testdata/protos/query_plan_descriptors.pb"},
+			verifyDescriptor: true,
+		},
+		{
+			desc:             "verify proto source files are compiled and loaded",
+			descriptorFiles:  []string{"testdata/protos/singer.proto"},
+			verifyDescriptor: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			var sysVars systemVariables
+			
+			// Add descriptor files
+			for _, file := range test.descriptorFiles {
+				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
+					t.Fatalf("Failed to add descriptor file %s: %v", file, err)
+				}
+			}
+			
+			// Verify descriptors were loaded
+			if test.verifyDescriptor {
+				if sysVars.ProtoDescriptor == nil {
+					t.Errorf("Expected ProtoDescriptor to be set")
+				}
+				if sysVars.ProtoDescriptor.GetFile() == nil {
+					t.Errorf("Expected FileDescriptorSet to contain files")
+				}
+				if len(sysVars.ProtoDescriptor.GetFile()) == 0 {
+					t.Errorf("Expected at least one file descriptor")
+				}
+			}
+		})
+	}
+}
+
+func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
+	tests := []struct {
+		desc      string
+		setup     func() *systemVariables
+		varName   string
+		value     string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			desc: "empty string value",
+			setup: func() *systemVariables {
+				return &systemVariables{}
+			},
+			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
+			value:     "",
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
+		{
+			desc: "spaces only value",
+			setup: func() *systemVariables {
+				return &systemVariables{}
+			},
+			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
+			value:     "   ",
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
+		{
+			desc: "non-existent path with parent directory traversal",
+			setup: func() *systemVariables {
+				return &systemVariables{}
+			},
+			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
+			value:     "../does_not_exist/non_existent_file.pb",
+			wantError: true,
+			errorMsg:  "no such file or directory",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			sysVars := test.setup()
+			err := sysVars.Add(test.varName, test.value)
+			
+			if test.wantError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if !strings.Contains(err.Error(), test.errorMsg) {
+					t.Errorf("expected error containing %q, got %v", test.errorMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
 				}
 			}
 		})

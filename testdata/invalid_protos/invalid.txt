@@ -1,0 +1,2 @@
+This is not a valid protobuf file.
+It contains plain text instead of binary protobuf data.
