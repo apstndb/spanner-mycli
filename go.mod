@@ -40,6 +40,7 @@ require (
 	github.com/olekukonko/tablewriter v1.0.6
 	github.com/samber/lo v1.49.1
 	github.com/sourcegraph/conc v0.3.0
+	github.com/spf13/afero v1.10.0
 	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.37.0
 	github.com/vbauerster/mpb/v8 v8.9.3

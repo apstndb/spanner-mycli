@@ -24,6 +24,7 @@ import (
 	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 	"github.com/samber/lo"
+	"github.com/spf13/afero"
 )
 
 // This file contains readline related code
@@ -35,6 +36,7 @@ type History interface {
 type persistentHistory struct {
 	filename string
 	history  *simplehistory.Container
+	fs       afero.Fs
 }
 
 func (p *persistentHistory) Len() int {
@@ -47,12 +49,12 @@ func (p *persistentHistory) At(i int) string {
 
 func (p *persistentHistory) Add(s string) {
 	p.history.Add(s)
-	file, err := os.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		slog.Error("failed to open history file", "file", p.filename, "err", err)
 		return
 	}
-	defer func(file *os.File) {
+	defer func(file afero.File) {
 		err := file.Close()
 		if err != nil {
 			slog.Error("failed to close history file", "file", p.filename, "err", err)
@@ -65,9 +67,13 @@ func (p *persistentHistory) Add(s string) {
 }
 
 func newPersistentHistory(filename string, h *simplehistory.Container) (History, error) {
-	b, err := os.ReadFile(filename)
+	return newPersistentHistoryWithFS(filename, h, afero.NewOsFs())
+}
+
+func newPersistentHistoryWithFS(filename string, h *simplehistory.Container, fs afero.Fs) (History, error) {
+	b, err := afero.ReadFile(fs, filename)
 	if errors.Is(err, os.ErrNotExist) {
-		return &persistentHistory{filename: filename, history: h}, nil
+		return &persistentHistory{filename: filename, history: h, fs: fs}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -82,7 +88,7 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 		}
 		h.Add(unquoted)
 	}
-	return &persistentHistory{filename: filename, history: h}, nil
+	return &persistentHistory{filename: filename, history: h, fs: fs}, nil
 }
 
 // shouldSubmitStatement determines if the input should be submitted based on statements and errors
