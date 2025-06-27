@@ -117,14 +117,15 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 
 	// Create a large descriptor file for testing
 	largeFile := "testdata/test_fixtures/large_test.pb"
-	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err == nil {
-		defer func() {
-			err := os.Remove(largeFile)
-			if err != nil {
-				t.Errorf("failed to remove %s: %v", largeFile, err)
-			}
-		}()
+	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err != nil {
+		t.Fatalf("Failed to create large test file: %v", err)
 	}
+	defer func() {
+		err := os.Remove(largeFile)
+		if err != nil {
+			t.Errorf("failed to remove %s: %v", largeFile, err)
+		}
+	}()
 
 	tests := []struct {
 		desc      string
