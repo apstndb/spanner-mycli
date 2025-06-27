@@ -627,6 +627,12 @@ func TestGeneratePS2Prompt(t *testing.T) {
 	}
 }
 
+// TestPS1PS2FuncToPromptFunc tests the function that converts PS1/PS2 functions into a readline prompt function.
+// It verifies that:
+// - Line 0 (first line) uses PS1 prompt
+// - Line 1+ (continuation lines) use PS2 prompt with PS1 passed as argument
+// - The functions are called the correct number of times
+// - The correct prompt strings are written to the output
 func TestPS1PS2FuncToPromptFunc(t *testing.T) {
 	ps1Called := 0
 	ps2Called := 0
