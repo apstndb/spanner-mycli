@@ -4,6 +4,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -90,13 +91,11 @@ func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
 }
 
 func TestReadFileDescriptorProtoFromFile(t *testing.T) {
-	// Ensure test fixtures directory exists for dynamic files
-	if err := os.MkdirAll("testdata/test_fixtures", 0755); err != nil {
-		t.Fatalf("Failed to create test fixtures directory: %v", err)
-	}
+	// Use t.TempDir() for dynamic test files - automatically cleaned up
+	tempDir := t.TempDir()
 	
 	// Create a test file with permission issues
-	permissionTestFile := "testdata/test_fixtures/permission_test.pb"
+	permissionTestFile := filepath.Join(tempDir, "permission_test.pb")
 	if err := os.WriteFile(permissionTestFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create permission test file: %v", err)
 	}
@@ -104,28 +103,12 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 	if err := os.Chmod(permissionTestFile, 0000); err != nil {
 		t.Fatalf("Failed to change permissions for test file: %v", err)
 	}
-	defer func() {
-		err := os.Chmod(permissionTestFile, 0644) // Reset permissions
-		if err != nil {
-			t.Errorf("failed to reset permissions for %s: %v", permissionTestFile, err)
-		}
-		err = os.Remove(permissionTestFile)
-		if err != nil {
-			t.Errorf("failed to remove %s: %v", permissionTestFile, err)
-		}
-	}()
 
 	// Create a large descriptor file for testing
-	largeFile := "testdata/test_fixtures/large_test.pb"
+	largeFile := filepath.Join(tempDir, "large_test.pb")
 	if err := os.WriteFile(largeFile, make([]byte, 1024*1024), 0644); err != nil {
 		t.Fatalf("Failed to create large test file: %v", err)
 	}
-	defer func() {
-		err := os.Remove(largeFile)
-		if err != nil {
-			t.Errorf("failed to remove %s: %v", largeFile, err)
-		}
-	}()
 
 	tests := []struct {
 		desc      string

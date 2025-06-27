@@ -25,6 +25,3 @@ tmp/          # Development temporary files (e.g., help output generation)
 
 # Phantom worktree notes - temporary development notes, safe to delete anywhere
 .notes.md
-
-# Test fixtures - generated during test runs, safe to delete
-testdata/test_fixtures/
