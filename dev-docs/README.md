@@ -11,6 +11,7 @@ dev-docs/
 ├── development-insights.md      # Development patterns and best practices
 ├── issue-management.md          # GitHub workflow and PR processes
 ├── coding-guidelines.md         # Coding standards and style guidelines
+├── testing-guidelines.md        # Testing standards and coverage goals
 └── patterns/                    # Specific implementation patterns
     └── system-variables.md      # System variable implementation patterns
 ```
@@ -43,6 +44,13 @@ dev-docs/
 - Go language standards and conventions
 - Project-specific coding rules
 - Current deviations and future improvements
+
+### [Testing Guidelines](testing-guidelines.md)
+- Coverage goals and current status
+- Running tests and coverage locally
+- Writing effective tests
+- Priority areas for coverage improvement
+
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
 
