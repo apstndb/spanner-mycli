@@ -296,12 +296,12 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 			errorMsg:  "no such file or directory",
 		},
 		{
-			desc: "relative path with ..",
+			desc: "non-existent path with parent directory traversal",
 			setup: func() *systemVariables {
 				return &systemVariables{}
 			},
 			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-			value:     "../testdata/protos/order_descriptors.pb",
+			value:     "../does_not_exist/non_existent_file.pb",
 			wantError: true,
 			errorMsg:  "no such file or directory",
 		},
