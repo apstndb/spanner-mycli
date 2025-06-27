@@ -49,7 +49,7 @@ func (p *persistentHistory) At(i int) string {
 
 func (p *persistentHistory) Add(s string) {
 	p.history.Add(s)
-	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		slog.Error("failed to open history file", "file", p.filename, "err", err)
 		return

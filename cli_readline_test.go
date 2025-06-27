@@ -419,7 +419,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 			setupFS: func() afero.Fs {
 				fs := afero.NewMemMapFs()
 				// Create file with existing content
-				err := afero.WriteFile(fs, "test_history.txt", []byte("\"EXISTING COMMAND\"\n"), 0666)
+				err := afero.WriteFile(fs, "test_history.txt", []byte("\"EXISTING COMMAND\"\n"), 0600)
 				require.NoError(t, err)
 				return fs
 			},
@@ -511,7 +511,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -530,7 +530,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"SELECT 1\"\n\n\"SELECT 2\"\n\n\n\"SELECT 3\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -550,7 +550,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 				fs := afero.NewMemMapFs()
 				// Use strconv.Quote to create properly escaped content
 				content := "\"SELECT \\\"quoted\\\"\"\n\"WHERE x = 'value'\"\n\"Line1\\nLine2\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -570,7 +570,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 				fs := afero.NewMemMapFs()
 				// Invalid format - not properly quoted
 				content := "SELECT 1\nSELECT 2\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -606,7 +606,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"NEW ITEM 1\"\n\"NEW ITEM 2\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
