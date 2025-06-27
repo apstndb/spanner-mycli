@@ -1,11 +1,17 @@
 package main
 
 import (
+	"errors"
+	"os"
 	"testing"
 
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
+	"github.com/nyaosorg/go-readline-ny/simplehistory"
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLexerHighlighterWithError(t *testing.T) {
@@ -339,4 +345,448 @@ func TestHighlightingPatterns(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test persistentHistory.Add method
+func TestPersistentHistoryAdd(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupFS        func() afero.Fs
+		filename       string
+		itemsToAdd     []string
+		wantError      bool
+		validateFile   func(t *testing.T, fs afero.Fs, filename string)
+		validateHistory func(t *testing.T, h History)
+	}{
+		{
+			name: "add single item to new file",
+			setupFS: func() afero.Fs {
+				return afero.NewMemMapFs()
+			},
+			filename:   "test_history.txt",
+			itemsToAdd: []string{"SELECT * FROM users"},
+			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
+				content, err := afero.ReadFile(fs, filename)
+				require.NoError(t, err)
+				assert.Equal(t, "\"SELECT * FROM users\"\n", string(content))
+			},
+			validateHistory: func(t *testing.T, h History) {
+				assert.Equal(t, 1, h.Len())
+				assert.Equal(t, "SELECT * FROM users", h.At(0))
+			},
+		},
+		{
+			name: "add multiple items",
+			setupFS: func() afero.Fs {
+				return afero.NewMemMapFs()
+			},
+			filename:   "test_history.txt",
+			itemsToAdd: []string{"SELECT 1", "SELECT 2", "SELECT 3"},
+			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
+				content, err := afero.ReadFile(fs, filename)
+				require.NoError(t, err)
+				expected := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
+				assert.Equal(t, expected, string(content))
+			},
+			validateHistory: func(t *testing.T, h History) {
+				assert.Equal(t, 3, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+				assert.Equal(t, "SELECT 2", h.At(1))
+				assert.Equal(t, "SELECT 3", h.At(2))
+			},
+		},
+		{
+			name: "add item with special characters",
+			setupFS: func() afero.Fs {
+				return afero.NewMemMapFs()
+			},
+			filename:   "test_history.txt",
+			itemsToAdd: []string{"SELECT \"quoted\"\nWHERE x = 'value'"},
+			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
+				content, err := afero.ReadFile(fs, filename)
+				require.NoError(t, err)
+				// strconv.Quote should escape the special characters
+				assert.Contains(t, string(content), "\\\"quoted\\\"")
+				assert.Contains(t, string(content), "\\n")
+			},
+			validateHistory: func(t *testing.T, h History) {
+				assert.Equal(t, 1, h.Len())
+				assert.Equal(t, "SELECT \"quoted\"\nWHERE x = 'value'", h.At(0))
+			},
+		},
+		{
+			name: "append to existing file",
+			setupFS: func() afero.Fs {
+				fs := afero.NewMemMapFs()
+				// Create file with existing content
+				err := afero.WriteFile(fs, "test_history.txt", []byte("\"EXISTING COMMAND\"\n"), 0666)
+				require.NoError(t, err)
+				return fs
+			},
+			filename:   "test_history.txt",
+			itemsToAdd: []string{"NEW COMMAND"},
+			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
+				content, err := afero.ReadFile(fs, filename)
+				require.NoError(t, err)
+				expected := "\"EXISTING COMMAND\"\n\"NEW COMMAND\"\n"
+				assert.Equal(t, expected, string(content))
+			},
+			validateHistory: func(t *testing.T, h History) {
+				// Only the new item should be in the history container
+				// (existing items are not loaded in this test)
+				assert.Equal(t, 1, h.Len())
+				assert.Equal(t, "NEW COMMAND", h.At(0))
+			},
+		},
+		{
+			name: "handle file system errors gracefully",
+			setupFS: func() afero.Fs {
+				// Create a read-only filesystem to trigger errors
+				fs := afero.NewMemMapFs()
+				return afero.NewReadOnlyFs(fs)
+			},
+			filename:   "test_history.txt",
+			itemsToAdd: []string{"SELECT 1"},
+			wantError:  false, // Add method logs errors but doesn't return them
+			validateHistory: func(t *testing.T, h History) {
+				// Item should still be added to in-memory history
+				assert.Equal(t, 1, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := tt.setupFS()
+			h := simplehistory.New()
+			ph := &persistentHistory{
+				filename: tt.filename,
+				history:  h,
+				fs:       fs,
+			}
+
+			// Add items
+			for _, item := range tt.itemsToAdd {
+				ph.Add(item)
+			}
+
+			// Validate file content if needed
+			if tt.validateFile != nil {
+				tt.validateFile(t, fs, tt.filename)
+			}
+
+			// Validate history state
+			if tt.validateHistory != nil {
+				tt.validateHistory(t, ph)
+			}
+		})
+	}
+}
+
+// Test newPersistentHistoryWithFS function
+func TestNewPersistentHistoryWithFS(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupFS       func() (afero.Fs, string)
+		container     *simplehistory.Container
+		wantError     bool
+		errorContains string
+		validate      func(t *testing.T, h History, err error)
+	}{
+		{
+			name: "create new history when file doesn't exist",
+			setupFS: func() (afero.Fs, string) {
+				return afero.NewMemMapFs(), "new_history.txt"
+			},
+			container: simplehistory.New(),
+			validate: func(t *testing.T, h History, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, h)
+				assert.Equal(t, 0, h.Len())
+			},
+		},
+		{
+			name: "load existing history file",
+			setupFS: func() (afero.Fs, string) {
+				fs := afero.NewMemMapFs()
+				content := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				require.NoError(t, err)
+				return fs, "history.txt"
+			},
+			container: simplehistory.New(),
+			validate: func(t *testing.T, h History, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, h)
+				assert.Equal(t, 3, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+				assert.Equal(t, "SELECT 2", h.At(1))
+				assert.Equal(t, "SELECT 3", h.At(2))
+			},
+		},
+		{
+			name: "handle empty lines in history file",
+			setupFS: func() (afero.Fs, string) {
+				fs := afero.NewMemMapFs()
+				content := "\"SELECT 1\"\n\n\"SELECT 2\"\n\n\n\"SELECT 3\"\n"
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				require.NoError(t, err)
+				return fs, "history.txt"
+			},
+			container: simplehistory.New(),
+			validate: func(t *testing.T, h History, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, h)
+				assert.Equal(t, 3, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+				assert.Equal(t, "SELECT 2", h.At(1))
+				assert.Equal(t, "SELECT 3", h.At(2))
+			},
+		},
+		{
+			name: "handle commands with special characters",
+			setupFS: func() (afero.Fs, string) {
+				fs := afero.NewMemMapFs()
+				// Use strconv.Quote to create properly escaped content
+				content := "\"SELECT \\\"quoted\\\"\"\n\"WHERE x = 'value'\"\n\"Line1\\nLine2\"\n"
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				require.NoError(t, err)
+				return fs, "history.txt"
+			},
+			container: simplehistory.New(),
+			validate: func(t *testing.T, h History, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, h)
+				assert.Equal(t, 3, h.Len())
+				assert.Equal(t, "SELECT \"quoted\"", h.At(0))
+				assert.Equal(t, "WHERE x = 'value'", h.At(1))
+				assert.Equal(t, "Line1\nLine2", h.At(2))
+			},
+		},
+		{
+			name: "error on invalid quote format",
+			setupFS: func() (afero.Fs, string) {
+				fs := afero.NewMemMapFs()
+				// Invalid format - not properly quoted
+				content := "SELECT 1\nSELECT 2\n"
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				require.NoError(t, err)
+				return fs, "history.txt"
+			},
+			container:     simplehistory.New(),
+			wantError:     true,
+			errorContains: "history file format error",
+			validate: func(t *testing.T, h History, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "history file format error")
+				assert.Contains(t, err.Error(), "maybe you should remove")
+			},
+		},
+		{
+			name: "error on file read failure",
+			setupFS: func() (afero.Fs, string) {
+				// Create a custom filesystem that returns an error
+				fs := &errorFS{
+					Fs:        afero.NewMemMapFs(),
+					readError: errors.New("read permission denied"),
+				}
+				return fs, "history.txt"
+			},
+			container:     simplehistory.New(),
+			wantError:     true,
+			errorContains: "read permission denied",
+			validate: func(t *testing.T, h History, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "read permission denied")
+			},
+		},
+		{
+			name: "preserve existing container items",
+			setupFS: func() (afero.Fs, string) {
+				fs := afero.NewMemMapFs()
+				content := "\"NEW ITEM 1\"\n\"NEW ITEM 2\"\n"
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0666)
+				require.NoError(t, err)
+				return fs, "history.txt"
+			},
+			container: func() *simplehistory.Container {
+				c := simplehistory.New()
+				c.Add("EXISTING ITEM")
+				return c
+			}(),
+			validate: func(t *testing.T, h History, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, h)
+				assert.Equal(t, 3, h.Len())
+				assert.Equal(t, "EXISTING ITEM", h.At(0))
+				assert.Equal(t, "NEW ITEM 1", h.At(1))
+				assert.Equal(t, "NEW ITEM 2", h.At(2))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs, filename := tt.setupFS()
+			h, err := newPersistentHistoryWithFS(filename, tt.container, fs)
+			
+			if tt.wantError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			}
+			
+			if tt.validate != nil {
+				tt.validate(t, h, err)
+			}
+		})
+	}
+}
+
+// Test persistentHistory.Len and persistentHistory.At methods
+func TestPersistentHistoryLenAndAt(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func() *persistentHistory
+		validate func(t *testing.T, h *persistentHistory)
+	}{
+		{
+			name: "empty history",
+			setup: func() *persistentHistory {
+				return &persistentHistory{
+					filename: "test.txt",
+					history:  simplehistory.New(),
+					fs:       afero.NewMemMapFs(),
+				}
+			},
+			validate: func(t *testing.T, h *persistentHistory) {
+				assert.Equal(t, 0, h.Len())
+			},
+		},
+		{
+			name: "history with single item",
+			setup: func() *persistentHistory {
+				c := simplehistory.New()
+				c.Add("SELECT 1")
+				return &persistentHistory{
+					filename: "test.txt",
+					history:  c,
+					fs:       afero.NewMemMapFs(),
+				}
+			},
+			validate: func(t *testing.T, h *persistentHistory) {
+				assert.Equal(t, 1, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+			},
+		},
+		{
+			name: "history with multiple items",
+			setup: func() *persistentHistory {
+				c := simplehistory.New()
+				items := []string{"SELECT 1", "SELECT 2", "SELECT 3", "SELECT 4", "SELECT 5"}
+				for _, item := range items {
+					c.Add(item)
+				}
+				return &persistentHistory{
+					filename: "test.txt",
+					history:  c,
+					fs:       afero.NewMemMapFs(),
+				}
+			},
+			validate: func(t *testing.T, h *persistentHistory) {
+				assert.Equal(t, 5, h.Len())
+				assert.Equal(t, "SELECT 1", h.At(0))
+				assert.Equal(t, "SELECT 2", h.At(1))
+				assert.Equal(t, "SELECT 3", h.At(2))
+				assert.Equal(t, "SELECT 4", h.At(3))
+				assert.Equal(t, "SELECT 5", h.At(4))
+			},
+		},
+		{
+			name: "access items in reverse order",
+			setup: func() *persistentHistory {
+				c := simplehistory.New()
+				for i := 1; i <= 3; i++ {
+					c.Add(string(rune('A' + i - 1)))
+				}
+				return &persistentHistory{
+					filename: "test.txt",
+					history:  c,
+					fs:       afero.NewMemMapFs(),
+				}
+			},
+			validate: func(t *testing.T, h *persistentHistory) {
+				assert.Equal(t, 3, h.Len())
+				// Access in reverse
+				assert.Equal(t, "C", h.At(2))
+				assert.Equal(t, "B", h.At(1))
+				assert.Equal(t, "A", h.At(0))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := tt.setup()
+			tt.validate(t, h)
+		})
+	}
+}
+
+// Test newPersistentHistory (the public function)
+func TestNewPersistentHistory(t *testing.T) {
+	// Create a temporary file for testing
+	tmpFile, err := os.CreateTemp("", "test_history_*.txt")
+	require.NoError(t, err)
+	defer func() {
+		_ = os.Remove(tmpFile.Name())
+	}()
+	
+	// Write some test data
+	testContent := "\"SELECT 1\"\n\"SELECT 2\"\n"
+	_, err = tmpFile.WriteString(testContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+	
+	// Test loading the file
+	h, err := newPersistentHistory(tmpFile.Name(), simplehistory.New())
+	require.NoError(t, err)
+	require.NotNil(t, h)
+	
+	assert.Equal(t, 2, h.Len())
+	assert.Equal(t, "SELECT 1", h.At(0))
+	assert.Equal(t, "SELECT 2", h.At(1))
+	
+	// Test adding new item
+	h.Add("SELECT 3")
+	assert.Equal(t, 3, h.Len())
+	assert.Equal(t, "SELECT 3", h.At(2))
+	
+	// Verify the file was updated
+	content, err := os.ReadFile(tmpFile.Name())
+	require.NoError(t, err)
+	expected := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
+	assert.Equal(t, expected, string(content))
+}
+
+// errorFS is a test filesystem that returns errors
+type errorFS struct {
+	afero.Fs
+	readError error
+}
+
+func (e *errorFS) Open(name string) (afero.File, error) {
+	if e.readError != nil {
+		return nil, e.readError
+	}
+	return e.Fs.Open(name)
+}
+
+func (e *errorFS) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	if e.readError != nil {
+		return nil, e.readError
+	}
+	return e.Fs.OpenFile(name, flag, perm)
 }
