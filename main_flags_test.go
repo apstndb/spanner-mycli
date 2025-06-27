@@ -524,28 +524,13 @@ priority = HIGH
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore environment variables
-			savedEnv := make(map[string]string)
-			for k := range tt.envVars {
-				savedEnv[k] = os.Getenv(k)
-				_ = os.Unsetenv(k)
-			}
-			defer func() {
-				for k, v := range savedEnv {
-					if v == "" {
-						_ = os.Unsetenv(k)
-					} else {
-						_ = os.Setenv(k, v)
-					}
-				}
-			}()
-
-			// Set test environment variables
+			// Set test environment variables. t.Setenv automatically handles cleanup.
 			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
-			// Create config file if content is provided
+			// For config file tests, we need to handle parsing differently
+			var gopts globalOptions
 			if tt.configContent != "" {
 				tmpDir := t.TempDir()
 				configFile := filepath.Join(tmpDir, cnfFileName)
@@ -553,21 +538,14 @@ priority = HIGH
 					t.Fatalf("Failed to create config file: %v", err)
 				}
 
-				// Change to temp directory so config file is found
-				oldCwd, _ := os.Getwd()
-				_ = os.Chdir(tmpDir)
-				defer func() { _ = os.Chdir(oldCwd) }()
-			}
-
-			// For config file tests, we need to handle parsing differently
-			var gopts globalOptions
-			if tt.configContent != "" {
 				// Initialize with defaults like parseFlags does
 				gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
 				
-				// Process config file first
+				// Process config file directly by calling the INI parser
+				// to avoid changing the global current working directory (os.Chdir).
 				configParser := flags.NewParser(&gopts, flags.Default)
-				if err := readConfigFile(configParser); err != nil {
+				iniParser := flags.NewIniParser(configParser)
+				if err := iniParser.ParseFile(configFile); err != nil {
 					t.Fatalf("Failed to read config file: %v", err)
 				}
 				
@@ -1303,14 +1281,11 @@ func TestDetermineInitialDatabase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore environment
-			oldEnv := os.Getenv("SPANNER_DATABASE_ID")
-			defer func() { _ = os.Setenv("SPANNER_DATABASE_ID", oldEnv) }()
-			
+			// Set test environment variable. t.Setenv automatically handles cleanup.
 			if tt.envDatabase != "" {
-				_ = os.Setenv("SPANNER_DATABASE_ID", tt.envDatabase)
+				t.Setenv("SPANNER_DATABASE_ID", tt.envDatabase)
 			} else {
-				_ = os.Unsetenv("SPANNER_DATABASE_ID")
+				t.Setenv("SPANNER_DATABASE_ID", "")
 			}
 
 			got := determineInitialDatabase(tt.opts)
