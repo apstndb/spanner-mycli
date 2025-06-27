@@ -2,18 +2,44 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanemuboost"
+	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 )
+
+// Helper to create stdin based on usePTY flag
+type stdinProvider func() (io.Reader, func(), error)
+
+func nonPTYStdin(content string) stdinProvider {
+	return func() (io.Reader, func(), error) {
+		return strings.NewReader(content), func() {}, nil
+	}
+}
+
+func ptyStdin() stdinProvider {
+	return func() (io.Reader, func(), error) {
+		pty, tty, err := pty.Open()
+		if err != nil {
+			return nil, nil, err
+		}
+		cleanup := func() {
+			pty.Close()
+			tty.Close()
+		}
+		return tty, cleanup, nil
+	}
+}
 
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
 func TestParseFlagsCombinations(t *testing.T) {
@@ -1478,49 +1504,49 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 	tests := []struct {
 		name          string
 		args          []string
-		stdin         string
-		isTerminal    bool
+		stdinProvider stdinProvider
 		wantCLIFormat DisplayMode
 	}{
 		{
 			name:          "interactive mode (terminal) defaults to table",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
-			isTerminal:    true,
+			stdinProvider: ptyStdin(),
 			wantCLIFormat: DisplayModeTable,
 		},
 		{
 			name:          "batch mode with --table flag uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table"},
+			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: DisplayModeTable,
 		},
 		{
 			name:          "batch mode without --table uses tab format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1"},
+			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: DisplayModeTab,
 		},
 		{
 			name:          "piped input defaults to tab format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
-			stdin:         "SELECT 1;",
-			isTerminal:    false,
+			stdinProvider: nonPTYStdin("SELECT 1;"),
 			wantCLIFormat: DisplayModeTab,
 		},
 		{
 			name:          "piped input with --table uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
-			stdin:         "SELECT 1;",
-			isTerminal:    false,
+			stdinProvider: nonPTYStdin("SELECT 1;"),
 			wantCLIFormat: DisplayModeTable,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides all defaults",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_FORMAT=VERTICAL"},
-			isTerminal:    true,
+			stdinProvider: ptyStdin(), // Can be any, as --set overrides
 			wantCLIFormat: DisplayModeVertical,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides --table flag",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table", "--set", "CLI_FORMAT=VERTICAL"},
+			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: DisplayModeVertical,
 		},
 	}
@@ -1541,35 +1567,26 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 
 			// Simulate the logic in run() that determines CLI_FORMAT
-			// Create appropriate stdin based on test case
-			if tt.isTerminal {
-				// For terminal tests, we can't easily simulate a real terminal,
-				// so we'll test the logic directly
-				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := DisplayModeTable // interactive defaults to table
-					if sysVars.CLIFormat != expectedFormat && sysVars.CLIFormat != tt.wantCLIFormat {
-						t.Errorf("CLIFormat = %v, want %v (interactive mode)", sysVars.CLIFormat, tt.wantCLIFormat)
-					}
+			stdin, cleanup, err := tt.stdinProvider()
+			if err != nil {
+				t.Skipf("Failed to create stdin: %v", err)
+			}
+			defer cleanup()
+
+			input, interactive, err := determineInputAndMode(&gopts.Spanner, stdin)
+			if err != nil {
+				t.Fatalf("Failed to determine input mode: %v", err)
+			}
+			
+			// Apply the same logic as in run()
+			if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
+				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, DisplayModeTable, DisplayModeTab)
+				if expectedFormat != tt.wantCLIFormat {
+					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
+						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
 				}
 			} else {
-				// For non-terminal (batch mode)
-				input, interactive, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
-				if err != nil {
-					t.Fatalf("Failed to determine input mode: %v", err)
-				}
-				
-				// Apply the same logic as in run()
-				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, DisplayModeTable, DisplayModeTab)
-					if expectedFormat != tt.wantCLIFormat {
-						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
-							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
-					}
-				}
-			}
-
-			// If CLI_FORMAT was explicitly set, verify it
-			if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; hasSet {
+				// If CLI_FORMAT was explicitly set, verify it
 				if sysVars.CLIFormat != tt.wantCLIFormat {
 					t.Errorf("CLIFormat = %v, want %v (explicitly set)", sysVars.CLIFormat, tt.wantCLIFormat)
 				}
