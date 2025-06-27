@@ -135,7 +135,8 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
 		},
 		func(ps1 string) string {
-			interpolatedPrompt2 := c.getInterpolatedPrompt(c.SystemVariables.Prompt2)
+			prompt2, _ := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
 			return generatePS2Prompt(ps1, c.SystemVariables.Prompt2, interpolatedPrompt2)
 		}))
 
