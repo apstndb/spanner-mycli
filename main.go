@@ -337,6 +337,15 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 		"ID", imageInspect.ID,
 	)
 	
+	// Validate that we have the required fields
+	if imageInspect.Os == "" || imageInspect.Architecture == "" {
+		slog.Debug("Image inspect result missing Os or Architecture", 
+			"imageName", imageName, 
+			"Os", imageInspect.Os, 
+			"Architecture", imageInspect.Architecture)
+		return ""
+	}
+	
 	platform := imageInspect.Os + "/" + imageInspect.Architecture
 	if imageInspect.Variant != "" {
 		platform += "/" + imageInspect.Variant
