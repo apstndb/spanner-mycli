@@ -219,6 +219,12 @@ gh issue create --body-file tmp/issue_body.md
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
 2. **For error handling**: [dev-docs/development-insights.md#error-handling-architecture-evolution](dev-docs/development-insights.md#error-handling-architecture-evolution)
 3. **For resource management**: [dev-docs/development-insights.md#resource-management-in-batch-processing](dev-docs/development-insights.md#resource-management-in-batch-processing)
+4. **Use `go doc` commands**: When investigating Go types, interfaces, or package APIs:
+   - `go doc <package>` - Show package documentation
+   - `go doc <package>.<type>` - Show specific type documentation
+   - `go doc -all <package>` - Show ALL exported identifiers (don't miss anything!)
+   - Example: `go doc github.com/testcontainers/testcontainers-go.GenericProvider`
+   - Example: `go doc -all github.com/testcontainers/testcontainers-go | grep Provider`
 
 ### When setting up development environment:
 1. **Start here**: Use `make worktree-setup WORKTREE_NAME=issue-123-feature` for worktree setup
