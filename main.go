@@ -296,7 +296,18 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 		// Cache container platform information
 		if inspectResult, err := container.Inspect(ctx); err == nil {
-			sysVars.EmulatorPlatform = inspectResult.Platform
+			// Construct platform string from ImageManifestDescriptor if available
+			if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
+				p := inspectResult.ImageManifestDescriptor.Platform
+				platform := p.OS + "/" + p.Architecture
+				if p.Variant != "" {
+					platform += "/" + p.Variant
+				}
+				sysVars.EmulatorPlatform = platform
+			} else {
+				// Fallback to basic Platform field
+				sysVars.EmulatorPlatform = inspectResult.Platform
+			}
 		} else {
 			slog.Warn("Failed to inspect container platform", "error", err)
 			// If inspect fails but platform was specified, use the specified value
