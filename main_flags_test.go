@@ -401,13 +401,12 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name: "valid credential file",
 			args: func() []string {
-				f, err := os.CreateTemp("", "cred-*.json")
-				if err != nil {
+				tempDir := t.TempDir()
+				credFile := filepath.Join(tempDir, "cred.json")
+				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
 					t.Fatal(err)
 				}
-				f.Close()
-				t.Cleanup(func() { _ = os.Remove(f.Name()) })
-				return []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", f.Name()}
+				return []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", credFile}
 			}(),
 			wantErr: false,
 		},
@@ -1581,45 +1580,42 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 func TestReadCredentialFile(t *testing.T) {
 	tests := []struct {
 		name        string
-		setupFile   func() (string, func())
+		setupFile   func(t *testing.T) string
 		wantContent string
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "valid credential file",
-			setupFile: func() (string, func()) {
-				f, err := os.CreateTemp("", "cred-*.json")
-				if err != nil {
-					t.Fatal(err)
-				}
+			setupFile: func(t *testing.T) string {
+				tempDir := t.TempDir()
+				credFile := filepath.Join(tempDir, "cred.json")
 				content := `{"type": "service_account", "project_id": "test"}`
-				if _, err := f.WriteString(content); err != nil {
+				if err := os.WriteFile(credFile, []byte(content), 0644); err != nil {
 					t.Fatal(err)
 				}
-				f.Close()
-				return f.Name(), func() { _ = os.Remove(f.Name()) }
+				return credFile
 			},
 			wantContent: `{"type": "service_account", "project_id": "test"}`,
 			wantErr:     false,
 		},
 		{
 			name: "non-existent file",
-			setupFile: func() (string, func()) {
-				return "/non/existent/file.json", func() {}
+			setupFile: func(t *testing.T) string {
+				return "/non/existent/file.json"
 			},
 			wantErr:     true,
 			errContains: "no such file",
 		},
 		{
 			name: "empty file",
-			setupFile: func() (string, func()) {
-				f, err := os.CreateTemp("", "cred-*.json")
-				if err != nil {
+			setupFile: func(t *testing.T) string {
+				tempDir := t.TempDir()
+				credFile := filepath.Join(tempDir, "cred.json")
+				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
 					t.Fatal(err)
 				}
-				f.Close()
-				return f.Name(), func() { _ = os.Remove(f.Name()) }
+				return credFile
 			},
 			wantContent: "",
 			wantErr:     false,
@@ -1628,8 +1624,7 @@ func TestReadCredentialFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filepath, cleanup := tt.setupFile()
-			defer cleanup()
+			filepath := tt.setupFile(t)
 
 			got, err := readCredentialFile(filepath)
 			if (err != nil) != tt.wantErr {
