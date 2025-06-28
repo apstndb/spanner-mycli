@@ -63,7 +63,10 @@ type globalOptions struct {
 // - --sql is an alias of --execute (gcloud spanner databases execute-sql compatibility)
 // - --database-role is an alias of --role (gcloud spanner databases execute-sql compatibility)
 // - --skip-tls-verify is an alias of --insecure (original spanner-cli compatibility)
-// When multiple aliases are specified, the non-hidden flag takes precedence.
+// 
+// Precedence behavior:
+// - For string flags (role/database-role): Non-hidden flag takes precedence when both are non-empty
+// - For boolean flags (insecure/skip-tls-verify): Non-hidden flag takes precedence when both are set
 // This precedence behavior may override normal flag/env/ini precedence.
 type spannerOptions struct {
 	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID" default-mask:"-" description:"(required) GCP Project ID."`
@@ -86,8 +89,8 @@ type spannerOptions struct {
 	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
 	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64" default-mask:"-"`
 	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message." default-mask:"-"`
-	Insecure                  bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias." default-mask:"-"`
-	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"Hidden alias of --insecure from original spanner-cli" hidden:"true" default-mask:"-"`
+	Insecure                  *bool             `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias." default-mask:"-"`
+	SkipTlsVerify             *bool             `long:"skip-tls-verify" description:"Hidden alias of --insecure from original spanner-cli" hidden:"true" default-mask:"-"`
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
@@ -408,10 +411,19 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	}
 	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
 	
-	if opts.Insecure && opts.SkipTlsVerify {
+	// Handle --insecure/--skip-tls-verify aliases with proper precedence
+	if opts.Insecure != nil && opts.SkipTlsVerify != nil {
 		slog.Warn("Both --insecure and --skip-tls-verify are specified. Using --insecure (non-hidden flag takes precedence)")
 	}
-	sysVars.Insecure = opts.Insecure || opts.SkipTlsVerify
+	
+	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
+	if opts.Insecure != nil {
+		sysVars.Insecure = *opts.Insecure
+	} else if opts.SkipTlsVerify != nil {
+		sysVars.Insecure = *opts.SkipTlsVerify
+	} else {
+		sysVars.Insecure = false // default value
+	}
 	
 	sysVars.Endpoint = opts.Endpoint
 	sysVars.Params = params
