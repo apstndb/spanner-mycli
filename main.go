@@ -296,9 +296,22 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 		// Cache container platform information
 		if inspectResult, err := container.Inspect(ctx); err == nil {
+			// Debug log the inspect result
+			slog.Debug("Container inspect result",
+				"Platform", inspectResult.Platform,
+				"ImageManifestDescriptor", inspectResult.ImageManifestDescriptor != nil,
+			)
+			
 			// Construct platform string from ImageManifestDescriptor if available
 			if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
 				p := inspectResult.ImageManifestDescriptor.Platform
+				slog.Debug("ImageManifestDescriptor.Platform details",
+					"OS", p.OS,
+					"Architecture", p.Architecture,
+					"Variant", p.Variant,
+					"OSVersion", p.OSVersion,
+					"OSFeatures", p.OSFeatures,
+				)
 				platform := p.OS + "/" + p.Architecture
 				if p.Variant != "" {
 					platform += "/" + p.Variant
@@ -306,8 +319,10 @@ func run(ctx context.Context, opts *spannerOptions) error {
 				sysVars.EmulatorPlatform = platform
 			} else {
 				// Fallback to basic Platform field
+				slog.Debug("Using basic Platform field", "Platform", inspectResult.Platform)
 				sysVars.EmulatorPlatform = inspectResult.Platform
 			}
+			slog.Debug("Final EmulatorPlatform value", "EmulatorPlatform", sysVars.EmulatorPlatform)
 		} else {
 			slog.Warn("Failed to inspect container platform", "error", err)
 			// If inspect fails but platform was specified, use the specified value
