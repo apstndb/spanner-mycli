@@ -301,7 +301,11 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
 		return ""
 	}
-	defer provider.Close()
+	defer func() {
+		if err := provider.Close(); err != nil {
+			slog.Debug("Failed to close testcontainers provider", "error", err)
+		}
+	}()
 	
 	// The provider.Client() returns the embedded *client.Client which implements APIClient
 	// This reuses the same Docker client that testcontainers uses internally
