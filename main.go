@@ -296,6 +296,10 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
+	// Note: We create a new Docker client here rather than reusing testcontainers' client
+	// because testcontainers.DockerClient is a wrapper type that doesn't expose the underlying
+	// docker/client.Client directly. The overhead is minimal since this function is only called
+	// once per CLI invocation when using --embedded-emulator.
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		slog.Debug("Failed to create Docker client", 
