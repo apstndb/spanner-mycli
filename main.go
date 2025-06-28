@@ -412,15 +412,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 		defer teardown()
 
-		// Determine container platform
-		// Priority: 1) User-specified flag, 2) Auto-detection from running container
-		if opts.EmulatorPlatform != "" {
-			sysVars.EmulatorPlatform = opts.EmulatorPlatform
-			slog.Debug("Using user-specified platform", "platform", opts.EmulatorPlatform)
-		} else {
-			sysVars.EmulatorPlatform = detectContainerPlatform(ctx, container)
-			slog.Debug("Detected container platform", "platform", sysVars.EmulatorPlatform)
-		}
+		// Always detect the actual platform the container is running on
+		// The --emulator-platform flag only controls what platform is requested,
+		// but we want to show the actual platform in CLI_EMULATOR_PLATFORM
+		sysVars.EmulatorPlatform = detectContainerPlatform(ctx, container)
+		slog.Debug("Detected container platform", 
+			"requested", opts.EmulatorPlatform,
+			"actual", sysVars.EmulatorPlatform)
 
 		sysVars.Endpoint = container.URI()
 		sysVars.WithoutAuthentication = true
