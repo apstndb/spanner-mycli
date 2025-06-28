@@ -249,6 +249,77 @@ CREATE TABLE test2 (id INT64) PRIMARY KEY (id);
 - Fast execution suitable for CI pipelines
 - Enables comprehensive feature testing without Spanner project costs
 
+## CLI Flag Testing Insights
+
+### Multi-Stage Validation Architecture
+The flag validation happens in three distinct stages:
+1. **Parsing Stage** (`parseFlags()`) - Basic syntax validation by go-flags
+2. **Business Logic Validation** (`ValidateSpannerOptions()`) - Mutual exclusivity, required fields
+3. **System Variable Initialization** (`initializeSystemVariables()`) - Value format validation, type conversions
+
+**Key Learning**: Different error types occur at different stages. Tests must handle this multi-stage validation appropriately.
+
+### Test Environment Best Practices
+
+#### Parallel Test Safety
+- Always use `t.Setenv()` instead of `os.Setenv()` for environment variables
+- Avoids race conditions in parallel test execution
+- Automatic cleanup prevents test pollution
+
+#### Terminal Simulation with PTY
+- Use pseudo-terminals (PTY) for accurate interactive mode testing
+- Essential for testing features that depend on `term.IsTerminal()`
+- Provides realistic terminal behavior in tests
+
+#### Config File Testing Without Global State
+- Parse config files directly using `flags.NewIniParser()`
+- Avoids `os.Chdir()` which modifies global process state
+- Prevents test flakiness and enables parallel execution
+
+### Flag Design Inconsistencies Discovered
+
+During comprehensive flag testing, several design inconsistencies were identified:
+
+1. **Duplicate Flags with Hidden Aliases**
+   - `--execute`/`--sql` and `--role`/`--database-role` pairs
+   - Hidden flags still appear in error messages
+   - Inconsistent handling of alias relationships
+
+2. **Mutually Exclusive Aliases**
+   - `--insecure` and `--skip-tls-verify` are aliases but marked as mutually exclusive
+   - Creates user confusion since they do the same thing
+
+3. **Silent Value Overrides**
+   - `--embedded-emulator` silently overrides user-specified connection parameters
+   - No warning given to users about ignored values
+
+4. **Inconsistent Default Handling**
+   - Mix of struct tag defaults and programmatic defaults
+   - Makes it harder to understand actual default values
+
+**Lesson**: Comprehensive testing reveals API design issues that might otherwise go unnoticed.
+
+### Test Infrastructure Best Practices
+
+During the comprehensive flag testing implementation, several important patterns emerged:
+
+#### 1. Environment Variable Safety
+- **Always use `t.Setenv()`** in tests, never `os.Setenv()`
+- This prevents race conditions when tests run in parallel
+- Automatic cleanup eliminates the need for complex defer statements
+- Code review feedback highlighted this as a critical issue for test robustness
+
+#### 2. Avoiding Global State Changes
+- **Never use `os.Chdir()`** in tests - it affects all concurrent tests
+- Instead, use absolute paths or parser-specific methods
+- For config file parsing: use `flags.NewIniParser().ParseFile()` directly
+
+#### 3. Test Helper Patterns
+- **PTY helpers** enable accurate terminal detection testing
+- **Table-driven tests** with clear test case names improve maintainability
+- **Multi-stage validation** tests should mirror the actual validation flow
+
+**Key Insight**: Test code should be written with future parallelization in mind, even if not currently using `t.Parallel()`. This future-proofs the test suite and prevents technical debt.
 
 ## Related Documentation
 
