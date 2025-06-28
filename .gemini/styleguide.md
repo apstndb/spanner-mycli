@@ -39,6 +39,25 @@ Reference: https://go.dev/blog/loopvar-preview
 - Use `t.Setenv()` instead of `os.Setenv()` for better test isolation
 - Avoid global state modifications in tests
 
+### Package-level Test Functions
+
+In Go, test files within the same package share the same namespace. This means that helper functions defined in one test file (e.g., `main_flags_test.go`) are accessible from other test files in the same package (e.g., `main_platform_test.go`).
+
+**DO NOT** report as missing when a test uses a helper function defined in another test file of the same package:
+
+```go
+// In main_flags_test.go
+func contains(s, substr string) bool {
+    return strings.Contains(s, substr)
+}
+
+// In main_platform_test.go (same package)
+// This is valid - contains() is accessible
+if !contains(platform, tt.wantOS) {
+    // ...
+}
+```
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
