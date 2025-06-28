@@ -121,6 +121,7 @@ spanner:
       --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
       --emulator-image=                                   container image for --embedded-emulator
+      --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
       --log-grpc                                          Show gRPC logs
@@ -820,7 +821,7 @@ mutation_count: 9
 spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
 
 ```
-$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
+$ spanner-mycli --embedded-emulator [--emulator-image=gcr.io/cloud-spanner-emulator/emulator:${VERSION}] [--emulator-platform=linux/amd64]
 > SET CLI_PROMPT="%p:%i:%d%n> ";
 Empty set (0.00 sec)
 
