@@ -233,10 +233,14 @@ func withPlatform(platform string) testcontainers.ContainerCustomizer {
 // 1. ImageManifestDescriptor.Platform (most accurate but not always available)
 // 2. Docker API image inspect (reliable when Docker socket is accessible)
 // 3. Basic Platform field from container (usually just OS, e.g., "linux")
+// Returns "unknown" if platform detection fails - this is intentional as the function
+// must return a string value for the system variable, and "unknown" accurately
+// represents that the platform could not be determined.
 func detectContainerPlatform(ctx context.Context, container *tcspanner.Container) string {
 	inspectResult, err := container.Inspect(ctx)
 	if err != nil {
 		slog.Warn("Failed to inspect container", "error", err)
+		// Return "unknown" rather than empty string to indicate detection attempted but failed
 		return "unknown"
 	}
 
@@ -303,6 +307,7 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 		return inspectResult.Platform
 	}
 
+	// All detection methods failed - return "unknown" to indicate this state
 	return "unknown"
 }
 
