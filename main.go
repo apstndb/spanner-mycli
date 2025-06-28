@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -300,7 +301,17 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			slog.Debug("Container inspect result",
 				"Platform", inspectResult.Platform,
 				"ImageManifestDescriptor", inspectResult.ImageManifestDescriptor != nil,
+				"Image", inspectResult.Image,
+				"ConfigNotNil", inspectResult.Config != nil,
 			)
+			
+			// Also log some config details if available
+			if inspectResult.Config != nil {
+				slog.Debug("Container config details",
+					"Image", inspectResult.Config.Image,
+					"Labels", inspectResult.Config.Labels,
+				)
+			}
 			
 			// Construct platform string from ImageManifestDescriptor if available
 			if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
@@ -320,7 +331,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			} else {
 				// Fallback to basic Platform field
 				slog.Debug("Using basic Platform field", "Platform", inspectResult.Platform)
-				sysVars.EmulatorPlatform = inspectResult.Platform
+				// Architecture detection is not available without ImageManifestDescriptor
+				// Set only OS part or use the user-specified platform
+				if inspectResult.Platform != "" {
+					sysVars.EmulatorPlatform = inspectResult.Platform
+				} else {
+					sysVars.EmulatorPlatform = "unknown"
+				}
+				slog.Info("Container architecture detection not available. Use --emulator-platform to specify explicitly.")
 			}
 			slog.Debug("Final EmulatorPlatform value", "EmulatorPlatform", sysVars.EmulatorPlatform)
 		} else {
