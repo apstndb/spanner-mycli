@@ -400,14 +400,8 @@ func TestParseFlagsValidation(t *testing.T) {
 		// Credential file tests
 		{
 			name: "valid credential file",
-			args: func() []string {
-				tempDir := t.TempDir()
-				credFile := filepath.Join(tempDir, "cred.json")
-				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
-					t.Fatal(err)
-				}
-				return []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", credFile}
-			}(),
+			// Use a placeholder that will be replaced in the test
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "__TEMP_CRED_FILE__"},
 			wantErr: false,
 		},
 		{
@@ -453,9 +447,26 @@ func TestParseFlagsValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Handle special placeholder for credential file test
+			args := tt.args
+			if tt.name == "valid credential file" {
+				tempDir := t.TempDir()
+				credFile := filepath.Join(tempDir, "cred.json")
+				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
+					t.Fatal(err)
+				}
+				// Replace placeholder with actual temp file path
+				for i, arg := range args {
+					if arg == "__TEMP_CRED_FILE__" {
+						args[i] = credFile
+						break
+					}
+				}
+			}
+			
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			_, err := parser.ParseArgs(args)
 			
 			// First check if parsing itself failed
 			if err != nil {
@@ -1870,10 +1881,10 @@ func TestComplexFlagInteractions(t *testing.T) {
 			args: []string{
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--strong",
-				"--set", "READ_TIMESTAMP=2023-01-01T00:00:00Z",
+				"--read-timestamp", "2023-01-01T00:00:00Z",
 			},
 			wantErr:     true,
-			errContains: "failed to set system variable",
+			errContains: "--strong and --read-timestamp are mutually exclusive",
 		},
 		{
 			name: "MCP mode with embedded emulator",
