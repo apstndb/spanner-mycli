@@ -298,6 +298,8 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 	// Create Docker client via testcontainers provider for consistent configuration
 	// Note: This still creates a new client, but ensures proper Docker socket handling
 	// and environment configuration that matches testcontainers' usage
+	// TODO: Test with Podman - testcontainers supports both Docker and Podman providers
+	// We're using NewDockerProvider() which might not work correctly with Podman
 	provider, err := testcontainers.NewDockerProvider()
 	if err != nil {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
