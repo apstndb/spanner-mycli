@@ -295,7 +295,9 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
-	// Get Docker client from testcontainers provider to avoid creating duplicate clients
+	// Create Docker client via testcontainers provider for consistent configuration
+	// Note: This still creates a new client, but ensures proper Docker socket handling
+	// and environment configuration that matches testcontainers' usage
 	provider, err := testcontainers.NewDockerProvider()
 	if err != nil {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
@@ -308,7 +310,6 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 	}()
 	
 	// The provider.Client() returns the embedded *client.Client which implements APIClient
-	// This reuses the same Docker client that testcontainers uses internally
 	dockerClient := provider.Client()
 	slog.Debug("Using Docker client from testcontainers provider")
 	
