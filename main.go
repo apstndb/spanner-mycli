@@ -291,28 +291,33 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 	return "unknown"
 }
 
-// inspectImagePlatform uses Docker API to get platform information from an image
+// inspectImagePlatform uses container runtime API (Docker/Podman) to get platform information from an image
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
-	// Create container client via testcontainers provider for consistent configuration
-	// Note: This creates a new client but ensures proper socket handling and environment
-	// configuration. Works with both Docker and Podman as NewDockerProvider() internally
-	// handles provider detection and returns appropriately configured *DockerProvider
-	provider, err := testcontainers.NewDockerProvider()
+	// Get the auto-detected provider (Docker or Podman) from testcontainers
+	// This uses the same provider detection as spanner.Run() for consistency
+	genericProvider, err := testcontainers.ProviderDefault.GetProvider()
 	if err != nil {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
 		return ""
 	}
 	defer func() {
-		if err := provider.Close(); err != nil {
+		if err := genericProvider.Close(); err != nil {
 			slog.Debug("Failed to close testcontainers provider", "error", err)
 		}
 	}()
 	
+	// Both Docker and Podman providers return *DockerProvider
+	provider, ok := genericProvider.(*testcontainers.DockerProvider)
+	if !ok {
+		slog.Debug("Provider is not a DockerProvider", "type", fmt.Sprintf("%T", genericProvider))
+		return ""
+	}
+	
 	// The provider.Client() returns the embedded *client.Client which implements APIClient
 	dockerClient := provider.Client()
-	slog.Debug("Using Docker client from testcontainers provider")
+	slog.Debug("Using container runtime client from testcontainers provider")
 	
 	// Log Docker client info
 	info, err := dockerClient.Info(ctx)
