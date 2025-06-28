@@ -1730,8 +1730,15 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				t.Fatalf("Failed to determine input mode: %v", err)
 			}
 			
-			// Apply the same logic as in run()
-			if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
+			// Apply the same logic as in run() - check case-insensitively
+			hasSet := false
+			for k := range gopts.Spanner.Set {
+				if strings.EqualFold(k, "CLI_FORMAT") {
+					hasSet = true
+					break
+				}
+			}
+			if !hasSet {
 				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, DisplayModeTable, DisplayModeTab)
 				if expectedFormat != tt.wantCLIFormat {
 					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
