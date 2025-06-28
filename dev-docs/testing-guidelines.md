@@ -166,7 +166,136 @@ Currently, we don't enforce minimum coverage thresholds. Instead, we:
 5. **Make tests deterministic** - Avoid time-dependent or random behavior
 6. **Document test intentions** - Use descriptive test names and comments
 
+### Test Safety and Isolation
+
+#### Global State Management
+- **Always use `t.Setenv()`** instead of `os.Setenv()` for environment variables
+- **Avoid `os.Chdir()`** - use absolute paths or parser methods instead
+- **Use `t.TempDir()`** for temporary files - automatic cleanup
+- **Consider `t.Parallel()`** compatibility even if not using it yet
+
+#### Test Data Setup
+```go
+// Good - using t.TempDir() for test files
+func TestWithTempFile(t *testing.T) {
+    tempDir := t.TempDir() // Automatically cleaned up
+    tempFile := filepath.Join(tempDir, "test.txt")
+    if err := os.WriteFile(tempFile, []byte("test data"), 0644); err != nil {
+        t.Fatal(err)
+    }
+    // Use tempFile in test...
+}
+
+// Good - using cleanup functions for resources
+func TestWithResource(t *testing.T) {
+    resource, err := createResource()
+    if err != nil {
+        t.Fatal(err)
+    }
+    t.Cleanup(func() { 
+        if err := resource.Close(); err != nil {
+            t.Logf("cleanup failed: %v", err)
+        }
+    })
+    // Use resource in test...
+}
+```
+
 ## Common Testing Patterns
+
+### Flag Testing
+When testing CLI flags, consider the following patterns implemented in `main_flags_test.go`:
+
+#### Multi-Stage Validation
+```go
+// Flags are validated at different stages:
+// 1. Parsing (go-flags)
+// 2. ValidateSpannerOptions()
+// 3. initializeSystemVariables()
+
+// Test accordingly:
+_, parseErr := parser.ParseArgs(tt.args)
+if parseErr == nil {
+    err = ValidateSpannerOptions(&opts)
+    if err == nil {
+        _, err = initializeSystemVariables(&opts)
+    }
+}
+```
+
+#### Environment Variable Management
+Use `t.Setenv()` for safe parallel test execution:
+```go
+// Good - automatically cleaned up, safe for parallel tests
+t.Setenv("SPANNER_DATABASE_ID", "test-db")
+
+// Avoid - requires manual cleanup, not safe for parallel tests
+os.Setenv("SPANNER_DATABASE_ID", "test-db")
+defer os.Unsetenv("SPANNER_DATABASE_ID")
+```
+
+**Key Benefits of t.Setenv():**
+- **Thread-safe**: Works correctly even when `t.Parallel()` is added later
+- **Automatic cleanup**: No need for defer statements or manual restoration
+- **Test isolation**: Each test gets its own environment snapshot
+- **Future-proof**: Prevents test flakiness when tests are parallelized
+
+**When testing multiple environment variables:**
+```go
+// Set multiple environment variables in tests
+envVars := map[string]string{
+    "SPANNER_PROJECT_ID": "test-project",
+    "SPANNER_INSTANCE_ID": "test-instance",
+    "SPANNER_DATABASE_ID": "test-database",
+}
+for k, v := range envVars {
+    t.Setenv(k, v)
+}
+```
+
+#### Terminal Testing with PTY
+For accurate terminal detection, use PTY helpers:
+```go
+// Helper types for stdin simulation
+type stdinProvider func() (io.Reader, func(), error)
+
+func ptyStdin() stdinProvider {
+    return func() (io.Reader, func(), error) {
+        pty, tty, err := pty.Open()
+        if err != nil {
+            return nil, nil, err
+        }
+        cleanup := func() {
+            pty.Close()
+            tty.Close()
+        }
+        return tty, cleanup, nil
+    }
+}
+
+// Use in tests to simulate interactive mode
+stdin, cleanup, err := ptyStdin()()
+defer cleanup()
+interactive := term.IsTerminal(int(stdin.(*os.File).Fd()))
+```
+
+#### Config File Testing
+Avoid `os.Chdir()` in tests; parse config files directly:
+```go
+// Good - no global state change
+iniParser := flags.NewIniParser(parser)
+err := iniParser.ParseFile(configFile)
+
+// Avoid - changes global working directory
+os.Chdir(configDir)
+defer os.Chdir(oldDir)
+```
+
+**Why avoiding global state matters:**
+- **Parallel test execution**: `os.Chdir()` affects all running tests
+- **Test isolation**: Each test should be independent
+- **Predictable behavior**: Tests should not depend on execution order
+- **CI/CD compatibility**: Works reliably in different environments
 
 ### Table-Driven Tests
 ```go
