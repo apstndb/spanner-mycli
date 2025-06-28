@@ -51,10 +51,9 @@ func TestParseFlagsCombinations(t *testing.T) {
 	}{
 		// Alias conflicts
 		{
-			name:        "execute and sql are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--sql", "SELECT 2"},
-			wantErr:     true,
-			errContains: "-e, -f, --sql are exclusive",
+			name:    "execute and sql are aliases (both allowed)",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--sql", "SELECT 2"},
+			wantErr: false,
 		},
 		{
 			name: "role and database-role both set (aliases allowed)",
@@ -63,10 +62,9 @@ func TestParseFlagsCombinations(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "insecure and skip-tls-verify are mutually exclusive",
-			args:        []string{"--insecure", "--skip-tls-verify"},
-			wantErr:     true,
-			errContains: "--insecure and --skip-tls-verify are mutually exclusive",
+			name:    "insecure and skip-tls-verify are aliases (both allowed)",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
+			wantErr: false,
 		},
 
 		// Mutually exclusive operations
@@ -727,26 +725,36 @@ func TestFlagSpecialModes(t *testing.T) {
 		checkAfterRun    bool // Some values are set in run() function
 	}{
 		{
-			name: "embedded emulator sets defaults",
+			name: "embedded emulator with no explicit values uses defaults",
 			args: []string{"--embedded-emulator"},
-			wantProject:  "emulator-project",
-			wantInstance: "emulator-instance",
-			wantDatabase: "emulator-database",
+			wantProject:  "emulator-project", // Default set in initializeSystemVariables
+			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
+			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
 			wantInsecure: true,
 			checkAfterRun: true, // Endpoint and WithoutAuthentication set in run()
 		},
 		{
-			name: "embedded emulator overrides explicit values",
+			name: "embedded emulator with explicit values uses user values",
 			args: []string{
 				"--embedded-emulator",
 				"--project", "my-project",
 				"--instance", "my-instance",
 				"--database", "my-database",
-				"--insecure", "false",
 			},
-			wantProject:  "emulator-project",
-			wantInstance: "emulator-instance",
-			wantDatabase: "emulator-database",
+			wantProject:  "my-project",
+			wantInstance: "my-instance",
+			wantDatabase: "my-database",
+			wantInsecure: true, // --embedded-emulator always sets insecure=true
+		},
+		{
+			name: "embedded emulator with detached mode",
+			args: []string{
+				"--embedded-emulator",
+				"--detached",
+			},
+			wantProject:  "emulator-project",  // Default set in initializeSystemVariables
+			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
+			wantDatabase: "",                  // Empty - respects detached mode
 			wantInsecure: true,
 		},
 		{
@@ -885,7 +893,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			// Special checks for modes that set values in run()
-			if tt.name == "embedded emulator sets defaults" && tt.checkAfterRun {
+			if tt.name == "embedded emulator with no explicit values uses defaults" && tt.checkAfterRun {
 				// These would be set in run() after emulator starts
 				// Just verify the flags that trigger this behavior are correct
 				if !gopts.Spanner.EmbeddedEmulator {
@@ -920,9 +928,9 @@ func TestFlagErrorMessages(t *testing.T) {
 			wantErrKeyword: "-d is required (or use --detached",
 		},
 		{
-			name:           "conflicting flags shows which flags conflict",
-			args:           []string{"--insecure", "--skip-tls-verify"},
-			wantErrKeyword: "--insecure and --skip-tls-verify are mutually exclusive",
+			name:           "conflicting input flags shows which flags conflict",
+			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql"},
+			wantErrKeyword: "-e, -f, --sql are exclusive",
 		},
 		{
 			name:           "invalid enum shows valid options",
@@ -1831,9 +1839,9 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--set", "READONLY=true",
 				"--set", "RPC_PRIORITY=LOW",
 			},
-			wantProject:  "emulator-project",
-			wantInstance: "emulator-instance",
-			wantDatabase: "emulator-database",
+			wantProject:  "emulator-project", // Default set in initializeSystemVariables
+			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
+			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
 			wantInsecure: true,
 			wantReadOnly: true,
 			wantPriority: sppb.RequestOptions_PRIORITY_LOW,
@@ -1899,9 +1907,9 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--embedded-emulator",
 				"--mcp",
 			},
-			wantProject:  "emulator-project",
-			wantInstance: "emulator-instance",
-			wantDatabase: "emulator-database",
+			wantProject:  "emulator-project", // Default set in initializeSystemVariables
+			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
+			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
 			wantInsecure: true,
 			wantVerbose:  true, // MCP sets verbose
 			wantPriority: defaultPriority, // Should use default priority
@@ -1978,4 +1986,98 @@ func TestComplexFlagInteractions(t *testing.T) {
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
+}
+
+// TestAliasFlagPrecedence tests that non-hidden flags take precedence over hidden aliases
+func TestAliasFlagPrecedence(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantRole   string
+		wantInsecure bool
+	}{
+		{
+			name:       "role takes precedence over database-role",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--role", "primary-role", "--database-role", "secondary-role"},
+			wantRole:   "primary-role",
+		},
+		{
+			name:       "database-role used when role not specified",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--database-role", "db-role"},
+			wantRole:   "db-role",
+		},
+		{
+			name:       "insecure and skip-tls-verify both set",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
+			wantInsecure: true,
+		},
+		{
+			name:       "only skip-tls-verify set",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
+			wantInsecure: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gopts globalOptions
+			parser := flags.NewParser(&gopts, flags.Default)
+			_, err := parser.ParseArgs(tt.args)
+			if err != nil {
+				t.Fatalf("ParseArgs() error: %v", err)
+			}
+
+			sysVars, err := initializeSystemVariables(&gopts.Spanner)
+			if err != nil {
+				t.Fatalf("initializeSystemVariables() error: %v", err)
+			}
+
+			if sysVars.Role != tt.wantRole {
+				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
+			}
+			if sysVars.Insecure != tt.wantInsecure {
+				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
+			}
+		})
+	}
+}
+
+// TestExecuteSQLAliasPrecedence tests execute/sql alias precedence
+func TestExecuteSQLAliasPrecedence(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantInput string
+	}{
+		{
+			name:      "execute takes precedence over sql",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--sql", "SELECT 2"},
+			wantInput: "SELECT 1",
+		},
+		{
+			name:      "sql used when execute not specified",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--sql", "SELECT 2"},
+			wantInput: "SELECT 2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gopts globalOptions
+			parser := flags.NewParser(&gopts, flags.Default)
+			_, err := parser.ParseArgs(tt.args)
+			if err != nil {
+				t.Fatalf("ParseArgs() error: %v", err)
+			}
+
+			input, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+			if err != nil {
+				t.Fatalf("determineInputAndMode() error: %v", err)
+			}
+
+			if input != tt.wantInput {
+				t.Errorf("Input = %q, want %q", input, tt.wantInput)
+			}
+		})
+	}
 }

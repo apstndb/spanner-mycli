@@ -278,18 +278,69 @@ func Test_initializeSystemVariables(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "embedded emulator sets defaults",
+			name: "embedded emulator with user values",
 			opts: &spannerOptions{
 				EmbeddedEmulator: true,
-				ProjectId:        "should-be-overridden",
-				InstanceId:       "should-be-overridden",
-				DatabaseId:       "should-be-overridden",
-				Insecure:         false, // should be overridden
+				ProjectId:        "user-project",
+				InstanceId:       "user-instance",
+				DatabaseId:       "user-database",
+				Insecure:         false, // should be overridden by embedded emulator
 			},
 			want: systemVariables{
-				Project:              "emulator-project",
-				Instance:             "emulator-instance",
-				Database:             "emulator-database",
+				Project:              "user-project",
+				Instance:             "user-instance",
+				Database:             "user-database",
+				Insecure:             true, // embedded emulator always sets this
+				Prompt:               defaultPrompt,
+				Prompt2:              defaultPrompt2,
+				HistoryFile:          defaultHistoryFile,
+				LogLevel:             slog.LevelWarn,
+				VertexAIModel:        defaultVertexAIModel,
+				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
+				AnalyzeColumns:       DefaultAnalyzeColumns,
+				RPCPriority:          defaultPriority,
+				OutputTemplateFile:   "",
+				OutputTemplate:       defaultOutputFormat,
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+			},
+			wantErr: false,
+		},
+		{
+			name: "embedded emulator with no user values",
+			opts: &spannerOptions{
+				EmbeddedEmulator: true,
+			},
+			want: systemVariables{
+				Project:              "emulator-project", // Default value set in initializeSystemVariables
+				Instance:             "emulator-instance", // Default value set in initializeSystemVariables
+				Database:             "emulator-database", // Default value set in initializeSystemVariables
+				Insecure:             true,
+				Prompt:               defaultPrompt,
+				Prompt2:              defaultPrompt2,
+				HistoryFile:          defaultHistoryFile,
+				LogLevel:             slog.LevelWarn,
+				VertexAIModel:        defaultVertexAIModel,
+				EnableADCPlus:        true,
+				ReturnCommitStats:    true,
+				AnalyzeColumns:       DefaultAnalyzeColumns,
+				RPCPriority:          defaultPriority,
+				OutputTemplateFile:   "",
+				OutputTemplate:       defaultOutputFormat,
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+			},
+			wantErr: false,
+		},
+		{
+			name: "embedded emulator with detached mode",
+			opts: &spannerOptions{
+				EmbeddedEmulator: true,
+				Detached:        true,
+			},
+			want: systemVariables{
+				Project:              "emulator-project",  // Default set for emulator
+				Instance:             "emulator-instance", // Default set for emulator
+				Database:             "",                  // Empty - respects detached mode
 				Insecure:             true,
 				Prompt:               defaultPrompt,
 				Prompt2:              defaultPrompt2,

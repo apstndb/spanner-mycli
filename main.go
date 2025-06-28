@@ -57,6 +57,14 @@ type globalOptions struct {
 // We can't use `default` because spanner-mycli uses multiple flags.NewParser() to process config files and flags.
 // All fields use `default-mask:"-"` to prevent struct field values from appearing in help output.
 // This is necessary because go-flags displays any non-zero struct field values as defaults in help text.
+//
+// Alias flags handling:
+// Some flags have hidden aliases for compatibility with other tools:
+// - --sql is an alias of --execute (gcloud spanner databases execute-sql compatibility)
+// - --database-role is an alias of --role (gcloud spanner databases execute-sql compatibility)
+// - --skip-tls-verify is an alias of --insecure (original spanner-cli compatibility)
+// When multiple aliases are specified, the non-hidden flag takes precedence.
+// This precedence behavior may override normal flag/env/ini precedence.
 type spannerOptions struct {
 	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID" default-mask:"-" description:"(required) GCP Project ID."`
 	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" default-mask:"-" description:"(required) Cloud Spanner Instance ID"`
@@ -74,12 +82,12 @@ type spannerOptions struct {
 	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias." default-mask:"-"`
 	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)" default-mask:"-"`
 	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
-	SQL                       string            `long:"sql" hidden:"true" description:"alias of --execute" default-mask:"-"`
+	SQL                       string            `long:"sql" hidden:"true" description:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility" default-mask:"-"`
 	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
 	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64" default-mask:"-"`
 	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message." default-mask:"-"`
 	Insecure                  bool              `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias." default-mask:"-"`
-	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"An alias of --insecure" hidden:"true" default-mask:"-"`
+	SkipTlsVerify             bool              `long:"skip-tls-verify" description:"Hidden alias of --insecure from original spanner-cli" hidden:"true" default-mask:"-"`
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
@@ -94,7 +102,7 @@ type spannerOptions struct {
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email" default-mask:"-"`
 	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true" default-mask:"-"`
-	DatabaseRole              string            `long:"database-role" description:"alias of --role" hidden:"true" default-mask:"-"`
+	DatabaseRole              string            `long:"database-role" description:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility" hidden:"true" default-mask:"-"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
 	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
 	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
@@ -230,13 +238,36 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 
 	if opts.EmbeddedEmulator {
-		container, teardown, err := spanemuboost.NewEmulator(ctx,
+		// Log when user provides custom values with embedded emulator
+		if opts.ProjectId != "" || opts.InstanceId != "" || opts.DatabaseId != "" {
+			attrs := []any{}
+			if opts.ProjectId != "" {
+				attrs = append(attrs, "project", opts.ProjectId)
+			}
+			if opts.InstanceId != "" {
+				attrs = append(attrs, "instance", opts.InstanceId)
+			}
+			if opts.DatabaseId != "" {
+				attrs = append(attrs, "database", opts.DatabaseId)
+			}
+			slog.Warn("Using embedded emulator with user-provided values", attrs...)
+		}
+		
+		// Use values from sysVars (which includes defaults set in initializeSystemVariables)
+		emulatorOpts := []spanemuboost.Option{
 			spanemuboost.WithProjectID(sysVars.Project),
 			spanemuboost.WithInstanceID(sysVars.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Database),
 			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
 			spanemuboost.WithDatabaseDialect(sysVars.DatabaseDialect),
-		)
+		}
+		
+		// In detached mode, only create instance without database
+		if opts.Detached {
+			emulatorOpts = append(emulatorOpts, spanemuboost.EnableInstanceAutoConfigOnly())
+		}
+		
+		container, teardown, err := spanemuboost.NewEmulator(ctx, emulatorOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
 		}
@@ -279,10 +310,6 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 // ValidateSpannerOptions validates the spannerOptions struct.
 func ValidateSpannerOptions(opts *spannerOptions) error {
-	if opts.Insecure && opts.SkipTlsVerify {
-		return fmt.Errorf("invalid parameters: --insecure and --skip-tls-verify are mutually exclusive")
-	}
-
 	if opts.Strong && opts.ReadTimestamp != "" {
 		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
 	}
@@ -295,13 +322,33 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		return fmt.Errorf("missing parameter: -d is required (or use --detached for detached mode)")
 	}
 
-	if nonEmptyInputCount := xiter.Count(xiter.Of(opts.File, opts.Execute, opts.SQL), lo.IsNotEmpty); nonEmptyInputCount > 1 {
-		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
+	// Check for mutually exclusive input methods
+	// Note: --execute and --sql are aliases, but we'll handle precedence in determineInputAndMode
+	inputMethods := []struct {
+		value string
+		name  string
+	}{
+		{opts.File, "-f"},
+		{opts.Execute, "--execute"},
+		{opts.SQL, "--sql"},
 	}
-
-	// This check is redundant with the above, but kept for consistency with original code.
-	if opts.Execute != "" && opts.SQL != "" {
-		return fmt.Errorf("--execute and --sql are mutually exclusive")
+	
+	var nonEmptyMethods []string
+	for _, method := range inputMethods {
+		if method.value != "" {
+			nonEmptyMethods = append(nonEmptyMethods, method.name)
+		}
+	}
+	
+	if len(nonEmptyMethods) > 1 {
+		// Special case: --execute and --sql are aliases, so this is allowed
+		if len(nonEmptyMethods) == 2 && 
+			(nonEmptyMethods[0] == "--execute" && nonEmptyMethods[1] == "--sql" ||
+			 nonEmptyMethods[0] == "--sql" && nonEmptyMethods[1] == "--execute") {
+			// This is OK - will be handled with precedence in determineInputAndMode
+		} else {
+			return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
+		}
 	}
 
 	if opts.TryPartitionQuery {
@@ -369,9 +416,19 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 		sysVars.VertexAIModel = *opts.VertexAIModel
 	}
 	
+	// Handle alias flags with precedence for non-hidden flags
+	// Note: This precedence may override normal flag/env/ini precedence
+	if opts.Role != "" && opts.DatabaseRole != "" {
+		slog.Warn("Both --role and --database-role are specified. Using --role (non-hidden flag takes precedence)")
+	}
 	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
-	sysVars.Endpoint = opts.Endpoint
+	
+	if opts.Insecure && opts.SkipTlsVerify {
+		slog.Warn("Both --insecure and --skip-tls-verify are specified. Using --insecure (non-hidden flag takes precedence)")
+	}
 	sysVars.Insecure = opts.Insecure || opts.SkipTlsVerify
+	
+	sysVars.Endpoint = opts.Endpoint
 	sysVars.Params = params
 	sysVars.LogGrpc = opts.LogGrpc
 	sysVars.LogLevel = l
@@ -484,11 +541,21 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	if opts.EmbeddedEmulator {
-		sysVars.Project = "emulator-project"
-		sysVars.Instance = "emulator-instance"
-		sysVars.Database = "emulator-database"
+		// When using embedded emulator, insecure connection is required
 		sysVars.Insecure = true
 		// sysVars.Endpoint and sysVars.WithoutAuthentication will be set in run() after emulator starts
+		
+		// Set default values for embedded emulator if not specified by user
+		if sysVars.Project == "" {
+			sysVars.Project = spanemuboost.DefaultProjectID
+		}
+		if sysVars.Instance == "" {
+			sysVars.Instance = spanemuboost.DefaultInstanceID
+		}
+		// For database, respect --detached mode (empty database)
+		if sysVars.Database == "" && !opts.Detached {
+			sysVars.Database = spanemuboost.DefaultDatabaseID
+		}
 	}
 
 	return sysVars, nil
@@ -583,7 +650,14 @@ func readCredentialFile(filepath string) ([]byte, error) {
 // determineInputAndMode decides whether to run in interactive or batch mode
 // and returns the input string, interactive flag, and any error
 func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
+	// Handle alias flags with precedence for non-hidden flags
+	// Note: This precedence may override normal flag/env/ini precedence
+	if opts.Execute != "" && opts.SQL != "" {
+		slog.Warn("Both --execute and --sql are specified. Using --execute (non-hidden flag takes precedence)")
+	}
+	
 	// Check command line options first
+	// Note: Execute takes precedence over SQL (alias)
 	switch {
 	case opts.Execute != "":
 		return opts.Execute, false, nil
