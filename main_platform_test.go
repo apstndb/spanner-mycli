@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	
 	"github.com/testcontainers/testcontainers-go"
@@ -89,7 +90,7 @@ func TestInspectImagePlatform(t *testing.T) {
 			if !tt.wantEmpty {
 				if platform == "" {
 					t.Errorf("inspectImagePlatform(%q) = empty, want non-empty platform", tt.imageName)
-				} else if !contains(platform, tt.wantOS) {
+				} else if !strings.Contains(platform, tt.wantOS) {
 					t.Errorf("inspectImagePlatform(%q) = %q, want to contain %q", tt.imageName, platform, tt.wantOS)
 				}
 			}
