@@ -25,6 +25,8 @@ func TestInspectImagePlatform(t *testing.T) {
 	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s", 
 		os.Getenv("CI"), os.Getenv("DOCKER_HOST"))
 
+	// In CI, we need to use an image that's already available from testcontainers
+	// The emulator image should be available as it's used in other tests
 	tests := []struct {
 		name      string
 		imageName string
@@ -32,8 +34,8 @@ func TestInspectImagePlatform(t *testing.T) {
 		wantEmpty bool // true if we expect empty string (error case)
 	}{
 		{
-			name:      "valid public image",
-			imageName: "hello-world:latest",
+			name:      "testcontainers ryuk image (always available)",
+			imageName: "testcontainers/ryuk:0.11.0",
 			wantOS:    "linux",
 			wantEmpty: false,
 		},
