@@ -36,6 +36,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
 	"github.com/olekukonko/tablewriter"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
 
@@ -93,6 +94,7 @@ type spannerOptions struct {
 	SkipTlsVerify             *bool             `long:"skip-tls-verify" description:"Hidden alias of --insecure from original spanner-cli" hidden:"true" default-mask:"-"`
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
+	EmulatorPlatform          string            `long:"emulator-platform" description:"Container platform for --embedded-emulator (e.g., linux/amd64, linux/arm64)" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
 	LogLevel                  string            `long:"log-level" default-mask:"-"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs" default-mask:"-"`
@@ -214,6 +216,17 @@ func main() {
 	os.Exit(exitCodeSuccess)
 }
 
+// withPlatform creates a ContainerCustomizer that sets the container platform
+func withPlatform(platform string) testcontainers.ContainerCustomizer {
+	return testcontainers.CustomizeRequest(
+		testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				ImagePlatform: platform,
+			},
+		},
+	)
+}
+
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
@@ -270,11 +283,27 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			emulatorOpts = append(emulatorOpts, spanemuboost.EnableInstanceAutoConfigOnly())
 		}
 		
+		// Add platform customizer if specified
+		if opts.EmulatorPlatform != "" {
+			emulatorOpts = append(emulatorOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
+		}
+		
 		container, teardown, err := spanemuboost.NewEmulator(ctx, emulatorOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
 		}
 		defer teardown()
+
+		// Cache container platform information
+		if inspectResult, err := container.Inspect(ctx); err == nil {
+			sysVars.EmulatorPlatform = inspectResult.Platform
+		} else {
+			slog.Warn("Failed to inspect container platform", "error", err)
+			// If inspect fails but platform was specified, use the specified value
+			if opts.EmulatorPlatform != "" {
+				sysVars.EmulatorPlatform = opts.EmulatorPlatform
+			}
+		}
 
 		sysVars.Endpoint = container.URI()
 		sysVars.WithoutAuthentication = true

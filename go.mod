@@ -14,7 +14,7 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
-	github.com/apstndb/spanemuboost v0.2.10
+	github.com/apstndb/spanemuboost v0.2.11
 	github.com/apstndb/spannerplan v0.1.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.6
