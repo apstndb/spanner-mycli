@@ -295,11 +295,10 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
-	// Create Docker client via testcontainers provider for consistent configuration
-	// Note: This still creates a new client, but ensures proper Docker socket handling
-	// and environment configuration that matches testcontainers' usage
-	// TODO: For Podman support, we'd need to use ProviderDefault.GetProvider() and handle
-	// different provider types appropriately. Currently this is Docker-specific.
+	// Create container client via testcontainers provider for consistent configuration
+	// Note: This creates a new client but ensures proper socket handling and environment
+	// configuration. Works with both Docker and Podman as NewDockerProvider() internally
+	// handles provider detection and returns appropriately configured *DockerProvider
 	provider, err := testcontainers.NewDockerProvider()
 	if err != nil {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
