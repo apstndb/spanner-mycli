@@ -2,16 +2,28 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"testing"
 )
 
 // TestInspectImagePlatform tests the inspectImagePlatform function
 func TestInspectImagePlatform(t *testing.T) {
-	// Skip this test in short mode or CI as it requires Docker access
-	if testing.Short() || os.Getenv("CI") != "" {
-		t.Skip("skipping test in short mode or CI environment")
+	// Skip this test in short mode as it requires Docker access
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
 	}
+
+	// Enable debug logging for this test
+	// Configure slog to output to test logger at debug level
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	slog.SetDefault(slog.New(handler))
+
+	// Log test environment
+	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s", 
+		os.Getenv("CI"), os.Getenv("DOCKER_HOST"))
 
 	tests := []struct {
 		name      string
@@ -41,7 +53,9 @@ func TestInspectImagePlatform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Logf("Testing inspectImagePlatform with image: %q", tt.imageName)
 			platform := inspectImagePlatform(context.Background(), tt.imageName)
+			t.Logf("Result: platform=%q", platform)
 			
 			if tt.wantEmpty && platform != "" {
 				t.Errorf("inspectImagePlatform(%q) = %q, want empty string", tt.imageName, platform)

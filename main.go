@@ -294,9 +294,14 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 
 // inspectImagePlatform uses Docker API to get platform information from an image
 func inspectImagePlatform(ctx context.Context, imageName string) string {
+	slog.Debug("inspectImagePlatform called", "imageName", imageName)
+	
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		slog.Debug("Failed to create Docker client", "error", err)
+		slog.Debug("Failed to create Docker client", 
+			"error", err,
+			"DOCKER_HOST", os.Getenv("DOCKER_HOST"),
+			"DOCKER_CERT_PATH", os.Getenv("DOCKER_CERT_PATH"))
 		return ""
 	}
 	defer func() {
@@ -305,22 +310,38 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 		}
 	}()
 	
+	// Log Docker client info
+	info, err := dockerClient.Info(ctx)
+	if err != nil {
+		slog.Debug("Failed to get Docker info", "error", err)
+	} else {
+		slog.Debug("Docker client info", 
+			"ServerVersion", info.ServerVersion,
+			"OSType", info.OSType,
+			"Architecture", info.Architecture)
+	}
+	
 	imageInspect, err := dockerClient.ImageInspect(ctx, imageName)
 	if err != nil {
-		slog.Debug("Image inspect failed", "error", err)
+		slog.Debug("Image inspect failed", 
+			"error", err,
+			"imageName", imageName)
 		return ""
 	}
 
 	slog.Debug("Image inspect successful",
+		"imageName", imageName,
 		"Architecture", imageInspect.Architecture,
 		"Os", imageInspect.Os,
 		"Variant", imageInspect.Variant,
+		"ID", imageInspect.ID,
 	)
 	
 	platform := imageInspect.Os + "/" + imageInspect.Architecture
 	if imageInspect.Variant != "" {
 		platform += "/" + imageInspect.Variant
 	}
+	slog.Debug("Returning platform", "platform", platform)
 	return platform
 }
 
