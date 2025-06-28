@@ -323,32 +323,17 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 
 	// Check for mutually exclusive input methods
-	// Note: --execute and --sql are aliases, but we'll handle precedence in determineInputAndMode
-	inputMethods := []struct {
-		value string
-		name  string
-	}{
-		{opts.File, "-f"},
-		{opts.Execute, "--execute"},
-		{opts.SQL, "--sql"},
+	// Note: --execute and --sql are aliases.
+	inputMethodsCount := 0
+	if opts.File != "" {
+		inputMethodsCount++
 	}
-	
-	var nonEmptyMethods []string
-	for _, method := range inputMethods {
-		if method.value != "" {
-			nonEmptyMethods = append(nonEmptyMethods, method.name)
-		}
+	if opts.Execute != "" || opts.SQL != "" {
+		inputMethodsCount++
 	}
-	
-	if len(nonEmptyMethods) > 1 {
-		// Special case: --execute and --sql are aliases, so this is allowed
-		if len(nonEmptyMethods) == 2 && 
-			(nonEmptyMethods[0] == "--execute" && nonEmptyMethods[1] == "--sql" ||
-			 nonEmptyMethods[0] == "--sql" && nonEmptyMethods[1] == "--execute") {
-			// This is OK - will be handled with precedence in determineInputAndMode
-		} else {
-			return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
-		}
+
+	if inputMethodsCount > 1 {
+		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
 	}
 
 	if opts.TryPartitionQuery {
