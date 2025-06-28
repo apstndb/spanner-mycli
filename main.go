@@ -28,7 +28,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -36,8 +35,10 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
+	"github.com/docker/docker/client"
 	"github.com/olekukonko/tablewriter"
 	"github.com/testcontainers/testcontainers-go"
+	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
 
@@ -228,6 +229,101 @@ func withPlatform(platform string) testcontainers.ContainerCustomizer {
 	)
 }
 
+// detectContainerPlatform detects the platform of a running container
+// It tries multiple methods in order of preference:
+// 1. ImageManifestDescriptor.Platform (most accurate but not always available)
+// 2. Docker API image inspect (reliable when Docker socket is accessible)
+// 3. Basic Platform field from container (usually just OS, e.g., "linux")
+func detectContainerPlatform(ctx context.Context, container *tcspanner.Container) string {
+	inspectResult, err := container.Inspect(ctx)
+	if err != nil {
+		slog.Warn("Failed to inspect container", "error", err)
+		return "unknown"
+	}
+
+	// Debug log the inspect result
+	slog.Debug("Container inspect result",
+		"Platform", inspectResult.Platform,
+		"ImageManifestDescriptor", inspectResult.ImageManifestDescriptor != nil,
+		"Image", inspectResult.Image,
+		"ConfigNotNil", inspectResult.Config != nil,
+	)
+	
+	// Log config details if available
+	if inspectResult.Config != nil {
+		slog.Debug("Container config details",
+			"Image", inspectResult.Config.Image,
+			"Labels", inspectResult.Config.Labels,
+		)
+	}
+	
+	// Method 1: Try ImageManifestDescriptor (OCI standard)
+	if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
+		p := inspectResult.ImageManifestDescriptor.Platform
+		slog.Debug("ImageManifestDescriptor.Platform details",
+			"OS", p.OS,
+			"Architecture", p.Architecture,
+			"Variant", p.Variant,
+			"OSVersion", p.OSVersion,
+			"OSFeatures", p.OSFeatures,
+		)
+		platform := p.OS + "/" + p.Architecture
+		if p.Variant != "" {
+			platform += "/" + p.Variant
+		}
+		return platform
+	}
+
+	// Method 2: Try Docker API image inspect
+	slog.Debug("ImageManifestDescriptor not available, trying image inspect")
+	if inspectResult.Config != nil && inspectResult.Config.Image != "" {
+		platform := inspectImagePlatform(ctx, inspectResult.Config.Image)
+		if platform != "" {
+			return platform
+		}
+	}
+
+	// Method 3: Fallback to basic platform field
+	if inspectResult.Platform != "" {
+		slog.Debug("Using basic Platform field", "Platform", inspectResult.Platform)
+		return inspectResult.Platform
+	}
+
+	return "unknown"
+}
+
+// inspectImagePlatform uses Docker API to get platform information from an image
+func inspectImagePlatform(ctx context.Context, imageName string) string {
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		slog.Debug("Failed to create Docker client", "error", err)
+		return ""
+	}
+	defer func() {
+		if err := dockerClient.Close(); err != nil {
+			slog.Debug("Failed to close Docker client", "error", err)
+		}
+	}()
+	
+	imageInspect, err := dockerClient.ImageInspect(ctx, imageName)
+	if err != nil {
+		slog.Debug("Image inspect failed", "error", err)
+		return ""
+	}
+
+	slog.Debug("Image inspect successful",
+		"Architecture", imageInspect.Architecture,
+		"Os", imageInspect.Os,
+		"Variant", imageInspect.Variant,
+	)
+	
+	platform := imageInspect.Os + "/" + imageInspect.Architecture
+	if imageInspect.Variant != "" {
+		platform += "/" + imageInspect.Variant
+	}
+	return platform
+}
+
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
@@ -295,58 +391,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 		defer teardown()
 
-		// Cache container platform information
-		if inspectResult, err := container.Inspect(ctx); err == nil {
-			// Debug log the inspect result
-			slog.Debug("Container inspect result",
-				"Platform", inspectResult.Platform,
-				"ImageManifestDescriptor", inspectResult.ImageManifestDescriptor != nil,
-				"Image", inspectResult.Image,
-				"ConfigNotNil", inspectResult.Config != nil,
-			)
-			
-			// Also log some config details if available
-			if inspectResult.Config != nil {
-				slog.Debug("Container config details",
-					"Image", inspectResult.Config.Image,
-					"Labels", inspectResult.Config.Labels,
-				)
-			}
-			
-			// Construct platform string from ImageManifestDescriptor if available
-			if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
-				p := inspectResult.ImageManifestDescriptor.Platform
-				slog.Debug("ImageManifestDescriptor.Platform details",
-					"OS", p.OS,
-					"Architecture", p.Architecture,
-					"Variant", p.Variant,
-					"OSVersion", p.OSVersion,
-					"OSFeatures", p.OSFeatures,
-				)
-				platform := p.OS + "/" + p.Architecture
-				if p.Variant != "" {
-					platform += "/" + p.Variant
-				}
-				sysVars.EmulatorPlatform = platform
-			} else {
-				// Fallback to basic Platform field
-				slog.Debug("Using basic Platform field", "Platform", inspectResult.Platform)
-				// Architecture detection is not available without ImageManifestDescriptor
-				// Set only OS part or use the user-specified platform
-				if inspectResult.Platform != "" {
-					sysVars.EmulatorPlatform = inspectResult.Platform
-				} else {
-					sysVars.EmulatorPlatform = "unknown"
-				}
-				slog.Info("Container architecture detection not available. Use --emulator-platform to specify explicitly.")
-			}
-			slog.Debug("Final EmulatorPlatform value", "EmulatorPlatform", sysVars.EmulatorPlatform)
+		// Determine container platform
+		// Priority: 1) User-specified flag, 2) Auto-detection from running container
+		if opts.EmulatorPlatform != "" {
+			sysVars.EmulatorPlatform = opts.EmulatorPlatform
+			slog.Debug("Using user-specified platform", "platform", opts.EmulatorPlatform)
 		} else {
-			slog.Warn("Failed to inspect container platform", "error", err)
-			// If inspect fails but platform was specified, use the specified value
-			if opts.EmulatorPlatform != "" {
-				sysVars.EmulatorPlatform = opts.EmulatorPlatform
-			}
+			sysVars.EmulatorPlatform = detectContainerPlatform(ctx, container)
+			slog.Debug("Detected container platform", "platform", sysVars.EmulatorPlatform)
 		}
 
 		sysVars.Endpoint = container.URI()
