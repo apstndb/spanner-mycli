@@ -230,6 +230,7 @@ gh issue create --body-file tmp/issue_body.md
    - Use `docs-user` for user-facing docs (README.md, docs/)
    - Use `docs-dev` for internal docs (dev-docs/, CLAUDE.md)
    - Apply `ignore-for-release` to PRs with changes *only* in dev-docs/
+5. **Gemini Code Assist style guide**: `.gemini/styleguide.md` - Update when encountering repeated false positives or outdated suggestions from Gemini Code Assist reviews. This helps improve the quality of automated code reviews.
 
 ## Quick Reference
 
