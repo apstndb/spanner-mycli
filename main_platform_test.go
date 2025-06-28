@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
 // TestInspectImagePlatform tests the inspectImagePlatform function
 func TestInspectImagePlatform(t *testing.T) {
-	// Skip this test in short mode as it requires Docker
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
+	// Skip this test in short mode or CI as it requires Docker access
+	if testing.Short() || os.Getenv("CI") != "" {
+		t.Skip("skipping test in short mode or CI environment")
 	}
 
 	tests := []struct {
