@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // TestInspectImagePlatform tests the inspectImagePlatform function
@@ -32,6 +34,17 @@ func TestInspectImagePlatform(t *testing.T) {
 	// Log test environment
 	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s", 
 		os.Getenv("CI"), os.Getenv("DOCKER_HOST"))
+
+	// Get provider once for all tests
+	provider, err := testcontainers.ProviderDefault.GetProvider()
+	if err != nil {
+		t.Fatalf("Failed to get testcontainers provider: %v", err)
+	}
+	defer func() {
+		if err := provider.Close(); err != nil {
+			t.Logf("Failed to close provider: %v", err)
+		}
+	}()
 
 	// Test cases for inspectImagePlatform function.
 	// Note: We use testcontainers/ryuk image because it's guaranteed to be available
@@ -66,7 +79,7 @@ func TestInspectImagePlatform(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Testing inspectImagePlatform with image: %q", tt.imageName)
-			platform := inspectImagePlatform(context.Background(), tt.imageName)
+			platform := inspectImagePlatform(context.Background(), tt.imageName, provider)
 			t.Logf("Result: platform=%q", platform)
 			
 			if tt.wantEmpty && platform != "" {

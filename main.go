@@ -276,9 +276,24 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 	// Method 2: Try Docker API image inspect
 	slog.Debug("ImageManifestDescriptor not available, trying image inspect")
 	if inspectResult.Config != nil && inspectResult.Config.Image != "" {
-		platform := inspectImagePlatform(ctx, inspectResult.Config.Image)
-		if platform != "" {
-			return platform
+		// Get provider for image inspection.
+		// IMPORTANT: GetProvider() creates a NEW provider instance each time, not a singleton.
+		// We must close it to avoid resource leaks.
+		// See: https://github.com/testcontainers/testcontainers-go/blob/main/provider.go
+		genericProvider, err := testcontainers.ProviderDefault.GetProvider()
+		if err != nil {
+			slog.Debug("Failed to get testcontainers provider", "error", err)
+		} else {
+			defer func() {
+				if err := genericProvider.Close(); err != nil {
+					slog.Debug("Failed to close testcontainers provider", "error", err)
+				}
+			}()
+			
+			platform := inspectImagePlatform(ctx, inspectResult.Config.Image, genericProvider)
+			if platform != "" {
+				return platform
+			}
 		}
 	}
 
@@ -292,41 +307,22 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 }
 
 // inspectImagePlatform uses container runtime API (Docker/Podman) to get platform information from an image.
-// Note: This function creates a new Docker/Podman client on each invocation. While this introduces some overhead,
-// it's acceptable for our use case because:
-// 1. This function is only called once during CLI startup when using --embedded-emulator
-// 2. The overhead is negligible for a CLI tool that starts an emulator once per invocation
-// 3. Reusing the testcontainers provider's client would require more complex lifecycle management
-func inspectImagePlatform(ctx context.Context, imageName string) string {
+// The provider parameter should be obtained from testcontainers.ProviderDefault.GetProvider().
+// The caller is responsible for managing the provider lifecycle.
+func inspectImagePlatform(ctx context.Context, imageName string, provider testcontainers.GenericProvider) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
-	
-	// Get the auto-detected provider (Docker or Podman) from testcontainers.
-	// This uses the same provider detection as spanner.Run() for consistency.
-	// IMPORTANT: GetProvider() creates a NEW provider instance each time, not the shared singleton.
-	// Therefore, we must close it when done to avoid resource leaks.
-	genericProvider, err := testcontainers.ProviderDefault.GetProvider()
-	if err != nil {
-		slog.Debug("Failed to get testcontainers provider", "error", err)
-		return ""
-	}
-	defer func() {
-		if err := genericProvider.Close(); err != nil {
-			slog.Debug("Failed to close testcontainers provider", "error", err)
-		}
-	}()
 	
 	// Both Docker and Podman providers return *DockerProvider type, even for Podman.
 	// This is because Podman provides Docker-compatible API.
-	provider, ok := genericProvider.(*testcontainers.DockerProvider)
+	dockerProvider, ok := provider.(*testcontainers.DockerProvider)
 	if !ok {
-		slog.Debug("Provider is not a DockerProvider", "type", fmt.Sprintf("%T", genericProvider))
+		slog.Debug("Provider is not a DockerProvider", "type", fmt.Sprintf("%T", provider))
 		return ""
 	}
 	
 	// The provider embeds *client.Client directly (not as a field), so we can access it
 	// using provider.Client() which returns the embedded Docker/Podman client.
-	// This client is created internally by testcontainers when the provider is instantiated.
-	dockerClient := provider.Client()
+	dockerClient := dockerProvider.Client()
 	slog.Debug("Using container runtime client from testcontainers provider")
 	
 	// Log Docker client info
