@@ -35,7 +35,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
-	"github.com/docker/docker/client"
 	"github.com/olekukonko/tablewriter"
 	"github.com/testcontainers/testcontainers-go"
 	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
@@ -296,23 +295,18 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
-	// Note: We create a new Docker client here rather than reusing testcontainers' client
-	// because testcontainers.DockerClient is a wrapper type that doesn't expose the underlying
-	// docker/client.Client directly. The overhead is minimal since this function is only called
-	// once per CLI invocation when using --embedded-emulator.
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	// Get Docker client from testcontainers provider to avoid creating duplicate clients
+	provider, err := testcontainers.NewDockerProvider()
 	if err != nil {
-		slog.Debug("Failed to create Docker client", 
-			"error", err,
-			"DOCKER_HOST", os.Getenv("DOCKER_HOST"),
-			"DOCKER_CERT_PATH", os.Getenv("DOCKER_CERT_PATH"))
+		slog.Debug("Failed to get testcontainers provider", "error", err)
 		return ""
 	}
-	defer func() {
-		if err := dockerClient.Close(); err != nil {
-			slog.Debug("Failed to close Docker client", "error", err)
-		}
-	}()
+	defer provider.Close()
+	
+	// The provider.Client() returns the embedded *client.Client which implements APIClient
+	// This reuses the same Docker client that testcontainers uses internally
+	dockerClient := provider.Client()
+	slog.Debug("Using Docker client from testcontainers provider")
 	
 	// Log Docker client info
 	info, err := dockerClient.Info(ctx)
