@@ -163,6 +163,10 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/architecture-guide.md](dev-docs/architecture-guide.md) - Understand system architecture
 2. **For system variables**: [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md) - Implementation patterns
 3. **For client statements**: [dev-docs/architecture-guide.md#client-side-statement-system](dev-docs/architecture-guide.md#client-side-statement-system) - Statement definition patterns
+4. **Code documentation**: When code review feedback indicates confusion about design decisions:
+   - Add clarifying comments directly in the source code
+   - Document the rationale for non-obvious choices
+   - Example: If a function returns "unknown" instead of an error, explain why in comments
 
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
