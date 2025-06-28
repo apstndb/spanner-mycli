@@ -37,6 +37,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 5. **Repository merge policy**: This repository enforces **squash merge only** via Repository Ruleset - AI assistants must use `squash` method for all automated merges
 6. **PR merge process**: Before merging, if additional commits have been pushed since the initial review, request an updated summary by commenting `/gemini summary`. An initial summary is generated automatically, so this is only for updates. Then, use `go tool gh-helper reviews wait` (**DO NOT** use `--request-review`)
 7. **Squash merge commits**: MUST include descriptive summary of PR changes in squash commit message
+8. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify the exact comment ID to avoid editing the wrong comment
 
 ## Essential Commands
 
@@ -162,26 +163,31 @@ This is a simplified guide. For detailed information, refer to:
 1. **ALWAYS check**: [dev-docs/architecture-guide.md](dev-docs/architecture-guide.md) - Understand system architecture
 2. **For system variables**: [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md) - Implementation patterns
 3. **For client statements**: [dev-docs/architecture-guide.md#client-side-statement-system](dev-docs/architecture-guide.md#client-side-statement-system) - Statement definition patterns
+4. **Code documentation**: When code review feedback indicates confusion about design decisions:
+   - Add clarifying comments directly in the source code
+   - Document the rationale for non-obvious choices
+   - Example: If a function returns "unknown" instead of an error, explain why in comments
 
 ### When working with GitHub issues/PRs:
 1. **ALWAYS check**: [dev-docs/issue-management.md](dev-docs/issue-management.md) - Complete GitHub workflow
-2. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
-3. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
-4. **For review analysis**: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (prevents missing critical issues)
-5. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
-6. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
-7. **Sub-issue operations**: Use `gh-helper issues` commands instead of GraphQL:
+2. **Language requirement**: ALL GitHub communications (PRs, issues, comments, commit messages) MUST be in English
+3. **For PR labels**: [dev-docs/issue-management.md#pull-request-labels](dev-docs/issue-management.md#pull-request-labels) - Release notes categorization
+4. **For insights capture**: [dev-docs/issue-management.md#knowledge-management](dev-docs/issue-management.md#knowledge-management) - PR comment best practices
+5. **For review analysis**: Use `go tool gh-helper reviews fetch` for comprehensive feedback analysis (prevents missing critical issues)
+6. **For thread replies**: Use `go tool gh-helper threads reply` - Automated thread replies
+7. **GitHub operation priority**: Use tools in this order: `gh-helper` → `gh` command → GitHub MCP (API calls)
+8. **Sub-issue operations**: Use `gh-helper issues` commands instead of GraphQL:
    - `issues show <parent> --include-sub` - List sub-issues and check completion
    - `issues edit <issue> --parent <parent>` - Link as sub-issue (replaces deprecated `link-parent`)
    - `issues edit <issue> --parent <new> --overwrite` - Move to different parent
    - `issues edit <issue> --unlink-parent` - Remove parent relationship
    - `issues edit <issue> --after <other>` - Reorder sub-issue after another
    - `issues edit <issue> --position first` - Move sub-issue to beginning
-8. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
-9. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Now only needed for:
-   - Complex custom field selections beyond gh-helper's output
-   - Advanced queries requiring specific field combinations
-10. **Schema introspection**: Use `go tool github-schema` instead of GraphQL:
+9. **Safe Issue/PR content handling**: ALWAYS use stdin or variables for Issue/PR creation/updates as they commonly contain code blocks with special characters (e.g., backticks, quotes, dollar signs, parentheses)
+10. **GitHub GraphQL API**: [docs.github.com/en/graphql](https://docs.github.com/en/graphql) - Now only needed for:
+    - Complex custom field selections beyond gh-helper's output
+    - Advanced queries requiring specific field combinations
+11. **Schema introspection**: Use `go tool github-schema` instead of GraphQL:
    - `go tool github-schema type <TypeName>` - Show type fields and descriptions
    - `go tool github-schema mutation <MutationName>` - Show mutation requirements
    - `go tool github-schema search <pattern>` - Search for types/fields
@@ -217,6 +223,12 @@ gh issue create --body-file tmp/issue_body.md
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
 2. **For error handling**: [dev-docs/development-insights.md#error-handling-architecture-evolution](dev-docs/development-insights.md#error-handling-architecture-evolution)
 3. **For resource management**: [dev-docs/development-insights.md#resource-management-in-batch-processing](dev-docs/development-insights.md#resource-management-in-batch-processing)
+4. **Use `go doc` commands**: When investigating Go types, interfaces, or package APIs:
+   - `go doc <package>` - Show package documentation
+   - `go doc <package>.<type>` - Show specific type documentation
+   - `go doc -all <package>` - Show ALL exported identifiers (don't miss anything!)
+   - Example: `go doc github.com/testcontainers/testcontainers-go.GenericProvider`
+   - Example: `go doc -all github.com/testcontainers/testcontainers-go | grep Provider`
 
 ### When setting up development environment:
 1. **Start here**: Use `make worktree-setup WORKTREE_NAME=issue-123-feature` for worktree setup

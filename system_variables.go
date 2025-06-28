@@ -114,6 +114,7 @@ type systemVariables struct {
 	Role               string                     // CLI_ROLE
 	EchoInput          bool                       // CLI_ECHO_INPUT
 	Endpoint           string                     // CLI_ENDPOINT
+	EmulatorPlatform   string                     // CLI_EMULATOR_PLATFORM
 	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
 	TabWidth           int64                      // CLI_TAB_WIDTH
 	LogLevel           slog.Level                 // CLI_LOG_LEVEL
@@ -715,6 +716,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "",
 		Accessor: accessor{
 			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+		},
+	},
+	"CLI_EMULATOR_PLATFORM": {
+		Description: "Container platform used by embedded emulator",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.EmulatorPlatform }),
 		},
 	},
 	"CLI_DIRECT_READ": {

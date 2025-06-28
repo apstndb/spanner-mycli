@@ -2070,13 +2070,73 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 				t.Fatalf("ParseArgs() error: %v", err)
 			}
 
-			input, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+			stdin := strings.NewReader("")
+			input, _, err := determineInputAndMode(&gopts.Spanner, stdin)
 			if err != nil {
 				t.Fatalf("determineInputAndMode() error: %v", err)
 			}
 
 			if input != tt.wantInput {
-				t.Errorf("Input = %q, want %q", input, tt.wantInput)
+				t.Errorf("input = %q, want %q", input, tt.wantInput)
+			}
+		})
+	}
+}
+
+// TestEmulatorPlatformFlag tests the --emulator-platform flag parsing
+func TestEmulatorPlatformFlag(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		wantPlatform     string
+		wantEmbedded     bool
+	}{
+		{
+			name:             "emulator-platform with linux/amd64",
+			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/amd64"},
+			wantPlatform:     "linux/amd64",
+			wantEmbedded:     true,
+		},
+		{
+			name:             "emulator-platform with linux/arm64",
+			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/arm64"},
+			wantPlatform:     "linux/arm64",
+			wantEmbedded:     true,
+		},
+		{
+			name:             "emulator-platform with variant",
+			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/arm/v7"},
+			wantPlatform:     "linux/arm/v7",
+			wantEmbedded:     true,
+		},
+		{
+			name:             "embedded-emulator without platform",
+			args:             []string{"--embedded-emulator"},
+			wantPlatform:     "",
+			wantEmbedded:     true,
+		},
+		{
+			name:             "emulator-platform without embedded-emulator",
+			args:             []string{"--emulator-platform", "linux/amd64"},
+			wantPlatform:     "linux/amd64",
+			wantEmbedded:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gopts globalOptions
+			parser := flags.NewParser(&gopts, flags.Default)
+			_, err := parser.ParseArgs(tt.args)
+			if err != nil {
+				t.Fatalf("ParseArgs() error: %v", err)
+			}
+
+			if gopts.Spanner.EmulatorPlatform != tt.wantPlatform {
+				t.Errorf("EmulatorPlatform = %q, want %q", gopts.Spanner.EmulatorPlatform, tt.wantPlatform)
+			}
+			if gopts.Spanner.EmbeddedEmulator != tt.wantEmbedded {
+				t.Errorf("EmbeddedEmulator = %v, want %v", gopts.Spanner.EmbeddedEmulator, tt.wantEmbedded)
 			}
 		})
 	}

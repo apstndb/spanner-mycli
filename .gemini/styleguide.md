@@ -39,6 +39,49 @@ Reference: https://go.dev/blog/loopvar-preview
 - Use `t.Setenv()` instead of `os.Setenv()` for better test isolation
 - Avoid global state modifications in tests
 
+### Global State Exceptions
+
+While global state modifications should generally be avoided in tests, `slog` (structured logging) is an **accepted exception** in this project because:
+
+1. Many functions throughout the codebase use the global `slog` for logging
+2. Refactoring all functions to accept a logger parameter would be impractical
+3. The save/restore pattern provides adequate test isolation
+
+**When modifying slog in tests, you MUST use the save/restore pattern**:
+
+```go
+// Save the original logger
+oldLogger := slog.Default()
+defer slog.SetDefault(oldLogger)
+
+// Set up test-specific logger
+handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+})
+slog.SetDefault(slog.New(handler))
+```
+
+This pattern ensures that global logger modifications don't affect other tests, even when running in parallel.
+
+### Package-level Test Functions
+
+In Go, test files within the same package share the same namespace. This means that helper functions defined in one test file (e.g., `main_flags_test.go`) are accessible from other test files in the same package (e.g., `main_platform_test.go`).
+
+**DO NOT** report as missing when a test uses a helper function defined in another test file of the same package:
+
+```go
+// In main_flags_test.go
+func contains(s, substr string) bool {
+    return strings.Contains(s, substr)
+}
+
+// In main_platform_test.go (same package)
+// This is valid - contains() is accessible
+if !contains(platform, tt.wantOS) {
+    // ...
+}
+```
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
