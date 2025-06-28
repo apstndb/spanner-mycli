@@ -1897,25 +1897,9 @@ func TestComplexFlagInteractions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore environment
-			savedEnv := make(map[string]string)
-			for k := range tt.envVars {
-				savedEnv[k] = os.Getenv(k)
-				_ = os.Unsetenv(k)
-			}
-			defer func() {
-				for k, v := range savedEnv {
-					if v == "" {
-						_ = os.Unsetenv(k)
-					} else {
-						_ = os.Setenv(k, v)
-					}
-				}
-			}()
-
-			// Set test environment variables
+			// Set test environment variables. t.Setenv automatically handles cleanup.
 			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			var gopts globalOptions
