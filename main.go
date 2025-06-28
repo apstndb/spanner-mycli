@@ -325,8 +325,13 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 	dockerClient := dockerProvider.Client()
 	slog.Debug("Using container runtime client from testcontainers provider")
 	
+	// Use a context with a timeout for Docker API calls to prevent hangs
+	// if the container runtime is unresponsive
+	inspectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	
 	// Log Docker client info
-	info, err := dockerClient.Info(ctx)
+	info, err := dockerClient.Info(inspectCtx)
 	if err != nil {
 		slog.Debug("Failed to get Docker info", "error", err)
 	} else {
@@ -336,7 +341,7 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 			"Architecture", info.Architecture)
 	}
 	
-	imageInspect, err := dockerClient.ImageInspect(ctx, imageName)
+	imageInspect, err := dockerClient.ImageInspect(inspectCtx, imageName)
 	if err != nil {
 		slog.Debug("Image inspect failed", 
 			"error", err,
