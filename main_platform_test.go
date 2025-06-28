@@ -14,12 +14,16 @@ func TestInspectImagePlatform(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 
-	// Enable debug logging for this test
-	// Save the original logger and restore it after the test to avoid affecting other tests
+	// Enable debug logging for this test to help diagnose CI failures.
+	// IMPORTANT: We modify the global logger here, which could affect other tests
+	// if they run in parallel. To prevent test interference:
+	// 1. Save the original logger before modification
+	// 2. Restore it in a defer to ensure it always gets restored
+	// This pattern ensures test isolation without requiring dependency injection.
 	oldLogger := slog.Default()
 	defer slog.SetDefault(oldLogger)
 	
-	// Configure slog to output to test logger at debug level
+	// Configure slog to output to stderr at debug level for detailed diagnostics
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
@@ -29,8 +33,10 @@ func TestInspectImagePlatform(t *testing.T) {
 	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s", 
 		os.Getenv("CI"), os.Getenv("DOCKER_HOST"))
 
-	// In CI, we need to use an image that's already available from testcontainers
-	// The emulator image should be available as it's used in other tests
+	// Test cases for inspectImagePlatform function.
+	// Note: We use testcontainers/ryuk image because it's guaranteed to be available
+	// in CI environments where testcontainers is used. This avoids image pull failures
+	// that could occur with other images like hello-world:latest.
 	tests := []struct {
 		name      string
 		imageName string

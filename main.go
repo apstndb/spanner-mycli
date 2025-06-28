@@ -291,12 +291,19 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 	return "unknown"
 }
 
-// inspectImagePlatform uses container runtime API (Docker/Podman) to get platform information from an image
+// inspectImagePlatform uses container runtime API (Docker/Podman) to get platform information from an image.
+// Note: This function creates a new Docker/Podman client on each invocation. While this introduces some overhead,
+// it's acceptable for our use case because:
+// 1. This function is only called once during CLI startup when using --embedded-emulator
+// 2. The overhead is negligible for a CLI tool that starts an emulator once per invocation
+// 3. Reusing the testcontainers provider's client would require more complex lifecycle management
 func inspectImagePlatform(ctx context.Context, imageName string) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
 	
-	// Get the auto-detected provider (Docker or Podman) from testcontainers
-	// This uses the same provider detection as spanner.Run() for consistency
+	// Get the auto-detected provider (Docker or Podman) from testcontainers.
+	// This uses the same provider detection as spanner.Run() for consistency.
+	// IMPORTANT: GetProvider() creates a NEW provider instance each time, not the shared singleton.
+	// Therefore, we must close it when done to avoid resource leaks.
 	genericProvider, err := testcontainers.ProviderDefault.GetProvider()
 	if err != nil {
 		slog.Debug("Failed to get testcontainers provider", "error", err)
@@ -308,14 +315,17 @@ func inspectImagePlatform(ctx context.Context, imageName string) string {
 		}
 	}()
 	
-	// Both Docker and Podman providers return *DockerProvider
+	// Both Docker and Podman providers return *DockerProvider type, even for Podman.
+	// This is because Podman provides Docker-compatible API.
 	provider, ok := genericProvider.(*testcontainers.DockerProvider)
 	if !ok {
 		slog.Debug("Provider is not a DockerProvider", "type", fmt.Sprintf("%T", genericProvider))
 		return ""
 	}
 	
-	// The provider.Client() returns the embedded *client.Client which implements APIClient
+	// The provider embeds *client.Client directly (not as a field), so we can access it
+	// using provider.Client() which returns the embedded Docker/Podman client.
+	// This client is created internally by testcontainers when the provider is instantiated.
 	dockerClient := provider.Client()
 	slog.Debug("Using container runtime client from testcontainers provider")
 	
