@@ -15,6 +15,10 @@ func TestInspectImagePlatform(t *testing.T) {
 	}
 
 	// Enable debug logging for this test
+	// Save the original logger and restore it after the test to avoid affecting other tests
+	oldLogger := slog.Default()
+	defer slog.SetDefault(oldLogger)
+	
 	// Configure slog to output to test logger at debug level
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
