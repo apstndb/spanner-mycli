@@ -181,6 +181,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	// Create system variables with non-existent database
+	host, port := parseEndpoint(emulator.URI())
 	sysVarsNonExistent := systemVariables{
 		Project:               "test-project",
 		Instance:              "test-instance",
@@ -188,7 +189,8 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		Params:                make(map[string]ast.Node),
 		RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 		StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-		Endpoint:              emulator.URI(),
+		Host:                  host,
+		Port:                  port,
 		WithoutAuthentication: true,
 	}
 
@@ -390,7 +392,8 @@ func TestRunMCP(t *testing.T) {
 				Database:              session.systemVariables.Database,
 				Params:                make(map[string]ast.Node),
 				RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-				Endpoint:              session.systemVariables.Endpoint,
+				Host:                  session.systemVariables.Host,
+				Port:                  session.systemVariables.Port,
 				WithoutAuthentication: session.systemVariables.WithoutAuthentication,
 				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 				AutoWrap:              true, // Set a different value

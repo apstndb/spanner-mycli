@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"fmt"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanemuboost"
@@ -94,6 +95,24 @@ func TestParseFlagsCombinations(t *testing.T) {
 		},
 
 		// Invalid combinations
+		{
+			name:        "endpoint and host are mutually exclusive",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--host", "example.com"},
+			wantErr:     true,
+			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+		},
+		{
+			name:        "endpoint and port are mutually exclusive",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--port", "9010"},
+			wantErr:     true,
+			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+		},
+		{
+			name:        "endpoint and both host/port are mutually exclusive",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--host", "example.com", "--port", "9010"},
+			wantErr:     true,
+			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+		},
 		{
 			name:        "try-partition-query requires SQL input",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
@@ -742,8 +761,13 @@ priority = HIGH
 			if sysVars.RPCPriority != tt.wantPriority {
 				t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
 			}
-			if sysVars.Endpoint != tt.wantEndpoint {
-				t.Errorf("Endpoint = %q, want %q", sysVars.Endpoint, tt.wantEndpoint)
+			// Check endpoint by constructing from host and port
+			var gotEndpoint string
+			if sysVars.Host != "" && sysVars.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
+			}
+			if gotEndpoint != tt.wantEndpoint {
+				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
 			}
 			if sysVars.Role != tt.wantRole {
 				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
@@ -2097,8 +2121,81 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			if sysVars.Insecure != tt.wantInsecure {
 				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
 			}
-			if sysVars.Endpoint != tt.wantEndpoint {
-				t.Errorf("Endpoint = %q, want %q", sysVars.Endpoint, tt.wantEndpoint)
+			// Check endpoint by constructing from host and port
+			var gotEndpoint string
+			if sysVars.Host != "" && sysVars.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
+			}
+			if gotEndpoint != tt.wantEndpoint {
+				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
+			}
+		})
+	}
+}
+
+// TestHostPortFlags tests the --host and --port flag behaviors
+func TestHostPortFlags(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantHost string
+		wantPort int
+		wantErr  bool
+	}{
+		{
+			name:     "only port specified uses localhost",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--port", "9010"},
+			wantHost: "localhost",
+			wantPort: 9010,
+		},
+		{
+			name:     "only host specified uses port 443",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--host", "example.com"},
+			wantHost: "example.com",
+			wantPort: 443,
+		},
+		{
+			name:     "both host and port specified",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--host", "example.com", "--port", "9010"},
+			wantHost: "example.com",
+			wantPort: 9010,
+		},
+		{
+			name:     "endpoint flag parses into host and port",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443"},
+			wantHost: "spanner.googleapis.com",
+			wantPort: 443,
+		},
+		{
+			name:     "endpoint with IPv6 address",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "[2001:db8::1]:443"},
+			wantHost: "[2001:db8::1]",
+			wantPort: 443,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gopts globalOptions
+			parser := flags.NewParser(&gopts, flags.Default)
+			_, err := parser.ParseArgs(tt.args)
+			if err != nil {
+				t.Fatalf("ParseArgs() error: %v", err)
+			}
+
+			sysVars, err := initializeSystemVariables(&gopts.Spanner)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("initializeSystemVariables() error: %v", err)
+				}
+				return
+			}
+
+			if sysVars.Host != tt.wantHost {
+				t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
+			}
+			if sysVars.Port != tt.wantPort {
+				t.Errorf("Port = %d, want %d", sysVars.Port, tt.wantPort)
 			}
 		})
 	}

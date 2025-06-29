@@ -395,9 +395,17 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{desc: "CLI_HISTORY_FILE", name: "CLI_HISTORY_FILE", unimplementedSet: true,
 			sysVars: &systemVariables{HistoryFile: "/tmp/spanner_mycli_readline.tmp"},
 			want:    singletonMap("CLI_HISTORY_FILE", "/tmp/spanner_mycli_readline.tmp")},
-		{desc: "CLI_ENDPOINT", name: "CLI_ENDPOINT", unimplementedSet: true,
-			sysVars: &systemVariables{Endpoint: "localhost:9010"},
+		{desc: "CLI_ENDPOINT getter", name: "CLI_ENDPOINT",
+			sysVars: &systemVariables{Host: "localhost", Port: 9010},
 			want:    singletonMap("CLI_ENDPOINT", "localhost:9010")},
+		{desc: "CLI_ENDPOINT setter", name: "CLI_ENDPOINT", value: "example.com:443",
+			want: singletonMap("CLI_ENDPOINT", "example.com:443")},
+		{desc: "CLI_HOST", name: "CLI_HOST", unimplementedSet: true,
+			sysVars: &systemVariables{Host: "example.com"},
+			want:    singletonMap("CLI_HOST", "example.com")},
+		{desc: "CLI_PORT", name: "CLI_PORT", unimplementedSet: true,
+			sysVars: &systemVariables{Port: 443},
+			want:    singletonMap("CLI_PORT", "443")},
 		{desc: "CLI_DIRECT_READ", name: "CLI_DIRECT_READ", unimplementedSet: true,
 			sysVars: &systemVariables{DirectedRead: &sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
 				IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
@@ -543,15 +551,18 @@ func TestSystemVariablesSetGet(t *testing.T) {
 				sysVars = &systemVariables{}
 			}
 
-			err := sysVars.Set(test.name, test.value)
-			if !test.unimplementedSet {
-				if err != nil {
-					t.Errorf("sysVars.Set should success, but failed: %v", err)
-				}
-			} else {
-				var e errSetterUnimplemented
-				if !errors.As(err, &e) {
-					t.Errorf("sysVars.Set is skipped, but implemented: %v", err)
+			// Only call Set if value is provided or if testing unimplemented setter
+			if test.value != "" || test.unimplementedSet {
+				err := sysVars.Set(test.name, test.value)
+				if !test.unimplementedSet {
+					if err != nil {
+						t.Errorf("sysVars.Set should success, but failed: %v", err)
+					}
+				} else {
+					var e errSetterUnimplemented
+					if !errors.As(err, &e) {
+						t.Errorf("sysVars.Set is skipped, but implemented: %v", err)
+					}
 				}
 			}
 
@@ -569,6 +580,62 @@ func TestSystemVariablesSetGet(t *testing.T) {
 				if !errors.As(err, &e) {
 					t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
+	tests := []struct {
+		desc     string
+		value    string
+		wantHost string
+		wantPort int
+		wantErr  bool
+	}{
+		{
+			desc:     "valid endpoint",
+			value:    "example.com:443",
+			wantHost: "example.com",
+			wantPort: 443,
+		},
+		{
+			desc:     "endpoint with IPv6",
+			value:    "[2001:db8::1]:443",
+			wantHost: "[2001:db8::1]",
+			wantPort: 443,
+		},
+		{
+			desc:    "invalid endpoint - no port",
+			value:   "example.com",
+			wantErr: true,
+		},
+		{
+			desc:    "invalid endpoint - empty",
+			value:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			sysVars := &systemVariables{}
+			err := sysVars.Set("CLI_ENDPOINT", tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if sysVars.Host != tt.wantHost {
+				t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
+			}
+			if sysVars.Port != tt.wantPort {
+				t.Errorf("Port = %d, want %d", sysVars.Port, tt.wantPort)
 			}
 		})
 	}
