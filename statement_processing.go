@@ -389,14 +389,11 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
 
-	// First check if the entire input is a single meta command
-	trimmed := strings.TrimSpace(input)
-	if IsMetaCommand(trimmed) {
-		stmt, err := ParseMetaCommand(trimmed)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse meta command: %w", err)
+	// Check if input contains any meta commands
+	for _, line := range strings.Split(input, "\n") {
+		if IsMetaCommand(strings.TrimSpace(line)) {
+			return nil, errors.New("meta commands are not supported in batch mode")
 		}
-		return []Statement{stmt}, nil
 	}
 
 	stmts, err := separateInput(input)

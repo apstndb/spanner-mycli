@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -54,9 +55,17 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		return nil, fmt.Errorf("command failed: %w", err)
 	}
 
-	// Print output directly (matching official spannercli behavior)
+	// Write output to the session's configured output stream
 	if len(output) > 0 {
-		fmt.Print(string(output))
+		if session.systemVariables.CurrentOutStream == nil {
+			slog.Error("CurrentOutStream is nil, cannot write shell command output", 
+				"command", s.Command,
+				"output", string(output))
+			return nil, errors.New("internal error: output stream not configured")
+		}
+		if _, err := session.systemVariables.CurrentOutStream.Write(output); err != nil {
+			return nil, fmt.Errorf("failed to write command output: %w", err)
+		}
 	}
 
 	// Return empty result

@@ -26,15 +26,15 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Fatalf("NewCli() error = %v", err)
 		}
 		
-		// Run in batch mode to avoid interactive readline
+		// Run in batch mode - should return error since meta commands are not supported
 		err = cli.RunBatch(ctx, "\\! echo hello")
-		if err != nil {
-			t.Errorf("RunBatch() error = %v", err)
+		if err == nil {
+			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check output contains "hello"
-		if !strings.Contains(output.String(), "hello") {
-			t.Errorf("Expected output to contain 'hello', got: %s", output.String())
+		// Check error message
+		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
+			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
 		}
 	})
 	
@@ -51,16 +51,15 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Fatalf("NewCli() error = %v", err)
 		}
 		
-		// Run in batch mode
+		// Run in batch mode - should return error since meta commands are not supported
 		err = cli.RunBatch(ctx, "\\! echo hello")
 		if err == nil {
-			t.Error("Expected error when system commands are disabled")
+			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error output
-		errorStr := errOutput.String()
-		if !strings.Contains(errorStr, "system commands are disabled") {
-			t.Errorf("Expected error message about system commands being disabled, got: %s", errorStr)
+		// Check error message (batch mode check happens before system command check)
+		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
+			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
 		}
 	})
 }

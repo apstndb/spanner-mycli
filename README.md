@@ -445,7 +445,9 @@ and `{A|B|...}` for a mutually exclusive keyword.
 
 ## Meta Commands
 
-Meta commands are special commands that start with a backslash (`\`) and are processed by the CLI itself rather than being sent to Spanner. They are terminated by a newline rather than a semicolon.
+Meta commands are special commands that start with a backslash (`\`) and are processed by the CLI itself rather than being sent to Spanner. They are terminated by a newline rather than a semicolon, following the [official spanner-cli style](https://cloud.google.com/spanner/docs/spanner-cli#supported-meta-commands).
+
+**Note**: Meta commands are only supported in interactive mode. They cannot be used in batch mode (with `--execute` or `--file` flags).
 
 ### Supported Meta Commands
 

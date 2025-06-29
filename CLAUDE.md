@@ -201,6 +201,8 @@ Line 3 with "double quotes"'
 echo "$content" | gh issue create --title "Title" --body-file -
 
 # Method 2: Heredoc with stdin (for inline content)
+# WARNING: Claude Code's bash tool may incorrectly handle quoted heredocs (<<'EOF')
+# If backslashes are being doubled unexpectedly, use Method 1 or temp files instead
 cat <<'EOF' | gh issue create --title "Title" --body-file -
 Content with `backticks` and "quotes"
 EOF
