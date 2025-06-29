@@ -27,6 +27,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 spanner-mycli is a personal fork of spanner-cli, designed as an interactive command-line tool for Google Cloud Spanner. The project philosophy is "by me, for me" - a continuously evolving tool that prioritizes the author's specific needs over stability. It embraces experimental features and follows a "ZeroVer" approach (will never reach v1.0.0).
 
+### Terminology Clarification
+
+- **OSS spanner-cli**: The open-source `spanner-cli` command (https://github.com/cloudspannerecosystem/spanner-cli)
+- **Google Cloud Spanner CLI**: `gcloud alpha spanner cli` - documented as part of gcloud (https://cloud.google.com/spanner/docs/spanner-cli)
+- **spannercli**: The undocumented binary (`spannercli sql`) that implements the actual Google Cloud Spanner CLI functionality
+- **spanner-mycli**: This project, a fork of OSS spanner-cli
+
+When testing compatibility or referencing behavior, be specific about which implementation you're comparing against.
+
 ## 🚨 CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
@@ -201,6 +210,8 @@ Line 3 with "double quotes"'
 echo "$content" | gh issue create --title "Title" --body-file -
 
 # Method 2: Heredoc with stdin (for inline content)
+# WARNING: Claude Code's bash tool may incorrectly handle quoted heredocs (<<'EOF')
+# If backslashes are being doubled unexpectedly, use Method 1 or temp files instead
 cat <<'EOF' | gh issue create --title "Title" --body-file -
 Content with `backticks` and "quotes"
 EOF

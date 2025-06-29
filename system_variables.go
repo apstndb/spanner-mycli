@@ -139,6 +139,7 @@ type systemVariables struct {
 	// link to session
 	CurrentSession   *Session
 	CurrentOutStream io.Writer
+	CurrentErrStream io.Writer
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -146,6 +147,7 @@ type systemVariables struct {
 	EnableADCPlus             bool
 	MCP                       bool // CLI_MCP (read-only)
 	AsyncDDL                  bool // CLI_ASYNC_DDL
+	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
 }
 
 var errIgnored = errors.New("ignored")
@@ -1098,6 +1100,14 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AsyncDDL
 		}),
+	},
+	"CLI_SKIP_SYSTEM_COMMAND": {
+		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag (maintained for compatibility with official Spanner CLI).",
+		Accessor: accessor{
+			Getter: boolGetter(func(variables *systemVariables) *bool {
+				return &variables.SkipSystemCommand
+			}),
+		},
 	},
 }
 

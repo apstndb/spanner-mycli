@@ -389,6 +389,14 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
 
+	// Check if input starts with a meta command.
+	// This check must be performed before separateInput() because meta-commands 
+	// (starting with '\') are not valid GoogleSQL lexical structure and would
+	// cause parsing errors.
+	if IsMetaCommand(strings.TrimSpace(input)) {
+		return nil, errors.New("meta commands are not supported in batch mode")
+	}
+
 	stmts, err := separateInput(input)
 	if err != nil {
 		return nil, err
@@ -397,6 +405,11 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 		// Ignore the last empty statement
 		if separated.delim == delimiterUndefined && separated.statementWithoutComments == "" {
 			continue
+		}
+
+		// Check each statement after splitting as a safety net
+		if IsMetaCommand(strings.TrimSpace(separated.statement)) {
+			return nil, errors.New("meta commands are not supported in batch mode")
 		}
 
 		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.statementWithoutComments), separated.statement, mode)

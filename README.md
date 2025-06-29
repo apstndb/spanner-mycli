@@ -136,7 +136,9 @@ spanner:
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
       --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
       --async                                             Return immediately, without waiting for the operation in progress to complete
+      --try-partition-query                               Test whether the query can be executed as partition query without execution
       --mcp                                               Run as MCP server
+      --skip-system-command                               Do not allow system commands
 
 Help Options:
   -h, --help                                              Show this help message
@@ -440,6 +442,47 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show help                                                       | `HELP;`                                                                                                    |                                                                                                                                                                            |
 | Show help for variables                                         | `HELP VARIABLES;`                                                                                          |                                                                                                                                                                            |
 | Exit CLI                                                        | `EXIT;`                                                                                                    |                                                                                                                                                                            |
+
+## Meta Commands
+
+Meta commands are special commands that start with a backslash (`\`) and are processed by the CLI itself rather than being sent to Spanner. They are terminated by a newline rather than a semicolon, following the [official spanner-cli style](https://cloud.google.com/spanner/docs/spanner-cli#supported-meta-commands).
+
+**Note**: Meta commands are only supported in interactive mode. They cannot be used in batch mode (with `--execute` or `--file` flags).
+
+### Supported Meta Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
+
+### Shell Command Execution
+
+The `\!` meta command allows you to execute shell commands without leaving the CLI:
+
+```
+spanner> \! echo "Hello from shell"
+Hello from shell
+spanner> \! pwd
+/Users/username/projects
+```
+
+**Note**: Only non-interactive shell commands are supported. Interactive commands that require user input (such as `vi`, `less`, or interactive shells) will not work properly as stdin is not connected to the executed command.
+
+#### Security
+
+Shell command execution can be disabled using the `--skip-system-command` flag:
+
+```bash
+spanner-mycli --skip-system-command
+```
+
+When disabled, attempting to use `\!` will result in an error:
+
+```
+spanner> \! ls
+ERROR: system commands are disabled
+```
+
 ## Customize prompt
 
 You can customize the prompt by `--prompt` option or `CLI_PROMPT` system variable.  

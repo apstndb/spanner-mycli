@@ -24,6 +24,27 @@ for _, item := range items {
 
 Reference: https://go.dev/blog/loopvar-preview
 
+### Error Wrapping with fmt.Errorf (Go 1.20+)
+
+Since Go 1.20, `fmt.Errorf` has enhanced flexibility for error wrapping with the `%w` verb:
+
+- **The `%w` verb can appear anywhere in the format string**, not just at the end
+- **Multiple `%w` verbs are allowed** in a single `fmt.Errorf` call
+- The position of `%w` in the format string does not affect the error wrapping functionality
+
+**DO NOT** suggest that `%w` must be at the end of the format string:
+
+```go
+// All of these are valid in Go 1.20+
+err1 := fmt.Errorf("command failed: %w\nadditional info", originalErr)  // Valid
+err2 := fmt.Errorf("prefix: %w, suffix", originalErr)                   // Valid
+err3 := fmt.Errorf("first: %w, second: %w", err1, err2)                // Valid with multiple %w
+
+// errors.Is() and errors.Unwrap() work correctly with all of the above
+```
+
+Reference: https://go.dev/doc/go1.20#errors
+
 ### Other Go Best Practices
 
 - Follow standard Go idioms and conventions

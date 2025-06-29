@@ -8,6 +8,10 @@ import (
 
 // TestRun ensure that --embedded-emulator doesn't need ADC.
 func TestRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping emulator test in short mode")
+	}
+	
 	tests := []struct {
 		name    string
 		opts    *spannerOptions
