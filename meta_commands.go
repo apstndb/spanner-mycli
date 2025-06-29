@@ -99,9 +99,34 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\! requires a shell command")
 		}
 		return &ShellMetaCommand{Command: args}, nil
+	case ".":
+		if args == "" {
+			return nil, errors.New("\\. requires a filename")
+		}
+		// Trim any quotes from the filename
+		fileName := strings.Trim(args, `"'`)
+		return &SourceMetaCommand{FilePath: fileName}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
+}
+
+// SourceMetaCommand executes SQL statements from a file using \. syntax
+type SourceMetaCommand struct {
+	FilePath string
+}
+
+// Ensure SourceMetaCommand implements both Statement and MetaCommandStatement
+var _ Statement = (*SourceMetaCommand)(nil)
+var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (s *SourceMetaCommand) isMetaCommand() {}
+
+// Execute is not used for SourceMetaCommand as it's handled specially in CLI
+func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// This should not be called as SourceMetaCommand is handled in handleSpecialStatements
+	return nil, errors.New("SourceMetaCommand should be handled by CLI directly")
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)

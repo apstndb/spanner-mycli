@@ -139,7 +139,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			history.Add(input.statement + ";")
 		}
 
-		if exitCode, processed := c.handleSpecialStatements(stmt); processed {
+		if exitCode, processed := c.handleSpecialStatements(ctx, stmt); processed {
 			if exitCode >= 0 {
 				return NewExitCodeError(exitCode)
 			}
@@ -183,11 +183,44 @@ func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
 // Returns (exitCode, processed) where:
 // - exitCode: if >= 0, the function should return this exit code
 // - processed: if true, the main loop should continue (either returning exitCode or skipping to next iteration)
-func (c *Cli) handleSpecialStatements(stmt Statement) (exitCode int, processed bool) {
+func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exitCode int, processed bool) {
 	// Handle ExitStatement
 	if _, ok := stmt.(*ExitStatement); ok {
 		fmt.Fprintln(c.OutStream, "Bye")
 		return c.handleExit(), true
+	}
+
+	// Handle SourceMetaCommand
+	if s, ok := stmt.(*SourceMetaCommand); ok {
+		// Read the file contents
+		contents, err := os.ReadFile(s.FilePath)
+		if err != nil {
+			c.PrintInteractiveError(fmt.Errorf("failed to read file %s: %w", s.FilePath, err))
+			return -1, true
+		}
+
+		// Parse the contents using buildCommands (same as batch mode)
+		stmts, err := buildCommands(string(contents), c.SystemVariables.BuildStatementMode)
+		if err != nil {
+			c.PrintInteractiveError(fmt.Errorf("failed to parse SQL from file %s: %w", s.FilePath, err))
+			return -1, true
+		}
+
+		// Execute each statement sequentially (similar to RunBatch but in interactive context)
+		for i, fileStmt := range stmts {
+			// Skip ExitStatement in source files
+			if _, ok := fileStmt.(*ExitStatement); ok {
+				continue
+			}
+
+			// Execute the statement in interactive mode to get proper output formatting
+			_, err = c.executeStatement(ctx, fileStmt, true, "", c.OutStream)
+			if err != nil {
+				c.PrintInteractiveError(fmt.Errorf("error executing statement %d from file %s: %w", i+1, s.FilePath, err))
+				return -1, true
+			}
+		}
+		return -1, true
 	}
 
 	// Handle DropDatabaseStatement
