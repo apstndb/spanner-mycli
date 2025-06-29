@@ -50,6 +50,10 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		slog.Error("CurrentOutStream is nil, cannot write shell command output", "command", s.Command)
 		return nil, errors.New("internal error: output stream not configured")
 	}
+	if session.systemVariables.CurrentErrStream == nil {
+		slog.Error("CurrentErrStream is nil, cannot write shell command error output", "command", s.Command)
+		return nil, errors.New("internal error: error stream not configured")
+	}
 
 	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
 	shellCmd.Stdout = session.systemVariables.CurrentOutStream

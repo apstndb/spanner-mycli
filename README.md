@@ -466,6 +466,8 @@ spanner> \! pwd
 /Users/username/projects
 ```
 
+**Note**: Only non-interactive shell commands are supported. Interactive commands that require user input (such as `vi`, `less`, or interactive shells) will not work properly as stdin is not connected to the executed command.
+
 #### Security
 
 Shell command execution can be disabled using the `--skip-system-command` flag:
