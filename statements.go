@@ -54,6 +54,10 @@ type SelectStatement struct {
 	Query string
 }
 
+func (s *SelectStatement) String() string {
+	return s.Query
+}
+
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	_, err := session.DetermineTransaction(ctx)
 	if err != nil {
@@ -80,6 +84,10 @@ type DmlStatement struct {
 	Dml string
 }
 
+func (s *DmlStatement) String() string {
+	return s.Dml
+}
+
 func (DmlStatement) isMutationStatement() {}
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -99,6 +107,10 @@ type DdlStatement struct {
 	Ddl string
 }
 
+func (s *DdlStatement) String() string {
+	return s.Ddl
+}
+
 func (DdlStatement) isMutationStatement() {}
 
 func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -107,6 +119,10 @@ func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 
 type CreateDatabaseStatement struct {
 	CreateStatement string
+}
+
+func (s *CreateDatabaseStatement) String() string {
+	return s.CreateStatement
 }
 
 func (CreateDatabaseStatement) IsMutationStatement() {}
@@ -560,6 +576,10 @@ const (
 
 type BulkDdlStatement struct {
 	Ddls []string
+}
+
+func (s *BulkDdlStatement) String() string {
+	return strings.Join(s.Ddls, ";\n")
 }
 
 func (BulkDdlStatement) IsMutationStatement() {}

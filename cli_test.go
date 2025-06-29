@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -976,7 +977,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 				ErrStream:       errBuf,
 			}
 
-			exitCode, processed := cli.handleSpecialStatements(tt.stmt)
+			exitCode, processed := cli.handleSpecialStatements(context.Background(), tt.stmt)
 
 			if exitCode != tt.wantExitCode {
 				t.Errorf("handleSpecialStatements() exitCode = %d, want %d", exitCode, tt.wantExitCode)
