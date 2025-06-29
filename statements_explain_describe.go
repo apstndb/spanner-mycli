@@ -45,6 +45,11 @@ type ExplainStatement struct {
 	Width   int64
 }
 
+func (s *ExplainStatement) String() string {
+	// Reconstruct the full EXPLAIN statement
+	return "EXPLAIN " + s.Explain
+}
+
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeExplain(ctx, session, s.Explain, s.IsDML, s.Format, s.Width)
@@ -185,6 +190,11 @@ func getGlobalOpts() []yaml.EncodeOption {
 type DescribeStatement struct {
 	Statement string
 	IsDML     bool
+}
+
+func (s *DescribeStatement) String() string {
+	// Reconstruct the full DESCRIBE statement
+	return "DESCRIBE " + s.Statement
 }
 
 // Execute processes `DESCRIBE` statement for queries and DMLs.

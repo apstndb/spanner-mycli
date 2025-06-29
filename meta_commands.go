@@ -134,7 +134,7 @@ func (s *SourceMetaCommand) isMetaCommand() {}
 // Execute is not used for SourceMetaCommand as it's handled specially in CLI
 func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
 	// This should not be called as SourceMetaCommand is handled in handleSpecialStatements
-	return nil, errors.New("SourceMetaCommand should be handled by CLI directly")
+	panic("SourceMetaCommand.Execute should not be called; it must be handled by the CLI")
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)

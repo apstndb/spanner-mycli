@@ -267,8 +267,14 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 			continue
 		}
 
+		// Extract SQL text for ECHO support
+		sqlText := ""
+		if stringer, ok := fileStmt.(fmt.Stringer); ok {
+			sqlText = stringer.String()
+		}
+		
 		// Execute the statement in interactive mode to get proper output formatting
-		_, err = c.executeStatement(ctx, fileStmt, true, "", c.OutStream)
+		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.OutStream)
 		if err != nil {
 			return fmt.Errorf("error executing statement %d from file %s: %w", i+1, filePath, err)
 		}

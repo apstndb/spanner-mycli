@@ -454,34 +454,9 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 | Command | Description | Example |
 |---------|-------------|---------|
 | `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
+| `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
 
-### Shell Command Execution
-
-The `\!` meta command allows you to execute shell commands without leaving the CLI:
-
-```
-spanner> \! echo "Hello from shell"
-Hello from shell
-spanner> \! pwd
-/Users/username/projects
-```
-
-**Note**: Only non-interactive shell commands are supported. Interactive commands that require user input (such as `vi`, `less`, or interactive shells) will not work properly as stdin is not connected to the executed command.
-
-#### Security
-
-Shell command execution can be disabled using the `--skip-system-command` flag:
-
-```bash
-spanner-mycli --skip-system-command
-```
-
-When disabled, attempting to use `\!` will result in an error:
-
-```
-spanner> \! ls
-ERROR: system commands are disabled
-```
+For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 
 ## Customize prompt
 
