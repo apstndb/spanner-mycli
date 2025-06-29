@@ -176,3 +176,65 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 	cmd := &ShellMetaCommand{Command: "test"}
 	cmd.isMetaCommand() // This should compile
 }
+
+func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		shouldError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid shell command with space",
+			input:       `\! echo test`,
+			shouldError: false,
+		},
+		{
+			name:        "shell command without arguments",
+			input:       `\!`,
+			shouldError: true,
+			errorMsg:    "\\! requires a shell command",
+		},
+		{
+			name:        "multi-char meta command",
+			input:       `\foo`,
+			shouldError: true,
+			errorMsg:    "invalid meta command format",
+		},
+		{
+			name:        "numeric meta command",
+			input:       `\123`,
+			shouldError: true,
+			errorMsg:    "invalid meta command format",
+		},
+		{
+			name:        "command-like string",
+			input:       `\test command`,
+			shouldError: true,
+			errorMsg:    "invalid meta command format",
+		},
+		{
+			name:        "no space after \\! (like \\!echo)",
+			input:       `\!echo test`,
+			shouldError: true,
+			errorMsg:    "invalid meta command format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseMetaCommand(tt.input)
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("Expected error for input %q, but got none", tt.input)
+				} else if err.Error() != tt.errorMsg {
+					t.Errorf("Expected error %q, got %q", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error for input %q: %v", tt.input, err)
+				}
+			}
+		})
+	}
+}

@@ -72,8 +72,8 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 	return &Result{}, nil
 }
 
-// metaCommandPattern matches meta commands starting with \
-var metaCommandPattern = regexp.MustCompile(`^\\(\S+)(?:\s+(.*))?$`)
+// metaCommandPattern matches meta commands starting with \ followed by a single character
+var metaCommandPattern = regexp.MustCompile(`^\\(.)(?:\s+(.*))?$`)
 
 // ParseMetaCommand parses a meta command string into a Statement
 func ParseMetaCommand(input string) (Statement, error) {
