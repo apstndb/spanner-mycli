@@ -45,27 +45,19 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Execute the command and capture output
-	output, err := shellCmd.CombinedOutput()
-	if err != nil {
-		// Include command output in error message if available
-		if len(output) > 0 {
-			return nil, fmt.Errorf("command failed: %w\n%s", err, string(output))
-		}
-		return nil, fmt.Errorf("command failed: %w", err)
+	// Check if output stream is configured
+	if session.systemVariables.CurrentOutStream == nil {
+		slog.Error("CurrentOutStream is nil, cannot write shell command output", "command", s.Command)
+		return nil, errors.New("internal error: output stream not configured")
 	}
 
-	// Write output to the session's configured output stream
-	if len(output) > 0 {
-		if session.systemVariables.CurrentOutStream == nil {
-			slog.Error("CurrentOutStream is nil, cannot write shell command output", 
-				"command", s.Command,
-				"output", string(output))
-			return nil, errors.New("internal error: output stream not configured")
-		}
-		if _, err := session.systemVariables.CurrentOutStream.Write(output); err != nil {
-			return nil, fmt.Errorf("failed to write command output: %w", err)
-		}
+	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
+	shellCmd.Stdout = session.systemVariables.CurrentOutStream
+	shellCmd.Stderr = session.systemVariables.CurrentErrStream
+
+	// Execute the command
+	if err := shellCmd.Run(); err != nil {
+		return nil, fmt.Errorf("command failed: %w", err)
 	}
 
 	// Return empty result

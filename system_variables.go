@@ -139,6 +139,7 @@ type systemVariables struct {
 	// link to session
 	CurrentSession   *Session
 	CurrentOutStream io.Writer
+	CurrentErrStream io.Writer
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
