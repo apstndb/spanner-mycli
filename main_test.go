@@ -787,6 +787,27 @@ func TestDetermineInputAndMode(t *testing.T) {
 			wantInput:       "SELECT 3;",
 			wantInteractive: false,
 		},
+		{
+			name:            "Source option from stdin (alias of File)",
+			opts:            &spannerOptions{Source: "-"},
+			stdinProvider:   nonPTYStdin("SELECT 3;"),
+			wantInput:       "SELECT 3;",
+			wantInteractive: false,
+		},
+		{
+			name:            "Both File and Source - File takes precedence",
+			opts:            &spannerOptions{File: "-", Source: "ignored.sql"},
+			stdinProvider:   nonPTYStdin("SELECT FROM FILE;"),
+			wantInput:       "SELECT FROM FILE;",
+			wantInteractive: false,
+		},
+		{
+			name:            "Both Execute and SQL - Execute takes precedence",
+			opts:            &spannerOptions{Execute: "SELECT 1", SQL: "SELECT 2"},
+			stdinProvider:   nonPTYStdin(""),
+			wantInput:       "SELECT 1",
+			wantInteractive: false,
+		},
 		// Piped input tests (non-PTY)
 		{
 			name:            "No options with piped input",

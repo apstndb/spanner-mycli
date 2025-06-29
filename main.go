@@ -76,7 +76,8 @@ type spannerOptions struct {
 	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" default-mask:"-" description:"Cloud Spanner Database ID. Optional when --detached is used."`
 	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag" default-mask:"-"`
 	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias." default-mask:"-"`
-	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit." default-mask:"-"`
+	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit. --source is an alias." default-mask:"-"`
+	Source                    string            `long:"source" hidden:"true" description:"Hidden alias of --file for Google Cloud Spanner CLI compatibility" default-mask:"-"`
 	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode." default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
@@ -504,9 +505,9 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 
 	// Check for mutually exclusive input methods
-	// Note: --execute and --sql are aliases.
+	// Note: --execute and --sql are aliases, --file and --source are aliases.
 	inputMethodsCount := 0
-	if opts.File != "" {
+	if opts.File != "" || opts.Source != "" {
 		inputMethodsCount++
 	}
 	if opts.Execute != "" || opts.SQL != "" {
@@ -514,13 +515,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 
 	if inputMethodsCount > 1 {
-		return fmt.Errorf("invalid combination: -e, -f, --sql are exclusive")
+		return fmt.Errorf("invalid combination: --execute(-e), --file(-f), --sql, --source are exclusive")
 	}
 
 	if opts.TryPartitionQuery {
-		hasInput := opts.Execute != "" || opts.SQL != "" || opts.File != ""
+		hasInput := opts.Execute != "" || opts.SQL != "" || opts.File != "" || opts.Source != ""
 		if !hasInput {
-			return fmt.Errorf("--try-partition-query requires SQL input via --execute, --file, or --sql")
+			return fmt.Errorf("--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql")
 		}
 	}
 
@@ -585,13 +586,13 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	// Handle alias flags with precedence for non-hidden flags
 	// Note: This precedence may override normal flag/env/ini precedence
 	if opts.Role != "" && opts.DatabaseRole != "" {
-		slog.Warn("Both --role and --database-role are specified. Using --role (non-hidden flag takes precedence)")
+		slog.Warn("Both --role and --database-role are specified. Using --role (alias has lower precedence)")
 	}
 	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
 	
 	// Handle --insecure/--skip-tls-verify aliases with proper precedence
 	if opts.Insecure != nil && opts.SkipTlsVerify != nil {
-		slog.Warn("Both --insecure and --skip-tls-verify are specified. Using --insecure (non-hidden flag takes precedence)")
+		slog.Warn("Both --insecure and --skip-tls-verify are specified. Using --insecure (alias has lower precedence)")
 	}
 	
 	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
@@ -825,10 +826,20 @@ func readCredentialFile(filepath string) ([]byte, error) {
 // determineInputAndMode decides whether to run in interactive or batch mode
 // and returns the input string, interactive flag, and any error
 func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
-	// Handle alias flags with precedence for non-hidden flags
+	// Handle alias flags - aliases have lower precedence
 	// Note: This precedence may override normal flag/env/ini precedence
 	if opts.Execute != "" && opts.SQL != "" {
-		slog.Warn("Both --execute and --sql are specified. Using --execute (non-hidden flag takes precedence)")
+		slog.Warn("Both --execute and --sql are specified. Using --execute (alias has lower precedence)")
+	}
+	if opts.File != "" && opts.Source != "" {
+		slog.Warn("Both --file and --source are specified. Using --file (alias has lower precedence)")
+	}
+	
+	// Determine the file to read from
+	// Note: File takes precedence over Source (alias)
+	fileToRead := opts.File
+	if fileToRead == "" && opts.Source != "" {
+		fileToRead = opts.Source
 	}
 	
 	// Check command line options first
@@ -838,16 +849,16 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 		return opts.Execute, false, nil
 	case opts.SQL != "":
 		return opts.SQL, false, nil
-	case opts.File == "-":
+	case fileToRead == "-":
 		b, err := io.ReadAll(stdin)
 		if err != nil {
 			return "", false, fmt.Errorf("read from stdin failed: %w", err)
 		}
 		return string(b), false, nil
-	case opts.File != "":
-		b, err := os.ReadFile(opts.File)
+	case fileToRead != "":
+		b, err := os.ReadFile(fileToRead)
 		if err != nil {
-			return "", false, fmt.Errorf("read from file %v failed: %w", opts.File, err)
+			return "", false, fmt.Errorf("read from file %v failed: %w", fileToRead, err)
 		}
 		return string(b), false, nil
 	default:
