@@ -13,7 +13,41 @@ import (
 func TestMetaCommandIntegration(t *testing.T) {
 	ctx := context.Background()
 	
-	t.Run("shell command execution", func(t *testing.T) {
+	t.Run("interactive shell command execution", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.SkipSystemCommand = false
+		
+		// Create a simulated interactive session with shell commands
+		input := strings.NewReader("\\! echo hello\n\\! echo world\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in interactive mode
+		err = cli.RunInteractive(ctx)
+		if err != nil {
+			t.Errorf("RunInteractive() error = %v", err)
+		}
+		
+		// Check output contains both commands' results
+		outputStr := output.String()
+		if !strings.Contains(outputStr, "hello") {
+			t.Errorf("Expected output to contain 'hello', got: %s", outputStr)
+		}
+		if !strings.Contains(outputStr, "world") {
+			t.Errorf("Expected output to contain 'world', got: %s", outputStr)
+		}
+		
+		// Verify no "Empty set" messages for meta commands
+		if strings.Contains(outputStr, "Empty set") {
+			t.Errorf("Output should not contain 'Empty set' for meta commands, got: %s", outputStr)
+		}
+	})
+	
+	t.Run("shell command execution in batch mode", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
 		

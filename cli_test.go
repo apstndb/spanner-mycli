@@ -113,6 +113,28 @@ func TestBuildCommands(t *testing.T) {
 			Expected: []Statement{
 				&SelectStatement{"SELECT 1"},
 			}},
+		{
+			Desc: "multi-line string with meta-command-like content",
+			Input: `SELECT r"""
+\! echo "hoge"
+""";`,
+			Expected: []Statement{
+				&SelectStatement{`SELECT r"""
+\! echo "hoge"
+"""`},
+			},
+			ExpectError: false, // Should not error - it's just a string literal
+		},
+		{
+			Desc: "meta command at start of input",
+			Input: `\! echo test`,
+			ExpectError: true, // Meta commands not supported in batch mode
+		},
+		{
+			Desc: "meta command after SQL statement", 
+			Input: `SELECT 1; \! echo test`,
+			ExpectError: true, // Meta commands not supported in batch mode
+		},
 	}
 
 	for _, test := range tests {
