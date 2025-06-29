@@ -66,6 +66,12 @@ func TestParseFlagsCombinations(t *testing.T) {
 			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
 			wantErr: false,
 		},
+		{
+			name:    "endpoint and deployment-endpoint both set (aliases allowed)",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"},
+			// Note: Both can be set during parsing, but initializeSystemVariables prefers --endpoint
+			wantErr: false,
+		},
 
 		// Mutually exclusive operations
 		{
@@ -613,6 +619,31 @@ insecure = true
 			wantInstance: "i",
 			wantDatabase: "d",
 			wantInsecure: true,
+			wantPriority: defaultPriority,
+		},
+		{
+			name: "deployment-endpoint alias sets endpoint",
+			args: []string{
+				"--project", "p", "--instance", "i", "--database", "d",
+				"--deployment-endpoint", "custom-endpoint:443",
+			},
+			wantProject:  "p",
+			wantInstance: "i",
+			wantDatabase: "d",
+			wantEndpoint: "custom-endpoint:443",
+			wantPriority: defaultPriority,
+		},
+		{
+			name: "endpoint preferred over deployment-endpoint",
+			args: []string{
+				"--project", "p", "--instance", "i", "--database", "d",
+				"--endpoint", "primary:443",
+				"--deployment-endpoint", "secondary:443",
+			},
+			wantProject:  "p",
+			wantInstance: "i",
+			wantDatabase: "d",
+			wantEndpoint: "primary:443", // --endpoint is preferred when both are set
 			wantPriority: defaultPriority,
 		},
 		{
@@ -2012,6 +2043,7 @@ func TestAliasFlagPrecedence(t *testing.T) {
 		args       []string
 		wantRole   string
 		wantInsecure bool
+		wantEndpoint string
 	}{
 		{
 			name:       "role takes precedence over database-role",
@@ -2032,6 +2064,16 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			name:       "only skip-tls-verify set",
 			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
 			wantInsecure: true,
+		},
+		{
+			name:       "endpoint takes precedence over deployment-endpoint",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "primary-endpoint:443", "--deployment-endpoint", "secondary-endpoint:443"},
+			wantEndpoint: "primary-endpoint:443",
+		},
+		{
+			name:       "deployment-endpoint used when endpoint not specified",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--deployment-endpoint", "deployment-endpoint:443"},
+			wantEndpoint: "deployment-endpoint:443",
 		},
 	}
 
@@ -2054,6 +2096,9 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			}
 			if sysVars.Insecure != tt.wantInsecure {
 				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
+			}
+			if sysVars.Endpoint != tt.wantEndpoint {
+				t.Errorf("Endpoint = %q, want %q", sysVars.Endpoint, tt.wantEndpoint)
 			}
 		})
 	}

@@ -65,9 +65,10 @@ type globalOptions struct {
 // - --sql is an alias of --execute (gcloud spanner databases execute-sql compatibility)
 // - --database-role is an alias of --role (gcloud spanner databases execute-sql compatibility)
 // - --skip-tls-verify is an alias of --insecure (original spanner-cli compatibility)
+// - --deployment-endpoint is an alias of --endpoint (Google Cloud Spanner CLI compatibility)
 // 
 // Precedence behavior:
-// - For string flags (role/database-role): Non-hidden flag takes precedence when both are non-empty
+// - For string flags (role/database-role, endpoint/deployment-endpoint): Non-hidden flag takes precedence when both are non-empty
 // - For boolean flags (insecure/skip-tls-verify): Non-hidden flag takes precedence when both are set
 // This precedence behavior may override normal flag/env/ini precedence.
 type spannerOptions struct {
@@ -110,6 +111,7 @@ type spannerOptions struct {
 	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
 	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true" default-mask:"-"`
 	DatabaseRole              string            `long:"database-role" description:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility" hidden:"true" default-mask:"-"`
+	DeploymentEndpoint        string            `long:"deployment-endpoint" hidden:"true" description:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility" default-mask:"-"`
 	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
 	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
 	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
@@ -604,7 +606,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 		sysVars.Insecure = false // default value
 	}
 	
-	sysVars.Endpoint = opts.Endpoint
+	// Handle --endpoint/--deployment-endpoint aliases with proper precedence
+	if opts.Endpoint != "" && opts.DeploymentEndpoint != "" {
+		slog.Warn("Both --endpoint and --deployment-endpoint are specified. Using --endpoint (alias has lower precedence)")
+	}
+	sysVars.Endpoint = cmp.Or(opts.Endpoint, opts.DeploymentEndpoint)
 	sysVars.Params = params
 	sysVars.LogGrpc = opts.LogGrpc
 	sysVars.LogLevel = l
