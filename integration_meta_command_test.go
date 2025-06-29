@@ -29,7 +29,10 @@ func TestMetaCommandIntegration(t *testing.T) {
 		// Run in interactive mode
 		err = cli.RunInteractive(ctx)
 		if err != nil {
-			t.Errorf("RunInteractive() error = %v", err)
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
 		}
 		
 		// Check output contains both commands' results
