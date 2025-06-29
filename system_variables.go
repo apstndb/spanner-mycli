@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,29 +158,21 @@ func parseEndpoint(endpoint string) (host string, port int) {
 	if endpoint == "" {
 		return "", 0
 	}
-	
-	// Handle IPv6 addresses in brackets
-	if strings.HasPrefix(endpoint, "[") {
-		if idx := strings.LastIndex(endpoint, "]:"); idx != -1 {
-			host = endpoint[:idx+1]
-			portStr := endpoint[idx+2:]
-			if p, err := strconv.Atoi(portStr); err == nil {
-				port = p
-			}
-			return
-		}
+
+	h, pStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		// net.SplitHostPort returns an error for inputs that do not contain a port,
+		// which is the desired behavior for an endpoint string that is expected to have one.
+		// This also correctly handles bare IPv6 addresses by failing to parse them as host-port pairs.
+		return "", 0
 	}
-	
-	// Handle regular host:port format
-	if idx := strings.LastIndex(endpoint, ":"); idx != -1 {
-		host = endpoint[:idx]
-		portStr := endpoint[idx+1:]
-		if p, err := strconv.Atoi(portStr); err == nil {
-			port = p
-		}
+
+	p, err := strconv.Atoi(pStr)
+	if err != nil {
+		// The port is not a valid number. The caller should handle this.
+		return h, 0
 	}
-	
-	return
+	return h, p
 }
 
 var errIgnored = errors.New("ignored")
@@ -753,7 +746,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				// Construct endpoint from host and port
 				var endpoint string
 				if this.Host != "" && this.Port != 0 {
-					endpoint = fmt.Sprintf("%s:%d", this.Host, this.Port)
+					endpoint = net.JoinHostPort(this.Host, strconv.Itoa(this.Port))
 				}
 				return singletonMap(name, endpoint), nil
 			},

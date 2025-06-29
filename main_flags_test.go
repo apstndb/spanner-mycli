@@ -2169,8 +2169,14 @@ func TestHostPortFlags(t *testing.T) {
 		{
 			name:     "endpoint with IPv6 address",
 			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "[2001:db8::1]:443"},
-			wantHost: "[2001:db8::1]",
+			wantHost: "2001:db8::1",
 			wantPort: 443,
+		},
+		{
+			name:     "endpoint with bare IPv6 address should be empty",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "2001:db8::1"},
+			wantHost: "",
+			wantPort: 0,
 		},
 	}
 

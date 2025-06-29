@@ -400,6 +400,8 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want:    singletonMap("CLI_ENDPOINT", "localhost:9010")},
 		{desc: "CLI_ENDPOINT setter", name: "CLI_ENDPOINT", value: "example.com:443",
 			want: singletonMap("CLI_ENDPOINT", "example.com:443")},
+		{desc: "CLI_ENDPOINT setter with IPv6", name: "CLI_ENDPOINT", value: "[2001:db8::1]:443",
+			want: singletonMap("CLI_ENDPOINT", "[2001:db8::1]:443")},
 		{desc: "CLI_HOST", name: "CLI_HOST", unimplementedSet: true,
 			sysVars: &systemVariables{Host: "example.com"},
 			want:    singletonMap("CLI_HOST", "example.com")},
@@ -602,7 +604,7 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 		{
 			desc:     "endpoint with IPv6",
 			value:    "[2001:db8::1]:443",
-			wantHost: "[2001:db8::1]",
+			wantHost: "2001:db8::1",
 			wantPort: 443,
 		},
 		{
@@ -613,6 +615,11 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 		{
 			desc:    "invalid endpoint - empty",
 			value:   "",
+			wantErr: true,
+		},
+		{
+			desc:    "invalid endpoint - bare IPv6 without port",
+			value:   "2001:db8::1",
 			wantErr: true,
 		},
 	}
