@@ -1101,10 +1101,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		}),
 	},
 	"CLI_SKIP_SYSTEM_COMMAND": {
-		Description: "A boolean indicating whether system commands are disabled. The default is false.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.SkipSystemCommand
-		}),
+		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag.",
+		Accessor: accessor{
+			Getter: boolGetter(func(variables *systemVariables) *bool {
+				return &variables.SkipSystemCommand
+			}),
+		},
 	},
 }
 

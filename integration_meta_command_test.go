@@ -96,4 +96,38 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
 		}
 	})
+	
+	t.Run("interactive shell command disabled", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.SkipSystemCommand = true
+		
+		// Create a simulated interactive session
+		input := strings.NewReader("\\! echo hello\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in interactive mode
+		err = cli.RunInteractive(ctx)
+		// Should exit normally (exit command will cause ExitCodeError)
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned unexpected error = %v", err)
+			}
+		}
+		
+		// Check that the error was printed to the output stream
+		outputStr := output.String()
+		if !strings.Contains(outputStr, "ERROR: system commands are disabled") {
+			t.Errorf("Expected output to contain 'ERROR: system commands are disabled', got: %s", outputStr)
+		}
+		
+		// Verify the shell command was not executed
+		if strings.Contains(outputStr, "hello") {
+			t.Errorf("Shell command should not have been executed, but output contains 'hello': %s", outputStr)
+		}
+	})
 }
