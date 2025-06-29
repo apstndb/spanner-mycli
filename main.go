@@ -114,6 +114,9 @@ type spannerOptions struct {
 	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
 	TryPartitionQuery         bool              `long:"try-partition-query" description:"Test whether the query can be executed as partition query without execution" default-mask:"-"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
+	// SkipSystemCommand is kept for compatibility with official Spanner CLI.
+	// The official implementation uses --skip-system-command to disable shell commands,
+	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
 }
 

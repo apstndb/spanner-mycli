@@ -1102,7 +1102,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		}),
 	},
 	"CLI_SKIP_SYSTEM_COMMAND": {
-		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag.",
+		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag (maintained for compatibility with official Spanner CLI).",
 		Accessor: accessor{
 			Getter: boolGetter(func(variables *systemVariables) *bool {
 				return &variables.SkipSystemCommand
