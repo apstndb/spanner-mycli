@@ -72,7 +72,7 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name:        "execute and file are mutually exclusive",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql"},
 			wantErr:     true,
-			errContains: "-e, -f, --sql are exclusive",
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:        "strong and read-timestamp are mutually exclusive",
@@ -84,7 +84,7 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name:        "all three input methods (execute, file, sql) are mutually exclusive",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2"},
 			wantErr:     true,
-			errContains: "-e, -f, --sql are exclusive",
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 
 		// Invalid combinations
@@ -92,7 +92,7 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name:        "try-partition-query requires SQL input",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
 			wantErr:     true,
-			errContains: "--try-partition-query requires SQL input",
+			errContains: "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql",
 		},
 		{
 			name:        "table flag without SQL input in batch mode",
@@ -114,6 +114,23 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name: "try-partition-query with file is valid",
 			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--file", "query.sql"},
 			wantErr: false,
+		},
+		{
+			name: "try-partition-query with source is valid",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--source", "query.sql"},
+			wantErr: false,
+		},
+		{
+			name:        "execute and source are mutually exclusive",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--source", "query.sql"},
+			wantErr:     true,
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
+		},
+		{
+			name:        "all four input methods are mutually exclusive",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2", "--source", "query3.sql"},
+			wantErr:     true,
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 
 		// Embedded emulator tests
@@ -930,7 +947,7 @@ func TestFlagErrorMessages(t *testing.T) {
 		{
 			name:           "conflicting input flags shows which flags conflict",
 			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql"},
-			wantErrKeyword: "-e, -f, --sql are exclusive",
+			wantErrKeyword: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:           "invalid enum shows valid options",
@@ -950,7 +967,7 @@ func TestFlagErrorMessages(t *testing.T) {
 		{
 			name:           "try-partition-query without input shows requirement",
 			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
-			wantErrKeyword: "--try-partition-query requires SQL input via --execute, --file, or --sql",
+			wantErrKeyword: "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql",
 		},
 		{
 			name:           "invalid timeout shows it's a timeout error",
@@ -1042,13 +1059,13 @@ func TestFileFlagBehavior(t *testing.T) {
 			name:        "file flag with execute is mutually exclusive",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile, "--execute", "SELECT 1"},
 			wantErr:     true,
-			errContains: "-e, -f, --sql are exclusive",
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:        "file flag with sql is mutually exclusive",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile, "--sql", "SELECT 1"},
 			wantErr:     true,
-			errContains: "-e, -f, --sql are exclusive",
+			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 	}
 
