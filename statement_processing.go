@@ -389,6 +389,16 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
 
+	// First check if the entire input is a single meta command
+	trimmed := strings.TrimSpace(input)
+	if IsMetaCommand(trimmed) {
+		stmt, err := ParseMetaCommand(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse meta command: %w", err)
+		}
+		return []Statement{stmt}, nil
+	}
+
 	stmts, err := separateInput(input)
 	if err != nil {
 		return nil, err

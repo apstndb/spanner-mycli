@@ -146,6 +146,7 @@ type systemVariables struct {
 	EnableADCPlus             bool
 	MCP                       bool // CLI_MCP (read-only)
 	AsyncDDL                  bool // CLI_ASYNC_DDL
+	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
 }
 
 var errIgnored = errors.New("ignored")
@@ -1097,6 +1098,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AsyncDDL
+		}),
+	},
+	"CLI_SKIP_SYSTEM_COMMAND": {
+		Description: "A boolean indicating whether system commands are disabled. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.SkipSystemCommand
 		}),
 	},
 }

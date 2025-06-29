@@ -114,6 +114,7 @@ type spannerOptions struct {
 	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
 	TryPartitionQuery         bool              `long:"try-partition-query" description:"Test whether the query can be executed as partition query without execution" default-mask:"-"`
 	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
+	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -610,6 +611,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.VertexAIProject = opts.VertexAIProject
 	sysVars.AsyncDDL = opts.Async
+	sysVars.SkipSystemCommand = opts.SkipSystemCommand
 
 	return sysVars, nil
 }

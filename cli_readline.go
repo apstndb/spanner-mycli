@@ -124,7 +124,15 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	}
 
 	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
-		statements, err := separateInput(strings.Join(lines, "\n"))
+		text := strings.Join(lines, "\n")
+		
+		// Meta commands are submitted immediately on Enter
+		if IsMetaCommand(strings.TrimSpace(text)) {
+			c.waitingStatus = ""
+			return true
+		}
+		
+		statements, err := separateInput(text)
 		shouldSubmit, newWaitingStatus := shouldSubmitStatement(statements, err)
 		c.waitingStatus = newWaitingStatus
 		return shouldSubmit
@@ -318,6 +326,17 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 	}
 
 	input := strings.Join(lines, "\n") + "\n"
+
+	// Check if this is a meta command (starts with \)
+	trimmed := strings.TrimSpace(input)
+	if IsMetaCommand(trimmed) {
+		// For meta commands, return the raw input without SQL parsing
+		return &inputStatement{
+			statement:                trimmed,
+			statementWithoutComments: trimmed,
+			delim:                    "", // Meta commands don't use semicolon delimiters
+		}, nil
+	}
 
 	statements, err := separateInput(input)
 	if err != nil {

@@ -1,0 +1,178 @@
+package main
+
+import (
+	"context"
+	"testing"
+)
+
+func TestIsMetaCommand(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "shell command",
+			input: "\\! ls",
+			want:  true,
+		},
+		{
+			name:  "shell command with spaces",
+			input: "  \\! echo hello  ",
+			want:  true,
+		},
+		{
+			name:  "regular SQL",
+			input: "SELECT 1",
+			want:  false,
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  false,
+		},
+		{
+			name:  "just backslash",
+			input: "\\",
+			want:  true,
+		},
+		{
+			name:  "other meta command",
+			input: "\\d ;",
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsMetaCommand(tt.input); got != tt.want {
+				t.Errorf("IsMetaCommand(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseMetaCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    Statement
+		wantErr bool
+	}{
+		{
+			name:  "shell command simple",
+			input: "\\! ls",
+			want:  &ShellMetaCommand{Command: "ls"},
+		},
+		{
+			name:  "shell command with arguments",
+			input: "\\! ls -la /tmp",
+			want:  &ShellMetaCommand{Command: "ls -la /tmp"},
+		},
+		{
+			name:  "shell command with extra spaces",
+			input: "  \\!   echo   hello world  ",
+			want:  &ShellMetaCommand{Command: "echo   hello world"},
+		},
+		{
+			name:    "shell command without arguments",
+			input:   "\\!",
+			wantErr: true,
+		},
+		{
+			name:    "unsupported meta command",
+			input:   "\\d table_name",
+			wantErr: true,
+		},
+		{
+			name:    "invalid format",
+			input:   "not a meta command",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseMetaCommand(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseMetaCommand(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				switch want := tt.want.(type) {
+				case *ShellMetaCommand:
+					if shell, ok := got.(*ShellMetaCommand); ok {
+						if shell.Command != want.Command {
+							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, shell.Command, want.Command)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *ShellMetaCommand", tt.input, got)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestShellMetaCommand_Execute(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("system commands disabled", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.SkipSystemCommand = true
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+
+		cmd := &ShellMetaCommand{Command: "echo hello"}
+		_, err := cmd.Execute(ctx, session)
+		if err == nil {
+			t.Error("Execute() should fail when system commands are disabled")
+		}
+		if err.Error() != "system commands are disabled" {
+			t.Errorf("Execute() error = %v, want 'system commands are disabled'", err)
+		}
+	})
+
+	t.Run("system commands enabled", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.SkipSystemCommand = false
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+
+		cmd := &ShellMetaCommand{Command: "echo hello"}
+		result, err := cmd.Execute(ctx, session)
+		if err != nil {
+			t.Errorf("Execute() error = %v, want nil", err)
+		}
+		if result == nil {
+			t.Error("Execute() returned nil result")
+		}
+	})
+
+	t.Run("command failure", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.SkipSystemCommand = false
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+
+		// Use a command that should fail on all platforms
+		cmd := &ShellMetaCommand{Command: "/nonexistent/command"}
+		_, err := cmd.Execute(ctx, session)
+		if err == nil {
+			t.Error("Execute() should fail for nonexistent command")
+		}
+	})
+}
+
+func TestMetaCommandStatement_Interface(t *testing.T) {
+	// Verify that ShellMetaCommand implements both interfaces
+	var _ Statement = (*ShellMetaCommand)(nil)
+	var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
+
+	// Test the marker method
+	cmd := &ShellMetaCommand{Command: "test"}
+	cmd.isMetaCommand() // This should compile
+}

@@ -131,7 +131,12 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			continue
 		}
 
-		history.Add(input.statement + ";")
+		// Add to history with appropriate terminator
+		if IsMetaCommand(input.statement) {
+			history.Add(input.statement)
+		} else {
+			history.Add(input.statement + ";")
+		}
 
 		if exitCode, processed := c.handleSpecialStatements(stmt); processed {
 			if exitCode >= 0 {
@@ -166,6 +171,10 @@ func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputSt
 
 // parseStatement parses the input statement.
 func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
+	// Check if this is a meta command
+	if IsMetaCommand(input.statement) {
+		return ParseMetaCommand(input.statement)
+	}
 	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
 }
 
@@ -468,8 +477,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	// Update result stats and system variables
 	c.updateResultStats(result, elapsed)
 
-	// Display the result
-	c.displayResult(result, interactive, input, w)
+	// Display the result (skip for meta commands)
+	if _, isMetaCommand := stmt.(MetaCommandStatement); !isMetaCommand {
+		c.displayResult(result, interactive, input, w)
+	}
 
 	return result.PreInput, nil
 }
