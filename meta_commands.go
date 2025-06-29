@@ -61,6 +61,14 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 
 	// Execute the command
 	if err := shellCmd.Run(); err != nil {
+		// If it's an ExitError, the command ran but returned a non-zero status.
+		// The command's own stderr has already been printed. We can consider this
+		// a "successful" execution from the CLI's perspective and not print a
+		// redundant error message.
+		if _, ok := err.(*exec.ExitError); ok {
+			return &Result{}, nil
+		}
+		// For other errors (e.g., command not found), it's a genuine execution error.
 		return nil, fmt.Errorf("command failed: %w", err)
 	}
 

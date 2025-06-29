@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -135,8 +137,12 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 	})
 
 	t.Run("system commands enabled", func(t *testing.T) {
+		var output bytes.Buffer
+		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
+		sysVars.CurrentOutStream = &output
+		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -149,20 +155,35 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		if result == nil {
 			t.Error("Execute() returned nil result")
 		}
+		// Check that output was written
+		if !strings.Contains(output.String(), "hello") {
+			t.Errorf("Expected output to contain 'hello', got: %s", output.String())
+		}
 	})
 
-	t.Run("command failure", func(t *testing.T) {
+	t.Run("exit status vs command not found", func(t *testing.T) {
+		var output bytes.Buffer
+		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
+		sysVars.CurrentOutStream = &output
+		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
 		}
 
-		// Use a command that should fail on all platforms
-		cmd := &ShellMetaCommand{Command: "/nonexistent/command"}
+		// Test case: Command that exits with non-zero status (should not return error)
+		cmd := &ShellMetaCommand{Command: "exit 1"}
 		_, err := cmd.Execute(ctx, session)
-		if err == nil {
-			t.Error("Execute() should fail for nonexistent command")
+		if err != nil {
+			t.Errorf("Execute() should not return error for exit status: %v", err)
+		}
+		
+		// Test case: Command that fails (should also not return error since it's ExitError)
+		cmd2 := &ShellMetaCommand{Command: "ls /nonexistent/directory"}
+		_, err2 := cmd2.Execute(ctx, session)
+		if err2 != nil {
+			t.Errorf("Execute() should not return error for command that exits with error status: %v", err2)
 		}
 	})
 }
