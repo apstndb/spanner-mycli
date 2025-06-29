@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 )
@@ -122,6 +123,8 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = true
+		sysVars.CurrentOutStream = io.Discard
+		sysVars.CurrentErrStream = io.Discard
 		session := &Session{
 			systemVariables: &sysVars,
 		}
