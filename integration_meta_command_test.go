@@ -179,8 +179,13 @@ SELECT "foo" AS s;`
 			}
 		}
 
-		// In a real integration test, we would check that the SQL statements were executed
-		// For now, we can at least verify the file was read (would fail with file not found)
+		// NOTE: This test verifies the file reading and parsing logic, but cannot verify
+		// actual SQL execution without a connected Spanner instance or emulator.
+		// The Session has a nil client, so any actual SQL execution would fail.
+		// Full integration testing would require TestMain setup with a real emulator,
+		// which is handled by other integration tests in the codebase.
+		// This test ensures the \. command correctly reads files and integrates with
+		// the CLI's execution flow, which is the primary responsibility of this feature.
 		outputStr := output.String()
 		if strings.Contains(outputStr, "failed to read file") {
 			t.Errorf("Failed to read SQL file: %s", outputStr)

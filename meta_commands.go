@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/kballard/go-shellquote"
 )
 
 // MetaCommandStatement is a marker interface for meta commands (commands starting with \).
@@ -103,9 +105,15 @@ func ParseMetaCommand(input string) (Statement, error) {
 		if args == "" {
 			return nil, errors.New("\\. requires a filename")
 		}
-		// Trim any quotes from the filename
-		fileName := strings.Trim(args, `"'`)
-		return &SourceMetaCommand{FilePath: fileName}, nil
+		// Use shellquote for proper parsing of quoted filenames
+		words, err := shellquote.Split(args)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filename quoting: %w", err)
+		}
+		if len(words) != 1 {
+			return nil, errors.New("\\. requires exactly one filename")
+		}
+		return &SourceMetaCommand{FilePath: words[0]}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}

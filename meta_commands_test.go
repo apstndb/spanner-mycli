@@ -108,6 +108,11 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:  "source command with multiple files",
+			input: `\. file1.sql file2.sql`,
+			wantErr: true,
+		},
+		{
 			name:    "unsupported meta command",
 			input:   "\\d table_name",
 			wantErr: true,

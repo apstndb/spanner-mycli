@@ -192,33 +192,9 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 
 	// Handle SourceMetaCommand
 	if s, ok := stmt.(*SourceMetaCommand); ok {
-		// Read the file contents
-		contents, err := os.ReadFile(s.FilePath)
+		err := c.executeSourceFile(ctx, s.FilePath)
 		if err != nil {
-			c.PrintInteractiveError(fmt.Errorf("failed to read file %s: %w", s.FilePath, err))
-			return -1, true
-		}
-
-		// Parse the contents using buildCommands (same as batch mode)
-		stmts, err := buildCommands(string(contents), c.SystemVariables.BuildStatementMode)
-		if err != nil {
-			c.PrintInteractiveError(fmt.Errorf("failed to parse SQL from file %s: %w", s.FilePath, err))
-			return -1, true
-		}
-
-		// Execute each statement sequentially (similar to RunBatch but in interactive context)
-		for i, fileStmt := range stmts {
-			// Skip ExitStatement in source files
-			if _, ok := fileStmt.(*ExitStatement); ok {
-				continue
-			}
-
-			// Execute the statement in interactive mode to get proper output formatting
-			_, err = c.executeStatement(ctx, fileStmt, true, "", c.OutStream)
-			if err != nil {
-				c.PrintInteractiveError(fmt.Errorf("error executing statement %d from file %s: %w", i+1, s.FilePath, err))
-				return -1, true
-			}
+			c.PrintInteractiveError(err)
 		}
 		return -1, true
 	}
@@ -264,6 +240,41 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
+}
+
+// executeSourceFile executes SQL statements from a file
+func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
+	// Read the file contents
+	contents, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", filePath, err)
+	}
+
+	// Parse the contents using buildCommands (same as batch mode)
+	// IMPORTANT: buildCommands explicitly rejects meta-commands (including \.) with the error
+	// "meta commands are not supported in batch mode". This means nested sourcing
+	// (i.e., having \. commands within a sourced file) is not possible by design.
+	// Meta-commands are only processed in the interactive mode's main loop.
+	stmts, err := buildCommands(string(contents), c.SystemVariables.BuildStatementMode)
+	if err != nil {
+		return fmt.Errorf("failed to parse SQL from file %s: %w", filePath, err)
+	}
+
+	// Execute each statement sequentially
+	for i, fileStmt := range stmts {
+		// Skip ExitStatement in source files (exit should only end the file, not the session)
+		if _, ok := fileStmt.(*ExitStatement); ok {
+			continue
+		}
+
+		// Execute the statement in interactive mode to get proper output formatting
+		_, err = c.executeStatement(ctx, fileStmt, true, "", c.OutStream)
+		if err != nil {
+			return fmt.Errorf("error executing statement %d from file %s: %w", i+1, filePath, err)
+		}
+	}
+
+	return nil
 }
 
 func (c *Cli) RunBatch(ctx context.Context, input string) error {
