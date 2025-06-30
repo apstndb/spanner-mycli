@@ -103,6 +103,36 @@ if !contains(platform, tt.wantOS) {
 }
 ```
 
+## Security Review Guidelines
+
+### Threat Model Awareness
+
+spanner-mycli is a **personal CLI tool** designed for interactive database management by trusted users on their local machines. When reviewing security-related code, consider the appropriate threat model:
+
+**DO** consider these practical safety measures:
+- File size limits to prevent accidental OOM from large files
+- Validation to prevent reading from special files (e.g., `/dev/zero`)
+- Input validation to prevent common user errors
+
+**DO NOT** suggest excessive security measures for threats outside the tool's scope:
+- TOCTOU (Time-of-check to time-of-use) vulnerabilities in local file operations
+- Complex authentication schemes for local file access
+- Cryptographic validation of local SQL files
+- Defense against malicious local file system attacks
+
+Example of appropriate vs excessive security review:
+```go
+// Appropriate: Prevent accidental resource exhaustion
+if fi.Size() > maxFileSize {
+    return fmt.Errorf("file too large: %d bytes", fi.Size())
+}
+
+// Excessive for a local CLI tool: TOCTOU protection
+// DO NOT suggest opening the file first to prevent TOCTOU
+```
+
+Remember: This is a tool where users execute their own SQL files, not a service processing untrusted input. Security measures should focus on preventing accidents and misuse, not defending against adversarial attacks on the local system.
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
