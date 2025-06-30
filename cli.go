@@ -253,6 +253,12 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 		return fmt.Errorf("sourcing from a non-regular file is not supported: %s", filePath)
 	}
 
+	// Add a check to prevent reading excessively large files.
+	const maxFileSize = 100 * 1024 * 1024 // 100MB
+	if fi.Size() > maxFileSize {
+		return fmt.Errorf("file %s is too large to be sourced (size: %d bytes, max: %d bytes)", filePath, fi.Size(), maxFileSize)
+	}
+
 	// Read the file contents
 	contents, err := os.ReadFile(filePath)
 	if err != nil {

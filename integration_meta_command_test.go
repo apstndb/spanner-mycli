@@ -227,8 +227,8 @@ SELECT "foo" AS s;`
 
 		// Check that error was printed
 		outputStr := output.String()
-		if !strings.Contains(outputStr, "ERROR: failed to read file") {
-			t.Errorf("Expected output to contain 'ERROR: failed to read file', got: %s", outputStr)
+		if !strings.Contains(outputStr, "ERROR: failed to stat file") {
+			t.Errorf("Expected output to contain 'ERROR: failed to stat file', got: %s", outputStr)
 		}
 	})
 

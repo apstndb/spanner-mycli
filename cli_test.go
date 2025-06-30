@@ -1304,3 +1304,36 @@ func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
 		t.Errorf("Expected error to contain 'sourcing from a non-regular file is not supported', got: %v", err)
 	}
 }
+
+// TestCli_executeSourceFile_FileTooLarge tests executeSourceFile with a file that exceeds the size limit
+func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
+	// Create a temporary file that simulates a large file
+	tmpFile, err := os.CreateTemp(t.TempDir(), "large_file_*.sql")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer tmpFile.Close()
+
+	// Write a small amount of data but use Truncate to set the file size
+	// This avoids actually writing 100MB+ of data
+	const largeSize = 101 * 1024 * 1024 // 101MB, just over the limit
+	if err := tmpFile.Truncate(largeSize); err != nil {
+		t.Fatalf("Failed to truncate file: %v", err)
+	}
+	tmpFile.Close()
+
+	cli := &Cli{
+		SessionHandler:  NewSessionHandler(&Session{}),
+		SystemVariables: &systemVariables{},
+		OutStream:       &bytes.Buffer{},
+		ErrStream:       &bytes.Buffer{},
+	}
+
+	// Try to source the large file
+	err = cli.executeSourceFile(context.Background(), tmpFile.Name())
+	if err == nil {
+		t.Error("Expected error for file too large")
+	} else if !strings.Contains(err.Error(), "is too large to be sourced") {
+		t.Errorf("Expected error to contain 'is too large to be sourced', got: %v", err)
+	}
+}
