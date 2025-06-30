@@ -164,7 +164,7 @@ SELECT "foo" AS s;`
 		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        input,
+			InStream:        io.NopCloser(input),
 			OutStream:       output,
 			ErrStream:       output,
 			SystemVariables: sysVars,
@@ -210,7 +210,7 @@ SELECT "foo" AS s;`
 		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        input,
+			InStream:        io.NopCloser(input),
 			OutStream:       output,
 			ErrStream:       output,
 			SystemVariables: sysVars,
