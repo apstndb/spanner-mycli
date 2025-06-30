@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -113,7 +114,8 @@ type systemVariables struct {
 	EchoExecutedDDL    bool                       // CLI_ECHO_EXECUTED_DDL
 	Role               string                     // CLI_ROLE
 	EchoInput          bool                       // CLI_ECHO_INPUT
-	Endpoint           string                     // CLI_ENDPOINT
+	Host               string                     // CLI_HOST
+	Port               int                        // CLI_PORT
 	EmulatorPlatform   string                     // CLI_EMULATOR_PLATFORM
 	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
 	TabWidth           int64                      // CLI_TAB_WIDTH
@@ -148,6 +150,36 @@ type systemVariables struct {
 	MCP                       bool // CLI_MCP (read-only)
 	AsyncDDL                  bool // CLI_ASYNC_DDL
 	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
+}
+
+// parseEndpoint parses an endpoint string into host and port components.
+// It returns an error if the endpoint is invalid.
+func parseEndpoint(endpoint string) (host string, port int, err error) {
+	if endpoint == "" {
+		return "", 0, nil
+	}
+
+	h, pStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		// net.SplitHostPort returns an error for inputs that do not contain a port,
+		// which is the desired behavior for an endpoint string that is expected to have one.
+		// This also correctly handles bare IPv6 addresses by failing to parse them as host-port pairs.
+		return "", 0, fmt.Errorf("invalid endpoint format (expected host:port): %w", err)
+	}
+
+	p, err := strconv.Atoi(pStr)
+	if err != nil {
+		// The port is not a valid number.
+		return "", 0, fmt.Errorf("invalid port in endpoint: %q", pStr)
+	}
+
+	// For IPv6, net.SplitHostPort keeps brackets, which we need to remove
+	// for consistent storage and for net.JoinHostPort to work correctly.
+	if strings.HasPrefix(h, "[") && strings.HasSuffix(h, "]") {
+		h = h[1 : len(h)-1]
+	}
+
+	return h, p, nil
 }
 
 var errIgnored = errors.New("ignored")
@@ -717,7 +749,38 @@ var systemVariableDefMap = map[string]systemVariableDef{
 	"CLI_ENDPOINT": {
 		Description: "",
 		Accessor: accessor{
-			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Endpoint }),
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				// Construct endpoint from host and port
+				var endpoint string
+				if this.Host != "" && this.Port != 0 {
+					endpoint = net.JoinHostPort(this.Host, strconv.Itoa(this.Port))
+				}
+				return singletonMap(name, endpoint), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				// Parse endpoint and update host and port
+				host, port, err := parseEndpoint(unquoteString(value))
+				if err != nil {
+					return err
+				}
+				this.Host = host
+				this.Port = port
+				return nil
+			},
+		},
+	},
+	"CLI_HOST": {
+		Description: "Host on which Spanner server is located",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Host }),
+		},
+	},
+	"CLI_PORT": {
+		Description: "Port number for Spanner connection",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, strconv.Itoa(this.Port)), nil
+			},
 		},
 	},
 	"CLI_EMULATOR_PLATFORM": {
