@@ -114,6 +114,8 @@ spanner:
       --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
       --role=                                             Use the specific database role. --database-role is an alias.
       --endpoint=                                         Set the Spanner API endpoint (host:port)
+      --host=                                             Host on which Spanner server is located
+      --port=                                             Port number for Spanner connection
       --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
       --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
       --param=                                            Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
@@ -659,6 +661,33 @@ $ spanner-mycli -p myproject -i myinstance -d mydb
 $ unset SPANNER_EMULATOR_HOST
 $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
+
+## Using Regional Endpoints
+
+spanner-mycli supports connecting to [regional endpoints](https://cloud.google.com/spanner/docs/endpoints#available-regional-endpoints) for improved performance and reliability. You can specify a regional endpoint using either the `--endpoint` flag or the `--host` flag:
+
+```sh
+# Using --endpoint (requires both host and port)
+$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=spanner.us-central1.rep.googleapis.com:443
+
+# Using --host (port 443 is used by default)
+$ spanner-mycli -p myproject -i myinstance -d mydb --host=spanner.us-central1.rep.googleapis.com
+
+# Verify the endpoint configuration
+spanner> SHOW VARIABLE CLI_ENDPOINT;
++--------------------------------------------+
+| CLI_ENDPOINT                               |
++--------------------------------------------+
+| spanner.us-central1.rep.googleapis.com:443 |
++--------------------------------------------+
+```
+
+The `--host` and `--port` flags provide more flexibility:
+- Use `--port` alone to connect to a local emulator: `--port=9010` (implies `localhost:9010`)
+- Use `--host` alone to connect to a regional endpoint: `--host=spanner.us-central1.rep.googleapis.com` (implies port 443)
+- Use both for custom configurations: `--host=custom-host --port=9999`
+
+Note: `--endpoint` and the combination of `--host`/`--port` are mutually exclusive.
 
 ## Detached Mode
 
