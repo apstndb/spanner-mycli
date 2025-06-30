@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1191,8 +1193,10 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 // createClientOptions creates client options based on credential and system variables
 func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
 	var opts []option.ClientOption
-	if sysVars.Endpoint != "" {
-		opts = append(opts, option.WithEndpoint(sysVars.Endpoint))
+	if sysVars.Host != "" && sysVars.Port != 0 {
+		// Reconstruct the endpoint, adding brackets back for IPv6 addresses
+		endpoint := net.JoinHostPort(sysVars.Host, strconv.Itoa(sysVars.Port))
+		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
 	switch {

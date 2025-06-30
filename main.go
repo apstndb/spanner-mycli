@@ -88,6 +88,8 @@ type spannerOptions struct {
 	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)" default-mask:"-"`
 	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias." default-mask:"-"`
 	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)" default-mask:"-"`
+	Host                      string            `long:"host" description:"Host on which Spanner server is located" default-mask:"-"`
+	Port                      int               `long:"port" description:"Port number for Spanner connection" default-mask:"-"`
 	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
 	SQL                       string            `long:"sql" hidden:"true" description:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility" default-mask:"-"`
 	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
@@ -461,7 +463,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			"requested", opts.EmulatorPlatform,
 			"actual", sysVars.EmulatorPlatform)
 
-		sysVars.Endpoint = container.URI()
+		// Parse container URI into host and port
+		host, port, err := parseEndpoint(container.URI())
+		if err != nil {
+			// This should not happen with a valid URI from testcontainers, but handle defensively.
+			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", container.URI(), err)
+		}
+		sysVars.Host, sysVars.Port = host, port
 		sysVars.WithoutAuthentication = true
 	}
 
@@ -500,6 +508,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 func ValidateSpannerOptions(opts *spannerOptions) error {
 	if opts.Strong && opts.ReadTimestamp != "" {
 		return fmt.Errorf("invalid parameters: --strong and --read-timestamp are mutually exclusive")
+	}
+
+	// Check for mutual exclusivity between --endpoint and (--host or --port)
+	if opts.Endpoint != "" && (opts.Host != "" || opts.Port != 0) {
+		return fmt.Errorf("invalid combination: --endpoint and (--host or --port) are mutually exclusive")
 	}
 
 	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "") {
@@ -614,7 +627,32 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	if opts.Endpoint != "" && opts.DeploymentEndpoint != "" {
 		slog.Warn("Both --endpoint and --deployment-endpoint are specified. Using --endpoint (alias has lower precedence)")
 	}
-	sysVars.Endpoint = cmp.Or(opts.Endpoint, opts.DeploymentEndpoint)
+	
+	// Handle endpoint, host, and port logic
+	endpoint := cmp.Or(opts.Endpoint, opts.DeploymentEndpoint)
+	if endpoint != "" {
+		// Parse endpoint into host and port
+		host, port, err := parseEndpoint(endpoint)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
+		}
+		sysVars.Host, sysVars.Port = host, port
+	} else if opts.Host != "" || opts.Port != 0 {
+		// Handle --host and --port flags
+		if opts.Port != 0 && opts.Host == "" {
+			// Only port specified: use localhost for emulator
+			sysVars.Host = "localhost"
+			sysVars.Port = opts.Port
+		} else if opts.Host != "" && opts.Port == 0 {
+			// Only host specified: use standard Spanner port
+			sysVars.Host = opts.Host
+			sysVars.Port = 443
+		} else {
+			// Both specified
+			sysVars.Host = opts.Host
+			sysVars.Port = opts.Port
+		}
+	}
 	sysVars.Params = params
 	sysVars.LogGrpc = opts.LogGrpc
 	sysVars.LogLevel = l
