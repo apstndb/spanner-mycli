@@ -172,6 +172,13 @@ func parseEndpoint(endpoint string) (host string, port int, err error) {
 		// The port is not a valid number.
 		return "", 0, fmt.Errorf("invalid port in endpoint: %q", pStr)
 	}
+
+	// For IPv6, net.SplitHostPort keeps brackets, which we need to remove
+	// for consistent storage and for net.JoinHostPort to work correctly.
+	if strings.HasPrefix(h, "[") && strings.HasSuffix(h, "]") {
+		h = h[1 : len(h)-1]
+	}
+
 	return h, p, nil
 }
 
@@ -755,9 +762,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				host, port, err := parseEndpoint(unquoteString(value))
 				if err != nil {
 					return err
-				}
-				if host == "" || port == 0 {
-					return fmt.Errorf("invalid endpoint format: %s", value)
 				}
 				this.Host = host
 				this.Port = port

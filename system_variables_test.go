@@ -615,9 +615,11 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 			errContains: "invalid endpoint format",
 		},
 		{
-			desc:    "invalid endpoint - empty",
-			value:   "",
-			wantErr: true,
+			desc:     "empty endpoint clears host and port",
+			value:    "",
+			wantHost: "",
+			wantPort: 0,
+			wantErr:  false,
 		},
 		{
 			desc:        "invalid endpoint - bare IPv6 without port",
