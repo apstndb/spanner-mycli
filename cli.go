@@ -244,6 +244,15 @@ func (c *Cli) updateSystemVariables(result *Result) {
 
 // executeSourceFile executes SQL statements from a file
 func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
+	// Check if the file is a regular file to prevent DoS from special files
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to stat file %s: %w", filePath, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("sourcing from a non-regular file is not supported: %s", filePath)
+	}
+
 	// Read the file contents
 	contents, err := os.ReadFile(filePath)
 	if err != nil {

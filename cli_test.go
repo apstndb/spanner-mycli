@@ -1280,7 +1280,27 @@ func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
 	err := cli.executeSourceFile(context.Background(), "/non/existent/file.sql")
 	if err == nil {
 		t.Error("Expected error for non-existent file")
-	} else if !strings.Contains(err.Error(), "failed to read file") {
-		t.Errorf("Expected error to contain 'failed to read file', got: %v", err)
+	} else if !strings.Contains(err.Error(), "failed to stat file") {
+		t.Errorf("Expected error to contain 'failed to stat file', got: %v", err)
+	}
+}
+
+// TestCli_executeSourceFile_NonRegularFile tests executeSourceFile with a non-regular file
+func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping test that requires /dev/null")
+	}
+
+	cli := &Cli{
+		SessionHandler:  NewSessionHandler(&Session{}),
+		SystemVariables: &systemVariables{},
+	}
+
+	// Try to source from /dev/null (a special file)
+	err := cli.executeSourceFile(context.Background(), "/dev/null")
+	if err == nil {
+		t.Error("Expected error for non-regular file")
+	} else if !strings.Contains(err.Error(), "sourcing from a non-regular file is not supported") {
+		t.Errorf("Expected error to contain 'sourcing from a non-regular file is not supported', got: %v", err)
 	}
 }
