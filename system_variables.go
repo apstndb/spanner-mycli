@@ -153,10 +153,10 @@ type systemVariables struct {
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
-// Returns empty strings and 0 if the endpoint is invalid.
-func parseEndpoint(endpoint string) (host string, port int) {
+// It returns an error if the endpoint is invalid.
+func parseEndpoint(endpoint string) (host string, port int, err error) {
 	if endpoint == "" {
-		return "", 0
+		return "", 0, nil
 	}
 
 	h, pStr, err := net.SplitHostPort(endpoint)
@@ -164,15 +164,15 @@ func parseEndpoint(endpoint string) (host string, port int) {
 		// net.SplitHostPort returns an error for inputs that do not contain a port,
 		// which is the desired behavior for an endpoint string that is expected to have one.
 		// This also correctly handles bare IPv6 addresses by failing to parse them as host-port pairs.
-		return "", 0
+		return "", 0, fmt.Errorf("invalid endpoint format (expected host:port): %w", err)
 	}
 
 	p, err := strconv.Atoi(pStr)
 	if err != nil {
-		// The port is not a valid number. The caller should handle this.
-		return h, 0
+		// The port is not a valid number.
+		return "", 0, fmt.Errorf("invalid port in endpoint: %q", pStr)
 	}
-	return h, p
+	return h, p, nil
 }
 
 var errIgnored = errors.New("ignored")
@@ -752,7 +752,10 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 			Setter: func(this *systemVariables, name, value string) error {
 				// Parse endpoint and update host and port
-				host, port := parseEndpoint(unquoteString(value))
+				host, port, err := parseEndpoint(unquoteString(value))
+				if err != nil {
+					return err
+				}
 				if host == "" || port == 0 {
 					return fmt.Errorf("invalid endpoint format: %s", value)
 				}

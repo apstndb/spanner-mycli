@@ -181,7 +181,10 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	// Create system variables with non-existent database
-	host, port := parseEndpoint(emulator.URI())
+	host, port, err := parseEndpoint(emulator.URI())
+	if err != nil {
+		t.Fatalf("Failed to parse emulator URI: %v", err)
+	}
 	sysVarsNonExistent := systemVariables{
 		Project:               "test-project",
 		Instance:              "test-instance",

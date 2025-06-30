@@ -464,7 +464,12 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			"actual", sysVars.EmulatorPlatform)
 
 		// Parse container URI into host and port
-		sysVars.Host, sysVars.Port = parseEndpoint(container.URI())
+		host, port, err := parseEndpoint(container.URI())
+		if err != nil {
+			// This should not happen with a valid URI from testcontainers, but handle defensively.
+			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", container.URI(), err)
+		}
+		sysVars.Host, sysVars.Port = host, port
 		sysVars.WithoutAuthentication = true
 	}
 
@@ -627,7 +632,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	endpoint := cmp.Or(opts.Endpoint, opts.DeploymentEndpoint)
 	if endpoint != "" {
 		// Parse endpoint into host and port
-		sysVars.Host, sysVars.Port = parseEndpoint(endpoint)
+		host, port, err := parseEndpoint(endpoint)
+		if err != nil {
+			return systemVariables{}, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
+		}
+		sysVars.Host, sysVars.Port = host, port
 	} else if opts.Host != "" || opts.Port != 0 {
 		// Handle --host and --port flags
 		if opts.Port != 0 && opts.Host == "" {

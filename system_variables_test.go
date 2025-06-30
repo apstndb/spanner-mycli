@@ -589,11 +589,12 @@ func TestSystemVariablesSetGet(t *testing.T) {
 
 func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 	tests := []struct {
-		desc     string
-		value    string
-		wantHost string
-		wantPort int
-		wantErr  bool
+		desc        string
+		value       string
+		wantHost    string
+		wantPort    int
+		wantErr     bool
+		errContains string
 	}{
 		{
 			desc:     "valid endpoint",
@@ -608,9 +609,10 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 			wantPort: 443,
 		},
 		{
-			desc:    "invalid endpoint - no port",
-			value:   "example.com",
-			wantErr: true,
+			desc:        "invalid endpoint - no port",
+			value:       "example.com",
+			wantErr:     true,
+			errContains: "invalid endpoint format",
 		},
 		{
 			desc:    "invalid endpoint - empty",
@@ -618,9 +620,16 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			desc:    "invalid endpoint - bare IPv6 without port",
-			value:   "2001:db8::1",
-			wantErr: true,
+			desc:        "invalid endpoint - bare IPv6 without port",
+			value:       "2001:db8::1",
+			wantErr:     true,
+			errContains: "invalid endpoint format",
+		},
+		{
+			desc:        "invalid endpoint - non-numeric port",
+			value:       "example.com:abc",
+			wantErr:     true,
+			errContains: "invalid port in endpoint",
 		},
 	}
 
@@ -631,6 +640,9 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error but got none")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %q, want it to contain %q", err.Error(), tt.errContains)
 				}
 				return
 			}
