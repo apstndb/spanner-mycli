@@ -268,6 +268,10 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 		}
 
 		// Extract SQL text for ECHO support
+		// TODO: Currently we reconstruct the SQL text using Statement.String() method.
+		// Ideally, buildCommands() should return the original text from the file
+		// to echo exactly what was written in the source file.
+		// See: https://github.com/apstndb/spanner-mycli/issues/380
 		sqlText := ""
 		if stringer, ok := fileStmt.(fmt.Stringer); ok {
 			sqlText = stringer.String()
