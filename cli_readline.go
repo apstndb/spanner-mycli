@@ -112,6 +112,9 @@ func generatePS2Prompt(ps1 string, ps2Template string, ps2Interpolated string) s
 
 func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	ed := &multiline.Editor{}
+	
+	// Configure the LineEditor with proper I/O streams
+	ed.LineEditor.Writer = c.OutStream
 
 	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1183,5 +1184,103 @@ func TestUpdateResultStatsElapsedTime(t *testing.T) {
 				t.Errorf("Expected ElapsedTime to be %q, got %q", tt.expectedElapsed, result.Stats.ElapsedTime)
 			}
 		})
+	}
+}
+
+// TestCli_executeSourceFile tests the executeSourceFile method
+func TestCli_executeSourceFile(t *testing.T) {
+	tests := []struct {
+		name          string
+		fileContent   string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "File with syntax error",
+			fileContent:   "INVALID SYNTAX;",
+			expectError:   true,
+			errorContains: "failed to parse SQL from file",
+		},
+		{
+			name:          "Meta command in file (should error)",
+			fileContent:   "SELECT 1;\n\\! echo test;",
+			expectError:   true,
+			errorContains: "meta commands are not supported in batch mode",
+		},
+		{
+			name:          "Empty file",
+			fileContent:   "",
+			expectError:   false, // Empty file should not error
+		},
+		{
+			name:          "File with only comments",
+			fileContent:   "-- This is a comment\n/* Another comment */",
+			expectError:   false, // Comments only should not error
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a temporary file
+			tmpfile, err := os.CreateTemp("", "test_source_*.sql")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_ = os.Remove(tmpfile.Name())
+			}()
+
+			// Write test content
+			if _, err := tmpfile.Write([]byte(tt.fileContent)); err != nil {
+				t.Fatal(err)
+			}
+			if err := tmpfile.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			// Setup session and CLI
+			outBuf := &bytes.Buffer{}
+			session := &Session{systemVariables: &systemVariables{}}
+
+			cli := &Cli{
+				SessionHandler:  NewSessionHandler(session),
+				SystemVariables: &systemVariables{
+					BuildStatementMode: parseModeFallback,
+					CLIFormat:          DisplayModeTab,
+				},
+				OutStream: outBuf,
+			}
+
+			// Execute the source file
+			err = cli.executeSourceFile(context.Background(), tmpfile.Name())
+
+			// Check error expectations
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error to contain %q, got: %v", tt.errorContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestCli_executeSourceFile_NonExistentFile tests executeSourceFile with a non-existent file
+func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
+	cli := &Cli{
+		SessionHandler:  NewSessionHandler(&Session{}),
+		SystemVariables: &systemVariables{},
+	}
+
+	err := cli.executeSourceFile(context.Background(), "/non/existent/file.sql")
+	if err == nil {
+		t.Error("Expected error for non-existent file")
+	} else if !strings.Contains(err.Error(), "failed to read file") {
+		t.Errorf("Expected error to contain 'failed to read file', got: %v", err)
 	}
 }
