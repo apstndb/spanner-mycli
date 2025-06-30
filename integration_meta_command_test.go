@@ -167,7 +167,7 @@ SELECT "foo" AS s;`
 			InStream:        io.NopCloser(input),
 			OutStream:       output,
 			ErrStream:       output,
-			SystemVariables: sysVars,
+			SystemVariables: &sysVars,
 		}
 
 		// Run in interactive mode
@@ -213,7 +213,7 @@ SELECT "foo" AS s;`
 			InStream:        io.NopCloser(input),
 			OutStream:       output,
 			ErrStream:       output,
-			SystemVariables: sysVars,
+			SystemVariables: &sysVars,
 		}
 
 		// Run in interactive mode
