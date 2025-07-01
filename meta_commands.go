@@ -119,6 +119,16 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\R requires a prompt string")
 		}
 		return &PromptMetaCommand{PromptString: trimmedArgs}, nil
+	case "u":
+		if args == "" {
+			return nil, errors.New("\\u requires a database name")
+		}
+		// Trim spaces and remove backticks if present (SQL-style quoting)
+		database := strings.Trim(strings.TrimSpace(args), "`")
+		if database == "" {
+			return nil, errors.New("\\u requires a database name")
+		}
+		return &UseDatabaseMetaCommand{Database: database}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
@@ -163,6 +173,29 @@ func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Res
 		return nil, fmt.Errorf("failed to set prompt: %w", err)
 	}
 	return &Result{}, nil
+}
+
+// UseDatabaseMetaCommand switches database using \u syntax
+type UseDatabaseMetaCommand struct {
+	Database string
+}
+
+// Ensure UseDatabaseMetaCommand implements both Statement and MetaCommandStatement
+var _ Statement = (*UseDatabaseMetaCommand)(nil)
+var _ MetaCommandStatement = (*UseDatabaseMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (s *UseDatabaseMetaCommand) isMetaCommand() {}
+
+// isDetachedCompatible allows this command to run in detached mode
+func (s *UseDatabaseMetaCommand) isDetachedCompatible() {}
+
+// Execute is required by Statement interface but the actual logic is handled in SessionHandler
+func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// This should not be called as UseDatabaseMetaCommand is handled in SessionHandler.
+	// While panic might be more appropriate for this logic error, we follow the
+	// codebase convention of avoiding panics and return an error instead.
+	return nil, errors.New("UseDatabaseMetaCommand.Execute should not be called; it must be handled by the SessionHandler")
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)
