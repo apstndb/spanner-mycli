@@ -142,6 +142,10 @@ type systemVariables struct {
 	CurrentSession   *Session
 	CurrentOutStream io.Writer
 	CurrentErrStream io.Writer
+	
+	// TTY/PTY operations need the original file descriptor
+	// This is always os.Stdout, kept separate when --tee is used
+	TtyOutStream     *os.File
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -1071,7 +1075,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				width, err := GetTerminalSize(this.CurrentOutStream)
+				// Prefer TtyOutStream for terminal size detection
+				w := this.CurrentOutStream
+				if this.TtyOutStream != nil {
+					w = this.TtyOutStream
+				}
+				width, err := GetTerminalSize(w)
 				if err != nil {
 					slog.Warn("failed to get terminal size", "error", err)
 					return singletonMap(name, "NULL"), nil

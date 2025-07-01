@@ -70,6 +70,13 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 
 	sysVars.CurrentOutStream = outStream
 	sysVars.CurrentErrStream = errStream
+	
+	// If TtyOutStream is not set, try to use os.Stdout as fallback
+	if sysVars.TtyOutStream == nil {
+		if f, ok := outStream.(*os.File); ok {
+			sysVars.TtyOutStream = f
+		}
+	}
 
 	return &Cli{
 		SessionHandler:  sessionHandler,
@@ -414,9 +421,14 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 }
 
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
-	// If no writer is provided, use the CLI's OutStream
-	if w == nil {
-		w = c.OutStream
+	// Progress marks use terminal control characters, so they should always
+	// go to TtyOutStream to avoid polluting tee output
+	ttyWriter := w
+	if c.SystemVariables.TtyOutStream != nil {
+		ttyWriter = c.SystemVariables.TtyOutStream
+	} else if w == nil {
+		// Fallback to OutStream if no writer provided and no TtyOutStream
+		ttyWriter = c.OutStream
 	}
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
@@ -429,14 +441,14 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 		for {
 			<-ticker.C
 			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(w, "\r%s", mark)
+			fmt.Fprintf(ttyWriter, "\r%s", mark)
 			i++
 		}
 	}()
 
 	stop := func() {
 		ticker.Stop()
-		fmt.Fprintf(w, "\r \r") // ensure to clear progressing mark
+		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
 	return stop
 }
@@ -607,6 +619,34 @@ func GetTerminalSize(w io.Writer) (int, error) {
 	return width, nil
 }
 
+// GetTerminalSizeWithTty returns the width of the terminal.
+// It uses the TtyOutStream from systemVariables if available, otherwise falls back to
+// attempting to type assert the writer to *os.File.
+// Returns an error if the terminal size cannot be determined.
+func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
+	var f *os.File
+	
+	// Prefer TtyOutStream if available
+	if c.SystemVariables.TtyOutStream != nil {
+		f = c.SystemVariables.TtyOutStream
+	} else {
+		// Fallback to type assertion
+		var ok bool
+		f, ok = w.(*os.File)
+		if !ok {
+			return 0, fmt.Errorf("writer is not a file and TtyOutStream is not set")
+		}
+	}
+
+	// Get terminal size using the file descriptor
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0, err
+	}
+
+	return width, nil
+}
+
 // displayResult displays the result of the statement execution.
 func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) {
 	// If no writer is provided, use the CLI's OutStream
@@ -621,7 +661,7 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 			size = int(*c.SystemVariables.FixedWidth)
 		} else {
 			// Otherwise get terminal width
-			width, err := GetTerminalSize(w)
+			width, err := c.GetTerminalSizeWithTty(w)
 			if err != nil {
 				// Add warning log when terminal size cannot be obtained
 				// and CLI_AUTOWRAP = TRUE

@@ -123,6 +123,7 @@ type spannerOptions struct {
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
+	Tee                       string            `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -473,7 +474,27 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		sysVars.WithoutAuthentication = true
 	}
 
-	cli, err := NewCli(ctx, cred, os.Stdin, os.Stdout, os.Stderr, &sysVars)
+	// Always keep the original os.Stdout for TTY operations
+	sysVars.TtyOutStream = os.Stdout
+	
+	// Setup output streams
+	var outStream io.Writer = os.Stdout
+	var errStream io.Writer = os.Stderr
+	
+	// If --tee is specified, wrap the stdout with MultiWriter
+	if opts.Tee != "" {
+		// Open tee file in append mode
+		teeFile, err := os.OpenFile(opts.Tee, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open tee file %q: %w", opts.Tee, err)
+		}
+		defer teeFile.Close()
+		
+		// Create a MultiWriter that writes to both stdout and the tee file
+		outStream = io.MultiWriter(os.Stdout, teeFile)
+	}
+
+	cli, err := NewCli(ctx, cred, os.Stdin, outStream, errStream, &sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
