@@ -29,6 +29,38 @@ This document provides detailed architectural information for spanner-mycli deve
 - **system_variables.go**: System variable definitions and management
 - **client_side_statement_def.go**: **CRITICAL** - Defines all client-side statement patterns and handlers
 
+## Output Handling Architecture
+
+spanner-mycli uses a stream separation pattern to support features like `--tee` output logging while maintaining clean terminal interaction.
+
+### Stream Types
+
+1. **OutStream** (`cli.OutStream`): Main output writer for all content that should be captured
+   - Query results and tables
+   - Error messages and warnings
+   - Result metadata (row counts, execution times)
+   - SQL echo when `CLI_ECHO_INPUT` is enabled
+   - When `--tee` is used, this becomes an `io.MultiWriter` writing to both stdout and the tee file
+
+2. **TtyOutStream** (`systemVariables.TtyOutStream`): Direct terminal output for TTY-specific operations
+   - Interactive prompts (e.g., `spanner>`)
+   - Progress indicators with carriage returns (`\r`)
+   - Confirmation dialogs (e.g., DROP DATABASE confirmations)
+   - Readline input display
+   - Always set to `os.Stdout` to ensure terminal operations work correctly
+
+3. **CurrentOutStream** (`systemVariables.CurrentOutStream`): Session-scoped output stream
+   - Used by Session and statement handlers
+   - Set to the same value as `cli.OutStream`
+   - Provides consistent output handling across all components
+
+### Implementation Pattern
+
+When implementing features that write output:
+- Use `OutStream` or `CurrentOutStream` for content that should be captured (results, messages)
+- Use `TtyOutStream` for terminal-specific operations that shouldn't be logged
+- Terminal size detection uses `TtyOutStream` via `GetTerminalSizeWithTty()` to work with `--tee`
+
 ## Client-Side Statement System
 
 The `client_side_statement_def.go` file is the heart of spanner-mycli's extended SQL syntax.
