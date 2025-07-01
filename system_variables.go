@@ -140,11 +140,22 @@ type systemVariables struct {
 
 	// link to session
 	CurrentSession   *Session
+	
+	// CurrentOutStream is the main output stream for query results and general output.
+	// When --tee is used, this is an io.MultiWriter that writes to both stdout and the tee file.
+	// This stream should be used for all output that should be captured in the tee file.
 	CurrentOutStream io.Writer
+	
+	// CurrentErrStream is the error output stream (typically os.Stderr).
+	// This is not affected by --tee option.
 	CurrentErrStream io.Writer
 	
-	// TTY/PTY operations need the original file descriptor
-	// This is always os.Stdout, kept separate when --tee is used
+	// TtyOutStream is the original terminal output (always os.Stdout).
+	// This should be used for TTY-specific operations that should NOT be captured in tee:
+	// - Progress marks (using \r carriage returns)
+	// - Readline prompts and interactive input display
+	// - Interactive confirmation prompts
+	// This ensures these terminal control sequences don't pollute the tee file.
 	TtyOutStream     *os.File
 
 	// TODO: Expose as CLI_*

@@ -54,7 +54,11 @@ type Cli struct {
 	SessionHandler  *SessionHandler
 	Credential      []byte
 	InStream        io.ReadCloser
+	// OutStream is the main output writer. When --tee is used, this is an io.MultiWriter
+	// that writes to both stdout and the tee file. This should be used for all
+	// output that should be captured (query results, messages, etc).
 	OutStream       io.Writer
+	// ErrStream is the error output writer (typically os.Stderr).
 	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
@@ -68,10 +72,13 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	
 	sessionHandler := NewSessionHandler(session)
 
-	sysVars.CurrentOutStream = outStream
+	// Set up the output streams in systemVariables
+	// These are used by Session and various statement handlers
+	sysVars.CurrentOutStream = outStream  // This includes tee when --tee is used
 	sysVars.CurrentErrStream = errStream
 	
-	// If TtyOutStream is not set, try to use os.Stdout as fallback
+	// TtyOutStream should already be set in main.go, but provide fallback
+	// This fallback only works when outStream is directly os.Stdout (no --tee)
 	if sysVars.TtyOutStream == nil {
 		if f, ok := outStream.(*os.File); ok {
 			sysVars.TtyOutStream = f
@@ -215,7 +222,12 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 			return -1, true
 		}
 
-		if !confirm(c.InStream, c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		// Use TtyOutStream for interactive confirmations to avoid polluting tee output
+		confirmOut := c.OutStream
+		if c.SystemVariables.TtyOutStream != nil {
+			confirmOut = c.SystemVariables.TtyOutStream
+		}
+		if !confirm(c.InStream, confirmOut, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}

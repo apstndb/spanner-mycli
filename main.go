@@ -475,15 +475,17 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 
 	// Always keep the original os.Stdout for TTY operations
+	// This is used for progress marks, readline prompts, and other terminal-specific output
+	// that should not be captured in the tee file
 	sysVars.TtyOutStream = os.Stdout
 	
 	// Setup output streams
-	var outStream io.Writer = os.Stdout
-	var errStream io.Writer = os.Stderr
+	var outStream io.Writer = os.Stdout  // Default: write directly to stdout
+	var errStream io.Writer = os.Stderr  // Error stream is not affected by --tee
 	
-	// If --tee is specified, wrap the stdout with MultiWriter
+	// If --tee is specified, wrap stdout with MultiWriter to capture output
 	if opts.Tee != "" {
-		// Open tee file in append mode
+		// Open tee file in append mode (creates if doesn't exist)
 		teeFile, err := os.OpenFile(opts.Tee, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to open tee file %q: %w", opts.Tee, err)
@@ -491,6 +493,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		defer teeFile.Close()
 		
 		// Create a MultiWriter that writes to both stdout and the tee file
+		// All normal output (query results, messages) will be captured in the tee file
 		outStream = io.MultiWriter(os.Stdout, teeFile)
 	}
 

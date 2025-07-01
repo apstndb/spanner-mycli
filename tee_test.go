@@ -126,6 +126,59 @@ func TestProgressMarkNotInTee(t *testing.T) {
 	}
 }
 
+func TestReadlinePromptsNotInTee(t *testing.T) {
+	// Skip this test if not in a TTY environment
+	if _, err := os.Stdout.Stat(); err != nil {
+		t.Skip("Not in a TTY environment")
+	}
+	
+	// This test verifies that readline is configured to use TtyOutStream
+	tmpDir := t.TempDir()
+	teeFile := filepath.Join(tmpDir, "output.log")
+	
+	f, err := os.OpenFile(teeFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open tee file: %v", err)
+	}
+	defer f.Close()
+	
+	// Create output stream with tee
+	var outBuf bytes.Buffer
+	outStream := io.MultiWriter(&outBuf, f)
+	
+	
+	// Create system variables with TTY stream
+	sysVars := &systemVariables{
+		TtyOutStream:     os.Stdout,  // In real usage, this is always os.Stdout
+		CurrentOutStream: outStream,
+		HistoryFile:      filepath.Join(tmpDir, "history"),
+		Prompt:           "test> ",
+		Prompt2:          "    > ",
+	}
+	
+	// Create CLI instance
+	cli := &Cli{
+		OutStream:       outStream,
+		InStream:        os.Stdin,
+		ErrStream:       os.Stderr,
+		SystemVariables: sysVars,
+	}
+	
+	// Try to initialize multiline editor
+	// This may fail in non-TTY environments, which is expected
+	ed, _, err := initializeMultilineEditor(cli)
+	if err != nil {
+		// In CI or non-TTY environments, this is expected
+		t.Logf("Failed to initialize editor (expected in non-TTY environment): %v", err)
+		return
+	}
+	
+	// Verify that LineEditor.Writer is set to TtyOutStream
+	if ed.LineEditor.Writer != sysVars.TtyOutStream {
+		t.Errorf("Expected LineEditor.Writer to be TtyOutStream, got %v", ed.LineEditor.Writer)
+	}
+}
+
 func TestGetTerminalSizeWithTee(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
