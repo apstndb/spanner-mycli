@@ -394,6 +394,52 @@ bar: 4
 			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
 		}
 	})
+
+	t.Run("SkipColumnNames with DisplayModeTable", func(t *testing.T) {
+		out := &bytes.Buffer{}
+		result := &Result{
+			TableHeader: toTableHeader("foo", "bar"),
+			Rows: sliceOf(
+				toRow("1", "2"),
+				toRow("3", "4"),
+			),
+			IsMutation: false,
+		}
+		printResult(&systemVariables{CLIFormat: DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+
+		expected := strings.TrimPrefix(`
++---+---+
+| 1 | 2 |
+| 3 | 4 |
++---+---+
+`, "\n")
+
+		got := out.String()
+		if got != expected {
+			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
+		}
+	})
+
+	t.Run("SkipColumnNames with DisplayModeTab", func(t *testing.T) {
+		out := &bytes.Buffer{}
+		result := &Result{
+			TableHeader: toTableHeader("foo", "bar"),
+			Rows: sliceOf(
+				toRow("1", "2"),
+				toRow("3", "4"),
+			),
+			IsMutation: false,
+		}
+		printResult(&systemVariables{CLIFormat: DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+
+		expected := "1\t2\n" +
+			"3\t4\n"
+
+		got := out.String()
+		if got != expected {
+			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
+		}
+	})
 }
 
 func TestResultLine(t *testing.T) {

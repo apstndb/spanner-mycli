@@ -141,6 +141,7 @@ spanner:
       --try-partition-query                               Test whether the query can be executed as partition query without execution
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
+      --skip-column-names                                 Suppress column headers in output
 
 Help Options:
   -h, --help                                              Show this help message
