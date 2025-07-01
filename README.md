@@ -457,6 +457,7 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 |---------|-------------|---------|
 | `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
 | `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
+| `\R <prompt_string>` | Change the prompt string | `\R mycli> ` |
 
 For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 

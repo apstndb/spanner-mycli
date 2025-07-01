@@ -75,3 +75,41 @@ spanner> \. setup.sql
 Query OK, 0 rows affected (1.23 sec)
 Query OK, 2 rows affected (0.45 sec)
 ```
+
+## Prompt Change (`\R`)
+
+The `\R` meta command allows you to change the prompt string during your session:
+
+```
+spanner> \R mycli> 
+mycli> 
+```
+
+### Features
+
+- Changes the prompt immediately for the current session
+- Updates the `CLI_PROMPT` system variable
+- Supports the same percent expansion patterns as the `--prompt` flag (see README.md for details)
+- The change persists for the duration of the session
+
+### Examples
+
+```
+spanner> \R [%p/%i/%d]> 
+[myproject/myinstance/mydatabase]> 
+
+spanner> \R custom> 
+custom> SHOW VARIABLE CLI_PROMPT;
++--------------+---------+
+| Variable_name | Value   |
++--------------+---------+
+| CLI_PROMPT   | custom> |
++--------------+---------+
+```
+
+### Notes
+
+- Trailing spaces in the prompt string are trimmed
+- An empty `\R` command (without a prompt string) will show an error
+- The prompt change only affects the current session
+- This is equivalent to `SET CLI_PROMPT = 'prompt>'` but more convenient for interactive use

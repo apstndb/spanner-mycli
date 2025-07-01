@@ -117,6 +117,7 @@ func ParseMetaCommand(input string) (Statement, error) {
 		if args == "" {
 			return nil, errors.New("\\R requires a prompt string")
 		}
+		// Note: args will have trailing spaces trimmed due to strings.TrimSpace on input
 		return &PromptMetaCommand{PromptString: args}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
