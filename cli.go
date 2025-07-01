@@ -543,10 +543,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		return "", err
 	} else {
 		// Handle special output messages for session-changing statements
-		if _, ok := stmt.(*UseStatement); ok {
+		switch stmt.(type) {
+		case *UseStatement, *UseDatabaseMetaCommand:
 			fmt.Fprintf(w, "Database changed")
-		}
-		if _, ok := stmt.(*DetachStatement); ok {
+		case *DetachStatement:
 			fmt.Fprintf(w, "Detached from database")
 		}
 	}

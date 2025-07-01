@@ -113,6 +113,41 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:  "use database simple",
+			input: "\\u mydb",
+			want:  &UseDatabaseMetaCommand{Database: "mydb"},
+		},
+		{
+			name:  "use database with hyphens",
+			input: "\\u my-database",
+			want:  &UseDatabaseMetaCommand{Database: "my-database"},
+		},
+		{
+			name:  "use database with underscores",
+			input: "\\u my_database",
+			want:  &UseDatabaseMetaCommand{Database: "my_database"},
+		},
+		{
+			name:  "use database with backticks",
+			input: "\\u `my-database`",
+			want:  &UseDatabaseMetaCommand{Database: "my-database"},
+		},
+		{
+			name:  "use database with extra spaces",
+			input: "  \\u   test_db  ",
+			want:  &UseDatabaseMetaCommand{Database: "test_db"},
+		},
+		{
+			name:    "use database without name",
+			input:   "\\u",
+			wantErr: true,
+		},
+		{
+			name:    "use database with empty name",
+			input:   "\\u ``",
+			wantErr: true,
+		},
+		{
 			name:    "unsupported meta command",
 			input:   "\\d table_name",
 			wantErr: true,
@@ -148,6 +183,14 @@ func TestParseMetaCommand(t *testing.T) {
 						}
 					} else {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *SourceMetaCommand", tt.input, got)
+					}
+				case *UseDatabaseMetaCommand:
+					if use, ok := got.(*UseDatabaseMetaCommand); ok {
+						if use.Database != want.Database {
+							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, use.Database, want.Database)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *UseDatabaseMetaCommand", tt.input, got)
 					}
 				}
 			}

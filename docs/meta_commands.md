@@ -75,3 +75,53 @@ spanner> \. setup.sql
 Query OK, 0 rows affected (1.23 sec)
 Query OK, 2 rows affected (0.45 sec)
 ```
+
+## Database Switching (`\u`)
+
+The `\u` meta command allows you to switch to a different database without restarting the CLI:
+
+```
+spanner> \u mydb
+Database changed
+spanner> \u my-database
+Database changed
+```
+
+### Features
+
+- Quick database switching within the same instance
+- Supports database names with special characters (hyphens, underscores)
+- Backtick quoting for database names: `` \u `my-database` ``
+- Maintains current project and instance context
+- Similar to the `USE` statement but with shorter syntax
+
+### Differences from USE Statement
+
+While `\u` provides similar functionality to the `USE` statement, there are some differences:
+
+- **Syntax**: `\u` is more concise (`\u mydb` vs `USE mydb`)
+- **ROLE support**: Unlike `USE database ROLE role`, the `\u` command does not support specifying a role
+- **Compatibility**: `\u` provides compatibility with Google Cloud Spanner CLI
+
+### Example
+
+```
+spanner> SHOW DATABASES;
++-----------+
+| Database  |
++-----------+
+| mydb      |
+| test-db   |
+| prod-db   |
++-----------+
+
+spanner> \u test-db
+Database changed
+
+spanner> SELECT DATABASE() as current_db;
++------------+
+| current_db |
++------------+
+| test-db    |
++------------+
+```
