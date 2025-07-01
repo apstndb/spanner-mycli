@@ -5,7 +5,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -314,6 +316,61 @@ func TestSafeTeeWriter(t *testing.T) {
 		// No additional warning should be printed
 		if errBuf.Len() > 0 {
 			t.Errorf("No additional warning expected, got: %s", errBuf.String())
+		}
+	})
+}
+
+func TestTeeNonRegularFile(t *testing.T) {
+	t.Run("named pipe detection", func(t *testing.T) {
+		// Skip if we can't create named pipes on this system
+		if runtime.GOOS == "windows" {
+			t.Skip("Named pipes not supported on Windows")
+		}
+		
+		tmpDir := t.TempDir()
+		pipePath := filepath.Join(tmpDir, "test.fifo")
+		
+		// Create a named pipe
+		err := syscall.Mkfifo(pipePath, 0644)
+		if err != nil {
+			t.Skipf("Cannot create named pipe: %v", err)
+		}
+		
+		// Verify the file exists and is not regular
+		fi, err := os.Stat(pipePath)
+		if err != nil {
+			t.Fatalf("Failed to stat pipe: %v", err)
+		}
+		if fi.Mode().IsRegular() {
+			t.Fatal("Expected pipe to not be a regular file")
+		}
+		
+		// The actual validation would happen in main.go run() function
+		// Here we just test the detection logic
+		if !fi.Mode().IsRegular() {
+			// This is the expected case - pipe is not a regular file
+			t.Logf("Correctly detected non-regular file: %s", pipePath)
+		}
+	})
+	
+	t.Run("directory detection", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		
+		// Try to use a directory as tee file
+		fi, err := os.Stat(tmpDir)
+		if err != nil {
+			t.Fatalf("Failed to stat directory: %v", err)
+		}
+		
+		if fi.Mode().IsRegular() {
+			t.Fatal("Expected directory to not be a regular file")
+		}
+		
+		// The actual validation would happen in main.go run() function
+		// Here we just test the detection logic
+		if !fi.Mode().IsRegular() {
+			// This is the expected case - directory is not a regular file
+			t.Logf("Correctly detected non-regular file: %s", tmpDir)
 		}
 	})
 }

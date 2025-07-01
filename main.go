@@ -520,6 +520,18 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	
 	// If --tee is specified, wrap stdout with MultiWriter to capture output
 	if opts.Tee != "" {
+		// Check if the file exists and is a regular file before opening.
+		// This prevents blocking on special files like FIFOs.
+		fi, err := os.Stat(opts.Tee)
+		if err != nil && !os.IsNotExist(err) {
+			// An error other than "not found" occurred.
+			return fmt.Errorf("failed to stat tee file %q: %w", opts.Tee, err)
+		}
+		if err == nil && !fi.Mode().IsRegular() {
+			// The file exists but is not a regular file.
+			return fmt.Errorf("tee output to a non-regular file is not supported: %s", opts.Tee)
+		}
+		
 		// Open tee file in append mode (creates if doesn't exist)
 		teeFile, err := os.OpenFile(opts.Tee, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
