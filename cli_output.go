@@ -87,7 +87,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 				slices.Values(adjustedWidths))),
 		)
 
-		table.Header(headers)
+		if !sysVars.SkipColumnNames {
+			table.Header(headers)
+		}
 
 		for _, row := range rows {
 			wrappedColumns := slices.Collect(hiter.Unify(
@@ -137,7 +139,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		}
 	case DisplayModeTab:
 		if len(columnNames) > 0 {
-			fmt.Fprintln(out, strings.Join(columnNames, "\t"))
+			if !sysVars.SkipColumnNames {
+				fmt.Fprintln(out, strings.Join(columnNames, "\t"))
+			}
 			for _, row := range result.Rows {
 				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}

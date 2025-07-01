@@ -451,6 +451,8 @@ func TestSystemVariablesSetGet(t *testing.T) {
 			want: singletonMap("CLI_MARKDOWN_CODEBLOCK", "TRUE")},
 		{desc: "CLI_LINT_PLAN", name: "CLI_LINT_PLAN", value: "TRUE",
 			want: singletonMap("CLI_LINT_PLAN", "TRUE")},
+		{desc: "CLI_SKIP_COLUMN_NAMES", name: "CLI_SKIP_COLUMN_NAMES", value: "TRUE",
+			want: singletonMap("CLI_SKIP_COLUMN_NAMES", "TRUE")},
 		{desc: "CLI_INSECURE", name: "CLI_INSECURE", unimplementedSet: true,
 			sysVars: &systemVariables{Insecure: true},
 			want:    singletonMap("CLI_INSECURE", "TRUE")},
@@ -971,4 +973,77 @@ func timestampBoundsEqual(a, b spanner.TimestampBound) bool {
 	// Since TimestampBound doesn't have an exported comparison method,
 	// we compare their string representations as a workaround
 	return a.String() == b.String()
+}
+
+func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
+	tests := []struct {
+		desc    string
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{
+			desc:  "set to true",
+			value: "TRUE",
+			want:  true,
+		},
+		{
+			desc:  "set to false",
+			value: "FALSE",
+			want:  false,
+		},
+		{
+			desc:  "set to 1",
+			value: "1",
+			want:  true,
+		},
+		{
+			desc:  "set to 0",
+			value: "0",
+			want:  false,
+		},
+		{
+			desc:    "invalid value",
+			value:   "invalid",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			sysVars := newSystemVariablesWithDefaults()
+			err := sysVars.Set("CLI_SKIP_COLUMN_NAMES", tt.value)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if sysVars.SkipColumnNames != tt.want {
+				t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.SkipColumnNames)
+			}
+
+			// Test GET
+			got, err := sysVars.Get("CLI_SKIP_COLUMN_NAMES")
+			if err != nil {
+				t.Errorf("unexpected error on Get: %v", err)
+				return
+			}
+
+			expectedStr := "FALSE"
+			if tt.want {
+				expectedStr = "TRUE"
+			}
+			if got["CLI_SKIP_COLUMN_NAMES"] != expectedStr {
+				t.Errorf("expected Get to return %s, got %s", expectedStr, got["CLI_SKIP_COLUMN_NAMES"])
+			}
+		})
+	}
 }
