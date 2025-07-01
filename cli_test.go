@@ -1280,8 +1280,8 @@ func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
 	err := cli.executeSourceFile(context.Background(), "/non/existent/file.sql")
 	if err == nil {
 		t.Error("Expected error for non-existent file")
-	} else if !strings.Contains(err.Error(), "failed to stat file") {
-		t.Errorf("Expected error to contain 'failed to stat file', got: %v", err)
+	} else if !strings.Contains(err.Error(), "failed to open file") {
+		t.Errorf("Expected error to contain 'failed to open file', got: %v", err)
 	}
 }
 
