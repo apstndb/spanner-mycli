@@ -164,14 +164,12 @@ func (s *UseDatabaseMetaCommand) isMetaCommand() {}
 // isDetachedCompatible allows this command to run in detached mode
 func (s *UseDatabaseMetaCommand) isDetachedCompatible() {}
 
-// Execute delegates to UseStatement for database switching
+// Execute is required by Statement interface but the actual logic is handled in SessionHandler
 func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Create a UseStatement and delegate to it
-	useStmt := &UseStatement{
-		Database: s.Database,
-		Role:     "", // \u command doesn't support ROLE parameter
-	}
-	return useStmt.Execute(ctx, session)
+	// This should not be called as UseDatabaseMetaCommand is handled in SessionHandler.
+	// While panic might be more appropriate for this logic error, we follow the
+	// codebase convention of avoiding panics and return an error instead.
+	return nil, errors.New("UseDatabaseMetaCommand.Execute should not be called; it must be handled by the SessionHandler")
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)
