@@ -71,9 +71,16 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 	
@@ -96,9 +103,16 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message (batch mode check happens before system command check)
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 	
@@ -249,9 +263,16 @@ SELECT "foo" AS s;`
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 
@@ -356,9 +377,16 @@ SELECT "foo" AS s;`
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 
@@ -435,9 +463,16 @@ SELECT "foo" AS s;`
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 }
