@@ -39,6 +39,10 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`, `--timeout`)
 * More `gcloud spanner databases ddl update` compatibilities
   * Support [`--proto-descriptor-file`](#protocol-buffers-support) flag
+* More Google Cloud Spanner CLI (`gcloud alpha spanner cli`) compatibilities
+  * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
+  * Support `--host` and `--port` flags as first-class options
+  * Support `--deployment-endpoint` as an alias for `--endpoint`
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
@@ -142,6 +146,7 @@ spanner:
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
       --tee=                                              Append a copy of output to the specified file
+      --skip-column-names                                 Suppress column headers in output
 
 Help Options:
   -h, --help                                              Show this help message
@@ -256,6 +261,21 @@ $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 | 1  | foo  | true   |
 | 2  | bar  | false  |
 +----+------+--------+
+```
+
+With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --skip-column-names
+1       foo     true
+2       bar     false
+
+# With table format
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t --skip-column-names
++---+-----+-------+
+| 1 | foo | true  |
+| 2 | bar | false |
++---+-----+-------+
 ```
 
 ### Timeout support
@@ -502,6 +522,7 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 |---------|-------------|---------|
 | `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
 | `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
+| `\u <database>` | Switch to a different database | `\u mydb` |
 
 For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 

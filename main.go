@@ -124,6 +124,7 @@ type spannerOptions struct {
 	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
 	Tee                       string            `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
+	SkipColumnNames           bool              `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -684,6 +685,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.VertexAIProject = opts.VertexAIProject
 	sysVars.AsyncDDL = opts.Async
 	sysVars.SkipSystemCommand = opts.SkipSystemCommand
+	sysVars.SkipColumnNames = opts.SkipColumnNames
 
 	return sysVars, nil
 }

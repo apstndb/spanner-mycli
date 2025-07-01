@@ -131,6 +131,13 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 	switch s := stmt.(type) {
 	case *UseStatement:
 		return h.handleUse(ctx, s)
+	case *UseDatabaseMetaCommand:
+		// Convert UseDatabaseMetaCommand to UseStatement and handle it
+		useStmt := &UseStatement{
+			Database: s.Database,
+			Role:     "", // \u command doesn't support ROLE parameter
+		}
+		return h.handleUse(ctx, useStmt)
 	case *DetachStatement:
 		return h.handleDetach(ctx, s)
 	default:

@@ -165,6 +165,7 @@ type systemVariables struct {
 	MCP                       bool // CLI_MCP (read-only)
 	AsyncDDL                  bool // CLI_ASYNC_DDL
 	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
+	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
@@ -1191,6 +1192,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return &variables.SkipSystemCommand
 			}),
 		},
+	},
+	"CLI_SKIP_COLUMN_NAMES": {
+		Description: "A boolean indicating whether to suppress column headers in output. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.SkipColumnNames
+		}),
 	},
 }
 
