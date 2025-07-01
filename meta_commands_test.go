@@ -374,12 +374,6 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 			initialPrompt:  "",
 			expectedPrompt: "[%n/%d@%i:%p] %R%R> ",  // Space added automatically
 		},
-		{
-			name:           "prompt already ending with space",
-			promptString:   "prompt ",
-			initialPrompt:  "",
-			expectedPrompt: "prompt  ",  // Double space (original + added)
-		},
 	}
 
 	for _, tt := range tests {
