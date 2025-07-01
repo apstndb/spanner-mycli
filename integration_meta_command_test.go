@@ -254,4 +254,111 @@ SELECT "foo" AS s;`
 			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
 		}
 	})
+
+	t.Run("prompt command execution", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.Project = "test-project"
+		sysVars.Instance = "test-instance"
+		sysVars.Database = "test-database"
+
+		// Create a mock session handler with a test client
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+		sessionHandler := NewSessionHandler(session)
+
+		// Create CLI instance
+		input := strings.NewReader("\\R custom-prompt>\nSHOW VARIABLE CLI_PROMPT;\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli := &Cli{
+			SessionHandler:  sessionHandler,
+			InStream:        io.NopCloser(input),
+			OutStream:       output,
+			ErrStream:       output,
+			SystemVariables: &sysVars,
+		}
+
+		// Run in interactive mode
+		err := cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+
+		// Verify the prompt was changed
+		if sysVars.Prompt != "custom-prompt>" {
+			t.Errorf("Expected prompt to be 'custom-prompt>', got %q", sysVars.Prompt)
+		}
+
+		// Check that SHOW VARIABLE output contains the new prompt
+		outputStr := output.String()
+		if !strings.Contains(outputStr, "custom-prompt>") {
+			t.Errorf("Expected output to contain 'custom-prompt>', got: %s", outputStr)
+		}
+	})
+
+	t.Run("prompt command with percent expansion", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.Project = "test-project"
+		sysVars.Instance = "test-instance"
+		sysVars.Database = "test-database"
+
+		// Create a mock session handler with a test client
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+		sessionHandler := NewSessionHandler(session)
+
+		// Create CLI instance
+		input := strings.NewReader("\\R [%p/%i/%d]>\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli := &Cli{
+			SessionHandler:  sessionHandler,
+			InStream:        io.NopCloser(input),
+			OutStream:       output,
+			ErrStream:       output,
+			SystemVariables: &sysVars,
+		}
+
+		// Run in interactive mode
+		err := cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+
+		// Verify the prompt was changed (expansion happens during display)
+		if sysVars.Prompt != "[%p/%i/%d]>" {
+			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]>', got %q", sysVars.Prompt)
+		}
+	})
+
+	t.Run("prompt command in batch mode", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		
+		input := strings.NewReader("")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in batch mode - should return error since meta commands are not supported
+		err = cli.RunBatch(ctx, "\\R new-prompt>")
+		if err == nil {
+			t.Error("Expected error for meta command in batch mode")
+		}
+		
+		// Check error message
+		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
+			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		}
+	})
 }

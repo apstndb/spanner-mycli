@@ -25,8 +25,7 @@ type ShellMetaCommand struct {
 	Command string
 }
 
-// Ensure ShellMetaCommand implements both Statement and MetaCommandStatement
-var _ Statement = (*ShellMetaCommand)(nil)
+// Ensure ShellMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
@@ -114,6 +113,11 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\. requires exactly one filename")
 		}
 		return &SourceMetaCommand{FilePath: words[0]}, nil
+	case "R":
+		if args == "" {
+			return nil, errors.New("\\R requires a prompt string")
+		}
+		return &PromptMetaCommand{PromptString: args}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
@@ -124,8 +128,7 @@ type SourceMetaCommand struct {
 	FilePath string
 }
 
-// Ensure SourceMetaCommand implements both Statement and MetaCommandStatement
-var _ Statement = (*SourceMetaCommand)(nil)
+// Ensure SourceMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
@@ -137,6 +140,25 @@ func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Res
 	// While panic might be more appropriate for this logic error, we follow the
 	// codebase convention of avoiding panics and return an error instead.
 	return nil, errors.New("SourceMetaCommand.Execute should not be called; it must be handled by the CLI")
+}
+
+// PromptMetaCommand changes the prompt string using \R syntax
+type PromptMetaCommand struct {
+	PromptString string
+}
+
+// Ensure PromptMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*PromptMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (p *PromptMetaCommand) isMetaCommand() {}
+
+// Execute updates the CLI_PROMPT system variable
+func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.systemVariables.Set("CLI_PROMPT", p.PromptString); err != nil {
+		return nil, fmt.Errorf("failed to set prompt: %w", err)
+	}
+	return &Result{}, nil
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)
