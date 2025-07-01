@@ -114,6 +114,16 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\. requires exactly one filename")
 		}
 		return &SourceMetaCommand{FilePath: words[0]}, nil
+	case "u":
+		if args == "" {
+			return nil, errors.New("\\u requires a database name")
+		}
+		// Trim spaces and remove backticks if present (SQL-style quoting)
+		database := strings.Trim(strings.TrimSpace(args), "`")
+		if database == "" {
+			return nil, errors.New("\\u requires a database name")
+		}
+		return &UseDatabaseMetaCommand{Database: database}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
@@ -137,6 +147,31 @@ func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Res
 	// While panic might be more appropriate for this logic error, we follow the
 	// codebase convention of avoiding panics and return an error instead.
 	return nil, errors.New("SourceMetaCommand.Execute should not be called; it must be handled by the CLI")
+}
+
+// UseDatabaseMetaCommand switches database using \u syntax
+type UseDatabaseMetaCommand struct {
+	Database string
+}
+
+// Ensure UseDatabaseMetaCommand implements both Statement and MetaCommandStatement
+var _ Statement = (*UseDatabaseMetaCommand)(nil)
+var _ MetaCommandStatement = (*UseDatabaseMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (s *UseDatabaseMetaCommand) isMetaCommand() {}
+
+// isDetachedCompatible allows this command to run in detached mode
+func (s *UseDatabaseMetaCommand) isDetachedCompatible() {}
+
+// Execute delegates to UseStatement for database switching
+func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Create a UseStatement and delegate to it
+	useStmt := &UseStatement{
+		Database: s.Database,
+		Role:     "", // \u command doesn't support ROLE parameter
+	}
+	return useStmt.Execute(ctx, session)
 }
 
 // IsMetaCommand checks if a line starts with a backslash (meta command)

@@ -546,6 +546,9 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		if _, ok := stmt.(*UseStatement); ok {
 			fmt.Fprintf(w, "Database changed")
 		}
+		if _, ok := stmt.(*UseDatabaseMetaCommand); ok {
+			fmt.Fprintf(w, "Database changed")
+		}
 		if _, ok := stmt.(*DetachStatement); ok {
 			fmt.Fprintf(w, "Detached from database")
 		}

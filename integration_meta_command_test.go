@@ -254,4 +254,83 @@ SELECT "foo" AS s;`
 			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
 		}
 	})
+
+	t.Run("use database command in interactive mode", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		
+		// Create a simulated interactive session with \u command
+		input := strings.NewReader("\\u test-db\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in interactive mode
+		err = cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+		
+		// Check output - should show error for non-existent database
+		outputStr := output.String()
+		if !strings.Contains(outputStr, "ERROR: unknown database \"test-db\"") {
+			t.Errorf("Expected output to contain 'ERROR: unknown database', got: %s", outputStr)
+		}
+	})
+
+	t.Run("use database command with backticks", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		
+		// Create a simulated interactive session with \u command using backticks
+		input := strings.NewReader("\\u `my-database`\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in interactive mode
+		err = cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+		
+		// Check output - should show error for non-existent database
+		outputStr := output.String()
+		if !strings.Contains(outputStr, "ERROR: unknown database \"my-database\"") {
+			t.Errorf("Expected output to contain 'ERROR: unknown database', got: %s", outputStr)
+		}
+	})
+
+	t.Run("use database command in batch mode", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		
+		input := strings.NewReader("")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in batch mode - should return error since meta commands are not supported
+		err = cli.RunBatch(ctx, "\\u test-db")
+		if err == nil {
+			t.Error("Expected error for meta command in batch mode")
+		}
+		
+		// Check error message
+		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
+			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		}
+	})
 }
