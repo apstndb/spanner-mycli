@@ -50,6 +50,7 @@ import (
 	"github.com/samber/lo"
 	"spheric.cloud/xiter"
 	"golang.org/x/term"
+	"sync"
 )
 
 type globalOptions struct {
@@ -390,6 +391,39 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 	return platform
 }
 
+// safeTeeWriter wraps a file writer to handle write errors gracefully.
+// On write error, it prints a warning once and then discards subsequent writes
+// to prevent interrupting the main output stream.
+type safeTeeWriter struct {
+	file      *os.File
+	errStream io.Writer
+	hasWarned bool
+	mu        sync.Mutex
+}
+
+// Write implements io.Writer, handling errors gracefully
+func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// If we've already warned about an error, just discard the write
+	if s.hasWarned {
+		return len(p), nil
+	}
+	
+	n, err = s.file.Write(p)
+	if err != nil {
+		// Print warning only once to avoid spamming
+		s.hasWarned = true
+		fmt.Fprintf(s.errStream, "WARNING: Failed to write to tee file: %v\n", err)
+		fmt.Fprintf(s.errStream, "WARNING: Tee logging disabled for remainder of session\n")
+		// Return success to io.MultiWriter to avoid interrupting stdout
+		return len(p), nil
+	}
+	
+	return n, nil
+}
+
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
@@ -493,9 +527,16 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 		defer teeFile.Close()
 		
-		// Create a MultiWriter that writes to both stdout and the tee file
+		// Wrap the tee file with error handling to prevent write failures from interrupting stdout
+		safeWriter := &safeTeeWriter{
+			file:       teeFile,
+			errStream:  errStream,
+			hasWarned:  false,
+		}
+		
+		// Create a MultiWriter that writes to both stdout and the safe tee writer
 		// All normal output (query results, messages) will be captured in the tee file
-		outStream = io.MultiWriter(os.Stdout, teeFile)
+		outStream = io.MultiWriter(os.Stdout, safeWriter)
 	}
 
 	cli, err := NewCli(ctx, cred, os.Stdin, outStream, errStream, &sysVars)

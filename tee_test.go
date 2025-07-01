@@ -220,3 +220,100 @@ func TestGetTerminalSizeWithTee(t *testing.T) {
 		t.Error("Expected GetTerminalSize to fail with MultiWriter")
 	}
 }
+
+func TestSafeTeeWriter(t *testing.T) {
+	t.Run("normal write", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		teeFile := filepath.Join(tmpDir, "output.log")
+		
+		f, err := os.OpenFile(teeFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			t.Fatalf("Failed to open file: %v", err)
+		}
+		defer f.Close()
+		
+		var errBuf bytes.Buffer
+		writer := &safeTeeWriter{
+			file:      f,
+			errStream: &errBuf,
+			hasWarned: false,
+		}
+		
+		// Normal write should succeed
+		data := []byte("Hello, World!\n")
+		n, err := writer.Write(data)
+		if err != nil {
+			t.Errorf("Write should not return error: %v", err)
+		}
+		if n != len(data) {
+			t.Errorf("Write returned %d, expected %d", n, len(data))
+		}
+		
+		// No warning should be printed
+		if errBuf.Len() > 0 {
+			t.Errorf("No warning expected, got: %s", errBuf.String())
+		}
+		
+		// Verify data was written
+		content, _ := os.ReadFile(teeFile)
+		if string(content) != string(data) {
+			t.Errorf("File content mismatch: got %q, want %q", content, data)
+		}
+	})
+	
+	t.Run("write error handling", func(t *testing.T) {
+		// Create a file that we'll close to simulate write error
+		tmpDir := t.TempDir()
+		teeFile := filepath.Join(tmpDir, "output.log")
+		
+		f, err := os.OpenFile(teeFile, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			t.Fatalf("Failed to open file: %v", err)
+		}
+		f.Close() // Close to simulate write error
+		
+		var errBuf bytes.Buffer
+		writer := &safeTeeWriter{
+			file:      f,
+			errStream: &errBuf,
+			hasWarned: false,
+		}
+		
+		// First write should fail but return success
+		data1 := []byte("First write\n")
+		n, err := writer.Write(data1)
+		if err != nil {
+			t.Errorf("Write should not return error even on failure: %v", err)
+		}
+		if n != len(data1) {
+			t.Errorf("Write should return full length even on failure: got %d, want %d", n, len(data1))
+		}
+		
+		// Warning should be printed
+		warnings := errBuf.String()
+		if !strings.Contains(warnings, "WARNING: Failed to write to tee file") {
+			t.Errorf("Expected warning about write failure, got: %s", warnings)
+		}
+		if !strings.Contains(warnings, "WARNING: Tee logging disabled") {
+			t.Errorf("Expected warning about tee being disabled, got: %s", warnings)
+		}
+		
+		// Clear error buffer
+		errBuf.Reset()
+		
+		// Second write should be discarded without warning
+		data2 := []byte("Second write\n")
+		n, err = writer.Write(data2)
+		if err != nil {
+			t.Errorf("Second write should not return error: %v", err)
+		}
+		if n != len(data2) {
+			t.Errorf("Second write should return full length: got %d, want %d", n, len(data2))
+		}
+		
+		// No additional warning should be printed
+		if errBuf.Len() > 0 {
+			t.Errorf("No additional warning expected, got: %s", errBuf.String())
+		}
+	})
+}
