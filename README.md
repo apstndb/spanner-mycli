@@ -141,6 +141,7 @@ spanner:
       --try-partition-query                               Test whether the query can be executed as partition query without execution
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
+      --tee=                                              Append a copy of output to the specified file
 
 Help Options:
   -h, --help                                              Show this help message
@@ -285,6 +286,50 @@ spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
 | STATEMENT_TIMEOUT | 2m0s  |
 +-------------------+-------+
 1 rows in set (0.00 sec)
+```
+
+### Output logging with --tee
+
+The `--tee` flag allows you to append a copy of all output to a file while still displaying it on the console, similar to the Unix `tee` command.
+
+```bash
+# Log all query results to a file
+$ spanner-mycli --tee output.log -p myproject -i myinstance -d mydb
+
+# In batch mode with --tee
+$ spanner-mycli --tee queries.log -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
+```
+
+The tee file will contain:
+- Query results and output
+- SQL statements when `CLI_ECHO_INPUT` is enabled
+- Error messages and warnings
+- Result metadata (row counts, execution times)
+
+The tee file will NOT contain:
+- Interactive prompts (e.g., `spanner>`)
+- Progress indicators (e.g., DDL progress bars)
+- Confirmation dialogs (e.g., DROP DATABASE confirmations)
+- Readline input display
+
+The file is opened in append mode, so existing content is preserved. If the file doesn't exist, it will be created.
+
+```bash
+# Example: Logging a session with CLI_ECHO_INPUT
+$ spanner-mycli --tee session.log -p myproject -i myinstance -d mydb
+Connected.
+spanner> SET CLI_ECHO_INPUT = TRUE;
+Query OK, 0 rows affected (0.00 sec)
+
+spanner> SELECT 1 AS test;
+# In session.log:
+# SELECT 1 AS test;
+# +------+
+# | test |
+# +------+
+# | 1    |
+# +------+
+# 1 rows in set (2.41 msecs)
 ```
 
 ### EXPLAIN
