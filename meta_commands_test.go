@@ -138,6 +138,11 @@ func TestParseMetaCommand(t *testing.T) {
 			want:  &PromptMetaCommand{PromptString: "my custom prompt>"},
 		},
 		{
+			name:  "prompt command with only spaces",
+			input: "\\R    ",
+			wantErr: true,
+		},
+		{
 			name:  "prompt command with only trailing space",
 			input: "\\R prompt ",
 			want:  &PromptMetaCommand{PromptString: "prompt"},
