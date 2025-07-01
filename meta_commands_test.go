@@ -83,6 +83,36 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:  "source command simple",
+			input: "\\. test.sql",
+			want:  &SourceMetaCommand{FilePath: "test.sql"},
+		},
+		{
+			name:  "source command with path",
+			input: "\\. /path/to/script.sql",
+			want:  &SourceMetaCommand{FilePath: "/path/to/script.sql"},
+		},
+		{
+			name:  "source command with quotes",
+			input: `\. "file with spaces.sql"`,
+			want:  &SourceMetaCommand{FilePath: "file with spaces.sql"},
+		},
+		{
+			name:  "source command with single quotes",
+			input: `\. 'another file.sql'`,
+			want:  &SourceMetaCommand{FilePath: "another file.sql"},
+		},
+		{
+			name:    "source command without filename",
+			input:   "\\.",
+			wantErr: true,
+		},
+		{
+			name:  "source command with multiple files",
+			input: `\. file1.sql file2.sql`,
+			wantErr: true,
+		},
+		{
 			name:    "unsupported meta command",
 			input:   "\\d table_name",
 			wantErr: true,
@@ -110,6 +140,14 @@ func TestParseMetaCommand(t *testing.T) {
 						}
 					} else {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *ShellMetaCommand", tt.input, got)
+					}
+				case *SourceMetaCommand:
+					if source, ok := got.(*SourceMetaCommand); ok {
+						if source.FilePath != want.FilePath {
+							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, source.FilePath, want.FilePath)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *SourceMetaCommand", tt.input, got)
 					}
 				}
 			}
@@ -196,9 +234,16 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 	var _ Statement = (*ShellMetaCommand)(nil)
 	var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
 
+	// Verify that SourceMetaCommand implements both interfaces
+	var _ Statement = (*SourceMetaCommand)(nil)
+	var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
+
 	// Test the marker method
 	cmd := &ShellMetaCommand{Command: "test"}
 	cmd.isMetaCommand() // This should compile
+
+	srcCmd := &SourceMetaCommand{FilePath: "test.sql"}
+	srcCmd.isMetaCommand() // This should compile
 }
 
 func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
