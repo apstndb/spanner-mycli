@@ -100,16 +100,17 @@ spanner> \R [%p/%i/%d]>
 
 spanner> \R custom> 
 custom> SHOW VARIABLE CLI_PROMPT;
-+--------------+---------+
-| Variable_name | Value   |
-+--------------+---------+
-| CLI_PROMPT   | custom> |
-+--------------+---------+
++---------------+----------+
+| Variable_name | Value    |
++---------------+----------+
+| CLI_PROMPT    | custom>  |
++---------------+----------+
 ```
 
 ### Notes
 
-- Trailing spaces in the prompt string are trimmed
+- A trailing space is automatically added to the prompt for better separation between prompt and user input
+- The input prompt string has trailing spaces trimmed, but a space is always added when setting the prompt
 - An empty `\R` command (without a prompt string) will show an error
 - The prompt change only affects the current session
-- This is equivalent to `SET CLI_PROMPT = 'prompt>'` but more convenient for interactive use
+- This is similar to `SET CLI_PROMPT = 'prompt> '` but more convenient for interactive use

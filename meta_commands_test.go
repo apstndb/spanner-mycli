@@ -138,6 +138,11 @@ func TestParseMetaCommand(t *testing.T) {
 			want:  &PromptMetaCommand{PromptString: "my custom prompt>"},
 		},
 		{
+			name:  "prompt command with only trailing space",
+			input: "\\R prompt ",
+			want:  &PromptMetaCommand{PromptString: "prompt"},
+		},
+		{
 			name:    "prompt command without string",
 			input:   "\\R",
 			wantErr: true,
@@ -293,33 +298,39 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 	}{
 		{
 			name:           "set simple prompt",
-			promptString:   "my-prompt> ",
+			promptString:   "my-prompt>",
 			initialPrompt:  "",
-			expectedPrompt: "my-prompt> ",
+			expectedPrompt: "my-prompt> ",  // Space added automatically
 		},
 		{
 			name:           "set prompt with percent expansion",
-			promptString:   "%n@%p> ",
+			promptString:   "%n@%p>",
 			initialPrompt:  "",
-			expectedPrompt: "%n@%p> ",
+			expectedPrompt: "%n@%p> ",  // Space added automatically
 		},
 		{
 			name:           "overwrite existing prompt",
-			promptString:   "new-prompt> ",
+			promptString:   "new-prompt>",
 			initialPrompt:  "old-prompt> ",
-			expectedPrompt: "new-prompt> ",
+			expectedPrompt: "new-prompt> ",  // Space added automatically
 		},
 		{
 			name:           "empty prompt string",
 			promptString:   "",
 			initialPrompt:  "test> ",
-			expectedPrompt: "",
+			expectedPrompt: " ",  // Just a space
 		},
 		{
 			name:           "complex prompt with multiple expansions",
-			promptString:   "[%n/%d@%i:%p] %R%R> ",
+			promptString:   "[%n/%d@%i:%p] %R%R>",
 			initialPrompt:  "",
-			expectedPrompt: "[%n/%d@%i:%p] %R%R> ",
+			expectedPrompt: "[%n/%d@%i:%p] %R%R> ",  // Space added automatically
+		},
+		{
+			name:           "prompt already ending with space",
+			promptString:   "prompt ",
+			initialPrompt:  "",
+			expectedPrompt: "prompt  ",  // Double space (original + added)
 		},
 	}
 

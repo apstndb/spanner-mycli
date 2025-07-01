@@ -288,9 +288,9 @@ SELECT "foo" AS s;`
 			}
 		}
 
-		// Verify the prompt was changed
-		if sysVars.Prompt != "custom-prompt>" {
-			t.Errorf("Expected prompt to be 'custom-prompt>', got %q", sysVars.Prompt)
+		// Verify the prompt was changed (with trailing space added)
+		if sysVars.Prompt != "custom-prompt> " {
+			t.Errorf("Expected prompt to be 'custom-prompt> ', got %q", sysVars.Prompt)
 		}
 
 		// Check that SHOW VARIABLE output contains the new prompt
@@ -333,9 +333,9 @@ SELECT "foo" AS s;`
 			}
 		}
 
-		// Verify the prompt was changed (expansion happens during display)
-		if sysVars.Prompt != "[%p/%i/%d]>" {
-			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]>', got %q", sysVars.Prompt)
+		// Verify the prompt was changed (expansion happens during display, with trailing space added)
+		if sysVars.Prompt != "[%p/%i/%d]> " {
+			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]> ', got %q", sysVars.Prompt)
 		}
 	})
 

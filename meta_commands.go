@@ -117,7 +117,6 @@ func ParseMetaCommand(input string) (Statement, error) {
 		if args == "" {
 			return nil, errors.New("\\R requires a prompt string")
 		}
-		// Note: args will have trailing spaces trimmed due to strings.TrimSpace on input
 		return &PromptMetaCommand{PromptString: args}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
@@ -156,7 +155,10 @@ func (p *PromptMetaCommand) isMetaCommand() {}
 
 // Execute updates the CLI_PROMPT system variable
 func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Set("CLI_PROMPT", p.PromptString); err != nil {
+	// Add a trailing space to the prompt for better UX (separation between prompt and input)
+	// This ensures compatibility with Google Cloud Spanner CLI behavior
+	promptWithSpace := p.PromptString + " "
+	if err := session.systemVariables.Set("CLI_PROMPT", promptWithSpace); err != nil {
 		return nil, fmt.Errorf("failed to set prompt: %w", err)
 	}
 	return &Result{}, nil
