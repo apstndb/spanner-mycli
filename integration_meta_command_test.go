@@ -314,10 +314,16 @@ SELECT "foo" AS s;`
 			t.Errorf("Expected prompt to be 'custom-prompt> ', got %q", sysVars.Prompt)
 		}
 
-		// Check that SHOW VARIABLE output contains the new prompt
+		// Check that SHOW VARIABLE output contains the expected table format
+		// The output should have a single column "CLI_PROMPT" with value "custom-prompt> "
 		outputStr := output.String()
-		if !strings.Contains(outputStr, "custom-prompt>") {
-			t.Errorf("Expected output to contain 'custom-prompt>', got: %s", outputStr)
+		expectedRow := "| custom-prompt> |"  // Note: includes the trailing space
+		
+		if !strings.Contains(outputStr, "CLI_PROMPT") {
+			t.Errorf("Expected output to contain column header 'CLI_PROMPT', got: %s", outputStr)
+		}
+		if !strings.Contains(outputStr, expectedRow) {
+			t.Errorf("Expected output to contain row %q, got: %s", expectedRow, outputStr)
 		}
 	})
 
@@ -358,6 +364,11 @@ SELECT "foo" AS s;`
 		if sysVars.Prompt != "[%p/%i/%d]> " {
 			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]> ', got %q", sysVars.Prompt)
 		}
+		
+		// Note: This test verifies that the prompt is stored with percent patterns intact.
+		// The actual expansion of %p, %i, %d happens during prompt display in getInterpolatedPrompt.
+		// Since this integration test doesn't have a real Spanner connection, we can't verify
+		// the expanded output. Unit tests in cli_test.go cover the expansion logic.
 	})
 
 	t.Run("prompt command in batch mode", func(t *testing.T) {
