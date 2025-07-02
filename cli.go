@@ -477,13 +477,19 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 			return runewidth.FillLeft(
 				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)
 		default:
-			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
-			value, err := sysVars.Get(varName)
-			if err != nil {
-				// Return error pattern to be interpolated.
-				return fmt.Sprintf("INVALID_VAR{%v}", varName)
+			// Check if it's a system variable pattern %{...}
+			matches := promptSystemVariableRe.FindStringSubmatch(s)
+			if len(matches) > 1 {
+				varName := matches[1]
+				value, err := sysVars.Get(varName)
+				if err != nil {
+					// Return error pattern to be interpolated.
+					return fmt.Sprintf("INVALID_VAR{%v}", varName)
+				}
+				return value[varName]
 			}
-			return value[varName]
+			// For unrecognized percent sequences, return them unchanged
+			return s
 		}
 	})
 }
