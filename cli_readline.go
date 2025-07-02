@@ -114,7 +114,12 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	ed := &multiline.Editor{}
 	
 	// Configure the LineEditor with proper I/O streams
-	ed.LineEditor.Writer = c.OutStream
+	// Use TtyOutStream for readline to avoid polluting tee output with prompts.
+	// Interactive mode requires a TTY for output.
+	if c.SystemVariables.TtyOutStream == nil {
+		return nil, nil, fmt.Errorf("cannot run in interactive mode: stdout is not a terminal")
+	}
+	ed.LineEditor.Writer = c.SystemVariables.TtyOutStream
 
 	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {

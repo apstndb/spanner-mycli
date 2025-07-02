@@ -160,6 +160,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out, "```sql")
 	}
 
+	// Echo the input SQL if CLI_ECHO_INPUT is enabled
+	// This output is intentionally sent to 'out' (not TtyOutStream) so it's captured in tee files
+	// This provides complete context in logs showing which queries produced which results
 	if sysVars.EchoInput && input != "" {
 		fmt.Fprintln(out, input+";")
 	}

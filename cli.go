@@ -54,7 +54,11 @@ type Cli struct {
 	SessionHandler  *SessionHandler
 	Credential      []byte
 	InStream        io.ReadCloser
+	// OutStream is the main output writer. When --tee is used, this is an io.MultiWriter
+	// that writes to both stdout and the tee file. This should be used for all
+	// output that should be captured (query results, messages, etc).
 	OutStream       io.Writer
+	// ErrStream is the error output writer (typically os.Stderr).
 	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
@@ -68,8 +72,18 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	
 	sessionHandler := NewSessionHandler(session)
 
-	sysVars.CurrentOutStream = outStream
+	// Set up the output streams in systemVariables
+	// These are used by Session and various statement handlers
+	sysVars.CurrentOutStream = outStream  // This includes tee when --tee is used
 	sysVars.CurrentErrStream = errStream
+	
+	// TtyOutStream should already be set in main.go, but provide fallback
+	// This fallback only works when outStream is directly os.Stdout (no --tee)
+	if sysVars.TtyOutStream == nil {
+		if f, ok := outStream.(*os.File); ok {
+			sysVars.TtyOutStream = f
+		}
+	}
 
 	return &Cli{
 		SessionHandler:  sessionHandler,
@@ -208,7 +222,12 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 			return -1, true
 		}
 
-		if !confirm(c.InStream, c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		// Interactive confirmations require a TTY
+		if c.SystemVariables.TtyOutStream == nil {
+			c.PrintInteractiveError(fmt.Errorf("cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal"))
+			return -1, true
+		}
+		if !confirm(c.InStream, c.SystemVariables.TtyOutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}
@@ -414,10 +433,13 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 }
 
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
-	// If no writer is provided, use the CLI's OutStream
-	if w == nil {
-		w = c.OutStream
+	// Progress marks use terminal control characters, so they should always
+	// go to TtyOutStream to avoid polluting tee output. If no TTY is available,
+	// disable progress marks.
+	if c.SystemVariables.TtyOutStream == nil {
+		return func() {}
 	}
+	ttyWriter := c.SystemVariables.TtyOutStream
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
@@ -429,14 +451,14 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 		for {
 			<-ticker.C
 			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(w, "\r%s", mark)
+			fmt.Fprintf(ttyWriter, "\r%s", mark)
 			i++
 		}
 	}()
 
 	stop := func() {
 		ticker.Stop()
-		fmt.Fprintf(w, "\r \r") // ensure to clear progressing mark
+		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
 	return stop
 }
@@ -613,6 +635,34 @@ func GetTerminalSize(w io.Writer) (int, error) {
 	return width, nil
 }
 
+// GetTerminalSizeWithTty returns the width of the terminal.
+// It uses the TtyOutStream from systemVariables if available, otherwise falls back to
+// attempting to type assert the writer to *os.File.
+// Returns an error if the terminal size cannot be determined.
+func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
+	var f *os.File
+	
+	// Prefer TtyOutStream if available
+	if c.SystemVariables.TtyOutStream != nil {
+		f = c.SystemVariables.TtyOutStream
+	} else {
+		// Fallback to type assertion
+		var ok bool
+		f, ok = w.(*os.File)
+		if !ok {
+			return 0, fmt.Errorf("writer is not a file and TtyOutStream is not set")
+		}
+	}
+
+	// Get terminal size using the file descriptor
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0, err
+	}
+
+	return width, nil
+}
+
 // displayResult displays the result of the statement execution.
 func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) {
 	// If no writer is provided, use the CLI's OutStream
@@ -627,7 +677,7 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 			size = int(*c.SystemVariables.FixedWidth)
 		} else {
 			// Otherwise get terminal width
-			width, err := GetTerminalSize(w)
+			width, err := c.GetTerminalSizeWithTty(w)
 			if err != nil {
 				// Add warning log when terminal size cannot be obtained
 				// and CLI_AUTOWRAP = TRUE
