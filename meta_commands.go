@@ -25,8 +25,7 @@ type ShellMetaCommand struct {
 	Command string
 }
 
-// Ensure ShellMetaCommand implements both Statement and MetaCommandStatement
-var _ Statement = (*ShellMetaCommand)(nil)
+// Ensure ShellMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
@@ -114,6 +113,12 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\. requires exactly one filename")
 		}
 		return &SourceMetaCommand{FilePath: words[0]}, nil
+	case "R":
+		trimmedArgs := strings.TrimSpace(args)
+		if trimmedArgs == "" {
+			return nil, errors.New("\\R requires a prompt string")
+		}
+		return &PromptMetaCommand{PromptString: trimmedArgs}, nil
 	case "u":
 		if args == "" {
 			return nil, errors.New("\\u requires a database name")
@@ -134,8 +139,7 @@ type SourceMetaCommand struct {
 	FilePath string
 }
 
-// Ensure SourceMetaCommand implements both Statement and MetaCommandStatement
-var _ Statement = (*SourceMetaCommand)(nil)
+// Ensure SourceMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
@@ -147,6 +151,28 @@ func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Res
 	// While panic might be more appropriate for this logic error, we follow the
 	// codebase convention of avoiding panics and return an error instead.
 	return nil, errors.New("SourceMetaCommand.Execute should not be called; it must be handled by the CLI")
+}
+
+// PromptMetaCommand changes the prompt string using \R syntax
+type PromptMetaCommand struct {
+	PromptString string
+}
+
+// Ensure PromptMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*PromptMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (p *PromptMetaCommand) isMetaCommand() {}
+
+// Execute updates the CLI_PROMPT system variable
+func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Add a trailing space to the prompt for better UX (separation between prompt and input)
+	// This ensures compatibility with Google Cloud Spanner CLI behavior
+	promptWithSpace := p.PromptString + " "
+	if err := session.systemVariables.Set("CLI_PROMPT", promptWithSpace); err != nil {
+		return nil, fmt.Errorf("failed to set prompt: %w", err)
+	}
+	return &Result{}, nil
 }
 
 // UseDatabaseMetaCommand switches database using \u syntax

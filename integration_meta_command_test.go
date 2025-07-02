@@ -71,9 +71,16 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 	
@@ -96,9 +103,16 @@ func TestMetaCommandIntegration(t *testing.T) {
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message (batch mode check happens before system command check)
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 	
@@ -249,9 +263,141 @@ SELECT "foo" AS s;`
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
+		}
+	})
+
+	t.Run("prompt command execution", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.Project = "test-project"
+		sysVars.Instance = "test-instance"
+		sysVars.Database = "test-database"
+
+		// Create a mock session handler with a test client
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+		sessionHandler := NewSessionHandler(session)
+
+		// Create CLI instance
+		input := strings.NewReader("\\R custom-prompt>\nSHOW VARIABLE CLI_PROMPT;\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli := &Cli{
+			SessionHandler:  sessionHandler,
+			InStream:        io.NopCloser(input),
+			OutStream:       output,
+			ErrStream:       output,
+			SystemVariables: &sysVars,
+		}
+
+		// Run in interactive mode
+		err := cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+
+		// Verify the prompt was changed (with trailing space added)
+		if sysVars.Prompt != "custom-prompt> " {
+			t.Errorf("Expected prompt to be 'custom-prompt> ', got %q", sysVars.Prompt)
+		}
+
+		// Check that SHOW VARIABLE output contains the expected table format
+		// The output should have a single column "CLI_PROMPT" with value "custom-prompt> "
+		outputStr := output.String()
+		expectedRow := "| custom-prompt> |"  // Note: includes the trailing space
+		
+		if !strings.Contains(outputStr, "CLI_PROMPT") {
+			t.Errorf("Expected output to contain column header 'CLI_PROMPT', got: %s", outputStr)
+		}
+		if !strings.Contains(outputStr, expectedRow) {
+			t.Errorf("Expected output to contain row %q, got: %s", expectedRow, outputStr)
+		}
+	})
+
+	t.Run("prompt command with percent expansion", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.Project = "test-project"
+		sysVars.Instance = "test-instance"
+		sysVars.Database = "test-database"
+
+		// Create a mock session handler with a test client
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+		sessionHandler := NewSessionHandler(session)
+
+		// Create CLI instance
+		input := strings.NewReader("\\R [%p/%i/%d]>\nexit;\n")
+		output := &bytes.Buffer{}
+		
+		cli := &Cli{
+			SessionHandler:  sessionHandler,
+			InStream:        io.NopCloser(input),
+			OutStream:       output,
+			ErrStream:       output,
+			SystemVariables: &sysVars,
+		}
+
+		// Run in interactive mode
+		err := cli.RunInteractive(ctx)
+		if err != nil {
+			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
+			}
+		}
+
+		// Verify the prompt was changed (expansion happens during display, with trailing space added)
+		if sysVars.Prompt != "[%p/%i/%d]> " {
+			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]> ', got %q", sysVars.Prompt)
+		}
+		
+		// Note: This test verifies that the prompt is stored with percent patterns intact.
+		// The actual expansion of %p, %i, %d happens during prompt display in getInterpolatedPrompt.
+		// Since this integration test doesn't have a real Spanner connection, we can't verify
+		// the expanded output. Unit tests in cli_test.go cover the expansion logic.
+	})
+
+	t.Run("prompt command in batch mode", func(t *testing.T) {
+		sysVars := newSystemVariablesWithDefaults()
+		
+		input := strings.NewReader("")
+		output := &bytes.Buffer{}
+		
+		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+		if err != nil {
+			t.Fatalf("NewCli() error = %v", err)
+		}
+		
+		// Run in batch mode - should return error since meta commands are not supported
+		err = cli.RunBatch(ctx, "\\R new-prompt>")
+		if err == nil {
+			t.Error("Expected error for meta command in batch mode")
+		}
+		
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 
@@ -328,9 +474,16 @@ SELECT "foo" AS s;`
 			t.Error("Expected error for meta command in batch mode")
 		}
 		
-		// Check error message
-		if err != nil && err.Error() != "meta commands are not supported in batch mode" {
-			t.Errorf("Expected 'meta commands are not supported in batch mode' error, got: %v", err)
+		// Check error type
+		if err != nil {
+			if _, ok := err.(*ExitCodeError); !ok {
+				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+			}
+			// Check that the correct error message was printed to the error stream
+			const expectedErrStr = "meta commands are not supported in batch mode"
+			if !strings.Contains(output.String(), expectedErrStr) {
+				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			}
 		}
 	})
 }

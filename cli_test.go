@@ -684,6 +684,29 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			},
 			want: "spanner:test-database> ",
 		},
+		{
+			desc:   "invalid percent sequence - single character",
+			prompt: "Invalid: %z",
+			want:   "Invalid: %z",
+		},
+		{
+			desc:   "invalid percent sequence - multiple invalid sequences",
+			prompt: "Test %x %y %z end",
+			want:   "Test %x %y %z end",
+		},
+		{
+			desc:   "mixed valid and invalid percent sequences",
+			prompt: "%p %z %i %q %d",
+			sysVars: &systemVariables{
+				Project:  "proj",
+				Instance: "inst",
+				Database: "db",
+			},
+			session: &Session{
+				mode: DatabaseConnected,
+			},
+			want: "proj %z inst %q db",
+		},
 	}
 
 	for _, tt := range tests {

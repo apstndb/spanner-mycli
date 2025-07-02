@@ -157,6 +157,36 @@ func TestParseMetaCommand(t *testing.T) {
 			input:   "not a meta command",
 			wantErr: true,
 		},
+		{
+			name:  "prompt command simple",
+			input: "\\R spanner> ",
+			want:  &PromptMetaCommand{PromptString: "spanner>"},
+		},
+		{
+			name:  "prompt command with percent expansion",
+			input: "\\R %n@%p> ",
+			want:  &PromptMetaCommand{PromptString: "%n@%p>"},
+		},
+		{
+			name:  "prompt command with extra spaces",
+			input: "  \\R   my custom prompt>  ",
+			want:  &PromptMetaCommand{PromptString: "my custom prompt>"},
+		},
+		{
+			name:  "prompt command with only spaces",
+			input: "\\R    ",
+			wantErr: true,
+		},
+		{
+			name:  "prompt command with only trailing space",
+			input: "\\R prompt ",
+			want:  &PromptMetaCommand{PromptString: "prompt"},
+		},
+		{
+			name:    "prompt command without string",
+			input:   "\\R",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -183,6 +213,14 @@ func TestParseMetaCommand(t *testing.T) {
 						}
 					} else {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *SourceMetaCommand", tt.input, got)
+					}
+				case *PromptMetaCommand:
+					if prompt, ok := got.(*PromptMetaCommand); ok {
+						if prompt.PromptString != want.PromptString {
+							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, prompt.PromptString, want.PromptString)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *PromptMetaCommand", tt.input, got)
 					}
 				case *UseDatabaseMetaCommand:
 					if use, ok := got.(*UseDatabaseMetaCommand); ok {
@@ -281,12 +319,90 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 	var _ Statement = (*SourceMetaCommand)(nil)
 	var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
 
+	// Verify that PromptMetaCommand implements both interfaces
+	var _ Statement = (*PromptMetaCommand)(nil)
+	var _ MetaCommandStatement = (*PromptMetaCommand)(nil)
+
 	// Test the marker method
 	cmd := &ShellMetaCommand{Command: "test"}
 	cmd.isMetaCommand() // This should compile
 
 	srcCmd := &SourceMetaCommand{FilePath: "test.sql"}
 	srcCmd.isMetaCommand() // This should compile
+
+	promptCmd := &PromptMetaCommand{PromptString: "test> "}
+	promptCmd.isMetaCommand() // This should compile
+}
+
+func TestPromptMetaCommand_Execute(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		promptString   string
+		initialPrompt  string
+		expectedPrompt string
+		wantErr        bool
+	}{
+		{
+			name:           "set simple prompt",
+			promptString:   "my-prompt>",
+			initialPrompt:  "",
+			expectedPrompt: "my-prompt> ",  // Space added automatically
+		},
+		{
+			name:           "set prompt with percent expansion",
+			promptString:   "%n@%p>",
+			initialPrompt:  "",
+			expectedPrompt: "%n@%p> ",  // Space added automatically
+		},
+		{
+			name:           "overwrite existing prompt",
+			promptString:   "new-prompt>",
+			initialPrompt:  "old-prompt> ",
+			expectedPrompt: "new-prompt> ",  // Space added automatically
+		},
+		{
+			name:           "empty prompt string",
+			promptString:   "",
+			initialPrompt:  "test> ",
+			expectedPrompt: " ",  // Just a space
+		},
+		{
+			name:           "complex prompt with multiple expansions",
+			promptString:   "[%n/%d@%i:%p] %R%R>",
+			initialPrompt:  "",
+			expectedPrompt: "[%n/%d@%i:%p] %R%R> ",  // Space added automatically
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sysVars := newSystemVariablesWithDefaults()
+			if tt.initialPrompt != "" {
+				sysVars.Prompt = tt.initialPrompt
+			}
+			session := &Session{
+				systemVariables: &sysVars,
+			}
+
+			cmd := &PromptMetaCommand{PromptString: tt.promptString}
+			result, err := cmd.Execute(ctx, session)
+			
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if result == nil {
+					t.Error("Execute() returned nil result")
+				}
+				if sysVars.Prompt != tt.expectedPrompt {
+					t.Errorf("Execute() prompt = %q, want %q", sysVars.Prompt, tt.expectedPrompt)
+				}
+			}
+		})
+	}
 }
 
 func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {

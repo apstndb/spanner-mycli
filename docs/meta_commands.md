@@ -76,6 +76,45 @@ Query OK, 0 rows affected (1.23 sec)
 Query OK, 2 rows affected (0.45 sec)
 ```
 
+## Prompt Change (`\R`)
+
+The `\R` meta command allows you to change the prompt string during your session:
+
+```
+spanner> \R mycli> 
+mycli> 
+```
+
+### Features
+
+- Changes the prompt immediately for the current session
+- Updates the `CLI_PROMPT` system variable
+- Supports the same percent expansion patterns as the `--prompt` flag (see README.md for details)
+- The change persists for the duration of the session
+
+### Examples
+
+```
+spanner> \R [%p/%i/%d]> 
+[myproject/myinstance/mydatabase]> 
+
+spanner> \R custom> 
+custom> SHOW VARIABLE CLI_PROMPT;
++---------------+----------+
+| Variable_name | Value    |
++---------------+----------+
+| CLI_PROMPT    | custom>  |
++---------------+----------+
+```
+
+### Notes
+
+- A trailing space is automatically added to the prompt for better separation between prompt and user input
+- The input prompt string has trailing spaces trimmed, but a space is always added when setting the prompt
+- An empty `\R` command (without a prompt string) will show an error
+- The prompt change only affects the current session
+- This is similar to `SET CLI_PROMPT = 'prompt> '` but more convenient for interactive use
+
 ## Database Switching (`\u`)
 
 The `\u` meta command allows you to switch to a different database without restarting the CLI:
