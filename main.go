@@ -524,13 +524,23 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		// Check if the file exists and is a regular file before opening.
 		// This prevents blocking on special files like FIFOs.
 		fi, err := os.Stat(opts.Tee)
-		if err != nil && !os.IsNotExist(err) {
-			// An error other than "not found" occurred.
+		
+		// Handle three cases:
+		// 1. File exists (err == nil) - check if it's a regular file
+		// 2. File doesn't exist (os.IsNotExist(err)) - will create it
+		// 3. Other stat error - return the error
+		switch {
+		case err == nil:
+			// File exists - ensure it's a regular file
+			if !fi.Mode().IsRegular() {
+				return fmt.Errorf("tee output to a non-regular file is not supported: %s", opts.Tee)
+			}
+		case os.IsNotExist(err):
+			// File doesn't exist - OpenFile will create it
+			// Continue to OpenFile
+		default:
+			// Unexpected stat error (e.g., permission denied)
 			return fmt.Errorf("failed to stat tee file %q: %w", opts.Tee, err)
-		}
-		if err == nil && !fi.Mode().IsRegular() {
-			// The file exists but is not a regular file.
-			return fmt.Errorf("tee output to a non-regular file is not supported: %s", opts.Tee)
 		}
 		
 		// Open tee file in append mode (creates if doesn't exist)
