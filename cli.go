@@ -222,12 +222,12 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 			return -1, true
 		}
 
-		// Use TtyOutStream for interactive confirmations to avoid polluting tee output
-		confirmOut := c.OutStream
-		if c.SystemVariables.TtyOutStream != nil {
-			confirmOut = c.SystemVariables.TtyOutStream
+		// Interactive confirmations require a TTY
+		if c.SystemVariables.TtyOutStream == nil {
+			c.PrintInteractiveError(fmt.Errorf("cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal"))
+			return -1, true
 		}
-		if !confirm(c.InStream, confirmOut, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		if !confirm(c.InStream, c.SystemVariables.TtyOutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}
@@ -434,14 +434,12 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 	// Progress marks use terminal control characters, so they should always
-	// go to TtyOutStream to avoid polluting tee output
-	ttyWriter := w
-	if c.SystemVariables.TtyOutStream != nil {
-		ttyWriter = c.SystemVariables.TtyOutStream
-	} else if w == nil {
-		// Fallback to OutStream if no writer provided and no TtyOutStream
-		ttyWriter = c.OutStream
+	// go to TtyOutStream to avoid polluting tee output. If no TTY is available,
+	// disable progress marks.
+	if c.SystemVariables.TtyOutStream == nil {
+		return func() {}
 	}
+	ttyWriter := c.SystemVariables.TtyOutStream
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)

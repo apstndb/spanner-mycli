@@ -509,10 +509,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		sysVars.WithoutAuthentication = true
 	}
 
-	// Always keep the original os.Stdout for TTY operations
-	// This is used for progress marks, readline prompts, and other terminal-specific output
-	// that should not be captured in the tee file
-	sysVars.TtyOutStream = os.Stdout
+	// If os.Stdout is a TTY, keep it for TTY-specific operations.
+	// This prevents writing terminal control codes (prompts, progress marks) to redirected files.
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		sysVars.TtyOutStream = os.Stdout
+	}
 	
 	// Setup output streams
 	var outStream io.Writer = os.Stdout  // Default: write directly to stdout
