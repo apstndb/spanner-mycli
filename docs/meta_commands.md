@@ -19,11 +19,23 @@ spanner> \! pwd
 
 ### Security
 
-Shell command execution can be disabled using the `--skip-system-command` flag:
+Shell command execution can be controlled using two options:
+
+1. `--skip-system-command` flag - Disables system commands
+2. `--system-command=ON/OFF` option - Enables (ON) or disables (OFF) system commands (default: ON)
 
 ```bash
+# Disable using --skip-system-command
 spanner-mycli --skip-system-command
+
+# Disable using --system-command
+spanner-mycli --system-command=OFF
+
+# Explicitly enable (default behavior)
+spanner-mycli --system-command=ON
 ```
+
+Note: When both options are used, `--skip-system-command` takes precedence.
 
 When disabled, attempting to use `\!` will result in an error:
 
