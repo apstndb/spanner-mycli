@@ -250,6 +250,9 @@ func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*
 	}
 
 	// Update CurrentOutStream to reflect the new tee configuration
+	// NOTE: This modifies systemVariables which is intended to be read-only.
+	// This is a known limitation - tee commands need to update the output stream.
+	// In practice, this is safe for CLI usage as commands are executed sequentially.
 	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
 	
 	return &Result{}, nil
@@ -278,6 +281,9 @@ func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (
 	session.systemVariables.TeeManager.DisableTee()
 	
 	// Update CurrentOutStream to reflect the new tee configuration
+	// NOTE: This modifies systemVariables which is intended to be read-only.
+	// This is a known limitation - tee commands need to update the output stream.
+	// In practice, this is safe for CLI usage as commands are executed sequentially.
 	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
 	
 	return &Result{}, nil

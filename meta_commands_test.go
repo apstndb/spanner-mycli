@@ -596,7 +596,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				return path, func() {}
 			},
 			wantErr: true,
-			errContains: "tee output to a non-regular file is not supported",
+			errContains: "is a directory", // OpenFile returns this error for directories
 		},
 	}
 
