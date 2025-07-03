@@ -124,6 +124,10 @@ type spannerOptions struct {
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
+	// SystemCommand provides an alternative way to control system command execution.
+	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
+	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
+	SystemCommand             *string           `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
 	Tee                       string            `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 	SkipColumnNames           bool              `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 }
@@ -748,7 +752,17 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.VertexAIProject = opts.VertexAIProject
 	sysVars.AsyncDDL = opts.Async
-	sysVars.SkipSystemCommand = opts.SkipSystemCommand
+	
+	// Handle system command options
+	// Priority: --skip-system-command takes precedence over --system-command
+	if opts.SkipSystemCommand {
+		sysVars.SkipSystemCommand = true
+	} else if opts.SystemCommand != nil {
+		// --system-command=OFF disables system commands
+		sysVars.SkipSystemCommand = *opts.SystemCommand == "OFF"
+	}
+	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
+	
 	sysVars.SkipColumnNames = opts.SkipColumnNames
 
 	return sysVars, nil

@@ -24,4 +24,20 @@ TODO
   - Can be set via `--skip-column-names` command-line flag
   - Useful for scripting and data processing where only raw data is needed
 
+##### CLI_SKIP_SYSTEM_COMMAND
+- **Type**: BOOL
+- **Default**: FALSE
+- **Description**: Indicates whether system commands are disabled
+- **Access**: Read-only
+- **Usage**: 
+  ```sql
+  SHOW CLI_SKIP_SYSTEM_COMMAND;  -- Check if system commands are disabled
+  ```
+- **Notes**:
+  - This is a read-only variable that reflects the state set by command-line flags
+  - Can be set via `--skip-system-command` flag or `--system-command=OFF`
+  - When set to TRUE, the `\!` meta command is disabled
+  - When both flags are used, `--skip-system-command` takes precedence
+  - Security feature to prevent shell command execution in restricted environments
+
 TODO: Document other CLI_* variables

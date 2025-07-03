@@ -145,6 +145,7 @@ spanner:
       --try-partition-query                               Test whether the query can be executed as partition query without execution
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
+      --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
       --tee=                                              Append a copy of output to the specified file
       --skip-column-names                                 Suppress column headers in output
 

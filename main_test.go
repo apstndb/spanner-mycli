@@ -706,6 +706,59 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 				return sv
 			}(),
 		},
+		{
+			name: "skip-system-command flag",
+			opts: &spannerOptions{
+				SkipSystemCommand: true,
+			},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.LogLevel = slog.LevelWarn
+				sv.SkipSystemCommand = true
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
+		{
+			name: "system-command=OFF",
+			opts: &spannerOptions{
+				SystemCommand: lo.ToPtr("OFF"),
+			},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.LogLevel = slog.LevelWarn
+				sv.SkipSystemCommand = true
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
+		{
+			name: "system-command=ON",
+			opts: &spannerOptions{
+				SystemCommand: lo.ToPtr("ON"),
+			},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.LogLevel = slog.LevelWarn
+				sv.SkipSystemCommand = false
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
+		{
+			name: "skip-system-command takes precedence over system-command=ON",
+			opts: &spannerOptions{
+				SkipSystemCommand: true,
+				SystemCommand:     lo.ToPtr("ON"),
+			},
+			want: func() systemVariables {
+				sv := newSystemVariablesWithDefaults()
+				sv.LogLevel = slog.LevelWarn
+				sv.SkipSystemCommand = true
+				sv.Params = make(map[string]ast.Node)
+				return sv
+			}(),
+		},
 	}
 
 	for _, test := range tests {
