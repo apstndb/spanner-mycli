@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -110,7 +111,10 @@ func (tm *TeeManager) EnableTee(filePath string) error {
 	
 	// Close any existing tee file after successful open
 	if tm.teeFile != nil {
-		_ = tm.teeFile.Close()
+		if err := tm.teeFile.Close(); err != nil {
+			// Log the error, but continue. The main operation (enabling the new tee) has succeeded.
+			slog.Warn("failed to close previous tee file", "path", tm.teeFile.Name(), "error", err)
+		}
 	}
 	
 	tm.teeFile = teeFile
@@ -123,7 +127,10 @@ func (tm *TeeManager) DisableTee() {
 	defer tm.mu.Unlock()
 	
 	if tm.teeFile != nil {
-		_ = tm.teeFile.Close()
+		if err := tm.teeFile.Close(); err != nil {
+			// Log the error, but continue. We're disabling tee, so we don't want to fail.
+			slog.Warn("failed to close tee file", "path", tm.teeFile.Name(), "error", err)
+		}
 		tm.teeFile = nil
 	}
 }

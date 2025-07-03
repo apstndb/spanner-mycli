@@ -494,10 +494,11 @@ SELECT "foo" AS s;`
 		sysVars.Instance = "test-instance"
 		sysVars.Database = "test-database"
 		
-		// Create TeeManager
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+		// Use buffers for tee's console output to keep tests hermetic and verifiable.
+		consoleBuf := &bytes.Buffer{}
+		sysVars.TeeManager = NewTeeManager(consoleBuf, consoleBuf)
 		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
-		sysVars.CurrentErrStream = os.Stderr
+		sysVars.CurrentErrStream = consoleBuf
 
 		// Create a mock session handler
 		session := &Session{

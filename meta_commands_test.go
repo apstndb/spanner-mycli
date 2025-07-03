@@ -542,9 +542,9 @@ func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
 // Helper functions for tee meta command tests
 func createTestSession(t *testing.T) (*Session, *systemVariables) {
 	sysVars := newSystemVariablesWithDefaults()
-	sysVars.CurrentOutStream = os.Stdout
-	sysVars.CurrentErrStream = os.Stderr
-	sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+	sysVars.CurrentOutStream = &bytes.Buffer{}
+	sysVars.CurrentErrStream = &bytes.Buffer{}
+	sysVars.TeeManager = NewTeeManager(sysVars.CurrentOutStream, sysVars.CurrentErrStream)
 	session := &Session{
 		systemVariables: &sysVars,
 	}
@@ -606,6 +606,9 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 			defer cleanup()
 
 			session, sysVars := createTestSession(t)
+			// Store the original stream (which is now a buffer for test isolation)
+			originalStream := sysVars.CurrentOutStream
+			
 			cmd := &TeeOutputMetaCommand{FilePath: path}
 			result, err := cmd.Execute(ctx, session)
 			
@@ -620,8 +623,8 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				if result == nil {
 					t.Error("Execute() returned nil result")
 				}
-				// Verify that CurrentOutStream has been updated
-				if sysVars.CurrentOutStream == os.Stdout {
+				// Verify that CurrentOutStream has been updated (should be different from original)
+				if sysVars.CurrentOutStream == originalStream {
 					t.Error("CurrentOutStream was not updated")
 				}
 			}
@@ -652,6 +655,8 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			session, sysVars := createTestSession(t)
+			// Store the original stream (which is now a buffer for test isolation)
+			originalStream := sysVars.CurrentOutStream
 			
 			if tt.setupTee {
 				// Enable tee first
@@ -662,8 +667,8 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 				}
 				sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
 				
-				// Verify tee is enabled
-				if sysVars.CurrentOutStream == os.Stdout {
+				// Verify tee is enabled (should be different from original)
+				if sysVars.CurrentOutStream == originalStream {
 					t.Error("Tee was not properly enabled")
 				}
 			}
@@ -677,9 +682,9 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 				t.Error("Execute() returned nil result")
 			}
 			
-			// Verify that CurrentOutStream is os.Stdout
-			if sysVars.CurrentOutStream != os.Stdout {
-				t.Error("CurrentOutStream should be os.Stdout after disable")
+			// Verify that CurrentOutStream reverts to the original stream
+			if sysVars.CurrentOutStream != originalStream {
+				t.Error("CurrentOutStream should revert to original stream after disable")
 			}
 		})
 	}
