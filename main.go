@@ -486,13 +486,15 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	var errStream io.Writer = os.Stderr  // Error stream is not affected by --tee
 	
 	// Determine the original output stream
+	// Always use os.Stdout as the original output for actual data
 	var originalOut io.Writer = os.Stdout
-	if sysVars.TtyOutStream != nil {
-		originalOut = sysVars.TtyOutStream
-	}
 	
 	// Create TeeManager for managing tee output
 	teeManager := NewTeeManager(originalOut, errStream)
+	// Set the TTY stream if available
+	if sysVars.TtyOutStream != nil {
+		teeManager.SetTtyStream(sysVars.TtyOutStream)
+	}
 	sysVars.TeeManager = teeManager
 	defer teeManager.Close()
 	

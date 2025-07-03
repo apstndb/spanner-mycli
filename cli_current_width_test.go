@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"strconv"
 	"testing"
@@ -10,18 +9,16 @@ import (
 
 func TestCliCurrentWidthWithTee(t *testing.T) {
 	// Test that CLI_CURRENT_WIDTH works correctly when --tee is enabled
-	// and CurrentOutStream is an io.MultiWriter
+	// and TeeManager is used
 	
 	t.Run("with TtyOutStream", func(t *testing.T) {
-		// Create a buffer to simulate tee file
-		var teeBuf bytes.Buffer
-		
-		// Simulate --tee setup with MultiWriter
-		multiWriter := io.MultiWriter(os.Stdout, &teeBuf)
+		// Setup TeeManager with a buffer for tee output
+		teeManager := NewTeeManager(os.Stdout, os.Stderr)
+		teeManager.SetTtyStream(os.Stdout)
 		
 		sysVars := &systemVariables{
-			CurrentOutStream: multiWriter,  // This is an io.MultiWriter, not *os.File
-			TtyOutStream:     os.Stdout,     // This should be used for terminal size
+			TeeManager:   teeManager,
+			TtyOutStream: os.Stdout,     // This should be used for terminal size
 		}
 		
 		// Get the accessor for CLI_CURRENT_WIDTH
@@ -46,15 +43,13 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 	})
 	
 	t.Run("without TtyOutStream and non-file stream", func(t *testing.T) {
-		// Create a buffer to simulate tee file
-		var teeBuf bytes.Buffer
-		
-		// Simulate --tee setup with MultiWriter
-		multiWriter := io.MultiWriter(&bytes.Buffer{}, &teeBuf)
+		// Setup TeeManager with non-TTY output
+		consoleBuf := &bytes.Buffer{}
+		teeManager := NewTeeManager(consoleBuf, consoleBuf)
 		
 		sysVars := &systemVariables{
-			CurrentOutStream: multiWriter,  // This is an io.MultiWriter, not *os.File
-			TtyOutStream:     nil,          // Not set
+			TeeManager:   teeManager,
+			TtyOutStream: nil,          // Not set
 		}
 		
 		// Get the accessor for CLI_CURRENT_WIDTH

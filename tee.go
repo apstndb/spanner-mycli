@@ -5,7 +5,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"sync"
+	
+	"golang.org/x/term"
 )
 
 // safeTeeWriter wraps a file writer to handle write errors gracefully.
@@ -85,14 +88,30 @@ type TeeManager struct {
 	originalOut  io.Writer
 	errStream    io.Writer
 	cachedWriter io.Writer // Cache the writer to ensure consistent behavior
+	ttyStream    *os.File  // Original TTY stream for terminal operations
 }
 
 // NewTeeManager creates a new TeeManager instance
 func NewTeeManager(originalOut, errStream io.Writer) *TeeManager {
-	return &TeeManager{
+	tm := &TeeManager{
 		originalOut: originalOut,
 		errStream:   errStream,
 	}
+	
+	// If originalOut is a terminal, keep a reference for terminal operations
+	if f, ok := originalOut.(*os.File); ok {
+		tm.ttyStream = f
+	}
+	
+	return tm
+}
+
+// SetTtyStream sets the TTY stream for terminal operations
+// This is useful when the original output is not a TTY (e.g., when piped)
+func (tm *TeeManager) SetTtyStream(tty *os.File) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.ttyStream = tty
 }
 
 // EnableTee starts tee output to the specified file
@@ -163,4 +182,60 @@ func (tm *TeeManager) IsEnabled() bool {
 // Close closes any open tee file and cleans up resources
 func (tm *TeeManager) Close() {
 	tm.DisableTee()
+}
+
+// GetTerminalWidth returns the current terminal width
+// Returns 0 and an error if the output is not a terminal
+func (tm *TeeManager) GetTerminalWidth() (int, error) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	// Use ttyStream if available (preferred)
+	if tm.ttyStream != nil {
+		width, _, err := term.GetSize(int(tm.ttyStream.Fd()))
+		if err != nil {
+			return 0, fmt.Errorf("failed to get terminal size: %w", err)
+		}
+		return width, nil
+	}
+	
+	// Fall back to originalOut if it's a file
+	if f, ok := tm.originalOut.(*os.File); ok {
+		width, _, err := term.GetSize(int(f.Fd()))
+		if err != nil {
+			return 0, fmt.Errorf("failed to get terminal size: %w", err)
+		}
+		return width, nil
+	}
+	
+	return 0, fmt.Errorf("output is not a terminal")
+}
+
+// GetTerminalWidthString returns the terminal width as a string
+// Returns "NULL" if the terminal width cannot be determined
+func (tm *TeeManager) GetTerminalWidthString() string {
+	width, err := tm.GetTerminalWidth()
+	if err != nil {
+		slog.Warn("failed to get terminal size", "error", err)
+		return "NULL"
+	}
+	return strconv.Itoa(width)
+}
+
+// IsTerminal returns whether the output is a terminal
+func (tm *TeeManager) IsTerminal() bool {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	// Check ttyStream first
+	if tm.ttyStream != nil {
+		return term.IsTerminal(int(tm.ttyStream.Fd()))
+	}
+	
+	// Check originalOut
+	if f, ok := tm.originalOut.(*os.File); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	
+	return false
 }

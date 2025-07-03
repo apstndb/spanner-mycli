@@ -300,7 +300,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = true
-		sysVars.CurrentOutStream = io.Discard
+		sysVars.TeeManager = NewTeeManager(io.Discard, io.Discard)
 		sysVars.CurrentErrStream = io.Discard
 		session := &Session{
 			systemVariables: &sysVars,
@@ -321,7 +321,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.CurrentOutStream = &output
+		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
 		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
@@ -346,7 +346,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.CurrentOutStream = &output
+		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
 		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
@@ -542,9 +542,10 @@ func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
 // Helper functions for tee meta command tests
 func createTestSession(t *testing.T) (*Session, *systemVariables) {
 	sysVars := newSystemVariablesWithDefaults()
-	sysVars.CurrentOutStream = &bytes.Buffer{}
-	sysVars.CurrentErrStream = &bytes.Buffer{}
-	sysVars.TeeManager = NewTeeManager(sysVars.CurrentOutStream, sysVars.CurrentErrStream)
+	outBuf := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	sysVars.TeeManager = NewTeeManager(outBuf, errBuf)
+	sysVars.CurrentErrStream = errBuf
 	session := &Session{
 		systemVariables: &sysVars,
 	}
@@ -606,8 +607,8 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 			defer cleanup()
 
 			session, sysVars := createTestSession(t)
-			// Store the original stream (which is now a buffer for test isolation)
-			originalStream := sysVars.CurrentOutStream
+			// Store the original writer before enabling tee
+			originalWriter := sysVars.TeeManager.GetWriter()
 			
 			cmd := &TeeOutputMetaCommand{FilePath: path}
 			result, err := cmd.Execute(ctx, session)
@@ -623,9 +624,10 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				if result == nil {
 					t.Error("Execute() returned nil result")
 				}
-				// Verify that CurrentOutStream has been updated (should be different from original)
-				if sysVars.CurrentOutStream == originalStream {
-					t.Error("CurrentOutStream was not updated")
+				// Verify that writer has been updated after enabling tee
+				newWriter := sysVars.TeeManager.GetWriter()
+				if newWriter == originalWriter {
+					t.Error("TeeManager writer was not updated after enabling tee")
 				}
 			}
 		})
@@ -655,8 +657,8 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			session, sysVars := createTestSession(t)
-			// Store the original stream (which is now a buffer for test isolation)
-			originalStream := sysVars.CurrentOutStream
+			// Store the original writer before enabling tee
+			originalWriter := sysVars.TeeManager.GetWriter()
 			
 			if tt.setupTee {
 				// Enable tee first
@@ -665,10 +667,9 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 				if err := sysVars.TeeManager.EnableTee(teeFile); err != nil {
 					t.Fatal(err)
 				}
-				sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
-				
-				// Verify tee is enabled (should be different from original)
-				if sysVars.CurrentOutStream == originalStream {
+				// Verify tee is enabled (writer should be different from original)
+				newWriter := sysVars.TeeManager.GetWriter()
+				if newWriter == originalWriter {
 					t.Error("Tee was not properly enabled")
 				}
 			}
@@ -682,9 +683,10 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 				t.Error("Execute() returned nil result")
 			}
 			
-			// Verify that CurrentOutStream reverts to the original stream
-			if sysVars.CurrentOutStream != originalStream {
-				t.Error("CurrentOutStream should revert to original stream after disable")
+			// Verify that writer reverts to the original after disable
+			finalWriter := sysVars.TeeManager.GetWriter()
+			if finalWriter != originalWriter {
+				t.Error("TeeManager writer should revert to original after disable")
 			}
 		})
 	}

@@ -72,9 +72,7 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	
 	sessionHandler := NewSessionHandler(session)
 
-	// Set up the output streams in systemVariables
-	// These are used by Session and various statement handlers
-	sysVars.CurrentOutStream = outStream  // This will be dynamically updated by teeManager
+	// Set up the error stream in systemVariables
 	sysVars.CurrentErrStream = errStream
 	
 	// TtyOutStream should already be set in main.go, but provide fallback

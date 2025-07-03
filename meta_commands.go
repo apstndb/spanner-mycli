@@ -46,10 +46,10 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Check if output stream is configured
-	if session.systemVariables.CurrentOutStream == nil {
-		slog.Error("CurrentOutStream is nil, cannot write shell command output", "command", s.Command)
-		return nil, errors.New("internal error: output stream not configured")
+	// Check if TeeManager is configured
+	if session.systemVariables.TeeManager == nil {
+		slog.Error("TeeManager is nil, cannot execute shell command", "command", s.Command)
+		return nil, errors.New("internal error: TeeManager not configured")
 	}
 	if session.systemVariables.CurrentErrStream == nil {
 		slog.Error("CurrentErrStream is nil, cannot write shell command error output", "command", s.Command)
@@ -57,7 +57,7 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 	}
 
 	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
-	shellCmd.Stdout = session.systemVariables.CurrentOutStream
+	shellCmd.Stdout = session.systemVariables.TeeManager.GetWriter()
 	shellCmd.Stderr = session.systemVariables.CurrentErrStream
 
 	// Execute the command
@@ -249,11 +249,6 @@ func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*
 		return nil, err
 	}
 
-	// Update CurrentOutStream to reflect the new tee configuration
-	// NOTE: This modifies systemVariables which is intended to be read-only.
-	// This is a known limitation - tee commands need to update the output stream.
-	// In practice, this is safe for CLI usage as commands are executed sequentially.
-	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
 	
 	return &Result{}, nil
 }
@@ -280,11 +275,6 @@ func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (
 	// Disable tee
 	session.systemVariables.TeeManager.DisableTee()
 	
-	// Update CurrentOutStream to reflect the new tee configuration
-	// NOTE: This modifies systemVariables which is intended to be read-only.
-	// This is a known limitation - tee commands need to update the output stream.
-	// In practice, this is safe for CLI usage as commands are executed sequentially.
-	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
 	
 	return &Result{}, nil
 }

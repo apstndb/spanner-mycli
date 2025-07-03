@@ -25,7 +25,6 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"golang.org/x/term"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
@@ -141,11 +140,6 @@ type systemVariables struct {
 
 	// link to session
 	CurrentSession   *Session
-	
-	// CurrentOutStream is the main output stream for query results and general output.
-	// When --tee is used, this is an io.MultiWriter that writes to both stdout and the tee file.
-	// This stream should be used for all output that should be captured in the tee file.
-	CurrentOutStream io.Writer
 	
 	// CurrentErrStream is the error output stream (typically os.Stderr).
 	// This is not affected by --tee option.
@@ -1091,24 +1085,15 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				// Resolve the terminal file directly for robust terminal size detection
-				// This is important when --tee is enabled and CurrentOutStream is an io.MultiWriter
-				var termFile *os.File
-				if this.TtyOutStream != nil {
-					termFile = this.TtyOutStream
-				} else if f, ok := this.CurrentOutStream.(*os.File); ok {
-					termFile = f
-				} else {
-					slog.Warn("failed to get terminal size: output stream is not a terminal and TtyOutStream is not set")
-					return singletonMap(name, "NULL"), nil
+				// Use TeeManager for terminal width detection
+				if this.TeeManager != nil {
+					return singletonMap(name, this.TeeManager.GetTerminalWidthString()), nil
 				}
 				
-				width, _, err := term.GetSize(int(termFile.Fd()))
-				if err != nil {
-					slog.Warn("failed to get terminal size", "error", err)
-					return singletonMap(name, "NULL"), nil
-				}
-				return singletonMap(name, strconv.Itoa(width)), nil
+				// Fallback to old logic if TeeManager is not available
+				// This should not happen in normal operation
+				slog.Warn("TeeManager not available for terminal width detection")
+				return singletonMap(name, "NULL"), nil
 			},
 		},
 	},

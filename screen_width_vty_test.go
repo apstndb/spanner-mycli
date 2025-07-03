@@ -156,10 +156,11 @@ func TestDisplayResultWithPty(t *testing.T) {
 			cli := &Cli{
 				OutStream: tty,
 				SystemVariables: &systemVariables{
-					CurrentOutStream: tty,
-					AutoWrap:         tt.autowrap,
-					FixedWidth:       tt.fixedWidth,
-					CLIFormat:        DisplayModeTab, // Use TAB format for predictable output
+					TeeManager:   NewTeeManager(tty, os.Stderr),
+					TtyOutStream: tty,
+					AutoWrap:     tt.autowrap,
+					FixedWidth:   tt.fixedWidth,
+					CLIFormat:    DisplayModeTab, // Use TAB format for predictable output
 				},
 			}
 
