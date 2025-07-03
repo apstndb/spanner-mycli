@@ -51,14 +51,10 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		slog.Error("TeeManager is nil, cannot execute shell command", "command", s.Command)
 		return nil, errors.New("internal error: TeeManager not configured")
 	}
-	if session.systemVariables.CurrentErrStream == nil {
-		slog.Error("CurrentErrStream is nil, cannot write shell command error output", "command", s.Command)
-		return nil, errors.New("internal error: error stream not configured")
-	}
 
 	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
 	shellCmd.Stdout = session.systemVariables.TeeManager.GetWriter()
-	shellCmd.Stderr = session.systemVariables.CurrentErrStream
+	shellCmd.Stderr = session.systemVariables.TeeManager.GetErrStream()
 
 	// Execute the command
 	if err := shellCmd.Run(); err != nil {

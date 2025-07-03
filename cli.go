@@ -71,9 +71,6 @@ func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outS
 	}
 	
 	sessionHandler := NewSessionHandler(session)
-
-	// Set up the error stream in systemVariables
-	sysVars.CurrentErrStream = errStream
 	
 	// TtyOutStream should already be set in main.go, but provide fallback
 	// This fallback only works when outStream is directly os.Stdout (no --tee)

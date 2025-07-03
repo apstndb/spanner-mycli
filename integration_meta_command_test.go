@@ -497,7 +497,6 @@ SELECT "foo" AS s;`
 		// Use buffers for tee's console output to keep tests hermetic and verifiable.
 		consoleBuf := &bytes.Buffer{}
 		sysVars.TeeManager = NewTeeManager(consoleBuf, consoleBuf)
-		sysVars.CurrentErrStream = consoleBuf
 
 		// Create a mock session handler
 		session := &Session{

@@ -141,10 +141,6 @@ type systemVariables struct {
 	// link to session
 	CurrentSession   *Session
 	
-	// CurrentErrStream is the error output stream (typically os.Stderr).
-	// This is not affected by --tee option.
-	CurrentErrStream io.Writer
-	
 	// TtyOutStream is the original terminal output (always os.Stdout).
 	// This should be used for TTY-specific operations that should NOT be captured in tee:
 	// - Progress marks (using \r carriage returns)

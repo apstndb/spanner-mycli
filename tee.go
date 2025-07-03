@@ -239,3 +239,11 @@ func (tm *TeeManager) IsTerminal() bool {
 	
 	return false
 }
+
+// GetErrStream returns the error stream
+func (tm *TeeManager) GetErrStream() io.Writer {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	return tm.errStream
+}

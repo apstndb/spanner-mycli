@@ -301,7 +301,6 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = true
 		sysVars.TeeManager = NewTeeManager(io.Discard, io.Discard)
-		sysVars.CurrentErrStream = io.Discard
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -322,7 +321,6 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
 		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
-		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -347,7 +345,6 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
 		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
-		sysVars.CurrentErrStream = &errOutput
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -545,7 +542,6 @@ func createTestSession(t *testing.T) (*Session, *systemVariables) {
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	sysVars.TeeManager = NewTeeManager(outBuf, errBuf)
-	sysVars.CurrentErrStream = errBuf
 	session := &Session{
 		systemVariables: &sysVars,
 	}
