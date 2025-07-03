@@ -84,10 +84,11 @@ func createTeeWriter(originalStream io.Writer, teeFile *os.File, errStream io.Wr
 
 // TeeManager manages tee output functionality for both --tee option and \T/\t meta-commands
 type TeeManager struct {
-	mu          sync.Mutex
-	teeFile     *os.File
-	originalOut io.Writer
-	errStream   io.Writer
+	mu           sync.Mutex
+	teeFile      *os.File
+	originalOut  io.Writer
+	errStream    io.Writer
+	cachedWriter io.Writer // Cache the writer to ensure consistent behavior
 }
 
 // NewTeeManager creates a new TeeManager instance
@@ -118,6 +119,7 @@ func (tm *TeeManager) EnableTee(filePath string) error {
 	}
 	
 	tm.teeFile = teeFile
+	tm.cachedWriter = nil // Invalidate cached writer
 	return nil
 }
 
@@ -132,6 +134,7 @@ func (tm *TeeManager) DisableTee() {
 			slog.Warn("failed to close tee file", "path", tm.teeFile.Name(), "error", err)
 		}
 		tm.teeFile = nil
+		tm.cachedWriter = nil // Invalidate cached writer
 	}
 }
 
@@ -144,7 +147,14 @@ func (tm *TeeManager) GetWriter() io.Writer {
 		return tm.originalOut
 	}
 	
-	return createTeeWriter(tm.originalOut, tm.teeFile, tm.errStream)
+	// Return cached writer if available
+	if tm.cachedWriter != nil {
+		return tm.cachedWriter
+	}
+	
+	// Create and cache new writer
+	tm.cachedWriter = createTeeWriter(tm.originalOut, tm.teeFile, tm.errStream)
+	return tm.cachedWriter
 }
 
 // IsEnabled returns whether tee output is currently active

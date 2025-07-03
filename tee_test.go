@@ -222,6 +222,47 @@ func TestTeeManager(t *testing.T) {
 		}
 	})
 
+	t.Run("writer caching", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		tm := NewTeeManager(originalOut, errOut)
+		defer tm.Close()
+
+		// Enable tee
+		tmpDir := t.TempDir()
+		teeFile := filepath.Join(tmpDir, "test.log")
+		if err := tm.EnableTee(teeFile); err != nil {
+			t.Fatalf("Failed to enable tee: %v", err)
+		}
+
+		// Get writer multiple times
+		writer1 := tm.GetWriter()
+		writer2 := tm.GetWriter()
+		writer3 := tm.GetWriter()
+
+		// Verify same instance is returned (caching works)
+		if writer1 != writer2 || writer2 != writer3 {
+			t.Error("Expected GetWriter to return the same cached instance")
+		}
+
+		// Disable and re-enable should create new instance
+		tm.DisableTee()
+		if err := tm.EnableTee(teeFile); err != nil {
+			t.Fatalf("Failed to re-enable tee: %v", err)
+		}
+
+		writer4 := tm.GetWriter()
+		if writer1 == writer4 {
+			t.Error("Expected new writer instance after disable/enable cycle")
+		}
+
+		// Multiple calls should still return same new instance
+		writer5 := tm.GetWriter()
+		if writer4 != writer5 {
+			t.Error("Expected GetWriter to return the same cached instance after re-enable")
+		}
+	})
+
 	t.Run("append to existing file", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
@@ -259,6 +300,54 @@ func TestTeeManager(t *testing.T) {
 }
 
 func TestSafeTeeWriter(t *testing.T) {
+	t.Run("single warning with cached writer", func(t *testing.T) {
+		// This test verifies that when using TeeManager with caching,
+		// we only get one warning even if multiple goroutines write
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		tm := NewTeeManager(originalOut, errOut)
+		defer tm.Close()
+
+		// Create a file and close it to simulate write errors
+		tmpFile, err := os.CreateTemp("", "test-*.log")
+		if err != nil {
+			t.Fatalf("Failed to create temp file: %v", err)
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+
+		// Enable tee with the closed file
+		if err := tm.EnableTee(tmpPath); err != nil {
+			t.Fatalf("Failed to enable tee: %v", err)
+		}
+
+		// Close the file to ensure writes will fail
+		tm.teeFile.Close()
+
+		// Get writer once (should be cached)
+		writer := tm.GetWriter()
+
+		// Multiple writes from different goroutines
+		var wg sync.WaitGroup
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = writer.Write([]byte("test data\n"))
+			}()
+		}
+		wg.Wait()
+
+		// Check that we only got one warning
+		warnings := strings.Count(errOut.String(), "WARNING: Failed to write to tee file")
+		if warnings != 1 {
+			t.Errorf("Expected exactly 1 warning, got %d warnings", warnings)
+		}
+
+		// Clean up
+		_ = os.Remove(tmpPath)
+	})
+
 	t.Run("write error handling", func(t *testing.T) {
 		// Create a file and close it to simulate write errors
 		tmpFile, err := os.CreateTemp("", "test-*.log")
