@@ -539,6 +539,18 @@ func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
 	}
 }
 
+// Helper functions for tee meta command tests
+func createTestSession(t *testing.T) (*Session, *systemVariables) {
+	sysVars := newSystemVariablesWithDefaults()
+	sysVars.CurrentOutStream = os.Stdout
+	sysVars.CurrentErrStream = os.Stderr
+	sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+	session := &Session{
+		systemVariables: &sysVars,
+	}
+	return session, &sysVars
+}
+
 func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 	ctx := context.Background()
 
@@ -593,15 +605,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 			path, cleanup := tt.setupFunc()
 			defer cleanup()
 
-			// Set up session with TeeManager
-			sysVars := newSystemVariablesWithDefaults()
-			sysVars.CurrentOutStream = os.Stdout
-			sysVars.CurrentErrStream = os.Stderr
-			sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-			session := &Session{
-				systemVariables: &sysVars,
-			}
-
+			session, sysVars := createTestSession(t)
 			cmd := &TeeOutputMetaCommand{FilePath: path}
 			result, err := cmd.Execute(ctx, session)
 			
@@ -628,67 +632,55 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("disable tee when enabled", func(t *testing.T) {
-		// Set up session with TeeManager and enable tee
-		sysVars := newSystemVariablesWithDefaults()
-		sysVars.CurrentOutStream = os.Stdout
-		sysVars.CurrentErrStream = os.Stderr
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-		
-		// Enable tee first
-		tmpDir := t.TempDir()
-		teeFile := tmpDir + "/test.log"
-		if err := sysVars.TeeManager.EnableTee(teeFile); err != nil {
-			t.Fatal(err)
-		}
-		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
+	tests := []struct {
+		name          string
+		setupTee      bool
+		expectChanged bool
+	}{
+		{
+			name:          "disable tee when enabled",
+			setupTee:      true,
+			expectChanged: true,
+		},
+		{
+			name:          "disable tee when not enabled",
+			setupTee:      false,
+			expectChanged: false,
+		},
+	}
 
-		session := &Session{
-			systemVariables: &sysVars,
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session, sysVars := createTestSession(t)
+			
+			if tt.setupTee {
+				// Enable tee first
+				tmpDir := t.TempDir()
+				teeFile := tmpDir + "/test.log"
+				if err := sysVars.TeeManager.EnableTee(teeFile); err != nil {
+					t.Fatal(err)
+				}
+				sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
+				
+				// Verify tee is enabled
+				if sysVars.CurrentOutStream == os.Stdout {
+					t.Error("Tee was not properly enabled")
+				}
+			}
 
-		// Verify tee is enabled (CurrentOutStream should be MultiWriter)
-		if sysVars.CurrentOutStream == os.Stdout {
-			t.Error("Tee was not properly enabled")
-		}
-
-		cmd := &DisableTeeMetaCommand{}
-		result, err := cmd.Execute(ctx, session)
-		if err != nil {
-			t.Errorf("Execute() error = %v, want nil", err)
-		}
-		if result == nil {
-			t.Error("Execute() returned nil result")
-		}
-		
-		// Verify that CurrentOutStream has been restored to original
-		if sysVars.CurrentOutStream != os.Stdout {
-			t.Error("CurrentOutStream was not restored to original")
-		}
-	})
-
-	t.Run("disable tee when not enabled", func(t *testing.T) {
-		// Set up session with TeeManager but no tee enabled
-		sysVars := newSystemVariablesWithDefaults()
-		sysVars.CurrentOutStream = os.Stdout
-		sysVars.CurrentErrStream = os.Stderr
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-		session := &Session{
-			systemVariables: &sysVars,
-		}
-
-		cmd := &DisableTeeMetaCommand{}
-		result, err := cmd.Execute(ctx, session)
-		if err != nil {
-			t.Errorf("Execute() error = %v, want nil", err)
-		}
-		if result == nil {
-			t.Error("Execute() returned nil result")
-		}
-		
-		// Verify CurrentOutStream remains unchanged
-		if sysVars.CurrentOutStream != os.Stdout {
-			t.Error("CurrentOutStream should remain as stdout")
-		}
-	})
+			cmd := &DisableTeeMetaCommand{}
+			result, err := cmd.Execute(ctx, session)
+			if err != nil {
+				t.Errorf("Execute() error = %v, want nil", err)
+			}
+			if result == nil {
+				t.Error("Execute() returned nil result")
+			}
+			
+			// Verify that CurrentOutStream is os.Stdout
+			if sysVars.CurrentOutStream != os.Stdout {
+				t.Error("CurrentOutStream should be os.Stdout after disable")
+			}
+		})
+	}
 }

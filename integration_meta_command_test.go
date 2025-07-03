@@ -487,10 +487,8 @@ SELECT "foo" AS s;`
 		}
 	})
 
-	t.Run("tee output command execution", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		teeFile := filepath.Join(tmpDir, "test_output.log")
-
+	// Helper functions for tee tests
+	setupTeeTestCLI := func(commands string) (*Cli, *bytes.Buffer) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.Project = "test-project"
 		sysVars.Instance = "test-instance"
@@ -508,7 +506,7 @@ SELECT "foo" AS s;`
 		sessionHandler := NewSessionHandler(session)
 
 		// Create CLI instance
-		input := strings.NewReader("\\T " + teeFile + "\n\\! echo 'tee test'\n\\t\nexit;\n")
+		input := strings.NewReader(commands + "\nexit;\n")
 		output := &bytes.Buffer{}
 		
 		cli := &Cli{
@@ -519,17 +517,23 @@ SELECT "foo" AS s;`
 			SystemVariables: &sysVars,
 		}
 
-		// Run in interactive mode
+		return cli, output
+	}
+
+	runInteractiveCLI := func(t *testing.T, cli *Cli) {
 		err := cli.RunInteractive(ctx)
 		if err != nil {
 			if _, ok := err.(*ExitCodeError); !ok {
 				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
 			}
 		}
+	}
 
-		// Check that tee file was created and contains expected output
+	verifyTeeFileContent := func(t *testing.T, teeFile, expectedContent string) {
+		// Check that tee file was created
 		if _, err := os.Stat(teeFile); os.IsNotExist(err) {
 			t.Errorf("Expected tee file %s to be created", teeFile)
+			return
 		}
 
 		// Read tee file content
@@ -538,66 +542,28 @@ SELECT "foo" AS s;`
 			t.Fatalf("Failed to read tee file: %v", err)
 		}
 
-		// Verify content contains shell command output
-		if !strings.Contains(string(content), "tee test") {
-			t.Errorf("Expected tee file to contain 'tee test', got: %s", string(content))
+		// Verify content
+		if !strings.Contains(string(content), expectedContent) {
+			t.Errorf("Expected tee file to contain %q, got: %s", expectedContent, string(content))
 		}
+	}
+
+	t.Run("tee output command execution", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		teeFile := filepath.Join(tmpDir, "test_output.log")
+
+		cli, _ := setupTeeTestCLI("\\T " + teeFile + "\n\\! echo 'tee test'\n\\t")
+		runInteractiveCLI(t, cli)
+		verifyTeeFileContent(t, teeFile, "tee test")
 	})
 
 	t.Run("tee command with quoted filename", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "file with spaces.log")
 
-		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
-		
-		// Create TeeManager
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
-		sysVars.CurrentErrStream = os.Stderr
-
-		// Create a mock session handler
-		session := &Session{
-			systemVariables: &sysVars,
-		}
-		sessionHandler := NewSessionHandler(session)
-
-		// Create CLI instance
-		input := strings.NewReader(`\T "` + teeFile + `"` + "\n\\! echo 'quoted filename test'\n\\t\nexit;\n")
-		output := &bytes.Buffer{}
-		
-		cli := &Cli{
-			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
-			SystemVariables: &sysVars,
-		}
-
-		// Run in interactive mode
-		err := cli.RunInteractive(ctx)
-		if err != nil {
-			if _, ok := err.(*ExitCodeError); !ok {
-				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
-			}
-		}
-
-		// Check that tee file was created
-		if _, err := os.Stat(teeFile); os.IsNotExist(err) {
-			t.Errorf("Expected tee file %s to be created", teeFile)
-		}
-
-		// Read and verify content
-		content, err := os.ReadFile(teeFile)
-		if err != nil {
-			t.Fatalf("Failed to read tee file: %v", err)
-		}
-
-		if !strings.Contains(string(content), "quoted filename test") {
-			t.Errorf("Expected tee file to contain 'quoted filename test', got: %s", string(content))
-		}
+		cli, _ := setupTeeTestCLI(`\T "` + teeFile + `"` + "\n\\! echo 'quoted filename test'\n\\t")
+		runInteractiveCLI(t, cli)
+		verifyTeeFileContent(t, teeFile, "quoted filename test")
 	})
 
 	t.Run("tee append to existing file", func(t *testing.T) {
@@ -606,47 +572,13 @@ SELECT "foo" AS s;`
 
 		// Create file with initial content
 		initialContent := "Initial content\n"
-		err := os.WriteFile(teeFile, []byte(initialContent), 0644)
-		if err != nil {
+		if err := os.WriteFile(teeFile, []byte(initialContent), 0644); err != nil {
 			t.Fatalf("Failed to create initial file: %v", err)
 		}
 
-		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		cli, _ := setupTeeTestCLI("\\T " + teeFile + "\n\\! echo 'appended content'\n\\t")
+		runInteractiveCLI(t, cli)
 		
-		// Create TeeManager
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
-		sysVars.CurrentErrStream = os.Stderr
-
-		// Create a mock session handler
-		session := &Session{
-			systemVariables: &sysVars,
-		}
-		sessionHandler := NewSessionHandler(session)
-
-		// Create CLI instance
-		input := strings.NewReader("\\T " + teeFile + "\n\\! echo 'appended content'\n\\t\nexit;\n")
-		output := &bytes.Buffer{}
-		
-		cli := &Cli{
-			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
-			SystemVariables: &sysVars,
-		}
-
-		// Run in interactive mode
-		err = cli.RunInteractive(ctx)
-		if err != nil {
-			if _, ok := err.(*ExitCodeError); !ok {
-				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
-			}
-		}
-
 		// Read and verify content
 		content, err := os.ReadFile(teeFile)
 		if err != nil {
@@ -665,41 +597,8 @@ SELECT "foo" AS s;`
 	t.Run("tee command with directory error", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
-		
-		// Create TeeManager
-		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
-		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
-		sysVars.CurrentErrStream = os.Stderr
-
-		// Create a mock session handler
-		session := &Session{
-			systemVariables: &sysVars,
-		}
-		sessionHandler := NewSessionHandler(session)
-
-		// Try to use directory as tee file
-		input := strings.NewReader("\\T " + tmpDir + "\nexit;\n")
-		output := &bytes.Buffer{}
-		
-		cli := &Cli{
-			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
-			SystemVariables: &sysVars,
-		}
-
-		// Run in interactive mode
-		err := cli.RunInteractive(ctx)
-		if err != nil {
-			if _, ok := err.(*ExitCodeError); !ok {
-				t.Errorf("RunInteractive() returned an unexpected error = %v", err)
-			}
-		}
+		cli, output := setupTeeTestCLI("\\T " + tmpDir)
+		runInteractiveCLI(t, cli)
 
 		// Check that error was printed
 		outputStr := output.String()
@@ -708,63 +607,43 @@ SELECT "foo" AS s;`
 		}
 	})
 
-	t.Run("tee command in batch mode", func(t *testing.T) {
-		sysVars := newSystemVariablesWithDefaults()
-		
-		input := strings.NewReader("")
-		output := &bytes.Buffer{}
-		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
-		
-		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\T output.log")
-		if err == nil {
-			t.Error("Expected error for meta command in batch mode")
-		}
-		
-		// Check error type
-		if err != nil {
-			if _, ok := err.(*ExitCodeError); !ok {
-				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
-			}
-			// Check that the correct error message was printed to the error stream
-			const expectedErrStr = "meta commands are not supported in batch mode"
-			if !strings.Contains(output.String(), expectedErrStr) {
-				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
-			}
-		}
-	})
+	// Table-driven tests for batch mode errors
+	batchModeTests := []struct {
+		name     string
+		command  string
+	}{
+		{"tee command in batch mode", "\\T output.log"},
+		{"disable tee command in batch mode", "\\t"},
+	}
 
-	t.Run("disable tee command in batch mode", func(t *testing.T) {
-		sysVars := newSystemVariablesWithDefaults()
-		
-		input := strings.NewReader("")
-		output := &bytes.Buffer{}
-		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
-		
-		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\t")
-		if err == nil {
-			t.Error("Expected error for meta command in batch mode")
-		}
-		
-		// Check error type
-		if err != nil {
-			if _, ok := err.(*ExitCodeError); !ok {
-				t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+	for _, tt := range batchModeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			sysVars := newSystemVariablesWithDefaults()
+			input := strings.NewReader("")
+			output := &bytes.Buffer{}
+			
+			cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
+			if err != nil {
+				t.Fatalf("NewCli() error = %v", err)
 			}
-			// Check that the correct error message was printed to the error stream
-			const expectedErrStr = "meta commands are not supported in batch mode"
-			if !strings.Contains(output.String(), expectedErrStr) {
-				t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+			
+			// Run in batch mode - should return error since meta commands are not supported
+			err = cli.RunBatch(ctx, tt.command)
+			if err == nil {
+				t.Error("Expected error for meta command in batch mode")
 			}
-		}
-	})
+			
+			// Check error type
+			if err != nil {
+				if _, ok := err.(*ExitCodeError); !ok {
+					t.Errorf("Expected error of type *ExitCodeError, but got %T", err)
+				}
+				// Check that the correct error message was printed to the error stream
+				const expectedErrStr = "meta commands are not supported in batch mode"
+				if !strings.Contains(output.String(), expectedErrStr) {
+					t.Errorf("Expected output to contain %q, but got: %s", expectedErrStr, output.String())
+				}
+			}
+		})
+	}
 }
