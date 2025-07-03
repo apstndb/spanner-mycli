@@ -532,22 +532,8 @@ func TestOpenTeeFile(t *testing.T) {
 			wantErr: true,
 			errMsg:  "is a directory", // OpenFile returns this error for directories
 		},
-		{
-			name: "named pipe (FIFO)",
-			setupFunc: func() string {
-				tmpDir := t.TempDir()
-				fifoPath := filepath.Join(tmpDir, "test.fifo")
-				// Try to create a FIFO - this may fail on some systems
-				if err := os.MkdirAll(tmpDir, 0755); err == nil {
-					// Use syscall.Mkfifo if available, otherwise skip this test
-					// For now, we'll create a file and test will pass
-					// In real scenario, this would be a FIFO that our validation catches
-					_ = os.WriteFile(fifoPath, []byte{}, 0644)
-				}
-				return fifoPath
-			},
-			wantErr: false, // Regular file creation as fallback
-		},
+		// Note: Testing actual FIFO would require syscall.Mkfifo which may not be available
+		// on all platforms. The important thing is that openTeeFile validates after opening.
 	}
 
 	for _, tt := range tests {
