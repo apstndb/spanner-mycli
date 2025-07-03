@@ -50,7 +50,6 @@ import (
 	"github.com/samber/lo"
 	"spheric.cloud/xiter"
 	"golang.org/x/term"
-	"sync"
 )
 
 type globalOptions struct {
@@ -391,38 +390,6 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 	return platform
 }
 
-// safeTeeWriter wraps a file writer to handle write errors gracefully.
-// On write error, it prints a warning once and then discards subsequent writes
-// to prevent interrupting the main output stream.
-type safeTeeWriter struct {
-	file      *os.File
-	errStream io.Writer
-	hasWarned bool
-	mu        sync.Mutex
-}
-
-// Write implements io.Writer, handling errors gracefully
-func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	
-	// If we've already warned about an error, just discard the write
-	if s.hasWarned {
-		return len(p), nil
-	}
-	
-	n, err = s.file.Write(p)
-	if err != nil {
-		// Print warning only once to avoid spamming
-		s.hasWarned = true
-		fmt.Fprintf(s.errStream, "WARNING: Failed to write to tee file: %v\n", err)
-		fmt.Fprintf(s.errStream, "WARNING: Tee logging disabled for remainder of session\n")
-		// Return success to io.MultiWriter to avoid interrupting stdout
-		return len(p), nil
-	}
-	
-	return n, nil
-}
 
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
@@ -516,51 +483,28 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 	
 	// Setup output streams
-	var outStream io.Writer = os.Stdout  // Default: write directly to stdout
 	var errStream io.Writer = os.Stderr  // Error stream is not affected by --tee
 	
-	// If --tee is specified, wrap stdout with MultiWriter to capture output
-	if opts.Tee != "" {
-		// Check if the file exists and is a regular file before opening.
-		// This prevents blocking on special files like FIFOs.
-		fi, err := os.Stat(opts.Tee)
-		
-		// Handle three cases:
-		// 1. File exists (err == nil) - check if it's a regular file
-		// 2. File doesn't exist (os.IsNotExist(err)) - will create it
-		// 3. Other stat error - return the error
-		switch {
-		case err == nil:
-			// File exists - ensure it's a regular file
-			if !fi.Mode().IsRegular() {
-				return fmt.Errorf("tee output to a non-regular file is not supported: %s", opts.Tee)
-			}
-		case os.IsNotExist(err):
-			// File doesn't exist - OpenFile will create it
-			// Continue to OpenFile
-		default:
-			// Unexpected stat error (e.g., permission denied)
-			return fmt.Errorf("failed to stat tee file %q: %w", opts.Tee, err)
-		}
-		
-		// Open tee file in append mode (creates if doesn't exist)
-		teeFile, err := os.OpenFile(opts.Tee, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open tee file %q: %w", opts.Tee, err)
-		}
-		defer teeFile.Close()
-		
-		// Wrap the tee file with error handling to prevent write failures from interrupting stdout
-		safeWriter := &safeTeeWriter{
-			file:       teeFile,
-			errStream:  errStream,
-			hasWarned:  false,
-		}
-		
-		// Create a MultiWriter that writes to both stdout and the safe tee writer
-		// All normal output (query results, messages) will be captured in the tee file
-		outStream = io.MultiWriter(os.Stdout, safeWriter)
+	// Determine the original output stream
+	var originalOut io.Writer = os.Stdout
+	if sysVars.TtyOutStream != nil {
+		originalOut = sysVars.TtyOutStream
 	}
+	
+	// Create TeeManager for managing tee output
+	teeManager := NewTeeManager(originalOut, errStream)
+	sysVars.TeeManager = teeManager
+	defer teeManager.Close()
+	
+	// If --tee is specified, enable tee output
+	if opts.Tee != "" {
+		if err := teeManager.EnableTee(opts.Tee); err != nil {
+			return err
+		}
+	}
+	
+	// Get the current output stream from TeeManager
+	outStream := teeManager.GetWriter()
 
 	cli, err := NewCli(ctx, cred, os.Stdin, outStream, errStream, &sysVars)
 	if err != nil {

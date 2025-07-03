@@ -158,6 +158,9 @@ type systemVariables struct {
 	// - Interactive confirmation prompts
 	// This ensures these terminal control sequences don't pollute the tee file.
 	TtyOutStream     *os.File
+	
+	// TeeManager manages tee output functionality
+	TeeManager       *TeeManager
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -187,6 +188,51 @@ func TestParseMetaCommand(t *testing.T) {
 			input:   "\\R",
 			wantErr: true,
 		},
+		{
+			name:  "tee output simple",
+			input: "\\T output.log",
+			want:  &TeeOutputMetaCommand{FilePath: "output.log"},
+		},
+		{
+			name:  "tee output with path",
+			input: "\\T /path/to/output.log",
+			want:  &TeeOutputMetaCommand{FilePath: "/path/to/output.log"},
+		},
+		{
+			name:  "tee output with quotes",
+			input: `\T "file with spaces.log"`,
+			want:  &TeeOutputMetaCommand{FilePath: "file with spaces.log"},
+		},
+		{
+			name:  "tee output with single quotes",
+			input: `\T 'another file.log'`,
+			want:  &TeeOutputMetaCommand{FilePath: "another file.log"},
+		},
+		{
+			name:    "tee output without filename",
+			input:   "\\T",
+			wantErr: true,
+		},
+		{
+			name:  "tee output with multiple files",
+			input: `\T file1.log file2.log`,
+			wantErr: true,
+		},
+		{
+			name:  "disable tee",
+			input: "\\t",
+			want:  &DisableTeeMetaCommand{},
+		},
+		{
+			name:  "disable tee with extra spaces",
+			input: "  \\t  ",
+			want:  &DisableTeeMetaCommand{},
+		},
+		{
+			name:    "disable tee with arguments",
+			input:   "\\t something",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -229,6 +275,18 @@ func TestParseMetaCommand(t *testing.T) {
 						}
 					} else {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *UseDatabaseMetaCommand", tt.input, got)
+					}
+				case *TeeOutputMetaCommand:
+					if tee, ok := got.(*TeeOutputMetaCommand); ok {
+						if tee.FilePath != want.FilePath {
+							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, tee.FilePath, want.FilePath)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *TeeOutputMetaCommand", tt.input, got)
+					}
+				case *DisableTeeMetaCommand:
+					if _, ok := got.(*DisableTeeMetaCommand); !ok {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *DisableTeeMetaCommand", tt.input, got)
 					}
 				}
 			}
@@ -323,6 +381,14 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 	var _ Statement = (*PromptMetaCommand)(nil)
 	var _ MetaCommandStatement = (*PromptMetaCommand)(nil)
 
+	// Verify that TeeOutputMetaCommand implements both interfaces
+	var _ Statement = (*TeeOutputMetaCommand)(nil)
+	var _ MetaCommandStatement = (*TeeOutputMetaCommand)(nil)
+
+	// Verify that DisableTeeMetaCommand implements both interfaces
+	var _ Statement = (*DisableTeeMetaCommand)(nil)
+	var _ MetaCommandStatement = (*DisableTeeMetaCommand)(nil)
+
 	// Test the marker method
 	cmd := &ShellMetaCommand{Command: "test"}
 	cmd.isMetaCommand() // This should compile
@@ -332,6 +398,12 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 
 	promptCmd := &PromptMetaCommand{PromptString: "test> "}
 	promptCmd.isMetaCommand() // This should compile
+
+	teeCmd := &TeeOutputMetaCommand{FilePath: "test.log"}
+	teeCmd.isMetaCommand() // This should compile
+
+	disableTeeCmd := &DisableTeeMetaCommand{}
+	disableTeeCmd.isMetaCommand() // This should compile
 }
 
 func TestPromptMetaCommand_Execute(t *testing.T) {
@@ -465,4 +537,158 @@ func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTeeOutputMetaCommand_Execute(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		filePath   string
+		setupFunc  func() (string, func()) // returns path and cleanup func
+		wantErr    bool
+		errContains string
+	}{
+		{
+			name:     "enable tee to new file",
+			filePath: "test_tee_output.log",
+			setupFunc: func() (string, func()) {
+				tmpDir := t.TempDir()
+				path := tmpDir + "/test_tee_output.log"
+				return path, func() {}
+			},
+		},
+		{
+			name:     "enable tee to existing file",
+			filePath: "existing_test.log",
+			setupFunc: func() (string, func()) {
+				tmpDir := t.TempDir()
+				path := tmpDir + "/existing_test.log"
+				// Create file with some content
+				if err := os.WriteFile(path, []byte("existing content\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return path, func() {}
+			},
+		},
+		{
+			name:     "enable tee to directory",
+			filePath: "test_dir",
+			setupFunc: func() (string, func()) {
+				tmpDir := t.TempDir()
+				path := tmpDir + "/test_dir"
+				// Create a directory
+				if err := os.Mkdir(path, 0755); err != nil {
+					t.Fatal(err)
+				}
+				return path, func() {}
+			},
+			wantErr: true,
+			errContains: "tee output to a non-regular file is not supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, cleanup := tt.setupFunc()
+			defer cleanup()
+
+			// Set up session with TeeManager
+			sysVars := newSystemVariablesWithDefaults()
+			sysVars.CurrentOutStream = os.Stdout
+			sysVars.CurrentErrStream = os.Stderr
+			sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+			session := &Session{
+				systemVariables: &sysVars,
+			}
+
+			cmd := &TeeOutputMetaCommand{FilePath: path}
+			result, err := cmd.Execute(ctx, session)
+			
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("Execute() error = %v, want error containing %q", err, tt.errContains)
+			}
+			if !tt.wantErr {
+				if result == nil {
+					t.Error("Execute() returned nil result")
+				}
+				// Verify that CurrentOutStream has been updated
+				if sysVars.CurrentOutStream == os.Stdout {
+					t.Error("CurrentOutStream was not updated")
+				}
+			}
+		})
+	}
+}
+
+func TestDisableTeeMetaCommand_Execute(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("disable tee when enabled", func(t *testing.T) {
+		// Set up session with TeeManager and enable tee
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.CurrentOutStream = os.Stdout
+		sysVars.CurrentErrStream = os.Stderr
+		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+		
+		// Enable tee first
+		tmpDir := t.TempDir()
+		teeFile := tmpDir + "/test.log"
+		if err := sysVars.TeeManager.EnableTee(teeFile); err != nil {
+			t.Fatal(err)
+		}
+		sysVars.CurrentOutStream = sysVars.TeeManager.GetWriter()
+
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+
+		// Verify tee is enabled (CurrentOutStream should be MultiWriter)
+		if sysVars.CurrentOutStream == os.Stdout {
+			t.Error("Tee was not properly enabled")
+		}
+
+		cmd := &DisableTeeMetaCommand{}
+		result, err := cmd.Execute(ctx, session)
+		if err != nil {
+			t.Errorf("Execute() error = %v, want nil", err)
+		}
+		if result == nil {
+			t.Error("Execute() returned nil result")
+		}
+		
+		// Verify that CurrentOutStream has been restored to original
+		if sysVars.CurrentOutStream != os.Stdout {
+			t.Error("CurrentOutStream was not restored to original")
+		}
+	})
+
+	t.Run("disable tee when not enabled", func(t *testing.T) {
+		// Set up session with TeeManager but no tee enabled
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.CurrentOutStream = os.Stdout
+		sysVars.CurrentErrStream = os.Stderr
+		sysVars.TeeManager = NewTeeManager(os.Stdout, os.Stderr)
+		session := &Session{
+			systemVariables: &sysVars,
+		}
+
+		cmd := &DisableTeeMetaCommand{}
+		result, err := cmd.Execute(ctx, session)
+		if err != nil {
+			t.Errorf("Execute() error = %v, want nil", err)
+		}
+		if result == nil {
+			t.Error("Execute() returned nil result")
+		}
+		
+		// Verify CurrentOutStream remains unchanged
+		if sysVars.CurrentOutStream != os.Stdout {
+			t.Error("CurrentOutStream should remain as stdout")
+		}
+	})
 }

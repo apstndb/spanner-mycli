@@ -129,6 +129,25 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\u requires a database name")
 		}
 		return &UseDatabaseMetaCommand{Database: database}, nil
+	case "T":
+		if args == "" {
+			return nil, errors.New("\\T requires a filename")
+		}
+		// Use shellquote for proper parsing of quoted filenames
+		words, err := shellquote.Split(args)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filename quoting: %w", err)
+		}
+		if len(words) != 1 {
+			return nil, errors.New("\\T requires exactly one filename")
+		}
+		return &TeeOutputMetaCommand{FilePath: words[0]}, nil
+	case "t":
+		// \t command takes no arguments
+		if args != "" {
+			return nil, errors.New("\\t does not accept arguments")
+		}
+		return &DisableTeeMetaCommand{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
@@ -202,4 +221,64 @@ func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) 
 func IsMetaCommand(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "\\")
+}
+
+// TeeOutputMetaCommand enables output tee to a file using \T syntax
+type TeeOutputMetaCommand struct {
+	FilePath string
+}
+
+// Ensure TeeOutputMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*TeeOutputMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (t *TeeOutputMetaCommand) isMetaCommand() {}
+
+// Execute enables tee output to the specified file
+func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Validate that we have system variables and tee manager available
+	if session.systemVariables == nil {
+		return nil, errors.New("internal error: system variables not initialized")
+	}
+	if session.systemVariables.TeeManager == nil {
+		return nil, errors.New("internal error: tee manager not initialized")
+	}
+
+	// Enable tee for the specified file
+	if err := session.systemVariables.TeeManager.EnableTee(t.FilePath); err != nil {
+		return nil, err
+	}
+
+	// Update CurrentOutStream to reflect the new tee configuration
+	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
+	
+	return &Result{}, nil
+}
+
+// DisableTeeMetaCommand disables output tee using \t syntax
+type DisableTeeMetaCommand struct{}
+
+// Ensure DisableTeeMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*DisableTeeMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (d *DisableTeeMetaCommand) isMetaCommand() {}
+
+// Execute disables tee output
+func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Validate that we have system variables and tee manager available
+	if session.systemVariables == nil {
+		return nil, errors.New("internal error: system variables not initialized")
+	}
+	if session.systemVariables.TeeManager == nil {
+		return nil, errors.New("internal error: tee manager not initialized")
+	}
+
+	// Disable tee
+	session.systemVariables.TeeManager.DisableTee()
+	
+	// Update CurrentOutStream to reflect the new tee configuration
+	session.systemVariables.CurrentOutStream = session.systemVariables.TeeManager.GetWriter()
+	
+	return &Result{}, nil
 }
