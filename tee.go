@@ -105,6 +105,7 @@ func (tm *TeeManager) EnableTee(filePath string) error {
 	// Close any existing tee file
 	if tm.teeFile != nil {
 		_ = tm.teeFile.Close()
+		tm.teeFile = nil // Ensure state is consistent before opening new file
 	}
 	
 	// Open the new tee file
