@@ -102,16 +102,15 @@ func (tm *TeeManager) EnableTee(filePath string) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	
-	// Close any existing tee file
-	if tm.teeFile != nil {
-		_ = tm.teeFile.Close()
-		tm.teeFile = nil // Ensure state is consistent before opening new file
-	}
-	
-	// Open the new tee file
+	// Open the new tee file first
 	teeFile, err := openTeeFile(filePath)
 	if err != nil {
 		return err
+	}
+	
+	// Close any existing tee file after successful open
+	if tm.teeFile != nil {
+		_ = tm.teeFile.Close()
 	}
 	
 	tm.teeFile = teeFile
@@ -139,6 +138,13 @@ func (tm *TeeManager) GetWriter() io.Writer {
 	}
 	
 	return createTeeWriter(tm.originalOut, tm.teeFile, tm.errStream)
+}
+
+// IsEnabled returns whether tee output is currently active
+func (tm *TeeManager) IsEnabled() bool {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.teeFile != nil
 }
 
 // Close closes any open tee file and cleans up resources
