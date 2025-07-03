@@ -476,11 +476,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		sysVars.WithoutAuthentication = true
 	}
 
-	// If os.Stdout is a TTY, keep it for TTY-specific operations.
-	// This prevents writing terminal control codes (prompts, progress marks) to redirected files.
-	if term.IsTerminal(int(os.Stdout.Fd())) {
-		sysVars.TtyOutStream = os.Stdout
-	}
+	// TTY detection has been moved to StreamManager.
 	
 	// Setup output streams
 	var errStream io.Writer = os.Stderr  // Error stream is not affected by --tee
@@ -489,26 +485,23 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	// Always use os.Stdout as the original output for actual data
 	var originalOut io.Writer = os.Stdout
 	
-	// Create TeeManager for managing tee output
-	teeManager := NewTeeManager(originalOut, errStream)
-	// Set the TTY stream if available
-	if sysVars.TtyOutStream != nil {
-		teeManager.SetTtyStream(sysVars.TtyOutStream)
+	// Create StreamManager for managing all input/output streams
+	streamManager := NewStreamManager(os.Stdin, originalOut, errStream)
+	// StreamManager will automatically detect if os.Stdout is a TTY
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		streamManager.SetTtyStream(os.Stdout)
 	}
-	sysVars.TeeManager = teeManager
-	defer teeManager.Close()
+	sysVars.StreamManager = streamManager
+	defer streamManager.Close()
 	
 	// If --tee is specified, enable tee output
 	if opts.Tee != "" {
-		if err := teeManager.EnableTee(opts.Tee); err != nil {
+		if err := streamManager.EnableTee(opts.Tee); err != nil {
 			return err
 		}
 	}
 	
-	// Get the current output stream from TeeManager
-	outStream := teeManager.GetWriter()
-
-	cli, err := NewCli(ctx, cred, os.Stdin, outStream, errStream, &sysVars)
+	cli, err := NewCli(ctx, cred, &sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}

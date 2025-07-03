@@ -81,43 +81,56 @@ func createTeeWriter(originalStream io.Writer, teeFile *os.File, errStream io.Wr
 	return io.MultiWriter(originalStream, safeWriter)
 }
 
-// TeeManager manages tee output functionality for both --tee option and \T/\t meta-commands
-type TeeManager struct {
+// StreamManager manages all input/output streams for the CLI.
+// It centralizes handling of stdin, stdout, stderr, TTY operations, and tee functionality.
+// This component ensures proper separation between data output (which may be tee'd)
+// and terminal control operations (which should not be tee'd).
+// It consolidates stream handling, tee functionality, and terminal operations
+type StreamManager struct {
 	mu           sync.Mutex
-	teeFile      *os.File
-	originalOut  io.Writer
-	errStream    io.Writer
-	cachedWriter io.Writer // Cache the writer to ensure consistent behavior
-	ttyStream    *os.File  // Original TTY stream for terminal operations
+	inStream     io.ReadCloser // Input stream (stdin or custom)
+	outStream    io.Writer     // Main output stream (stdout or custom)
+	errStream    io.Writer     // Error output stream (stderr or custom)
+	ttyStream    *os.File      // Original TTY stream for terminal operations
+	teeFile      *os.File      // Tee file when enabled
+	cachedWriter io.Writer     // Cache the writer to ensure consistent behavior
 }
 
-// NewTeeManager creates a new TeeManager instance
-func NewTeeManager(originalOut, errStream io.Writer) *TeeManager {
-	tm := &TeeManager{
-		originalOut: originalOut,
-		errStream:   errStream,
+// NewStreamManager creates a new StreamManager instance
+func NewStreamManager(inStream io.ReadCloser, outStream, errStream io.Writer) *StreamManager {
+	sm := &StreamManager{
+		inStream:  inStream,
+		outStream: outStream,
+		errStream: errStream,
 	}
 	
-	// If originalOut is a terminal, keep a reference for terminal operations
-	if f, ok := originalOut.(*os.File); ok {
-		tm.ttyStream = f
+	// If outStream is a terminal, keep a reference for terminal operations
+	if f, ok := outStream.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		sm.ttyStream = f
 	}
 	
-	return tm
+	return sm
+}
+
+// NewTeeManager creates a new StreamManager instance (compatibility wrapper)
+// Deprecated: Use NewStreamManager instead
+func NewTeeManager(outStream, errStream io.Writer) *StreamManager {
+	// For compatibility, use os.Stdin as the default input stream
+	return NewStreamManager(os.Stdin, outStream, errStream)
 }
 
 // SetTtyStream sets the TTY stream for terminal operations
 // This is useful when the original output is not a TTY (e.g., when piped)
-func (tm *TeeManager) SetTtyStream(tty *os.File) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	tm.ttyStream = tty
+func (sm *StreamManager) SetTtyStream(tty *os.File) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.ttyStream = tty
 }
 
 // EnableTee starts tee output to the specified file
-func (tm *TeeManager) EnableTee(filePath string) error {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) EnableTee(filePath string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
 	// Open the new tee file first
 	teeFile, err := openTeeFile(filePath)
@@ -126,81 +139,83 @@ func (tm *TeeManager) EnableTee(filePath string) error {
 	}
 	
 	// Close any existing tee file after successful open
-	if tm.teeFile != nil {
-		if err := tm.teeFile.Close(); err != nil {
+	if sm.teeFile != nil {
+		if err := sm.teeFile.Close(); err != nil {
 			// Log the error, but continue. The main operation (enabling the new tee) has succeeded.
-			slog.Warn("failed to close previous tee file", "path", tm.teeFile.Name(), "error", err)
+			slog.Warn("failed to close previous tee file", "path", sm.teeFile.Name(), "error", err)
 		}
 	}
 	
-	tm.teeFile = teeFile
-	tm.cachedWriter = nil // Invalidate cached writer
+	sm.teeFile = teeFile
+	// IMPORTANT: Invalidate cached writer to ensure the new tee file is included
+	// in the io.MultiWriter. This is critical for maintaining correct output behavior.
+	sm.cachedWriter = nil
 	return nil
 }
 
 // DisableTee stops tee output and closes the tee file
-func (tm *TeeManager) DisableTee() {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) DisableTee() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
-	if tm.teeFile != nil {
-		if err := tm.teeFile.Close(); err != nil {
+	if sm.teeFile != nil {
+		if err := sm.teeFile.Close(); err != nil {
 			// Log the error, but continue. We're disabling tee, so we don't want to fail.
-			slog.Warn("failed to close tee file", "path", tm.teeFile.Name(), "error", err)
+			slog.Warn("failed to close tee file", "path", sm.teeFile.Name(), "error", err)
 		}
-		tm.teeFile = nil
-		tm.cachedWriter = nil // Invalidate cached writer
+		sm.teeFile = nil
+		sm.cachedWriter = nil // Invalidate cached writer
 	}
 }
 
 // GetWriter returns the current output writer (with or without tee)
-func (tm *TeeManager) GetWriter() io.Writer {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) GetWriter() io.Writer {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
-	if tm.teeFile == nil {
-		return tm.originalOut
+	if sm.teeFile == nil {
+		return sm.outStream
 	}
 	
 	// Return cached writer if available
-	if tm.cachedWriter != nil {
-		return tm.cachedWriter
+	if sm.cachedWriter != nil {
+		return sm.cachedWriter
 	}
 	
 	// Create and cache new writer
-	tm.cachedWriter = createTeeWriter(tm.originalOut, tm.teeFile, tm.errStream)
-	return tm.cachedWriter
+	sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
+	return sm.cachedWriter
 }
 
 // IsEnabled returns whether tee output is currently active
-func (tm *TeeManager) IsEnabled() bool {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	return tm.teeFile != nil
+func (sm *StreamManager) IsEnabled() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.teeFile != nil
 }
 
 // Close closes any open tee file and cleans up resources
-func (tm *TeeManager) Close() {
-	tm.DisableTee()
+func (sm *StreamManager) Close() {
+	sm.DisableTee()
 }
 
 // GetTerminalWidth returns the current terminal width
 // Returns 0 and an error if the output is not a terminal
-func (tm *TeeManager) GetTerminalWidth() (int, error) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) GetTerminalWidth() (int, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
 	// Use ttyStream if available (preferred)
-	if tm.ttyStream != nil {
-		width, _, err := term.GetSize(int(tm.ttyStream.Fd()))
+	if sm.ttyStream != nil {
+		width, _, err := term.GetSize(int(sm.ttyStream.Fd()))
 		if err != nil {
 			return 0, fmt.Errorf("failed to get terminal size: %w", err)
 		}
 		return width, nil
 	}
 	
-	// Fall back to originalOut if it's a file
-	if f, ok := tm.originalOut.(*os.File); ok {
+	// Fall back to outStream if it's a file
+	if f, ok := sm.outStream.(*os.File); ok {
 		width, _, err := term.GetSize(int(f.Fd()))
 		if err != nil {
 			return 0, fmt.Errorf("failed to get terminal size: %w", err)
@@ -213,8 +228,8 @@ func (tm *TeeManager) GetTerminalWidth() (int, error) {
 
 // GetTerminalWidthString returns the terminal width as a string
 // Returns "NULL" if the terminal width cannot be determined
-func (tm *TeeManager) GetTerminalWidthString() string {
-	width, err := tm.GetTerminalWidth()
+func (sm *StreamManager) GetTerminalWidthString() string {
+	width, err := sm.GetTerminalWidth()
 	if err != nil {
 		slog.Warn("failed to get terminal size", "error", err)
 		return "NULL"
@@ -223,17 +238,17 @@ func (tm *TeeManager) GetTerminalWidthString() string {
 }
 
 // IsTerminal returns whether the output is a terminal
-func (tm *TeeManager) IsTerminal() bool {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) IsTerminal() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
 	// Check ttyStream first
-	if tm.ttyStream != nil {
-		return term.IsTerminal(int(tm.ttyStream.Fd()))
+	if sm.ttyStream != nil {
+		return term.IsTerminal(int(sm.ttyStream.Fd()))
 	}
 	
-	// Check originalOut
-	if f, ok := tm.originalOut.(*os.File); ok {
+	// Check outStream
+	if f, ok := sm.outStream.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	
@@ -241,9 +256,34 @@ func (tm *TeeManager) IsTerminal() bool {
 }
 
 // GetErrStream returns the error stream
-func (tm *TeeManager) GetErrStream() io.Writer {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+func (sm *StreamManager) GetErrStream() io.Writer {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	
-	return tm.errStream
+	return sm.errStream
+}
+
+// GetInStream returns the input stream
+func (sm *StreamManager) GetInStream() io.ReadCloser {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	return sm.inStream
+}
+
+// GetOutStream returns the output stream (without tee)
+// For tee-enabled output, use GetWriter() instead
+func (sm *StreamManager) GetOutStream() io.Writer {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	return sm.outStream
+}
+
+// GetTtyStream returns the TTY stream for terminal operations
+func (sm *StreamManager) GetTtyStream() *os.File {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	return sm.ttyStream
 }

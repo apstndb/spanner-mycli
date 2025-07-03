@@ -47,11 +47,11 @@ DESCRIBE SELECT * FROM users;`
 		input := strings.NewReader("\\. " + sqlFile + "\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -115,11 +115,11 @@ DESCRIBE SELECT * FROM users;`
 		input := strings.NewReader("\\. " + sqlFile + "\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 

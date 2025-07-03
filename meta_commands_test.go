@@ -300,7 +300,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = true
-		sysVars.TeeManager = NewTeeManager(io.Discard, io.Discard)
+		sysVars.StreamManager = NewTeeManager(io.Discard, io.Discard)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -320,7 +320,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
+		sysVars.StreamManager = NewTeeManager(&output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -344,7 +344,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.TeeManager = NewTeeManager(&output, &errOutput)
+		sysVars.StreamManager = NewTeeManager(&output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -541,7 +541,7 @@ func createTestSession(t *testing.T) (*Session, *systemVariables) {
 	sysVars := newSystemVariablesWithDefaults()
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	sysVars.TeeManager = NewTeeManager(outBuf, errBuf)
+	sysVars.StreamManager = NewTeeManager(outBuf, errBuf)
 	session := &Session{
 		systemVariables: &sysVars,
 	}
@@ -604,7 +604,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 
 			session, sysVars := createTestSession(t)
 			// Store the original writer before enabling tee
-			originalWriter := sysVars.TeeManager.GetWriter()
+			originalWriter := sysVars.StreamManager.GetWriter()
 			
 			cmd := &TeeOutputMetaCommand{FilePath: path}
 			result, err := cmd.Execute(ctx, session)
@@ -621,9 +621,9 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 					t.Error("Execute() returned nil result")
 				}
 				// Verify that writer has been updated after enabling tee
-				newWriter := sysVars.TeeManager.GetWriter()
+				newWriter := sysVars.StreamManager.GetWriter()
 				if newWriter == originalWriter {
-					t.Error("TeeManager writer was not updated after enabling tee")
+					t.Error("StreamManager writer was not updated after enabling tee")
 				}
 			}
 		})
@@ -654,17 +654,17 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			session, sysVars := createTestSession(t)
 			// Store the original writer before enabling tee
-			originalWriter := sysVars.TeeManager.GetWriter()
+			originalWriter := sysVars.StreamManager.GetWriter()
 			
 			if tt.setupTee {
 				// Enable tee first
 				tmpDir := t.TempDir()
 				teeFile := tmpDir + "/test.log"
-				if err := sysVars.TeeManager.EnableTee(teeFile); err != nil {
+				if err := sysVars.StreamManager.EnableTee(teeFile); err != nil {
 					t.Fatal(err)
 				}
 				// Verify tee is enabled (writer should be different from original)
-				newWriter := sysVars.TeeManager.GetWriter()
+				newWriter := sysVars.StreamManager.GetWriter()
 				if newWriter == originalWriter {
 					t.Error("Tee was not properly enabled")
 				}
@@ -680,9 +680,9 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 			}
 			
 			// Verify that writer reverts to the original after disable
-			finalWriter := sysVars.TeeManager.GetWriter()
+			finalWriter := sysVars.StreamManager.GetWriter()
 			if finalWriter != originalWriter {
-				t.Error("TeeManager writer should revert to original after disable")
+				t.Error("StreamManager writer should revert to original after disable")
 			}
 		})
 	}

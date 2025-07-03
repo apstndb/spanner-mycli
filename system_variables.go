@@ -141,16 +141,11 @@ type systemVariables struct {
 	// link to session
 	CurrentSession   *Session
 	
-	// TtyOutStream is the original terminal output (always os.Stdout).
-	// This should be used for TTY-specific operations that should NOT be captured in tee:
-	// - Progress marks (using \r carriage returns)
-	// - Readline prompts and interactive input display
-	// - Interactive confirmation prompts
-	// This ensures these terminal control sequences don't pollute the tee file.
-	TtyOutStream     *os.File
+	// TtyOutStream has been moved to StreamManager.
+	// Use StreamManager.GetTtyStream() instead.
 	
-	// TeeManager manages tee output functionality
-	TeeManager       *TeeManager
+	// StreamManager manages tee output functionality
+	StreamManager       *StreamManager
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -1081,14 +1076,14 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				// Use TeeManager for terminal width detection
-				if this.TeeManager != nil {
-					return singletonMap(name, this.TeeManager.GetTerminalWidthString()), nil
+				// Terminal width detection is now handled by StreamManager
+				// which properly uses the TTY stream even when output is tee'd
+				if this.StreamManager != nil {
+					return singletonMap(name, this.StreamManager.GetTerminalWidthString()), nil
 				}
 				
-				// Fallback to old logic if TeeManager is not available
 				// This should not happen in normal operation
-				slog.Warn("TeeManager not available for terminal width detection")
+				slog.Warn("StreamManager not available for terminal width detection")
 				return singletonMap(name, "NULL"), nil
 			},
 		},

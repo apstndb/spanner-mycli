@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestTeeManager(t *testing.T) {
+func TestStreamManager(t *testing.T) {
 	t.Run("basic enable and disable", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
@@ -395,7 +395,7 @@ func TestTeeManager(t *testing.T) {
 
 func TestSafeTeeWriter(t *testing.T) {
 	t.Run("single warning with cached writer", func(t *testing.T) {
-		// This test verifies that when using TeeManager with caching,
+		// This test verifies that when using StreamManager with caching,
 		// we only get one warning even if multiple goroutines write
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}

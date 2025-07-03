@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strconv"
 	"testing"
@@ -9,16 +10,15 @@ import (
 
 func TestCliCurrentWidthWithTee(t *testing.T) {
 	// Test that CLI_CURRENT_WIDTH works correctly when --tee is enabled
-	// and TeeManager is used
+	// and StreamManager is used
 	
-	t.Run("with TtyOutStream", func(t *testing.T) {
-		// Setup TeeManager with a buffer for tee output
-		teeManager := NewTeeManager(os.Stdout, os.Stderr)
+	t.Run("with TtyStream in StreamManager", func(t *testing.T) {
+		// Setup StreamManager with a buffer for tee output
+		teeManager := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
 		teeManager.SetTtyStream(os.Stdout)
 		
 		sysVars := &systemVariables{
-			TeeManager:   teeManager,
-			TtyOutStream: os.Stdout,     // This should be used for terminal size
+			StreamManager: teeManager,
 		}
 		
 		// Get the accessor for CLI_CURRENT_WIDTH
@@ -42,14 +42,14 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 		}
 	})
 	
-	t.Run("without TtyOutStream and non-file stream", func(t *testing.T) {
-		// Setup TeeManager with non-TTY output
+	t.Run("without TtyStream and non-file stream", func(t *testing.T) {
+		// Setup StreamManager with non-TTY output
 		consoleBuf := &bytes.Buffer{}
-		teeManager := NewTeeManager(consoleBuf, consoleBuf)
+		teeManager := NewStreamManager(io.NopCloser(bytes.NewReader(nil)), consoleBuf, consoleBuf)
+		// Do not set TTY stream
 		
 		sysVars := &systemVariables{
-			TeeManager:   teeManager,
-			TtyOutStream: nil,          // Not set
+			StreamManager: teeManager,
 		}
 		
 		// Get the accessor for CLI_CURRENT_WIDTH

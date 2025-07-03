@@ -863,7 +863,7 @@ func (s *Session) Close() {
 		s.cqlSession.Close()
 	}
 
-	// No need to close tee file here as it's managed by TeeManager
+	// No need to close tee file here as it's managed by StreamManager
 }
 
 func (s *Session) DatabasePath() string {

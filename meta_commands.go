@@ -46,15 +46,15 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Check if TeeManager is configured
-	if session.systemVariables.TeeManager == nil {
-		slog.Error("TeeManager is nil, cannot execute shell command", "command", s.Command)
-		return nil, errors.New("internal error: TeeManager not configured")
+	// Check if StreamManager is configured
+	if session.systemVariables.StreamManager == nil {
+		slog.Error("StreamManager is nil, cannot execute shell command", "command", s.Command)
+		return nil, errors.New("internal error: StreamManager not configured")
 	}
 
 	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
-	shellCmd.Stdout = session.systemVariables.TeeManager.GetWriter()
-	shellCmd.Stderr = session.systemVariables.TeeManager.GetErrStream()
+	shellCmd.Stdout = session.systemVariables.StreamManager.GetWriter()
+	shellCmd.Stderr = session.systemVariables.StreamManager.GetErrStream()
 
 	// Execute the command
 	if err := shellCmd.Run(); err != nil {
@@ -236,12 +236,12 @@ func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
 	}
-	if session.systemVariables.TeeManager == nil {
+	if session.systemVariables.StreamManager == nil {
 		return nil, errors.New("internal error: tee manager not initialized")
 	}
 
 	// Enable tee for the specified file
-	if err := session.systemVariables.TeeManager.EnableTee(t.FilePath); err != nil {
+	if err := session.systemVariables.StreamManager.EnableTee(t.FilePath); err != nil {
 		return nil, err
 	}
 
@@ -264,12 +264,12 @@ func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
 	}
-	if session.systemVariables.TeeManager == nil {
+	if session.systemVariables.StreamManager == nil {
 		return nil, errors.New("internal error: tee manager not initialized")
 	}
 
 	// Disable tee
-	session.systemVariables.TeeManager.DisableTee()
+	session.systemVariables.StreamManager.DisableTee()
 	
 	
 	return &Result{}, nil

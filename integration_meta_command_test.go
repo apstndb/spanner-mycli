@@ -12,6 +12,18 @@ import (
 	"testing"
 )
 
+// createTestCli creates a test CLI with the given input, output, and error streams
+func createTestCli(t *testing.T, ctx context.Context, input io.ReadCloser, output, errOutput io.Writer, sysVars *systemVariables) *Cli {
+	// Create StreamManager with the provided streams
+	sysVars.StreamManager = NewStreamManager(input, output, errOutput)
+	
+	cli, err := NewCli(ctx, nil, sysVars)
+	if err != nil {
+		t.Fatalf("NewCli() error = %v", err)
+	}
+	return cli
+}
+
 func TestMetaCommandIntegration(t *testing.T) {
 	ctx := context.Background()
 	
@@ -20,16 +32,13 @@ func TestMetaCommandIntegration(t *testing.T) {
 		sysVars.SkipSystemCommand = false
 		
 		// Create a simulated interactive session with shell commands
-		input := strings.NewReader("\\! echo hello\n\\! echo world\nexit;\n")
+		input := io.NopCloser(strings.NewReader("\\! echo hello\n\\! echo world\nexit;\n"))
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, input, output, output, &sysVars)
 		
 		// Run in interactive mode
-		err = cli.RunInteractive(ctx)
+		err := cli.RunInteractive(ctx)
 		if err != nil {
 			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
 			if _, ok := err.(*ExitCodeError); !ok {
@@ -60,13 +69,10 @@ func TestMetaCommandIntegration(t *testing.T) {
 		input := strings.NewReader("\\! echo hello\nexit;\n")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\! echo hello")
+		err := cli.RunBatch(ctx, "\\! echo hello")
 		if err == nil {
 			t.Error("Expected error for meta command in batch mode")
 		}
@@ -92,13 +98,10 @@ func TestMetaCommandIntegration(t *testing.T) {
 		output := &bytes.Buffer{}
 		errOutput := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, errOutput, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, errOutput, &sysVars)
 		
 		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\! echo hello")
+		err := cli.RunBatch(ctx, "\\! echo hello")
 		if err == nil {
 			t.Error("Expected error for meta command in batch mode")
 		}
@@ -124,13 +127,10 @@ func TestMetaCommandIntegration(t *testing.T) {
 		input := strings.NewReader("\\! echo hello\nexit;\n")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in interactive mode
-		err = cli.RunInteractive(ctx)
+		err := cli.RunInteractive(ctx)
 		// Should exit normally (exit command will cause ExitCodeError)
 		if err != nil {
 			if _, ok := err.(*ExitCodeError); !ok {
@@ -176,11 +176,11 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\. " + sqlFile + "\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -222,11 +222,11 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\. /non/existent/file.sql\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -252,13 +252,10 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\. test.sql")
+		err := cli.RunBatch(ctx, "\\. test.sql")
 		if err == nil {
 			t.Error("Expected error for meta command in batch mode")
 		}
@@ -292,11 +289,11 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\R custom-prompt>\nSHOW VARIABLE CLI_PROMPT;\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -343,11 +340,11 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\R [%p/%i/%d]>\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -377,13 +374,10 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\R new-prompt>")
+		err := cli.RunBatch(ctx, "\\R new-prompt>")
 		if err == nil {
 			t.Error("Expected error for meta command in batch mode")
 		}
@@ -408,13 +402,10 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\u test-db\nexit;\n")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in interactive mode
-		err = cli.RunInteractive(ctx)
+		err := cli.RunInteractive(ctx)
 		if err != nil {
 			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
 			if _, ok := err.(*ExitCodeError); !ok {
@@ -436,13 +427,10 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("\\u `my-database`\nexit;\n")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in interactive mode
-		err = cli.RunInteractive(ctx)
+		err := cli.RunInteractive(ctx)
 		if err != nil {
 			// The `exit;` command causes RunInteractive to return an ExitCodeError, which is expected.
 			if _, ok := err.(*ExitCodeError); !ok {
@@ -463,13 +451,10 @@ SELECT "foo" AS s;`
 		input := strings.NewReader("")
 		output := &bytes.Buffer{}
 		
-		cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-		if err != nil {
-			t.Fatalf("NewCli() error = %v", err)
-		}
+		cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 		
 		// Run in batch mode - should return error since meta commands are not supported
-		err = cli.RunBatch(ctx, "\\u test-db")
+		err := cli.RunBatch(ctx, "\\u test-db")
 		if err == nil {
 			t.Error("Expected error for meta command in batch mode")
 		}
@@ -496,7 +481,6 @@ SELECT "foo" AS s;`
 		
 		// Use buffers for tee's console output to keep tests hermetic and verifiable.
 		consoleBuf := &bytes.Buffer{}
-		sysVars.TeeManager = NewTeeManager(consoleBuf, consoleBuf)
 
 		// Create a mock session handler
 		session := &Session{
@@ -508,11 +492,11 @@ SELECT "foo" AS s;`
 		input := strings.NewReader(commands + "\nexit;\n")
 		output := &bytes.Buffer{}
 		
+		// Create StreamManager with the test streams
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), consoleBuf, consoleBuf)
+		
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
-			InStream:        io.NopCloser(input),
-			OutStream:       output,
-			ErrStream:       output,
 			SystemVariables: &sysVars,
 		}
 
@@ -621,13 +605,10 @@ SELECT "foo" AS s;`
 			input := strings.NewReader("")
 			output := &bytes.Buffer{}
 			
-			cli, err := NewCli(ctx, nil, io.NopCloser(input), output, output, &sysVars)
-			if err != nil {
-				t.Fatalf("NewCli() error = %v", err)
-			}
+			cli := createTestCli(t, ctx, io.NopCloser(input), output, output, &sysVars)
 			
 			// Run in batch mode - should return error since meta commands are not supported
-			err = cli.RunBatch(ctx, tt.command)
+			err := cli.RunBatch(ctx, tt.command)
 			if err == nil {
 				t.Error("Expected error for meta command in batch mode")
 			}
