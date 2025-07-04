@@ -660,9 +660,18 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_FORMAT": {
-		Description: "",
+		Description: "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format).",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
+				// Set the output format for query results.
+				// Valid values:
+				//   TABLE              - ASCII table with borders (default for interactive mode)
+				//   TABLE_COMMENT      - Table wrapped in /* */ comments
+				//   TABLE_DETAIL_COMMENT - Table with opening /* comment only
+				//   VERTICAL           - Vertical format (column: value pairs)
+				//   TAB                - Tab-separated values (default for batch mode)
+				//   HTML               - HTML table format (--html flag)
+				//   XML                - XML format (--xml flag)
 				switch strings.ToUpper(unquoteString(value)) {
 				case "TABLE":
 					this.CLIFormat = DisplayModeTable
@@ -674,18 +683,37 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					this.CLIFormat = DisplayModeVertical
 				case "TAB":
 					this.CLIFormat = DisplayModeTab
+				case "HTML":
+					this.CLIFormat = DisplayModeHTML
+				case "XML":
+					this.CLIFormat = DisplayModeXML
+				default:
+					return fmt.Errorf("invalid CLI_FORMAT value: %v", value)
 				}
 				return nil
 			},
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				// Return the current output format as a string.
+				// This maps the internal DisplayMode enum to user-visible string values.
 				var formatStr string
 				switch this.CLIFormat {
 				case DisplayModeTable:
 					formatStr = "TABLE"
+				case DisplayModeTableComment:
+					formatStr = "TABLE_COMMENT"
+				case DisplayModeTableDetailComment:
+					formatStr = "TABLE_DETAIL_COMMENT"
 				case DisplayModeVertical:
 					formatStr = "VERTICAL"
 				case DisplayModeTab:
 					formatStr = "TAB"
+				case DisplayModeHTML:
+					formatStr = "HTML"
+				case DisplayModeXML:
+					formatStr = "XML"
+				default:
+					// This should never happen as we validate on setter
+					formatStr = "TABLE"
 				}
 				return singletonMap(name, formatStr), nil
 			},
@@ -1173,7 +1201,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		}),
 	},
 	"CLI_SKIP_SYSTEM_COMMAND": {
-		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag (maintained for compatibility with official Spanner CLI).",
+		Description: "A read-only boolean indicating whether system commands are disabled. Set via --skip-system-command flag or --system-command=OFF. When both are used, --skip-system-command takes precedence.",
 		Accessor: accessor{
 			Getter: boolGetter(func(variables *systemVariables) *bool {
 				return &variables.SkipSystemCommand

@@ -216,6 +216,37 @@ Common false positives to avoid:
 2. Missing extensive comments that explain the current design
 3. Suggesting changes that violate principles already documented in the code
 
+## Output Format Memory Patterns
+
+### Memory Buffering vs Streaming in Output Formats
+
+Different output formats in `cli_output.go` use different memory patterns by design:
+
+**Buffering formats** (build complete output in memory):
+- TABLE format - Uses `strings.Builder` to calculate column widths
+- XML format - Builds complete structure for well-formed output
+
+**Streaming formats** (output row-by-row):
+- VERTICAL format - Simple key-value pairs
+- TAB format - Simple delimited values
+- HTML format - Simple tag structure allows streaming
+
+**DO NOT** suggest converting buffering formats to streaming without considering:
+1. **Complexity**: XML with proper headers and structure is complex to stream correctly
+2. **Consistency**: TABLE and XML formats intentionally follow the same pattern
+3. **Context**: This is an interactive CLI tool, not a bulk export utility
+4. **Documentation**: If the code explicitly documents the trade-off, respect it
+
+Example of documented trade-off:
+```go
+// Note: This implementation builds the entire result set in memory before
+// encoding. For very large result sets, consider using TAB format for
+// streaming output. This design prioritizes simplicity and consistency
+// with the TABLE format over memory efficiency.
+```
+
+For users needing to process very large datasets, the TAB format already provides a streaming option.
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:

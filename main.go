@@ -80,6 +80,8 @@ type spannerOptions struct {
 	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit. --source is an alias." default-mask:"-"`
 	Source                    string            `long:"source" hidden:"true" description:"Hidden alias of --file for Google Cloud Spanner CLI compatibility" default-mask:"-"`
 	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode." default-mask:"-"`
+	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
+	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
@@ -123,6 +125,10 @@ type spannerOptions struct {
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
+	// SystemCommand provides an alternative way to control system command execution.
+	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
+	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
+	SystemCommand             *string           `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
 	Tee                       string            `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 	SkipColumnNames           bool              `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 }
@@ -516,11 +522,20 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 
 	// CLI_FORMAT is set in initializeSystemVariables from opts.Set,
-	// but if not set there, it's set here based on interactive mode or --table flag.
+	// but if not set there, it's set here based on interactive mode or format flags.
 	// This logic needs to be after sysVars is initialized.
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
-		sysVars.CLIFormat = lo.Ternary(interactive || opts.Table, DisplayModeTable, DisplayModeTab)
+		switch {
+		case opts.HTML:
+			sysVars.CLIFormat = DisplayModeHTML
+		case opts.XML:
+			sysVars.CLIFormat = DisplayModeXML
+		case interactive || opts.Table:
+			sysVars.CLIFormat = DisplayModeTable
+		default:
+			sysVars.CLIFormat = DisplayModeTab
+		}
 	}
 
 	switch {
@@ -570,6 +585,21 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		if !hasInput {
 			return fmt.Errorf("--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql")
 		}
+	}
+
+	// Check for mutually exclusive output format options
+	formatCount := 0
+	if opts.Table {
+		formatCount++
+	}
+	if opts.HTML {
+		formatCount++
+	}
+	if opts.XML {
+		formatCount++
+	}
+	if formatCount > 1 {
+		return fmt.Errorf("invalid combination: --table, --html, and --xml are mutually exclusive")
 	}
 
 	return nil
@@ -687,7 +717,17 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.VertexAIProject = opts.VertexAIProject
 	sysVars.AsyncDDL = opts.Async
-	sysVars.SkipSystemCommand = opts.SkipSystemCommand
+	
+	// Handle system command options
+	// Priority: --skip-system-command takes precedence over --system-command
+	if opts.SkipSystemCommand {
+		sysVars.SkipSystemCommand = true
+	} else if opts.SystemCommand != nil {
+		// --system-command=OFF disables system commands
+		sysVars.SkipSystemCommand = *opts.SystemCommand == "OFF"
+	}
+	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
+	
 	sysVars.SkipColumnNames = opts.SkipColumnNames
 
 	return sysVars, nil

@@ -43,6 +43,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
   * Support `--host` and `--port` flags as first-class options
   * Support `--deployment-endpoint` as an alias for `--endpoint`
+  * Support `--html` and `--xml` output format options with proper escaping (security-enhanced compared to reference implementation)
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
@@ -108,8 +109,10 @@ spanner:
   -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used. [$SPANNER_DATABASE_ID]
       --detached                                          Start in detached mode, ignoring database env var/flag
   -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
-  -f, --file=                                             Execute SQL statement from file and quit.
+  -f, --file=                                             Execute SQL statement from file and quit. --source is an alias.
   -t, --table                                             Display output in table format for batch mode.
+      --html                                              Display output in HTML format.
+      --xml                                               Display output in XML format.
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
@@ -145,6 +148,7 @@ spanner:
       --try-partition-query                               Test whether the query can be executed as partition query without execution
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
+      --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
       --tee=                                              Append a copy of output to the specified file
       --skip-column-names                                 Suppress column headers in output
 
@@ -858,7 +862,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
 | CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
 | CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
+| CLI_FORMAT                | READ_WRITE | `"TABLE"` (`"TAB"` in batch mode)              |
 | CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
 | CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
 | CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
@@ -875,6 +879,17 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
 | CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
+
+> **Note**: `CLI_FORMAT` accepts the following values:
+> - `TABLE` - ASCII table with borders (default for interactive mode)
+> - `TABLE_COMMENT` - Table wrapped in /* */ comments  
+> - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
+> - `VERTICAL` - Vertical format (column: value pairs)
+> - `TAB` - Tab-separated values (default for batch mode)
+> - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
+> - `XML` - XML format (compatible with Google Cloud Spanner CLI)
+>
+> You can change the output format at runtime using `SET CLI_FORMAT = 'HTML';` or use command-line flags `--table`, `--html`, or `--xml`.
 
 ### Batch statements
 
