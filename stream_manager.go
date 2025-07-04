@@ -63,7 +63,7 @@ func openTeeFile(filePath string) (*os.File, error) {
 	case err == nil:
 		// File exists - ensure it's a regular file
 		if !fi.Mode().IsRegular() {
-			return nil, fmt.Errorf("tee output to a non-regular file is not supported: %s", filePath)
+			return nil, fmt.Errorf("tee output to a non-regular file is not supported: %q", filePath)
 		}
 	case os.IsNotExist(err):
 		// File doesn't exist - OpenFile will create it
@@ -90,7 +90,7 @@ func openTeeFile(filePath string) (*os.File, error) {
 	
 	if !fi.Mode().IsRegular() {
 		file.Close()
-		return nil, fmt.Errorf("tee output to a non-regular file is not supported: %s", filePath)
+		return nil, fmt.Errorf("tee output to a non-regular file is not supported: %q", filePath)
 	}
 	
 	return file, nil
