@@ -151,22 +151,14 @@ func (sm *StreamManager) SetTtyStream(tty *os.File) {
 
 // EnableTee starts tee output to the specified file
 func (sm *StreamManager) EnableTee(filePath string) error {
-	// DESIGN NOTE: File opening is intentionally done OUTSIDE the mutex lock.
-	// This prevents blocking other StreamManager operations (GetWriter, etc.)
-	// during potentially slow file I/O (e.g., network filesystems).
-	//
-	// This creates a harmless race condition where concurrent EnableTee calls
-	// may result in "last writer wins" behavior. This is acceptable because:
-	// 1. Tee configuration is typically done single-threaded (CLI startup or REPL)
-	// 2. The semantics are "replace current tee file", not "add if not exists"
-	// 3. Proper resource cleanup is maintained regardless of ordering
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	// Open the new tee file while holding the lock to ensure atomicity.
 	teeFile, err := openTeeFile(filePath)
 	if err != nil {
 		return err
 	}
-	
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
 	
 	// Close any existing tee file after successful open
 	if sm.teeFile != nil {
