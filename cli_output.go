@@ -3,7 +3,9 @@ package main
 import (
 	"cmp"
 	_ "embed"
+	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"iter"
 	"log/slog"
@@ -37,6 +39,8 @@ const (
 	DisplayModeTableDetailComment
 	DisplayModeVertical
 	DisplayModeTab
+	DisplayModeHTML
+	DisplayModeXML
 )
 
 // renderTableHeader renders TableHeader. It is nil safe.
@@ -49,6 +53,9 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 }
 
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
+	// TODO(#388): Migrate all output functions to return errors for better error handling.
+	// Currently, only HTML and XML formats return errors as a first step toward
+	// improving error handling across all output formats.
 	mode := sysVars.CLIFormat
 
 	// screenWidth <= means no limit.
@@ -145,6 +152,30 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			for _, row := range result.Rows {
 				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}
+		}
+	case DisplayModeHTML:
+		// Output data in HTML table format compatible with Google Cloud Spanner CLI.
+		// All values are properly escaped using html.EscapeString for security.
+		if err := printHTMLTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printHTMLTable() failed", "err", err)
+		}
+	case DisplayModeXML:
+		// Output data in XML format compatible with Google Cloud Spanner CLI.
+		// All values are properly escaped using encoding/xml for security.
+		// Schema:
+		//   <resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+		//     <header>  <!-- optional, omitted when SkipColumnNames is true -->
+		//       <field>column1</field>
+		//       ...
+		//     </header>
+		//     <row>
+		//       <field>value1</field>
+		//       ...
+		//     </row>
+		//     ...
+		//   </resultset>
+		if err := printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printXMLResultSet() failed", "err", err)
 		}
 	}
 }
@@ -500,4 +531,132 @@ var (
 
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 	return field.GetName() + "\n" + formatTypeSimple(field.GetType())
+}
+
+// printHTMLTable outputs query results in HTML table format.
+// The format is compatible with Google Cloud Spanner CLI:
+//   - Uses uppercase HTML tags (TABLE, TR, TD, TH) for compatibility
+//   - Includes BORDER='1' attribute on TABLE element
+//   - All values are HTML-escaped using html.EscapeString for security
+// Note: This function streams output row-by-row for memory efficiency.
+func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
+	if len(columnNames) == 0 {
+		return nil
+	}
+
+	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
+		return err
+	}
+	
+	// Add header row unless skipping column names
+	if !skipColumnNames {
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+			return err
+		}
+		for _, col := range columnNames {
+			if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+			return err
+		}
+	}
+	
+	// Add data rows
+	for _, row := range rows {
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+			return err
+		}
+		for _, col := range row {
+			if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+			return err
+		}
+	}
+	
+	_, err := fmt.Fprintln(out, "</TABLE>")
+	return err
+}
+
+// xmlField represents a field element in XML output.
+type xmlField struct {
+	XMLName xml.Name `xml:"field"`
+	Value   string   `xml:",chardata"`
+}
+
+// xmlRow represents a row element containing multiple fields.
+type xmlRow struct {
+	XMLName xml.Name   `xml:"row"`
+	Fields  []xmlField `xml:"field"`
+}
+
+// xmlHeader represents the optional header element containing column names.
+type xmlHeader struct {
+	XMLName xml.Name   `xml:"header"`
+	Fields  []xmlField `xml:"field"`
+}
+
+// xmlResultSet represents the root element of the XML output.
+type xmlResultSet struct {
+	XMLName xml.Name   `xml:"resultset"`
+	XMLNS   string     `xml:"xmlns:xsi,attr"`
+	Header  *xmlHeader `xml:"header,omitempty"`
+	Rows    []xmlRow   `xml:"row"`
+}
+
+// printXMLResultSet outputs query results in XML format.
+// The format is compatible with Google Cloud Spanner CLI:
+//   - Uses XML declaration with single quotes: <?xml version='1.0'?>
+//   - Includes xmlns:xsi namespace for compatibility
+//   - All values are automatically XML-escaped by encoding/xml package
+// Note: This implementation builds the entire result set in memory before
+// encoding. For very large result sets, consider using TAB format for
+// streaming output. This design prioritizes simplicity and consistency
+// with the TABLE format over memory efficiency.
+func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
+	if len(columnNames) == 0 {
+		return nil
+	}
+
+	// Build the result set structure
+	resultSet := xmlResultSet{
+		XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
+		Rows:  make([]xmlRow, 0, len(rows)),
+	}
+	
+	// Add header fields only if not skipping column names
+	if !skipColumnNames {
+		header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
+		for _, col := range columnNames {
+			header.Fields = append(header.Fields, xmlField{Value: col})
+		}
+		resultSet.Header = header
+	}
+	
+	// Add rows
+	for _, row := range rows {
+		xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
+		for _, col := range row {
+			xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
+		}
+		resultSet.Rows = append(resultSet.Rows, xmlRow)
+	}
+	
+	// Write XML declaration
+	if _, err := fmt.Fprintln(out, "<?xml version='1.0'?>"); err != nil {
+		return err
+	}
+	
+	// Marshal the result set
+	encoder := xml.NewEncoder(out)
+	encoder.Indent("", "\t")
+	if err := encoder.Encode(resultSet); err != nil {
+		return fmt.Errorf("xml.Encoder.Encode() failed: %w", err)
+	}
+	_, err := fmt.Fprintln(out) // Add final newline
+	return err
 }

@@ -40,4 +40,40 @@ TODO
   - When both flags are used, `--skip-system-command` takes precedence
   - Security feature to prevent shell command execution in restricted environments
 
+##### CLI_FORMAT
+- **Type**: STRING
+- **Default**: TABLE (interactive mode) or TAB (batch mode)
+- **Description**: Controls output format for query results
+- **Access**: Read/Write
+- **Valid Values**:
+  - `TABLE` - ASCII table with borders (default for interactive mode)
+  - `TABLE_COMMENT` - Table wrapped in `/* */` comments
+  - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in `/* */` comments (useful for embedding results in SQL code blocks)
+  - `VERTICAL` - Vertical format with column:value pairs
+  - `TAB` - Tab-separated values (default for batch mode)
+  - `HTML` - HTML table format
+  - `XML` - XML format
+- **Usage**: 
+  ```sql
+  SET CLI_FORMAT = 'VERTICAL';
+  SELECT * FROM users;  -- Output in vertical format
+  
+  SET CLI_FORMAT = 'HTML';
+  SELECT * FROM users;  -- Output as HTML table
+  
+  SET CLI_FORMAT = 'XML';
+  SELECT * FROM users;  -- Output as XML
+  
+  SET CLI_FORMAT = 'TABLE_DETAIL_COMMENT';
+  SELECT * FROM users;  -- Output as table with execution stats, all wrapped in /* */ comments
+  ```
+- **Notes**:
+  - Can be set via `--html` flag (sets to HTML format)
+  - Can be set via `--xml` flag (sets to XML format)
+  - Can be set via `--table` flag (sets to TABLE format in batch mode)
+  - HTML and XML formats are compatible with Google Cloud Spanner CLI
+  - All special characters are properly escaped in HTML and XML formats for security
+  - The format affects how query results are displayed, not how they are executed
+  - `TABLE_DETAIL_COMMENT` is particularly useful with `CLI_ECHO_INPUT=TRUE` and `CLI_MARKDOWN_CODEBLOCK=TRUE` for documentation
+
 TODO: Document other CLI_* variables
