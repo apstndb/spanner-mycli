@@ -675,6 +675,15 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
+				// Set the output format for query results.
+				// Valid values:
+				//   TABLE              - ASCII table with borders (default for interactive mode)
+				//   TABLE_COMMENT      - Table wrapped in /* */ comments
+				//   TABLE_DETAIL_COMMENT - Table with opening /* comment only
+				//   VERTICAL           - Vertical format (column: value pairs)
+				//   TAB                - Tab-separated values (default for batch mode)
+				//   HTML               - HTML table format (--html flag)
+				//   XML                - XML format (--xml flag)
 				switch strings.ToUpper(unquoteString(value)) {
 				case "TABLE":
 					this.CLIFormat = DisplayModeTable
@@ -696,6 +705,8 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				// Return the current output format as a string.
+				// This maps the internal DisplayMode enum to user-visible string values.
 				var formatStr string
 				switch this.CLIFormat {
 				case DisplayModeTable:
@@ -712,6 +723,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					formatStr = "HTML"
 				case DisplayModeXML:
 					formatStr = "XML"
+				default:
+					// This should never happen as we validate on setter
+					formatStr = "TABLE"
 				}
 				return singletonMap(name, formatStr), nil
 			},

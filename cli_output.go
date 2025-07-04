@@ -151,79 +151,25 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			}
 		}
 	case DisplayModeHTML:
-		if len(columnNames) > 0 {
-			fmt.Fprint(out, "<TABLE BORDER='1'>")
-			if !sysVars.SkipColumnNames {
-				fmt.Fprint(out, "<TR>")
-				for _, col := range columnNames {
-					fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
-				}
-				fmt.Fprint(out, "</TR>")
-			}
-			for _, row := range result.Rows {
-				fmt.Fprint(out, "<TR>")
-				for _, col := range row {
-					fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
-				}
-				fmt.Fprint(out, "</TR>")
-			}
-			fmt.Fprintln(out, "</TABLE>")
-		}
+		// Output data in HTML table format compatible with Google Cloud Spanner CLI.
+		// All values are properly escaped using html.EscapeString for security.
+		printHTMLTable(out, columnNames, result.Rows, sysVars.SkipColumnNames)
 	case DisplayModeXML:
-		if len(columnNames) > 0 {
-			type xmlField struct {
-				XMLName xml.Name `xml:"field"`
-				Value   string   `xml:",chardata"`
-			}
-			type xmlRow struct {
-				XMLName xml.Name   `xml:"row"`
-				Fields  []xmlField `xml:"field"`
-			}
-			type xmlHeader struct {
-				XMLName xml.Name   `xml:"header"`
-				Fields  []xmlField `xml:"field"`
-			}
-			type xmlResultSet struct {
-				XMLName xml.Name   `xml:"resultset"`
-				XMLNS   string     `xml:"xmlns:xsi,attr"`
-				Header  *xmlHeader `xml:"header,omitempty"`
-				Rows    []xmlRow   `xml:"row"`
-			}
-
-			// Build the result set structure
-			resultSet := xmlResultSet{
-				XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
-			}
-			
-			// Add header fields only if not skipping column names
-			if !sysVars.SkipColumnNames {
-				header := &xmlHeader{}
-				for _, col := range columnNames {
-					header.Fields = append(header.Fields, xmlField{Value: col})
-				}
-				resultSet.Header = header
-			}
-			
-			// Add rows
-			for _, row := range result.Rows {
-				xmlRow := xmlRow{}
-				for _, col := range row {
-					xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
-				}
-				resultSet.Rows = append(resultSet.Rows, xmlRow)
-			}
-			
-			// Write XML declaration
-			fmt.Fprintln(out, "<?xml version='1.0'?>")
-			
-			// Marshal the result set
-			encoder := xml.NewEncoder(out)
-			encoder.Indent("", "\t")
-			if err := encoder.Encode(resultSet); err != nil {
-				slog.Error("xml.Encoder.Encode() failed", "err", err)
-			}
-			fmt.Fprintln(out) // Add final newline
-		}
+		// Output data in XML format compatible with Google Cloud Spanner CLI.
+		// All values are properly escaped using encoding/xml for security.
+		// Schema:
+		//   <resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+		//     <header>  <!-- optional, omitted when SkipColumnNames is true -->
+		//       <field>column1</field>
+		//       ...
+		//     </header>
+		//     <row>
+		//       <field>value1</field>
+		//       ...
+		//     </row>
+		//     ...
+		//   </resultset>
+		printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames)
 	}
 }
 
@@ -578,4 +524,105 @@ var (
 
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 	return field.GetName() + "\n" + formatTypeSimple(field.GetType())
+}
+
+// printHTMLTable outputs query results in HTML table format.
+// The format is compatible with Google Cloud Spanner CLI.
+// All values are HTML-escaped for security.
+func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
+	if len(columnNames) == 0 {
+		return
+	}
+
+	fmt.Fprint(out, "<TABLE BORDER='1'>")
+	
+	// Add header row unless skipping column names
+	if !skipColumnNames {
+		fmt.Fprint(out, "<TR>")
+		for _, col := range columnNames {
+			fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
+		}
+		fmt.Fprint(out, "</TR>")
+	}
+	
+	// Add data rows
+	for _, row := range rows {
+		fmt.Fprint(out, "<TR>")
+		for _, col := range row {
+			fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
+		}
+		fmt.Fprint(out, "</TR>")
+	}
+	
+	fmt.Fprintln(out, "</TABLE>")
+}
+
+// xmlField represents a field element in XML output.
+type xmlField struct {
+	XMLName xml.Name `xml:"field"`
+	Value   string   `xml:",chardata"`
+}
+
+// xmlRow represents a row element containing multiple fields.
+type xmlRow struct {
+	XMLName xml.Name   `xml:"row"`
+	Fields  []xmlField `xml:"field"`
+}
+
+// xmlHeader represents the optional header element containing column names.
+type xmlHeader struct {
+	XMLName xml.Name   `xml:"header"`
+	Fields  []xmlField `xml:"field"`
+}
+
+// xmlResultSet represents the root element of the XML output.
+type xmlResultSet struct {
+	XMLName xml.Name   `xml:"resultset"`
+	XMLNS   string     `xml:"xmlns:xsi,attr"`
+	Header  *xmlHeader `xml:"header,omitempty"`
+	Rows    []xmlRow   `xml:"row"`
+}
+
+// printXMLResultSet outputs query results in XML format.
+// The format is compatible with Google Cloud Spanner CLI.
+// All values are automatically XML-escaped by the encoder.
+func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
+	if len(columnNames) == 0 {
+		return
+	}
+
+	// Build the result set structure
+	resultSet := xmlResultSet{
+		XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
+		Rows:  make([]xmlRow, 0, len(rows)),
+	}
+	
+	// Add header fields only if not skipping column names
+	if !skipColumnNames {
+		header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
+		for _, col := range columnNames {
+			header.Fields = append(header.Fields, xmlField{Value: col})
+		}
+		resultSet.Header = header
+	}
+	
+	// Add rows
+	for _, row := range rows {
+		xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
+		for _, col := range row {
+			xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
+		}
+		resultSet.Rows = append(resultSet.Rows, xmlRow)
+	}
+	
+	// Write XML declaration
+	fmt.Fprintln(out, "<?xml version='1.0'?>")
+	
+	// Marshal the result set
+	encoder := xml.NewEncoder(out)
+	encoder.Indent("", "\t")
+	if err := encoder.Encode(resultSet); err != nil {
+		slog.Error("xml.Encoder.Encode() failed", "err", err)
+	}
+	fmt.Fprintln(out) // Add final newline
 }

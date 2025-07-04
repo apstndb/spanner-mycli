@@ -252,6 +252,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{DisplayModeTab, "TAB"},
 		{DisplayModeHTML, "HTML"},
 		{DisplayModeXML, "XML"},
+		{DisplayMode(999), "TABLE"}, // Invalid mode should return default
 	}
 
 	for _, tt := range tests {
@@ -270,4 +271,113 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPrintTableDataEdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       DisplayMode
+		result     *Result
+		wantOutput bool // whether we expect any output
+	}{
+		{
+			name: "HTML with nil header and empty rows",
+			mode: DisplayModeHTML,
+			result: &Result{
+				TableHeader: nil,
+				Rows:        []Row{},
+			},
+			wantOutput: false,
+		},
+		{
+			name: "XML with nil header and empty rows",
+			mode: DisplayModeXML,
+			result: &Result{
+				TableHeader: nil,
+				Rows:        []Row{},
+			},
+			wantOutput: false,
+		},
+		{
+			name: "HTML with empty column names but data rows",
+			mode: DisplayModeHTML,
+			result: &Result{
+				TableHeader: nil,
+				Rows:        []Row{{"data"}},
+			},
+			wantOutput: false,
+		},
+		{
+			name: "All display modes with unicode data",
+			mode: DisplayModeHTML,
+			result: &Result{
+				TableHeader: toTableHeader("列1", "列2"),
+				Rows: []Row{
+					{"データ1", "データ2"},
+					{"🌟", "🌙"},
+				},
+			},
+			wantOutput: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			sysVars := &systemVariables{
+				CLIFormat: tt.mode,
+			}
+			
+			printTableData(sysVars, 0, &buf, tt.result)
+			
+			got := buf.String()
+			if tt.wantOutput && got == "" {
+				t.Error("expected output but got empty string")
+			} else if !tt.wantOutput && got != "" {
+				t.Errorf("expected no output but got: %q", got)
+			}
+		})
+	}
+}
+
+func TestHTMLAndXMLHelpers(t *testing.T) {
+	t.Run("printHTMLTable with empty input", func(t *testing.T) {
+		var buf bytes.Buffer
+		printHTMLTable(&buf, []string{}, []Row{}, false)
+		if buf.String() != "" {
+			t.Errorf("expected empty output, got: %q", buf.String())
+		}
+	})
+
+	t.Run("printXMLResultSet with empty input", func(t *testing.T) {
+		var buf bytes.Buffer
+		printXMLResultSet(&buf, []string{}, []Row{}, false)
+		if buf.String() != "" {
+			t.Errorf("expected empty output, got: %q", buf.String())
+		}
+	})
+
+	t.Run("XML with large dataset", func(t *testing.T) {
+		// Test with a larger dataset to ensure performance
+		columns := []string{"id", "name", "value"}
+		rows := make([]Row, 100)
+		for i := range rows {
+			rows[i] = Row{
+				strings.Repeat("a", 100),
+				strings.Repeat("b", 100),
+				strings.Repeat("c", 100),
+			}
+		}
+
+		var buf bytes.Buffer
+		printXMLResultSet(&buf, columns, rows, false)
+		
+		output := buf.String()
+		if !strings.Contains(output, "<?xml version='1.0'?>") {
+			t.Error("XML declaration missing")
+		}
+		if !strings.Contains(output, "</resultset>") {
+			t.Error("XML closing tag missing")
+		}
+	})
 }
