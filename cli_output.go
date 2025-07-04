@@ -527,8 +527,11 @@ func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 }
 
 // printHTMLTable outputs query results in HTML table format.
-// The format is compatible with Google Cloud Spanner CLI.
-// All values are HTML-escaped for security.
+// The format is compatible with Google Cloud Spanner CLI:
+//   - Uses uppercase HTML tags (TABLE, TR, TD, TH) for compatibility
+//   - Includes BORDER='1' attribute on TABLE element
+//   - All values are HTML-escaped using html.EscapeString for security
+// Note: This function streams output row-by-row for memory efficiency.
 func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
 	if len(columnNames) == 0 {
 		return
@@ -584,8 +587,14 @@ type xmlResultSet struct {
 }
 
 // printXMLResultSet outputs query results in XML format.
-// The format is compatible with Google Cloud Spanner CLI.
-// All values are automatically XML-escaped by the encoder.
+// The format is compatible with Google Cloud Spanner CLI:
+//   - Uses XML declaration with single quotes: <?xml version='1.0'?>
+//   - Includes xmlns:xsi namespace for compatibility
+//   - All values are automatically XML-escaped by encoding/xml package
+// Note: This implementation builds the entire result set in memory before
+// encoding. For very large result sets, consider using TAB format for
+// streaming output. This design prioritizes simplicity and consistency
+// with the TABLE format over memory efficiency.
 func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
 	if len(columnNames) == 0 {
 		return
