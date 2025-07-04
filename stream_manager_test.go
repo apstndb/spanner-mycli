@@ -14,27 +14,27 @@ func TestStreamManager(t *testing.T) {
 	t.Run("basic enable and disable", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		// Initially disabled
-		if tm.IsEnabled() {
+		if sm.IsEnabled() {
 			t.Error("Expected tee to be disabled initially")
 		}
 
 		// Enable tee
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "test.log")
-		if err := tm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
-		if !tm.IsEnabled() {
+		if !sm.IsEnabled() {
 			t.Error("Expected tee to be enabled after EnableTee")
 		}
 
 		// Write through the writer
-		writer := tm.GetWriter()
+		writer := sm.GetWriter()
 		testData := "Hello, tee!\n"
 		if _, err := writer.Write([]byte(testData)); err != nil {
 			t.Fatalf("Failed to write: %v", err)
@@ -55,8 +55,8 @@ func TestStreamManager(t *testing.T) {
 		}
 
 		// Disable tee
-		tm.DisableTee()
-		if tm.IsEnabled() {
+		sm.DisableTee()
+		if sm.IsEnabled() {
 			t.Error("Expected tee to be disabled after DisableTee")
 		}
 	})
@@ -64,32 +64,32 @@ func TestStreamManager(t *testing.T) {
 	t.Run("multiple enable calls", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		teeFile1 := filepath.Join(tmpDir, "test1.log")
 		teeFile2 := filepath.Join(tmpDir, "test2.log")
 
 		// Enable first file
-		if err := tm.EnableTee(teeFile1); err != nil {
+		if err := sm.EnableTee(teeFile1); err != nil {
 			t.Fatalf("Failed to enable tee1: %v", err)
 		}
 
 		// Write to first file
-		writer1 := tm.GetWriter()
+		writer1 := sm.GetWriter()
 		data1 := "First file\n"
 		if _, err := writer1.Write([]byte(data1)); err != nil {
 			t.Fatalf("Failed to write to first file: %v", err)
 		}
 
 		// Enable second file (should close first)
-		if err := tm.EnableTee(teeFile2); err != nil {
+		if err := sm.EnableTee(teeFile2); err != nil {
 			t.Fatalf("Failed to enable tee2: %v", err)
 		}
 
 		// Write to second file
-		writer2 := tm.GetWriter()
+		writer2 := sm.GetWriter()
 		data2 := "Second file\n"
 		if _, err := writer2.Write([]byte(data2)); err != nil {
 			t.Fatalf("Failed to write to second file: %v", err)
@@ -111,37 +111,37 @@ func TestStreamManager(t *testing.T) {
 	t.Run("enable with invalid file preserves existing tee", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		validFile := filepath.Join(tmpDir, "valid.log")
 		
 		// Enable valid file
-		if err := tm.EnableTee(validFile); err != nil {
+		if err := sm.EnableTee(validFile); err != nil {
 			t.Fatalf("Failed to enable valid file: %v", err)
 		}
 
 		// Write some data
-		writer := tm.GetWriter()
+		writer := sm.GetWriter()
 		testData := "Valid data\n"
 		if _, err := writer.Write([]byte(testData)); err != nil {
 			t.Fatalf("Failed to write test data: %v", err)
 		}
 
 		// Try to enable a directory (should fail)
-		if err := tm.EnableTee(tmpDir); err == nil {
+		if err := sm.EnableTee(tmpDir); err == nil {
 			t.Error("Expected error when enabling directory as tee file")
 		}
 
 		// Verify tee is still enabled with original file
-		if !tm.IsEnabled() {
+		if !sm.IsEnabled() {
 			t.Error("Expected tee to remain enabled after failed EnableTee")
 		}
 
 		// Write more data
 		moreData := "More data\n"
-		writer2 := tm.GetWriter()
+		writer2 := sm.GetWriter()
 		if _, err := writer2.Write([]byte(moreData)); err != nil {
 			t.Fatalf("Failed to write more data: %v", err)
 		}
@@ -157,14 +157,14 @@ func TestStreamManager(t *testing.T) {
 	t.Run("concurrent access", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "concurrent.log")
 
 		// Enable tee
-		if err := tm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
@@ -177,7 +177,7 @@ func TestStreamManager(t *testing.T) {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				writer := tm.GetWriter()
+				writer := sm.GetWriter()
 				for j := 0; j < numWrites; j++ {
 					data := []byte("test\n")
 					if _, err := writer.Write(data); err != nil {
@@ -201,24 +201,24 @@ func TestStreamManager(t *testing.T) {
 	t.Run("close idempotency", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
 
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "test.log")
 		
 		// Enable tee
-		if err := tm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
 		// Close multiple times (should not panic)
-		tm.Close()
-		tm.Close()
-		tm.DisableTee()
-		tm.Close()
+		sm.Close()
+		sm.Close()
+		sm.DisableTee()
+		sm.Close()
 
 		// Verify disabled
-		if tm.IsEnabled() {
+		if sm.IsEnabled() {
 			t.Error("Expected tee to be disabled after Close")
 		}
 	})
@@ -226,20 +226,20 @@ func TestStreamManager(t *testing.T) {
 	t.Run("writer caching", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		// Enable tee
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "test.log")
-		if err := tm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
 		// Get writer multiple times
-		writer1 := tm.GetWriter()
-		writer2 := tm.GetWriter()
-		writer3 := tm.GetWriter()
+		writer1 := sm.GetWriter()
+		writer2 := sm.GetWriter()
+		writer3 := sm.GetWriter()
 
 		// Verify same instance is returned (caching works)
 		if writer1 != writer2 || writer2 != writer3 {
@@ -247,18 +247,18 @@ func TestStreamManager(t *testing.T) {
 		}
 
 		// Disable and re-enable should create new instance
-		tm.DisableTee()
-		if err := tm.EnableTee(teeFile); err != nil {
+		sm.DisableTee()
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to re-enable tee: %v", err)
 		}
 
-		writer4 := tm.GetWriter()
+		writer4 := sm.GetWriter()
 		if writer1 == writer4 {
 			t.Error("Expected new writer instance after disable/enable cycle")
 		}
 
 		// Multiple calls should still return same new instance
-		writer5 := tm.GetWriter()
+		writer5 := sm.GetWriter()
 		if writer4 != writer5 {
 			t.Error("Expected GetWriter to return the same cached instance after re-enable")
 		}
@@ -267,8 +267,8 @@ func TestStreamManager(t *testing.T) {
 	t.Run("concurrent EnableTee calls", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		
@@ -281,7 +281,7 @@ func TestStreamManager(t *testing.T) {
 			go func(index int) {
 				defer wg.Done()
 				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", index))
-				errors[index] = tm.EnableTee(filePath)
+				errors[index] = sm.EnableTee(filePath)
 			}(i)
 		}
 		
@@ -295,12 +295,12 @@ func TestStreamManager(t *testing.T) {
 		}
 		
 		// Only one file should be active (the last one)
-		if !tm.IsEnabled() {
+		if !sm.IsEnabled() {
 			t.Error("Expected tee to be enabled after concurrent calls")
 		}
 		
 		// Write data to verify it works
-		writer := tm.GetWriter()
+		writer := sm.GetWriter()
 		testData := "concurrent test data\n"
 		if _, err := writer.Write([]byte(testData)); err != nil {
 			t.Fatalf("Failed to write after concurrent EnableTee: %v", err)
@@ -310,14 +310,14 @@ func TestStreamManager(t *testing.T) {
 	t.Run("concurrent GetWriter and EnableTee", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		initialFile := filepath.Join(tmpDir, "initial.log")
 		
 		// Enable initial tee
-		if err := tm.EnableTee(initialFile); err != nil {
+		if err := sm.EnableTee(initialFile); err != nil {
 			t.Fatalf("Failed to enable initial tee: %v", err)
 		}
 		
@@ -330,7 +330,7 @@ func TestStreamManager(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 100; j++ {
-					writer := tm.GetWriter()
+					writer := sm.GetWriter()
 					// Try to write
 					_, _ = writer.Write([]byte("test\n"))
 				}
@@ -344,7 +344,7 @@ func TestStreamManager(t *testing.T) {
 				defer wg.Done()
 				for j := 0; j < 10; j++ {
 					filePath := filepath.Join(tmpDir, fmt.Sprintf("change-%d-%d.log", index, j))
-					_ = tm.EnableTee(filePath)
+					_ = sm.EnableTee(filePath)
 				}
 			}(i)
 		}
@@ -352,7 +352,7 @@ func TestStreamManager(t *testing.T) {
 		wg.Wait()
 		
 		// Should still be functional
-		if !tm.IsEnabled() {
+		if !sm.IsEnabled() {
 			t.Error("Expected tee to be enabled after concurrent operations")
 		}
 	})
@@ -360,8 +360,8 @@ func TestStreamManager(t *testing.T) {
 	t.Run("append to existing file", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "append.log")
@@ -373,12 +373,12 @@ func TestStreamManager(t *testing.T) {
 		}
 
 		// Enable tee (should append)
-		if err := tm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
 		// Write new data
-		writer := tm.GetWriter()
+		writer := sm.GetWriter()
 		newData := "Appended data\n"
 		if _, err := writer.Write([]byte(newData)); err != nil {
 			t.Fatalf("Failed to write new data: %v", err)
@@ -399,8 +399,8 @@ func TestSafeTeeWriter(t *testing.T) {
 		// we only get one warning even if multiple goroutines write
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
-		tm := NewTeeManager(originalOut, errOut)
-		defer tm.Close()
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
 
 		// Create a file and close it to simulate write errors
 		tmpFile, err := os.CreateTemp("", "test-*.log")
@@ -411,15 +411,15 @@ func TestSafeTeeWriter(t *testing.T) {
 		tmpFile.Close()
 
 		// Enable tee with the closed file
-		if err := tm.EnableTee(tmpPath); err != nil {
+		if err := sm.EnableTee(tmpPath); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
 		}
 
 		// Close the file to ensure writes will fail
-		tm.teeFile.Close()
+		sm.teeFile.Close()
 
 		// Get writer once (should be cached)
-		writer := tm.GetWriter()
+		writer := sm.GetWriter()
 
 		// Multiple writes from different goroutines
 		var wg sync.WaitGroup
@@ -530,7 +530,7 @@ func TestOpenTeeFile(t *testing.T) {
 				return t.TempDir()
 			},
 			wantErr: true,
-			errMsg:  "is a directory", // OpenFile returns this error for directories
+			errMsg:  "non-regular file", // Our validation returns this error
 		},
 		// Note: Testing actual FIFO would require syscall.Mkfifo which may not be available
 		// on all platforms. The important thing is that openTeeFile validates after opening.

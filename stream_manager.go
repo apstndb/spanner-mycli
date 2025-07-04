@@ -46,20 +46,41 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 
 // openTeeFile validates and opens a file for tee output
 func openTeeFile(filePath string) (*os.File, error) {
+	// Check if the file exists and is a regular file before opening.
+	// This prevents blocking on special files like FIFOs.
+	fi, err := os.Stat(filePath)
+	
+	// Handle three cases:
+	// 1. File exists (err == nil) - check if it's a regular file
+	// 2. File doesn't exist (os.IsNotExist(err)) - will create it
+	// 3. Other stat error - return the error
+	switch {
+	case err == nil:
+		// File exists - ensure it's a regular file
+		if !fi.Mode().IsRegular() {
+			return nil, fmt.Errorf("tee output to a non-regular file is not supported: %s", filePath)
+		}
+	case os.IsNotExist(err):
+		// File doesn't exist - OpenFile will create it
+		// Continue to OpenFile
+	default:
+		// Unexpected stat error (e.g., permission denied)
+		return nil, fmt.Errorf("failed to stat tee file %q: %w", filePath, err)
+	}
+	
 	// Open tee file in append mode (creates if doesn't exist)
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
 	
-	// Validate after opening to avoid TOCTOU race
-	fi, err := file.Stat()
+	// Double-check the file after opening (in case of race condition)
+	fi, err = file.Stat()
 	if err != nil {
 		file.Close()
-		return nil, fmt.Errorf("failed to stat tee file %q: %w", filePath, err)
+		return nil, fmt.Errorf("failed to stat opened file %q: %w", filePath, err)
 	}
 	
-	// Ensure it's a regular file (not a device, FIFO, etc.)
 	if !fi.Mode().IsRegular() {
 		file.Close()
 		return nil, fmt.Errorf("tee output to a non-regular file is not supported: %s", filePath)
@@ -112,12 +133,6 @@ func NewStreamManager(inStream io.ReadCloser, outStream, errStream io.Writer) *S
 	return sm
 }
 
-// NewTeeManager creates a new StreamManager instance (compatibility wrapper)
-// Deprecated: Use NewStreamManager instead
-func NewTeeManager(outStream, errStream io.Writer) *StreamManager {
-	// For compatibility, use os.Stdin as the default input stream
-	return NewStreamManager(os.Stdin, outStream, errStream)
-}
 
 // SetTtyStream sets the TTY stream for terminal operations
 // This is useful when the original output is not a TTY (e.g., when piped)

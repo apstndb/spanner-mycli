@@ -13,9 +13,9 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 			t.Skip("Test requires TTY")
 		}
 		
-		tm := NewTeeManager(os.Stdout, os.Stderr)
+		sm := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
 		
-		width, err := tm.GetTerminalWidth()
+		width, err := sm.GetTerminalWidth()
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
 		}
@@ -28,9 +28,9 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 	
 	t.Run("GetTerminalWidth without TTY", func(t *testing.T) {
 		buf := &bytes.Buffer{}
-		tm := NewTeeManager(buf, os.Stderr)
+		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
 		
-		_, err := tm.GetTerminalWidth()
+		_, err := sm.GetTerminalWidth()
 		if err == nil {
 			t.Error("Expected error for non-TTY output")
 		}
@@ -38,9 +38,9 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 	
 	t.Run("GetTerminalWidthString without TTY", func(t *testing.T) {
 		buf := &bytes.Buffer{}
-		tm := NewTeeManager(buf, os.Stderr)
+		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
 		
-		result := tm.GetTerminalWidthString()
+		result := sm.GetTerminalWidthString()
 		if result != "NULL" {
 			t.Errorf("Expected 'NULL', got %s", result)
 		}
@@ -48,24 +48,24 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 	
 	t.Run("SetTtyStream", func(t *testing.T) {
 		buf := &bytes.Buffer{}
-		tm := NewTeeManager(buf, os.Stderr)
+		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
 		
 		// Initially should not be a terminal
-		if tm.IsTerminal() {
+		if sm.IsTerminal() {
 			t.Error("Expected IsTerminal to be false with buffer output")
 		}
 		
 		// Set TTY stream (if available)
 		if isatty(os.Stdout) {
-			tm.SetTtyStream(os.Stdout)
+			sm.SetTtyStream(os.Stdout)
 			
 			// Now it should report as terminal
-			if !tm.IsTerminal() {
+			if !sm.IsTerminal() {
 				t.Error("Expected IsTerminal to be true after SetTtyStream")
 			}
 			
 			// Should be able to get terminal width
-			width, err := tm.GetTerminalWidth()
+			width, err := sm.GetTerminalWidth()
 			if err != nil {
 				t.Errorf("Expected no error after SetTtyStream, got %v", err)
 			}
@@ -78,14 +78,14 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 	t.Run("IsTerminal", func(t *testing.T) {
 		// Test with buffer (not a terminal)
 		buf := &bytes.Buffer{}
-		tm1 := NewTeeManager(buf, os.Stderr)
+		tm1 := NewStreamManager(os.Stdin, buf, os.Stderr)
 		if tm1.IsTerminal() {
 			t.Error("Expected IsTerminal to be false for buffer")
 		}
 		
 		// Test with actual terminal (if available)
 		if isatty(os.Stdout) {
-			tm2 := NewTeeManager(os.Stdout, os.Stderr)
+			tm2 := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
 			if !tm2.IsTerminal() {
 				t.Error("Expected IsTerminal to be true for os.Stdout")
 			}
