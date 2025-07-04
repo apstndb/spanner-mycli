@@ -39,7 +39,10 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 		s.hasWarned = true
 		fmt.Fprintf(s.errStream, "WARNING: Failed to write to tee file: %v\n", err)
 		fmt.Fprintf(s.errStream, "WARNING: Tee logging disabled for remainder of session\n")
-		// Return success to io.MultiWriter to avoid interrupting stdout
+		// CRITICAL: We must return success here even though the write failed.
+		// io.MultiWriter will stop writing to ALL writers (including stdout!)
+		// if ANY writer returns an error. By returning success, we ensure
+		// that tee failures never interrupt the main CLI output.
 		return len(p), nil
 	}
 	
@@ -76,7 +79,9 @@ func openTeeFile(filePath string) (*os.File, error) {
 		return nil, err
 	}
 	
-	// Double-check the file after opening (in case of race condition)
+	// Double-check the file after opening to handle TOCTOU race conditions.
+	// Without this check, a regular file could be replaced with a FIFO
+	// between our initial stat and open calls, causing the CLI to block.
 	fi, err = file.Stat()
 	if err != nil {
 		file.Close()
@@ -194,7 +199,11 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.outStream
 	}
 	
-	// Return cached writer if available
+	// Return cached writer if available.
+	// Caching is critical for two reasons:
+	// 1. It ensures all code paths use the same writer instance, preventing
+	//    multiple safeTeeWriter instances that would each show their own warning
+	// 2. It improves performance by avoiding repeated MultiWriter creation
 	if sm.cachedWriter != nil {
 		return sm.cachedWriter
 	}
