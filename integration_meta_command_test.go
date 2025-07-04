@@ -500,7 +500,7 @@ SELECT "foo" AS s;`
 			SystemVariables: &sysVars,
 		}
 
-		return cli, output
+		return cli, consoleBuf
 	}
 
 	runInteractiveCLI := func(t *testing.T, cli *Cli) {
@@ -580,12 +580,12 @@ SELECT "foo" AS s;`
 	t.Run("tee command with directory error", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		cli, output := setupTeeTestCLI("\\T " + tmpDir)
+		cli, consoleBuf := setupTeeTestCLI("\\T " + tmpDir)
 		runInteractiveCLI(t, cli)
 
 		// Check that error was printed
-		outputStr := output.String()
-		if !strings.Contains(outputStr, "ERROR: open") || !strings.Contains(outputStr, "is a directory") {
+		outputStr := consoleBuf.String()
+		if !strings.Contains(outputStr, "ERROR: tee output to a non-regular file is not supported") {
 			t.Errorf("Expected output to contain error about directory, got: %s", outputStr)
 		}
 	})
