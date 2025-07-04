@@ -1,3 +1,5 @@
+// StreamManager manages all I/O streams for the CLI.
+// All methods are safe for concurrent use.
 package main
 
 import (
