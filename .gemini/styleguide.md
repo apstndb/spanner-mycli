@@ -133,50 +133,13 @@ if fi.Size() > maxFileSize {
 
 Remember: This is a tool where users execute their own SQL files, not a service processing untrusted input. Security measures should focus on preventing accidents and misuse, not defending against adversarial attacks on the local system.
 
-## Error Handling Patterns
-
-### Output Functions (cli_output.go)
-
-Output functions in `cli_output.go` follow a specific error handling pattern that should be maintained for consistency:
-
-**DO NOT** suggest that output functions should return errors. The established pattern is:
-- Output functions (`print*` functions that write to `io.Writer`) do not return errors
-- Errors from complex operations (e.g., `table.Render()`, `xml.Encode()`) are logged using `slog.Error()` but execution continues
-- Simple I/O operations (`fmt.Fprintf`, `fmt.Fprintln`) do not check for errors
-
-```go
-// Correct pattern for output functions:
-func printSomething(out io.Writer, data Data) {
-    // Simple I/O - no error checking
-    fmt.Fprintf(out, "Header")
-    
-    // Complex operations - log errors but continue
-    if err := complexOperation(); err != nil {
-        slog.Error("operation failed", "err", err)
-    }
-    
-    // More simple I/O - no error checking
-    fmt.Fprintln(out, "Footer")
-}
-
-// DO NOT suggest changing to:
-func printSomething(out io.Writer, data Data) error {
-    if _, err := fmt.Fprintf(out, "Header"); err != nil {
-        return err
-    }
-    // ...
-}
-```
-
-This "log and continue" approach is intentional for CLI output functions, as partial output is often more useful than no output in an interactive tool.
-
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
 
 1. **Correctness**: Does the code do what it claims to do?
 2. **Test Coverage**: Are there adequate tests for new functionality?
-3. **Error Handling**: Are errors properly handled and returned? (Note: See section above for output function exceptions)
+3. **Error Handling**: Are errors properly handled and returned?
 4. **Resource Management**: Are resources (files, connections, etc.) properly closed?
 5. **Documentation**: Are public APIs and complex logic adequately documented?
 

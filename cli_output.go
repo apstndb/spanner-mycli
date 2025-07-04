@@ -53,6 +53,9 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 }
 
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
+	// TODO(#issue): Migrate all output functions to return errors for better error handling.
+	// Currently, only HTML and XML formats return errors as a first step toward
+	// improving error handling across all output formats.
 	mode := sysVars.CLIFormat
 
 	// screenWidth <= means no limit.
@@ -153,7 +156,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	case DisplayModeHTML:
 		// Output data in HTML table format compatible with Google Cloud Spanner CLI.
 		// All values are properly escaped using html.EscapeString for security.
-		printHTMLTable(out, columnNames, result.Rows, sysVars.SkipColumnNames)
+		if err := printHTMLTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printHTMLTable() failed", "err", err)
+		}
 	case DisplayModeXML:
 		// Output data in XML format compatible with Google Cloud Spanner CLI.
 		// All values are properly escaped using encoding/xml for security.
@@ -169,7 +174,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		//     </row>
 		//     ...
 		//   </resultset>
-		printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames)
+		if err := printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printXMLResultSet() failed", "err", err)
+		}
 	}
 }
 
@@ -532,32 +539,47 @@ func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 //   - Includes BORDER='1' attribute on TABLE element
 //   - All values are HTML-escaped using html.EscapeString for security
 // Note: This function streams output row-by-row for memory efficiency.
-func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
+func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return
+		return nil
 	}
 
-	fmt.Fprint(out, "<TABLE BORDER='1'>")
+	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
+		return err
+	}
 	
 	// Add header row unless skipping column names
 	if !skipColumnNames {
-		fmt.Fprint(out, "<TR>")
-		for _, col := range columnNames {
-			fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+			return err
 		}
-		fmt.Fprint(out, "</TR>")
+		for _, col := range columnNames {
+			if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+			return err
+		}
 	}
 	
 	// Add data rows
 	for _, row := range rows {
-		fmt.Fprint(out, "<TR>")
-		for _, col := range row {
-			fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+			return err
 		}
-		fmt.Fprint(out, "</TR>")
+		for _, col := range row {
+			if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+			return err
+		}
 	}
 	
-	fmt.Fprintln(out, "</TABLE>")
+	_, err := fmt.Fprintln(out, "</TABLE>")
+	return err
 }
 
 // xmlField represents a field element in XML output.
@@ -595,9 +617,9 @@ type xmlResultSet struct {
 // encoding. For very large result sets, consider using TAB format for
 // streaming output. This design prioritizes simplicity and consistency
 // with the TABLE format over memory efficiency.
-func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) {
+func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return
+		return nil
 	}
 
 	// Build the result set structure
@@ -625,13 +647,16 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 	}
 	
 	// Write XML declaration
-	fmt.Fprintln(out, "<?xml version='1.0'?>")
+	if _, err := fmt.Fprintln(out, "<?xml version='1.0'?>"); err != nil {
+		return err
+	}
 	
 	// Marshal the result set
 	encoder := xml.NewEncoder(out)
 	encoder.Indent("", "\t")
 	if err := encoder.Encode(resultSet); err != nil {
-		slog.Error("xml.Encoder.Encode() failed", "err", err)
+		return fmt.Errorf("xml.Encoder.Encode() failed: %w", err)
 	}
-	fmt.Fprintln(out) // Add final newline
+	_, err := fmt.Fprintln(out) // Add final newline
+	return err
 }

@@ -343,7 +343,10 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 func TestHTMLAndXMLHelpers(t *testing.T) {
 	t.Run("printHTMLTable with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
-		printHTMLTable(&buf, []string{}, []Row{}, false)
+		err := printHTMLTable(&buf, []string{}, []Row{}, false)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
 		}
@@ -351,7 +354,10 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 
 	t.Run("printXMLResultSet with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
-		printXMLResultSet(&buf, []string{}, []Row{}, false)
+		err := printXMLResultSet(&buf, []string{}, []Row{}, false)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
 		}
@@ -370,7 +376,10 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		printXMLResultSet(&buf, columns, rows, false)
+		err := printXMLResultSet(&buf, columns, rows, false)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
 		
 		output := buf.String()
 		if !strings.Contains(output, "<?xml version='1.0'?>") {
