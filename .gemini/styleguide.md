@@ -133,6 +133,42 @@ if fi.Size() > maxFileSize {
 
 Remember: This is a tool where users execute their own SQL files, not a service processing untrusted input. Security measures should focus on preventing accidents and misuse, not defending against adversarial attacks on the local system.
 
+## Concurrency and Mutex Usage
+
+### File I/O Outside Mutex Locks
+
+When implementing concurrent-safe operations that involve file I/O, it's often appropriate to perform the I/O operations **outside** the mutex lock to avoid blocking other operations:
+
+```go
+// GOOD: File I/O outside lock prevents blocking other operations
+func (m *Manager) SetFile(path string) error {
+    // Open file BEFORE acquiring lock
+    file, err := os.Open(path)
+    if err != nil {
+        return err
+    }
+    
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    
+    // Quick operations under lock
+    if m.file != nil {
+        m.file.Close()
+    }
+    m.file = file
+    return nil
+}
+```
+
+**DO NOT** suggest moving file I/O inside mutex locks purely for theoretical race-condition elimination when:
+1. The "race" results in acceptable "last write wins" semantics
+2. The operation is typically single-threaded in practice (CLI commands, configuration)
+3. Resource cleanup is properly maintained regardless of ordering
+
+### Configuration Semantics
+
+For configuration-changing methods (like `EnableTee`, `SetOutput`, etc.), "last write wins" is the expected behavior. This matches standard software behavior where the most recent configuration change takes effect.
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
