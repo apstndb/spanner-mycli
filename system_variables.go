@@ -686,6 +686,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					this.CLIFormat = DisplayModeVertical
 				case "TAB":
 					this.CLIFormat = DisplayModeTab
+				case "HTML":
+					this.CLIFormat = DisplayModeHTML
+				case "XML":
+					this.CLIFormat = DisplayModeXML
+				default:
+					return fmt.Errorf("invalid CLI_FORMAT value: %v", value)
 				}
 				return nil
 			},
@@ -694,10 +700,18 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				switch this.CLIFormat {
 				case DisplayModeTable:
 					formatStr = "TABLE"
+				case DisplayModeTableComment:
+					formatStr = "TABLE_COMMENT"
+				case DisplayModeTableDetailComment:
+					formatStr = "TABLE_DETAIL_COMMENT"
 				case DisplayModeVertical:
 					formatStr = "VERTICAL"
 				case DisplayModeTab:
 					formatStr = "TAB"
+				case DisplayModeHTML:
+					formatStr = "HTML"
+				case DisplayModeXML:
+					formatStr = "XML"
 				}
 				return singletonMap(name, formatStr), nil
 			},

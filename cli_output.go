@@ -3,7 +3,9 @@ package main
 import (
 	"cmp"
 	_ "embed"
+	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"iter"
 	"log/slog"
@@ -37,6 +39,8 @@ const (
 	DisplayModeTableDetailComment
 	DisplayModeVertical
 	DisplayModeTab
+	DisplayModeHTML
+	DisplayModeXML
 )
 
 // renderTableHeader renders TableHeader. It is nil safe.
@@ -145,6 +149,80 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			for _, row := range result.Rows {
 				fmt.Fprintln(out, strings.Join(row, "\t"))
 			}
+		}
+	case DisplayModeHTML:
+		if len(columnNames) > 0 {
+			fmt.Fprint(out, "<TABLE BORDER='1'>")
+			if !sysVars.SkipColumnNames {
+				fmt.Fprint(out, "<TR>")
+				for _, col := range columnNames {
+					fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
+				}
+				fmt.Fprint(out, "</TR>")
+			}
+			for _, row := range result.Rows {
+				fmt.Fprint(out, "<TR>")
+				for _, col := range row {
+					fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
+				}
+				fmt.Fprint(out, "</TR>")
+			}
+			fmt.Fprintln(out, "</TABLE>")
+		}
+	case DisplayModeXML:
+		if len(columnNames) > 0 {
+			type xmlField struct {
+				XMLName xml.Name `xml:"field"`
+				Value   string   `xml:",chardata"`
+			}
+			type xmlRow struct {
+				XMLName xml.Name   `xml:"row"`
+				Fields  []xmlField `xml:"field"`
+			}
+			type xmlHeader struct {
+				XMLName xml.Name   `xml:"header"`
+				Fields  []xmlField `xml:"field"`
+			}
+			type xmlResultSet struct {
+				XMLName xml.Name   `xml:"resultset"`
+				XMLNS   string     `xml:"xmlns:xsi,attr"`
+				Header  *xmlHeader `xml:"header,omitempty"`
+				Rows    []xmlRow   `xml:"row"`
+			}
+
+			// Build the result set structure
+			resultSet := xmlResultSet{
+				XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
+			}
+			
+			// Add header fields only if not skipping column names
+			if !sysVars.SkipColumnNames {
+				header := &xmlHeader{}
+				for _, col := range columnNames {
+					header.Fields = append(header.Fields, xmlField{Value: col})
+				}
+				resultSet.Header = header
+			}
+			
+			// Add rows
+			for _, row := range result.Rows {
+				xmlRow := xmlRow{}
+				for _, col := range row {
+					xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
+				}
+				resultSet.Rows = append(resultSet.Rows, xmlRow)
+			}
+			
+			// Write XML declaration
+			fmt.Fprintln(out, "<?xml version='1.0'?>")
+			
+			// Marshal the result set
+			encoder := xml.NewEncoder(out)
+			encoder.Indent("", "\t")
+			if err := encoder.Encode(resultSet); err != nil {
+				slog.Error("xml.Encoder.Encode() failed", "err", err)
+			}
+			fmt.Fprintln(out) // Add final newline
 		}
 	}
 }
