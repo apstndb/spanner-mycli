@@ -24,10 +24,11 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
 	session.systemVariables.Verbose = true // Set Verbose to true to ensure result line is printed
 	
+	// Update the session's StreamManager to use the output buffer
+	session.systemVariables.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf)
+	
 	cli := &Cli{
 		SessionHandler: NewSessionHandler(session),
-		OutStream: &outputBuf,
-		ErrStream: &outputBuf,
 		SystemVariables: session.systemVariables, // Use the same systemVariables as the session
 	}
 
@@ -212,7 +213,10 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	defer func() { _ = pipeReader.Close() }()
 	defer func() { _ = pipeWriter.Close() }()
 
-	cli, err := NewCli(ctx, nil, pipeReader, &outputBuf, &outputBuf, &sysVarsNonExistent)
+	// Create StreamManager with the pipe for input
+	sysVarsNonExistent.StreamManager = NewStreamManager(pipeReader, &outputBuf, &outputBuf)
+	
+	cli, err := NewCli(ctx, nil, &sysVarsNonExistent)
 	if err != nil {
 		t.Fatalf("Failed to create CLI with non-existent database: %v", err)
 	}
@@ -385,23 +389,24 @@ func TestRunMCP(t *testing.T) {
 		session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
 		
 		var outputBuf strings.Builder
+		// Create a new system variables with modified values
+		modifiedSysVars := &systemVariables{
+			Project:               session.systemVariables.Project,
+			Instance:              session.systemVariables.Instance,
+			Database:              session.systemVariables.Database,
+			Params:                make(map[string]ast.Node),
+			RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			Host:                  session.systemVariables.Host,
+			Port:                  session.systemVariables.Port,
+			WithoutAuthentication: session.systemVariables.WithoutAuthentication,
+			StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+			AutoWrap:              true, // Set a different value
+			EnableHighlight:       true, // Set a different value
+			StreamManager:         NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
+		}
 		cli := &Cli{
-			SessionHandler: NewSessionHandler(session),
-			OutStream: &outputBuf,
-			ErrStream: &outputBuf,
-			SystemVariables: &systemVariables{
-				Project:               session.systemVariables.Project,
-				Instance:              session.systemVariables.Instance,
-				Database:              session.systemVariables.Database,
-				Params:                make(map[string]ast.Node),
-				RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-				Host:                  session.systemVariables.Host,
-				Port:                  session.systemVariables.Port,
-				WithoutAuthentication: session.systemVariables.WithoutAuthentication,
-				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-				AutoWrap:              true, // Set a different value
-				EnableHighlight:       true, // Set a different value
-			},
+			SessionHandler:  NewSessionHandler(session),
+			SystemVariables: modifiedSysVars,
 		}
 
 		// Create server with the modified CLI

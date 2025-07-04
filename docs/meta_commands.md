@@ -176,3 +176,21 @@ spanner> SELECT DATABASE() as current_db;
 | test-db    |
 +------------+
 ```
+
+## Output Tee Control (`\T` and `\t`)
+
+The `\T` and `\t` meta commands provide dynamic control over output logging during an interactive session, complementing the `--tee` command-line option.
+
+### Usage
+
+- `\T <filename>` - Start appending output to the specified file
+- `\t` - Stop output logging
+
+```
+spanner> \T session.log
+spanner> SELECT * FROM users;  -- This query and result will be logged
+spanner> \t
+spanner> SELECT * FROM sensitive_data;  -- This won't be logged
+```
+
+For detailed information about tee functionality (what gets logged, file handling, error handling), see [Output logging (tee functionality)](../README.md#output-logging-tee-functionality) in the README.

@@ -53,46 +53,45 @@ const (
 type Cli struct {
 	SessionHandler  *SessionHandler
 	Credential      []byte
-	InStream        io.ReadCloser
-	// OutStream is the main output writer. When --tee is used, this is an io.MultiWriter
-	// that writes to both stdout and the tee file. This should be used for all
-	// output that should be captured (query results, messages, etc).
-	OutStream       io.Writer
-	// ErrStream is the error output writer (typically os.Stderr).
-	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
 }
 
-func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
 	}
 	
 	sessionHandler := NewSessionHandler(session)
-
-	// Set up the output streams in systemVariables
-	// These are used by Session and various statement handlers
-	sysVars.CurrentOutStream = outStream  // This includes tee when --tee is used
-	sysVars.CurrentErrStream = errStream
 	
-	// TtyOutStream should already be set in main.go, but provide fallback
-	// This fallback only works when outStream is directly os.Stdout (no --tee)
-	if sysVars.TtyOutStream == nil {
-		if f, ok := outStream.(*os.File); ok {
-			sysVars.TtyOutStream = f
-		}
-	}
+	// StreamManager now manages the TTY stream internally
 
 	return &Cli{
 		SessionHandler:  sessionHandler,
 		Credential:      credential,
-		InStream:        inStream,
-		OutStream:       outStream,
-		ErrStream:       errStream,
 		SystemVariables: sysVars,
 	}, nil
+}
+
+// GetWriter returns the current output writer (with or without tee)
+func (c *Cli) GetWriter() io.Writer {
+	return c.SystemVariables.StreamManager.GetWriter()
+}
+
+// GetTtyStream returns the TTY stream for terminal operations
+func (c *Cli) GetTtyStream() *os.File {
+	return c.SystemVariables.StreamManager.GetTtyStream()
+}
+
+// GetErrStream returns the error stream
+func (c *Cli) GetErrStream() io.Writer {
+	return c.SystemVariables.StreamManager.GetErrStream()
+}
+
+// GetInStream returns the input stream
+func (c *Cli) GetInStream() io.ReadCloser {
+	return c.SystemVariables.StreamManager.GetInStream()
 }
 
 func (c *Cli) RunInteractive(ctx context.Context) error {
@@ -104,12 +103,12 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 		}
 
 		if exists {
-			fmt.Fprintf(c.OutStream, "Connected.\n")
+			fmt.Fprintf(c.GetWriter(), "Connected.\n")
 		} else {
 			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
 		}
 	} else {
-		fmt.Fprintf(c.OutStream, "Connected in detached mode.\n")
+		fmt.Fprintf(c.GetWriter(), "Connected in detached mode.\n")
 	}
 
 	ed, history, err := initializeMultilineEditor(c)
@@ -128,7 +127,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 		if err != nil {
 			switch {
 			case errors.Is(err, io.EOF):
-				fmt.Fprintln(c.OutStream, "Bye")
+				fmt.Fprintln(c.GetWriter(), "Bye")
 				return NewExitCodeError(c.handleExit())
 			case isInterrupted(err):
 				// This section is currently redundant but keep as intended
@@ -200,7 +199,7 @@ func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
 func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exitCode int, processed bool) {
 	// Handle ExitStatement
 	if _, ok := stmt.(*ExitStatement); ok {
-		fmt.Fprintln(c.OutStream, "Bye")
+		fmt.Fprintln(c.GetWriter(), "Bye")
 		return c.handleExit(), true
 	}
 
@@ -223,11 +222,12 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 		}
 
 		// Interactive confirmations require a TTY
-		if c.SystemVariables.TtyOutStream == nil {
+		ttyStream := c.GetTtyStream()
+		if ttyStream == nil {
 			c.PrintInteractiveError(fmt.Errorf("cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal"))
 			return -1, true
 		}
-		if !confirm(c.InStream, c.SystemVariables.TtyOutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+		if !confirm(c.GetInStream(), ttyStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
 			return -1, true
 		}
 	}
@@ -237,7 +237,7 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 
 // executeStatementInteractive executes the statement and displays the result.
 func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
-	preInput, err := c.executeStatement(ctx, stmt, true, input.statement, c.OutStream)
+	preInput, err := c.executeStatement(ctx, stmt, true, input.statement, c.GetWriter())
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +319,7 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 		}
 		
 		// Execute the statement in interactive mode to get proper output formatting
-		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.OutStream)
+		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.GetWriter())
 		if err != nil {
 			return fmt.Errorf("error executing statement %d from file %s: %w", i+1, filePath, err)
 		}
@@ -343,7 +343,7 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 			return NewExitCodeError(c.handleExit())
 		}
 
-		_, err = c.executeStatement(ctx, stmt, false, input, c.OutStream)
+		_, err = c.executeStatement(ctx, stmt, false, input, c.GetWriter())
 		if err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)
@@ -361,12 +361,12 @@ func (c *Cli) handleExit() int {
 
 func (c *Cli) ExitOnError(err error) int {
 	c.SessionHandler.Close()
-	printError(c.ErrStream, err)
+	printError(c.GetErrStream(), err)
 	return exitCodeError
 }
 
 func (c *Cli) PrintInteractiveError(err error) {
-	printError(c.OutStream, err)
+	printError(c.GetWriter(), err)
 }
 
 func printError(w io.Writer, err error) {
@@ -388,13 +388,13 @@ func printError(w io.Writer, err error) {
 }
 
 func (c *Cli) PrintBatchError(err error) {
-	printError(c.ErrStream, err)
+	printError(c.GetErrStream(), err)
 }
 
 func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
-		w = c.OutStream
+		w = c.GetWriter()
 	}
 
 	ostream := w
@@ -436,10 +436,11 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 	// Progress marks use terminal control characters, so they should always
 	// go to TtyOutStream to avoid polluting tee output. If no TTY is available,
 	// disable progress marks.
-	if c.SystemVariables.TtyOutStream == nil {
+	ttyStream := c.GetTtyStream()
+	if ttyStream == nil {
 		return func() {}
 	}
-	ttyWriter := c.SystemVariables.TtyOutStream
+	ttyWriter := ttyStream
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
@@ -536,7 +537,7 @@ func confirm(in io.Reader, out io.Writer, msg string) bool {
 func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string, w io.Writer) (string, error) {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
-		w = c.OutStream
+		w = c.GetWriter()
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	go handleInterrupt(cancel)
@@ -636,15 +637,16 @@ func GetTerminalSize(w io.Writer) (int, error) {
 }
 
 // GetTerminalSizeWithTty returns the width of the terminal.
-// It uses the TtyOutStream from systemVariables if available, otherwise falls back to
+// It uses the TtyOutStream from StreamManager if available, otherwise falls back to
 // attempting to type assert the writer to *os.File.
 // Returns an error if the terminal size cannot be determined.
 func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 	var f *os.File
 	
 	// Prefer TtyOutStream if available
-	if c.SystemVariables.TtyOutStream != nil {
-		f = c.SystemVariables.TtyOutStream
+	ttyStream := c.GetTtyStream()
+	if ttyStream != nil {
+		f = ttyStream
 	} else {
 		// Fallback to type assertion
 		var ok bool
@@ -667,7 +669,7 @@ func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
-		w = c.OutStream
+		w = c.GetWriter()
 	}
 
 	size := math.MaxInt

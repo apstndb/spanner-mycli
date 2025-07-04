@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"math"
 	"strconv"
 	"testing"
@@ -50,13 +51,15 @@ func TestCli_displayResult(t *testing.T) {
 			// in displayResult to determine what size would be passed to PrintResult
 
 			// Create a Cli with our system variables
+			outBuf := &bytes.Buffer{}
+			sysVars := &systemVariables{
+				AutoWrap:      tt.autowrap,
+				FixedWidth:    tt.fixedWidth,
+				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+			}
 			cli := &Cli{
-				OutStream: &bytes.Buffer{},
-				SystemVariables: &systemVariables{
-					AutoWrap:   tt.autowrap,
-					FixedWidth: tt.fixedWidth,
-					CLIFormat:  DisplayModeTab, // Use TAB format for predictable output
-				},
+				SystemVariables: sysVars,
 			}
 
 			// Calculate the expected size based on the same logic as displayResult

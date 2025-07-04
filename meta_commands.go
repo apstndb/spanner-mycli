@@ -46,19 +46,15 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Check if output stream is configured
-	if session.systemVariables.CurrentOutStream == nil {
-		slog.Error("CurrentOutStream is nil, cannot write shell command output", "command", s.Command)
-		return nil, errors.New("internal error: output stream not configured")
-	}
-	if session.systemVariables.CurrentErrStream == nil {
-		slog.Error("CurrentErrStream is nil, cannot write shell command error output", "command", s.Command)
-		return nil, errors.New("internal error: error stream not configured")
+	// Check if StreamManager is configured
+	if session.systemVariables.StreamManager == nil {
+		slog.Error("StreamManager is nil, cannot execute shell command", "command", s.Command)
+		return nil, errors.New("internal error: StreamManager not configured")
 	}
 
 	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
-	shellCmd.Stdout = session.systemVariables.CurrentOutStream
-	shellCmd.Stderr = session.systemVariables.CurrentErrStream
+	shellCmd.Stdout = session.systemVariables.StreamManager.GetWriter()
+	shellCmd.Stderr = session.systemVariables.StreamManager.GetErrStream()
 
 	// Execute the command
 	if err := shellCmd.Run(); err != nil {
@@ -129,6 +125,25 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\u requires a database name")
 		}
 		return &UseDatabaseMetaCommand{Database: database}, nil
+	case "T":
+		if args == "" {
+			return nil, errors.New("\\T requires a filename")
+		}
+		// Use shellquote for proper parsing of quoted filenames
+		words, err := shellquote.Split(args)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filename quoting: %w", err)
+		}
+		if len(words) != 1 {
+			return nil, errors.New("\\T requires exactly one filename")
+		}
+		return &TeeOutputMetaCommand{FilePath: words[0]}, nil
+	case "t":
+		// \t command takes no arguments
+		if args != "" {
+			return nil, errors.New("\\t does not accept arguments")
+		}
+		return &DisableTeeMetaCommand{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported meta command: \\%s", command)
 	}
@@ -202,4 +217,60 @@ func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) 
 func IsMetaCommand(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "\\")
+}
+
+// TeeOutputMetaCommand enables output tee to a file using \T syntax
+type TeeOutputMetaCommand struct {
+	FilePath string
+}
+
+// Ensure TeeOutputMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*TeeOutputMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (t *TeeOutputMetaCommand) isMetaCommand() {}
+
+// Execute enables tee output to the specified file
+func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Validate that we have system variables and tee manager available
+	if session.systemVariables == nil {
+		return nil, errors.New("internal error: system variables not initialized")
+	}
+	if session.systemVariables.StreamManager == nil {
+		return nil, errors.New("internal error: tee manager not initialized")
+	}
+
+	// Enable tee for the specified file
+	if err := session.systemVariables.StreamManager.EnableTee(t.FilePath); err != nil {
+		return nil, err
+	}
+
+	
+	return &Result{}, nil
+}
+
+// DisableTeeMetaCommand disables output tee using \t syntax
+type DisableTeeMetaCommand struct{}
+
+// Ensure DisableTeeMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*DisableTeeMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (d *DisableTeeMetaCommand) isMetaCommand() {}
+
+// Execute disables tee output
+func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Validate that we have system variables and tee manager available
+	if session.systemVariables == nil {
+		return nil, errors.New("internal error: system variables not initialized")
+	}
+	if session.systemVariables.StreamManager == nil {
+		return nil, errors.New("internal error: tee manager not initialized")
+	}
+
+	// Disable tee
+	session.systemVariables.StreamManager.DisableTee()
+	
+	
+	return &Result{}, nil
 }

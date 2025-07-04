@@ -312,9 +312,13 @@ spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
 1 rows in set (0.00 sec)
 ```
 
-### Output logging with --tee
+### Output logging (tee functionality)
 
-The `--tee` flag allows you to append a copy of all output to a file while still displaying it on the console, similar to the Unix `tee` command.
+spanner-mycli provides tee functionality to append a copy of all output to a file while still displaying it on the console, similar to the Unix `tee` command. This feature is available through both:
+- `--tee` command-line option: starts logging from the beginning of the session
+- `\T` and `\t` meta-commands: dynamically control logging during interactive sessions
+
+#### Using --tee option
 
 ```bash
 # Log all query results to a file
@@ -323,6 +327,18 @@ $ spanner-mycli --tee output.log -p myproject -i myinstance -d mydb
 # In batch mode with --tee
 $ spanner-mycli --tee queries.log -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 ```
+
+#### Using \T and \t meta-commands
+
+```sql
+spanner> \T session.log       -- Start logging to session.log
+spanner> SELECT * FROM users; -- This query and result will be logged
+spanner> \t                   -- Stop logging
+spanner> SELECT * FROM keys;  -- This won't be logged
+spanner> \T another.log       -- Start logging to a different file
+```
+
+#### What gets logged
 
 The tee file will contain:
 - Query results and output
@@ -336,7 +352,19 @@ The tee file will NOT contain:
 - Confirmation dialogs (e.g., DROP DATABASE confirmations)
 - Readline input display
 
-The file is opened in append mode, so existing content is preserved. If the file doesn't exist, it will be created.
+#### Features
+
+- **Dynamic control** with meta-commands: Start and stop logging during the session
+- **File switching**: Starting a new tee (with `\T`) automatically closes the previous file
+- **Quoted filenames**: Supports filenames with spaces: `\T "my output.log"`
+- **Combine with --tee**: Start with `--tee`, use `\t` to pause, and `\T` to resume
+
+#### File handling
+
+- Files are opened in **append mode** (existing content is preserved)
+- Files are created if they don't exist
+- Only regular files are supported (not directories, FIFOs, or device files)
+- Write errors are handled gracefully with warnings
 
 ```bash
 # Example: Logging a session with CLI_ECHO_INPUT
@@ -528,6 +556,8 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 | `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
 | `\R <prompt_string>` | Change the prompt string | `\R mycli> ` |
 | `\u <database>` | Switch to a different database | `\u mydb` |
+| `\T <filename>` | Start tee logging to file | `\T output.txt` |
+| `\t` | Stop tee logging | `\t` |
 
 For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 

@@ -102,6 +102,7 @@ type Session struct {
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
+
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements
@@ -861,6 +862,8 @@ func (s *Session) Close() {
 	if s.cqlSession != nil {
 		s.cqlSession.Close()
 	}
+
+	// No need to close tee file here as it's managed by StreamManager
 }
 
 func (s *Session) DatabasePath() string {

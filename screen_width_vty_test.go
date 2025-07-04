@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"testing"
 
@@ -153,14 +155,16 @@ func TestDisplayResultWithPty(t *testing.T) {
 			}
 
 			// Create a Cli with our system variables and the pseudoterminal as output
+			sysVars := &systemVariables{
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), tty, os.Stderr),
+				AutoWrap:      tt.autowrap,
+				FixedWidth:    tt.fixedWidth,
+				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+			}
+			// Set the TTY stream in StreamManager
+			sysVars.StreamManager.SetTtyStream(tty)
 			cli := &Cli{
-				OutStream: tty,
-				SystemVariables: &systemVariables{
-					CurrentOutStream: tty,
-					AutoWrap:         tt.autowrap,
-					FixedWidth:       tt.fixedWidth,
-					CLIFormat:        DisplayModeTab, // Use TAB format for predictable output
-				},
+				SystemVariables: sysVars,
 			}
 
 			// Call displayResult

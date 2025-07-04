@@ -133,6 +133,89 @@ if fi.Size() > maxFileSize {
 
 Remember: This is a tool where users execute their own SQL files, not a service processing untrusted input. Security measures should focus on preventing accidents and misuse, not defending against adversarial attacks on the local system.
 
+## Concurrency and Race Conditions
+
+### Logical vs Memory Race Conditions
+
+When reviewing concurrent code, distinguish between:
+1. **Memory race conditions**: Unsynchronized concurrent access to shared memory (undefined behavior)
+2. **Logical race conditions**: Operations that appear atomic to callers but aren't (incorrect semantics)
+
+Example of a logical race condition:
+```go
+// BAD: Logical race - operation appears atomic but isn't
+func (m *Manager) SetFile(path string) error {
+    file, err := os.Open(path)  // Outside lock
+    if err != nil {
+        return err
+    }
+    
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    
+    // Another thread could have changed m.file between Open and Lock
+    if m.file != nil {
+        m.file.Close()  // Might close a different file than expected
+    }
+    m.file = file
+    return nil
+}
+```
+
+While there's no memory race (all access to `m.file` is synchronized), concurrent calls violate the expected semantics - a successful call might have its file immediately closed by another thread.
+
+### When File I/O Inside Locks is Appropriate
+
+For operations that must be atomic (like configuration changes), it's often necessary to hold the lock during file I/O:
+
+```go
+// GOOD: Entire operation is atomic
+func (m *Manager) SetFile(path string) error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    
+    file, err := os.Open(path)  // Inside lock for atomicity
+    if err != nil {
+        return err
+    }
+    
+    if m.file != nil {
+        m.file.Close()
+    }
+    m.file = file
+    return nil
+}
+```
+
+The performance impact is usually acceptable for infrequent operations like configuration changes in CLI tools.
+
+## CLI Tool Error Notification
+
+For CLI tools, user-facing error notifications should use standard streams:
+- **stderr**: For warnings and non-fatal errors that users need to see
+- **slog**: For internal debugging and structured logging
+
+Example:
+```go
+// GOOD: User-facing warning via stderr
+fmt.Fprintf(errStream, "WARNING: Operation failed: %v\n", err)
+
+// AVOID: Using slog for user notifications
+slog.Error("Operation failed", "error", err)  // User might not see this
+```
+
+## Code Review Context
+
+When reviewing code, ensure you have the full context:
+- Check if suggested fixes are already implemented nearby
+- Read comments that explain design decisions
+- Verify line numbers match the actual issue location
+
+Common false positives to avoid:
+1. Suggesting to add code that already exists (e.g., TOCTOU double-checks)
+2. Missing extensive comments that explain the current design
+3. Suggesting changes that violate principles already documented in the code
+
 ## Output Format Memory Patterns
 
 ### Memory Buffering vs Streaming in Output Formats

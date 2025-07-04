@@ -916,9 +916,12 @@ func Test_confirm(t *testing.T) {
 
 func TestCli_handleExit(t *testing.T) {
 	outBuf := &bytes.Buffer{}
+	sysVars := &systemVariables{
+		StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+	}
 	cli := &Cli{
-		SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
-		OutStream: outBuf,
+		SessionHandler:  NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
+		SystemVariables: sysVars,
 	}
 
 	exitCode := cli.handleExit()
@@ -953,9 +956,12 @@ func TestCli_ExitOnError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
+			sysVars := &systemVariables{
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
+			}
 			cli := &Cli{
-				SessionHandler: NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
-				ErrStream: errBuf,
+				SessionHandler:  NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
+				SystemVariables: sysVars,
 			}
 
 			exitCode := cli.ExitOnError(tt.err)
@@ -1048,12 +1054,15 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 				tt.wantProcessed = true
 			}
 			
+			// Create StreamManager with the test streams
+			sysVars.StreamManager = NewStreamManager(
+				io.NopCloser(strings.NewReader(tt.confirmInput)), // InStream for confirm
+				outBuf,
+				errBuf,
+			)
 			cli := &Cli{
 				SessionHandler:  NewSessionHandler(&Session{systemVariables: sysVars}), // Dummy Session
 				SystemVariables: sysVars,
-				InStream:        io.NopCloser(strings.NewReader(tt.confirmInput)), // Set InStream for confirm
-				OutStream:       outBuf,
-				ErrStream:       errBuf,
 			}
 
 			exitCode, processed := cli.handleSpecialStatements(context.Background(), tt.stmt)
@@ -1099,12 +1108,13 @@ func TestCli_PrintResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			outBuf := &bytes.Buffer{}
+			sysVars := &systemVariables{
+				UsePager:  tt.usePager,
+				CLIFormat: DisplayModeTab, // Use TAB format for predictable output
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+			}
 			cli := &Cli{
-				OutStream: outBuf,
-				SystemVariables: &systemVariables{
-					UsePager:  tt.usePager,
-					CLIFormat: DisplayModeTab, // Use TAB format for predictable output
-				},
+				SystemVariables: sysVars,
 			}
 
 			cli.PrintResult(80, tt.result, tt.interactive, tt.input, outBuf)
@@ -1140,8 +1150,11 @@ func TestCli_PrintBatchError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
+			sysVars := &systemVariables{
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
+			}
 			cli := &Cli{
-				ErrStream: errBuf,
+				SystemVariables: sysVars,
 			}
 
 			cli.PrintBatchError(tt.err)
@@ -1318,15 +1331,16 @@ func TestCli_executeSourceFile(t *testing.T) {
 
 			// Setup session and CLI
 			outBuf := &bytes.Buffer{}
-			session := &Session{systemVariables: &systemVariables{}}
+			sysVars := &systemVariables{
+				BuildStatementMode: parseModeFallback,
+				CLIFormat:          DisplayModeTab,
+				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+			}
+			session := &Session{systemVariables: sysVars}
 
 			cli := &Cli{
 				SessionHandler:  NewSessionHandler(session),
-				SystemVariables: &systemVariables{
-					BuildStatementMode: parseModeFallback,
-					CLIFormat:          DisplayModeTab,
-				},
-				OutStream: outBuf,
+				SystemVariables: sysVars,
 			}
 
 			// Execute the source file
@@ -1400,11 +1414,14 @@ func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
 	}
 	tmpFile.Close()
 
+	outBuf := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	sysVars := &systemVariables{
+		StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, errBuf),
+	}
 	cli := &Cli{
 		SessionHandler:  NewSessionHandler(&Session{}),
-		SystemVariables: &systemVariables{},
-		OutStream:       &bytes.Buffer{},
-		ErrStream:       &bytes.Buffer{},
+		SystemVariables: sysVars,
 	}
 
 	// Try to source the large file
