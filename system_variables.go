@@ -672,7 +672,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_FORMAT": {
-		Description: "",
+		Description: "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format).",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
 				// Set the output format for query results.
