@@ -227,5 +227,5 @@ func TestStreamManager_WriteAfterError(t *testing.T) {
 	}
 	
 	// Clean up
-	os.Remove(tmpPath)
+	_ = os.Remove(tmpPath)
 }
