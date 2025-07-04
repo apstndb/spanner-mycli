@@ -1,6 +1,3 @@
-//go:build !windows
-// +build !windows
-
 package main
 
 import (
@@ -13,12 +10,24 @@ import (
 	"time"
 )
 
-func TestOpenTeeFile_FIFO(t *testing.T) {
-	// Skip test on platforms that don't support FIFOs reliably
+// supportsFIFO returns true if the current platform supports FIFOs (named pipes).
+// We use runtime.GOOS instead of build tags for several reasons:
+// 1. Code compiles on all platforms, allowing for better cross-platform testing
+// 2. Compile-time errors are caught even on platforms that don't support FIFOs
+// 3. Test coverage tools can see the code even when tests are skipped
+// 4. Simpler build process without platform-specific build constraints
+func supportsFIFO() bool {
 	switch runtime.GOOS {
 	case "darwin", "linux", "freebsd", "netbsd", "openbsd":
-		// These platforms support FIFOs
+		return true
 	default:
+		return false
+	}
+}
+
+func TestOpenTeeFile_FIFO(t *testing.T) {
+	// Skip test on platforms that don't support FIFOs reliably
+	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)
 	}
 	
@@ -61,10 +70,7 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 
 func TestStreamManager_FIFO(t *testing.T) {
 	// Skip test on platforms that don't support FIFOs reliably
-	switch runtime.GOOS {
-	case "darwin", "linux", "freebsd", "netbsd", "openbsd":
-		// These platforms support FIFOs
-	default:
+	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)
 	}
 	
