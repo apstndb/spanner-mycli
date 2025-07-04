@@ -133,17 +133,19 @@ if fi.Size() > maxFileSize {
 
 Remember: This is a tool where users execute their own SQL files, not a service processing untrusted input. Security measures should focus on preventing accidents and misuse, not defending against adversarial attacks on the local system.
 
-## Concurrency and Mutex Usage
+## Concurrency and Race Conditions
 
-### File I/O Outside Mutex Locks
+### Logical vs Memory Race Conditions
 
-When implementing concurrent-safe operations that involve file I/O, it's often appropriate to perform the I/O operations **outside** the mutex lock to avoid blocking other operations:
+When reviewing concurrent code, distinguish between:
+1. **Memory race conditions**: Unsynchronized concurrent access to shared memory (undefined behavior)
+2. **Logical race conditions**: Operations that appear atomic to callers but aren't (incorrect semantics)
 
+Example of a logical race condition:
 ```go
-// GOOD: File I/O outside lock prevents blocking other operations
+// BAD: Logical race - operation appears atomic but isn't
 func (m *Manager) SetFile(path string) error {
-    // Open file BEFORE acquiring lock
-    file, err := os.Open(path)
+    file, err := os.Open(path)  // Outside lock
     if err != nil {
         return err
     }
@@ -151,7 +153,32 @@ func (m *Manager) SetFile(path string) error {
     m.mu.Lock()
     defer m.mu.Unlock()
     
-    // Quick operations under lock
+    // Another thread could have changed m.file between Open and Lock
+    if m.file != nil {
+        m.file.Close()  // Might close a different file than expected
+    }
+    m.file = file
+    return nil
+}
+```
+
+While there's no memory race (all access to `m.file` is synchronized), concurrent calls violate the expected semantics - a successful call might have its file immediately closed by another thread.
+
+### When File I/O Inside Locks is Appropriate
+
+For operations that must be atomic (like configuration changes), it's often necessary to hold the lock during file I/O:
+
+```go
+// GOOD: Entire operation is atomic
+func (m *Manager) SetFile(path string) error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    
+    file, err := os.Open(path)  // Inside lock for atomicity
+    if err != nil {
+        return err
+    }
+    
     if m.file != nil {
         m.file.Close()
     }
@@ -160,14 +187,7 @@ func (m *Manager) SetFile(path string) error {
 }
 ```
 
-**DO NOT** suggest moving file I/O inside mutex locks purely for theoretical race-condition elimination when:
-1. The "race" results in acceptable "last write wins" semantics
-2. The operation is typically single-threaded in practice (CLI commands, configuration)
-3. Resource cleanup is properly maintained regardless of ordering
-
-### Configuration Semantics
-
-For configuration-changing methods (like `EnableTee`, `SetOutput`, etc.), "last write wins" is the expected behavior. This matches standard software behavior where the most recent configuration change takes effect.
+The performance impact is usually acceptable for infrequent operations like configuration changes in CLI tools.
 
 ## Code Review Focus
 
