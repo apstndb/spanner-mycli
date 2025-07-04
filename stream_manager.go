@@ -151,20 +151,23 @@ func (sm *StreamManager) SetTtyStream(tty *os.File) {
 
 // EnableTee starts tee output to the specified file
 func (sm *StreamManager) EnableTee(filePath string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	
-	// Open the new tee file first
+	// Open the new tee file first, without holding the lock to avoid blocking
+	// other stream operations on potentially slow file I/O.
 	teeFile, err := openTeeFile(filePath)
 	if err != nil {
 		return err
 	}
 	
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
 	// Close any existing tee file after successful open
 	if sm.teeFile != nil {
 		if err := sm.teeFile.Close(); err != nil {
-			// Log the error, but continue. The main operation (enabling the new tee) has succeeded.
-			slog.Warn("failed to close previous tee file", "path", sm.teeFile.Name(), "error", err)
+			// If we can't close the old file, we're in a risky state.
+			// To be safe, close the new file and abort the operation to prevent a leak.
+			_ = teeFile.Close()
+			return fmt.Errorf("failed to switch tee file: could not close previous file %q: %w", sm.teeFile.Name(), err)
 		}
 	}
 	
