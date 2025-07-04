@@ -189,6 +189,33 @@ func (m *Manager) SetFile(path string) error {
 
 The performance impact is usually acceptable for infrequent operations like configuration changes in CLI tools.
 
+## CLI Tool Error Notification
+
+For CLI tools, user-facing error notifications should use standard streams:
+- **stderr**: For warnings and non-fatal errors that users need to see
+- **slog**: For internal debugging and structured logging
+
+Example:
+```go
+// GOOD: User-facing warning via stderr
+fmt.Fprintf(errStream, "WARNING: Operation failed: %v\n", err)
+
+// AVOID: Using slog for user notifications
+slog.Error("Operation failed", "error", err)  // User might not see this
+```
+
+## Code Review Context
+
+When reviewing code, ensure you have the full context:
+- Check if suggested fixes are already implemented nearby
+- Read comments that explain design decisions
+- Verify line numbers match the actual issue location
+
+Common false positives to avoid:
+1. Suggesting to add code that already exists (e.g., TOCTOU double-checks)
+2. Missing extensive comments that explain the current design
+3. Suggesting changes that violate principles already documented in the code
+
 ## Code Review Focus
 
 When reviewing pull requests, please focus on:
