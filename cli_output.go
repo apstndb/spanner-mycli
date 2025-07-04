@@ -53,7 +53,7 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 }
 
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
-	// TODO(#issue): Migrate all output functions to return errors for better error handling.
+	// TODO(#388): Migrate all output functions to return errors for better error handling.
 	// Currently, only HTML and XML formats return errors as a first step toward
 	// improving error handling across all output formats.
 	mode := sysVars.CLIFormat
