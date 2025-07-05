@@ -285,6 +285,7 @@ func logGrpcClientOptions() []option.ClientOption {
 
 	return []option.ClientOption{
 		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
+			serverTimingUnaryInterceptor(zapLogger),
 			selector.UnaryClientInterceptor(
 				logging.UnaryClientInterceptor(InterceptorLogger(zapLogger),
 					logging.WithLogOnEvents(logging.FinishCall, logging.PayloadSent, logging.PayloadReceived)),
@@ -292,6 +293,7 @@ func logGrpcClientOptions() []option.ClientOption {
 					return true
 				})))),
 		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
+			serverTimingStreamInterceptor(zapLogger),
 			selectlogging.StreamClientInterceptor(InterceptorLogger(zapLogger), selector.MatchFunc(func(ctx context.Context, callMeta interceptors.CallMeta) bool {
 				req, ok := callMeta.ReqOrNil.(*sppb.ExecuteSqlRequest)
 				return !ok || req.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat"
