@@ -1095,25 +1095,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			setValue:     "false",
 			hasSession:   true,
 			expectError:  true,
-			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
-		},
-		{
-			name:         "idempotent set after session creation - same value",
-			variableName: "CLI_ENABLE_ADC_PLUS",
-			variableCase: "CLI_ENABLE_ADC_PLUS",
-			initialValue: "true",
-			setValue:     "true",
-			hasSession:   true,
-			expectError:  false,
-		},
-		{
-			name:         "idempotent set after session creation - different case",
-			variableName: "CLI_ENABLE_ADC_PLUS",
-			variableCase: "cli_enable_adc_plus",
-			initialValue: "true",
-			setValue:     "TRUE",
-			hasSession:   true,
-			expectError:  false,
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 		},
 		{
 			name:         "change after session with lowercase variable name",
@@ -1123,7 +1105,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			setValue:     "false",
 			hasSession:   true,
 			expectError:  true,
-			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 		},
 		{
 			name:         "non-session-init-only variable can be changed",
@@ -1143,7 +1125,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			hasSession:   true,
 			detached:     true,
 			expectError:  true,
-			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 		},
 	}
 
@@ -1182,12 +1164,12 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 					return
 				}
 
-				// Verify the value was set correctly (for non-session cases or idempotent sets)
+				// Verify the value was set correctly (only for non-session cases)
 				switch tt.variableName {
 				case "CLI_ENABLE_ADC_PLUS":
 					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
-					if !tt.hasSession || tt.initialValue == tt.setValue || strings.EqualFold(tt.initialValue, tt.setValue) {
-						// Value should be updated or remain the same for idempotent sets
+					if !tt.hasSession {
+						// Value should be updated
 						if sv.EnableADCPlus != expectedValue {
 							t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
 						}

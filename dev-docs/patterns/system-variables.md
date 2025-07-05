@@ -75,8 +75,7 @@ var sessionInitOnlyVariables = []string{
 
 **Behavior**:
 - Can be set via `--set` flag before session creation
-- After session creation, attempts to change the value will return an error with the current value
-- Idempotent sets (setting to the same value) are allowed
+- After session creation, any attempt to set the value will return an error
 - The validation in `systemVariables.Set()` handles case-insensitive variable names correctly
 
 ### Development Workflow

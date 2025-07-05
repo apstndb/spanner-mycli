@@ -302,23 +302,7 @@ func (sv *systemVariables) Set(name string, value string) error {
 		// For example, CLI_ENABLE_ADC_PLUS affects adminClient creation which happens
 		// during initial session setup, not during database connection.
 		if sv.CurrentSession != nil {
-			// Get current value for comparison without calling sv.Get() to avoid deadlocks with mutexes.
-			getter := a.Accessor.Getter
-			if getter == nil {
-				return fmt.Errorf("cannot change %s after session creation, variable is not readable", upperName)
-			}
-			currentValues, err := getter(sv, upperName)
-			if err != nil {
-				// Wrap the error to provide more context for debugging.
-				return fmt.Errorf("cannot change %s after session creation, failed to get current value: %w", upperName, err)
-			}
-			
-			currentValue := currentValues[upperName]
-			
-			// Check if actually trying to change the value
-			if !strings.EqualFold(currentValue, value) {
-				return fmt.Errorf("%s cannot be changed after session creation. Current value: %s", upperName, currentValue)
-			}
+			return fmt.Errorf("%s cannot be changed after session creation", upperName)
 		}
 	}
 

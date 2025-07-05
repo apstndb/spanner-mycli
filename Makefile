@@ -8,6 +8,7 @@ build-tools:
 	go install tool
 	@echo "✅ Tools installed successfully"
 	@echo "💡 Use: go tool gh-helper --help"
+	test
 
 clean:
 	rm -f spanner-mycli
