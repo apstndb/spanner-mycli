@@ -302,6 +302,11 @@ func (sv *systemVariables) Set(name string, value string) error {
 		// For example, CLI_ENABLE_ADC_PLUS affects adminClient creation which happens
 		// during initial session setup, not during database connection.
 		if sv.CurrentSession != nil {
+			// NOTE: We intentionally do not include the current value in the error message
+			// or allow idempotent sets (setting to the same value). This is a deliberate
+			// design choice: session-init-only variables should reject ALL SET operations
+			// after session creation to make it crystal clear that these settings cannot
+			// be changed once the session is established.
 			return fmt.Errorf("%s cannot be changed after session creation", upperName)
 		}
 	}
