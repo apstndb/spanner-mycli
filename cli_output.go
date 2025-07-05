@@ -241,7 +241,41 @@ type OutputContext struct {
 func sproutFuncMap() template.FuncMap {
 	handler := sprout.New()
 	lo.Must0(handler.AddGroups(hermetic.RegistryGroup()))
-	return handler.Build()
+	funcMap := handler.Build()
+	
+	// Add custom functions
+	funcMap["formatLatency"] = formatLatency
+	
+	return funcMap
+}
+
+// formatLatency formats latency values with appropriate precision
+func formatLatency(ms float64) string {
+	if ms == 0 {
+		return "0 ms"
+	}
+	
+	// Format with appropriate decimal places based on value
+	// Always use %f to avoid scientific notation
+	if ms < 0.01 {
+		// For very small values, show 4 decimal places
+		return fmt.Sprintf("%.4f ms", ms)
+	} else if ms < 0.1 {
+		// For values < 0.1 ms, show 3 decimal places
+		return fmt.Sprintf("%.3f ms", ms)
+	} else if ms < 1 {
+		// For values < 1 ms, show 3 decimal places
+		return fmt.Sprintf("%.3f ms", ms)
+	} else if ms < 10 {
+		// For values < 10 ms, show 2 decimal places
+		return fmt.Sprintf("%.2f ms", ms)
+	} else if ms < 100 {
+		// For values < 100 ms, show 1 decimal place
+		return fmt.Sprintf("%.1f ms", ms)
+	} else {
+		// For larger values, show no decimal places
+		return fmt.Sprintf("%.0f ms", ms)
+	}
 }
 
 //go:embed output_default.tmpl

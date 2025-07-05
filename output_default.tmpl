@@ -14,10 +14,10 @@
 {{if and .Verbose .ClientMetrics -}}
 {{if or .ClientMetrics.GFELatencyMs .ClientMetrics.AFELatencyMs .ClientMetrics.OperationLatencyMs .ClientMetrics.AttemptLatencyMs .ClientMetrics.AttemptCount .ClientMetrics.GFEErrorCount .ClientMetrics.AFEErrorCount -}}
 client metrics:
-{{with .ClientMetrics.GFELatencyMs -}}  gfe latency:          {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
-{{with .ClientMetrics.AFELatencyMs -}}  afe latency:          {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
-{{with .ClientMetrics.OperationLatencyMs -}}  operation latency:    {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
-{{with .ClientMetrics.AttemptLatencyMs -}}  attempt latency:      {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
+{{with .ClientMetrics.GFELatencyMs -}}  gfe latency:          {{formatLatency .}}{{"\n"}}{{end -}}
+{{with .ClientMetrics.AFELatencyMs -}}  afe latency:          {{formatLatency .}}{{"\n"}}{{end -}}
+{{with .ClientMetrics.OperationLatencyMs -}}  operation latency:    {{formatLatency .}}{{"\n"}}{{end -}}
+{{with .ClientMetrics.AttemptLatencyMs -}}  attempt latency:      {{formatLatency .}}{{"\n"}}{{end -}}
 {{with .ClientMetrics.AttemptCount -}}  attempt count:        {{.}}{{"\n"}}{{end -}}
 {{with .ClientMetrics.GFEErrorCount -}}  gfe error count:      {{.}}{{"\n"}}{{end -}}
 {{with .ClientMetrics.AFEErrorCount -}}  afe error count:      {{.}}{{"\n"}}{{end -}}
