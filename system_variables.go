@@ -228,7 +228,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 		RPCPriority:       defaultPriority,
 		
 		// CLI defaults
-		EnableADCPlus:        false,
+		EnableADCPlus:        true,
 		AnalyzeColumns:       DefaultAnalyzeColumns,
 		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
 		Prompt:               defaultPrompt,
@@ -267,6 +267,15 @@ var _ error = &errSetterUnimplemented{}
 var _ error = &errGetterUnimplemented{}
 var _ error = &errAdderUnimplemented{}
 
+// sessionInitOnlyVariables contains variables that can only be set before session creation
+var sessionInitOnlyVariables = map[string]struct{}{
+	"CLI_ENABLE_CLIENT_METRICS": {},
+	"CLI_ENABLE_ADC_PLUS":       {},
+	// Add more variables here as needed in the future
+	// For example:
+	// "CLI_ENABLE_TRACING": {},
+}
+
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
 	a, ok := systemVariableDefMap[upperName]
@@ -275,6 +284,25 @@ func (sv *systemVariables) Set(name string, value string) error {
 	}
 	if a.Accessor.Setter == nil {
 		return errSetterUnimplemented{name}
+	}
+
+	// Check if this is a session-init-only variable
+	if _, isInitOnly := sessionInitOnlyVariables[upperName]; isInitOnly {
+		// Check if session is already initialized
+		if sv.CurrentSession != nil && sv.CurrentSession.client != nil {
+			// Get current value for comparison
+			currentValues, err := sv.Get(name)
+			if err != nil {
+				return fmt.Errorf("%s cannot be changed after session creation", upperName)
+			}
+			
+			currentValue := currentValues[upperName]
+			
+			// Check if actually trying to change the value
+			if !strings.EqualFold(currentValue, value) {
+				return fmt.Errorf("%s cannot be changed after session creation. Current value: %s", upperName, currentValue)
+			}
+		}
 	}
 
 	return a.Accessor.Setter(sv, upperName, value)
@@ -1188,12 +1216,10 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_ENABLE_ADC_PLUS": {
-		Description: "A boolean indicating whether to enable enhanced Application Default Credentials. The default is false.",
-		Accessor: accessor{
-			Getter: boolGetter(func(variables *systemVariables) *bool {
-				return &variables.EnableADCPlus
-			}),
-		},
+		Description: "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableADCPlus
+		}),
 	},
 	"CLI_ASYNC_DDL": {
 		Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
@@ -1216,7 +1242,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		}),
 	},
 	"CLI_ENABLE_CLIENT_METRICS": {
-		Description: "Enable collection of Spanner client-side metrics (GFE/AFE latency, etc.). The default is false.",
+		Description: "Enable collection of Spanner client-side metrics (GFE/AFE latency, etc.). Must be set before session creation. The default is false.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.EnableClientMetrics
 		}),
