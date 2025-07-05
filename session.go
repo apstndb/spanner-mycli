@@ -1024,7 +1024,8 @@ func (s *Session) startHeartbeat() {
 			s.tcMutex.Lock()
 			defer s.tcMutex.Unlock()
 			if s.tc != nil && s.tc.mode == transactionModeReadWrite && s.tc.sendHeartbeat {
-				err := heartbeat(s.tc.RWTxn(), s.currentPriority())
+				// Always use LOW priority for heartbeat to avoid interfering with real work
+				err := heartbeat(s.tc.RWTxn(), sppb.RequestOptions_PRIORITY_LOW)
 				if err != nil {
 					slog.Error("heartbeat error", "err", err)
 				}

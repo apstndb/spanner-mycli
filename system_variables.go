@@ -266,6 +266,23 @@ var _ error = &errSetterUnimplemented{}
 var _ error = &errGetterUnimplemented{}
 var _ error = &errAdderUnimplemented{}
 
+// sessionInitOnlyVariables contains variables that can only be set before session creation.
+// These variables typically control client initialization behavior that cannot be changed
+// after the session is established. Attempting to change these after session creation
+// will return an error showing the current value.
+//
+// To add a new session-init-only variable:
+// 1. Add the variable name to this slice
+// 2. Ensure the variable has a proper Setter in systemVariableDefMap
+// 3. Document in the variable's Description that it must be set before session creation
+var sessionInitOnlyVariables = []string{
+	"CLI_ENABLE_ADC_PLUS",
+	// Add more variables here as needed in the future
+	// For example:
+	// "CLI_ENABLE_TRACING",
+	// "CLI_ENABLE_CLIENT_METRICS",
+}
+
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
 	a, ok := systemVariableDefMap[upperName]
@@ -274,6 +291,24 @@ func (sv *systemVariables) Set(name string, value string) error {
 	}
 	if a.Accessor.Setter == nil {
 		return errSetterUnimplemented{name}
+	}
+
+	// Check if this is a session-init-only variable
+	if slices.Contains(sessionInitOnlyVariables, upperName) {
+		// Check if session is already initialized.
+		// We check only CurrentSession != nil, not client != nil, because these variables
+		// configure client options at CLI startup. Changes after session creation have no effect,
+		// even in detached mode when the client will be created later via USE command.
+		// For example, CLI_ENABLE_ADC_PLUS affects adminClient creation which happens
+		// during initial session setup, not during database connection.
+		if sv.CurrentSession != nil {
+			// NOTE: We intentionally do not include the current value in the error message
+			// or allow idempotent sets (setting to the same value). This is a deliberate
+			// design choice: session-init-only variables should reject ALL SET operations
+			// after session creation to make it crystal clear that these settings cannot
+			// be changed once the session is established.
+			return fmt.Errorf("%s cannot be changed after session creation", upperName)
+		}
 	}
 
 	return a.Accessor.Setter(sv, upperName, value)
@@ -1187,12 +1222,10 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_ENABLE_ADC_PLUS": {
-		Description: "A boolean indicating whether to enable enhanced Application Default Credentials. The default is false.",
-		Accessor: accessor{
-			Getter: boolGetter(func(variables *systemVariables) *bool {
-				return &variables.EnableADCPlus
-			}),
-		},
+		Description: "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableADCPlus
+		}),
 	},
 	"CLI_ASYNC_DDL": {
 		Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",

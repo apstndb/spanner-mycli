@@ -47,6 +47,37 @@ This document provides detailed patterns and best practices for implementing sys
 - **Testing Strategy**: System variables test pattern in `system_variables_test.go` covers both SET/GET operations and proper error handling for unimplemented setters
 - **Code Organization**: System variable definitions follow clear patterns that make adding new variables straightforward
 
+### Session-Init-Only Variables
+
+Some variables can only be set before session creation because they control client initialization behavior that cannot be changed after the session is established. These are defined in the `sessionInitOnlyVariables` map in `system_variables.go`.
+
+**Implementation Pattern**:
+1. Add the variable name to `sessionInitOnlyVariables` slice
+2. Use standard accessor (e.g., `boolAccessor`) - the validation is automatic
+3. Document in the Description that it must be set before session creation
+
+**Example**:
+```go
+// In sessionInitOnlyVariables slice
+var sessionInitOnlyVariables = []string{
+    "CLI_ENABLE_ADC_PLUS",
+    // Add more variables here as needed
+}
+
+// In systemVariableDefMap
+"CLI_ENABLE_ADC_PLUS": {
+    Description: "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
+    Accessor: boolAccessor(func(variables *systemVariables) *bool {
+        return &variables.EnableADCPlus
+    }),
+},
+```
+
+**Behavior**:
+- Can be set via `--set` flag before session creation
+- After session creation, any attempt to set the value will return an error
+- The validation in `systemVariables.Set()` handles case-insensitive variable names correctly
+
 ### Development Workflow
 
 - **Workflow**: phantom + tmux horizontal split works well for focused system variable implementation
