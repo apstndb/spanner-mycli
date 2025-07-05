@@ -34,6 +34,7 @@ import (
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
 	"github.com/gocql/gocql"
 	"github.com/samber/lo"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -1233,17 +1234,38 @@ func createClientOptions(ctx context.Context, credential []byte, sysVars *system
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
+	slog.Debug("createClientOptions auth decision", 
+		"WithoutAuthentication", sysVars.WithoutAuthentication,
+		"EnableADCPlus", sysVars.EnableADCPlus,
+		"credential_len", len(credential))
+
 	switch {
 	case sysVars.WithoutAuthentication:
+		slog.Debug("Using WithoutAuthentication")
 		opts = append(opts, option.WithoutAuthentication())
 	case sysVars.EnableADCPlus:
+		slog.Debug("Using ADCPlus with SmartAccessTokenSource")
 		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, option.WithTokenSource(source))
 	case len(credential) > 0:
+		slog.Debug("Using WithCredentialsJSON")
 		opts = append(opts, option.WithCredentialsJSON(credential))
+	default:
+		slog.Debug("Using default (ADC) - explicitly creating default token source")
+		// Explicitly use Application Default Credentials with proper scopes
+		tokenSource, err := google.DefaultTokenSource(ctx, 
+			"https://www.googleapis.com/auth/spanner.data",
+			"https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			slog.Warn("Failed to create default token source, falling back to implicit ADC", "error", err)
+			// Fall back to implicit ADC by not adding any options
+		} else {
+			slog.Debug("Created default token source, using WithTokenSource")
+			opts = append(opts, option.WithTokenSource(tokenSource))
+		}
 	}
 
 	return opts, nil

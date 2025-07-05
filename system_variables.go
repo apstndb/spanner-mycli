@@ -228,7 +228,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 		RPCPriority:       defaultPriority,
 		
 		// CLI defaults
-		EnableADCPlus:        false, // Set to false to allow direct access testing
+		EnableADCPlus:        false,
 		AnalyzeColumns:       DefaultAnalyzeColumns,
 		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
 		Prompt:               defaultPrompt,
