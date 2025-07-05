@@ -103,6 +103,8 @@ type Session struct {
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
 
+	// metrics collector for client-side metrics
+	metricsCollector *MetricsCollector
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements
@@ -311,6 +313,27 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
+	// Initialize metrics collector if enabled
+	var metricsCollector *MetricsCollector
+	if sysVars.EnableClientMetrics {
+		slog.Info("Initializing client metrics collector")
+		collector, err := NewMetricsCollector()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create metrics collector: %w", err)
+		}
+		metricsCollector = collector
+		
+		// Enable OpenTelemetry metrics in Spanner
+		spanner.EnableOpenTelemetryMetrics()
+		slog.Info("Enabled OpenTelemetry metrics in Spanner")
+		
+		// Configure client to use our meter provider
+		clientConfig.OpenTelemetryMeterProvider = collector.MeterProvider()
+		
+		// Enable native metrics when client metrics are enabled
+		clientConfig.DisableNativeMetrics = false
+	}
+
 	opts = append(opts, defaultClientOpts...)
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, opts...)
 	if err != nil {
@@ -323,12 +346,13 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	}
 
 	session := &Session{
-		mode:            DatabaseConnected,
-		client:          client,
-		clientConfig:    clientConfig,
-		clientOpts:      opts,
-		adminClient:     adminClient,
-		systemVariables: sysVars,
+		mode:             DatabaseConnected,
+		client:           client,
+		clientConfig:     clientConfig,
+		clientOpts:       opts,
+		adminClient:      adminClient,
+		systemVariables:  sysVars,
+		metricsCollector: metricsCollector,
 	}
 	sysVars.CurrentSession = session
 	go session.startHeartbeat()

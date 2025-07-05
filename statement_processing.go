@@ -169,9 +169,24 @@ type Result struct {
 
 	BatchInfo      *BatchInfo
 	PartitionCount int
+
+	// Client-side metrics (separate from server-side QueryStats)
+	ClientMetrics *ClientSideMetrics
 }
 
 type Row []string
+
+// ClientSideMetrics contains metrics collected from Spanner client library.
+// These are client-side measurements, separate from server-side QueryStats.
+type ClientSideMetrics struct {
+	GFELatencyMs       float64 `json:"gfe_latency_ms,omitempty"`
+	AFELatencyMs       float64 `json:"afe_latency_ms,omitempty"`
+	OperationLatencyMs float64 `json:"operation_latency_ms,omitempty"`
+	AttemptLatencyMs   float64 `json:"attempt_latency_ms,omitempty"`
+	AttemptCount       int64   `json:"attempt_count,omitempty"`
+	GFEErrorCount      int64   `json:"gfe_error_count,omitempty"`
+	AFEErrorCount      int64   `json:"afe_error_count,omitempty"`
+}
 
 // QueryStats contains query statistics.
 // Some fields may not have a valid value depending on the environment.

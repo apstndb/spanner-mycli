@@ -155,6 +155,7 @@ type systemVariables struct {
 	AsyncDDL                  bool // CLI_ASYNC_DDL
 	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
+	EnableClientMetrics       bool // CLI_ENABLE_CLIENT_METRICS
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
@@ -1212,6 +1213,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "A boolean indicating whether to suppress column headers in output. The default is false.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.SkipColumnNames
+		}),
+	},
+	"CLI_ENABLE_CLIENT_METRICS": {
+		Description: "Enable collection of Spanner client-side metrics (GFE/AFE latency, etc.). The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableClientMetrics
 		}),
 	},
 }

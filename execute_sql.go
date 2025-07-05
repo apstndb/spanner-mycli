@@ -46,6 +46,12 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
+	// Reset metrics collector if enabled
+	if session.metricsCollector != nil {
+		slog.Debug("Resetting metrics collector before query")
+		session.metricsCollector.Reset()
+	}
+
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
 	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
@@ -70,6 +76,22 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows: len(rows),
 		Stats:        queryStats,
+	}
+
+	// Collect client-side metrics if enabled
+	if session.metricsCollector != nil {
+		slog.Debug("Collecting client-side metrics")
+		clientMetrics, err := session.metricsCollector.Collect(ctx)
+		if err != nil {
+			slog.Warn("failed to collect client-side metrics", "err", err)
+		} else {
+			slog.Debug("Client metrics collected", 
+				"gfe_latency", clientMetrics.GFELatencyMs,
+				"afe_latency", clientMetrics.AFELatencyMs,
+				"operation_latency", clientMetrics.OperationLatencyMs,
+				"attempt_count", clientMetrics.AttemptCount)
+			result.ClientMetrics = clientMetrics
+		}
 	}
 
 	// ReadOnlyTransaction.Timestamp() is invalid until read.

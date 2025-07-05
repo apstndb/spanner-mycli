@@ -11,3 +11,15 @@
 {{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
 {{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
 {{end -}}
+{{if and .Verbose .ClientMetrics -}}
+{{if or .ClientMetrics.GFELatencyMs .ClientMetrics.AFELatencyMs .ClientMetrics.OperationLatencyMs .ClientMetrics.AttemptLatencyMs .ClientMetrics.AttemptCount .ClientMetrics.GFEErrorCount .ClientMetrics.AFEErrorCount -}}
+client metrics:
+{{with .ClientMetrics.GFELatencyMs -}}  gfe latency:          {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
+{{with .ClientMetrics.AFELatencyMs -}}  afe latency:          {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
+{{with .ClientMetrics.OperationLatencyMs -}}  operation latency:    {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
+{{with .ClientMetrics.AttemptLatencyMs -}}  attempt latency:      {{printf "%.1f" .}} ms{{"\n"}}{{end -}}
+{{with .ClientMetrics.AttemptCount -}}  attempt count:        {{.}}{{"\n"}}{{end -}}
+{{with .ClientMetrics.GFEErrorCount -}}  gfe error count:      {{.}}{{"\n"}}{{end -}}
+{{with .ClientMetrics.AFEErrorCount -}}  afe error count:      {{.}}{{"\n"}}{{end -}}
+{{end -}}
+{{end -}}

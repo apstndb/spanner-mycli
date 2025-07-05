@@ -230,11 +230,12 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 }
 
 type OutputContext struct {
-	Verbose     bool
-	IsMutation  bool
-	Timestamp   string
-	Stats       *QueryStats
-	CommitStats *sppb.CommitResponse_CommitStats
+	Verbose       bool
+	IsMutation    bool
+	Timestamp     string
+	Stats         *QueryStats
+	CommitStats   *sppb.CommitResponse_CommitStats
+	ClientMetrics *ClientSideMetrics
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -270,11 +271,12 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	var sb strings.Builder
 	err := outputTemplate.Execute(&sb, OutputContext{
-		Verbose:     verbose,
-		IsMutation:  result.IsMutation,
-		Timestamp:   timestamp,
-		Stats:       &result.Stats,
-		CommitStats: result.CommitStats,
+		Verbose:       verbose,
+		IsMutation:    result.IsMutation,
+		Timestamp:     timestamp,
+		Stats:         &result.Stats,
+		CommitStats:   result.CommitStats,
+		ClientMetrics: result.ClientMetrics,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)
