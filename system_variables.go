@@ -294,14 +294,7 @@ func (sv *systemVariables) Set(name string, value string) error {
 	}
 
 	// Check if this is a session-init-only variable
-	isInitOnly := false
-	for _, v := range sessionInitOnlyVariables {
-		if v == upperName {
-			isInitOnly = true
-			break
-		}
-	}
-	if isInitOnly {
+	if slices.Contains(sessionInitOnlyVariables, upperName) {
 		// Check if session is already initialized
 		if sv.CurrentSession != nil && sv.CurrentSession.client != nil {
 			// Get current value for comparison.
