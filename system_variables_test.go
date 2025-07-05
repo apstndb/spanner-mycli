@@ -1169,7 +1169,8 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 				}
 
 				// Verify the value was set correctly (for non-session cases or idempotent sets)
-				if tt.variableName == "CLI_ENABLE_ADC_PLUS" {
+				switch tt.variableName {
+				case "CLI_ENABLE_ADC_PLUS":
 					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
 					if !tt.hasSession || tt.initialValue == tt.setValue || strings.EqualFold(tt.initialValue, tt.setValue) {
 						// Value should be updated or remain the same for idempotent sets
@@ -1177,7 +1178,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 							t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
 						}
 					}
-				} else if tt.variableName == "CLI_ASYNC_DDL" {
+				case "CLI_ASYNC_DDL":
 					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
 					if sv.AsyncDDL != expectedValue {
 						t.Errorf("expected AsyncDDL to be %v, got %v", expectedValue, sv.AsyncDDL)
@@ -1195,13 +1196,14 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			// Check that the value returned by Get matches expectation
 			gotValue := values[tt.variableName]
 			var expectedGetValue string
-			if tt.variableName == "CLI_ENABLE_ADC_PLUS" {
+			switch tt.variableName {
+			case "CLI_ENABLE_ADC_PLUS":
 				if sv.EnableADCPlus {
 					expectedGetValue = "TRUE"
 				} else {
 					expectedGetValue = "FALSE"
 				}
-			} else if tt.variableName == "CLI_ASYNC_DDL" {
+			case "CLI_ASYNC_DDL":
 				if sv.AsyncDDL {
 					expectedGetValue = "TRUE"
 				} else {

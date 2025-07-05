@@ -52,15 +52,15 @@ This document provides detailed patterns and best practices for implementing sys
 Some variables can only be set before session creation because they control client initialization behavior that cannot be changed after the session is established. These are defined in the `sessionInitOnlyVariables` map in `system_variables.go`.
 
 **Implementation Pattern**:
-1. Add the variable name to `sessionInitOnlyVariables` map
+1. Add the variable name to `sessionInitOnlyVariables` slice
 2. Use standard accessor (e.g., `boolAccessor`) - the validation is automatic
 3. Document in the Description that it must be set before session creation
 
 **Example**:
 ```go
-// In sessionInitOnlyVariables map
-var sessionInitOnlyVariables = map[string]struct{}{
-    "CLI_ENABLE_ADC_PLUS": {},
+// In sessionInitOnlyVariables slice
+var sessionInitOnlyVariables = []string{
+    "CLI_ENABLE_ADC_PLUS",
     // Add more variables here as needed
 }
 

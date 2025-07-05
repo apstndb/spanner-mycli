@@ -272,15 +272,15 @@ var _ error = &errAdderUnimplemented{}
 // will return an error showing the current value.
 //
 // To add a new session-init-only variable:
-// 1. Add the variable name to this map
+// 1. Add the variable name to this slice
 // 2. Ensure the variable has a proper Setter in systemVariableDefMap
 // 3. Document in the variable's Description that it must be set before session creation
-var sessionInitOnlyVariables = map[string]struct{}{
-	"CLI_ENABLE_ADC_PLUS": {},
+var sessionInitOnlyVariables = []string{
+	"CLI_ENABLE_ADC_PLUS",
 	// Add more variables here as needed in the future
 	// For example:
-	// "CLI_ENABLE_TRACING": {},
-	// "CLI_ENABLE_CLIENT_METRICS": {},
+	// "CLI_ENABLE_TRACING",
+	// "CLI_ENABLE_CLIENT_METRICS",
 }
 
 func (sv *systemVariables) Set(name string, value string) error {
@@ -294,7 +294,14 @@ func (sv *systemVariables) Set(name string, value string) error {
 	}
 
 	// Check if this is a session-init-only variable
-	if _, isInitOnly := sessionInitOnlyVariables[upperName]; isInitOnly {
+	isInitOnly := false
+	for _, v := range sessionInitOnlyVariables {
+		if v == upperName {
+			isInitOnly = true
+			break
+		}
+	}
+	if isInitOnly {
 		// Check if session is already initialized
 		if sv.CurrentSession != nil && sv.CurrentSession.client != nil {
 			// Get current value for comparison.
