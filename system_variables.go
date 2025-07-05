@@ -295,8 +295,13 @@ func (sv *systemVariables) Set(name string, value string) error {
 
 	// Check if this is a session-init-only variable
 	if slices.Contains(sessionInitOnlyVariables, upperName) {
-		// Check if session is already initialized
-		if sv.CurrentSession != nil && sv.CurrentSession.client != nil {
+		// Check if session is already initialized.
+		// We check only CurrentSession != nil, not client != nil, because these variables
+		// configure client options at CLI startup. Changes after session creation have no effect,
+		// even in detached mode when the client will be created later via USE command.
+		// For example, CLI_ENABLE_ADC_PLUS affects adminClient creation which happens
+		// during initial session setup, not during database connection.
+		if sv.CurrentSession != nil {
 			// Get current value for comparison.
 			// Call Get with upperName to ensure the key in the returned map is predictable.
 			currentValues, err := sv.Get(upperName)

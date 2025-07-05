@@ -1056,6 +1056,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 		initialValue   string
 		setValue       string
 		hasSession     bool
+		detached       bool // Whether session is detached (no client)
 		expectError    bool
 		expectedErrMsg string
 	}{
@@ -1133,6 +1134,17 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			hasSession:   true,
 			expectError:  false,
 		},
+		{
+			name:         "change after detached session creation should fail",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "CLI_ENABLE_ADC_PLUS",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   true,
+			detached:     true,
+			expectError:  true,
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1145,8 +1157,10 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 
 			// Simulate session creation if needed
 			if tt.hasSession {
-				sv.CurrentSession = &Session{
-					client: &spanner.Client{}, // Mock client to simulate initialized session
+				sv.CurrentSession = &Session{}
+				// Set client for non-detached sessions
+				if !tt.detached {
+					sv.CurrentSession.client = &spanner.Client{} // Mock client to simulate initialized session
 				}
 			}
 
