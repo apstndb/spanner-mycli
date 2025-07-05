@@ -535,8 +535,8 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{desc: "CLI_IMPERSONATE_SERVICE_ACCOUNT", name: "CLI_IMPERSONATE_SERVICE_ACCOUNT", unimplementedSet: true,
 			sysVars: &systemVariables{ImpersonateServiceAccount: "test@example.com"},
 			want:    singletonMap("CLI_IMPERSONATE_SERVICE_ACCOUNT", "test@example.com")},
-		{desc: "CLI_ENABLE_ADC_PLUS", name: "CLI_ENABLE_ADC_PLUS", unimplementedSet: true,
-			sysVars: &systemVariables{EnableADCPlus: true},
+		{desc: "CLI_ENABLE_ADC_PLUS", name: "CLI_ENABLE_ADC_PLUS", value: "true",
+			sysVars: &systemVariables{EnableADCPlus: false}, // Start with false to test setting
 			want:    singletonMap("CLI_ENABLE_ADC_PLUS", "TRUE")},
 		{desc: "CLI_MCP", name: "CLI_MCP", unimplementedSet: true,
 			sysVars: &systemVariables{MCP: true},

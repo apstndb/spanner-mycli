@@ -266,7 +266,15 @@ var _ error = &errSetterUnimplemented{}
 var _ error = &errGetterUnimplemented{}
 var _ error = &errAdderUnimplemented{}
 
-// sessionInitOnlyVariables contains variables that can only be set before session creation
+// sessionInitOnlyVariables contains variables that can only be set before session creation.
+// These variables typically control client initialization behavior that cannot be changed
+// after the session is established. Attempting to change these after session creation
+// will return an error showing the current value.
+//
+// To add a new session-init-only variable:
+// 1. Add the variable name to this map
+// 2. Ensure the variable has a proper Setter in systemVariableDefMap
+// 3. Document in the variable's Description that it must be set before session creation
 var sessionInitOnlyVariables = map[string]struct{}{
 	"CLI_ENABLE_ADC_PLUS": {},
 	// Add more variables here as needed in the future
