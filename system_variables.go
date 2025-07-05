@@ -289,10 +289,12 @@ func (sv *systemVariables) Set(name string, value string) error {
 	if _, isInitOnly := sessionInitOnlyVariables[upperName]; isInitOnly {
 		// Check if session is already initialized
 		if sv.CurrentSession != nil && sv.CurrentSession.client != nil {
-			// Get current value for comparison
-			currentValues, err := sv.Get(name)
+			// Get current value for comparison.
+			// Call Get with upperName to ensure the key in the returned map is predictable.
+			currentValues, err := sv.Get(upperName)
 			if err != nil {
-				return fmt.Errorf("%s cannot be changed after session creation", upperName)
+				// Wrap the error to provide more context for debugging.
+				return fmt.Errorf("cannot change %s after session creation, failed to get current value: %w", upperName, err)
 			}
 			
 			currentValue := currentValues[upperName]

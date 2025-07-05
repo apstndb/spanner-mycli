@@ -1047,3 +1047,171 @@ func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionInitOnlyVariables(t *testing.T) {
+	tests := []struct {
+		name           string
+		variableName   string
+		variableCase   string // Different casing for variable name test
+		initialValue   string
+		setValue       string
+		hasSession     bool
+		expectError    bool
+		expectedErrMsg string
+	}{
+		{
+			name:         "set before session creation - uppercase",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "CLI_ENABLE_ADC_PLUS",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   false,
+			expectError:  false,
+		},
+		{
+			name:         "set before session creation - lowercase",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "cli_enable_adc_plus",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   false,
+			expectError:  false,
+		},
+		{
+			name:         "set before session creation - mixed case",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "Cli_Enable_Adc_Plus",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   false,
+			expectError:  false,
+		},
+		{
+			name:         "change after session creation",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "CLI_ENABLE_ADC_PLUS",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   true,
+			expectError:  true,
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
+		},
+		{
+			name:         "idempotent set after session creation - same value",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "CLI_ENABLE_ADC_PLUS",
+			initialValue: "true",
+			setValue:     "true",
+			hasSession:   true,
+			expectError:  false,
+		},
+		{
+			name:         "idempotent set after session creation - different case",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "cli_enable_adc_plus",
+			initialValue: "true",
+			setValue:     "TRUE",
+			hasSession:   true,
+			expectError:  false,
+		},
+		{
+			name:         "change after session with lowercase variable name",
+			variableName: "CLI_ENABLE_ADC_PLUS",
+			variableCase: "cli_enable_adc_plus",
+			initialValue: "true",
+			setValue:     "false",
+			hasSession:   true,
+			expectError:  true,
+			expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation. Current value: TRUE",
+		},
+		{
+			name:         "non-session-init-only variable can be changed",
+			variableName: "CLI_ASYNC_DDL",
+			variableCase: "CLI_ASYNC_DDL",
+			initialValue: "false",
+			setValue:     "true",
+			hasSession:   true,
+			expectError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a new systemVariables instance
+			sv := &systemVariables{
+				EnableADCPlus: tt.initialValue == "true",
+				AsyncDDL:      false,
+			}
+
+			// Simulate session creation if needed
+			if tt.hasSession {
+				sv.CurrentSession = &Session{
+					client: &spanner.Client{}, // Mock client to simulate initialized session
+				}
+			}
+
+			// Test Set operation
+			err := sv.Set(tt.variableCase, tt.setValue)
+
+			// Check error expectation
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+					return
+				}
+				if !strings.Contains(err.Error(), tt.expectedErrMsg) {
+					t.Errorf("expected error message containing %q, got %q", tt.expectedErrMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+					return
+				}
+
+				// Verify the value was set correctly (for non-session cases or idempotent sets)
+				if tt.variableName == "CLI_ENABLE_ADC_PLUS" {
+					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
+					if !tt.hasSession || tt.initialValue == tt.setValue || strings.EqualFold(tt.initialValue, tt.setValue) {
+						// Value should be updated or remain the same for idempotent sets
+						if sv.EnableADCPlus != expectedValue {
+							t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
+						}
+					}
+				} else if tt.variableName == "CLI_ASYNC_DDL" {
+					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
+					if sv.AsyncDDL != expectedValue {
+						t.Errorf("expected AsyncDDL to be %v, got %v", expectedValue, sv.AsyncDDL)
+					}
+				}
+			}
+
+			// Additional test: verify Get returns the correct value
+			values, err := sv.Get(tt.variableName)
+			if err != nil {
+				t.Errorf("unexpected error from Get: %v", err)
+				return
+			}
+
+			// Check that the value returned by Get matches expectation
+			gotValue := values[tt.variableName]
+			var expectedGetValue string
+			if tt.variableName == "CLI_ENABLE_ADC_PLUS" {
+				if sv.EnableADCPlus {
+					expectedGetValue = "TRUE"
+				} else {
+					expectedGetValue = "FALSE"
+				}
+			} else if tt.variableName == "CLI_ASYNC_DDL" {
+				if sv.AsyncDDL {
+					expectedGetValue = "TRUE"
+				} else {
+					expectedGetValue = "FALSE"
+				}
+			}
+
+			if gotValue != expectedGetValue {
+				t.Errorf("Get(%s) returned %q, expected %q", tt.variableName, gotValue, expectedGetValue)
+			}
+		})
+	}
+}
