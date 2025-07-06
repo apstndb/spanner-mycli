@@ -93,6 +93,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 
 	columnNames := renderTableHeader(result.TableHeader, false)
 
+	// Early return if no columns - Spanner requires at least one column in SELECT,
+	// so this only happens for edge cases where no output is expected
+	if len(columnNames) == 0 {
+		return
+	}
+
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
 		rw := runewidthex.NewCondition()
@@ -574,7 +580,7 @@ func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 // Note: This function streams output row-by-row for memory efficiency.
 func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return nil
+		return fmt.Errorf("no columns to output")
 	}
 
 	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
@@ -653,7 +659,7 @@ type xmlResultSet struct {
 // with the TABLE format over memory efficiency.
 func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return nil
+		return fmt.Errorf("no columns to output")
 	}
 
 	// Build the result set structure
@@ -698,6 +704,10 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 // printCSVTable outputs query results in CSV format.
 // The format follows RFC 4180 with automatic escaping via encoding/csv.
 // Column headers are included unless skipColumnNames is true.
+//
+// Note: Spanner requires at least one column in SELECT queries, so columnNames
+// should never be empty for valid query results. The empty check is defensive
+// programming for edge cases like client-side statements or error conditions.
 func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
 		return fmt.Errorf("no columns to output")

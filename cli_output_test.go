@@ -349,8 +349,11 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 	t.Run("printHTMLTable with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
 		err := printHTMLTable(&buf, []string{}, []Row{}, false)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
@@ -360,8 +363,25 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 	t.Run("printXMLResultSet with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
 		err := printXMLResultSet(&buf, []string{}, []Row{}, false)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
+		}
+		if buf.String() != "" {
+			t.Errorf("expected empty output, got: %q", buf.String())
+		}
+	})
+
+	t.Run("printCSVTable with empty input", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := printCSVTable(&buf, []string{}, []Row{}, false)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
