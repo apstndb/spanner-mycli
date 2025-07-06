@@ -96,9 +96,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Early return if no columns - Spanner requires at least one column in SELECT,
 	// so this only happens for edge cases where no output is expected
 	if len(columnNames) == 0 {
-		// Log edge case where we have rows but no columns
+		// Log logic error where we have rows but no columns
 		if len(result.Rows) > 0 {
-			slog.Warn("printTableData called with empty column headers but non-empty rows",
+			slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
 				"rowCount", len(result.Rows))
 		}
 		return
