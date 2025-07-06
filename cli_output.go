@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	_ "embed"
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"html"
@@ -41,7 +42,34 @@ const (
 	DisplayModeTab
 	DisplayModeHTML
 	DisplayModeXML
+	DisplayModeCSV
 )
+
+// parseDisplayMode converts a string format name to DisplayMode.
+// It accepts both uppercase and lowercase format names.
+// Returns an error if the format name is invalid.
+func parseDisplayMode(format string) (DisplayMode, error) {
+	switch strings.ToUpper(format) {
+	case "TABLE":
+		return DisplayModeTable, nil
+	case "TABLE_COMMENT":
+		return DisplayModeTableComment, nil
+	case "TABLE_DETAIL_COMMENT":
+		return DisplayModeTableDetailComment, nil
+	case "VERTICAL":
+		return DisplayModeVertical, nil
+	case "TAB":
+		return DisplayModeTab, nil
+	case "HTML":
+		return DisplayModeHTML, nil
+	case "XML":
+		return DisplayModeXML, nil
+	case "CSV":
+		return DisplayModeCSV, nil
+	default:
+		return DisplayModeTable, fmt.Errorf("invalid format: %v", format)
+	}
+}
 
 // renderTableHeader renders TableHeader. It is nil safe.
 func renderTableHeader(header TableHeader, verbose bool) []string {
@@ -176,6 +204,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		//   </resultset>
 		if err := printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
 			slog.Error("printXMLResultSet() failed", "err", err)
+		}
+	case DisplayModeCSV:
+		// Output data in CSV format using encoding/csv for RFC 4180 compliance.
+		// This provides automatic escaping of special characters (commas, quotes, newlines).
+		if err := printCSVTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printCSVTable() failed", "err", err)
 		}
 	}
 }
@@ -659,4 +693,30 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 	}
 	_, err := fmt.Fprintln(out) // Add final newline
 	return err
+}
+
+// printCSVTable outputs query results in CSV format.
+// The format follows RFC 4180 with automatic escaping via encoding/csv.
+// Column headers are included unless skipColumnNames is true.
+func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
+	if len(columnNames) == 0 {
+		return fmt.Errorf("no columns to output")
+	}
+
+	csvWriter := csv.NewWriter(out)
+	defer csvWriter.Flush()
+
+	if !skipColumnNames {
+		if err := csvWriter.Write(columnNames); err != nil {
+			return err
+		}
+	}
+
+	for _, row := range rows {
+		if err := csvWriter.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

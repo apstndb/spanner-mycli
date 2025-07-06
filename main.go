@@ -82,6 +82,8 @@ type spannerOptions struct {
 	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode." default-mask:"-"`
 	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
 	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
+	CSV                       bool              `long:"csv" description:"Display output in CSV format." default-mask:"-"`
+	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv)" choice:"table" choice:"tab" choice:"vertical" choice:"html" choice:"xml" choice:"csv" default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
@@ -524,12 +526,27 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	// This logic needs to be after sysVars is initialized.
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
+		// Individual format flags take precedence over --format for backward compatibility
 		switch {
 		case opts.HTML:
 			sysVars.CLIFormat = DisplayModeHTML
 		case opts.XML:
 			sysVars.CLIFormat = DisplayModeXML
-		case interactive || opts.Table:
+		case opts.CSV:
+			sysVars.CLIFormat = DisplayModeCSV
+		case opts.Table:
+			sysVars.CLIFormat = DisplayModeTable
+		case opts.Format != "":
+			// Handle --format flag using the common parser
+			mode, err := parseDisplayMode(opts.Format)
+			if err != nil {
+				// Invalid format will be caught by go-flags validation
+				// This is just a fallback
+				sysVars.CLIFormat = DisplayModeTable
+			} else {
+				sysVars.CLIFormat = mode
+			}
+		case interactive:
 			sysVars.CLIFormat = DisplayModeTable
 		default:
 			sysVars.CLIFormat = DisplayModeTab
@@ -596,8 +613,14 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	if opts.XML {
 		formatCount++
 	}
+	if opts.CSV {
+		formatCount++
+	}
+	if opts.Format != "" {
+		formatCount++
+	}
 	if formatCount > 1 {
-		return fmt.Errorf("invalid combination: --table, --html, and --xml are mutually exclusive")
+		return fmt.Errorf("invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive")
 	}
 
 	return nil
