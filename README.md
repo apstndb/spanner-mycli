@@ -43,7 +43,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
   * Support `--host` and `--port` flags as first-class options
   * Support `--deployment-endpoint` as an alias for `--endpoint`
-  * Support `--html` and `--xml` output format options with proper escaping (security-enhanced compared to reference implementation)
+  * Support `--html`, `--xml`, and `--csv` output format options with proper escaping (security-enhanced compared to reference implementation)
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
@@ -113,6 +113,8 @@ spanner:
   -t, --table                                             Display output in table format for batch mode.
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
+      --csv                                               Display output in CSV format.
+      --format=[table|tab|vertical|html|xml|csv]         Output format (alternative to individual format flags)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
@@ -888,8 +890,9 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > - `TAB` - Tab-separated values (default for batch mode)
 > - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
 > - `XML` - XML format (compatible with Google Cloud Spanner CLI)
+> - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
 >
-> You can change the output format at runtime using `SET CLI_FORMAT = 'HTML';` or use command-line flags `--table`, `--html`, or `--xml`.
+> You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, or `--csv`.
 
 ### Batch statements
 

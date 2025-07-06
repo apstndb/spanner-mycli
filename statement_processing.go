@@ -79,6 +79,10 @@ func (th simpleTableHeader) internalRender(verbose bool) []string {
 
 // toTableHeader convert slice or variable arguments to TableHeader.
 // nil or empty slice will return untyped nil.
+//
+// Note: In practice, this should never receive empty input from Spanner query results
+// because Spanner requires at least one column in SELECT queries. Empty input might
+// occur only in client-side statements or error conditions.
 func toTableHeader[T interface {
 	string | []string | *sppb.StructType_Field | []*sppb.StructType_Field
 }](ss ...T) TableHeader {

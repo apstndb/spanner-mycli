@@ -702,7 +702,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		},
 	},
 	"CLI_FORMAT": {
-		Description: "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format).",
+		Description: "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
 		Accessor: accessor{
 			Setter: func(this *systemVariables, name, value string) error {
 				// Set the output format for query results.
@@ -714,24 +714,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				//   TAB                - Tab-separated values (default for batch mode)
 				//   HTML               - HTML table format (--html flag)
 				//   XML                - XML format (--xml flag)
-				switch strings.ToUpper(unquoteString(value)) {
-				case "TABLE":
-					this.CLIFormat = DisplayModeTable
-				case "TABLE_COMMENT":
-					this.CLIFormat = DisplayModeTableComment
-				case "TABLE_DETAIL_COMMENT":
-					this.CLIFormat = DisplayModeTableDetailComment
-				case "VERTICAL":
-					this.CLIFormat = DisplayModeVertical
-				case "TAB":
-					this.CLIFormat = DisplayModeTab
-				case "HTML":
-					this.CLIFormat = DisplayModeHTML
-				case "XML":
-					this.CLIFormat = DisplayModeXML
-				default:
+				//   CSV                - Comma-separated values (RFC 4180)
+				mode, err := parseDisplayMode(unquoteString(value))
+				if err != nil {
 					return fmt.Errorf("invalid CLI_FORMAT value: %v", value)
 				}
+				this.CLIFormat = mode
 				return nil
 			},
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
@@ -753,6 +741,8 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					formatStr = "HTML"
 				case DisplayModeXML:
 					formatStr = "XML"
+				case DisplayModeCSV:
+					formatStr = "CSV"
 				default:
 					// This should never happen as we validate on setter
 					formatStr = "TABLE"

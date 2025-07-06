@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	_ "embed"
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"html"
@@ -41,7 +42,34 @@ const (
 	DisplayModeTab
 	DisplayModeHTML
 	DisplayModeXML
+	DisplayModeCSV
 )
+
+// parseDisplayMode converts a string format name to DisplayMode.
+// It accepts both uppercase and lowercase format names.
+// Returns an error if the format name is invalid.
+func parseDisplayMode(format string) (DisplayMode, error) {
+	switch strings.ToUpper(format) {
+	case "TABLE":
+		return DisplayModeTable, nil
+	case "TABLE_COMMENT":
+		return DisplayModeTableComment, nil
+	case "TABLE_DETAIL_COMMENT":
+		return DisplayModeTableDetailComment, nil
+	case "VERTICAL":
+		return DisplayModeVertical, nil
+	case "TAB":
+		return DisplayModeTab, nil
+	case "HTML":
+		return DisplayModeHTML, nil
+	case "XML":
+		return DisplayModeXML, nil
+	case "CSV":
+		return DisplayModeCSV, nil
+	default:
+		return DisplayModeTable, fmt.Errorf("invalid format: %v", format)
+	}
+}
 
 // renderTableHeader renders TableHeader. It is nil safe.
 func renderTableHeader(header TableHeader, verbose bool) []string {
@@ -64,6 +92,17 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	columnNames := renderTableHeader(result.TableHeader, false)
+
+	// Early return if no columns - Spanner requires at least one column in SELECT,
+	// so this only happens for edge cases where no output is expected
+	if len(columnNames) == 0 {
+		// Log logic error where we have rows but no columns
+		if len(result.Rows) > 0 {
+			slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
+				"rowCount", len(result.Rows))
+		}
+		return
+	}
 
 	switch mode {
 	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
@@ -140,8 +179,14 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row { // j represents the index of the column in the row
-
-				fmt.Fprintf(out, format, columnNames[j], column)
+				var columnName string
+				if j < len(columnNames) {
+					columnName = columnNames[j]
+				} else {
+					// Use a default column name if row has more columns than headers
+					columnName = fmt.Sprintf("Column_%d", j+1)
+				}
+				fmt.Fprintf(out, format, columnName, column)
 			}
 		}
 	case DisplayModeTab:
@@ -176,6 +221,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		//   </resultset>
 		if err := printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
 			slog.Error("printXMLResultSet() failed", "err", err)
+		}
+	case DisplayModeCSV:
+		// Output data in CSV format using encoding/csv for RFC 4180 compliance.
+		// This provides automatic escaping of special characters (commas, quotes, newlines).
+		if err := printCSVTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
+			slog.Error("printCSVTable() failed", "err", err)
 		}
 	}
 }
@@ -540,7 +591,7 @@ func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 // Note: This function streams output row-by-row for memory efficiency.
 func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return nil
+		return fmt.Errorf("no columns to output")
 	}
 
 	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
@@ -619,7 +670,7 @@ type xmlResultSet struct {
 // with the TABLE format over memory efficiency.
 func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
-		return nil
+		return fmt.Errorf("no columns to output")
 	}
 
 	// Build the result set structure
@@ -659,4 +710,42 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 	}
 	_, err := fmt.Fprintln(out) // Add final newline
 	return err
+}
+
+// printCSVTable outputs query results in CSV format.
+// The format follows RFC 4180 with automatic escaping via encoding/csv.
+// Column headers are included unless skipColumnNames is true.
+//
+// Note: Spanner requires at least one column in SELECT queries, so columnNames
+// should never be empty for valid query results. The empty check is defensive
+// programming for edge cases like client-side statements or error conditions.
+func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
+	if len(columnNames) == 0 {
+		return fmt.Errorf("no columns to output")
+	}
+
+	csvWriter := csv.NewWriter(out)
+	// Defer Flush to ensure the buffer is written to the output, even on error.
+	defer csvWriter.Flush()
+
+	if !skipColumnNames {
+		if err := csvWriter.Write(columnNames); err != nil {
+			return err
+		}
+	}
+
+	for _, row := range rows {
+		if err := csvWriter.Write(row); err != nil {
+			return err
+		}
+	}
+
+	// The deferred Flush() will write any remaining buffered data.
+	// We must check for an error from the writer, which can happen
+	// during a Write or the final Flush.
+	if err := csvWriter.Error(); err != nil {
+		return fmt.Errorf("csv writer error: %w", err)
+	}
+
+	return nil
 }

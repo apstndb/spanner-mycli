@@ -51,6 +51,36 @@ func TestValidateSpannerOptions_FormatFlags(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "only --csv",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				CSV:        true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "only --format=table",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				Format:     "table",
+			},
+			wantErr: false,
+		},
+		{
+			name: "only --format=csv",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				Format:     "csv",
+			},
+			wantErr: false,
+		},
+		{
 			name: "--table and --html are mutually exclusive",
 			opts: &spannerOptions{
 				ProjectId:  "test",
@@ -60,7 +90,7 @@ func TestValidateSpannerOptions_FormatFlags(t *testing.T) {
 				HTML:       true,
 			},
 			wantErr: true,
-			errMsg:  "invalid combination: --table, --html, and --xml are mutually exclusive",
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
 		},
 		{
 			name: "--table and --xml are mutually exclusive",
@@ -72,7 +102,7 @@ func TestValidateSpannerOptions_FormatFlags(t *testing.T) {
 				XML:        true,
 			},
 			wantErr: true,
-			errMsg:  "invalid combination: --table, --html, and --xml are mutually exclusive",
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
 		},
 		{
 			name: "--html and --xml are mutually exclusive",
@@ -84,7 +114,67 @@ func TestValidateSpannerOptions_FormatFlags(t *testing.T) {
 				XML:        true,
 			},
 			wantErr: true,
-			errMsg:  "invalid combination: --table, --html, and --xml are mutually exclusive",
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
+		},
+		{
+			name: "--table and --csv are mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				Table:      true,
+				CSV:        true,
+			},
+			wantErr: true,
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
+		},
+		{
+			name: "--html and --csv are mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				HTML:       true,
+				CSV:        true,
+			},
+			wantErr: true,
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
+		},
+		{
+			name: "--xml and --csv are mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				XML:        true,
+				CSV:        true,
+			},
+			wantErr: true,
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
+		},
+		{
+			name: "--format and --table are mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				Format:     "csv",
+				Table:      true,
+			},
+			wantErr: true,
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
+		},
+		{
+			name: "--format and --html are mutually exclusive",
+			opts: &spannerOptions{
+				ProjectId:  "test",
+				InstanceId: "test",
+				DatabaseId: "test",
+				Format:     "table",
+				HTML:       true,
+			},
+			wantErr: true,
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
 		},
 		{
 			name: "all three format flags are mutually exclusive",
@@ -97,7 +187,7 @@ func TestValidateSpannerOptions_FormatFlags(t *testing.T) {
 				XML:        true,
 			},
 			wantErr: true,
-			errMsg:  "invalid combination: --table, --html, and --xml are mutually exclusive",
+			errMsg:  "invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive",
 		},
 	}
 

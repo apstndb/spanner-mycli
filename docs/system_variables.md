@@ -19,7 +19,7 @@ TODO
   SELECT * FROM users;  -- Output without column headers
   ```
 - **Notes**:
-  - Affects table format (`CLI_FORMAT='TABLE'`) and tab format (`CLI_FORMAT='TAB'`)
+  - Affects table format (`CLI_FORMAT='TABLE'`), tab format (`CLI_FORMAT='TAB'`), CSV format (`CLI_FORMAT='CSV'`), HTML format (`CLI_FORMAT='HTML'`), and XML format (`CLI_FORMAT='XML'`)
   - Headers are always preserved in vertical format (`CLI_FORMAT='VERTICAL'`) as they are integral to the format
   - Can be set via `--skip-column-names` command-line flag
   - Useful for scripting and data processing where only raw data is needed
@@ -53,6 +53,7 @@ TODO
   - `TAB` - Tab-separated values (default for batch mode)
   - `HTML` - HTML table format
   - `XML` - XML format
+  - `CSV` - Comma-separated values (RFC 4180 compliant)
 - **Usage**: 
   ```sql
   SET CLI_FORMAT = 'VERTICAL';
@@ -64,15 +65,20 @@ TODO
   SET CLI_FORMAT = 'XML';
   SELECT * FROM users;  -- Output as XML
   
+  SET CLI_FORMAT = 'CSV';
+  SELECT * FROM users;  -- Output as CSV (comma-separated values)
+  
   SET CLI_FORMAT = 'TABLE_DETAIL_COMMENT';
   SELECT * FROM users;  -- Output as table with execution stats, all wrapped in /* */ comments
   ```
 - **Notes**:
   - Can be set via `--html` flag (sets to HTML format)
   - Can be set via `--xml` flag (sets to XML format)
+  - Can be set via `--csv` flag (sets to CSV format)
   - Can be set via `--table` flag (sets to TABLE format in batch mode)
   - HTML and XML formats are compatible with Google Cloud Spanner CLI
-  - All special characters are properly escaped in HTML and XML formats for security
+  - All special characters are properly escaped in HTML, XML, and CSV formats for security
+  - CSV format follows RFC 4180 standard with automatic escaping of commas, quotes, and newlines
   - The format affects how query results are displayed, not how they are executed
   - `TABLE_DETAIL_COMMENT` is particularly useful with `CLI_ECHO_INPUT=TRUE` and `CLI_MARKDOWN_CODEBLOCK=TRUE` for documentation
 

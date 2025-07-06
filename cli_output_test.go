@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/MakeNowJust/heredoc/v2"
 )
 
 func TestPrintTableDataHTML(t *testing.T) {
@@ -216,8 +218,10 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 		{"set TAB", "TAB", DisplayModeTab, false},
 		{"set HTML", "HTML", DisplayModeHTML, false},
 		{"set XML", "XML", DisplayModeXML, false},
+		{"set CSV", "CSV", DisplayModeCSV, false},
 		{"set html lowercase", "html", DisplayModeHTML, false},
 		{"set xml lowercase", "xml", DisplayModeXML, false},
+		{"set csv lowercase", "csv", DisplayModeCSV, false},
 		{"set invalid", "INVALID", DisplayModeTable, true},
 	}
 
@@ -252,6 +256,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{DisplayModeTab, "TAB"},
 		{DisplayModeHTML, "HTML"},
 		{DisplayModeXML, "XML"},
+		{DisplayModeCSV, "CSV"},
 		{DisplayMode(999), "TABLE"}, // Invalid mode should return default
 	}
 
@@ -344,8 +349,11 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 	t.Run("printHTMLTable with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
 		err := printHTMLTable(&buf, []string{}, []Row{}, false)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
@@ -355,8 +363,25 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 	t.Run("printXMLResultSet with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
 		err := printXMLResultSet(&buf, []string{}, []Row{}, false)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
+		}
+		if buf.String() != "" {
+			t.Errorf("expected empty output, got: %q", buf.String())
+		}
+	})
+
+	t.Run("printCSVTable with empty input", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := printCSVTable(&buf, []string{}, []Row{}, false)
+		if err == nil {
+			t.Error("expected error for empty columns, got nil")
+		}
+		if err != nil && err.Error() != "no columns to output" {
+			t.Errorf("unexpected error message: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
@@ -389,4 +414,105 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 			t.Error("XML closing tag missing")
 		}
 	})
+}
+
+func TestPrintTableDataCSV(t *testing.T) {
+	tests := []struct {
+		name         string
+		result       *Result
+		skipColNames bool
+		wantOutput   string
+	}{
+		{
+			name: "simple CSV output",
+			result: &Result{
+				TableHeader: toTableHeader("num", "str", "bool"),
+				Rows: []Row{
+					{"1", "test", "true"},
+					{"2", "data", "false"},
+				},
+			},
+			wantOutput: heredoc.Doc(`
+				num,str,bool
+				1,test,true
+				2,data,false
+			`),
+		},
+		{
+			name: "CSV with special characters",
+			result: &Result{
+				TableHeader: toTableHeader("name", "description", "value"),
+				Rows: []Row{
+					{"John, Jr.", "Says \"Hello\"", "100"},
+					{"Jane\nDoe", "Has,comma", "$50"},
+					{"Bob", "Normal text", "75"},
+				},
+			},
+			wantOutput: heredoc.Doc(`
+				name,description,value
+				"John, Jr.","Says ""Hello""",100
+				"Jane
+				Doe","Has,comma",$50
+				Bob,Normal text,75
+			`),
+		},
+		{
+			name: "CSV with skip column names",
+			result: &Result{
+				TableHeader: toTableHeader("col1", "col2"),
+				Rows: []Row{
+					{"val1", "val2"},
+					{"val3", "val4"},
+				},
+			},
+			skipColNames: true,
+			wantOutput: heredoc.Doc(`
+				val1,val2
+				val3,val4
+			`),
+		},
+		{
+			name: "empty result",
+			result: &Result{
+				TableHeader: nil,
+				Rows:        []Row{},
+			},
+			wantOutput: "",
+		},
+		{
+			name: "CSV with quotes and newlines",
+			result: &Result{
+				TableHeader: toTableHeader("text"),
+				Rows: []Row{
+					{"Line 1\nLine 2"},
+					{"\"Quoted\""},
+					{"Normal"},
+				},
+			},
+			wantOutput: heredoc.Doc(`
+				text
+				"Line 1
+				Line 2"
+				"""Quoted"""
+				Normal
+			`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			sysVars := &systemVariables{
+				CLIFormat:       DisplayModeCSV,
+				SkipColumnNames: tt.skipColNames,
+			}
+
+			printTableData(sysVars, 0, &buf, tt.result)
+
+			got := buf.String()
+			if got != tt.wantOutput {
+				t.Errorf("printTableData() = %q, want %q", got, tt.wantOutput)
+			}
+		})
+	}
 }
