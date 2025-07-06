@@ -381,7 +381,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				EmbeddedEmulator: true,
 			},
 			want: systemVariables{
-				Project:              "emulator-project", // Default value set in initializeSystemVariables
+				Project:              "emulator-project",  // Default value set in initializeSystemVariables
 				Instance:             "emulator-instance", // Default value set in initializeSystemVariables
 				Database:             "emulator-database", // Default value set in initializeSystemVariables
 				Insecure:             true,
@@ -404,7 +404,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			name: "embedded emulator with detached mode",
 			opts: &spannerOptions{
 				EmbeddedEmulator: true,
-				Detached:        true,
+				Detached:         true,
 			},
 			want: systemVariables{
 				Project:              "emulator-project",  // Default set for emulator
@@ -565,7 +565,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 
 func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	got := newSystemVariablesWithDefaults()
-	
+
 	want := systemVariables{
 		ReturnCommitStats:    true,
 		RPCPriority:          defaultPriority,
@@ -577,19 +577,19 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 		HistoryFile:          defaultHistoryFile,
 		VertexAIModel:        defaultVertexAIModel,
 	}
-	
-	if diff := cmp.Diff(want, got, 
+
+	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
 		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
 	}
-	
+
 	// Separately check OutputTemplate is not nil
 	if got.OutputTemplate == nil {
 		t.Errorf("newSystemVariablesWithDefaults() OutputTemplate should not be nil")
 	}
-	
+
 	// Separately check ParsedAnalyzeColumns is not nil
 	if got.ParsedAnalyzeColumns == nil {
 		t.Errorf("newSystemVariablesWithDefaults() ParsedAnalyzeColumns should not be nil")
@@ -648,13 +648,13 @@ func Test_parseParams(t *testing.T) {
 				t.Errorf("parseParams() error = %v, wantErr %v", err, test.wantErr)
 				return
 			}
-			
+
 			// Compare using string representation since AST nodes are complex
 			if len(got) != len(test.want) {
 				t.Errorf("parseParams() got %d params, want %d", len(got), len(test.want))
 				return
 			}
-			
+
 			for k, wantNode := range test.want {
 				gotNode, exists := got[k]
 				if !exists {
@@ -786,17 +786,16 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 	}
 }
 
-
 func TestDetermineInputAndMode(t *testing.T) {
 	// Helper to create stdin based on usePTY flag
 	type stdinProvider func() (io.Reader, func(), error)
-	
+
 	nonPTYStdin := func(content string) stdinProvider {
 		return func() (io.Reader, func(), error) {
 			return strings.NewReader(content), func() {}, nil
 		}
 	}
-	
+
 	ptyStdin := func() stdinProvider {
 		return func() (io.Reader, func(), error) {
 			pty, tty, err := pty.Open()
@@ -902,9 +901,9 @@ func TestDetermineInputAndMode(t *testing.T) {
 				t.Skipf("Failed to create stdin: %v", err)
 			}
 			defer cleanup()
-			
+
 			input, interactive, err := determineInputAndMode(tt.opts, stdin)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("determineInputAndMode() error = %v, wantErr %v", err, tt.wantErr)
 				return

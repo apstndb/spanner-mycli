@@ -124,7 +124,7 @@ func TestShowOperationStatement_getOperationProgress(t *testing.T) {
 func TestShowOperationStatement_SyncModeWithCompletedOperation(t *testing.T) {
 	// Test that SYNC mode immediately returns for completed operations
 	// This is a unit test that doesn't require the full integration setup
-	
+
 	// Create a mock completed operation
 	completedOp := &longrunningpb.Operation{
 		Name: "projects/test/instances/test/databases/test/operations/auto_op_123",
@@ -140,7 +140,7 @@ func TestShowOperationStatement_SyncModeWithCompletedOperation(t *testing.T) {
 	desc := stmt.getOperationDescription(completedOp)
 	assert.Equal(t, "Operation auto_op_123", desc)
 
-	// Test that getOperationProgress works correctly  
+	// Test that getOperationProgress works correctly
 	progress := stmt.getOperationProgress(completedOp)
 	assert.Equal(t, 0.0, progress)
 }
@@ -186,9 +186,9 @@ func TestShowOperationStatement_MetadataTypes(t *testing.T) {
 	stmt := &ShowOperationStatement{}
 
 	tests := []struct {
-		name        string
-		metadata    proto.Message
-		expectedOp  string
+		name         string
+		metadata     proto.Message
+		expectedOp   string
 		expectedProg float64
 	}{
 		{
@@ -213,7 +213,7 @@ func TestShowOperationStatement_MetadataTypes(t *testing.T) {
 				},
 			},
 			expectedOp:   "CREATE TABLE t1 (id INT64) PRIMARY KEY (id)", // First statement
-			expectedProg: 70.0, // Average of 80 and 60
+			expectedProg: 70.0,                                          // Average of 80 and 60
 		},
 	}
 

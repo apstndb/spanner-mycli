@@ -78,12 +78,12 @@ func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
 	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.StatementTimeout == nil {
 		return 24 * time.Hour // PDML default
 	}
-	
+
 	// Use custom timeout if set, otherwise default
 	if s.systemVariables.StatementTimeout != nil {
 		return *s.systemVariables.StatementTimeout
 	}
-	
+
 	return 10 * time.Minute // default timeout
 }
 
@@ -102,7 +102,6 @@ type Session struct {
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
-
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements
@@ -153,7 +152,7 @@ func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *sys
 	if sysVars.Database == "" {
 		return NewAdminSession(ctx, sysVars, h.clientOpts...)
 	}
-	
+
 	return NewSession(ctx, sysVars, h.clientOpts...)
 }
 
@@ -188,7 +187,7 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
 	newSystemVariables := *h.systemVariables
-	
+
 	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""
 	newSystemVariables.Role = ""
@@ -294,7 +293,8 @@ func logGrpcClientOptions() []option.ClientOption {
 				req, ok := callMeta.ReqOrNil.(*sppb.ExecuteSqlRequest)
 				return !ok || req.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat"
 			}), selectlogging.WithLogOnEvents(selectlogging.FinishCall, selectlogging.PayloadSent, selectlogging.PayloadReceived)),
-		))}
+		)),
+	}
 }
 
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
@@ -388,8 +388,6 @@ func (s *Session) IsDetached() bool {
 	return s.mode == Detached
 }
 
-
-
 func (s *Session) RequiresDatabaseConnection() bool {
 	return s.client == nil
 }
@@ -398,7 +396,6 @@ func (s *Session) ValidateDetachedOperation() error {
 	// Detached operations only require adminClient, which is always present
 	return nil
 }
-
 
 func (s *Session) ValidateDatabaseOperation() error {
 	if s.client == nil {
@@ -426,7 +423,7 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	// Construct database path directly to avoid modifying state before success
 	dbPath := databasePath(s.systemVariables.Project, s.systemVariables.Instance, databaseId)
 	clientConfig := s.clientConfig
-	
+
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
 	if err != nil {
 		return err
@@ -438,12 +435,12 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	}
 
 	wasDetached := s.mode == Detached
-	
+
 	// Update state only after successful client creation
 	s.systemVariables.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
-	
+
 	// Start heartbeat if transitioning from Detached mode
 	if wasDetached {
 		go s.startHeartbeat()
@@ -561,7 +558,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return err
 	}
-	
+
 	if err := s.validateNoActiveTransaction(); err != nil {
 		return err
 	}
@@ -653,7 +650,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return time.Time{}, err
 	}
-	
+
 	if err := s.validateNoActiveTransaction(); err != nil {
 		return time.Time{}, err
 	}
@@ -710,7 +707,7 @@ func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement,
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
-	
+
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := s.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
@@ -728,7 +725,7 @@ func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanne
 		// Return nil to indicate error - caller should check for nil
 		return nil, nil
 	}
-	
+
 	opts := s.buildQueryOptions(nil)
 	return s.runQueryWithOptions(ctx, stmt, opts)
 }
@@ -752,7 +749,6 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
-
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
@@ -779,7 +775,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		// and DetachedCompatible interface checks in ExecuteStatement
 		if s.client == nil {
 			// This is a programming error - log it and return a failing iterator
-			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations", 
+			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations",
 				"sessionMode", s.mode,
 				"statement", stmt.SQL)
 			// Create a failing iterator that will return an error when used
@@ -798,7 +794,8 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 // RunUpdate executes a DML statement on the running read-write transaction.
 // It returns error if there is no running read-write transaction.
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64,
-	*sppb.ResultSetMetadata, *sppb.QueryPlan, error) {
+	*sppb.ResultSetMetadata, *sppb.QueryPlan, error,
+) {
 	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, nil, 0, nil, nil, err
@@ -877,27 +874,27 @@ func (s *Session) InstancePath() string {
 func (s *Session) InstanceExists() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	
+
 	// Method 1: Try listing databases (databases.list) first
 	// This works for users with database-level permissions and uses the already available adminClient
 	dbIter := s.adminClient.ListDatabases(ctx, &adminpb.ListDatabasesRequest{
 		Parent:   s.InstancePath(),
 		PageSize: 1, // Only check if instance is accessible
 	})
-	
+
 	// Try to get the first item from iterator
 	_, err := dbIter.Next()
-	
+
 	if err == nil {
 		// Successfully got at least one database, instance exists
 		return true, nil
 	}
-	
+
 	// Check if it's an iterator.Done error (no databases but instance exists)
 	if err == iterator.Done {
 		return true, nil
 	}
-	
+
 	switch status.Code(err) {
 	case codes.NotFound:
 		return false, nil
@@ -906,7 +903,7 @@ func (s *Session) InstanceExists() (bool, error) {
 	default:
 		// For other errors, fall through to try instance admin API
 	}
-	
+
 	// Method 2: Try using instance admin API (instances.get)
 	// This works for users with spanner.instances.get permission (like Database Reader role)
 	instanceAdminClient, err := instanceapi.NewInstanceAdminClient(ctx, s.clientOpts...)
@@ -919,15 +916,15 @@ func (s *Session) InstanceExists() (bool, error) {
 			slog.Error("error on instanceAdminClient.Close()", "err", closeErr)
 		}
 	}()
-	
+
 	_, err = instanceAdminClient.GetInstance(ctx, &instancepb.GetInstanceRequest{
 		Name: s.InstancePath(),
 	})
-	
+
 	if err == nil {
 		return true, nil
 	}
-	
+
 	switch status.Code(err) {
 	case codes.NotFound:
 		return false, nil
@@ -945,7 +942,7 @@ func (s *Session) DatabaseExists() (bool, error) {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return false, err
 	}
-	
+
 	// For users who don't have `spanner.databases.get` IAM permission,
 	// check database existence by running an actual query.
 	// cf. https://github.com/cloudspannerecosystem/spanner-cli/issues/10
@@ -975,7 +972,7 @@ func (s *Session) RecreateClient() error {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return err
 	}
-	
+
 	ctx := context.Background()
 	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), s.clientConfig, s.clientOpts...)
 	if err != nil {
@@ -1153,12 +1150,12 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err
 	}
-	
+
 	// Apply statement timeout based on statement type
 	timeout := s.getTimeoutForStatement(stmt)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	
+
 	defer func() {
 		if result != nil {
 			result.BatchInfo = extractBatchInfo(s.currentBatch)
@@ -1236,6 +1233,6 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if sysVars.Database == "" {
 		return NewAdminSession(ctx, sysVars, opts...)
 	}
-	
+
 	return NewSession(ctx, sysVars, opts...)
 }

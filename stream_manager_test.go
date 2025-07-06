@@ -116,7 +116,7 @@ func TestStreamManager(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		validFile := filepath.Join(tmpDir, "valid.log")
-		
+
 		// Enable valid file
 		if err := sm.EnableTee(validFile); err != nil {
 			t.Fatalf("Failed to enable valid file: %v", err)
@@ -205,7 +205,7 @@ func TestStreamManager(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "test.log")
-		
+
 		// Enable tee
 		if err := sm.EnableTee(teeFile); err != nil {
 			t.Fatalf("Failed to enable tee: %v", err)
@@ -271,11 +271,11 @@ func TestStreamManager(t *testing.T) {
 		defer sm.Close()
 
 		tmpDir := t.TempDir()
-		
+
 		// Run multiple EnableTee calls concurrently
 		var wg sync.WaitGroup
 		errors := make([]error, 10)
-		
+
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func(index int) {
@@ -284,21 +284,21 @@ func TestStreamManager(t *testing.T) {
 				errors[index] = sm.EnableTee(filePath)
 			}(i)
 		}
-		
+
 		wg.Wait()
-		
+
 		// All calls should succeed
 		for i, err := range errors {
 			if err != nil {
 				t.Errorf("EnableTee call %d failed: %v", i, err)
 			}
 		}
-		
+
 		// Only one file should be active (the last one)
 		if !sm.IsEnabled() {
 			t.Error("Expected tee to be enabled after concurrent calls")
 		}
-		
+
 		// Write data to verify it works
 		writer := sm.GetWriter()
 		testData := "concurrent test data\n"
@@ -315,15 +315,15 @@ func TestStreamManager(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		initialFile := filepath.Join(tmpDir, "initial.log")
-		
+
 		// Enable initial tee
 		if err := sm.EnableTee(initialFile); err != nil {
 			t.Fatalf("Failed to enable initial tee: %v", err)
 		}
-		
+
 		// Run GetWriter and EnableTee concurrently
 		var wg sync.WaitGroup
-		
+
 		// Writers will try to get the writer repeatedly
 		for i := 0; i < 5; i++ {
 			wg.Add(1)
@@ -336,7 +336,7 @@ func TestStreamManager(t *testing.T) {
 				}
 			}()
 		}
-		
+
 		// Enablers will try to change the tee file
 		for i := 0; i < 3; i++ {
 			wg.Add(1)
@@ -348,9 +348,9 @@ func TestStreamManager(t *testing.T) {
 				}
 			}(i)
 		}
-		
+
 		wg.Wait()
-		
+
 		// Should still be functional
 		if !sm.IsEnabled() {
 			t.Error("Expected tee to be enabled after concurrent operations")
@@ -365,10 +365,10 @@ func TestStreamManager(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		teeFile := filepath.Join(tmpDir, "append.log")
-		
+
 		// Create file with initial content
 		initialContent := "Initial content\n"
-		if err := os.WriteFile(teeFile, []byte(initialContent), 0644); err != nil {
+		if err := os.WriteFile(teeFile, []byte(initialContent), 0o644); err != nil {
 			t.Fatalf("Failed to create initial file: %v", err)
 		}
 
@@ -453,7 +453,7 @@ func TestSafeTeeWriter(t *testing.T) {
 		_ = os.Remove(tmpPath) // Remove so we can't write to it
 
 		// Create a closed file handle
-		closedFile, _ := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY, 0644)
+		closedFile, _ := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY, 0o644)
 		closedFile.Close()
 
 		errBuf := &bytes.Buffer{}
@@ -540,15 +540,15 @@ func TestOpenTeeFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := tt.setupFunc()
 			file, err := openTeeFile(path)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("openTeeFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			
+
 			if err != nil && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 				t.Errorf("Expected error containing %q, got %v", tt.errMsg, err)
 			}
-			
+
 			if file != nil {
 				file.Close()
 			}

@@ -54,7 +54,7 @@ type LastQueryCache struct {
 
 // systemVariables holds configuration state for spanner-mycli sessions.
 // IMPORTANT: This struct is designed to be read-only after creation for session safety.
-// SessionHandler depends on this read-only property when creating new sessions with 
+// SessionHandler depends on this read-only property when creating new sessions with
 // modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
@@ -105,8 +105,8 @@ type systemVariables struct {
 	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
 	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
 
-	QueryMode *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
-	TryPartitionQuery bool                       // CLI_TRY_PARTITION_QUERY
+	QueryMode         *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
+	TryPartitionQuery bool                              // CLI_TRY_PARTITION_QUERY
 
 	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
@@ -124,9 +124,9 @@ type systemVariables struct {
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 	InlineStats    string // CLI_INLINE_STATS
 
-	ExplainFormat         explainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth      int64         // CLI_EXPLAIN_WRAP_WIDTH
-	AutoConnectAfterCreate bool         // CLI_AUTO_CONNECT_AFTER_CREATE
+	ExplainFormat          explainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth       int64         // CLI_EXPLAIN_WRAP_WIDTH
+	AutoConnectAfterCreate bool          // CLI_AUTO_CONNECT_AFTER_CREATE
 
 	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
@@ -139,13 +139,13 @@ type systemVariables struct {
 	Params                map[string]ast.Node
 
 	// link to session
-	CurrentSession   *Session
-	
+	CurrentSession *Session
+
 	// TtyOutStream has been moved to StreamManager.
 	// Use StreamManager.GetTtyStream() instead.
-	
+
 	// StreamManager manages tee output functionality
-	StreamManager       *StreamManager
+	StreamManager *StreamManager
 
 	// TODO: Expose as CLI_*
 	EnableProgressBar         bool
@@ -225,7 +225,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 		// Java-spanner compatible defaults
 		ReturnCommitStats: true,
 		RPCPriority:       defaultPriority,
-		
+
 		// CLI defaults
 		EnableADCPlus:        true,
 		AnalyzeColumns:       DefaultAnalyzeColumns,
@@ -262,9 +262,11 @@ func (e errAdderUnimplemented) Error() string {
 	return fmt.Sprintf("unimplemented adder: %v", e.Name)
 }
 
-var _ error = &errSetterUnimplemented{}
-var _ error = &errGetterUnimplemented{}
-var _ error = &errAdderUnimplemented{}
+var (
+	_ error = &errSetterUnimplemented{}
+	_ error = &errGetterUnimplemented{}
+	_ error = &errAdderUnimplemented{}
+)
 
 // sessionInitOnlyVariables contains variables that can only be set before session creation.
 // These variables typically control client initialization behavior that cannot be changed
@@ -521,7 +523,8 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.ExcludeTxnFromChangeStreams
-		})},
+		}),
+	},
 	"READ_ONLY_STALENESS": {
 		Description: "A property of type `STRING` indicating the current read-only staleness setting that Spanner uses for read-only transactions and single read-only queries.",
 		Accessor: accessor{
@@ -575,12 +578,14 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
 		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
 			return &sysVars.OptimizerVersion
-		})},
+		}),
+	},
 	"OPTIMIZER_STATISTICS_PACKAGE": {
 		Description: "A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
 		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
 			return &sysVars.OptimizerStatisticsPackage
-		})},
+		}),
+	},
 	"RETURN_COMMIT_STATS": {
 		Description: "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
@@ -591,12 +596,14 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AutoBatchDML
-		})},
+		}),
+	},
 	"DATA_BOOST_ENABLED": {
 		Description: "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
 		Accessor: boolAccessor(func(sysVars *systemVariables) *bool {
 			return &sysVars.DataBoostEnabled
-		})},
+		}),
+	},
 	"RPC_PRIORITY": {
 		Description: "A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
 		Accessor: accessor{
@@ -882,18 +889,22 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "",
 		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
 			return &sysVars.VertexAIModel
-		})},
+		}),
+	},
 	"CLI_VERTEXAI_PROJECT": {
 		Description: "",
 		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
 			return &sysVars.VertexAIProject
-		})},
+		}),
+	},
 	"CLI_PROMPT": {
 		Description: "",
-		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt })},
+		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	},
 	"CLI_PROMPT2": {
 		Description: "",
-		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 })},
+		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
+	},
 	"CLI_PROJECT": {
 		Description: "",
 		Accessor: accessor{
@@ -1104,12 +1115,14 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.UsePager
-		})},
+		}),
+	},
 	"CLI_AUTOWRAP": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.AutoWrap
-		})},
+		}),
+	},
 	"CLI_FIXED_WIDTH": {
 		Description: "Set fixed width to overwrite wrap width for CLI_AUTOWRAP.",
 		Accessor: accessor{
@@ -1144,7 +1157,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				if this.StreamManager != nil {
 					return singletonMap(name, this.StreamManager.GetTerminalWidthString()), nil
 				}
-				
+
 				// This should not happen in normal operation
 				slog.Warn("StreamManager not available for terminal width detection")
 				return singletonMap(name, "NULL"), nil
@@ -1155,17 +1168,20 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.EnableHighlight
-		})},
+		}),
+	},
 	"CLI_PROTOTEXT_MULTILINE": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.MultilineProtoText
-		})},
+		}),
+	},
 	"CLI_MARKDOWN_CODEBLOCK": {
 		Description: "",
 		Accessor: boolAccessor(func(variables *systemVariables) *bool {
 			return &variables.MarkdownCodeblock
-		})},
+		}),
+	},
 	"CLI_QUERY_MODE": {
 		Description: "",
 		Accessor: accessor{
@@ -1432,7 +1448,7 @@ func parseTimestampBound(s string) (spanner.TimestampBound, error) {
 	}
 
 	first := fields[0]
-	
+
 	// All timestamp bounds accept at most 2 fields (type + parameter)
 	if len(fields) > 2 {
 		return spanner.StrongRead(), fmt.Errorf("%s accepts at most one parameter", first)

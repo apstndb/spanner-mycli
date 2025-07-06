@@ -196,8 +196,10 @@ type UseDatabaseMetaCommand struct {
 }
 
 // Ensure UseDatabaseMetaCommand implements both Statement and MetaCommandStatement
-var _ Statement = (*UseDatabaseMetaCommand)(nil)
-var _ MetaCommandStatement = (*UseDatabaseMetaCommand)(nil)
+var (
+	_ Statement            = (*UseDatabaseMetaCommand)(nil)
+	_ MetaCommandStatement = (*UseDatabaseMetaCommand)(nil)
+)
 
 // isMetaCommand marks this as a meta command
 func (s *UseDatabaseMetaCommand) isMetaCommand() {}
@@ -245,7 +247,6 @@ func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*
 		return nil, err
 	}
 
-	
 	return &Result{}, nil
 }
 
@@ -270,7 +271,6 @@ func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (
 
 	// Disable tee
 	session.systemVariables.StreamManager.DisableTee()
-	
-	
+
 	return &Result{}, nil
 }

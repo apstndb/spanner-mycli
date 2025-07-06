@@ -1,8 +1,8 @@
 package main
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"errors"
 	"testing"
 

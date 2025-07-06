@@ -314,7 +314,6 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 }
 
 func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {
-
 	// table overhead is:
 	// len(`|  |`) +
 	// len(` | `) * len(columns) - 1
@@ -348,12 +347,11 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 	for {
 		slog.Debug("widthCounts", "counts", widthCounts)
 
-		firstCounts :=
-			xiter.Map(
-				func(wcs []WidthCount) WidthCount {
-					return lo.FirstOr(wcs, invalidWidthCount)
-				},
-				slices.Values(widthCounts))
+		firstCounts := xiter.Map(
+			func(wcs []WidthCount) WidthCount {
+				return lo.FirstOr(wcs, invalidWidthCount)
+			},
+			slices.Values(widthCounts))
 
 		// find the largest count idx within available width
 		idx, target := wc.maxIndex(termWidthWithoutOverhead-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
@@ -538,6 +536,7 @@ func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 //   - Uses uppercase HTML tags (TABLE, TR, TD, TH) for compatibility
 //   - Includes BORDER='1' attribute on TABLE element
 //   - All values are HTML-escaped using html.EscapeString for security
+//
 // Note: This function streams output row-by-row for memory efficiency.
 func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
 	if len(columnNames) == 0 {
@@ -547,7 +546,7 @@ func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnN
 	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
 		return err
 	}
-	
+
 	// Add header row unless skipping column names
 	if !skipColumnNames {
 		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
@@ -562,7 +561,7 @@ func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnN
 			return err
 		}
 	}
-	
+
 	// Add data rows
 	for _, row := range rows {
 		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
@@ -577,7 +576,7 @@ func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnN
 			return err
 		}
 	}
-	
+
 	_, err := fmt.Fprintln(out, "</TABLE>")
 	return err
 }
@@ -613,6 +612,7 @@ type xmlResultSet struct {
 //   - Uses XML declaration with single quotes: <?xml version='1.0'?>
 //   - Includes xmlns:xsi namespace for compatibility
 //   - All values are automatically XML-escaped by encoding/xml package
+//
 // Note: This implementation builds the entire result set in memory before
 // encoding. For very large result sets, consider using TAB format for
 // streaming output. This design prioritizes simplicity and consistency
@@ -627,7 +627,7 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 		XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
 		Rows:  make([]xmlRow, 0, len(rows)),
 	}
-	
+
 	// Add header fields only if not skipping column names
 	if !skipColumnNames {
 		header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
@@ -636,7 +636,7 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 		}
 		resultSet.Header = header
 	}
-	
+
 	// Add rows
 	for _, row := range rows {
 		xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
@@ -645,12 +645,12 @@ func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColu
 		}
 		resultSet.Rows = append(resultSet.Rows, xmlRow)
 	}
-	
+
 	// Write XML declaration
 	if _, err := fmt.Fprintln(out, "<?xml version='1.0'?>"); err != nil {
 		return err
 	}
-	
+
 	// Marshal the result set
 	encoder := xml.NewEncoder(out)
 	encoder.Indent("", "\t")

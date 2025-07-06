@@ -8,11 +8,11 @@ import (
 
 func TestPrintTableDataHTML(t *testing.T) {
 	tests := []struct {
-		name          string
-		result        *Result
-		skipColNames  bool
-		wantContains  []string
-		wantOutput    string
+		name         string
+		result       *Result
+		skipColNames bool
+		wantContains []string
+		wantOutput   string
 	}{
 		{
 			name: "simple HTML output",
@@ -73,15 +73,15 @@ func TestPrintTableDataHTML(t *testing.T) {
 				CLIFormat:       DisplayModeHTML,
 				SkipColumnNames: tt.skipColNames,
 			}
-			
+
 			printTableData(sysVars, 0, &buf, tt.result)
-			
+
 			got := buf.String()
-			
+
 			if tt.wantOutput != "" && got != tt.wantOutput {
 				t.Errorf("printTableData() = %q, want %q", got, tt.wantOutput)
 			}
-			
+
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
 					t.Errorf("printTableData() output missing %q", want)
@@ -93,10 +93,10 @@ func TestPrintTableDataHTML(t *testing.T) {
 
 func TestPrintTableDataXML(t *testing.T) {
 	tests := []struct {
-		name          string
-		result        *Result
-		skipColNames  bool
-		wantContains  []string
+		name            string
+		result          *Result
+		skipColNames    bool
+		wantContains    []string
 		wantNotContains []string
 	}{
 		{
@@ -184,17 +184,17 @@ func TestPrintTableDataXML(t *testing.T) {
 				CLIFormat:       DisplayModeXML,
 				SkipColumnNames: tt.skipColNames,
 			}
-			
+
 			printTableData(sysVars, 0, &buf, tt.result)
-			
+
 			got := buf.String()
-			
+
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
 					t.Errorf("printTableData() output missing %q\nGot:\n%s", want, got)
 				}
 			}
-			
+
 			for _, notWant := range tt.wantNotContains {
 				if strings.Contains(got, notWant) {
 					t.Errorf("printTableData() output should not contain %q\nGot:\n%s", notWant, got)
@@ -226,13 +226,13 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 			sysVars := &systemVariables{
 				CLIFormat: DisplayModeTable,
 			}
-			
+
 			err := sysVars.Set("CLI_FORMAT", tt.setValue)
-			
+
 			if (err != nil) != tt.wantError {
 				t.Errorf("Set() error = %v, wantError %v", err, tt.wantError)
 			}
-			
+
 			if !tt.wantError && sysVars.CLIFormat != tt.wantMode {
 				t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, tt.wantMode)
 			}
@@ -242,8 +242,8 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 
 func TestCLIFormatSystemVariableGetter(t *testing.T) {
 	tests := []struct {
-		mode     DisplayMode
-		wantStr  string
+		mode    DisplayMode
+		wantStr string
 	}{
 		{DisplayModeTable, "TABLE"},
 		{DisplayModeTableComment, "TABLE_COMMENT"},
@@ -260,12 +260,12 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 			sysVars := &systemVariables{
 				CLIFormat: tt.mode,
 			}
-			
+
 			got, err := sysVars.Get("CLI_FORMAT")
 			if err != nil {
 				t.Fatalf("Get() error = %v", err)
 			}
-			
+
 			if got["CLI_FORMAT"] != tt.wantStr {
 				t.Errorf("Get() = %v, want %v", got["CLI_FORMAT"], tt.wantStr)
 			}
@@ -327,9 +327,9 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			sysVars := &systemVariables{
 				CLIFormat: tt.mode,
 			}
-			
+
 			printTableData(sysVars, 0, &buf, tt.result)
-			
+
 			got := buf.String()
 			if tt.wantOutput && got == "" {
 				t.Error("expected output but got empty string")
@@ -380,7 +380,7 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		
+
 		output := buf.String()
 		if !strings.Contains(output, "<?xml version='1.0'?>") {
 			t.Error("XML declaration missing")

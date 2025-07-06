@@ -49,7 +49,7 @@ func (p *persistentHistory) At(i int) string {
 
 func (p *persistentHistory) Add(s string) {
 	p.history.Add(s)
-	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		slog.Error("failed to open history file", "file", p.filename, "err", err)
 		return
@@ -112,7 +112,7 @@ func generatePS2Prompt(ps1 string, ps2Template string, ps2Interpolated string) s
 
 func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	ed := &multiline.Editor{}
-	
+
 	// Configure the LineEditor with proper I/O streams
 	// Use TtyOutStream for readline to avoid polluting tee output with prompts.
 	// Interactive mode requires a TTY for output.
@@ -134,13 +134,13 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 
 	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
 		text := strings.Join(lines, "\n")
-		
+
 		// Meta commands are submitted immediately on Enter
 		if IsMetaCommand(strings.TrimSpace(text)) {
 			c.waitingStatus = ""
 			return true
 		}
-		
+
 		statements, err := separateInput(text)
 		shouldSubmit, newWaitingStatus := shouldSubmitStatement(statements, err)
 		c.waitingStatus = newWaitingStatus
@@ -220,9 +220,11 @@ func kindHighlighter(kinds ...token.TokenKind) highlighterFunc {
 	})
 }
 
-const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
-const errMessageUnclosedStringLiteral = `unclosed string literal`
-const errMessageUnclosedComment = `unclosed comment`
+const (
+	errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
+	errMessageUnclosedStringLiteral             = `unclosed string literal`
+	errMessageUnclosedComment                   = `unclosed comment`
+)
 
 func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
@@ -328,7 +330,7 @@ func validateInteractiveInput(statements []inputStatement) (*inputStatement, err
 
 func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
 	lines, err := ed.Read(ctx)
-	
+
 	// Handle read errors
 	if stmt, procErr := processInputLines(lines, err); procErr != nil || stmt != nil {
 		return stmt, procErr

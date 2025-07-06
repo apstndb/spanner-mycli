@@ -225,7 +225,6 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	return result, nil
-
 }
 
 func isInsert(sql string) bool {
@@ -485,7 +484,7 @@ func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, err
 	}
 
 	operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
-	
+
 	// Use the same formatting logic as SHOW OPERATION statement
 	// For async DDL, errors are reported when polling, not immediately available
 	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), "")

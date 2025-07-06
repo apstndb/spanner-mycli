@@ -71,7 +71,8 @@ type ShowColumnsStatement struct {
 }
 
 func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.Statement{SQL: `SELECT
+	stmt := spanner.Statement{
+		SQL: `SELECT
   C.COLUMN_NAME as Field,
   C.SPANNER_TYPE as Type,
   C.IS_NULLABLE as ` + "`NULL`" + `,
@@ -90,7 +91,8 @@ WHERE
   LOWER(C.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(C.TABLE_NAME) = LOWER(@table_name)
 ORDER BY
   C.ORDINAL_POSITION ASC`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
+	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
@@ -116,7 +118,8 @@ FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
   LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
+	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)

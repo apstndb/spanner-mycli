@@ -2,13 +2,13 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-	"fmt"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanemuboost"
@@ -68,8 +68,8 @@ func TestParseFlagsCombinations(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "endpoint and deployment-endpoint both set (aliases allowed)",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"},
+			name: "endpoint and deployment-endpoint both set (aliases allowed)",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"},
 			// Note: Both can be set during parsing, but initializeSystemVariables prefers --endpoint
 			wantErr: false,
 		},
@@ -120,29 +120,29 @@ func TestParseFlagsCombinations(t *testing.T) {
 			errContains: "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql",
 		},
 		{
-			name:        "table flag without SQL input in batch mode",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
+			name: "table flag without SQL input in batch mode",
+			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
 			// Table flag is valid without SQL input - it affects output format
-			wantErr:     false,
-		},
-		{
-			name: "try-partition-query with execute is valid",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
 			wantErr: false,
 		},
 		{
-			name: "try-partition-query with sql is valid",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--sql", "SELECT 1"},
+			name:    "try-partition-query with execute is valid",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
 			wantErr: false,
 		},
 		{
-			name: "try-partition-query with file is valid",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--file", "query.sql"},
+			name:    "try-partition-query with sql is valid",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--sql", "SELECT 1"},
 			wantErr: false,
 		},
 		{
-			name: "try-partition-query with source is valid",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--source", "query.sql"},
+			name:    "try-partition-query with file is valid",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--file", "query.sql"},
+			wantErr: false,
+		},
+		{
+			name:    "try-partition-query with source is valid",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--source", "query.sql"},
 			wantErr: false,
 		},
 		{
@@ -160,18 +160,18 @@ func TestParseFlagsCombinations(t *testing.T) {
 
 		// Embedded emulator tests
 		{
-			name: "embedded-emulator without connection params",
-			args: []string{"--embedded-emulator"},
+			name:    "embedded-emulator without connection params",
+			args:    []string{"--embedded-emulator"},
 			wantErr: false,
 		},
 		{
-			name: "embedded-emulator with custom image",
-			args: []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
+			name:    "embedded-emulator with custom image",
+			args:    []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
 			wantErr: false,
 		},
 		{
-			name: "embedded-emulator ignores connection params",
-			args: []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
+			name:    "embedded-emulator ignores connection params",
+			args:    []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
 			wantErr: false,
 		},
 
@@ -195,40 +195,40 @@ func TestParseFlagsCombinations(t *testing.T) {
 			errContains: "missing parameter: -d is required",
 		},
 		{
-			name: "detached mode doesn't require database",
-			args: []string{"--project", "p", "--instance", "i", "--detached"},
+			name:    "detached mode doesn't require database",
+			args:    []string{"--project", "p", "--instance", "i", "--detached"},
 			wantErr: false,
 		},
 		{
-			name: "embedded emulator doesn't require project/instance/database",
-			args: []string{"--embedded-emulator"},
+			name:    "embedded emulator doesn't require project/instance/database",
+			args:    []string{"--embedded-emulator"},
 			wantErr: false,
 		},
 
 		// Valid combinations
 		{
-			name: "minimal valid flags",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d"},
+			name:    "minimal valid flags",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d"},
 			wantErr: false,
 		},
 		{
-			name: "only insecure flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure"},
+			name:    "only insecure flag",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure"},
 			wantErr: false,
 		},
 		{
-			name: "only skip-tls-verify flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
+			name:    "only skip-tls-verify flag",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
 			wantErr: false,
 		},
 		{
-			name: "only strong flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--strong"},
+			name:    "only strong flag",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--strong"},
 			wantErr: false,
 		},
 		{
-			name: "only read-timestamp flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
+			name:    "only read-timestamp flag",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
 			wantErr: false,
 		},
 	}
@@ -238,23 +238,23 @@ func TestParseFlagsCombinations(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			// First check if parsing itself failed
 			if err != nil && !tt.wantErr {
 				t.Errorf("ParseArgs() unexpected error: %v", err)
 				return
 			}
-			
+
 			// If parsing succeeded, validate the options
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -283,18 +283,18 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "priority must be either HIGH, MEDIUM, or LOW",
 		},
 		{
-			name: "valid priority HIGH",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "HIGH"},
+			name:    "valid priority HIGH",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "HIGH"},
 			wantErr: false,
 		},
 		{
-			name: "valid priority MEDIUM",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "MEDIUM"},
+			name:    "valid priority MEDIUM",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "MEDIUM"},
 			wantErr: false,
 		},
 		{
-			name: "valid priority LOW",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "LOW"},
+			name:    "valid priority LOW",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "LOW"},
 			wantErr: false,
 		},
 		{
@@ -304,18 +304,18 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "Invalid value `INVALID' for option `--query-mode'",
 		},
 		{
-			name: "valid query-mode NORMAL",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "NORMAL"},
+			name:    "valid query-mode NORMAL",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "NORMAL"},
 			wantErr: false,
 		},
 		{
-			name: "valid query-mode PLAN",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PLAN"},
+			name:    "valid query-mode PLAN",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PLAN"},
 			wantErr: false,
 		},
 		{
-			name: "valid query-mode PROFILE",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PROFILE"},
+			name:    "valid query-mode PROFILE",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PROFILE"},
 			wantErr: false,
 		},
 		{
@@ -325,13 +325,13 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "Invalid value `INVALID' for option `--database-dialect'",
 		},
 		{
-			name: "valid database-dialect POSTGRESQL",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "POSTGRESQL"},
+			name:    "valid database-dialect POSTGRESQL",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "POSTGRESQL"},
 			wantErr: false,
 		},
 		{
-			name: "valid database-dialect GOOGLE_STANDARD_SQL",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "GOOGLE_STANDARD_SQL"},
+			name:    "valid database-dialect GOOGLE_STANDARD_SQL",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "GOOGLE_STANDARD_SQL"},
 			wantErr: false,
 		},
 
@@ -343,18 +343,18 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "directed read option must be in the form of <replica_location>:<replica_type>",
 		},
 		{
-			name: "valid directed-read with location only",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1"},
+			name:    "valid directed-read with location only",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1"},
 			wantErr: false,
 		},
 		{
-			name: "valid directed-read with READ_ONLY",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_ONLY"},
+			name:    "valid directed-read with READ_ONLY",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_ONLY"},
 			wantErr: false,
 		},
 		{
-			name: "valid directed-read with READ_WRITE",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_WRITE"},
+			name:    "valid directed-read with READ_WRITE",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_WRITE"},
 			wantErr: false,
 		},
 		{
@@ -370,8 +370,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "error on parsing --read-timestamp",
 		},
 		{
-			name: "valid read-timestamp",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
+			name:    "valid read-timestamp",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
 			wantErr: false,
 		},
 		{
@@ -381,8 +381,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "invalid value of --timeout",
 		},
 		{
-			name: "valid timeout",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
+			name:    "valid timeout",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
 			wantErr: false,
 		},
 		{
@@ -392,13 +392,13 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "error on parsing --param",
 		},
 		{
-			name: "valid param with string value",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1='hello'"},
+			name:    "valid param with string value",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1='hello'"},
 			wantErr: false,
 		},
 		{
-			name: "valid param with type",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1=STRING"},
+			name:    "valid param with type",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1=STRING"},
 			wantErr: false,
 		},
 		{
@@ -408,8 +408,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "failed to set system variable",
 		},
 		{
-			name: "valid set value",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "READONLY=true"},
+			name:    "valid set value",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "READONLY=true"},
 			wantErr: false,
 		},
 
@@ -421,8 +421,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "error on --proto-descriptor-file",
 		},
 		{
-			name: "valid proto descriptor file",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--proto-descriptor-file", validProtoFile},
+			name:    "valid proto descriptor file",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--proto-descriptor-file", validProtoFile},
 			wantErr: false,
 		},
 		{
@@ -432,16 +432,16 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "error on parsing --log-level",
 		},
 		{
-			name: "valid log level",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--log-level", "INFO"},
+			name:    "valid log level",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--log-level", "INFO"},
 			wantErr: false,
 		},
-		
+
 		// Credential file tests
 		{
 			name: "valid credential file",
 			// Use a placeholder that will be replaced in the test
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "__TEMP_CRED_FILE__"},
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "__TEMP_CRED_FILE__"},
 			wantErr: false,
 		},
 		{
@@ -450,37 +450,43 @@ func TestParseFlagsValidation(t *testing.T) {
 			// Note: This won't fail during flag parsing/validation, only during run()
 			wantErr: false,
 		},
-		
-		// MCP mode tests  
+
+		// MCP mode tests
 		{
-			name: "mcp mode with all required params",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--mcp"},
+			name:    "mcp mode with all required params",
+			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--mcp"},
 			wantErr: false,
 		},
 		{
-			name: "mcp mode with embedded emulator",
-			args: []string{"--embedded-emulator", "--mcp"},
+			name:    "mcp mode with embedded emulator",
+			args:    []string{"--embedded-emulator", "--mcp"},
 			wantErr: false,
 		},
-		
+
 		// Complex flag combinations
 		{
 			name: "multiple set flags",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", 
-				"--set", "CLI_FORMAT=VERTICAL", "--set", "READONLY=true", "--set", "AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC"},
+			args: []string{
+				"--project", "p", "--instance", "i", "--database", "d",
+				"--set", "CLI_FORMAT=VERTICAL", "--set", "READONLY=true", "--set", "AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC",
+			},
 			wantErr: false,
 		},
 		{
 			name: "multiple param flags",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d",
-				"--param", "p1='value1'", "--param", "p2=INT64", "--param", "p3=ARRAY<STRING>"},
+			args: []string{
+				"--project", "p", "--instance", "i", "--database", "d",
+				"--param", "p1='value1'", "--param", "p2=INT64", "--param", "p3=ARRAY<STRING>",
+			},
 			wantErr: false,
 		},
 		{
 			name: "invalid param syntax",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d",
-				"--param", "p1=@{invalid}"},
-			wantErr: true,
+			args: []string{
+				"--project", "p", "--instance", "i", "--database", "d",
+				"--param", "p1=@{invalid}",
+			},
+			wantErr:     true,
 			errContains: "error on parsing --param",
 		},
 	}
@@ -492,7 +498,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			if tt.name == "valid credential file" {
 				tempDir := t.TempDir()
 				credFile := filepath.Join(tempDir, "cred.json")
-				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
+				if err := os.WriteFile(credFile, []byte{}, 0o644); err != nil {
 					t.Fatal(err)
 				}
 				// Replace placeholder with actual temp file path
@@ -503,11 +509,10 @@ func TestParseFlagsValidation(t *testing.T) {
 					}
 				}
 			}
-			
+
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(args)
-			
 			// First check if parsing itself failed
 			if err != nil {
 				if !tt.wantErr {
@@ -517,7 +522,7 @@ func TestParseFlagsValidation(t *testing.T) {
 				}
 				return
 			}
-			
+
 			// If parsing succeeded, validate the options and initialize system variables
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
@@ -525,12 +530,12 @@ func TestParseFlagsValidation(t *testing.T) {
 					_, err = initializeSystemVariables(&gopts.Spanner)
 				}
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -543,18 +548,18 @@ func TestParseFlagsValidation(t *testing.T) {
 // TestFlagSystemVariablePrecedence tests the precedence of flags vs system variables
 func TestFlagSystemVariablePrecedence(t *testing.T) {
 	tests := []struct {
-		name           string
-		args           []string
-		envVars        map[string]string
-		configContent  string
-		wantProject    string
-		wantInstance   string
-		wantDatabase   string
-		wantPriority   sppb.RequestOptions_Priority
-		wantEndpoint   string
-		wantRole       string
-		wantLogGrpc    bool
-		wantInsecure   bool
+		name          string
+		args          []string
+		envVars       map[string]string
+		configContent string
+		wantProject   string
+		wantInstance  string
+		wantDatabase  string
+		wantPriority  sppb.RequestOptions_Priority
+		wantEndpoint  string
+		wantRole      string
+		wantLogGrpc   bool
+		wantInsecure  bool
 	}{
 		{
 			name: "CLI flags override environment variables",
@@ -693,9 +698,9 @@ instance = config-instance
 database = config-database
 priority = HIGH
 `,
-			wantProject:  "env-project",  // env overrides config
-			wantInstance: "env-instance", // env overrides config
-			wantDatabase: "env-database", // env overrides config
+			wantProject:  "env-project",                    // env overrides config
+			wantInstance: "env-instance",                   // env overrides config
+			wantDatabase: "env-database",                   // env overrides config
 			wantPriority: sppb.RequestOptions_PRIORITY_LOW, // CLI overrides config
 		},
 	}
@@ -712,13 +717,13 @@ priority = HIGH
 			if tt.configContent != "" {
 				tmpDir := t.TempDir()
 				configFile := filepath.Join(tmpDir, cnfFileName)
-				if err := os.WriteFile(configFile, []byte(tt.configContent), 0644); err != nil {
+				if err := os.WriteFile(configFile, []byte(tt.configContent), 0o644); err != nil {
 					t.Fatalf("Failed to create config file: %v", err)
 				}
 
 				// Initialize with defaults like parseFlags does
 				gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
-				
+
 				// Process config file directly by calling the INI parser
 				// to avoid changing the global current working directory (os.Chdir).
 				configParser := flags.NewParser(&gopts, flags.Default)
@@ -726,7 +731,7 @@ priority = HIGH
 				if err := iniParser.ParseFile(configFile); err != nil {
 					t.Fatalf("Failed to read config file: %v", err)
 				}
-				
+
 				// Then parse command line args
 				flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash|flags.HelpFlag)
 				_, err := flagParser.ParseArgs(tt.args)
@@ -785,24 +790,24 @@ priority = HIGH
 // TestFlagSpecialModes tests special modes like embedded emulator and MCP
 func TestFlagSpecialModes(t *testing.T) {
 	tests := []struct {
-		name             string
-		args             []string
-		wantProject      string
-		wantInstance     string
-		wantDatabase     string
-		wantInsecure     bool
-		wantVerbose      bool
-		wantMCP          bool
-		wantCLIFormat    DisplayMode
-		checkAfterRun    bool // Some values are set in run() function
+		name          string
+		args          []string
+		wantProject   string
+		wantInstance  string
+		wantDatabase  string
+		wantInsecure  bool
+		wantVerbose   bool
+		wantMCP       bool
+		wantCLIFormat DisplayMode
+		checkAfterRun bool // Some values are set in run() function
 	}{
 		{
-			name: "embedded emulator with no explicit values uses defaults",
-			args: []string{"--embedded-emulator"},
-			wantProject:  "emulator-project", // Default set in initializeSystemVariables
-			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
-			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
-			wantInsecure: true,
+			name:          "embedded emulator with no explicit values uses defaults",
+			args:          []string{"--embedded-emulator"},
+			wantProject:   "emulator-project",  // Default set in initializeSystemVariables
+			wantInstance:  "emulator-instance", // Default set in initializeSystemVariables
+			wantDatabase:  "emulator-database", // Default set in initializeSystemVariables
+			wantInsecure:  true,
 			checkAfterRun: true, // Endpoint and WithoutAuthentication set in run()
 		},
 		{
@@ -1046,7 +1051,7 @@ func TestFlagErrorMessages(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, parseErr := parser.ParseArgs(tt.args)
-			
+
 			var err error
 			if parseErr == nil {
 				// If parsing succeeded, try validation and initialization
@@ -1075,7 +1080,7 @@ func TestFileFlagBehavior(t *testing.T) {
 	// Create a temporary test file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.sql")
-	if err := os.WriteFile(testFile, []byte("SELECT 1;"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("SELECT 1;"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -1089,11 +1094,11 @@ func TestFileFlagBehavior(t *testing.T) {
 		wantInput   string
 	}{
 		{
-			name: "valid file flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile},
-			wantErr: false,
+			name:       "valid file flag",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile},
+			wantErr:    false,
 			checkInput: true,
-			wantInput: "SELECT 1;",
+			wantInput:  "SELECT 1;",
 		},
 		{
 			name:        "non-existent file",
@@ -1103,12 +1108,12 @@ func TestFileFlagBehavior(t *testing.T) {
 			checkInput:  true, // Need to call determineInputAndMode to get the error
 		},
 		{
-			name: "file flag with dash reads from stdin",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--file", "-"},
-			stdin: "SELECT 2;",
-			wantErr: false,
+			name:       "file flag with dash reads from stdin",
+			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--file", "-"},
+			stdin:      "SELECT 2;",
+			wantErr:    false,
 			checkInput: true,
-			wantInput: "SELECT 2;",
+			wantInput:  "SELECT 2;",
 		},
 		{
 			name:        "file flag with execute is mutually exclusive",
@@ -1129,11 +1134,11 @@ func TestFileFlagBehavior(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
-			
+
 			// If no validation error, test determineInputAndMode
 			if err == nil && tt.checkInput {
 				input, _, determineErr := determineInputAndMode(&gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
@@ -1143,12 +1148,12 @@ func TestFileFlagBehavior(t *testing.T) {
 					t.Errorf("determineInputAndMode() input = %q, want %q", input, tt.wantInput)
 				}
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -1161,31 +1166,31 @@ func TestFileFlagBehavior(t *testing.T) {
 // TestSpecialFlags tests special flags like --async, --statement-help, etc.
 func TestSpecialFlags(t *testing.T) {
 	tests := []struct {
-		name                string
-		args                []string
-		wantAsync           bool
-		wantStatementHelp   bool
-		wantTryPartition    bool
-		wantEmulatorImage   string
-		wantErr             bool
-		errContains         string
+		name              string
+		args              []string
+		wantAsync         bool
+		wantStatementHelp bool
+		wantTryPartition  bool
+		wantEmulatorImage string
+		wantErr           bool
+		errContains       string
 	}{
 		{
-			name: "async flag",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
+			name:      "async flag",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
 			wantAsync: true,
 		},
 		{
-			name: "statement-help flag",
-			args: []string{"--statement-help"},
+			name:              "statement-help flag",
+			args:              []string{"--statement-help"},
 			wantStatementHelp: true,
 			// Note: --statement-help doesn't require project/instance/database
 			// but our test calls ValidateSpannerOptions which would fail.
 			// In real usage, run() checks StatementHelp before validation.
 		},
 		{
-			name: "try-partition-query with valid input",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
+			name:             "try-partition-query with valid input",
+			args:             []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
 			wantTryPartition: true,
 		},
 		{
@@ -1195,13 +1200,13 @@ func TestSpecialFlags(t *testing.T) {
 			errContains: "--try-partition-query requires SQL input",
 		},
 		{
-			name: "emulator-image flag",
-			args: []string{"--embedded-emulator", "--emulator-image", "gcr.io/my-project/my-emulator:latest"},
+			name:              "emulator-image flag",
+			args:              []string{"--embedded-emulator", "--emulator-image", "gcr.io/my-project/my-emulator:latest"},
 			wantEmulatorImage: "gcr.io/my-project/my-emulator:latest",
 		},
 		{
-			name: "emulator-image without embedded-emulator is ignored",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--emulator-image", "gcr.io/my-project/my-emulator:latest"},
+			name:              "emulator-image without embedded-emulator is ignored",
+			args:              []string{"--project", "p", "--instance", "i", "--database", "d", "--emulator-image", "gcr.io/my-project/my-emulator:latest"},
 			wantEmulatorImage: "gcr.io/my-project/my-emulator:latest",
 		},
 	}
@@ -1211,24 +1216,24 @@ func TestSpecialFlags(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			if err == nil && !gopts.Spanner.StatementHelp {
 				// Skip validation for --statement-help as it's handled before validation in run()
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
 				return
 			}
-			
+
 			// Check flag values
 			if gopts.Spanner.Async != tt.wantAsync {
 				t.Errorf("Async = %v, want %v", gopts.Spanner.Async, tt.wantAsync)
@@ -1242,7 +1247,7 @@ func TestSpecialFlags(t *testing.T) {
 			if tt.wantEmulatorImage != "" && gopts.Spanner.EmulatorImage != tt.wantEmulatorImage {
 				t.Errorf("EmulatorImage = %q, want %q", gopts.Spanner.EmulatorImage, tt.wantEmulatorImage)
 			}
-			
+
 			// If async flag is set, check it's propagated to system variables
 			if tt.wantAsync && err == nil {
 				sysVars, err := initializeSystemVariables(&gopts.Spanner)
@@ -1268,22 +1273,22 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "timeout without async",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
+			name:        "timeout without async",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
 			wantTimeout: lo.ToPtr(30 * time.Second),
-			wantAsync: false,
+			wantAsync:   false,
 		},
 		{
-			name: "async without timeout uses default",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
+			name:        "async without timeout uses default",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
 			wantTimeout: lo.ToPtr(10 * time.Minute), // default
-			wantAsync: true,
+			wantAsync:   true,
 		},
 		{
-			name: "both timeout and async",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "5m", "--async"},
+			name:        "both timeout and async",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "5m", "--async"},
 			wantTimeout: lo.ToPtr(5 * time.Minute),
-			wantAsync: true,
+			wantAsync:   true,
 		},
 		{
 			name:        "invalid timeout format",
@@ -1292,10 +1297,10 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 			errContains: "invalid value of --timeout",
 		},
 		{
-			name: "zero timeout",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "0s"},
+			name:        "zero timeout",
+			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "0s"},
 			wantTimeout: lo.ToPtr(0 * time.Second),
-			wantAsync: false,
+			wantAsync:   false,
 		},
 	}
 
@@ -1304,11 +1309,11 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
-			
+
 			if err == nil {
 				sysVars, initErr := initializeSystemVariables(&gopts.Spanner)
 				if initErr != nil {
@@ -1323,19 +1328,19 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 							t.Errorf("StatementTimeout = %v, want %v", *sysVars.StatementTimeout, *tt.wantTimeout)
 						}
 					}
-					
+
 					// Check async
 					if sysVars.AsyncDDL != tt.wantAsync {
 						t.Errorf("AsyncDDL = %v, want %v", sysVars.AsyncDDL, tt.wantAsync)
 					}
 				}
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -1350,12 +1355,12 @@ func TestOutputTemplateValidation(t *testing.T) {
 	// Create test template files
 	tmpDir := t.TempDir()
 	validTemplate := filepath.Join(tmpDir, "valid.tmpl")
-	if err := os.WriteFile(validTemplate, []byte("{{.Result}}"), 0644); err != nil {
+	if err := os.WriteFile(validTemplate, []byte("{{.Result}}"), 0o644); err != nil {
 		t.Fatalf("Failed to create valid template file: %v", err)
 	}
-	
+
 	invalidTemplate := filepath.Join(tmpDir, "invalid.tmpl")
-	if err := os.WriteFile(invalidTemplate, []byte("{{.Result"), 0644); err != nil { // Missing closing }}
+	if err := os.WriteFile(invalidTemplate, []byte("{{.Result"), 0o644); err != nil { // Missing closing }}
 		t.Fatalf("Failed to create invalid template file: %v", err)
 	}
 
@@ -1369,11 +1374,11 @@ func TestOutputTemplateValidation(t *testing.T) {
 		wantFile    string
 	}{
 		{
-			name: "valid output template file",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate},
-			wantErr: false,
+			name:      "valid output template file",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate},
+			wantErr:   false,
 			checkFile: true,
-			wantFile: validTemplate,
+			wantFile:  validTemplate,
 		},
 		{
 			name:        "non-existent output template file",
@@ -1388,18 +1393,18 @@ func TestOutputTemplateValidation(t *testing.T) {
 			errContains: "parse error of output template",
 		},
 		{
-			name: "output template via --set",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_OUTPUT_TEMPLATE_FILE=" + validTemplate},
-			wantErr: false,
+			name:      "output template via --set",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_OUTPUT_TEMPLATE_FILE=" + validTemplate},
+			wantErr:   false,
 			checkFile: true,
-			wantFile: validTemplate,
+			wantFile:  validTemplate,
 		},
 		{
-			name: "clear output template with NULL",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate, "--set", "CLI_OUTPUT_TEMPLATE_FILE=NULL"},
-			wantErr: false,
+			name:      "clear output template with NULL",
+			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate, "--set", "CLI_OUTPUT_TEMPLATE_FILE=NULL"},
+			wantErr:   false,
 			checkFile: true,
-			wantFile: "", // Should be cleared
+			wantFile:  "", // Should be cleared
 		},
 	}
 
@@ -1408,11 +1413,11 @@ func TestOutputTemplateValidation(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
-			
+
 			if err == nil {
 				sysVars, initErr := initializeSystemVariables(&gopts.Spanner)
 				if initErr != nil {
@@ -1423,12 +1428,12 @@ func TestOutputTemplateValidation(t *testing.T) {
 					}
 				}
 			}
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if tt.wantErr && tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -1682,7 +1687,7 @@ func TestReadCredentialFile(t *testing.T) {
 				tempDir := t.TempDir()
 				credFile := filepath.Join(tempDir, "cred.json")
 				content := `{"type": "service_account", "project_id": "test"}`
-				if err := os.WriteFile(credFile, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(credFile, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return credFile
@@ -1703,7 +1708,7 @@ func TestReadCredentialFile(t *testing.T) {
 			setupFile: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				credFile := filepath.Join(tempDir, "cred.json")
-				if err := os.WriteFile(credFile, []byte{}, 0644); err != nil {
+				if err := os.WriteFile(credFile, []byte{}, 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return credFile
@@ -1809,7 +1814,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to determine input mode: %v", err)
 			}
-			
+
 			// Apply the same logic as in run() - check case-insensitively
 			hasSet := false
 			for k := range gopts.Spanner.Set {
@@ -1837,30 +1842,30 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 // TestHelpAndVersionFlags tests help and version flag behavior
 func TestHelpAndVersionFlags(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantHelp   bool
+		name        string
+		args        []string
+		wantHelp    bool
 		wantVersion bool
 	}{
 		{
-			name:       "help flag",
-			args:       []string{"--help"},
-			wantHelp:   true,
+			name:     "help flag",
+			args:     []string{"--help"},
+			wantHelp: true,
 		},
 		{
-			name:       "short help flag",
-			args:       []string{"-h"},
-			wantHelp:   true,
+			name:     "short help flag",
+			args:     []string{"-h"},
+			wantHelp: true,
 		},
 		{
-			name:       "version flag",
-			args:       []string{"--version"},
+			name:        "version flag",
+			args:        []string{"--version"},
 			wantVersion: true,
 		},
 		{
-			name:       "help with other flags still shows help",
-			args:       []string{"--help", "--project", "p"},
-			wantHelp:   true,
+			name:     "help with other flags still shows help",
+			args:     []string{"--help", "--project", "p"},
+			wantHelp: true,
 		},
 	}
 
@@ -1869,7 +1874,7 @@ func TestHelpAndVersionFlags(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			
+
 			if tt.wantHelp {
 				if err == nil || !flags.WroteHelp(err) {
 					t.Errorf("Expected help to be written, but got err = %v", err)
@@ -1889,20 +1894,20 @@ func TestHelpAndVersionFlags(t *testing.T) {
 // TestComplexFlagInteractions tests complex interactions between multiple flags
 func TestComplexFlagInteractions(t *testing.T) {
 	tests := []struct {
-		name             string
-		args             []string
-		envVars          map[string]string
-		wantProject      string
-		wantInstance     string
-		wantDatabase     string
-		wantRole         string
-		wantInsecure     bool
-		wantVerbose      bool
-		wantReadOnly     bool
-		wantPriority     sppb.RequestOptions_Priority
-		wantStaleness    bool // true if ReadOnlyStaleness is set
-		wantErr          bool
-		errContains      string
+		name          string
+		args          []string
+		envVars       map[string]string
+		wantProject   string
+		wantInstance  string
+		wantDatabase  string
+		wantRole      string
+		wantInsecure  bool
+		wantVerbose   bool
+		wantReadOnly  bool
+		wantPriority  sppb.RequestOptions_Priority
+		wantStaleness bool // true if ReadOnlyStaleness is set
+		wantErr       bool
+		errContains   string
 	}{
 		{
 			name: "embedded emulator with --set overrides",
@@ -1911,7 +1916,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--set", "READONLY=true",
 				"--set", "RPC_PRIORITY=LOW",
 			},
-			wantProject:  "emulator-project", // Default set in initializeSystemVariables
+			wantProject:  "emulator-project",  // Default set in initializeSystemVariables
 			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
 			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
 			wantInsecure: true,
@@ -1979,11 +1984,11 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--embedded-emulator",
 				"--mcp",
 			},
-			wantProject:  "emulator-project", // Default set in initializeSystemVariables
+			wantProject:  "emulator-project",  // Default set in initializeSystemVariables
 			wantInstance: "emulator-instance", // Default set in initializeSystemVariables
 			wantDatabase: "emulator-database", // Default set in initializeSystemVariables
 			wantInsecure: true,
-			wantVerbose:  true, // MCP sets verbose
+			wantVerbose:  true,            // MCP sets verbose
 			wantPriority: defaultPriority, // Should use default priority
 		},
 	}
@@ -2063,40 +2068,40 @@ func contains(s, substr string) bool {
 // TestAliasFlagPrecedence tests that non-hidden flags take precedence over hidden aliases
 func TestAliasFlagPrecedence(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantRole   string
+		name         string
+		args         []string
+		wantRole     string
 		wantInsecure bool
 		wantEndpoint string
 	}{
 		{
-			name:       "role takes precedence over database-role",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--role", "primary-role", "--database-role", "secondary-role"},
-			wantRole:   "primary-role",
+			name:     "role takes precedence over database-role",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--role", "primary-role", "--database-role", "secondary-role"},
+			wantRole: "primary-role",
 		},
 		{
-			name:       "database-role used when role not specified",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--database-role", "db-role"},
-			wantRole:   "db-role",
+			name:     "database-role used when role not specified",
+			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--database-role", "db-role"},
+			wantRole: "db-role",
 		},
 		{
-			name:       "insecure and skip-tls-verify both set",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
+			name:         "insecure and skip-tls-verify both set",
+			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
 			wantInsecure: true,
 		},
 		{
-			name:       "only skip-tls-verify set",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
+			name:         "only skip-tls-verify set",
+			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
 			wantInsecure: true,
 		},
 		{
-			name:       "endpoint takes precedence over deployment-endpoint",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "primary-endpoint:443", "--deployment-endpoint", "secondary-endpoint:443"},
+			name:         "endpoint takes precedence over deployment-endpoint",
+			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "primary-endpoint:443", "--deployment-endpoint", "secondary-endpoint:443"},
 			wantEndpoint: "primary-endpoint:443",
 		},
 		{
-			name:       "deployment-endpoint used when endpoint not specified",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--deployment-endpoint", "deployment-endpoint:443"},
+			name:         "deployment-endpoint used when endpoint not specified",
+			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--deployment-endpoint", "deployment-endpoint:443"},
 			wantEndpoint: "deployment-endpoint:443",
 		},
 	}
@@ -2252,40 +2257,40 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 // TestEmulatorPlatformFlag tests the --emulator-platform flag parsing
 func TestEmulatorPlatformFlag(t *testing.T) {
 	tests := []struct {
-		name             string
-		args             []string
-		wantPlatform     string
-		wantEmbedded     bool
+		name         string
+		args         []string
+		wantPlatform string
+		wantEmbedded bool
 	}{
 		{
-			name:             "emulator-platform with linux/amd64",
-			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/amd64"},
-			wantPlatform:     "linux/amd64",
-			wantEmbedded:     true,
+			name:         "emulator-platform with linux/amd64",
+			args:         []string{"--embedded-emulator", "--emulator-platform", "linux/amd64"},
+			wantPlatform: "linux/amd64",
+			wantEmbedded: true,
 		},
 		{
-			name:             "emulator-platform with linux/arm64",
-			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/arm64"},
-			wantPlatform:     "linux/arm64",
-			wantEmbedded:     true,
+			name:         "emulator-platform with linux/arm64",
+			args:         []string{"--embedded-emulator", "--emulator-platform", "linux/arm64"},
+			wantPlatform: "linux/arm64",
+			wantEmbedded: true,
 		},
 		{
-			name:             "emulator-platform with variant",
-			args:             []string{"--embedded-emulator", "--emulator-platform", "linux/arm/v7"},
-			wantPlatform:     "linux/arm/v7",
-			wantEmbedded:     true,
+			name:         "emulator-platform with variant",
+			args:         []string{"--embedded-emulator", "--emulator-platform", "linux/arm/v7"},
+			wantPlatform: "linux/arm/v7",
+			wantEmbedded: true,
 		},
 		{
-			name:             "embedded-emulator without platform",
-			args:             []string{"--embedded-emulator"},
-			wantPlatform:     "",
-			wantEmbedded:     true,
+			name:         "embedded-emulator without platform",
+			args:         []string{"--embedded-emulator"},
+			wantPlatform: "",
+			wantEmbedded: true,
 		},
 		{
-			name:             "emulator-platform without embedded-emulator",
-			args:             []string{"--emulator-platform", "linux/amd64"},
-			wantPlatform:     "linux/amd64",
-			wantEmbedded:     false,
+			name:         "emulator-platform without embedded-emulator",
+			args:         []string{"--emulator-platform", "linux/amd64"},
+			wantPlatform: "linux/amd64",
+			wantEmbedded: false,
 		},
 	}
 

@@ -41,7 +41,6 @@ func toRow(vs ...string) Row {
 	return vs
 }
 
-
 func sliceOf[V any](vs ...V) []V {
 	return vs
 }

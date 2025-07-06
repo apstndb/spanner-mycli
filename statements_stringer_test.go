@@ -27,8 +27,8 @@ func TestStatementStringer(t *testing.T) {
 			expected: "CREATE TABLE users (id INT64) PRIMARY KEY (id)",
 		},
 		{
-			name: "BulkDdlStatement single",
-			stmt: &BulkDdlStatement{Ddls: []string{"CREATE TABLE t1 (id INT64) PRIMARY KEY (id)"}},
+			name:     "BulkDdlStatement single",
+			stmt:     &BulkDdlStatement{Ddls: []string{"CREATE TABLE t1 (id INT64) PRIMARY KEY (id)"}},
 			expected: "CREATE TABLE t1 (id INT64) PRIMARY KEY (id)",
 		},
 		{
@@ -75,7 +75,7 @@ func TestSourceFileEchoIntegration(t *testing.T) {
 	// 1. Create a SQL file with various statement types
 	// 2. Execute it with CLI_ECHO_INPUT = TRUE
 	// 3. Verify that all statements are echoed correctly
-	
+
 	stmts := []Statement{
 		&SelectStatement{Query: "SELECT 1"},
 		&DmlStatement{Dml: "UPDATE t SET x = 1"},
@@ -83,7 +83,7 @@ func TestSourceFileEchoIntegration(t *testing.T) {
 		&ExplainStatement{Explain: "SELECT * FROM t"},
 		&DescribeStatement{Statement: "SELECT * FROM t"},
 	}
-	
+
 	// Verify all can produce String() output
 	for _, stmt := range stmts {
 		stringer, ok := stmt.(interface{ String() string })
@@ -91,7 +91,7 @@ func TestSourceFileEchoIntegration(t *testing.T) {
 			t.Errorf("%T should implement String() for ECHO support in source files", stmt)
 			continue
 		}
-		
+
 		// Verify String() returns non-empty result
 		str := stringer.String()
 		if str == "" {

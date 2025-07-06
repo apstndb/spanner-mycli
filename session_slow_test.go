@@ -28,7 +28,7 @@ func TestRequestPriority(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping emulator test in short mode")
 	}
-	
+
 	ctx := t.Context()
 
 	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
@@ -153,7 +153,7 @@ func TestIsolationLevel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping emulator test in short mode")
 	}
-	
+
 	ctx := t.Context()
 
 	emulator, teardown, err := spanemuboost.NewEmulator(ctx,

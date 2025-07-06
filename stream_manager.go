@@ -9,7 +9,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	
+
 	"golang.org/x/term"
 )
 
@@ -27,12 +27,12 @@ type safeTeeWriter struct {
 func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// If we've already warned about an error, just discard the write
 	if s.hasWarned {
 		return len(p), nil
 	}
-	
+
 	n, err = s.file.Write(p)
 	if err != nil {
 		// Print warning only once to avoid spamming
@@ -45,7 +45,7 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 		// that tee failures never interrupt the main CLI output.
 		return len(p), nil
 	}
-	
+
 	return n, nil
 }
 
@@ -54,7 +54,7 @@ func openTeeFile(filePath string) (*os.File, error) {
 	// Check if the file exists and is a regular file before opening.
 	// This prevents blocking on special files like FIFOs.
 	fi, err := os.Stat(filePath)
-	
+
 	// Handle three cases:
 	// 1. File exists (err == nil) - check if it's a regular file
 	// 2. File doesn't exist (os.IsNotExist(err)) - will create it
@@ -72,13 +72,13 @@ func openTeeFile(filePath string) (*os.File, error) {
 		// Unexpected stat error (e.g., permission denied)
 		return nil, fmt.Errorf("failed to stat tee file %q: %w", filePath, err)
 	}
-	
+
 	// Open tee file in append mode (creates if doesn't exist)
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Double-check the file after opening to handle TOCTOU race conditions.
 	// Without this check, a regular file could be replaced with a FIFO
 	// between our initial stat and open calls, causing the CLI to block.
@@ -87,12 +87,12 @@ func openTeeFile(filePath string) (*os.File, error) {
 		file.Close()
 		return nil, fmt.Errorf("failed to stat opened file %q: %w", filePath, err)
 	}
-	
+
 	if !fi.Mode().IsRegular() {
 		file.Close()
 		return nil, fmt.Errorf("tee output to a non-regular file is not supported: %q", filePath)
 	}
-	
+
 	return file, nil
 }
 
@@ -104,7 +104,7 @@ func createTeeWriter(originalStream io.Writer, teeFile *os.File, errStream io.Wr
 		errStream: errStream,
 		hasWarned: false,
 	}
-	
+
 	// Create a MultiWriter that writes to both original stream and the safe tee writer
 	return io.MultiWriter(originalStream, safeWriter)
 }
@@ -131,15 +131,14 @@ func NewStreamManager(inStream io.ReadCloser, outStream, errStream io.Writer) *S
 		outStream: outStream,
 		errStream: errStream,
 	}
-	
+
 	// If outStream is a terminal, keep a reference for terminal operations
 	if f, ok := outStream.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		sm.ttyStream = f
 	}
-	
+
 	return sm
 }
-
 
 // SetTtyStream sets the TTY stream for terminal operations
 // This is useful when the original output is not a TTY (e.g., when piped)
@@ -153,13 +152,13 @@ func (sm *StreamManager) SetTtyStream(tty *os.File) {
 func (sm *StreamManager) EnableTee(filePath string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Open the new tee file while holding the lock to ensure atomicity.
 	teeFile, err := openTeeFile(filePath)
 	if err != nil {
 		return err
 	}
-	
+
 	// Close any existing tee file after successful open
 	if sm.teeFile != nil {
 		if err := sm.teeFile.Close(); err != nil {
@@ -169,7 +168,7 @@ func (sm *StreamManager) EnableTee(filePath string) error {
 			return fmt.Errorf("failed to switch tee file: could not close previous file %q: %w", sm.teeFile.Name(), err)
 		}
 	}
-	
+
 	sm.teeFile = teeFile
 	// IMPORTANT: Invalidate cached writer to ensure the new tee file is included
 	// in the io.MultiWriter. This is critical for maintaining correct output behavior.
@@ -181,7 +180,7 @@ func (sm *StreamManager) EnableTee(filePath string) error {
 func (sm *StreamManager) DisableTee() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	if sm.teeFile != nil {
 		if err := sm.teeFile.Close(); err != nil {
 			// Log the error, but continue. We're disabling tee, so we don't want to fail.
@@ -196,11 +195,11 @@ func (sm *StreamManager) DisableTee() {
 func (sm *StreamManager) GetWriter() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	if sm.teeFile == nil {
 		return sm.outStream
 	}
-	
+
 	// Return cached writer if available.
 	// Caching is critical for two reasons:
 	// 1. It ensures all code paths use the same writer instance, preventing
@@ -209,7 +208,7 @@ func (sm *StreamManager) GetWriter() io.Writer {
 	if sm.cachedWriter != nil {
 		return sm.cachedWriter
 	}
-	
+
 	// Create and cache new writer
 	sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
 	return sm.cachedWriter
@@ -232,7 +231,7 @@ func (sm *StreamManager) Close() {
 func (sm *StreamManager) GetTerminalWidth() (int, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Use ttyStream if available (preferred)
 	if sm.ttyStream != nil {
 		width, _, err := term.GetSize(int(sm.ttyStream.Fd()))
@@ -241,7 +240,7 @@ func (sm *StreamManager) GetTerminalWidth() (int, error) {
 		}
 		return width, nil
 	}
-	
+
 	// Fall back to outStream if it's a file
 	if f, ok := sm.outStream.(*os.File); ok {
 		width, _, err := term.GetSize(int(f.Fd()))
@@ -250,7 +249,7 @@ func (sm *StreamManager) GetTerminalWidth() (int, error) {
 		}
 		return width, nil
 	}
-	
+
 	return 0, fmt.Errorf("output is not a terminal")
 }
 
@@ -269,17 +268,17 @@ func (sm *StreamManager) GetTerminalWidthString() string {
 func (sm *StreamManager) IsTerminal() bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Check ttyStream first
 	if sm.ttyStream != nil {
 		return term.IsTerminal(int(sm.ttyStream.Fd()))
 	}
-	
+
 	// Check outStream
 	if f, ok := sm.outStream.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}
-	
+
 	return false
 }
 
@@ -287,7 +286,7 @@ func (sm *StreamManager) IsTerminal() bool {
 func (sm *StreamManager) GetErrStream() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	return sm.errStream
 }
 
@@ -295,7 +294,7 @@ func (sm *StreamManager) GetErrStream() io.Writer {
 func (sm *StreamManager) GetInStream() io.ReadCloser {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	return sm.inStream
 }
 
@@ -304,7 +303,7 @@ func (sm *StreamManager) GetInStream() io.ReadCloser {
 func (sm *StreamManager) GetOutStream() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	return sm.outStream
 }
 
@@ -312,6 +311,6 @@ func (sm *StreamManager) GetOutStream() io.Writer {
 func (sm *StreamManager) GetTtyStream() *os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	return sm.ttyStream
 }
