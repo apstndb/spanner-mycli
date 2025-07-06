@@ -725,7 +725,6 @@ func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNa
 	}
 
 	csvWriter := csv.NewWriter(out)
-	defer csvWriter.Flush()
 
 	if !skipColumnNames {
 		if err := csvWriter.Write(columnNames); err != nil {
@@ -737,6 +736,12 @@ func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNa
 		if err := csvWriter.Write(row); err != nil {
 			return err
 		}
+	}
+
+	// Explicitly flush to ensure all data is written
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return fmt.Errorf("csv.Writer.Flush() failed: %w", err)
 	}
 
 	return nil
