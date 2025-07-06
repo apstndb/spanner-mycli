@@ -725,6 +725,8 @@ func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNa
 	}
 
 	csvWriter := csv.NewWriter(out)
+	// Defer Flush to ensure the buffer is written to the output, even on error.
+	defer csvWriter.Flush()
 
 	if !skipColumnNames {
 		if err := csvWriter.Write(columnNames); err != nil {
@@ -738,10 +740,11 @@ func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNa
 		}
 	}
 
-	// Explicitly flush to ensure all data is written
-	csvWriter.Flush()
+	// The deferred Flush() will write any remaining buffered data.
+	// We must check for an error from the writer, which can happen
+	// during a Write or the final Flush.
 	if err := csvWriter.Error(); err != nil {
-		return fmt.Errorf("csv.Writer.Flush() failed: %w", err)
+		return fmt.Errorf("csv writer error: %w", err)
 	}
 
 	return nil
