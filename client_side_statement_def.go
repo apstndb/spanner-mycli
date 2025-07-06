@@ -908,7 +908,6 @@ func parseExplainFormat(s string) (explainFormat, error) {
 	default:
 		return "", fmt.Errorf("parse error: unknown explain format: %s", s)
 	}
-
 }
 
 // Helper functions for HandleSubmatch implementations

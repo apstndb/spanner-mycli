@@ -12,58 +12,58 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 		if !isatty(os.Stdout) {
 			t.Skip("Test requires TTY")
 		}
-		
+
 		sm := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
-		
+
 		width, err := sm.GetTerminalWidth()
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
 		}
-		
+
 		// Terminal width should be positive
 		if width <= 0 {
 			t.Errorf("Expected positive width, got %d", width)
 		}
 	})
-	
+
 	t.Run("GetTerminalWidth without TTY", func(t *testing.T) {
 		buf := &bytes.Buffer{}
 		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
-		
+
 		_, err := sm.GetTerminalWidth()
 		if err == nil {
 			t.Error("Expected error for non-TTY output")
 		}
 	})
-	
+
 	t.Run("GetTerminalWidthString without TTY", func(t *testing.T) {
 		buf := &bytes.Buffer{}
 		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
-		
+
 		result := sm.GetTerminalWidthString()
 		if result != "NULL" {
 			t.Errorf("Expected 'NULL', got %s", result)
 		}
 	})
-	
+
 	t.Run("SetTtyStream", func(t *testing.T) {
 		buf := &bytes.Buffer{}
 		sm := NewStreamManager(os.Stdin, buf, os.Stderr)
-		
+
 		// Initially should not be a terminal
 		if sm.IsTerminal() {
 			t.Error("Expected IsTerminal to be false with buffer output")
 		}
-		
+
 		// Set TTY stream (if available)
 		if isatty(os.Stdout) {
 			sm.SetTtyStream(os.Stdout)
-			
+
 			// Now it should report as terminal
 			if !sm.IsTerminal() {
 				t.Error("Expected IsTerminal to be true after SetTtyStream")
 			}
-			
+
 			// Should be able to get terminal width
 			width, err := sm.GetTerminalWidth()
 			if err != nil {
@@ -74,7 +74,7 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 			}
 		}
 	})
-	
+
 	t.Run("IsTerminal", func(t *testing.T) {
 		// Test with buffer (not a terminal)
 		buf := &bytes.Buffer{}
@@ -82,7 +82,7 @@ func TestStreamManager_TerminalFunctions(t *testing.T) {
 		if tm1.IsTerminal() {
 			t.Error("Expected IsTerminal to be false for buffer")
 		}
-		
+
 		// Test with actual terminal (if available)
 		if isatty(os.Stdout) {
 			tm2 := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)

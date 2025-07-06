@@ -30,29 +30,29 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)
 	}
-	
+
 	// Additional check for CI environments
 	if os.Getenv("CI") != "" {
 		t.Skip("Skipping FIFO test in CI environment")
 	}
-	
+
 	tmpDir := t.TempDir()
 	fifoPath := filepath.Join(tmpDir, "test.fifo")
-	
+
 	// Create a FIFO
-	if err := syscall.Mkfifo(fifoPath, 0644); err != nil {
+	if err := syscall.Mkfifo(fifoPath, 0o644); err != nil {
 		t.Skipf("Failed to create FIFO (may not be supported): %v", err)
 	}
-	
+
 	// Test that openTeeFile rejects the FIFO without hanging
 	done := make(chan struct{})
 	var openErr error
-	
+
 	go func() {
 		_, openErr = openTeeFile(fifoPath)
 		close(done)
 	}()
-	
+
 	// Wait for the function to complete or timeout
 	select {
 	case <-done:
@@ -73,32 +73,32 @@ func TestStreamManager_FIFO(t *testing.T) {
 	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)
 	}
-	
+
 	// Additional check for CI environments
 	if os.Getenv("CI") != "" {
 		t.Skip("Skipping FIFO test in CI environment")
 	}
-	
+
 	tmpDir := t.TempDir()
 	fifoPath := filepath.Join(tmpDir, "test.fifo")
-	
+
 	// Create a FIFO
-	if err := syscall.Mkfifo(fifoPath, 0644); err != nil {
+	if err := syscall.Mkfifo(fifoPath, 0o644); err != nil {
 		t.Skipf("Failed to create FIFO (may not be supported): %v", err)
 	}
-	
+
 	sm := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
 	defer sm.Close()
-	
+
 	// Test that EnableTee rejects the FIFO without hanging
 	done := make(chan struct{})
 	var enableErr error
-	
+
 	go func() {
 		enableErr = sm.EnableTee(fifoPath)
 		close(done)
 	}()
-	
+
 	// Wait for the function to complete or timeout
 	select {
 	case <-done:

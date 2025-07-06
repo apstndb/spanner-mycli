@@ -56,9 +56,10 @@ When testing compatibility or referencing behavior, be specific about which impl
 
 ```bash
 # Development cycle (CRITICAL)
-make check                    # REQUIRED before ANY push (runs test && lint)
+make check                    # REQUIRED before ANY push (runs test && lint && fmt-check)
 make build                    # Build the application
 make test-quick               # Quick tests during development
+make help-dev                 # Show all available development commands
 
 # Development tools (Go 1.24 tool management: make build-tools)
 go tool gh-helper reviews fetch [PR]        # Fetch review data including threads

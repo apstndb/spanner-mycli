@@ -36,10 +36,10 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
 	"github.com/olekukonko/tablewriter"
-	"github.com/testcontainers/testcontainers-go"
-	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
+	"github.com/testcontainers/testcontainers-go"
+	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -48,8 +48,8 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
-	"spheric.cloud/xiter"
 	"golang.org/x/term"
+	"spheric.cloud/xiter"
 )
 
 type globalOptions struct {
@@ -66,7 +66,7 @@ type globalOptions struct {
 // - --database-role is an alias of --role (gcloud spanner databases execute-sql compatibility)
 // - --skip-tls-verify is an alias of --insecure (original spanner-cli compatibility)
 // - --deployment-endpoint is an alias of --endpoint (Google Cloud Spanner CLI compatibility)
-// 
+//
 // Precedence behavior:
 // - For string flags (role/database-role, endpoint/deployment-endpoint): Non-hidden flag takes precedence when both are non-empty
 // - For boolean flags (insecure/skip-tls-verify): Non-hidden flag takes precedence when both are set
@@ -124,13 +124,13 @@ type spannerOptions struct {
 	// SkipSystemCommand is kept for compatibility with official Spanner CLI.
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
-	SkipSystemCommand         bool              `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
+	SkipSystemCommand bool `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
 	// SystemCommand provides an alternative way to control system command execution.
 	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
 	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
-	SystemCommand             *string           `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
-	Tee                       string            `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
-	SkipColumnNames           bool              `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
+	SystemCommand   *string `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
+	Tee             string  `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
+	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -153,7 +153,6 @@ func determineInitialDatabase(opts *spannerOptions) string {
 	// Default: detached mode (empty string)
 	return ""
 }
-
 
 const (
 	defaultPrompt         = "spanner%t> "
@@ -268,7 +267,7 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 		"Image", inspectResult.Image,
 		"ConfigNotNil", inspectResult.Config != nil,
 	)
-	
+
 	// Log config details if available
 	if inspectResult.Config != nil {
 		slog.Debug("Container config details",
@@ -276,7 +275,7 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 			"Labels", inspectResult.Config.Labels,
 		)
 	}
-	
+
 	// Method 1: Try ImageManifestDescriptor (OCI standard)
 	if inspectResult.ImageManifestDescriptor != nil && inspectResult.ImageManifestDescriptor.Platform != nil {
 		p := inspectResult.ImageManifestDescriptor.Platform
@@ -310,7 +309,7 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 					slog.Debug("Failed to close testcontainers provider", "error", err)
 				}
 			}()
-			
+
 			platform := inspectImagePlatform(ctx, inspectResult.Config.Image, genericProvider)
 			if platform != "" {
 				return platform
@@ -333,7 +332,7 @@ func detectContainerPlatform(ctx context.Context, container *tcspanner.Container
 // The caller is responsible for managing the provider lifecycle.
 func inspectImagePlatform(ctx context.Context, imageName string, provider testcontainers.GenericProvider) string {
 	slog.Debug("inspectImagePlatform called", "imageName", imageName)
-	
+
 	// Both Docker and Podman providers return *DockerProvider type, even for Podman.
 	// This is because Podman provides Docker-compatible API.
 	dockerProvider, ok := provider.(*testcontainers.DockerProvider)
@@ -341,31 +340,31 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 		slog.Debug("Provider is not a DockerProvider", "type", fmt.Sprintf("%T", provider))
 		return ""
 	}
-	
+
 	// The provider embeds *client.Client directly (not as a field), so we can access it
 	// using provider.Client() which returns the embedded Docker/Podman client.
 	dockerClient := dockerProvider.Client()
 	slog.Debug("Using container runtime client from testcontainers provider")
-	
+
 	// Use a context with a timeout for Docker API calls to prevent hangs
 	// if the container runtime is unresponsive
 	inspectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	
+
 	// Log Docker client info
 	info, err := dockerClient.Info(inspectCtx)
 	if err != nil {
 		slog.Debug("Failed to get Docker info", "error", err)
 	} else {
-		slog.Debug("Docker client info", 
+		slog.Debug("Docker client info",
 			"ServerVersion", info.ServerVersion,
 			"OSType", info.OSType,
 			"Architecture", info.Architecture)
 	}
-	
+
 	imageInspect, err := dockerClient.ImageInspect(inspectCtx, imageName)
 	if err != nil {
-		slog.Debug("Image inspect failed", 
+		slog.Debug("Image inspect failed",
 			"error", err,
 			"imageName", imageName)
 		return ""
@@ -378,16 +377,16 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 		"Variant", imageInspect.Variant,
 		"ID", imageInspect.ID,
 	)
-	
+
 	// Validate that we have the required fields
 	if imageInspect.Os == "" || imageInspect.Architecture == "" {
-		slog.Debug("Image inspect result missing Os or Architecture", 
-			"imageName", imageName, 
-			"Os", imageInspect.Os, 
+		slog.Debug("Image inspect result missing Os or Architecture",
+			"imageName", imageName,
+			"Os", imageInspect.Os,
 			"Architecture", imageInspect.Architecture)
 		return ""
 	}
-	
+
 	platform := imageInspect.Os + "/" + imageInspect.Architecture
 	if imageInspect.Variant != "" {
 		platform += "/" + imageInspect.Variant
@@ -395,7 +394,6 @@ func inspectImagePlatform(ctx context.Context, imageName string, provider testco
 	slog.Debug("Returning platform", "platform", platform)
 	return platform
 }
-
 
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
@@ -438,7 +436,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			}
 			slog.Warn("Using embedded emulator with user-provided values", attrs...)
 		}
-		
+
 		// Use values from sysVars (which includes defaults set in initializeSystemVariables)
 		emulatorOpts := []spanemuboost.Option{
 			spanemuboost.WithProjectID(sysVars.Project),
@@ -447,17 +445,17 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
 			spanemuboost.WithDatabaseDialect(sysVars.DatabaseDialect),
 		}
-		
+
 		// In detached mode, only create instance without database
 		if opts.Detached {
 			emulatorOpts = append(emulatorOpts, spanemuboost.EnableInstanceAutoConfigOnly())
 		}
-		
+
 		// Add platform customizer if specified
 		if opts.EmulatorPlatform != "" {
 			emulatorOpts = append(emulatorOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
 		}
-		
+
 		container, teardown, err := spanemuboost.NewEmulator(ctx, emulatorOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
@@ -468,7 +466,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		// The --emulator-platform flag only controls what platform is requested,
 		// but we want to show the actual platform in CLI_EMULATOR_PLATFORM
 		sysVars.EmulatorPlatform = detectContainerPlatform(ctx, container)
-		slog.Debug("Detected container platform", 
+		slog.Debug("Detected container platform",
 			"requested", opts.EmulatorPlatform,
 			"actual", sysVars.EmulatorPlatform)
 
@@ -483,14 +481,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 
 	// TTY detection has been moved to StreamManager.
-	
+
 	// Setup output streams
-	var errStream io.Writer = os.Stderr  // Error stream is not affected by --tee
-	
+	var errStream io.Writer = os.Stderr // Error stream is not affected by --tee
+
 	// Determine the original output stream
 	// Always use os.Stdout as the original output for actual data
 	var originalOut io.Writer = os.Stdout
-	
+
 	// Create StreamManager for managing all input/output streams
 	streamManager := NewStreamManager(os.Stdin, originalOut, errStream)
 	// StreamManager will automatically detect if os.Stdout is a TTY
@@ -499,14 +497,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	}
 	sysVars.StreamManager = streamManager
 	defer streamManager.Close()
-	
+
 	// If --tee is specified, enable tee output
 	if opts.Tee != "" {
 		if err := streamManager.EnableTee(opts.Tee); err != nil {
 			return err
 		}
 	}
-	
+
 	cli, err := NewCli(ctx, cred, &sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
@@ -561,7 +559,7 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "") {
 		return fmt.Errorf("missing parameters: -p, -i are required")
 	}
-	
+
 	if !opts.EmbeddedEmulator && !opts.Detached && opts.DatabaseId == "" {
 		return fmt.Errorf("missing parameter: -d is required (or use --detached for detached mode)")
 	}
@@ -638,14 +636,14 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
-	
+
 	// Override with command-line options (only when explicitly provided)
 	sysVars.Project = opts.ProjectId
 	sysVars.Instance = opts.InstanceId
 	sysVars.Database = determineInitialDatabase(opts)
 	sysVars.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
 	sysVars.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
-	
+
 	// Override defaults only if explicitly provided
 	if opts.Prompt != nil {
 		sysVars.Prompt = *opts.Prompt
@@ -659,19 +657,19 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	if opts.VertexAIModel != nil {
 		sysVars.VertexAIModel = *opts.VertexAIModel
 	}
-	
+
 	// Handle alias flags with precedence for non-hidden flags
 	// Note: This precedence may override normal flag/env/ini precedence
 	if opts.Role != "" && opts.DatabaseRole != "" {
 		slog.Warn("Both --role and --database-role are specified. Using --role (alias has lower precedence)")
 	}
 	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
-	
+
 	// Handle --insecure/--skip-tls-verify aliases with proper precedence
 	if opts.Insecure != nil && opts.SkipTlsVerify != nil {
 		slog.Warn("Both --insecure and --skip-tls-verify are specified. Using --insecure (alias has lower precedence)")
 	}
-	
+
 	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
 	if opts.Insecure != nil {
 		sysVars.Insecure = *opts.Insecure
@@ -680,12 +678,12 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	} else {
 		sysVars.Insecure = false // default value
 	}
-	
+
 	// Handle --endpoint/--deployment-endpoint aliases with proper precedence
 	if opts.Endpoint != "" && opts.DeploymentEndpoint != "" {
 		slog.Warn("Both --endpoint and --deployment-endpoint are specified. Using --endpoint (alias has lower precedence)")
 	}
-	
+
 	// Handle endpoint, host, and port logic
 	endpoint := cmp.Or(opts.Endpoint, opts.DeploymentEndpoint)
 	if endpoint != "" {
@@ -717,7 +715,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.VertexAIProject = opts.VertexAIProject
 	sysVars.AsyncDDL = opts.Async
-	
+
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command
 	if opts.SkipSystemCommand {
@@ -727,7 +725,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 		sysVars.SkipSystemCommand = *opts.SystemCommand == "OFF"
 	}
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
-	
+
 	sysVars.SkipColumnNames = opts.SkipColumnNames
 
 	return sysVars, nil
@@ -838,7 +836,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		// When using embedded emulator, insecure connection is required
 		sysVars.Insecure = true
 		// sysVars.Endpoint and sysVars.WithoutAuthentication will be set in run() after emulator starts
-		
+
 		// Set default values for embedded emulator if not specified by user
 		if sysVars.Project == "" {
 			sysVars.Project = spanemuboost.DefaultProjectID
@@ -952,14 +950,14 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 	if opts.File != "" && opts.Source != "" {
 		slog.Warn("Both --file and --source are specified. Using --file (alias has lower precedence)")
 	}
-	
+
 	// Determine the file to read from
 	// Note: File takes precedence over Source (alias)
 	fileToRead := opts.File
 	if fileToRead == "" && opts.Source != "" {
 		fileToRead = opts.Source
 	}
-	
+
 	// Check command line options first
 	// Note: Execute takes precedence over SQL (alias)
 	switch {
@@ -986,7 +984,7 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 			// Terminal available - run interactively
 			return "", true, nil
 		}
-		
+
 		// No terminal - read from stdin for batch mode
 		b, err := io.ReadAll(stdin)
 		if err != nil {

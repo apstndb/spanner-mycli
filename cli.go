@@ -62,9 +62,9 @@ func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*
 	if err != nil {
 		return nil, err
 	}
-	
+
 	sessionHandler := NewSessionHandler(session)
-	
+
 	// StreamManager now manages the TTY stream internally
 
 	return &Cli{
@@ -317,7 +317,7 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 		if stringer, ok := fileStmt.(fmt.Stringer); ok {
 			sqlText = stringer.String()
 		}
-		
+
 		// Execute the statement in interactive mode to get proper output formatting
 		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.GetWriter())
 		if err != nil {
@@ -464,8 +464,10 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 	return stop
 }
 
-var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
-var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+var (
+	promptRe               = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
+	promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+)
 
 // getInterpolatedPrompt returns the prompt string with the values of system variables interpolated.
 func (c *Cli) getInterpolatedPrompt(prompt string) string {
@@ -591,7 +593,6 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	return result.PreInput, nil
 }
 
-
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
 // Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
@@ -642,7 +643,7 @@ func GetTerminalSize(w io.Writer) (int, error) {
 // Returns an error if the terminal size cannot be determined.
 func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 	var f *os.File
-	
+
 	// Prefer TtyOutStream if available
 	ttyStream := c.GetTtyStream()
 	if ttyStream != nil {
@@ -697,7 +698,6 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 		fmt.Fprintf(w, "\n")
 	}
 }
-
 
 func handleInterrupt(cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)

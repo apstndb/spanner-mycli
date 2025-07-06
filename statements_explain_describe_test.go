@@ -74,7 +74,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       7,
 					TreePart: "                  +- ", NodeText: "Index Scan (Index: SingersByFirstLastName)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query:
@@ -114,7 +115,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       9,
 					TreePart: "         +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query: https://cloud.google.com/spanner/docs/query-execution-operators?hl=en#array_subqueries
@@ -165,7 +167,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       11,
 					TreePart: "                  +- ", NodeText: "Index Scan (Index: ConcertsBySingerId)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query: https://cloud.google.com/spanner/docs/query-execution-operators?hl=en#scalar_subqueries
@@ -226,7 +229,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       16,
 					TreePart: "                        +- ", NodeText: "Table Scan (Full scan: true, Table: Songs)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query:
@@ -513,7 +517,8 @@ func TestRenderTreeWithStats(t *testing.T) {
 						ScannedRows:      TotalWithUnit("9", "rows"),
 					},
 				},
-			}},
+			},
+		},
 	} {
 		t.Run(test.title, func(t *testing.T) {
 			var opts []plantree.Option
@@ -532,13 +537,15 @@ func TestRenderTreeWithStats(t *testing.T) {
 		})
 	}
 }
+
 func TestNodeString(t *testing.T) {
 	for _, test := range []struct {
 		title string
 		node  *sppb.PlanNode
 		want  string
 	}{
-		{"Distributed Union with call_type=Local",
+		{
+			"Distributed Union with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Distributed Union",
 				Metadata: mustNewStruct(map[string]interface{}{
@@ -547,7 +554,8 @@ func TestNodeString(t *testing.T) {
 				}),
 			}, "Local Distributed Union",
 		},
-		{"Scan with scan_type=IndexScan and Full scan=true",
+		{
+			"Scan with scan_type=IndexScan and Full scan=true",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
@@ -555,44 +563,55 @@ func TestNodeString(t *testing.T) {
 					"scan_target": "SongsBySongName",
 					"Full scan":   "true",
 				}),
-			}, "Index Scan (Full scan: true, Index: SongsBySongName)"},
-		{"Scan with scan_type=TableScan",
+			}, "Index Scan (Full scan: true, Index: SongsBySongName)",
+		},
+		{
+			"Scan with scan_type=TableScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "TableScan",
 					"scan_target": "Songs",
 				}),
-			}, "Table Scan (Table: Songs)"},
-		{"Scan with scan_type=BatchScan",
+			}, "Table Scan (Table: Songs)",
+		},
+		{
+			"Scan with scan_type=BatchScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "BatchScan",
 					"scan_target": "$v2",
 				}),
-			}, "Batch Scan (Batch: $v2)"},
-		{"Sort Limit with call_type=Local",
+			}, "Batch Scan (Batch: $v2)",
+		},
+		{
+			"Sort Limit with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Local",
 				}),
-			}, "Local Sort Limit"},
-		{"Sort Limit with call_type=Global",
+			}, "Local Sort Limit",
+		},
+		{
+			"Sort Limit with call_type=Global",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Global",
 				}),
-			}, "Global Sort Limit"},
-		{"Aggregate with iterator_type=Stream",
+			}, "Global Sort Limit",
+		},
+		{
+			"Aggregate with iterator_type=Stream",
 			&sppb.PlanNode{
 				DisplayName: "Aggregate",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"iterator_type": "Stream",
 				}),
-			}, "Stream Aggregate"},
+			}, "Stream Aggregate",
+		},
 	} {
 		if got := spannerplan.NodeTitle(test.node); got != test.want {
 			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
@@ -683,7 +702,8 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 		want           *Result
 		wantErr        bool
 	}{
-		{"EXPLAIN ANALYZE",
+		{
+			"EXPLAIN ANALYZE",
 			&ShowPlanNodeStatement{NodeID: 1},
 			&LastQueryCache{
 				QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
@@ -705,7 +725,8 @@ execution_stats:
 `))),
 				AffectedRows: 1,
 				TableHeader:  toTableHeader("Content of Node 1"),
-			}, false},
+			}, false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

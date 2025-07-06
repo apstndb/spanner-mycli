@@ -78,10 +78,10 @@ Result is ASCII table rendered, so you need to print as code block`)
 	// Set tool annotations to provide hints about the tool's behavior
 	tool.Tool.Annotations = &mcp.ToolAnnotations{
 		Title:           "Execute Spanner SQL Statement",
-		ReadOnlyHint:    false,               // Can modify the database
-		DestructiveHint: lo.ToPtr(true),     // Can perform destructive operations
-		IdempotentHint:  false,               // Repeated calls can have different effects
-		OpenWorldHint:   lo.ToPtr(true),      // Interacts with external entities (the database)
+		ReadOnlyHint:    false,          // Can modify the database
+		DestructiveHint: lo.ToPtr(true), // Can perform destructive operations
+		IdempotentHint:  false,          // Repeated calls can have different effects
+		OpenWorldHint:   lo.ToPtr(true), // Interacts with external entities (the database)
 	}
 
 	server.AddTools(tool)

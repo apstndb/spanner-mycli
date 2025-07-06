@@ -240,7 +240,7 @@ func TestDetachedCompatibleStatements(t *testing.T) {
 			&SetStatement{VarName: "CLI_FORMAT", Value: "JSON"},
 			&SetAddStatement{VarName: "PROTO_DESCRIPTOR_FILE", Value: "test.pb"},
 			&HelpVariablesStatement{},
-			// Query parameters statements  
+			// Query parameters statements
 			&ShowParamsStatement{},
 			&SetParamTypeStatement{Name: "p1", Type: "STRING"},
 			&SetParamValueStatement{Name: "p1", Value: "test"},

@@ -63,8 +63,8 @@ func newParser(filepath, s string) *memefish.Parser {
 			},
 		},
 	}
-
 }
+
 func parseAddSplitPointsBody(body string) ([]*databasepb.SplitPoints, error) {
 	p := newParser("", body)
 	if err := p.NextToken(); err != nil {

@@ -205,7 +205,7 @@ func TestSystemVariables_CaseInsensitive(t *testing.T) {
 			if err != nil {
 				t.Errorf("Set(%s) failed: %v", varName, err)
 			}
-			
+
 			// Verify that Get works with the same case
 			result, err := sv.Get(varName)
 			if err != nil {
@@ -226,7 +226,7 @@ func TestSystemVariables_CaseInsensitive(t *testing.T) {
 		if err != nil {
 			t.Errorf("Set(cli_verbose) failed: %v", err)
 		}
-		
+
 		// Get with uppercase - should still work
 		result, err := sv.Get("CLI_VERBOSE")
 		if err != nil {

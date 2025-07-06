@@ -109,8 +109,8 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:  "source command with multiple files",
-			input: `\. file1.sql file2.sql`,
+			name:    "source command with multiple files",
+			input:   `\. file1.sql file2.sql`,
 			wantErr: true,
 		},
 		{
@@ -174,8 +174,8 @@ func TestParseMetaCommand(t *testing.T) {
 			want:  &PromptMetaCommand{PromptString: "my custom prompt>"},
 		},
 		{
-			name:  "prompt command with only spaces",
-			input: "\\R    ",
+			name:    "prompt command with only spaces",
+			input:   "\\R    ",
 			wantErr: true,
 		},
 		{
@@ -214,8 +214,8 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:  "tee output with multiple files",
-			input: `\T file1.log file2.log`,
+			name:    "tee output with multiple files",
+			input:   `\T file1.log file2.log`,
 			wantErr: true,
 		},
 		{
@@ -355,7 +355,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		if err != nil {
 			t.Errorf("Execute() should not return error for exit status: %v", err)
 		}
-		
+
 		// Test case: Command that fails (should also not return error since it's ExitError)
 		cmd2 := &ShellMetaCommand{Command: "ls /nonexistent/directory"}
 		_, err2 := cmd2.Execute(ctx, session)
@@ -417,31 +417,31 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 			name:           "set simple prompt",
 			promptString:   "my-prompt>",
 			initialPrompt:  "",
-			expectedPrompt: "my-prompt> ",  // Space added automatically
+			expectedPrompt: "my-prompt> ", // Space added automatically
 		},
 		{
 			name:           "set prompt with percent expansion",
 			promptString:   "%n@%p>",
 			initialPrompt:  "",
-			expectedPrompt: "%n@%p> ",  // Space added automatically
+			expectedPrompt: "%n@%p> ", // Space added automatically
 		},
 		{
 			name:           "overwrite existing prompt",
 			promptString:   "new-prompt>",
 			initialPrompt:  "old-prompt> ",
-			expectedPrompt: "new-prompt> ",  // Space added automatically
+			expectedPrompt: "new-prompt> ", // Space added automatically
 		},
 		{
 			name:           "empty prompt string",
 			promptString:   "",
 			initialPrompt:  "test> ",
-			expectedPrompt: " ",  // Just a space
+			expectedPrompt: " ", // Just a space
 		},
 		{
 			name:           "complex prompt with multiple expansions",
 			promptString:   "[%n/%d@%i:%p] %R%R>",
 			initialPrompt:  "",
-			expectedPrompt: "[%n/%d@%i:%p] %R%R> ",  // Space added automatically
+			expectedPrompt: "[%n/%d@%i:%p] %R%R> ", // Space added automatically
 		},
 	}
 
@@ -457,7 +457,7 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 
 			cmd := &PromptMetaCommand{PromptString: tt.promptString}
 			result, err := cmd.Execute(ctx, session)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -552,10 +552,10 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name       string
-		filePath   string
-		setupFunc  func() (string, func()) // returns path and cleanup func
-		wantErr    bool
+		name        string
+		filePath    string
+		setupFunc   func() (string, func()) // returns path and cleanup func
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -574,7 +574,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				tmpDir := t.TempDir()
 				path := tmpDir + "/existing_test.log"
 				// Create file with some content
-				if err := os.WriteFile(path, []byte("existing content\n"), 0644); err != nil {
+				if err := os.WriteFile(path, []byte("existing content\n"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {}
@@ -587,12 +587,12 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				tmpDir := t.TempDir()
 				path := tmpDir + "/test_dir"
 				// Create a directory
-				if err := os.Mkdir(path, 0755); err != nil {
+				if err := os.Mkdir(path, 0o755); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {}
 			},
-			wantErr: true,
+			wantErr:     true,
 			errContains: "non-regular file", // Our validation returns this error
 		},
 	}
@@ -605,10 +605,10 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 			session, sysVars := createTestSession(t)
 			// Store the original writer before enabling tee
 			originalWriter := sysVars.StreamManager.GetWriter()
-			
+
 			cmd := &TeeOutputMetaCommand{FilePath: path}
 			result, err := cmd.Execute(ctx, session)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -655,7 +655,7 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 			session, sysVars := createTestSession(t)
 			// Store the original writer before enabling tee
 			originalWriter := sysVars.StreamManager.GetWriter()
-			
+
 			if tt.setupTee {
 				// Enable tee first
 				tmpDir := t.TempDir()
@@ -678,7 +678,7 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 			if result == nil {
 				t.Error("Execute() returned nil result")
 			}
-			
+
 			// Verify that writer reverts to the original after disable
 			finalWriter := sysVars.StreamManager.GetWriter()
 			if finalWriter != originalWriter {

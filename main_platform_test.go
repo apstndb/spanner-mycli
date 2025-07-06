@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
-	
+
 	"github.com/testcontainers/testcontainers-go"
 )
 
@@ -25,7 +25,7 @@ func TestInspectImagePlatform(t *testing.T) {
 	// This pattern ensures test isolation without requiring dependency injection.
 	oldLogger := slog.Default()
 	defer slog.SetDefault(oldLogger)
-	
+
 	// Configure slog to output to stderr at debug level for detailed diagnostics
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
@@ -33,7 +33,7 @@ func TestInspectImagePlatform(t *testing.T) {
 	slog.SetDefault(slog.New(handler))
 
 	// Log test environment
-	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s", 
+	t.Logf("Running TestInspectImagePlatform in environment: CI=%s, DOCKER_HOST=%s",
 		os.Getenv("CI"), os.Getenv("DOCKER_HOST"))
 
 	// Get provider once for all tests
@@ -82,11 +82,11 @@ func TestInspectImagePlatform(t *testing.T) {
 			t.Logf("Testing inspectImagePlatform with image: %q", tt.imageName)
 			platform := inspectImagePlatform(context.Background(), tt.imageName, provider)
 			t.Logf("Result: platform=%q", platform)
-			
+
 			if tt.wantEmpty && platform != "" {
 				t.Errorf("inspectImagePlatform(%q) = %q, want empty string", tt.imageName, platform)
 			}
-			
+
 			if !tt.wantEmpty {
 				if platform == "" {
 					t.Errorf("inspectImagePlatform(%q) = empty, want non-empty platform", tt.imageName)

@@ -82,8 +82,10 @@ type protoEnumResolver interface {
 	FindEnumByName(protoreflect.FullName) (protoreflect.EnumType, error)
 }
 
-var _ protoEnumResolver = (*dynamicpb.Types)(nil)
-var _ protoEnumResolver = (*protoregistry.Types)(nil)
+var (
+	_ protoEnumResolver = (*dynamicpb.Types)(nil)
+	_ protoEnumResolver = (*protoregistry.Types)(nil)
+)
 
 func formatProto(types protoEnumResolver, multiline bool) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
 	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {

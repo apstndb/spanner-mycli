@@ -137,7 +137,7 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initiate database creation: %w", err)
 	}
-	
+
 	dbResponse, err := op.Wait(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("database creation operation failed: %w", err)
@@ -146,7 +146,7 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 	if dbResponse == nil || dbResponse.Name == "" {
 		return nil, fmt.Errorf("database creation succeeded but response is missing database name")
 	}
-	
+
 	// Return empty result like previous versions (non-breaking change)
 	result := &Result{
 		IsMutation: true,
@@ -214,7 +214,8 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		rows = append(rows, toRow(matched[1]))
 	}
 
-	return &Result{TableHeader: toTableHeader("Database"),
+	return &Result{
+		TableHeader:  toTableHeader("Database"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
@@ -288,25 +289,25 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 	if s.Mode == "SYNC" {
 		return s.executeSyncMode(ctx, session)
 	}
-	
+
 	operationName := s.OperationId
-	
+
 	// If the operation ID doesn't contain a full path, construct the full operation name
 	if !strings.Contains(operationName, "/") {
 		operationName = session.DatabasePath() + "/operations/" + operationName
 	}
-	
+
 	return s.executeAsyncMode(ctx, session, operationName)
 }
 
 func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *Session) (*Result, error) {
 	operationName := s.OperationId
-	
+
 	// If the operation ID doesn't contain a full path, construct the full operation name
 	if !strings.Contains(operationName, "/") {
 		operationName = session.DatabasePath() + "/operations/" + operationName
 	}
-	
+
 	// Get the specific operation
 	op, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
 		Name: operationName,
@@ -314,12 +315,12 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	if err != nil {
 		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
 	}
-	
+
 	// If operation is already done, return the status
 	if op.GetDone() {
 		return s.executeAsyncMode(ctx, session, operationName)
 	}
-	
+
 	// Start progress monitoring
 	var p *mpb.Progress
 	var bar *mpb.Bar
@@ -331,10 +332,10 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 			p.Wait()
 		}
 	}
-	
+
 	// Extract operation description for progress bar
 	operationDesc := s.getOperationDescription(op)
-	
+
 	if session.systemVariables.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
 		bar = p.AddBar(int64(100),
@@ -348,13 +349,13 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		bar.EnableTriggerComplete()
 		defer teardown()
 	}
-	
+
 	// Update progress bar with initial status
 	if bar != nil && !bar.Completed() {
 		progressPercent := s.getOperationProgress(op)
 		bar.SetCurrent(int64(progressPercent))
 	}
-	
+
 	// Polling loop
 	for !op.GetDone() {
 		select {
@@ -363,7 +364,7 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-		
+
 		// Poll the operation
 		op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
 			Name: operationName,
@@ -371,19 +372,19 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		if err != nil {
 			return nil, fmt.Errorf("failed to poll operation %q: %w", operationName, err)
 		}
-		
+
 		// Update progress bar
 		if bar != nil && !bar.Completed() {
 			progressPercent := s.getOperationProgress(op)
 			bar.SetCurrent(int64(progressPercent))
 		}
 	}
-	
+
 	// Operation completed, update progress bar to 100%
 	if bar != nil && !bar.Completed() {
 		bar.SetCurrent(100)
 	}
-	
+
 	// Return final operation status
 	return s.executeAsyncMode(ctx, session, operationName)
 }
@@ -396,9 +397,9 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 	if err != nil {
 		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
 	}
-	
+
 	var rows []Row
-	
+
 	// Handle different operation types
 	metadata := op.GetMetadata()
 	if metadata == nil {
@@ -419,14 +420,14 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 			if err := metadata.UnmarshalTo(&md); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
 			}
-			
+
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 			errorMessage := ""
 			if opError := op.GetError(); opError != nil {
 				errorMessage = opError.GetMessage()
 			}
 			rows = append(rows, formatUpdateDatabaseDdlRows(operationId, &md, op.GetDone(), errorMessage)...)
-			
+
 		default:
 			// For other operation types, show basic information
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
@@ -440,11 +441,11 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 			))
 		}
 	}
-	
+
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("operation %q not found or has no statements", operationName)
 	}
-	
+
 	return &Result{
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 		Rows:         rows,
@@ -458,7 +459,7 @@ func (s *ShowOperationStatement) getOperationDescription(op *longrunningpb.Opera
 		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 		return fmt.Sprintf("Operation %s", operationId)
 	}
-	
+
 	switch metadata.GetTypeUrl() {
 	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
 		var md databasepb.UpdateDatabaseDdlMetadata
@@ -466,14 +467,14 @@ func (s *ShowOperationStatement) getOperationDescription(op *longrunningpb.Opera
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 			return fmt.Sprintf("Operation %s", operationId)
 		}
-		
+
 		if len(md.GetStatements()) > 0 {
 			return md.GetStatements()[0] // Use first statement as description
 		}
-		
+
 		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 		return fmt.Sprintf("DDL Operation %s", operationId)
-		
+
 	default:
 		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
 		return fmt.Sprintf("Operation %s", operationId)
@@ -485,14 +486,14 @@ func (s *ShowOperationStatement) getOperationProgress(op *longrunningpb.Operatio
 	if metadata == nil {
 		return 0.0
 	}
-	
+
 	switch metadata.GetTypeUrl() {
 	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
 		var md databasepb.UpdateDatabaseDdlMetadata
 		if err := metadata.UnmarshalTo(&md); err != nil {
 			return 0.0
 		}
-		
+
 		if len(md.GetProgress()) > 0 {
 			// Return average progress if multiple statements
 			var total float64
@@ -501,9 +502,9 @@ func (s *ShowOperationStatement) getOperationProgress(op *longrunningpb.Operatio
 			}
 			return total / float64(len(md.GetProgress()))
 		}
-		
+
 		return 0.0
-		
+
 	default:
 		return 0.0
 	}

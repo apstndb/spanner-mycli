@@ -25,8 +25,8 @@ UPDATE users SET active = true WHERE id = 1;
 CREATE TABLE test_table (id INT64) PRIMARY KEY (id);
 EXPLAIN SELECT * FROM users;
 DESCRIBE SELECT * FROM users;`
-		
-		if err := os.WriteFile(sqlFile, []byte(sqlContent), 0644); err != nil {
+
+		if err := os.WriteFile(sqlFile, []byte(sqlContent), 0o644); err != nil {
 			t.Fatalf("Failed to create test SQL file: %v", err)
 		}
 
@@ -35,7 +35,7 @@ DESCRIBE SELECT * FROM users;`
 		sysVars.Project = "test-project"
 		sysVars.Instance = "test-instance"
 		sysVars.Database = "test-database"
-		sysVars.EchoInput = true  // Enable ECHO
+		sysVars.EchoInput = true // Enable ECHO
 
 		// Create a mock session
 		session := &Session{
@@ -46,10 +46,10 @@ DESCRIBE SELECT * FROM users;`
 		// Create CLI instance
 		input := strings.NewReader("\\. " + sqlFile + "\nexit;\n")
 		output := &bytes.Buffer{}
-		
+
 		// Create StreamManager with the test streams
 		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
-		
+
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
 			SystemVariables: &sysVars,
@@ -66,7 +66,7 @@ DESCRIBE SELECT * FROM users;`
 
 		// Check that statements were echoed
 		outputStr := output.String()
-		
+
 		// These are the expected echoed statements (reconstructed by String() methods)
 		expectedEchoes := []string{
 			"SELECT 1 AS n;",
@@ -93,8 +93,8 @@ DESCRIBE SELECT * FROM users;`
 		tmpDir := t.TempDir()
 		sqlFile := filepath.Join(tmpDir, "test_no_echo.sql")
 		sqlContent := `SELECT 1 AS n;`
-		
-		if err := os.WriteFile(sqlFile, []byte(sqlContent), 0644); err != nil {
+
+		if err := os.WriteFile(sqlFile, []byte(sqlContent), 0o644); err != nil {
 			t.Fatalf("Failed to create test SQL file: %v", err)
 		}
 
@@ -103,7 +103,7 @@ DESCRIBE SELECT * FROM users;`
 		sysVars.Project = "test-project"
 		sysVars.Instance = "test-instance"
 		sysVars.Database = "test-database"
-		sysVars.EchoInput = false  // Disable ECHO
+		sysVars.EchoInput = false // Disable ECHO
 
 		// Create a mock session
 		session := &Session{
@@ -114,10 +114,10 @@ DESCRIBE SELECT * FROM users;`
 		// Create CLI instance
 		input := strings.NewReader("\\. " + sqlFile + "\nexit;\n")
 		output := &bytes.Buffer{}
-		
+
 		// Create StreamManager with the test streams
 		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
-		
+
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
 			SystemVariables: &sysVars,

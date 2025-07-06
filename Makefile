@@ -49,17 +49,32 @@ test-coverage-open: test-coverage
 lint:
 	golangci-lint run
 
+fmt:
+	@echo "Formatting code..."
+	golangci-lint fmt .
+	@echo "Code formatted successfully"
+
+fmt-check:
+	@echo "Checking code formatting..."
+	@if golangci-lint fmt --diff . | grep -q "^diff"; then \
+		echo "Code formatting issues found. Run 'make fmt' to fix."; \
+		golangci-lint fmt --diff . | head -100; \
+		exit 1; \
+	else \
+		echo "Code formatting is correct"; \
+	fi
+
 
 # Enhanced development targets (issue #301 - script reorganization)
 # Development targets using Go 1.24 tool management and simple Makefile workflows
-.PHONY: test-quick test-coverage test-coverage-open check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools
+.PHONY: test-quick test-coverage test-coverage-open check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools fmt fmt-check
 
 # Quick tests for development cycle
 test-quick:
 	go test -short ./...
 
-# Combined test and lint check (required before push)
-check: test lint
+# Combined test, lint, and format check (required before push)
+check: test lint fmt-check
 
 
 # Update README.md help sections (replacing spanner-mycli-dev)
@@ -84,7 +99,9 @@ help-dev:
 	@echo "  make test-coverage-open - Run coverage and open HTML report in browser"
 	@echo "  make test-quick       - Run quick tests (go test -short)"
 	@echo "  make lint             - Run linter (required before push)"
-	@echo "  make check            - Run test && lint (required before push)"
+	@echo "  make fmt              - Format code with gofmt, goimports, and gofumpt"
+	@echo "  make fmt-check        - Check if code is properly formatted"
+	@echo "  make check            - Run test && lint && fmt-check (required before push)"
 	@echo "  make clean            - Clean build artifacts and test cache"
 	@echo "  make run              - Run with PROJECT/INSTANCE/DATABASE env vars"
 	@echo "  make docs-update      - Generate help output for README.md"

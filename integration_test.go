@@ -178,7 +178,7 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 		sysVars := &systemVariables{
 			Project:          clients.ProjectID,
 			Instance:         clients.InstanceID,
-			Database:         "", // No database for admin-only mode
+			Database:         "",                      // No database for admin-only mode
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
 
@@ -390,12 +390,12 @@ func TestStatements(t *testing.T) {
 		wantResults []*Result
 		cmpOpts     []cmp.Option
 		database    string // Database name behavior:
-		             // - Empty + admin=false: Random database name (auto-assigned)
-		             // - Empty + admin=true: Admin-only session (no database)
-		             // - Non-empty + admin=false: Specific database name
-		             // - Non-empty + admin=true: Invalid combination (will be rejected)
-		dedicated   bool // Use dedicated instance (vs shared emulator)
-		admin       bool // Create admin-only session (no database connection)
+		// - Empty + admin=false: Random database name (auto-assigned)
+		// - Empty + admin=true: Admin-only session (no database)
+		// - Non-empty + admin=false: Specific database name
+		// - Non-empty + admin=true: Invalid combination (will be rejected)
+		dedicated bool // Use dedicated instance (vs shared emulator)
+		admin     bool // Create admin-only session (no database connection)
 	}{
 		{
 			desc: "query parameters",
@@ -468,7 +468,8 @@ func TestStatements(t *testing.T) {
 				{
 					KeepVariables: true,
 					TableHeader:   toTableHeader("CLI_VERSION"),
-					Rows:          sliceOf(toRow(getVersion()))},
+					Rows:          sliceOf(toRow(getVersion())),
+				},
 			},
 		},
 		{
@@ -901,15 +902,16 @@ func TestStatements(t *testing.T) {
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
 				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
 				// tab is pass-through as is in this layer
-				{IsMutation: true, AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
-					toRow(
-						heredoc.Doc(`
+				{
+					IsMutation: true, AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
+						toRow(
+							heredoc.Doc(`
 										CREATE TABLE TestTable (
 											id		INT64,
 											active	BOOL,
 										) PRIMARY KEY(id);`), "(ignored)"),
-					toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
-				),
+						toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
+					),
 				},
 			},
 			cmpOpts: sliceOf(
@@ -1160,21 +1162,21 @@ func TestStatements(t *testing.T) {
 						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			database:  "", 
+			database:  "",
 			dedicated: true,
 			admin:     true,
 		},
 		{
 			desc: "DETACH and USE workflow with database creation",
 			stmt: sliceOf(
-				"SHOW VARIABLE CLI_DATABASE",        // Should show test-database (connected)
-				"SELECT 1 AS connected",             // Should work from database mode
+				"SHOW VARIABLE CLI_DATABASE",       // Should show test-database (connected)
+				"SELECT 1 AS connected",            // Should work from database mode
 				"DETACH",                           // Switch to admin-only mode
-				"SHOW VARIABLE CLI_DATABASE",        // Should show empty string (*detached*)
+				"SHOW VARIABLE CLI_DATABASE",       // Should show empty string (*detached*)
 				"CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
 				"SHOW DATABASES",                   // Should show both databases
 				"USE `test_detach_db`",             // Switch to new database
-				"SHOW VARIABLE CLI_DATABASE",        // Should show test_detach_db
+				"SHOW VARIABLE CLI_DATABASE",       // Should show test_detach_db
 				"SELECT 1 AS reconnected",          // Should work from database mode after USE
 				"DETACH",                           // Switch to admin-only mode again
 				"DROP DATABASE `test_detach_db`",   // Should work from admin-only mode
@@ -1216,7 +1218,7 @@ func TestStatements(t *testing.T) {
 					Rows:         sliceOf(toRow("1")),
 					AffectedRows: 1,
 				},
-				{}, // DETACH statement returns empty result
+				{},                 // DETACH statement returns empty result
 				{IsMutation: true}, // DROP DATABASE should succeed from admin mode
 			},
 			cmpOpts: sliceOf(
@@ -1276,7 +1278,6 @@ func TestStatements(t *testing.T) {
 			compareResult(t, gots, tt.wantResults, tt.cmpOpts...)
 		})
 	}
-
 }
 
 func TestReadWriteTransaction(t *testing.T) {
@@ -1862,12 +1863,12 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Test SHOW OPERATION with full operation name format
-	fullOpName := fmt.Sprintf("projects/%s/instances/%s/databases/%s/operations/%s", 
-		session.systemVariables.Project, 
-		session.systemVariables.Instance, 
-		session.systemVariables.Database, 
+	fullOpName := fmt.Sprintf("projects/%s/instances/%s/databases/%s/operations/%s",
+		session.systemVariables.Project,
+		session.systemVariables.Instance,
+		session.systemVariables.Database,
 		operationID)
-	
+
 	showOpFullStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s'", fullOpName))
 	if err != nil {
 		t.Fatalf("invalid SHOW OPERATION statement with full name: %v", err)
@@ -1880,7 +1881,7 @@ func TestShowOperation(t *testing.T) {
 
 	// Results should be identical whether using short ID or full name
 	if len(fullOpResult.Rows) != len(opResult.Rows) {
-		t.Errorf("Expected same number of rows for short ID (%d) and full name (%d)", 
+		t.Errorf("Expected same number of rows for short ID (%d) and full name (%d)",
 			len(opResult.Rows), len(fullOpResult.Rows))
 	}
 
@@ -1909,7 +1910,7 @@ func TestShowOperation(t *testing.T) {
 
 	// Results should be identical for default and SYNC mode when operation is already completed
 	if len(syncResult.Rows) != len(opResult.Rows) {
-		t.Errorf("Expected same number of rows for default (%d) and SYNC mode (%d)", 
+		t.Errorf("Expected same number of rows for default (%d) and SYNC mode (%d)",
 			len(opResult.Rows), len(syncResult.Rows))
 	}
 
@@ -1926,7 +1927,7 @@ func TestShowOperation(t *testing.T) {
 
 	// Results should be identical for default and explicit ASYNC mode
 	if len(asyncResult.Rows) != len(opResult.Rows) {
-		t.Errorf("Expected same number of rows for default (%d) and ASYNC mode (%d)", 
+		t.Errorf("Expected same number of rows for default (%d) and ASYNC mode (%d)",
 			len(opResult.Rows), len(asyncResult.Rows))
 	}
 

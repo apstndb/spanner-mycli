@@ -52,7 +52,8 @@ func TestBuildCommands(t *testing.T) {
 		{Desc: "SELECT", Input: `SELECT * FROM t1;`, Expected: []Statement{&SelectStatement{"SELECT * FROM t1"}}},
 		{Desc: "EXIT", Input: `EXIT;`, Expected: []Statement{&ExitStatement{}}},
 		{Desc: "CREATE TABLE(Invalid)", Input: `CREATE TABLE t1;`, Expected: []Statement{&BulkDdlStatement{[]string{"CREATE TABLE t1"}}}},
-		{Desc: "DDLs",
+		{
+			Desc:  "DDLs",
 			Input: `CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64; CREATE INDEX i1 ON t1(col); DROP INDEX i1; DROP TABLE t1;`,
 			Expected: []Statement{&BulkDdlStatement{[]string{
 				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
@@ -62,7 +63,8 @@ func TestBuildCommands(t *testing.T) {
 				"DROP TABLE t1",
 			}}},
 		},
-		{Desc: "mixed statements",
+		{
+			Desc: "mixed statements",
 			Input: `CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);
                 CREATE TABLE t2 (pk INT64) PRIMARY KEY(pk);
                 SELECT * FROM t1;
@@ -79,8 +81,10 @@ func TestBuildCommands(t *testing.T) {
 				&SelectStatement{"SELECT * FROM t1"},
 				&BulkDdlStatement{[]string{"DROP TABLE t1", "DROP TABLE t2"}},
 				&SelectStatement{"SELECT 1"},
-			}},
-		{Desc: "mixed statements with comments",
+			},
+		},
+		{
+			Desc: "mixed statements with comments",
 			Input: `
 			CREATE TABLE t1(pk INT64 /* NOT NULL*/, col INT64) PRIMARY KEY(pk);
 			INSERT t1(pk/*, col*/) VALUES(1/*, 2*/);
@@ -96,7 +100,8 @@ func TestBuildCommands(t *testing.T) {
 				&DmlStatement{"UPDATE t1 SET col = /* pk + */ col + 1 WHERE TRUE"},
 				&DmlStatement{"DELETE t1 WHERE TRUE /* AND pk = 1 */"},
 				&SelectStatement{"SELECT 0x1/**/A"},
-			}},
+			},
+		},
 		{
 			Desc: "empty statement",
 			// spanner-cli don't permit empty statements.
@@ -114,7 +119,8 @@ func TestBuildCommands(t *testing.T) {
 			Input: `SELECT 1; /* comment */`,
 			Expected: []Statement{
 				&SelectStatement{"SELECT 1"},
-			}},
+			},
+		},
 		{
 			Desc: "multi-line string with meta-command-like content",
 			Input: `SELECT r"""
@@ -128,13 +134,13 @@ func TestBuildCommands(t *testing.T) {
 			ExpectError: false, // Should not error - it's just a string literal
 		},
 		{
-			Desc: "meta command at start of input",
-			Input: `\! echo test`,
+			Desc:        "meta command at start of input",
+			Input:       `\! echo test`,
 			ExpectError: true, // Meta commands not supported in batch mode
 		},
 		{
-			Desc: "meta command after SQL statement", 
-			Input: `SELECT 1; \! echo test`,
+			Desc:        "meta command after SQL statement",
+			Input:       `SELECT 1; \! echo test`,
 			ExpectError: true, // Meta commands not supported in batch mode
 		},
 	}
@@ -1045,7 +1051,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			sysVars := &systemVariables{Database: tt.currentDB}
 			outBuf := &bytes.Buffer{}
 			errBuf := &bytes.Buffer{}
-			
+
 			// For DROP DATABASE tests that need confirmation, check if we're testing the confirmation case
 			if dropStmt, ok := tt.stmt.(*DropDatabaseStatement); ok && tt.currentDB != dropStmt.DatabaseId {
 				// These test cases now expect the error about no TTY
@@ -1053,7 +1059,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 				tt.wantOut = "ERROR: cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal\n"
 				tt.wantProcessed = true
 			}
-			
+
 			// Create StreamManager with the test streams
 			sysVars.StreamManager = NewStreamManager(
 				io.NopCloser(strings.NewReader(tt.confirmInput)), // InStream for confirm
@@ -1109,8 +1115,8 @@ func TestCli_PrintResult(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				UsePager:  tt.usePager,
-				CLIFormat: DisplayModeTab, // Use TAB format for predictable output
+				UsePager:      tt.usePager,
+				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
 				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
@@ -1299,14 +1305,14 @@ func TestCli_executeSourceFile(t *testing.T) {
 			errorContains: "meta commands are not supported in batch mode",
 		},
 		{
-			name:          "Empty file",
-			fileContent:   "",
-			expectError:   false, // Empty file should not error
+			name:        "Empty file",
+			fileContent: "",
+			expectError: false, // Empty file should not error
 		},
 		{
-			name:          "File with only comments",
-			fileContent:   "-- This is a comment\n/* Another comment */",
-			expectError:   false, // Comments only should not error
+			name:        "File with only comments",
+			fileContent: "-- This is a comment\n/* Another comment */",
+			expectError: false, // Comments only should not error
 		},
 	}
 
@@ -1334,7 +1340,7 @@ func TestCli_executeSourceFile(t *testing.T) {
 			sysVars := &systemVariables{
 				BuildStatementMode: parseModeFallback,
 				CLIFormat:          DisplayModeTab,
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+				StreamManager:      NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			session := &Session{systemVariables: sysVars}
 

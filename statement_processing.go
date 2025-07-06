@@ -33,7 +33,6 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 )
 
-
 type Statement interface {
 	Execute(ctx context.Context, session *Session) (*Result, error)
 }
@@ -390,7 +389,7 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 	var pendingDdls []string
 
 	// Check if input starts with a meta command.
-	// This check must be performed before separateInput() because meta-commands 
+	// This check must be performed before separateInput() because meta-commands
 	// (starting with '\') are not valid GoogleSQL lexical structure and would
 	// cause parsing errors.
 	if IsMetaCommand(strings.TrimSpace(input)) {

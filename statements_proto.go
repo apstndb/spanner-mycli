@@ -38,7 +38,6 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 	_, fds, err := session.GetDatabaseSchema(ctx)
 	if err != nil {
 		return nil, err
-
 	}
 
 	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
@@ -218,11 +217,12 @@ func isValidDescriptorProto(message proto.Message) bool {
 }
 
 func toNamedType(fullName string) *ast.NamedType {
-	return &ast.NamedType{Path: slices.Collect(xiter.Map(
-		func(s string) *ast.Ident {
-			return &ast.Ident{Name: s}
-		},
-		slices.Values(strings.Split(fullName, ".")))),
+	return &ast.NamedType{
+		Path: slices.Collect(xiter.Map(
+			func(s string) *ast.Ident {
+				return &ast.Ident{Name: s}
+			},
+			slices.Values(strings.Split(fullName, ".")))),
 	}
 }
 

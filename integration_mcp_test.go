@@ -19,16 +19,16 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	t.Helper()
 	// Create CLI instance
 	var outputBuf strings.Builder
-	
+
 	// Update the session's StatementTimeout for integration tests
 	session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
 	session.systemVariables.Verbose = true // Set Verbose to true to ensure result line is printed
-	
+
 	// Update the session's StreamManager to use the output buffer
 	session.systemVariables.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf)
-	
+
 	cli := &Cli{
-		SessionHandler: NewSessionHandler(session),
+		SessionHandler:  NewSessionHandler(session),
 		SystemVariables: session.systemVariables, // Use the same systemVariables as the session
 	}
 
@@ -37,7 +37,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 
 	// Create in-memory transport for testing
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	
+
 	// Start server in a goroutine
 	serverDone := make(chan error, 1)
 	var serverSession *mcp.ServerSession
@@ -54,7 +54,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 
 	// Create and connect client
 	mcpClient := mcp.NewClient("spanner-mycli-test", version, nil)
-	
+
 	// Connect client and get session
 	clientSession, err := mcpClient.Connect(ctx, clientTransport)
 	if err != nil {
@@ -103,11 +103,10 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// Call the execute_statement tool using the MCP client
 	t.Logf("Executing statement via MCP client: %q", statement)
 	params := &mcp.CallToolParams{
-		Name: "execute_statement",
+		Name:      "execute_statement",
 		Arguments: ExecuteStatementArgs{Statement: statement},
 	}
 	result, err := mcpClient.CallTool(ctx, params)
-
 	// Handle errors
 	if err != nil {
 		if wantError {
@@ -215,7 +214,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 
 	// Create StreamManager with the pipe for input
 	sysVarsNonExistent.StreamManager = NewStreamManager(pipeReader, &outputBuf, &outputBuf)
-	
+
 	cli, err := NewCli(ctx, nil, &sysVarsNonExistent)
 	if err != nil {
 		t.Fatalf("Failed to create CLI with non-existent database: %v", err)
@@ -387,7 +386,7 @@ func TestRunMCP(t *testing.T) {
 
 		// Create CLI with different system variables (but make sure session has timeout too)
 		session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
-		
+
 		var outputBuf strings.Builder
 		// Create a new system variables with modified values
 		modifiedSysVars := &systemVariables{
@@ -400,8 +399,8 @@ func TestRunMCP(t *testing.T) {
 			Port:                  session.systemVariables.Port,
 			WithoutAuthentication: session.systemVariables.WithoutAuthentication,
 			StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-			AutoWrap:              true, // Set a different value
-			EnableHighlight:       true, // Set a different value
+			AutoWrap:              true,                    // Set a different value
+			EnableHighlight:       true,                    // Set a different value
 			StreamManager:         NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
 		}
 		cli := &Cli{

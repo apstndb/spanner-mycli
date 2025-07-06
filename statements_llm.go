@@ -55,7 +55,8 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 
-	return &Result{PreInput: composed.Statement.Text,
+	return &Result{
+		PreInput: composed.Statement.Text,
 		Rows: slices.Concat(
 			lo.Ternary(composed.ErrorDescription != "",
 				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
@@ -64,7 +65,8 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 				toRow("text", composed.Statement.Text),
 				toRow("semanticDescription", composed.Statement.SemanticDescription),
 				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
-		TableHeader: toTableHeader("Column", "Value")}, nil
+		TableHeader: toTableHeader("Column", "Value"),
+	}, nil
 }
 
 func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([][]byte, error) {

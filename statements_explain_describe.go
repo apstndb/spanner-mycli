@@ -311,7 +311,8 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 }
 
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
-	format explainFormat, width int64) (*Result, error) {
+	format explainFormat, width int64,
+) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
 	inlines := sysVars.ParsedInlineStats
 	format = lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat)

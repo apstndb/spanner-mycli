@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"testing"
-	
+
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -16,14 +16,14 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 
 	// Create a mock admin session without actual authentication
 	sysVars := &systemVariables{
-		Project:       "test-project",
-		Instance:      "test-instance",
-		Database:      "",
-		CLIFormat:     DisplayModeTable,
-		Verbose:       false,
-		ReadOnly:      false,
-		Prompt:        "spanner> ",
-		Params:        make(map[string]ast.Node),
+		Project:   "test-project",
+		Instance:  "test-instance",
+		Database:  "",
+		CLIFormat: DisplayModeTable,
+		Verbose:   false,
+		ReadOnly:  false,
+		Prompt:    "spanner> ",
+		Params:    make(map[string]ast.Node),
 	}
 
 	// Create a minimal admin session for testing
@@ -40,7 +40,7 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 	t.Run("SHOW VARIABLES works in AdminOnly session", func(t *testing.T) {
 		stmt := &ShowVariablesStatement{}
 		result, err := stmt.Execute(ctx, session)
-		
+
 		if err != nil {
 			t.Errorf("SHOW VARIABLES failed: %v", err)
 		} else if result == nil {

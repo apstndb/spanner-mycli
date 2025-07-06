@@ -231,9 +231,9 @@ func TestColorToSequence(t *testing.T) {
 	defer func() { color.NoColor = originalNoColor }()
 
 	tests := []struct {
-		name     string
-		noColor  bool
-		attrs    []color.Attribute
+		name      string
+		noColor   bool
+		attrs     []color.Attribute
 		wantEmpty bool
 	}{
 		{
@@ -276,7 +276,7 @@ func TestDefaultHighlights(t *testing.T) {
 	originalNoColor := color.NoColor
 	color.NoColor = false
 	defer func() { color.NoColor = originalNoColor }()
-	
+
 	// Verify defaultHighlights is properly initialized
 	if len(defaultHighlights) == 0 {
 		t.Fatal("defaultHighlights is empty")
@@ -353,36 +353,36 @@ func TestHighlightingPatterns(t *testing.T) {
 
 func TestShouldSubmitStatement(t *testing.T) {
 	tests := []struct {
-		name               string
-		statements         []inputStatement
-		err                error
-		wantShouldSubmit   bool
-		wantWaitingStatus  string
+		name              string
+		statements        []inputStatement
+		err               error
+		wantShouldSubmit  bool
+		wantWaitingStatus string
 	}{
 		{
-			name:               "empty statements with no error",
-			statements:         []inputStatement{},
-			err:                nil,
-			wantShouldSubmit:   false,
-			wantWaitingStatus:  "",
+			name:              "empty statements with no error",
+			statements:        []inputStatement{},
+			err:               nil,
+			wantShouldSubmit:  false,
+			wantWaitingStatus: "",
 		},
 		{
 			name: "single complete statement with delimiter",
 			statements: []inputStatement{
 				{statement: "SELECT 1", delim: ";"},
 			},
-			err:                nil,
-			wantShouldSubmit:   true,
-			wantWaitingStatus:  "",
+			err:               nil,
+			wantShouldSubmit:  true,
+			wantWaitingStatus: "",
 		},
 		{
 			name: "single incomplete statement without delimiter",
 			statements: []inputStatement{
 				{statement: "SELECT 1", delim: delimiterUndefined},
 			},
-			err:                nil,
-			wantShouldSubmit:   false,
-			wantWaitingStatus:  "",
+			err:               nil,
+			wantShouldSubmit:  false,
+			wantWaitingStatus: "",
 		},
 		{
 			name: "multiple statements",
@@ -390,39 +390,39 @@ func TestShouldSubmitStatement(t *testing.T) {
 				{statement: "SELECT 1", delim: ";"},
 				{statement: "SELECT 2", delim: ";"},
 			},
-			err:                nil,
-			wantShouldSubmit:   true,
-			wantWaitingStatus:  "",
+			err:               nil,
+			wantShouldSubmit:  true,
+			wantWaitingStatus: "",
 		},
 		{
-			name:               "lexer status error with waiting string",
-			statements:         []inputStatement{},
-			err:                &gsqlutils.ErrLexerStatus{WaitingString: "waiting for '"},
-			wantShouldSubmit:   false,
-			wantWaitingStatus:  "waiting for '",
+			name:              "lexer status error with waiting string",
+			statements:        []inputStatement{},
+			err:               &gsqlutils.ErrLexerStatus{WaitingString: "waiting for '"},
+			wantShouldSubmit:  false,
+			wantWaitingStatus: "waiting for '",
 		},
 		{
-			name:               "other error",
-			statements:         []inputStatement{},
-			err:                errors.New("some error"),
-			wantShouldSubmit:   true,
-			wantWaitingStatus:  "",
+			name:              "other error",
+			statements:        []inputStatement{},
+			err:               errors.New("some error"),
+			wantShouldSubmit:  true,
+			wantWaitingStatus: "",
 		},
 		{
 			name: "single statement with horizontal delimiter",
 			statements: []inputStatement{
 				{statement: "SELECT 1", delim: delimiterHorizontal},
 			},
-			err:                nil,
-			wantShouldSubmit:   true,
-			wantWaitingStatus:  "",
+			err:               nil,
+			wantShouldSubmit:  true,
+			wantWaitingStatus: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotShouldSubmit, gotWaitingStatus := shouldSubmitStatement(tt.statements, tt.err)
-			
+
 			if gotShouldSubmit != tt.wantShouldSubmit {
 				t.Errorf("shouldSubmitStatement() shouldSubmit = %v, want %v", gotShouldSubmit, tt.wantShouldSubmit)
 			}
@@ -443,11 +443,11 @@ func TestProcessInputLines(t *testing.T) {
 		errString string
 	}{
 		{
-			name:      "successful read with no error",
-			lines:     []string{"SELECT 1"},
-			readErr:   nil,
-			wantStmt:  nil,
-			wantErr:   false,
+			name:     "successful read with no error",
+			lines:    []string{"SELECT 1"},
+			readErr:  nil,
+			wantStmt: nil,
+			wantErr:  false,
 		},
 		{
 			name:      "read error with empty lines",
@@ -486,15 +486,15 @@ func TestProcessInputLines(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotStmt, gotErr := processInputLines(tt.lines, tt.readErr)
-			
+
 			if (gotErr != nil) != tt.wantErr {
 				t.Errorf("processInputLines() error = %v, wantErr %v", gotErr, tt.wantErr)
 			}
-			
+
 			if tt.wantErr && gotErr != nil && gotErr.Error() != tt.errString {
 				t.Errorf("processInputLines() error = %v, want %v", gotErr.Error(), tt.errString)
 			}
-			
+
 			if tt.wantStmt != nil {
 				if gotStmt == nil {
 					t.Error("processInputLines() returned nil statement, want non-nil")
@@ -550,15 +550,15 @@ func TestValidateInteractiveInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotStmt, gotErr := validateInteractiveInput(tt.statements)
-			
+
 			if (gotErr != nil) != tt.wantErr {
 				t.Errorf("validateInteractiveInput() error = %v, wantErr %v", gotErr, tt.wantErr)
 			}
-			
+
 			if tt.wantErr && gotErr != nil && gotErr.Error() != tt.errString {
 				t.Errorf("validateInteractiveInput() error = %v, want %v", gotErr.Error(), tt.errString)
 			}
-			
+
 			if tt.wantStmt != nil {
 				if gotStmt == nil {
 					t.Error("validateInteractiveInput() returned nil statement, want non-nil")
@@ -574,46 +574,46 @@ func TestValidateInteractiveInput(t *testing.T) {
 
 func TestGeneratePS2Prompt(t *testing.T) {
 	tests := []struct {
-		name             string
-		ps1              string
-		ps2Template      string
-		ps2Interpolated  string
-		want             string
+		name            string
+		ps1             string
+		ps2Template     string
+		ps2Interpolated string
+		want            string
 	}{
 		{
-			name:             "no padding needed",
-			ps1:              "spanner> ",
-			ps2Template:      "... ",
-			ps2Interpolated:  "... ",
-			want:             "... ",
+			name:            "no padding needed",
+			ps1:             "spanner> ",
+			ps2Template:     "... ",
+			ps2Interpolated: "... ",
+			want:            "... ",
 		},
 		{
-			name:             "padding needed with %P prefix",
-			ps1:              "spanner> ",
-			ps2Template:      "%P... ",
-			ps2Interpolated:  "... ",
-			want:             "     ... ", // padded to match "spanner> " width
+			name:            "padding needed with %P prefix",
+			ps1:             "spanner> ",
+			ps2Template:     "%P... ",
+			ps2Interpolated: "... ",
+			want:            "     ... ", // padded to match "spanner> " width
 		},
 		{
-			name:             "multi-line PS1, uses last line",
-			ps1:              "line1\nspanner> ",
-			ps2Template:      "%P... ",
-			ps2Interpolated:  "... ",
-			want:             "     ... ", // padded to match "spanner> " width
+			name:            "multi-line PS1, uses last line",
+			ps1:             "line1\nspanner> ",
+			ps2Template:     "%P... ",
+			ps2Interpolated: "... ",
+			want:            "     ... ", // padded to match "spanner> " width
 		},
 		{
-			name:             "empty PS1",
-			ps1:              "",
-			ps2Template:      "%P... ",
-			ps2Interpolated:  "... ",
-			want:             "... ", // no padding for empty PS1
+			name:            "empty PS1",
+			ps1:             "",
+			ps2Template:     "%P... ",
+			ps2Interpolated: "... ",
+			want:            "... ", // no padding for empty PS1
 		},
 		{
-			name:             "longer PS2 than PS1",
-			ps1:              "sql> ",
-			ps2Template:      "%P..... ",
-			ps2Interpolated:  "..... ",
-			want:             "..... ", // no left-padding when PS2 is already longer
+			name:            "longer PS2 than PS1",
+			ps1:             "sql> ",
+			ps2Template:     "%P..... ",
+			ps2Interpolated: "..... ",
+			want:            "..... ", // no left-padding when PS2 is already longer
 		},
 	}
 
@@ -638,12 +638,12 @@ func TestPS1PS2FuncToPromptFunc(t *testing.T) {
 	ps2Called := 0
 	testPS1 := "test> "
 	testPS2 := "... "
-	
+
 	ps1Func := func() string {
 		ps1Called++
 		return testPS1
 	}
-	
+
 	ps2Func := func(ps1 string) string {
 		ps2Called++
 		if ps1 != testPS1 {
@@ -651,63 +651,62 @@ func TestPS1PS2FuncToPromptFunc(t *testing.T) {
 		}
 		return testPS2
 	}
-	
+
 	promptFunc := PS1PS2FuncToPromptFunc(ps1Func, ps2Func)
-	
+
 	tests := []struct {
-		name      string
-		lineNum   int
-		wantStr   string
-		wantPS1   int
-		wantPS2   int
+		name    string
+		lineNum int
+		wantStr string
+		wantPS1 int
+		wantPS2 int
 	}{
 		{
-			name:      "first line uses PS1",
-			lineNum:   0,
-			wantStr:   testPS1,
-			wantPS1:   1,
-			wantPS2:   0,
+			name:    "first line uses PS1",
+			lineNum: 0,
+			wantStr: testPS1,
+			wantPS1: 1,
+			wantPS2: 0,
 		},
 		{
-			name:      "second line uses PS2",
-			lineNum:   1,
-			wantStr:   testPS2,
-			wantPS1:   1, // PS1 is called to pass to PS2
-			wantPS2:   1,
+			name:    "second line uses PS2",
+			lineNum: 1,
+			wantStr: testPS2,
+			wantPS1: 1, // PS1 is called to pass to PS2
+			wantPS2: 1,
 		},
 		{
-			name:      "third line uses PS2",
-			lineNum:   2,
-			wantStr:   testPS2,
-			wantPS1:   1,
-			wantPS2:   1,
+			name:    "third line uses PS2",
+			lineNum: 2,
+			wantStr: testPS2,
+			wantPS1: 1,
+			wantPS2: 1,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ps1Called = 0
 			ps2Called = 0
-			
+
 			var buf strings.Builder
 			n, err := promptFunc(&buf, tt.lineNum)
-			
 			if err != nil {
 				t.Errorf("promptFunc() error = %v", err)
 			}
-			
+
 			if n != len(tt.wantStr) {
 				t.Errorf("promptFunc() wrote %d bytes, want %d", n, len(tt.wantStr))
 			}
-			
+
 			if buf.String() != tt.wantStr {
 				t.Errorf("promptFunc() wrote %q, want %q", buf.String(), tt.wantStr)
 			}
-			
+
 			if ps1Called != tt.wantPS1 {
 				t.Errorf("ps1Func called %d times, want %d", ps1Called, tt.wantPS1)
 			}
-			
+
 			if ps2Called != tt.wantPS2 {
 				t.Errorf("ps2Func called %d times, want %d", ps2Called, tt.wantPS2)
 			}
@@ -718,12 +717,12 @@ func TestPS1PS2FuncToPromptFunc(t *testing.T) {
 // Test persistentHistory.Add method
 func TestPersistentHistoryAdd(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFS        func() afero.Fs
-		filename       string
-		itemsToAdd     []string
-		wantError      bool
-		validateFile   func(t *testing.T, fs afero.Fs, filename string)
+		name            string
+		setupFS         func() afero.Fs
+		filename        string
+		itemsToAdd      []string
+		wantError       bool
+		validateFile    func(t *testing.T, fs afero.Fs, filename string)
 		validateHistory func(t *testing.T, h History)
 	}{
 		{
@@ -787,7 +786,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 			setupFS: func() afero.Fs {
 				fs := afero.NewMemMapFs()
 				// Create file with existing content
-				err := afero.WriteFile(fs, "test_history.txt", []byte("\"EXISTING COMMAND\"\n"), 0600)
+				err := afero.WriteFile(fs, "test_history.txt", []byte("\"EXISTING COMMAND\"\n"), 0o600)
 				require.NoError(t, err)
 				return fs
 			},
@@ -879,7 +878,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0o600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -898,7 +897,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"SELECT 1\"\n\n\"SELECT 2\"\n\n\n\"SELECT 3\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0o600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -918,7 +917,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 				fs := afero.NewMemMapFs()
 				// Use strconv.Quote to create properly escaped content
 				content := "\"SELECT \\\"quoted\\\"\"\n\"WHERE x = 'value'\"\n\"Line1\\nLine2\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0o600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -938,7 +937,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 				fs := afero.NewMemMapFs()
 				// Invalid format - not properly quoted
 				content := "SELECT 1\nSELECT 2\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0o600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -974,7 +973,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 			setupFS: func() (afero.Fs, string) {
 				fs := afero.NewMemMapFs()
 				content := "\"NEW ITEM 1\"\n\"NEW ITEM 2\"\n"
-				err := afero.WriteFile(fs, "history.txt", []byte(content), 0600)
+				err := afero.WriteFile(fs, "history.txt", []byte(content), 0o600)
 				require.NoError(t, err)
 				return fs, "history.txt"
 			},
@@ -998,14 +997,14 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs, filename := tt.setupFS()
 			h, err := newPersistentHistoryWithFS(filename, tt.container, fs)
-			
+
 			if tt.wantError {
 				require.Error(t, err)
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
 			}
-			
+
 			if tt.validate != nil {
 				tt.validate(t, h, err)
 			}
@@ -1111,27 +1110,27 @@ func TestNewPersistentHistory(t *testing.T) {
 	defer func() {
 		_ = os.Remove(tmpFile.Name())
 	}()
-	
+
 	// Write some test data
 	testContent := "\"SELECT 1\"\n\"SELECT 2\"\n"
 	_, err = tmpFile.WriteString(testContent)
 	require.NoError(t, err)
 	tmpFile.Close()
-	
+
 	// Test loading the file
 	h, err := newPersistentHistory(tmpFile.Name(), simplehistory.New())
 	require.NoError(t, err)
 	require.NotNil(t, h)
-	
+
 	assert.Equal(t, 2, h.Len())
 	assert.Equal(t, "SELECT 1", h.At(0))
 	assert.Equal(t, "SELECT 2", h.At(1))
-	
+
 	// Test adding new item
 	h.Add("SELECT 3")
 	assert.Equal(t, 3, h.Len())
 	assert.Equal(t, "SELECT 3", h.At(2))
-	
+
 	// Verify the file was updated
 	content, err := os.ReadFile(tmpFile.Name())
 	require.NoError(t, err)
