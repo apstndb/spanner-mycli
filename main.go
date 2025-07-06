@@ -83,7 +83,7 @@ type spannerOptions struct {
 	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
 	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
 	CSV                       bool              `long:"csv" description:"Display output in CSV format." default-mask:"-"`
-	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv)" choice:"table" choice:"tab" choice:"vertical" choice:"html" choice:"xml" choice:"csv" default-mask:"-"`
+	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv)" default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
@@ -621,6 +621,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 	if formatCount > 1 {
 		return fmt.Errorf("invalid combination: --table, --html, --xml, --csv, and --format are mutually exclusive")
+	}
+
+	// Validate format string if provided
+	if opts.Format != "" {
+		if _, err := parseDisplayMode(opts.Format); err != nil {
+			return err
+		}
 	}
 
 	return nil

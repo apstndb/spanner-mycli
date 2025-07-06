@@ -96,6 +96,11 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Early return if no columns - Spanner requires at least one column in SELECT,
 	// so this only happens for edge cases where no output is expected
 	if len(columnNames) == 0 {
+		// Log edge case where we have rows but no columns
+		if len(result.Rows) > 0 {
+			slog.Warn("printTableData called with empty column headers but non-empty rows",
+				"rowCount", len(result.Rows))
+		}
 		return
 	}
 
@@ -174,8 +179,14 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		for i, row := range result.Rows {
 			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
 			for j, column := range row { // j represents the index of the column in the row
-
-				fmt.Fprintf(out, format, columnNames[j], column)
+				var columnName string
+				if j < len(columnNames) {
+					columnName = columnNames[j]
+				} else {
+					// Use a default column name if row has more columns than headers
+					columnName = fmt.Sprintf("Column_%d", j+1)
+				}
+				fmt.Fprintf(out, format, columnName, column)
 			}
 		}
 	case DisplayModeTab:
