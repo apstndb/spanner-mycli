@@ -450,6 +450,8 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 }
 
 func (s *Session) TransactionMode() transactionMode {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	if s.tc == nil {
 		return transactionModeUndetermined
 	}
@@ -458,21 +460,29 @@ func (s *Session) TransactionMode() transactionMode {
 
 // InReadWriteTransaction returns true if the session is running read-write transaction.
 func (s *Session) InReadWriteTransaction() bool {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	return s.tc != nil && s.tc.mode == transactionModeReadWrite
 }
 
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
 func (s *Session) InReadOnlyTransaction() bool {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	return s.tc != nil && s.tc.mode == transactionModeReadOnly
 }
 
 // InPendingTransaction returns true if the session is running pending transaction.
 func (s *Session) InPendingTransaction() bool {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	return s.tc != nil && s.tc.mode == transactionModePending
 }
 
 // InTransaction returns true if the session is running transaction.
 func (s *Session) InTransaction() bool {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	return s.tc != nil
 }
 
@@ -517,6 +527,8 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 	resolvedPriority := s.resolveTransactionPriority(priority)
 
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	s.tc = &transactionContext{
 		mode:           transactionModePending,
 		priority:       resolvedPriority,
@@ -530,23 +542,31 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
 	var zeroTime time.Time
 
-	// If there's no pending transaction, no action is needed
+	// Check if there's a pending transaction and get its properties
+	s.tcMutex.Lock()
 	if s.tc == nil || s.tc.mode != transactionModePending {
+		s.tcMutex.Unlock()
 		return zeroTime, nil
 	}
+	// Copy the values we need before unlocking
+	priority := s.tc.priority
+	isolationLevel := s.tc.isolationLevel
+	s.tcMutex.Unlock()
 
 	// Determine transaction type based on system variables
 	if s.systemVariables.ReadOnly {
 		// Start a read-only transaction with the pending transaction's priority
-		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.tc.priority)
+		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
 	}
 
 	// Start a read-write transaction with the pending transaction's isolation level and priority
-	return zeroTime, s.BeginReadWriteTransaction(ctx, s.tc.isolationLevel, s.tc.priority)
+	return zeroTime, s.BeginReadWriteTransaction(ctx, isolationLevel, priority)
 }
 
 // getTransactionTag returns the transaction tag from a pending transaction if it exists.
 func (s *Session) getTransactionTag() string {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	if s.tc != nil && s.tc.mode == transactionModePending {
 		return s.tc.tag
 	}
@@ -579,6 +599,9 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	if err != nil {
 		return err
 	}
+
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	s.tc = &transactionContext{
 		mode:           transactionModeReadWrite,
 		tag:            tag,
@@ -667,6 +690,8 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		return time.Time{}, err
 	}
 
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	s.tc = &transactionContext{
 		mode:     transactionModeReadOnly,
 		priority: resolvedPriority,
@@ -682,6 +707,8 @@ func (s *Session) CloseReadOnlyTransaction() error {
 		return errors.New("read-only transaction is not running")
 	}
 
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	s.tc.ROTxn().Close()
 	s.tc = nil
 	return nil
@@ -692,6 +719,8 @@ func (s *Session) ClosePendingTransaction() error {
 		return errors.New("pending transaction is not running")
 	}
 
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	s.tc = nil
 	return nil
 }
@@ -765,11 +794,16 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
+		s.tcMutex.Lock()
 		iter := s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts)
 		s.tc.sendHeartbeat = true
+		s.tcMutex.Unlock()
 		return iter, nil
 	case s.InReadOnlyTransaction():
-		return s.tc.ROTxn().QueryWithOptions(ctx, stmt, opts), s.tc.ROTxn()
+		s.tcMutex.Lock()
+		roTxn := s.tc.ROTxn()
+		s.tcMutex.Unlock()
+		return roTxn.QueryWithOptions(ctx, stmt, opts), roTxn
 	default:
 		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
 		// and DetachedCompatible interface checks in ExecuteStatement
@@ -811,8 +845,10 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
+	s.tcMutex.Lock()
 	rows, stats, count, metadata, plan, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
 	s.tc.sendHeartbeat = true
+	s.tcMutex.Unlock()
 	return rows, stats, count, metadata, plan, err
 }
 
@@ -984,6 +1020,8 @@ func (s *Session) RecreateClient() error {
 }
 
 func (s *Session) currentPriority() sppb.RequestOptions_Priority {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
 	if s.tc != nil {
 		return s.tc.priority
 	}
