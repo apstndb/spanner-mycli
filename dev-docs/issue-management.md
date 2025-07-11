@@ -99,6 +99,7 @@ spanner-mycli uses a systematic labeling approach to categorize and prioritize i
 - `low hanging fruit` - Easy implementation with good value
 
 **🗂️ Issue Management Labels**
+- `umbrella` - Parent issue tracking multiple sub-issues
 - `claude-code` - Issues identified by Claude Code
 - `question` - Information requests from third parties
 - `wontfix` - Will not be implemented (policy decisions)
@@ -165,6 +166,15 @@ Most issues should have 2-4 labels:
 - Sometimes: Technical characteristic labels
 - As needed: Work status labels
 
+**Implementation Readiness Philosophy**
+This project focuses on implementation readiness rather than traditional priority systems:
+- **`low hanging fruit`**: Ready to implement with clear scope and minimal complexity
+- **No label**: Standard implementation complexity
+- **`design-needed`**: Requires design work before implementation can begin
+- **`blocked`**: Cannot be worked on due to external dependencies
+
+This approach emphasizes whether an issue can be immediately worked on rather than its business priority.
+
 **Label Maintenance**
 - **Issue Creation**: Apply primary classification immediately
 - **Triage**: Add functional domain labels within 24-48 hours
@@ -220,6 +230,12 @@ This systematic labeling approach enables owner and AI agent development:
 - **Removed Labels**: `duplicate`, `invalid` (GitHub provides built-in detection)
 - **Result**: 25 → 21 labels, reduced AI decision complexity while maintaining functional coverage
 - **Rationale**: Focus on actionable categorization for development prioritization
+
+**Label Philosophy Update (2025-07-11)**:
+- **Added Label**: `umbrella` - Essential for tracking parent-child issue relationships
+- **Rejected**: Priority labels (P0-P3) - Implementation readiness is more relevant than business priority
+- **Rejected**: Status labels (in-progress, needs-review) - GitHub UI and PR process provide this visibility
+- **Result**: Minimal label set focused on implementation decisions rather than project management overhead
 
 ### Creating Issues
 
