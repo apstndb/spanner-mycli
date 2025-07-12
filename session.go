@@ -72,6 +72,13 @@ var defaultClientOpts = []option.ClientOption{
 // Use MEDIUM priority not to disturb regular workloads on the database.
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
+// Transaction state errors
+var (
+	ErrNoTransaction             = errors.New("no active transaction")
+	ErrNotInReadWriteTransaction = errors.New("not in read-write transaction")
+	ErrNotInReadOnlyTransaction  = errors.New("not in read-only transaction")
+)
+
 // getTimeoutForStatement returns the appropriate timeout for the given statement type
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
 	// For partitioned DML, use longer default if no custom timeout is set
@@ -259,6 +266,45 @@ var (
 	_ transaction = (*spanner.ReadOnlyTransaction)(nil)
 	_ transaction = (*spanner.ReadWriteTransaction)(nil)
 )
+
+// withReadWriteTransaction executes fn with the current read-write transaction under mutex protection.
+// Returns ErrNotInReadWriteTransaction if not in a read-write transaction.
+func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	if s.tc == nil || s.tc.mode != transactionModeReadWrite {
+		return ErrNotInReadWriteTransaction
+	}
+
+	return fn(s.tc.RWTxn())
+}
+
+// withReadWriteTransactionContext executes fn with both the transaction and context under mutex protection.
+// This allows safe access to both the transaction and its context fields.
+func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	if s.tc == nil || s.tc.mode != transactionModeReadWrite {
+		return ErrNotInReadWriteTransaction
+	}
+
+	return fn(s.tc.RWTxn(), s.tc)
+}
+
+// withReadOnlyTransaction executes fn with the current read-only transaction under mutex protection.
+// Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
+func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	if s.tc == nil || s.tc.mode != transactionModeReadOnly {
+		return ErrNotInReadOnlyTransaction
+	}
+
+	return fn(s.tc.ROTxn())
+}
 
 func (tc *transactionContext) Txn() transaction {
 	if tc == nil || tc.txn == nil {
@@ -789,22 +835,34 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	switch {
-	case s.InReadWriteTransaction():
+	// Try read-write transaction first
+	var rwIter *spanner.RowIterator
+	rwErr := s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
-		s.tcMutex.Lock()
-		iter := s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts)
-		s.tc.sendHeartbeat = true
-		s.tcMutex.Unlock()
-		return iter, nil
-	case s.InReadOnlyTransaction():
-		s.tcMutex.Lock()
-		roTxn := s.tc.ROTxn()
-		s.tcMutex.Unlock()
-		return roTxn.QueryWithOptions(ctx, stmt, opts), roTxn
-	default:
+		rwIter = txn.QueryWithOptions(ctx, stmt, opts)
+		tc.sendHeartbeat = true
+		return nil
+	})
+	if rwErr == nil {
+		return rwIter, nil
+	}
+
+	// Try read-only transaction
+	var roIter *spanner.RowIterator
+	var roTxn *spanner.ReadOnlyTransaction
+	roErr := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
+		roTxn = txn
+		roIter = txn.QueryWithOptions(ctx, stmt, opts)
+		return nil
+	})
+	if roErr == nil {
+		return roIter, roTxn
+	}
+
+	// No transaction - use single-use read-only transaction
+	{
 		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
 		// and DetachedCompatible interface checks in ExecuteStatement
 		if s.client == nil {
@@ -835,20 +893,28 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 		return nil, nil, 0, nil, nil, err
 	}
 
-	if !s.InReadWriteTransaction() {
-		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
-	}
-
 	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	s.tcMutex.Lock()
-	rows, stats, count, metadata, plan, err := consumeRowIterCollect(s.tc.RWTxn().QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
-	s.tc.sendHeartbeat = true
-	s.tcMutex.Unlock()
+	var rows []Row
+	var stats map[string]any
+	var count int64
+	var metadata *sppb.ResultSetMetadata
+	var plan *sppb.QueryPlan
+
+	err = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+		rows, stats, count, metadata, plan, err = consumeRowIterCollect(txn.QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
+		tc.sendHeartbeat = true
+		return err
+	})
+
+	if err == ErrNotInReadWriteTransaction {
+		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
+	}
+
 	return rows, stats, count, metadata, plan, err
 }
 
