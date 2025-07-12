@@ -84,16 +84,12 @@ type SetTransactionStatement struct {
 
 func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
-	if !session.InPendingTransaction() {
-		// nop
-		return result, nil
-	}
 
-	// Get the pending transaction attributes
+	// Get transaction attributes atomically to avoid check-then-act race
 	attrs := session.TransactionAttrs()
 	if attrs.mode != transactionModePending {
-		// This shouldn't happen since we checked InPendingTransaction above
-		return nil, errors.New("not in pending transaction")
+		// nop - not in pending transaction
+		return result, nil
 	}
 
 	if s.IsReadOnly {
