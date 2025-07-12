@@ -105,7 +105,7 @@ type Session struct {
 	tcMutex      sync.Mutex // Guard a critical section for transaction.
 	// Direct access to tc is ONLY allowed in the following functions:
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
-	// - setTransactionContext, clearTransactionContext, getTransactionAttributesCopy (context management)
+	// - setTransactionContext, clearTransactionContext, TransactionAttrs (context management)
 	// - DetermineTransaction (needs isolationLevel from pending transaction)
 	// - getTransactionTag, setTransactionTag (needs tag access for pending transaction)
 	// All other functions MUST use these helpers instead of direct tc access.
@@ -340,22 +340,6 @@ func (s *Session) clearTransactionContext() {
 	s.tc = nil
 }
 
-// getTransactionAttributesCopy returns a copy of transaction attributes.
-// This allows safe inspection of transaction state without holding the mutex.
-// If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.
-// NOTE: This is a core context management function with direct tc access.
-func (s *Session) getTransactionAttributesCopy() transactionAttributes {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	if s.tc == nil {
-		// Return zero-value struct (mode will be transactionModeUndetermined = "")
-		return transactionAttributes{}
-	}
-
-	// Return a copy of the attributes
-	return s.tc.attrs
-}
 
 // withReadWriteTransactionResult executes fn with the current read-write transaction and returns both result and error.
 // This generic helper eliminates the need to declare result variables outside the closure.
@@ -625,9 +609,20 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 }
 
 // TransactionAttrs returns a copy of all transaction attributes.
-// This is useful when multiple attributes are needed by the caller.
+// This allows safe inspection of transaction state without holding the mutex.
+// If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.
+// NOTE: This is a core context management function with direct tc access.
 func (s *Session) TransactionAttrs() transactionAttributes {
-	return s.getTransactionAttributesCopy()
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	if s.tc == nil {
+		// Return zero-value struct (mode will be transactionModeUndetermined = "")
+		return transactionAttributes{}
+	}
+
+	// Return a copy of the attributes
+	return s.tc.attrs
 }
 
 // TransactionMode returns the current transaction mode.
