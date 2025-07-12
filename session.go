@@ -141,6 +141,7 @@ type Session struct {
 	// - BeginPendingTransaction, BeginReadWriteTransaction, BeginReadOnlyTransaction (atomic transaction creation)
 	// - validateNoActiveTransactionLocked (internal validation helper)
 	// All other functions MUST use these helpers instead of direct tc access.
+	tcMutex         sync.Mutex
 	systemVariables *systemVariables
 
 	currentBatch Statement
