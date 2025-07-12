@@ -301,26 +301,13 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	var rows []Row
 	var queryStats map[string]any
 	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		// Use the formatConfig from session
-		fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+		updateResult, err := session.runUpdateOnTransaction(ctx, tx, stmt, implicit)
 		if err != nil {
 			return 0, nil, nil, err
 		}
-
-		opts := session.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
-		opts.LastStatement = implicit
-
-		// Reset STATEMENT_TAG
-		session.systemVariables.RequestTag = ""
-
-		// Use the transaction directly instead of going through RunUpdate
-		rs, stats, num, meta, plan, err := consumeRowIterCollect(
-			tx.QueryWithOptions(ctx, stmt, opts),
-			spannerRowToRow(fc),
-		)
-		rows = rs
-		queryStats = stats
-		return num, plan, meta, err
+		rows = updateResult.Rows
+		queryStats = updateResult.Stats
+		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
 		return nil, err

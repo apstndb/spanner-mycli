@@ -399,6 +399,8 @@ func (s *Session) withReadWriteTransactionUpdate(ctx context.Context, stmt spann
 			txn.QueryWithOptions(ctx, stmt, opts),
 			spannerRowToRow(fc),
 		)
+		// Enable heartbeat after any operation (success or failure)
+		// Even failed operations start the abort countdown
 		tc.attrs.sendHeartbeat = true
 		return err
 	})
@@ -938,6 +940,39 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 	return plan, metadata, err
 }
 
+// runUpdateOnTransaction executes a DML statement on the given read-write transaction
+// This is a helper function to be used within transaction closures to avoid direct tc access
+// The caller is responsible for setting sendHeartbeat flag in the transaction context if needed
+func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
+	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts.LastStatement = implicit
+
+	// Reset STATEMENT_TAG
+	s.systemVariables.RequestTag = ""
+
+	rows, stats, count, metadata, plan, err := consumeRowIterCollect(
+		tx.QueryWithOptions(ctx, stmt, opts),
+		spannerRowToRow(fc),
+	)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &UpdateResult{
+		Rows:     rows,
+		Stats:    stats,
+		Count:    count,
+		Metadata: metadata,
+		Plan:     plan,
+	}, nil
+}
+
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
@@ -1344,10 +1379,13 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		return nil, err
 	}
 
+	// Check transaction state atomically
+	mode, isActive := s.TransactionState()
 	var implicitRWTx bool
-	if !s.InReadWriteTransaction() {
-		// Start implicit transaction.
-		// Note: isolation level is not session level property so it is left as unspecified.
+	
+	if !isActive || mode != transactionModeReadWrite {
+		// Start implicit transaction
+		// Note: isolation level is not session level property so it is left as unspecified
 		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriority()); err != nil {
 			return nil, err
 		}
@@ -1358,11 +1396,15 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	var plan *sppb.QueryPlan
 	var metadata *sppb.ResultSetMetadata
 
-	// Use the safe closure pattern to access the transaction
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+	// Use the safe closure pattern to access the transaction and update heartbeat flag
+	err = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 		affected, plan, metadata, err = f(txn, implicitRWTx)
+		// Enable heartbeat after any operation (success or failure)
+		// Even failed operations start the abort countdown
+		tc.attrs.sendHeartbeat = true
 		return err
 	})
+	
 	if err != nil {
 		// once error has happened, escape from the current transaction
 		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
