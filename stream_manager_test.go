@@ -155,8 +155,8 @@ func TestStreamManager(t *testing.T) {
 	})
 
 	t.Run("concurrent access", func(t *testing.T) {
-		originalOut := &bytes.Buffer{}
-		errOut := &bytes.Buffer{}
+		originalOut := &syncBuffer{}
+		errOut := &syncBuffer{}
 		sm := NewStreamManager(os.Stdin, originalOut, errOut)
 		defer sm.Close()
 
@@ -308,8 +308,8 @@ func TestStreamManager(t *testing.T) {
 	})
 
 	t.Run("concurrent GetWriter and EnableTee", func(t *testing.T) {
-		originalOut := &bytes.Buffer{}
-		errOut := &bytes.Buffer{}
+		originalOut := &syncBuffer{}
+		errOut := &syncBuffer{}
 		sm := NewStreamManager(os.Stdin, originalOut, errOut)
 		defer sm.Close()
 
