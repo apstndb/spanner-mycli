@@ -247,6 +247,45 @@ result := tx.Query(...)  // BAD: tx might be invalid
 result, err := s.runQueryOnTransaction(ctx, stmt)  // GOOD: Encapsulated
 ```
 
+### Periodic Operations and Mutex Contention
+
+When reviewing code with periodic operations (timers, heartbeats, monitoring), pay special attention to mutex usage:
+
+1. **Check-before-lock pattern**: For frequently executed operations, check state using lock-free methods before acquiring mutex
+2. **Document performance rationale**: When optimizing mutex usage, explain why in comments
+
+Example of good periodic operation pattern:
+```go
+// GOOD: Minimize mutex contention in periodic operations
+ticker := time.NewTicker(5 * time.Second)
+for range ticker.C {
+    // Check state without mutex first (lock-free read)
+    if !s.shouldProcess() {
+        continue
+    }
+    
+    // Only acquire mutex when actually needed
+    s.mu.Lock()
+    s.doWork()
+    s.mu.Unlock()
+}
+
+// BAD: Acquires mutex every tick regardless of need
+for range ticker.C {
+    s.mu.Lock()
+    if s.needsWork {
+        s.doWork()
+    }
+    s.mu.Unlock()
+}
+```
+
+This pattern is especially important in:
+- Heartbeat mechanisms
+- Health checks
+- Metric collection
+- Background cleanup tasks
+
 ## CLI Tool Error Notification
 
 For CLI tools, user-facing error notifications should use standard streams:

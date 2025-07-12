@@ -1349,7 +1349,9 @@ func (s *Session) startHeartbeat() {
 	defer interval.Stop()
 
 	for range interval.C {
-		// Get transaction attributes safely
+		// Get transaction attributes safely without holding mutex to avoid contention.
+		// This is critical for performance: the heartbeat runs every 5 seconds, and
+		// acquiring the mutex each time was causing test timeouts in parallel tests.
 		attrs := s.TransactionAttrs()
 
 		// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
