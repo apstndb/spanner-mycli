@@ -1349,20 +1349,21 @@ func (s *Session) startHeartbeat() {
 	defer interval.Stop()
 
 	for range interval.C {
-		func() {
-			// Use withReadWriteTransactionContext to safely access transaction and heartbeat state
-			_ = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-				if tc.attrs.sendHeartbeat {
-					// Always use LOW priority for heartbeat to avoid interfering with real work
-					err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
-					if err != nil {
-						slog.Error("heartbeat error", "err", err)
-					}
+		// Get transaction attributes safely
+		attrs := s.TransactionAttrs()
+		
+		// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
+		if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
+			// Use withReadWriteTransaction to safely access the transaction
+			_ = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+				// Always use LOW priority for heartbeat to avoid interfering with real work
+				err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
+				if err != nil {
+					slog.Error("heartbeat error", "err", err)
 				}
 				return nil
 			})
-			// Ignore the error - if there's no read-write transaction, that's fine
-		}()
+		}
 	}
 }
 
