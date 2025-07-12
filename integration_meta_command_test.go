@@ -490,7 +490,6 @@ SELECT "foo" AS s;`
 
 		// Create CLI instance
 		input := strings.NewReader(commands + "\nexit;\n")
-		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
 		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), consoleBuf, consoleBuf)
