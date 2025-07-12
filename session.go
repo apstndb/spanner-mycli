@@ -662,10 +662,15 @@ func (s *Session) InTransaction() bool {
 }
 
 // validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
+// This only checks for read-write and read-only transactions, allowing pending transactions
+// to be promoted to active transactions by DetermineTransaction.
 func (s *Session) validateNoActiveTransaction() error {
-	mode, isActive := s.TransactionState()
-	if isActive {
-		return fmt.Errorf("%s transaction is already running", mode)
+	mode, _ := s.TransactionState()
+	if mode == transactionModeReadWrite {
+		return errors.New("read-write transaction is already running")
+	}
+	if mode == transactionModeReadOnly {
+		return errors.New("read-only transaction is already running")
 	}
 	return nil
 }
@@ -691,8 +696,10 @@ func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_I
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	if err := s.validateNoActiveTransaction(); err != nil {
-		return err
+	// Check for any type of existing transaction (including pending)
+	mode, isActive := s.TransactionState()
+	if isActive {
+		return fmt.Errorf("%s transaction is already running", mode)
 	}
 
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
