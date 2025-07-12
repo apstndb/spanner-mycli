@@ -559,7 +559,7 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{
 			desc: "TRANSACTION_TAG", name: "TRANSACTION_TAG", value: "test-tag",
 			sysVars: &systemVariables{CurrentSession: &Session{tc: &transactionContext{
-				mode: transactionModePending,
+				attrs: transactionAttributes{mode: transactionModePending},
 			}}},
 			want: singletonMap("TRANSACTION_TAG", "test-tag"),
 		},

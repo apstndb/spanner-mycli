@@ -89,15 +89,22 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 		return result, nil
 	}
 
+	// Get the pending transaction attributes
+	attrs := session.getTransactionAttributesCopy()
+	if attrs.mode != transactionModePending {
+		// This shouldn't happen since we checked InPendingTransaction above
+		return nil, errors.New("not in pending transaction")
+	}
+
 	if s.IsReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, attrs.priority)
 		if err != nil {
 			return nil, err
 		}
 		result.Timestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, session.tc.isolationLevel, session.tc.priority)
+		err := session.BeginReadWriteTransaction(ctx, attrs.isolationLevel, attrs.priority)
 		if err != nil {
 			return nil, err
 		}
