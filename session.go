@@ -1351,7 +1351,7 @@ func (s *Session) startHeartbeat() {
 	for range interval.C {
 		// Get transaction attributes safely
 		attrs := s.TransactionAttrs()
-		
+
 		// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
 		if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
 			// Use withReadWriteTransaction to safely access the transaction
