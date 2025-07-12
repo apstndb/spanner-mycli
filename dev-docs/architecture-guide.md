@@ -216,6 +216,81 @@ func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDataba
 - SHOW OPERATION statement: Displays operation details
 - Both use identical formatting logic for consistency
 
+## Transaction Management
+
+### Thread-Safe Transaction Handling
+
+**Pattern**: Closure-based transaction access with mutex protection to eliminate data races
+
+#### Core Design Principles
+
+1. **No Direct Access**: The `tc` (transaction context) field is private and protected by mutex
+2. **Closure-Based Access**: All transaction operations use closure-based helper functions
+3. **Atomic State Management**: Transaction state checks and operations are atomic
+
+#### Transaction Helper Functions
+
+```go
+// Core transaction access helpers
+func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error
+func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error
+func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error
+```
+
+**Benefits**:
+- Mutex is held throughout the entire critical section
+- Eliminates race conditions between state checks and transaction access
+- Provides clear, type-safe interfaces for transaction operations
+
+#### Transaction Attributes Structure
+
+```go
+type transactionAttributes struct {
+    mode           transactionMode
+    tag            string
+    priority       sppb.RequestOptions_Priority
+    isolationLevel sppb.TransactionOptions_IsolationLevel
+    sendHeartbeat  bool
+}
+```
+
+**Usage**:
+- Consolidates all transaction metadata in a single struct
+- Zero-value struct eliminates need for nil checks
+- Easily extensible for new transaction properties
+
+#### Result Structs for Complex Operations
+
+```go
+// Consolidates query results with transaction reference
+type QueryResult struct {
+    Iterator    *spanner.RowIterator
+    Transaction *spanner.ReadOnlyTransaction
+}
+
+// Consolidates DML execution results
+type DMLResult struct {
+    Affected       int64
+    CommitResponse spanner.CommitResponse
+    Plan           *sppb.QueryPlan
+    Metadata       *sppb.ResultSetMetadata
+}
+```
+
+**Benefits**:
+- Eliminates multiple return values
+- Makes code more readable and maintainable
+- Provides type safety for complex operations
+
+#### Direct Access Control
+
+Direct access to the `tc` field is strictly limited to these functions:
+- **Transaction helpers**: `withReadWriteTransaction`, `withReadWriteTransactionContext`, `withReadOnlyTransaction`
+- **Context management**: `setTransactionContext`, `clearTransactionContext`, `TransactionAttrs`
+- **Special cases**: `DetermineTransaction`, `getTransactionTag`, `setTransactionTag`
+
+All other code MUST use these helpers instead of direct access.
+
 ## Configuration Management
 
 ### Configuration Sources (Priority Order)

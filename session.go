@@ -611,6 +611,10 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 // TransactionAttrs returns a copy of all transaction attributes.
 // This allows safe inspection of transaction state without holding the mutex.
 // If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.
+// 
+// Design decision: This method directly implements the mutex-protected access
+// rather than delegating to an internal method. This reduces unnecessary layers
+// while maintaining a clean public API name.
 // NOTE: This is a core context management function with direct tc access.
 func (s *Session) TransactionAttrs() transactionAttributes {
 	s.tcMutex.Lock()
