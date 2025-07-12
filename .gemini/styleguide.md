@@ -189,6 +189,64 @@ func (m *Manager) SetFile(path string) error {
 
 The performance impact is usually acceptable for infrequent operations like configuration changes in CLI tools.
 
+### Mutex Protection in CLI Tools
+
+While CLI tools typically have sequential user interactions, proper mutex usage is still important:
+
+1. **Background operations**: CLI tools may spawn goroutines for:
+   - Progress bars and monitoring
+   - Background heartbeats for long-running operations
+   - Signal handlers (e.g., Ctrl+C)
+   - Future parallel features
+
+2. **Check-then-act patterns**: Always look for logical races in patterns like:
+   ```go
+   // BAD: Check-then-act race
+   if !s.InTransaction() {
+       s.BeginTransaction()  // Another goroutine might begin between check and act
+   }
+   
+   // GOOD: Atomic operation
+   attrs := s.TransactionAttrs()  // Single atomic call
+   if attrs.mode == transactionModeNone {
+       // ...
+   }
+   ```
+
+3. **Closure-based patterns**: When reviewing transaction or session code, prefer closure-based patterns that encapsulate critical sections:
+   ```go
+   // GOOD: Mutex held throughout operation
+   func (s *Session) withTransaction(fn func(tx *Transaction) error) error {
+       s.mu.Lock()
+       defer s.mu.Unlock()
+       
+       if s.tx == nil {
+           return ErrNoTransaction
+       }
+       return fn(s.tx)
+   }
+   ```
+
+### Helper Functions for Concurrent Access
+
+When reviewing code that accesses shared state, look for opportunities to suggest helper functions:
+
+1. **Encapsulation**: Helper functions should encapsulate the entire critical section
+2. **Type safety**: Use specific types rather than generic interfaces where possible
+3. **Clear ownership**: Document which functions are allowed direct access to shared state
+
+Example review feedback:
+```go
+// Instead of direct access scattered throughout:
+s.mu.Lock()
+tx := s.tc.txn
+s.mu.Unlock()
+result := tx.Query(...)  // BAD: tx might be invalid
+
+// Suggest helper functions:
+result, err := s.runQueryOnTransaction(ctx, stmt)  // GOOD: Encapsulated
+```
+
 ## CLI Tool Error Notification
 
 For CLI tools, user-facing error notifications should use standard streams:
