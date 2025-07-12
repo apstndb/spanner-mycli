@@ -36,7 +36,7 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	result, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		err = session.tc.RWTxn().BufferWrite(mutations)
 		if err != nil {
 			return 0, nil, nil, err
@@ -48,8 +48,8 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 	}
 	return &Result{
 		IsMutation:  true,
-		CommitStats: stats.CommitStats,
-		Timestamp:   stats.CommitTs,
+		CommitStats: result.CommitResponse.CommitStats,
+		Timestamp:   result.CommitResponse.CommitTs,
 	}, nil
 }
 

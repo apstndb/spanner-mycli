@@ -373,7 +373,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	}
 
 	var queryStats map[string]any
-	affectedRows, commitResp, queryPlan, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	dmlResult, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
 		qs, count, metadata, plan, err := consumeRowIterDiscard(iter)
 		queryStats = qs
@@ -383,15 +383,15 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 		return nil, err
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, queryPlan, queryStats, format, width)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, dmlResult.Plan, queryStats, format, width)
 	if err != nil {
 		return nil, err
 	}
 
 	result.IsMutation = true
-	result.AffectedRows = int(affectedRows)
+	result.AffectedRows = int(dmlResult.Affected)
 	result.AffectedRowsType = rowCountTypeExact
-	result.Timestamp = commitResp.CommitTs
+	result.Timestamp = dmlResult.CommitResponse.CommitTs
 
 	return result, nil
 }
@@ -547,11 +547,14 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	_, commitResp, queryPlan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	result, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
 		return 0, plan, metadata, err
 	})
-	return queryPlan, commitResp.CommitTs, metadata, err
+	if err != nil {
+		return nil, time.Time{}, nil, err
+	}
+	return result.Plan, result.CommitResponse.CommitTs, result.Metadata, nil
 }
 
 func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format explainFormat, width int64) ([]plantree.RowWithPredicates, error) {

@@ -32,6 +32,7 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+	"github.com/apstndb/spanvalue"
 	"github.com/gocql/gocql"
 	"github.com/samber/lo"
 	"google.golang.org/api/iterator"
@@ -372,6 +373,23 @@ type QueryResult struct {
 	Transaction *spanner.ReadOnlyTransaction
 }
 
+// UpdateResult holds the complete result of an update operation.
+type UpdateResult struct {
+	Rows         []Row
+	Stats        map[string]any
+	Count        int64
+	Metadata     *sppb.ResultSetMetadata
+	Plan         *sppb.QueryPlan
+}
+
+// DMLResult holds the results of a DML operation execution including commit information.
+type DMLResult struct {
+	Affected       int64
+	CommitResponse spanner.CommitResponse
+	Plan           *sppb.QueryPlan
+	Metadata       *sppb.ResultSetMetadata
+}
+
 // withReadOnlyTransactionQuery executes a query with the current read-only transaction.
 // Returns both the iterator and transaction in a single struct.
 func (s *Session) withReadOnlyTransactionQuery(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*QueryResult, error) {
@@ -385,6 +403,28 @@ func (s *Session) withReadOnlyTransactionQuery(ctx context.Context, stmt spanner
 		return nil, err
 	}
 	return &result, nil
+}
+
+// withReadWriteTransactionUpdate executes an update with the current read-write transaction.
+// Returns all results in a single struct, eliminating the need for multiple variable declarations.
+func (s *Session) withReadWriteTransactionUpdate(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions, fc *spanvalue.FormatConfig) (*UpdateResult, error) {
+	var result UpdateResult
+	var err error
+	
+	txErr := s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+		result.Rows, result.Stats, result.Count, result.Metadata, result.Plan, err = consumeRowIterCollect(
+			txn.QueryWithOptions(ctx, stmt, opts), 
+			spannerRowToRow(fc),
+		)
+		tc.attrs.sendHeartbeat = true
+		return err
+	})
+	
+	if txErr != nil {
+		return nil, txErr
+	}
+	
+	return &result, err
 }
 
 func (tc *transactionContext) Txn() transaction {
@@ -1002,23 +1042,15 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	var rows []Row
-	var stats map[string]any
-	var count int64
-	var metadata *sppb.ResultSetMetadata
-	var plan *sppb.QueryPlan
-
-	err = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-		rows, stats, count, metadata, plan, err = consumeRowIterCollect(txn.QueryWithOptions(ctx, stmt, opts), spannerRowToRow(fc))
-		tc.attrs.sendHeartbeat = true
-		return err
-	})
-
+	result, err := s.withReadWriteTransactionUpdate(ctx, stmt, opts, fc)
 	if err == ErrNotInReadWriteTransaction {
 		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
 	}
+	if err != nil {
+		return nil, nil, 0, nil, nil, err
+	}
 
-	return rows, stats, count, metadata, plan, err
+	return result.Rows, result.Stats, result.Count, result.Metadata, result.Plan, nil
 }
 
 func (s *Session) queryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
@@ -1288,10 +1320,10 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 // If there is an error, the transaction will be rolled back.
 func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	f func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
-) (affected int64, commitResponse spanner.CommitResponse, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-	_, err = s.DetermineTransaction(ctx)
+) (*DMLResult, error) {
+	_, err := s.DetermineTransaction(ctx)
 	if err != nil {
-		return 0, spanner.CommitResponse{}, nil, nil, err
+		return nil, err
 	}
 
 	var implicitRWTx bool
@@ -1299,30 +1331,37 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		// Start implicit transaction.
 		// Note: isolation level is not session level property so it is left as unspecified.
 		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriority()); err != nil {
-			return 0, spanner.CommitResponse{}, nil, nil, err
+			return nil, err
 		}
 		implicitRWTx = true
 	}
 
-	affected, plan, metadata, err = f(implicitRWTx)
+	affected, plan, metadata, err := f(implicitRWTx)
 	if err != nil {
 		// once error has happened, escape from the current transaction
 		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 		}
-		return 0, spanner.CommitResponse{}, nil, nil, fmt.Errorf("transaction was aborted: %w", err)
+		return nil, fmt.Errorf("transaction was aborted: %w", err)
+	}
+
+	result := &DMLResult{
+		Affected: affected,
+		Plan:     plan,
+		Metadata: metadata,
 	}
 
 	if !implicitRWTx {
-		return affected, spanner.CommitResponse{}, plan, metadata, nil
+		return result, nil
 	}
 
 	// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
 	resp, err := s.CommitReadWriteTransaction(ctx)
 	if err != nil {
-		return 0, spanner.CommitResponse{}, nil, nil, err
+		return nil, err
 	}
-	return affected, resp, plan, metadata, nil
+	result.CommitResponse = resp
+	return result, nil
 }
 
 var errReadOnly = errors.New("can't execute this statement in READONLY mode")
