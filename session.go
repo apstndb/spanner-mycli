@@ -101,8 +101,38 @@ type Session struct {
 	adminClient  *adminapi.DatabaseAdminClient
 	clientConfig spanner.ClientConfig
 	clientOpts   []option.ClientOption
-	tc           *transactionContext
-	tcMutex      sync.Mutex // Guard a critical section for transaction.
+	tc *transactionContext
+	// tcMutex protects the transaction context from concurrent access.
+	//
+	// Why mutex protection is necessary in a CLI tool:
+	//
+	// While spanner-mycli is primarily a CLI tool with sequential user interactions,
+	// mutex protection is still essential for several reasons:
+	//
+	// 1. **Goroutine safety**: Even in a CLI, operations may spawn goroutines:
+	//    - Background heartbeat for long-running transactions
+	//    - Progress bars and monitoring features
+	//    - Future parallel query execution features
+	//    - Signal handlers (Ctrl+C) that may access transaction state
+	//
+	// 2. **Correctness over performance**: The mutex ensures:
+	//    - Atomic check-and-act operations (e.g., checking transaction state before modifying)
+	//    - Prevention of use-after-free bugs if transaction is closed concurrently
+	//    - Consistent transaction state across all operations
+	//
+	// 3. **Future extensibility**: The mutex-based design allows for:
+	//    - Safe addition of concurrent features without major refactoring
+	//    - Integration with tools that may access session state concurrently
+	//    - Support for multiplexed connections or parallel operations
+	//
+	// 4. **Best practices**: Following Go's concurrency principles:
+	//    - "Don't communicate by sharing memory; share memory by communicating"
+	//    - When sharing is necessary (as with session state), protect it properly
+	//    - Make the zero value useful - mutex provides safe default behavior
+	//
+	// The performance overhead of mutex operations is negligible for CLI usage patterns,
+	// while the safety guarantees prevent subtle bugs that could corrupt user data.
+	tcMutex sync.Mutex
 	// Direct access to tc is ONLY allowed in the following functions:
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
 	// - setTransactionContext, clearTransactionContext, TransactionAttrs (context management)
