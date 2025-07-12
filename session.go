@@ -959,11 +959,10 @@ func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWr
 		tx.QueryWithOptions(ctx, stmt, opts),
 		spannerRowToRow(fc),
 	)
-	
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &UpdateResult{
 		Rows:     rows,
 		Stats:    stats,
@@ -1382,7 +1381,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	// Check transaction state atomically
 	mode, isActive := s.TransactionState()
 	var implicitRWTx bool
-	
+
 	if !isActive || mode != transactionModeReadWrite {
 		// Start implicit transaction
 		// Note: isolation level is not session level property so it is left as unspecified
@@ -1404,7 +1403,6 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		tc.attrs.sendHeartbeat = true
 		return err
 	})
-	
 	if err != nil {
 		// once error has happened, escape from the current transaction
 		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
