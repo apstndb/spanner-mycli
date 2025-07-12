@@ -101,7 +101,7 @@ type Session struct {
 	adminClient  *adminapi.DatabaseAdminClient
 	clientConfig spanner.ClientConfig
 	clientOpts   []option.ClientOption
-	tc *transactionContext
+	tc           *transactionContext
 	// tcMutex protects the transaction context from concurrent access.
 	//
 	// Why mutex protection is necessary in a CLI tool:
