@@ -58,6 +58,19 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
+// newStoppedIterator creates a stopped RowIterator.
+// When a stopped iterator is used (via Next() or Do()), it immediately returns iterator.Done.
+// This is the idiomatic way in the Google Cloud Spanner library to handle cases where
+// we need to return a non-nil iterator that indicates no results.
+//
+// Note: We cannot return custom errors through a stopped iterator. The caller will need
+// to check for other indicators (like nil transaction) to understand why the query failed.
+func newStoppedIterator() *spanner.RowIterator {
+	iter := &spanner.RowIterator{}
+	iter.Stop()
+	return iter
+}
+
 var defaultClientConfig = spanner.ClientConfig{
 	DisableNativeMetrics: true,
 	SessionPoolConfig: spanner.SessionPoolConfig{
@@ -1089,19 +1102,19 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		case transactionModeReadWrite:
 			// We're in a read-write transaction
 			if s.tc.txn == nil {
-				// This shouldn't happen - log and return failing iterator
-				slog.Error("INTERNAL ERROR: read-write transaction context exists but txn is nil")
-				iter := &spanner.RowIterator{}
-				iter.Stop()
-				return iter, nil
+				// This shouldn't happen - log the error and return a stopped iterator
+				err := fmt.Errorf("internal error: read-write transaction context exists but txn is nil")
+				slog.Error("INTERNAL ERROR", "error", err)
+				// Return a stopped iterator to prevent nil pointer dereference
+				// The error has been logged and the iterator will return iterator.Done
+				return newStoppedIterator(), nil
 			}
 			rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
 			if !ok {
-				// This shouldn't happen - log and return failing iterator
-				slog.Error("INTERNAL ERROR: transaction is not a ReadWriteStmtBasedTransaction")
-				iter := &spanner.RowIterator{}
-				iter.Stop()
-				return iter, nil
+				// This shouldn't happen - log the error and return a stopped iterator
+				err := fmt.Errorf("internal error: transaction is not a ReadWriteStmtBasedTransaction")
+				slog.Error("INTERNAL ERROR", "error", err)
+				return newStoppedIterator(), nil
 			}
 			// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 			// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
@@ -1112,19 +1125,17 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		case transactionModeReadOnly:
 			// We're in a read-only transaction
 			if s.tc.txn == nil {
-				// This shouldn't happen - log and return failing iterator
-				slog.Error("INTERNAL ERROR: read-only transaction context exists but txn is nil")
-				iter := &spanner.RowIterator{}
-				iter.Stop()
-				return iter, nil
+				// This shouldn't happen - log the error and return a stopped iterator
+				err := fmt.Errorf("internal error: read-only transaction context exists but txn is nil")
+				slog.Error("INTERNAL ERROR", "error", err)
+				return newStoppedIterator(), nil
 			}
 			roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
 			if !ok {
-				// This shouldn't happen - log and return failing iterator
-				slog.Error("INTERNAL ERROR: transaction is not a ReadOnlyTransaction")
-				iter := &spanner.RowIterator{}
-				iter.Stop()
-				return iter, nil
+				// This shouldn't happen - log the error and return a stopped iterator
+				err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction")
+				slog.Error("INTERNAL ERROR", "error", err)
+				return newStoppedIterator(), nil
 			}
 			iter := roTxn.QueryWithOptions(ctx, stmt, opts)
 			return iter, roTxn
@@ -1134,14 +1145,11 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	// No transaction (includes transactionModeNone and transactionModePending)
 	// Use single-use read-only transaction
 	if s.client == nil {
-		// This is a programming error - log it and return a failing iterator
-		slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations",
-			"sessionMode", s.mode,
-			"statement", stmt.SQL)
-		// Create a failing iterator that will return an error when used
-		iter := &spanner.RowIterator{}
-		iter.Stop()
-		return iter, nil
+		// This is a programming error - log the error and return a stopped iterator
+		err := fmt.Errorf("internal error: runQueryWithOptions called with nil client despite validations (sessionMode: %v, statement: %v)",
+			s.mode, stmt.SQL)
+		slog.Error("INTERNAL ERROR", "error", err)
+		return newStoppedIterator(), nil
 	}
 	txn := s.client.Single()
 	if s.systemVariables.ReadOnlyStaleness != nil {
