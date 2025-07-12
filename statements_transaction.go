@@ -90,7 +90,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 	}
 
 	// Get the pending transaction attributes
-	attrs := session.getTransactionAttributesCopy()
+	attrs := session.TransactionAttrs()
 	if attrs.mode != transactionModePending {
 		// This shouldn't happen since we checked InPendingTransaction above
 		return nil, errors.New("not in pending transaction")

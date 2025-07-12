@@ -356,6 +356,37 @@ func (s *Session) getTransactionAttributesCopy() transactionAttributes {
 	return s.tc.attrs
 }
 
+// withReadWriteTransactionResult executes fn with the current read-write transaction and returns both result and error.
+// This generic helper eliminates the need to declare result variables outside the closure.
+func withReadWriteTransactionResult[T any](s *Session, fn func(*spanner.ReadWriteStmtBasedTransaction) (T, error)) (result T, err error) {
+	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		result, err = fn(txn)
+		return err
+	})
+	return result, err
+}
+
+// QueryResult holds the result of a query operation with optional transaction.
+type QueryResult struct {
+	Iterator    *spanner.RowIterator
+	Transaction *spanner.ReadOnlyTransaction
+}
+
+// withReadOnlyTransactionQuery executes a query with the current read-only transaction.
+// Returns both the iterator and transaction in a single struct.
+func (s *Session) withReadOnlyTransactionQuery(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*QueryResult, error) {
+	var result QueryResult
+	err := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
+		result.Transaction = txn
+		result.Iterator = txn.QueryWithOptions(ctx, stmt, opts)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (tc *transactionContext) Txn() transaction {
 	if tc == nil || tc.txn == nil {
 		panic("transaction is not available")
@@ -545,33 +576,49 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	return nil
 }
 
+// TransactionState returns the current transaction mode and whether a transaction is active.
+// This consolidates multiple transaction state checks into a single method.
+func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
+	attrs := s.TransactionAttrs()
+	isActive = attrs.mode != transactionModeUndetermined && attrs.mode != ""
+	return attrs.mode, isActive
+}
+
+// TransactionAttrs returns a copy of all transaction attributes.
+// This is useful when multiple attributes are needed by the caller.
+func (s *Session) TransactionAttrs() transactionAttributes {
+	return s.getTransactionAttributesCopy()
+}
+
+// TransactionMode returns the current transaction mode.
+// Deprecated: Use TransactionState() for new code.
 func (s *Session) TransactionMode() transactionMode {
-	attrs := s.getTransactionAttributesCopy()
-	return attrs.mode
+	mode, _ := s.TransactionState()
+	return mode
 }
 
 // InReadWriteTransaction returns true if the session is running read-write transaction.
 func (s *Session) InReadWriteTransaction() bool {
-	attrs := s.getTransactionAttributesCopy()
-	return attrs.mode == transactionModeReadWrite
+	mode, _ := s.TransactionState()
+	return mode == transactionModeReadWrite
 }
 
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
 func (s *Session) InReadOnlyTransaction() bool {
-	attrs := s.getTransactionAttributesCopy()
-	return attrs.mode == transactionModeReadOnly
+	mode, _ := s.TransactionState()
+	return mode == transactionModeReadOnly
 }
 
 // InPendingTransaction returns true if the session is running pending transaction.
 func (s *Session) InPendingTransaction() bool {
-	attrs := s.getTransactionAttributesCopy()
-	return attrs.mode == transactionModePending
+	mode, _ := s.TransactionState()
+	return mode == transactionModePending
 }
 
 // InTransaction returns true if the session is running transaction.
 func (s *Session) InTransaction() bool {
-	attrs := s.getTransactionAttributesCopy()
-	return attrs.mode != transactionModeUndetermined && attrs.mode != ""
+	_, isActive := s.TransactionState()
+	return isActive
 }
 
 // validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
@@ -722,11 +769,8 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 		return spanner.CommitResponse{}, err
 	}
 
-	var resp spanner.CommitResponse
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		var commitErr error
-		resp, commitErr = txn.CommitWithReturnResp(ctx)
-		return commitErr
+	resp, err := withReadWriteTransactionResult(s, func(txn *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error) {
+		return txn.CommitWithReturnResp(ctx)
 	})
 
 	if err == ErrNotInReadWriteTransaction {
@@ -915,15 +959,9 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	}
 
 	// Try read-only transaction
-	var roIter *spanner.RowIterator
-	var roTxn *spanner.ReadOnlyTransaction
-	roErr := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
-		roTxn = txn
-		roIter = txn.QueryWithOptions(ctx, stmt, opts)
-		return nil
-	})
+	queryResult, roErr := s.withReadOnlyTransactionQuery(ctx, stmt, opts)
 	if roErr == nil {
-		return roIter, roTxn
+		return queryResult.Iterator, queryResult.Transaction
 	}
 
 	// No transaction - use single-use read-only transaction
@@ -1151,7 +1189,7 @@ func (s *Session) RecreateClient() error {
 }
 
 func (s *Session) currentPriority() sppb.RequestOptions_Priority {
-	attrs := s.getTransactionAttributesCopy()
+	attrs := s.TransactionAttrs()
 	if attrs.mode != transactionModeUndetermined && attrs.mode != "" {
 		return attrs.priority
 	}
