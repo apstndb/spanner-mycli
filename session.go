@@ -1097,39 +1097,28 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	defer s.tcMutex.Unlock()
 
 	// Check transaction state and execute query under the same lock
-	if s.tc != nil {
-		switch s.tc.attrs.mode {
-		case transactionModeReadWrite:
-			// We're in a read-write transaction
-			if s.tc.txn == nil {
-				// This shouldn't happen - log the error and return a stopped iterator
-				err := fmt.Errorf("internal error: read-write transaction context exists but txn is nil")
-				slog.Error("INTERNAL ERROR", "error", err)
-				// Return a stopped iterator to prevent nil pointer dereference
-				// The error has been logged and the iterator will return iterator.Done
-				return newStoppedIterator(), nil
-			}
-			rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
-			if !ok {
-				// This shouldn't happen - log the error and return a stopped iterator
-				err := fmt.Errorf("internal error: transaction is not a ReadWriteStmtBasedTransaction")
-				slog.Error("INTERNAL ERROR", "error", err)
-				return newStoppedIterator(), nil
-			}
+	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
+		// We're in a transaction (either read-write or read-only)
+		if s.tc.txn == nil {
+			// This shouldn't happen - log the error and return a stopped iterator
+			err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", s.tc.attrs.mode)
+			slog.Error("INTERNAL ERROR", "error", err)
+			return newStoppedIterator(), nil
+		}
+
+		// Apply read-write specific settings
+		if s.tc.attrs.mode == transactionModeReadWrite {
 			// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
 			// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
 			opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
 			s.tc.attrs.sendHeartbeat = true
-			return rwTxn.QueryWithOptions(ctx, stmt, opts), nil
+		}
 
-		case transactionModeReadOnly:
-			// We're in a read-only transaction
-			if s.tc.txn == nil {
-				// This shouldn't happen - log the error and return a stopped iterator
-				err := fmt.Errorf("internal error: read-only transaction context exists but txn is nil")
-				slog.Error("INTERNAL ERROR", "error", err)
-				return newStoppedIterator(), nil
-			}
+		// Execute query on the transaction
+		iter := s.tc.txn.QueryWithOptions(ctx, stmt, opts)
+		
+		// For read-only transactions, return the transaction for timestamp access
+		if s.tc.attrs.mode == transactionModeReadOnly {
 			roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
 			if !ok {
 				// This shouldn't happen - log the error and return a stopped iterator
@@ -1137,12 +1126,14 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 				slog.Error("INTERNAL ERROR", "error", err)
 				return newStoppedIterator(), nil
 			}
-			iter := roTxn.QueryWithOptions(ctx, stmt, opts)
 			return iter, roTxn
 		}
+		
+		// For read-write transactions, return nil as the second value
+		return iter, nil
 	}
 
-	// No transaction (includes transactionModeNone and transactionModePending)
+	// No transaction context or in pending transaction mode
 	// Use single-use read-only transaction
 	if s.client == nil {
 		// This is a programming error - log the error and return a stopped iterator
