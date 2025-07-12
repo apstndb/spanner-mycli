@@ -340,7 +340,6 @@ func (s *Session) clearTransactionContext() {
 	s.tc = nil
 }
 
-
 // withReadWriteTransactionResult executes fn with the current read-write transaction and returns both result and error.
 // This generic helper eliminates the need to declare result variables outside the closure.
 func withReadWriteTransactionResult[T any](s *Session, fn func(*spanner.ReadWriteStmtBasedTransaction) (T, error)) (result T, err error) {
@@ -359,11 +358,11 @@ type QueryResult struct {
 
 // UpdateResult holds the complete result of an update operation.
 type UpdateResult struct {
-	Rows         []Row
-	Stats        map[string]any
-	Count        int64
-	Metadata     *sppb.ResultSetMetadata
-	Plan         *sppb.QueryPlan
+	Rows     []Row
+	Stats    map[string]any
+	Count    int64
+	Metadata *sppb.ResultSetMetadata
+	Plan     *sppb.QueryPlan
 }
 
 // DMLResult holds the results of a DML operation execution including commit information.
@@ -394,20 +393,20 @@ func (s *Session) withReadOnlyTransactionQuery(ctx context.Context, stmt spanner
 func (s *Session) withReadWriteTransactionUpdate(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions, fc *spanvalue.FormatConfig) (*UpdateResult, error) {
 	var result UpdateResult
 	var err error
-	
+
 	txErr := s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 		result.Rows, result.Stats, result.Count, result.Metadata, result.Plan, err = consumeRowIterCollect(
-			txn.QueryWithOptions(ctx, stmt, opts), 
+			txn.QueryWithOptions(ctx, stmt, opts),
 			spannerRowToRow(fc),
 		)
 		tc.attrs.sendHeartbeat = true
 		return err
 	})
-	
+
 	if txErr != nil {
 		return nil, txErr
 	}
-	
+
 	return &result, err
 }
 
@@ -611,7 +610,7 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 // TransactionAttrs returns a copy of all transaction attributes.
 // This allows safe inspection of transaction state without holding the mutex.
 // If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.
-// 
+//
 // Design decision: This method directly implements the mutex-protected access
 // rather than delegating to an internal method. This reduces unnecessary layers
 // while maintaining a clean public API name.
