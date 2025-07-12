@@ -393,12 +393,30 @@ func TestStreamManager(t *testing.T) {
 	})
 }
 
+// syncBuffer is a thread-safe wrapper around bytes.Buffer for testing
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (sb *syncBuffer) Write(p []byte) (n int, err error) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.Write(p)
+}
+
+func (sb *syncBuffer) String() string {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.String()
+}
+
 func TestSafeTeeWriter(t *testing.T) {
 	t.Run("single warning with cached writer", func(t *testing.T) {
 		// This test verifies that when using StreamManager with caching,
 		// we only get one warning even if multiple goroutines write
-		originalOut := &bytes.Buffer{}
-		errOut := &bytes.Buffer{}
+		originalOut := &syncBuffer{}
+		errOut := &syncBuffer{}
 		sm := NewStreamManager(os.Stdin, originalOut, errOut)
 		defer sm.Close()
 
