@@ -99,7 +99,7 @@ spanner-mycli uses a systematic labeling approach to categorize and prioritize i
 - `low hanging fruit` - Easy implementation with good value
 
 **🗂️ Issue Management Labels**
-- `umbrella` - Parent issue tracking multiple sub-issues
+- `umbrella` - Parent issue tracking multiple sub-issues. This should be applied to the parent issue in a parent-child relationship.
 - `claude-code` - Issues identified by Claude Code
 - `question` - Information requests from third parties
 - `wontfix` - Will not be implemented (policy decisions)
