@@ -135,9 +135,11 @@ type Session struct {
 	tcMutex sync.Mutex
 	// Direct access to tc is ONLY allowed in the following functions:
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
-	// - setTransactionContext, clearTransactionContext, TransactionAttrs (context management)
+	// - clearTransactionContext, TransactionAttrs (context management)
 	// - DetermineTransaction (needs isolationLevel from pending transaction)
 	// - getTransactionTag, setTransactionTag (needs tag access for pending transaction)
+	// - BeginPendingTransaction, BeginReadWriteTransaction, BeginReadOnlyTransaction (atomic transaction creation)
+	// - validateNoActiveTransactionLocked (internal validation helper)
 	// All other functions MUST use these helpers instead of direct tc access.
 	systemVariables *systemVariables
 
@@ -350,15 +352,6 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 	}
 
 	return fn(s.tc.ROTxn())
-}
-
-// setTransactionContext atomically sets the transaction context.
-// This ensures thread-safe assignment of the transaction context.
-// NOTE: This is a core context management function with direct tc access.
-func (s *Session) setTransactionContext(tc *transactionContext) {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc = tc
 }
 
 // clearTransactionContext atomically clears the transaction context.
@@ -689,15 +682,6 @@ func (s *Session) InPendingTransaction() bool {
 func (s *Session) InTransaction() bool {
 	_, isActive := s.TransactionState()
 	return isActive
-}
-
-// validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
-// This only checks for read-write and read-only transactions, allowing pending transactions
-// to be promoted to active transactions by DetermineTransaction.
-func (s *Session) validateNoActiveTransaction() error {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	return s.validateNoActiveTransactionLocked()
 }
 
 // validateNoActiveTransactionLocked checks if there's no active transaction while holding the mutex.
