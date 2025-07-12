@@ -306,6 +306,35 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 	return fn(s.tc.ROTxn())
 }
 
+// setTransactionContext atomically sets the transaction context.
+// This ensures thread-safe assignment of the transaction context.
+func (s *Session) setTransactionContext(tc *transactionContext) {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+	s.tc = tc
+}
+
+// clearTransactionContext atomically clears the transaction context.
+// This is equivalent to setTransactionContext(nil) but more expressive.
+func (s *Session) clearTransactionContext() {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+	s.tc = nil
+}
+
+// getTransactionContextCopy returns a copy of key transaction context fields.
+// This allows safe inspection of transaction state without holding the mutex.
+func (s *Session) getTransactionContextCopy() (mode transactionMode, priority sppb.RequestOptions_Priority, hasTransaction bool) {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+	
+	if s.tc == nil {
+		return transactionModeUndetermined, sppb.RequestOptions_PRIORITY_UNSPECIFIED, false
+	}
+	
+	return s.tc.mode, s.tc.priority, true
+}
+
 func (tc *transactionContext) Txn() transaction {
 	if tc == nil || tc.txn == nil {
 		panic("transaction is not available")
@@ -496,40 +525,35 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 }
 
 func (s *Session) TransactionMode() transactionMode {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	if s.tc == nil {
+	mode, _, hasTransaction := s.getTransactionContextCopy()
+	if !hasTransaction {
 		return transactionModeUndetermined
 	}
-	return s.tc.mode
+	return mode
 }
 
 // InReadWriteTransaction returns true if the session is running read-write transaction.
 func (s *Session) InReadWriteTransaction() bool {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	return s.tc != nil && s.tc.mode == transactionModeReadWrite
+	mode, _, hasTransaction := s.getTransactionContextCopy()
+	return hasTransaction && mode == transactionModeReadWrite
 }
 
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
 func (s *Session) InReadOnlyTransaction() bool {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	return s.tc != nil && s.tc.mode == transactionModeReadOnly
+	mode, _, hasTransaction := s.getTransactionContextCopy()
+	return hasTransaction && mode == transactionModeReadOnly
 }
 
 // InPendingTransaction returns true if the session is running pending transaction.
 func (s *Session) InPendingTransaction() bool {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	return s.tc != nil && s.tc.mode == transactionModePending
+	mode, _, hasTransaction := s.getTransactionContextCopy()
+	return hasTransaction && mode == transactionModePending
 }
 
 // InTransaction returns true if the session is running transaction.
 func (s *Session) InTransaction() bool {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	return s.tc != nil
+	_, _, hasTransaction := s.getTransactionContextCopy()
+	return hasTransaction
 }
 
 // validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
@@ -573,13 +597,11 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 	resolvedPriority := s.resolveTransactionPriority(priority)
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc = &transactionContext{
+	s.setTransactionContext(&transactionContext{
 		mode:           transactionModePending,
 		priority:       resolvedPriority,
 		isolationLevel: resolvedIsolationLevel,
-	}
+	})
 	return nil
 }
 
@@ -646,15 +668,13 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		return err
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc = &transactionContext{
+	s.setTransactionContext(&transactionContext{
 		mode:           transactionModeReadWrite,
 		tag:            tag,
 		priority:       resolvedPriority,
 		txn:            txn,
 		isolationLevel: resolvedIsolationLevel,
-	}
+	})
 	return nil
 }
 
@@ -665,15 +685,20 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 		return spanner.CommitResponse{}, err
 	}
 
-	if !s.InReadWriteTransaction() {
+	var resp spanner.CommitResponse
+	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		var commitErr error
+		resp, commitErr = txn.CommitWithReturnResp(ctx)
+		return commitErr
+	})
+
+	if err == ErrNotInReadWriteTransaction {
 		return spanner.CommitResponse{}, errors.New("read-write transaction is not running")
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	resp, err := s.tc.RWTxn().CommitWithReturnResp(ctx)
-	s.tc = nil
+	// Clear transaction context after commit (regardless of error)
+	s.clearTransactionContext()
+	
 	return resp, err
 }
 
@@ -684,15 +709,18 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 		return err
 	}
 
-	if !s.InReadWriteTransaction() {
+	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		txn.Rollback(ctx)
+		return nil
+	})
+
+	if err == ErrNotInReadWriteTransaction {
 		return errors.New("read-write transaction is not running")
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	s.tc.RWTxn().Rollback(ctx)
-	s.tc = nil
+	// Clear transaction context after rollback
+	s.clearTransactionContext()
+	
 	return nil
 }
 
@@ -736,27 +764,27 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		return time.Time{}, err
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc = &transactionContext{
+	s.setTransactionContext(&transactionContext{
 		mode:     transactionModeReadOnly,
 		priority: resolvedPriority,
 		txn:      txn,
-	}
+	})
 
 	return txn.Timestamp()
 }
 
 // CloseReadOnlyTransaction closes a running read-only transaction.
 func (s *Session) CloseReadOnlyTransaction() error {
-	if !s.InReadOnlyTransaction() {
+	err := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
+		txn.Close()
+		return nil
+	})
+
+	if err == ErrNotInReadOnlyTransaction {
 		return errors.New("read-only transaction is not running")
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc.ROTxn().Close()
-	s.tc = nil
+	s.clearTransactionContext()
 	return nil
 }
 
@@ -765,9 +793,7 @@ func (s *Session) ClosePendingTransaction() error {
 		return errors.New("pending transaction is not running")
 	}
 
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	s.tc = nil
+	s.clearTransactionContext()
 	return nil
 }
 
@@ -1086,10 +1112,9 @@ func (s *Session) RecreateClient() error {
 }
 
 func (s *Session) currentPriority() sppb.RequestOptions_Priority {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	if s.tc != nil {
-		return s.tc.priority
+	_, priority, hasTransaction := s.getTransactionContextCopy()
+	if hasTransaction {
+		return priority
 	}
 	return s.systemVariables.RPCPriority
 }
@@ -1122,15 +1147,18 @@ func (s *Session) startHeartbeat() {
 
 	for range interval.C {
 		func() {
-			s.tcMutex.Lock()
-			defer s.tcMutex.Unlock()
-			if s.tc != nil && s.tc.mode == transactionModeReadWrite && s.tc.sendHeartbeat {
-				// Always use LOW priority for heartbeat to avoid interfering with real work
-				err := heartbeat(s.tc.RWTxn(), sppb.RequestOptions_PRIORITY_LOW)
-				if err != nil {
-					slog.Error("heartbeat error", "err", err)
+			// Use withReadWriteTransactionContext to safely access transaction and heartbeat state
+			_ = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+				if tc.sendHeartbeat {
+					// Always use LOW priority for heartbeat to avoid interfering with real work
+					err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
+					if err != nil {
+						slog.Error("heartbeat error", "err", err)
+					}
 				}
-			}
+				return nil
+			})
+			// Ignore the error - if there's no read-write transaction, that's fine
 		}()
 	}
 }
