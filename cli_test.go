@@ -617,7 +617,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			prompt:  "%t> ",
 			sysVars: &systemVariables{},
 			session: &Session{
-				tc: &transactionContext{mode: transactionModeReadWrite},
+				tc: &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}},
 			},
 			want: "(rw txn)> ",
 		},
@@ -625,7 +625,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "transaction status - read-only",
 			prompt: "%t> ",
 			session: &Session{
-				tc: &transactionContext{mode: transactionModeReadOnly},
+				tc: &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}},
 			},
 			want: "(ro txn)> ",
 		},

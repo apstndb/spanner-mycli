@@ -631,19 +631,19 @@ var systemVariableDefMap = map[string]systemVariableDef{
 					return errors.New("invalid state: current session is not populated")
 				}
 
-				if !this.CurrentSession.InPendingTransaction() {
-					return errors.New("there is no pending transaction")
-				}
-
-				this.CurrentSession.tc.tag = unquoteString(value)
-				return nil
+				return this.CurrentSession.setTransactionTag(unquoteString(value))
 			},
 			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.CurrentSession == nil || this.CurrentSession.tc == nil || this.CurrentSession.tc.tag == "" {
+				if this.CurrentSession == nil {
 					return singletonMap(name, ""), errIgnored
 				}
 
-				return singletonMap(name, this.CurrentSession.tc.tag), nil
+				tag := this.CurrentSession.getTransactionTag()
+				if tag == "" {
+					return singletonMap(name, ""), errIgnored
+				}
+
+				return singletonMap(name, tag), nil
 			},
 		},
 	},

@@ -91,17 +91,17 @@ func TestSession_TransactionMode(t *testing.T) {
 		t.Errorf("New session should have undetermined transaction mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModeReadWrite}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
 	if got := s.TransactionMode(); got != transactionModeReadWrite {
 		t.Errorf("Session with read-write transaction should return read-write mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModeReadOnly}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}}
 	if got := s.TransactionMode(); got != transactionModeReadOnly {
 		t.Errorf("Session with read-only transaction should return read-only mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModePending}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModePending}}
 	if got := s.TransactionMode(); got != transactionModePending {
 		t.Errorf("Session with pending transaction should return pending mode, got %v", got)
 	}
@@ -142,8 +142,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "RWTxn with nil txn",
 			tc: &transactionContext{
-				mode: transactionModeReadWrite,
-				txn:  nil,
+				attrs: transactionAttributes{mode: transactionModeReadWrite},
+				txn:   nil,
 			},
 			method:       "RWTxn",
 			shouldPanic:  true,
@@ -152,8 +152,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "RWTxn with wrong mode",
 			tc: &transactionContext{
-				mode: transactionModeReadOnly,
-				txn:  &mockTransaction{},
+				attrs: transactionAttributes{mode: transactionModeReadOnly},
+				txn:   &mockTransaction{},
 			},
 			method:       "RWTxn",
 			shouldPanic:  true,
@@ -169,8 +169,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "ROTxn with nil txn",
 			tc: &transactionContext{
-				mode: transactionModeReadOnly,
-				txn:  nil,
+				attrs: transactionAttributes{mode: transactionModeReadOnly},
+				txn:   nil,
 			},
 			method:       "ROTxn",
 			shouldPanic:  true,
@@ -179,8 +179,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "ROTxn with wrong mode",
 			tc: &transactionContext{
-				mode: transactionModeReadWrite,
-				txn:  &mockTransaction{},
+				attrs: transactionAttributes{mode: transactionModeReadWrite},
+				txn:   &mockTransaction{},
 			},
 			method:       "ROTxn",
 			shouldPanic:  true,
@@ -196,8 +196,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "Txn with nil txn",
 			tc: &transactionContext{
-				mode: transactionModeReadWrite,
-				txn:  nil,
+				attrs: transactionAttributes{mode: transactionModeReadWrite},
+				txn:   nil,
 			},
 			method:       "Txn",
 			shouldPanic:  true,
@@ -206,8 +206,8 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 		{
 			name: "Txn with wrong mode",
 			tc: &transactionContext{
-				mode: transactionModeUndetermined,
-				txn:  &mockTransaction{},
+				attrs: transactionAttributes{mode: transactionModeUndetermined},
+				txn:   &mockTransaction{},
 			},
 			method:       "Txn",
 			shouldPanic:  true,
