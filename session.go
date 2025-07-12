@@ -1079,46 +1079,75 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	// Try read-write transaction first
-	var rwIter *spanner.RowIterator
-	rwErr := s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
-		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
-		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
-		rwIter = txn.QueryWithOptions(ctx, stmt, opts)
-		tc.attrs.sendHeartbeat = true
-		return nil
-	})
-	if rwErr == nil {
-		return rwIter, nil
+	// Hold the lock for the entire operation to ensure atomicity
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	// Check transaction state and execute query under the same lock
+	if s.tc != nil {
+		switch s.tc.attrs.mode {
+		case transactionModeReadWrite:
+			// We're in a read-write transaction
+			if s.tc.txn == nil {
+				// This shouldn't happen - log and return failing iterator
+				slog.Error("INTERNAL ERROR: read-write transaction context exists but txn is nil")
+				iter := &spanner.RowIterator{}
+				iter.Stop()
+				return iter, nil
+			}
+			rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+			if !ok {
+				// This shouldn't happen - log and return failing iterator
+				slog.Error("INTERNAL ERROR: transaction is not a ReadWriteStmtBasedTransaction")
+				iter := &spanner.RowIterator{}
+				iter.Stop()
+				return iter, nil
+			}
+			// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
+			// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
+			opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
+			s.tc.attrs.sendHeartbeat = true
+			return rwTxn.QueryWithOptions(ctx, stmt, opts), nil
+
+		case transactionModeReadOnly:
+			// We're in a read-only transaction
+			if s.tc.txn == nil {
+				// This shouldn't happen - log and return failing iterator
+				slog.Error("INTERNAL ERROR: read-only transaction context exists but txn is nil")
+				iter := &spanner.RowIterator{}
+				iter.Stop()
+				return iter, nil
+			}
+			roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
+			if !ok {
+				// This shouldn't happen - log and return failing iterator
+				slog.Error("INTERNAL ERROR: transaction is not a ReadOnlyTransaction")
+				iter := &spanner.RowIterator{}
+				iter.Stop()
+				return iter, nil
+			}
+			iter := roTxn.QueryWithOptions(ctx, stmt, opts)
+			return iter, roTxn
+		}
 	}
 
-	// Try read-only transaction
-	queryResult, roErr := s.withReadOnlyTransactionQuery(ctx, stmt, opts)
-	if roErr == nil {
-		return queryResult.Iterator, queryResult.Transaction
+	// No transaction (includes transactionModeNone and transactionModePending)
+	// Use single-use read-only transaction
+	if s.client == nil {
+		// This is a programming error - log it and return a failing iterator
+		slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations",
+			"sessionMode", s.mode,
+			"statement", stmt.SQL)
+		// Create a failing iterator that will return an error when used
+		iter := &spanner.RowIterator{}
+		iter.Stop()
+		return iter, nil
 	}
-
-	// No transaction - use single-use read-only transaction
-	{
-		// s.client should never be nil here due to validation in RunQuery/RunQueryWithStats
-		// and DetachedCompatible interface checks in ExecuteStatement
-		if s.client == nil {
-			// This is a programming error - log it and return a failing iterator
-			slog.Error("INTERNAL ERROR: runQueryWithOptions called with nil client despite validations",
-				"sessionMode", s.mode,
-				"statement", stmt.SQL)
-			// Create a failing iterator that will return an error when used
-			iter := &spanner.RowIterator{}
-			iter.Stop()
-			return iter, nil
-		}
-		txn := s.client.Single()
-		if s.systemVariables.ReadOnlyStaleness != nil {
-			txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
-		}
-		return txn.QueryWithOptions(ctx, stmt, opts), txn
+	txn := s.client.Single()
+	if s.systemVariables.ReadOnlyStaleness != nil {
+		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
 	}
+	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
 
 // RunUpdate executes a DML statement on the running read-write transaction.
