@@ -661,14 +661,10 @@ func (s *Session) InTransaction() bool {
 
 // validateNoActiveTransaction checks if there's no active transaction and returns an error if one exists.
 func (s *Session) validateNoActiveTransaction() error {
-	if s.InReadWriteTransaction() {
-		return errors.New("read-write transaction is already running")
+	mode, isActive := s.TransactionState()
+	if isActive {
+		return fmt.Errorf("%s transaction is already running", mode)
 	}
-
-	if s.InReadOnlyTransaction() {
-		return errors.New("read-only transaction is already running")
-	}
-
 	return nil
 }
 
@@ -916,6 +912,30 @@ func (s *Session) ClosePendingTransaction() error {
 
 	s.clearTransactionContext()
 	return nil
+}
+
+// runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
+// This is a helper function to be used within transaction closures to avoid direct tc access
+func (s *Session) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
+	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts.LastStatement = implicit
+	return tx.QueryWithOptions(ctx, stmt, opts)
+}
+
+// runAnalyzeQueryOnTransaction executes an analyze query on the given transaction
+// This is a helper function to be used within transaction closures to avoid direct tc access
+func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	mode := sppb.ExecuteSqlRequest_PLAN
+	opts := spanner.QueryOptions{
+		Mode:     &mode,
+		Priority: s.currentPriority(),
+	}
+	if opts.Options == nil {
+		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
+	}
+	iter := tx.QueryWithOptions(ctx, stmt, opts)
+	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
+	return plan, metadata, err
 }
 
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
@@ -1317,7 +1337,7 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 // It executes a function in the current RW transaction or an implicit RW transaction.
 // If there is an error, the transaction will be rolled back.
 func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
-	f func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
 	_, err := s.DetermineTransaction(ctx)
 	if err != nil {
@@ -1334,7 +1354,15 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		implicitRWTx = true
 	}
 
-	affected, plan, metadata, err := f(implicitRWTx)
+	var affected int64
+	var plan *sppb.QueryPlan
+	var metadata *sppb.ResultSetMetadata
+
+	// Use the safe closure pattern to access the transaction
+	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		affected, plan, metadata, err = f(txn, implicitRWTx)
+		return err
+	})
 	if err != nil {
 		// once error has happened, escape from the current transaction
 		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {

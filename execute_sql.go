@@ -269,8 +269,8 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
-	result, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {
@@ -300,8 +300,24 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 	var rows []Row
 	var queryStats map[string]any
-	result, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, num, meta, plan, err := session.RunUpdate(ctx, stmt, implicit)
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		// Use the formatConfig from session
+		fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+
+		opts := session.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+		opts.LastStatement = implicit
+
+		// Reset STATEMENT_TAG
+		session.systemVariables.RequestTag = ""
+
+		// Use the transaction directly instead of going through RunUpdate
+		rs, stats, num, meta, plan, err := consumeRowIterCollect(
+			tx.QueryWithOptions(ctx, stmt, opts),
+			spannerRowToRow(fc),
+		)
 		rows = rs
 		queryStats = stats
 		return num, plan, meta, err

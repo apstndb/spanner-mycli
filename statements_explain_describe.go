@@ -373,8 +373,8 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	}
 
 	var queryStats map[string]any
-	dmlResult, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter, _ := session.RunQueryWithStats(ctx, stmt, implicit)
+	dmlResult, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		iter := session.runQueryWithStatsOnTransaction(ctx, tx, stmt, implicit)
 		qs, count, metadata, plan, err := consumeRowIterDiscard(iter)
 		queryStats = qs
 		return count, plan, metadata, err
@@ -547,8 +547,8 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	result, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		plan, metadata, err := session.runAnalyzeQueryOnTransaction(ctx, tx, stmt)
 		return 0, plan, metadata, err
 	})
 	if err != nil {
