@@ -695,12 +695,17 @@ func (s *Session) InTransaction() bool {
 // This only checks for read-write and read-only transactions, allowing pending transactions
 // to be promoted to active transactions by DetermineTransaction.
 func (s *Session) validateNoActiveTransaction() error {
-	mode, _ := s.TransactionState()
-	if mode == transactionModeReadWrite {
-		return errors.New("read-write transaction is already running")
-	}
-	if mode == transactionModeReadOnly {
-		return errors.New("read-only transaction is already running")
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+	return s.validateNoActiveTransactionLocked()
+}
+
+// validateNoActiveTransactionLocked checks if there's no active transaction while holding the mutex.
+// This is used internally by transaction creation methods to ensure atomic check-and-set.
+// Caller must hold s.tcMutex.
+func (s *Session) validateNoActiveTransactionLocked() error {
+	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
+		return fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
 	}
 	return nil
 }
@@ -726,22 +731,25 @@ func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_I
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	// Check for any type of existing transaction (including pending)
-	mode, isActive := s.TransactionState()
-	if isActive {
-		return fmt.Errorf("%s transaction is already running", mode)
-	}
-
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 	resolvedPriority := s.resolveTransactionPriority(priority)
 
-	s.setTransactionContext(&transactionContext{
+	// Perform check and set atomically to prevent race conditions
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	// Check for any type of existing transaction (including pending)
+	if s.tc != nil {
+		return fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
+	}
+
+	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:           transactionModePending,
 			priority:       resolvedPriority,
 			isolationLevel: resolvedIsolationLevel,
 		},
-	})
+	}
 	return nil
 }
 
@@ -802,10 +810,6 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		return err
 	}
 
-	if err := s.validateNoActiveTransaction(); err != nil {
-		return err
-	}
-
 	tag := s.getTransactionTag()
 	resolvedPriority := s.resolveTransactionPriority(priority)
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
@@ -823,7 +827,18 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		return err
 	}
 
-	s.setTransactionContext(&transactionContext{
+	// Perform check and set atomically to prevent race conditions
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	// Check for existing transaction under lock
+	if err := s.validateNoActiveTransactionLocked(); err != nil {
+		// Need to rollback the transaction we just created since we can't use it
+		txn.Rollback(ctx)
+		return err
+	}
+
+	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:           transactionModeReadWrite,
 			tag:            tag,
@@ -831,7 +846,7 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 			isolationLevel: resolvedIsolationLevel,
 		},
 		txn: txn,
-	})
+	}
 	return nil
 }
 
@@ -902,12 +917,17 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		return time.Time{}, err
 	}
 
-	if err := s.validateNoActiveTransaction(); err != nil {
-		return time.Time{}, err
-	}
-
 	tb := s.resolveTimestampBound(typ, staleness, timestamp)
 	resolvedPriority := s.resolveTransactionPriority(priority)
+
+	// Perform check and set atomically to prevent race conditions
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	// Check for existing transaction under lock
+	if err := s.validateNoActiveTransactionLocked(); err != nil {
+		return time.Time{}, err
+	}
 
 	txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
@@ -915,16 +935,17 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
 	opts := spanner.QueryOptions{Priority: resolvedPriority}
 	if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
+		txn.Close()
 		return time.Time{}, err
 	}
 
-	s.setTransactionContext(&transactionContext{
+	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:     transactionModeReadOnly,
 			priority: resolvedPriority,
 		},
 		txn: txn,
-	})
+	}
 
 	return txn.Timestamp()
 }
