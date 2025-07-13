@@ -47,6 +47,7 @@ When testing compatibility or referencing behavior, be specific about which impl
 6. **PR merge process**: Before merging, if additional commits have been pushed since the initial review, request an updated summary by commenting `/gemini summary`. An initial summary is generated automatically, so this is only for updates. Then, use `go tool gh-helper reviews wait` (**DO NOT** use `--request-review`)
 7. **Squash merge commits**: MUST include descriptive summary of PR changes in squash commit message
 8. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify the exact comment ID to avoid editing the wrong comment
+9. **GitHub checks must pass**: All GitHub Actions checks MUST pass before merging AND during review cycles. Even if local tests pass, always investigate failing GitHub checks - do NOT assume failures are unrelated to PR changes or transient. Fix all check failures immediately to ensure reviewers can properly assess changes and prevent accumulating technical debt.
 
 ## Essential Commands
 

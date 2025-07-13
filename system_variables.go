@@ -1320,6 +1320,10 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 			return nil, err
 		}
 		defer resp.Body.Close()
+		
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to fetch proto descriptor from %v: HTTP %d", filename, resp.StatusCode)
+		}
 
 		b, err = io.ReadAll(resp.Body)
 		if err != nil {
