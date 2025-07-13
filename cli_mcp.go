@@ -45,6 +45,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		var sb strings.Builder
 
 		// Execute the statement with the string builder as the output
+		// Use false for interactive to avoid progress marks and interrupt handlers
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
 		if err != nil {
 			return nil, err

@@ -336,7 +336,8 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel()
+	go handleInterrupt(ctx, cancel)
 
 	for _, stmt := range stmts {
 		if _, ok := stmt.(*ExitStatement); ok {
@@ -444,20 +445,31 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
+	done := make(chan struct{})
+
 	go func() {
 		// wait to avoid corruption with first output of command
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-done:
+			return
+		}
 
 		i := 0
 		for {
-			<-ticker.C
-			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(ttyWriter, "\r%s", mark)
-			i++
+			select {
+			case <-ticker.C:
+				mark := progressMarks[i%len(progressMarks)]
+				fmt.Fprintf(ttyWriter, "\r%s", mark)
+				i++
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	stop := func() {
+		close(done)
 		ticker.Stop()
 		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
@@ -542,7 +554,12 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		w = c.GetWriter()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel() // Ensure context is cancelled when function returns
+
+	// Start interrupt handler in interactive mode only
+	if interactive {
+		go handleInterrupt(ctx, cancel)
+	}
 
 	// Setup progress mark and timing
 	t0 := time.Now()
@@ -699,9 +716,16 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 	}
 }
 
-func handleInterrupt(cancel context.CancelFunc) {
+func handleInterrupt(ctx context.Context, cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	<-c
-	cancel()
+	defer signal.Stop(c)
+
+	select {
+	case <-c:
+		cancel()
+	case <-ctx.Done():
+		// Context cancelled, exit gracefully
+		return
+	}
 }

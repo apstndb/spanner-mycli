@@ -321,6 +321,91 @@ During the comprehensive flag testing implementation, several important patterns
 
 **Key Insight**: Test code should be written with future parallelization in mind, even if not currently using `t.Parallel()`. This future-proofs the test suite and prevents technical debt.
 
+## Concurrency and Thread Safety Patterns
+
+**Discovery**: CLI tools still need proper concurrency handling for background operations and future extensibility
+
+### Mutex Usage Evolution (Issue #371)
+
+The data race fix in Session.BeginReadWriteTransaction() led to comprehensive concurrency improvements:
+
+1. **Initial Problem**: Simple mutex addition revealed deeper architectural issues
+2. **Logical Race Conditions**: Check-and-act operations needed atomic execution
+3. **Solution Pattern**: Closure-based helpers guarantee mutex scope
+
+### Key Implementation Patterns
+
+#### Closure-Based Resource Access
+```go
+// BAD: Race between check and use
+if s.InReadWriteTransaction() {
+    s.tc.txn.Update(...) // tc might be nil!
+}
+
+// GOOD: Atomic check-and-use with closure
+err := s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+    return tx.Update(...)
+})
+```
+
+#### Heartbeat Optimization
+- **Problem**: Constant mutex acquisition every 5 seconds caused contention
+- **Solution**: Check-before-lock pattern using lock-free TransactionAttrs()
+- **Result**: Reduced lock contention from periodic to only-when-needed
+
+#### Testing Strategy for Unmockable Types
+- **Challenge**: Spanner types have unexported fields, preventing mocking
+- **Solution**: Two-tier testing approach
+  - Unit tests: Error paths and mutex behavior
+  - Integration tests: Real transaction behavior with emulator
+
+### Lessons Learned
+
+1. **Review-Driven Architecture**: Multiple review cycles led to better design
+2. **Performance vs Correctness**: Mutex overhead negligible for CLI usage patterns
+3. **Future-Proofing**: Proper concurrency patterns enable safe feature additions
+4. **Documentation Importance**: Explaining "why mutex in a CLI" prevents future confusion
+
+For implementation details, see:
+- [Architecture Guide](architecture-guide.md) - Transaction management and concurrency patterns
+- Session.go source code comments - Detailed implementation notes
+
+## Mutex Deadlock Prevention in Transaction Management
+
+**Discovery**: Go mutexes are not reentrant, requiring careful design to prevent deadlocks in callback-based architectures
+
+### Problem Scenario
+
+The deadlock occurs in DML execution paths through MCP:
+1. `withTransactionLocked` acquires `tcMutex`
+2. Calls a callback function (e.g., `runUpdateOnTransaction`)
+3. Callback attempts to call `TransactionAttrs()` which tries to acquire `tcMutex` again
+4. Deadlock occurs because Go mutexes are not reentrant
+
+### Solution Pattern
+
+Create locked variants of methods that don't acquire the mutex, for use within callbacks:
+- `transactionAttrsLocked()` - Access transaction attributes without locking
+- `currentPriorityLocked()` - Get RPC priority without locking  
+- `queryOptionsLocked()` - Build query options without locking
+
+### Implementation Guidelines
+
+1. **Identify callback chains**: Trace execution paths to find where mutex is already held
+2. **Create locked variants**: For any method called within a mutex-protected callback
+3. **Document clearly**: Add comments explaining the deadlock scenario and why locked variant exists
+4. **Naming convention**: 
+   - `*WithLock()` suffix - Methods that acquire the lock internally
+   - `*Locked()` suffix - Methods that assume caller holds the lock
+   - This makes the locking behavior explicit and prevents misuse
+
+### Testing Approach
+
+- Use `TryLock` for deadlock detection during development
+- Add debug logging to trace execution paths
+- Run integration tests with race detector enabled
+- Test DML operations through various execution paths (direct, MCP, batch)
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables

@@ -269,8 +269,8 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
-	affected, commitResp, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {
@@ -279,15 +279,15 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 
 	return &Result{
 		IsMutation:  true,
-		Timestamp:   commitResp.CommitTs,
-		CommitStats: commitResp.CommitStats,
+		Timestamp:   result.CommitResponse.CommitTs,
+		CommitStats: result.CommitResponse.CommitStats,
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
 		TableHeader:      toTableHeader("DML", "Rows"),
-		AffectedRows:     int(affected),
+		AffectedRows:     int(result.Affected),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
 	}, nil
 }
@@ -300,11 +300,14 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 	var rows []Row
 	var queryStats map[string]any
-	affected, commitResp, plan, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, num, meta, plan, err := session.RunUpdate(ctx, stmt, implicit)
-		rows = rs
-		queryStats = stats
-		return num, plan, meta, err
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		updateResult, err := session.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		rows = updateResult.Rows
+		queryStats = updateResult.Stats
+		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
 		return nil, err
@@ -316,19 +319,19 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  plan,
+		QueryPlan:  result.Plan,
 		QueryStats: queryStats,
-		Timestamp:  commitResp.CommitTs,
+		Timestamp:  result.CommitResponse.CommitTs,
 	}
 
 	return &Result{
 		IsMutation:   true,
-		Timestamp:    commitResp.CommitTs,
-		CommitStats:  commitResp.CommitStats,
+		Timestamp:    result.CommitResponse.CommitTs,
+		CommitStats:  result.CommitResponse.CommitStats,
 		Stats:        stats,
-		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
+		TableHeader:  toTableHeader(result.Metadata.GetRowType().GetFields()),
 		Rows:         rows,
-		AffectedRows: int(affected),
+		AffectedRows: int(result.Affected),
 	}, nil
 }
 

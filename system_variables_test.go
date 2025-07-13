@@ -113,8 +113,14 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 
 	// Create a test HTTP server for URL tests
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("this is not a valid proto"))
+		switch r.URL.Path {
+		case "/non_existent.pb":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("404 Not Found"))
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("this is not a valid proto"))
+		}
 	}))
 	defer httpServer.Close()
 
@@ -186,12 +192,10 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 			errorMsg:  "error on unmarshal proto descriptor-file",
 		},
 		{
-			desc:      "HTTPS URL - non-existent",
-			filename:  "https://example.com/non_existent.pb",
+			desc:      "HTTP URL - non-existent (404)",
+			filename:  httpServer.URL + "/non_existent.pb",
 			wantError: true,
-			errorMsg:  "error on unmarshal proto descriptor-file",
-			// NOTE: This still relies on external network for HTTPS, but tests error path only.
-			// A full solution would require setting up an HTTPS test server.
+			errorMsg:  "failed to fetch proto descriptor",
 		},
 	}
 
@@ -559,7 +563,7 @@ func TestSystemVariablesSetGet(t *testing.T) {
 		{
 			desc: "TRANSACTION_TAG", name: "TRANSACTION_TAG", value: "test-tag",
 			sysVars: &systemVariables{CurrentSession: &Session{tc: &transactionContext{
-				mode: transactionModePending,
+				attrs: transactionAttributes{mode: transactionModePending},
 			}}},
 			want: singletonMap("TRANSACTION_TAG", "test-tag"),
 		},
