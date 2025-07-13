@@ -86,7 +86,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 	result := &Result{IsMutation: true}
 
 	// Get transaction attributes atomically to avoid check-then-act race
-	attrs := session.TransactionAttrs()
+	attrs := session.TransactionAttrsWithLock()
 	if attrs.mode != transactionModePending {
 		// nop - not in pending transaction
 		return result, nil

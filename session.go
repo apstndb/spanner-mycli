@@ -534,7 +534,7 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 // TransactionState returns the current transaction mode and whether a transaction is active.
 // This consolidates multiple transaction state checks into a single method.
 func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
-	attrs := s.TransactionAttrs()
+	attrs := s.TransactionAttrsWithLock()
 	isActive = attrs.mode != transactionModeUndetermined && attrs.mode != ""
 	return attrs.mode, isActive
 }
@@ -547,10 +547,34 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 // rather than delegating to an internal method. This reduces unnecessary layers
 // while maintaining a clean public API name.
 // NOTE: This is a core context management function with direct tc access.
-func (s *Session) TransactionAttrs() transactionAttributes {
+//
+// Naming convention:
+// - TransactionAttrsWithLock() - Acquires lock internally (this method)
+// - transactionAttrsLocked() - Assumes caller holds lock
+func (s *Session) TransactionAttrsWithLock() transactionAttributes {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
+	return s.transactionAttrsLocked()
+}
+
+// transactionAttrsLocked returns transaction attributes without locking.
+// Caller must hold s.tcMutex.
+//
+// IMPORTANT: This method exists to prevent deadlocks in DML execution paths.
+// The withTransactionLocked method holds tcMutex and calls callbacks that may
+// need to access transaction attributes. Using TransactionAttrs() in those
+// callbacks would attempt to acquire tcMutex again, causing a deadlock since
+// Go mutexes are not reentrant.
+//
+// Example deadlock scenario:
+// 1. withTransactionLocked acquires tcMutex
+// 2. Calls callback (e.g., runUpdateOnTransaction)
+// 3. Callback calls TransactionAttrs() which tries to acquire tcMutex
+// 4. Deadlock occurs
+//
+// Always use this locked version when already holding tcMutex.
+func (s *Session) transactionAttrsLocked() transactionAttributes {
 	if s.tc == nil {
 		// Return zero-value struct (mode will be transactionModeUndetermined = "")
 		return transactionAttributes{}
@@ -886,8 +910,9 @@ func (s *Session) ClosePendingTransaction() error {
 
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
 // This is a helper function to be used within transaction closures to avoid direct tc access
+// NOTE: This method is called from within transaction callbacks where tcMutex is already held.
 func (s *Session) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
-	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts := s.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
 	return tx.QueryWithOptions(ctx, stmt, opts)
 }
@@ -898,7 +923,7 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 	mode := sppb.ExecuteSqlRequest_PLAN
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
-		Priority: s.currentPriority(),
+		Priority: s.currentPriorityWithLock(),
 	}
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
@@ -908,16 +933,23 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 	return plan, metadata, err
 }
 
-// runUpdateOnTransaction executes a DML statement on the given read-write transaction.
-// This is a helper function to be used within transaction closures to avoid direct tc access.
-// Note: sendHeartbeat flag is handled by withReadWriteTransactionUpdate, not by callers.
+// runUpdateOnTransaction executes an update statement on a transaction.
+// NOTE: This method is always called from within withReadWriteTransactionContext,
+// so the tcMutex is already held. We must use the locked versions of methods
+// to avoid deadlock.
+//
+// CRITICAL: This method is part of a callback chain where tcMutex is already held:
+//   RunInNewOrExistRwTx -> withReadWriteTransactionContext -> withTransactionLocked -> callback -> runUpdateOnTransaction
+//
+// Using non-locked versions of methods like TransactionAttrs(), CurrentPriority(),
+// or QueryOptions() here will cause a deadlock. Always use the *Locked variants.
 func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
 	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}
 
-	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts := s.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
@@ -984,7 +1016,7 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 	mode := sppb.ExecuteSqlRequest_PLAN
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
-		Priority: s.currentPriority(),
+		Priority: s.currentPriorityWithLock(),
 	}
 	iter, _ := s.runQueryWithOptions(ctx, stmt, opts)
 
@@ -1098,7 +1130,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 		return nil, nil, 0, nil, nil, err
 	}
 
-	opts := s.queryOptions(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts := s.queryOptionsWithLock(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
@@ -1132,10 +1164,28 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	return rows, stats, count, metadata, plan, nil
 }
 
-func (s *Session) queryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
+func (s *Session) queryOptionsWithLock(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
 	return spanner.QueryOptions{
 		Mode:       mode,
-		Priority:   s.currentPriority(),
+		Priority:   s.currentPriorityWithLock(),
+		RequestTag: s.systemVariables.RequestTag,
+		Options: &sppb.ExecuteSqlRequest_QueryOptions{
+			OptimizerVersion:           s.systemVariables.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+		},
+	}
+}
+
+// queryOptionsLocked returns query options without locking.
+// Caller must hold s.tcMutex.
+//
+// This method exists to prevent deadlocks when accessing query options within
+// callbacks that are invoked while tcMutex is already held.
+// See transactionAttrsLocked for detailed explanation of the deadlock scenario.
+func (s *Session) queryOptionsLocked(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
+	return spanner.QueryOptions{
+		Mode:       mode,
+		Priority:   s.currentPriorityLocked(),
 		RequestTag: s.systemVariables.RequestTag,
 		Options: &sppb.ExecuteSqlRequest_QueryOptions{
 			OptimizerVersion:           s.systemVariables.OptimizerVersion,
@@ -1269,7 +1319,7 @@ func (s *Session) DatabaseExists() (bool, error) {
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().
-		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriority()})
+		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriorityWithLock()})
 	defer iter.Stop()
 
 	_, err := iter.Next()
@@ -1302,8 +1352,22 @@ func (s *Session) RecreateClient() error {
 	return nil
 }
 
-func (s *Session) currentPriority() sppb.RequestOptions_Priority {
-	attrs := s.TransactionAttrs()
+func (s *Session) currentPriorityWithLock() sppb.RequestOptions_Priority {
+	attrs := s.TransactionAttrsWithLock()
+	if attrs.mode != transactionModeUndetermined && attrs.mode != "" {
+		return attrs.priority
+	}
+	return s.systemVariables.RPCPriority
+}
+
+// currentPriorityLocked returns the current priority without locking.
+// Caller must hold s.tcMutex.
+//
+// This method exists to prevent deadlocks when accessing priority within
+// callbacks that are invoked while tcMutex is already held.
+// See transactionAttrsLocked for detailed explanation of the deadlock scenario.
+func (s *Session) currentPriorityLocked() sppb.RequestOptions_Priority {
+	attrs := s.transactionAttrsLocked()
 	if attrs.mode != transactionModeUndetermined && attrs.mode != "" {
 		return attrs.priority
 	}
@@ -1313,7 +1377,7 @@ func (s *Session) currentPriority() sppb.RequestOptions_Priority {
 func (s *Session) buildQueryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
 	opts := spanner.QueryOptions{
 		Mode:       mode,
-		Priority:   s.currentPriority(),
+		Priority:   s.currentPriorityWithLock(),
 		RequestTag: s.systemVariables.RequestTag,
 		Options: &sppb.ExecuteSqlRequest_QueryOptions{
 			OptimizerVersion:           s.systemVariables.OptimizerVersion,
@@ -1344,7 +1408,7 @@ func (s *Session) startHeartbeat(ctx context.Context) {
 			// Get transaction attributes safely without holding mutex to avoid contention.
 			// This is critical for performance: the heartbeat runs every 5 seconds, and
 			// acquiring the mutex each time was causing test timeouts in parallel tests.
-			attrs := s.TransactionAttrs()
+			attrs := s.TransactionAttrsWithLock()
 
 			// Check for invalid states and exit if detected
 			if attrs.mode == transactionModeUndetermined || attrs.mode == "" {
@@ -1435,7 +1499,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 	if !isActive || mode != transactionModeReadWrite {
 		// Start implicit transaction
 		// Note: isolation level is not session level property so it is left as unspecified
-		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriority()); err != nil {
+		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriorityWithLock()); err != nil {
 			return nil, err
 		}
 		implicitRWTx = true

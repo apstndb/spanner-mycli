@@ -69,14 +69,14 @@ func TestTransactionAttrs(t *testing.T) {
 				tc: tt.setupTC(),
 			}
 
-			attrs := s.TransactionAttrs()
+			attrs := s.TransactionAttrsWithLock()
 			if attrs.mode != tt.wantMode {
 				t.Errorf("TransactionAttrs().mode = %v, want %v", attrs.mode, tt.wantMode)
 			}
 
 			// Verify that modifying the returned attrs doesn't affect the session
 			attrs.mode = "modified"
-			actualAttrs := s.TransactionAttrs()
+			actualAttrs := s.TransactionAttrsWithLock()
 			if actualAttrs.mode == "modified" {
 				t.Error("modifying returned attrs affected the session state")
 			}

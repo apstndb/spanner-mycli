@@ -370,6 +370,42 @@ For implementation details, see:
 - [Architecture Guide](architecture-guide.md) - Transaction management and concurrency patterns
 - Session.go source code comments - Detailed implementation notes
 
+## Mutex Deadlock Prevention in Transaction Management
+
+**Discovery**: Go mutexes are not reentrant, requiring careful design to prevent deadlocks in callback-based architectures
+
+### Problem Scenario
+
+The deadlock occurs in DML execution paths through MCP:
+1. `withTransactionLocked` acquires `tcMutex`
+2. Calls a callback function (e.g., `runUpdateOnTransaction`)
+3. Callback attempts to call `TransactionAttrs()` which tries to acquire `tcMutex` again
+4. Deadlock occurs because Go mutexes are not reentrant
+
+### Solution Pattern
+
+Create locked variants of methods that don't acquire the mutex, for use within callbacks:
+- `transactionAttrsLocked()` - Access transaction attributes without locking
+- `currentPriorityLocked()` - Get RPC priority without locking  
+- `queryOptionsLocked()` - Build query options without locking
+
+### Implementation Guidelines
+
+1. **Identify callback chains**: Trace execution paths to find where mutex is already held
+2. **Create locked variants**: For any method called within a mutex-protected callback
+3. **Document clearly**: Add comments explaining the deadlock scenario and why locked variant exists
+4. **Naming convention**: 
+   - `*WithLock()` suffix - Methods that acquire the lock internally
+   - `*Locked()` suffix - Methods that assume caller holds the lock
+   - This makes the locking behavior explicit and prevents misuse
+
+### Testing Approach
+
+- Use `TryLock` for deadlock detection during development
+- Add debug logging to trace execution paths
+- Run integration tests with race detector enabled
+- Test DML operations through various execution paths (direct, MCP, batch)
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables

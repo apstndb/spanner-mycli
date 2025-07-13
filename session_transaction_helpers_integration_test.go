@@ -173,7 +173,7 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 	}
 
 	// Verify modifications persisted
-	attrs := session.TransactionAttrs()
+	attrs := session.TransactionAttrsWithLock()
 	if !attrs.sendHeartbeat {
 		t.Error("expected sendHeartbeat to be true after modification")
 	}
@@ -240,7 +240,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 		defer wg.Done()
 		// This should not block or race
 		for i := 0; i < 10; i++ {
-			attrs := session.TransactionAttrs()
+			attrs := session.TransactionAttrsWithLock()
 			if attrs.mode != transactionModeReadWrite {
 				errors <- fmt.Errorf("unexpected transaction mode")
 				break
@@ -259,7 +259,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	}
 
 	// Verify final state
-	attrs := session.TransactionAttrs()
+	attrs := session.TransactionAttrsWithLock()
 	if !attrs.sendHeartbeat {
 		t.Error("expected sendHeartbeat to be true after concurrent operations")
 	}
