@@ -7,6 +7,7 @@ This document provides detailed architectural information for spanner-mycli deve
 ### Entry Point and Configuration
 - **main.go**: Entry point, CLI argument parsing, configuration management
 - **session.go**: Database session management and Spanner client connections
+- **session_transaction_context.go**: Transaction context types and encapsulation methods
 
 ### Interactive Interface
 - **cli.go**: Main interactive CLI interface and batch processing
@@ -290,6 +291,57 @@ Direct access to the `tc` field is strictly limited to these functions:
 - **Special cases**: `DetermineTransaction`, `getTransactionTag`, `setTransactionTag`
 
 All other code MUST use these helpers instead of direct access.
+
+### Concurrency Patterns
+
+#### Mutex Usage Pattern
+
+The session uses a single mutex (`tcMutex`) to protect transaction context access:
+
+```go
+// Generic transaction helper with mutex protection
+func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
+    s.tcMutex.Lock()
+    defer s.tcMutex.Unlock()
+    
+    if s.tc == nil || s.tc.attrs.mode != mode {
+        // Return appropriate error based on mode
+    }
+    return fn()
+}
+```
+
+#### Heartbeat Optimization
+
+Background heartbeats use a check-before-lock pattern to minimize contention:
+
+```go
+// Check state without lock first
+attrs := s.TransactionAttrs()  // Returns copy, lock-free
+if !attrs.sendHeartbeat {
+    return
+}
+
+// Only acquire lock if heartbeat needed
+s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+    // Send heartbeat with LOW priority
+})
+```
+
+**Key optimizations**:
+- Lock-free state check via `TransactionAttrs()` 
+- Mutex acquired only when sending heartbeat
+- Low priority to avoid interfering with queries
+- Tagged as "heartbeat" for log filtering
+
+#### Testing Unmockable Types
+
+Spanner transaction types have unexported fields and cannot be mocked. Use a two-tier testing strategy:
+
+1. **Unit tests**: Test error paths and mutex behavior without real transactions
+2. **Integration tests**: Test actual behavior with Spanner emulator
+
+See `session_transaction_helpers_test.go` and `session_transaction_helpers_integration_test.go` for examples.
 
 ## Configuration Management
 

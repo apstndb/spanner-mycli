@@ -366,14 +366,12 @@ err := s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction
 3. **Future-Proofing**: Proper concurrency patterns enable safe feature additions
 4. **Documentation Importance**: Explaining "why mutex in a CLI" prevents future confusion
 
-For detailed patterns, see:
-- [Concurrency Patterns](patterns/concurrency-patterns.md) - Mutex usage and goroutine management
-- [Transaction Patterns](patterns/transaction-patterns.md) - Transaction-specific concurrency handling
+For implementation details, see:
+- [Architecture Guide](architecture-guide.md) - Transaction management and concurrency patterns
+- Session.go source code comments - Detailed implementation notes
 
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables
 - [Architecture Guide](architecture-guide.md) - Detailed architecture documentation
 - [Issue Management](issue-management.md) - GitHub workflow and processes
-- [Concurrency Patterns](patterns/concurrency-patterns.md) - Mutex usage and thread safety
-- [Transaction Patterns](patterns/transaction-patterns.md) - Transaction management patterns

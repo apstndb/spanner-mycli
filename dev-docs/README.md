@@ -13,9 +13,7 @@ dev-docs/
 ├── coding-guidelines.md         # Coding standards and style guidelines
 ├── testing-guidelines.md        # Testing standards and coverage goals
 └── patterns/                    # Specific implementation patterns
-    ├── system-variables.md      # System variable implementation patterns
-    ├── concurrency-patterns.md  # Mutex usage and thread safety
-    └── transaction-patterns.md  # Transaction management patterns
+    └── system-variables.md      # System variable implementation patterns
 ```
 
 ## Documentation Overview
@@ -55,8 +53,6 @@ dev-docs/
 
 ### [Patterns](patterns/)
 - [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
-- [Concurrency Patterns](patterns/concurrency-patterns.md) - Mutex usage, goroutine management, and thread-safe design
-- [Transaction Patterns](patterns/transaction-patterns.md) - Transaction lifecycle, closure-based helpers, and testing strategies
 
 ## Updating Documentation
 

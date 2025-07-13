@@ -196,19 +196,23 @@ func TestTransactionStateHelpers(t *testing.T) {
 	}
 }
 
-func TestWithReadWriteTransactionErrorHandling(t *testing.T) {
+func TestTransactionHelperErrorHandling(t *testing.T) {
 	tests := []struct {
-		name    string
-		setupTC func() *transactionContext
-		wantErr error
+		name     string
+		testType string // "readwrite" or "readonly"
+		setupTC  func() *transactionContext
+		wantErr  error
 	}{
+		// Read-write transaction tests
 		{
-			name:    "no transaction context",
-			setupTC: func() *transactionContext { return nil },
-			wantErr: ErrNotInReadWriteTransaction,
+			name:     "readwrite/no transaction context",
+			testType: "readwrite",
+			setupTC:  func() *transactionContext { return nil },
+			wantErr:  ErrNotInReadWriteTransaction,
 		},
 		{
-			name: "wrong transaction mode - read-only",
+			name:     "readwrite/wrong mode - read-only",
+			testType: "readwrite",
 			setupTC: func() *transactionContext {
 				return &transactionContext{
 					attrs: transactionAttributes{mode: transactionModeReadOnly},
@@ -217,7 +221,8 @@ func TestWithReadWriteTransactionErrorHandling(t *testing.T) {
 			wantErr: ErrNotInReadWriteTransaction,
 		},
 		{
-			name: "wrong transaction mode - pending",
+			name:     "readwrite/wrong mode - pending",
+			testType: "readwrite",
 			setupTC: func() *transactionContext {
 				return &transactionContext{
 					attrs: transactionAttributes{mode: transactionModePending},
@@ -225,39 +230,16 @@ func TestWithReadWriteTransactionErrorHandling(t *testing.T) {
 			},
 			wantErr: ErrNotInReadWriteTransaction,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
-				tc: tt.setupTC(),
-			}
-
-			err := s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
-				t.Fatal("function should not be called")
-				return nil
-			})
-
-			if err != tt.wantErr {
-				t.Errorf("withReadWriteTransaction() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestWithReadOnlyTransactionErrorHandling(t *testing.T) {
-	tests := []struct {
-		name    string
-		setupTC func() *transactionContext
-		wantErr error
-	}{
+		// Read-only transaction tests
 		{
-			name:    "no transaction context",
-			setupTC: func() *transactionContext { return nil },
-			wantErr: ErrNotInReadOnlyTransaction,
+			name:     "readonly/no transaction context",
+			testType: "readonly",
+			setupTC:  func() *transactionContext { return nil },
+			wantErr:  ErrNotInReadOnlyTransaction,
 		},
 		{
-			name: "wrong transaction mode - read-write",
+			name:     "readonly/wrong mode - read-write",
+			testType: "readonly",
 			setupTC: func() *transactionContext {
 				return &transactionContext{
 					attrs: transactionAttributes{mode: transactionModeReadWrite},
@@ -266,7 +248,8 @@ func TestWithReadOnlyTransactionErrorHandling(t *testing.T) {
 			wantErr: ErrNotInReadOnlyTransaction,
 		},
 		{
-			name: "wrong transaction mode - pending",
+			name:     "readonly/wrong mode - pending",
+			testType: "readonly",
 			setupTC: func() *transactionContext {
 				return &transactionContext{
 					attrs: transactionAttributes{mode: transactionModePending},
@@ -282,13 +265,24 @@ func TestWithReadOnlyTransactionErrorHandling(t *testing.T) {
 				tc: tt.setupTC(),
 			}
 
-			err := s.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
-				t.Fatal("function should not be called")
-				return nil
-			})
+			var err error
+			switch tt.testType {
+			case "readwrite":
+				err = s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+					t.Fatal("function should not be called")
+					return nil
+				})
+			case "readonly":
+				err = s.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
+					t.Fatal("function should not be called")
+					return nil
+				})
+			default:
+				t.Fatalf("unknown test type: %s", tt.testType)
+			}
 
 			if err != tt.wantErr {
-				t.Errorf("withReadOnlyTransaction() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("%s helper error = %v, wantErr %v", tt.testType, err, tt.wantErr)
 			}
 		})
 	}

@@ -32,7 +32,6 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
-	"github.com/apstndb/spanvalue"
 	"github.com/gocql/gocql"
 	"github.com/samber/lo"
 	"google.golang.org/api/iterator"
@@ -272,57 +271,6 @@ const (
 	DatabaseConnected
 )
 
-type transactionMode string
-
-const (
-	transactionModeUndetermined = ""
-	transactionModePending      = "pending"
-	transactionModeReadOnly     = "read-only"
-	transactionModeReadWrite    = "read-write"
-)
-
-// transactionAttributes contains all non-transaction fields of transactionContext.
-// This struct is used to safely copy transaction metadata without holding mutex.
-// The zero value is safe to use and indicates no active transaction.
-type transactionAttributes struct {
-	mode           transactionMode
-	tag            string
-	priority       sppb.RequestOptions_Priority
-	isolationLevel sppb.TransactionOptions_IsolationLevel
-	sendHeartbeat  bool
-}
-
-type transactionContext struct {
-	attrs transactionAttributes // Transaction metadata (mode, priority, tag, etc.)
-
-	// txn holds either a read-write or read-only transaction.
-	// Design rationale: Using a single transaction interface field maintains mutual exclusivity
-	// by preventing both RW and RO transactions from existing simultaneously.
-	// The transaction interface provides type safety while still requiring type assertions
-	// for specific transaction types.
-	txn transaction
-}
-
-func (tc *transactionContext) RWTxn() *spanner.ReadWriteStmtBasedTransaction {
-	if tc == nil || tc.txn == nil {
-		panic("read-write transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadWrite {
-		panic(fmt.Sprintf("must be in read-write transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
-}
-
-func (tc *transactionContext) ROTxn() *spanner.ReadOnlyTransaction {
-	if tc == nil || tc.txn == nil {
-		panic("read-only transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadOnly {
-		panic(fmt.Sprintf("must be in read-only transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn.(*spanner.ReadOnlyTransaction)
-}
-
 var (
 	_ transaction = (*spanner.ReadOnlyTransaction)(nil)
 	_ transaction = (*spanner.ReadWriteTransaction)(nil)
@@ -331,43 +279,49 @@ var (
 // withReadWriteTransaction executes fn with the current read-write transaction under mutex protection.
 // Returns ErrNotInReadWriteTransaction if not in a read-write transaction.
 // NOTE: This is a core transaction helper with direct tc access.
-func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
+// withTransactionLocked is a generic helper that executes fn while holding the transaction mutex.
+// It validates the transaction mode and returns an appropriate error if the mode doesn't match.
+// NOTE: The mutex must NOT be held by the caller - this function acquires it.
+func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
-	if s.tc == nil || s.tc.attrs.mode != transactionModeReadWrite {
-		return ErrNotInReadWriteTransaction
+	if s.tc == nil || s.tc.attrs.mode != mode {
+		switch mode {
+		case transactionModeReadWrite:
+			return ErrNotInReadWriteTransaction
+		case transactionModeReadOnly:
+			return ErrNotInReadOnlyTransaction
+		default:
+			return fmt.Errorf("not in %s transaction", mode)
+		}
 	}
 
-	return fn(s.tc.RWTxn())
+	return fn()
+}
+
+func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
+	return s.withTransactionLocked(transactionModeReadWrite, func() error {
+		return fn(s.tc.RWTxn())
+	})
 }
 
 // withReadWriteTransactionContext executes fn with both the transaction and context under mutex protection.
 // This allows safe access to both the transaction and its context fields.
 // NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	if s.tc == nil || s.tc.attrs.mode != transactionModeReadWrite {
-		return ErrNotInReadWriteTransaction
-	}
-
-	return fn(s.tc.RWTxn(), s.tc)
+	return s.withTransactionLocked(transactionModeReadWrite, func() error {
+		return fn(s.tc.RWTxn(), s.tc)
+	})
 }
 
 // withReadOnlyTransaction executes fn with the current read-only transaction under mutex protection.
 // Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
 // NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	if s.tc == nil || s.tc.attrs.mode != transactionModeReadOnly {
-		return ErrNotInReadOnlyTransaction
-	}
-
-	return fn(s.tc.ROTxn())
+	return s.withTransactionLocked(transactionModeReadOnly, func() error {
+		return fn(s.tc.ROTxn())
+	})
 }
 
 // clearTransactionContext atomically clears the transaction context.
@@ -377,16 +331,6 @@ func (s *Session) clearTransactionContext() {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 	s.tc = nil
-}
-
-// withReadWriteTransactionResult executes fn with the current read-write transaction and returns both result and error.
-// This generic helper eliminates the need to declare result variables outside the closure.
-func withReadWriteTransactionResult[T any](s *Session, fn func(*spanner.ReadWriteStmtBasedTransaction) (T, error)) (result T, err error) {
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		result, err = fn(txn)
-		return err
-	})
-	return result, err
 }
 
 // QueryResult holds the result of a query operation with optional transaction.
@@ -410,45 +354,6 @@ type DMLResult struct {
 	CommitResponse spanner.CommitResponse  // Commit response including timestamp and stats
 	Plan           *sppb.QueryPlan         // Query execution plan (when requested)
 	Metadata       *sppb.ResultSetMetadata // Metadata about the result set
-}
-
-// withReadWriteTransactionUpdate executes an update with the current read-write transaction.
-// Returns all results in a single struct, eliminating the need for multiple variable declarations.
-func (s *Session) withReadWriteTransactionUpdate(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions, fc *spanvalue.FormatConfig) (*UpdateResult, error) {
-	var result UpdateResult
-	var err error
-
-	txErr := s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-		result.Rows, result.Stats, result.Count, result.Metadata, result.Plan, err = consumeRowIterCollect(
-			txn.QueryWithOptions(ctx, stmt, opts),
-			spannerRowToRow(fc),
-		)
-		// Enable heartbeat after any operation (success or failure)
-		// Even failed operations start the abort countdown
-		tc.attrs.sendHeartbeat = true
-		return err
-	})
-
-	if txErr != nil {
-		return nil, txErr
-	}
-
-	return &result, err
-}
-
-func (tc *transactionContext) Txn() transaction {
-	if tc == nil || tc.txn == nil {
-		panic("transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadOnly && tc.attrs.mode != transactionModeReadWrite {
-		panic(fmt.Sprintf("must be in transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn
-}
-
-type transaction interface {
-	QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator
-	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
 }
 
 func logGrpcClientOptions() []option.ClientOption {
@@ -846,8 +751,10 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 		return spanner.CommitResponse{}, err
 	}
 
-	resp, err := withReadWriteTransactionResult(s, func(txn *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error) {
-		return txn.CommitWithReturnResp(ctx)
+	var resp spanner.CommitResponse
+	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		resp, err = txn.CommitWithReturnResp(ctx)
+		return err
 	})
 
 	if err == ErrNotInReadWriteTransaction {
@@ -1072,6 +979,20 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 }
 
 func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+	// Prepare query options
+	s.prepareQueryOptions(&opts)
+
+	// Try to execute in existing transaction first
+	if iter, txn := s.tryQueryInTransaction(ctx, stmt, opts); iter != nil {
+		return iter, txn
+	}
+
+	// Fall back to single-use transaction
+	return s.runSingleUseQuery(ctx, stmt, opts)
+}
+
+// prepareQueryOptions sets up the query options with system variables
+func (s *Session) prepareQueryOptions(opts *spanner.QueryOptions) {
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
@@ -1082,7 +1003,11 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
+}
 
+// tryQueryInTransaction attempts to execute a query within an existing transaction
+// Returns (nil, nil) if no active transaction
+func (s *Session) tryQueryInTransaction(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	// Hold the lock for the entire operation to ensure atomicity.
 	// Performance impact: The single-lock approach adds minimal overhead for a CLI tool
 	// where queries are user-initiated and not high-frequency. The correctness guarantee
@@ -1091,47 +1016,49 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
-	// Check transaction state and execute query under the same lock
-	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
-		// We're in a transaction (either read-write or read-only)
-		if s.tc.txn == nil {
+	// Check if we're in an active transaction
+	if s.tc == nil || (s.tc.attrs.mode != transactionModeReadWrite && s.tc.attrs.mode != transactionModeReadOnly) {
+		return nil, nil
+	}
+
+	// Validate transaction state
+	if s.tc.txn == nil {
+		// This shouldn't happen - log the error and return a stopped iterator
+		mode := s.tc.attrs.mode
+		err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", mode)
+		slog.Error("INTERNAL ERROR", "error", err)
+		return newStoppedIterator(), nil
+	}
+
+	// Apply read-write specific settings
+	if s.tc.attrs.mode == transactionModeReadWrite {
+		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
+		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
+		opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
+		s.tc.EnableHeartbeat()
+	}
+
+	// Execute query on the transaction
+	iter := s.tc.txn.QueryWithOptions(ctx, stmt, opts)
+
+	// For read-only transactions, return the transaction for timestamp access
+	if s.tc.attrs.mode == transactionModeReadOnly {
+		roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
+		if !ok {
 			// This shouldn't happen - log the error and return a stopped iterator
-			// Capture mode for safe error message formatting
-			mode := s.tc.attrs.mode
-			err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", mode)
+			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction")
 			slog.Error("INTERNAL ERROR", "error", err)
 			return newStoppedIterator(), nil
 		}
-
-		// Apply read-write specific settings
-		if s.tc.attrs.mode == transactionModeReadWrite {
-			// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
-			// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
-			opts.DirectedReadOptions = s.clientConfig.DirectedReadOptions
-			s.tc.attrs.sendHeartbeat = true
-		}
-
-		// Execute query on the transaction
-		iter := s.tc.txn.QueryWithOptions(ctx, stmt, opts)
-
-		// For read-only transactions, return the transaction for timestamp access
-		if s.tc.attrs.mode == transactionModeReadOnly {
-			roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
-			if !ok {
-				// This shouldn't happen - log the error and return a stopped iterator
-				err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction")
-				slog.Error("INTERNAL ERROR", "error", err)
-				return newStoppedIterator(), nil
-			}
-			return iter, roTxn
-		}
-
-		// For read-write transactions, return nil as the second value
-		return iter, nil
+		return iter, roTxn
 	}
 
-	// No transaction context or in pending transaction mode
-	// Use single-use read-only transaction
+	// For read-write transactions, return nil as the second value
+	return iter, nil
+}
+
+// runSingleUseQuery executes a query in a single-use read-only transaction
+func (s *Session) runSingleUseQuery(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
 	if s.client == nil {
 		// This is a programming error - log the error and return a stopped iterator
 		err := fmt.Errorf("internal error: runQueryWithOptions called with nil client despite validations (sessionMode: %v, statement: %v)",
@@ -1139,6 +1066,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		slog.Error("INTERNAL ERROR", "error", err)
 		return newStoppedIterator(), nil
 	}
+
 	txn := s.client.Single()
 	if s.systemVariables.ReadOnlyStaleness != nil {
 		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
@@ -1162,7 +1090,24 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	result, err := s.withReadWriteTransactionUpdate(ctx, stmt, opts, fc)
+	var rows []Row
+	var stats map[string]any
+	var count int64
+	var metadata *sppb.ResultSetMetadata
+	var plan *sppb.QueryPlan
+
+	err = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+		var err error
+		rows, stats, count, metadata, plan, err = consumeRowIterCollect(
+			txn.QueryWithOptions(ctx, stmt, opts),
+			spannerRowToRow(fc),
+		)
+		// Enable heartbeat after any operation (success or failure)
+		// Even failed operations start the abort countdown
+		tc.EnableHeartbeat()
+		return err
+	})
+
 	if err == ErrNotInReadWriteTransaction {
 		return nil, nil, 0, nil, nil, ErrNotInReadWriteTransaction
 	}
@@ -1170,7 +1115,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 		return nil, nil, 0, nil, nil, err
 	}
 
-	return result.Rows, result.Stats, result.Count, result.Metadata, result.Plan, nil
+	return rows, stats, count, metadata, plan, nil
 }
 
 func (s *Session) queryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
@@ -1471,7 +1416,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		affected, plan, metadata, err = f(txn, implicitRWTx)
 		// Enable heartbeat after any operation (success or failure)
 		// Even failed operations start the abort countdown
-		tc.attrs.sendHeartbeat = true
+		tc.EnableHeartbeat()
 		return err
 	})
 	if err != nil {
