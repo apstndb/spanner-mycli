@@ -835,6 +835,14 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		return time.Time{}, err
 	}
 
+	// Get timestamp first to ensure the transaction is valid
+	ts, err := txn.Timestamp()
+	if err != nil {
+		txn.Close()
+		return time.Time{}, err
+	}
+
+	// Only update session state after successful timestamp retrieval
 	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:     transactionModeReadOnly,
@@ -843,7 +851,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		txn: txn,
 	}
 
-	return txn.Timestamp()
+	return ts, nil
 }
 
 // CloseReadOnlyTransaction closes a running read-only transaction.
