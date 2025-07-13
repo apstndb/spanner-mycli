@@ -59,6 +59,7 @@ When testing compatibility or referencing behavior, be specific about which impl
 make check                    # REQUIRED before ANY push (runs test && lint && fmt-check)
 make build                    # Build the application
 make test-quick               # Quick tests during development
+make fmt                      # Format code with gofmt, goimports, and gofumpt
 make help-dev                 # Show all available development commands
 
 # Development tools (Go 1.24 tool management: make build-tools)

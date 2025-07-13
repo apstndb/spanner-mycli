@@ -410,21 +410,6 @@ type DMLResult struct {
 	Metadata       *sppb.ResultSetMetadata
 }
 
-// withReadOnlyTransactionQuery executes a query with the current read-only transaction.
-// Returns both the iterator and transaction in a single struct.
-func (s *Session) withReadOnlyTransactionQuery(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*QueryResult, error) {
-	var result QueryResult
-	err := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
-		result.Transaction = txn
-		result.Iterator = txn.QueryWithOptions(ctx, stmt, opts)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
 // withReadWriteTransactionUpdate executes an update with the current read-write transaction.
 // Returns all results in a single struct, eliminating the need for multiple variable declarations.
 func (s *Session) withReadWriteTransactionUpdate(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions, fc *spanvalue.FormatConfig) (*UpdateResult, error) {
@@ -1116,7 +1101,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 
 		// Execute query on the transaction
 		iter := s.tc.txn.QueryWithOptions(ctx, stmt, opts)
-		
+
 		// For read-only transactions, return the transaction for timestamp access
 		if s.tc.attrs.mode == transactionModeReadOnly {
 			roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
@@ -1128,7 +1113,7 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 			}
 			return iter, roTxn
 		}
-		
+
 		// For read-write transactions, return nil as the second value
 		return iter, nil
 	}
