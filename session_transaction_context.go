@@ -52,8 +52,10 @@ type transaction interface {
 // It provides safe access to the underlying transaction while maintaining
 // metadata about the transaction's mode and properties.
 type transactionContext struct {
-	attrs transactionAttributes
-	txn   transaction
+	attrs           transactionAttributes
+	txn             transaction
+	heartbeatCancel context.CancelFunc
+	heartbeatFunc   func(ctx context.Context) // Function to run heartbeat
 }
 
 // RWTxn returns the transaction as a ReadWriteStmtBasedTransaction.
@@ -95,8 +97,16 @@ func (tc *transactionContext) Txn() transaction {
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.
 // This method provides encapsulation for the sendHeartbeat field.
 func (tc *transactionContext) EnableHeartbeat() {
-	if tc != nil {
+	if tc != nil && tc.attrs.mode == transactionModeReadWrite {
 		tc.attrs.sendHeartbeat = true
+		// Start heartbeat goroutine if not already started
+		if tc.heartbeatCancel == nil && tc.heartbeatFunc != nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			tc.heartbeatCancel = cancel
+			// Debug: Log when heartbeat is started
+			// fmt.Println("DEBUG: Starting heartbeat goroutine")
+			go tc.heartbeatFunc(ctx)
+		}
 	}
 }
 
@@ -124,4 +134,13 @@ func (tc *transactionContext) Tag() string {
 		return ""
 	}
 	return tc.attrs.tag
+}
+
+// Close stops the heartbeat goroutine if it's running.
+// This should be called when the transaction is committed or rolled back.
+func (tc *transactionContext) Close() {
+	if tc != nil && tc.heartbeatCancel != nil {
+		tc.heartbeatCancel()
+		tc.heartbeatCancel = nil
+	}
 }

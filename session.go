@@ -330,6 +330,12 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 func (s *Session) clearTransactionContext() {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
+	
+	// Close the transaction context to stop any running heartbeat
+	if s.tc != nil {
+		s.tc.Close()
+	}
+	
 	s.tc = nil
 }
 
@@ -412,7 +418,6 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 		systemVariables: sysVars,
 	}
 	sysVars.CurrentSession = session
-	go session.startHeartbeat()
 
 	return session, nil
 }
@@ -515,17 +520,13 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 		s.client.Close()
 	}
 
-	wasDetached := s.mode == Detached
-
 	// Update state only after successful client creation
 	s.systemVariables.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
 
-	// Start heartbeat if transitioning from Detached mode
-	if wasDetached {
-		go s.startHeartbeat()
-	}
+	// Heartbeat is now managed per-transaction, not per-session
+	// so we don't need to start it here anymore
 
 	return nil
 }
@@ -739,8 +740,13 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 			priority:       resolvedPriority,
 			isolationLevel: resolvedIsolationLevel,
 		},
-		txn: txn,
+		txn:           txn,
+		heartbeatFunc: s.startHeartbeat,
 	}
+	
+	// Heartbeat will be started by EnableHeartbeat() after the first operation
+	// For implicit transactions, they commit immediately so heartbeat isn't needed
+	
 	return nil
 }
 
@@ -1156,6 +1162,9 @@ func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorp
 }
 
 func (s *Session) Close() {
+	// Close any active transaction context (which stops heartbeat)
+	s.clearTransactionContext()
+	
 	if s.client != nil {
 		s.client.Close()
 	}
@@ -1323,27 +1332,32 @@ func (s *Session) buildQueryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) span
 // We send an actual heartbeat only if the read-write transaction is active and
 // at least one user-initialized SQL query has been executed on the transaction.
 // Background: https://github.com/cloudspannerecosystem/spanner-cli/issues/100
-func (s *Session) startHeartbeat() {
+func (s *Session) startHeartbeat(ctx context.Context) {
 	interval := time.NewTicker(5 * time.Second)
 	defer interval.Stop()
 
-	for range interval.C {
-		// Get transaction attributes safely without holding mutex to avoid contention.
-		// This is critical for performance: the heartbeat runs every 5 seconds, and
-		// acquiring the mutex each time was causing test timeouts in parallel tests.
-		attrs := s.TransactionAttrs()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-interval.C:
+			// Get transaction attributes safely without holding mutex to avoid contention.
+			// This is critical for performance: the heartbeat runs every 5 seconds, and
+			// acquiring the mutex each time was causing test timeouts in parallel tests.
+			attrs := s.TransactionAttrs()
 
-		// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
-		if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
-			// Use withReadWriteTransaction to safely access the transaction
-			_ = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-				// Always use LOW priority for heartbeat to avoid interfering with real work
-				err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
-				if err != nil {
-					slog.Error("heartbeat error", "err", err)
-				}
-				return nil
-			})
+			// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
+			if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
+				// Use withReadWriteTransaction to safely access the transaction
+				_ = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+					// Always use LOW priority for heartbeat to avoid interfering with real work
+					err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
+					if err != nil {
+						slog.Error("heartbeat error", "err", err)
+					}
+					return nil
+				})
+			}
 		}
 	}
 }
@@ -1424,7 +1438,10 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		affected, plan, metadata, err = f(txn, implicitRWTx)
 		// Enable heartbeat after any operation (success or failure)
 		// Even failed operations start the abort countdown
-		tc.EnableHeartbeat()
+		// BUT: Don't enable heartbeat for implicit transactions since they commit immediately
+		if !implicitRWTx {
+			tc.EnableHeartbeat()
+		}
 		return err
 	})
 	if err != nil {
