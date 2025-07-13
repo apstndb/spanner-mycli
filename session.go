@@ -91,6 +91,7 @@ var (
 	ErrNoTransaction             = errors.New("no active transaction")
 	ErrNotInReadWriteTransaction = errors.New("not in read-write transaction")
 	ErrNotInReadOnlyTransaction  = errors.New("not in read-only transaction")
+	ErrNotInPendingTransaction   = errors.New("not in pending transaction")
 )
 
 // getTimeoutForStatement returns the appropriate timeout for the given statement type
@@ -282,6 +283,7 @@ const (
 
 // transactionAttributes contains all non-transaction fields of transactionContext.
 // This struct is used to safely copy transaction metadata without holding mutex.
+// The zero value is safe to use and indicates no active transaction.
 type transactionAttributes struct {
 	mode           transactionMode
 	tag            string
@@ -395,19 +397,19 @@ type QueryResult struct {
 
 // UpdateResult holds the complete result of an update operation.
 type UpdateResult struct {
-	Rows     []Row
-	Stats    map[string]any
-	Count    int64
-	Metadata *sppb.ResultSetMetadata
-	Plan     *sppb.QueryPlan
+	Rows     []Row                   // Rows returned by the update operation (e.g., from RETURNING clause)
+	Stats    map[string]any          // Query statistics from the operation
+	Count    int64                   // Number of rows affected by the update
+	Metadata *sppb.ResultSetMetadata // Metadata about the result set
+	Plan     *sppb.QueryPlan         // Query execution plan (when requested)
 }
 
 // DMLResult holds the results of a DML operation execution including commit information.
 type DMLResult struct {
-	Affected       int64
-	CommitResponse spanner.CommitResponse
-	Plan           *sppb.QueryPlan
-	Metadata       *sppb.ResultSetMetadata
+	Affected       int64                   // Total number of rows affected by the DML operation
+	CommitResponse spanner.CommitResponse  // Commit response including timestamp and stats
+	Plan           *sppb.QueryPlan         // Query execution plan (when requested)
+	Metadata       *sppb.ResultSetMetadata // Metadata about the result set
 }
 
 // withReadWriteTransactionUpdate executes an update with the current read-write transaction.
@@ -688,7 +690,9 @@ func (s *Session) InTransaction() bool {
 // Caller must hold s.tcMutex.
 func (s *Session) validateNoActiveTransactionLocked() error {
 	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
-		return fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
+		// Capture mode for safe error message formatting
+		mode := s.tc.attrs.mode
+		return fmt.Errorf("%s transaction is already running", mode)
 	}
 	return nil
 }
@@ -723,7 +727,9 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 
 	// Check for any type of existing transaction (including pending)
 	if s.tc != nil {
-		return fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
+		// Capture mode for safe error message formatting
+		mode := s.tc.attrs.mode
+		return fmt.Errorf("%s transaction is already running", mode)
 	}
 
 	s.tc = &transactionContext{
@@ -781,7 +787,7 @@ func (s *Session) setTransactionTag(tag string) error {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 	if s.tc == nil || s.tc.attrs.mode != transactionModePending {
-		return errors.New("not in pending transaction")
+		return ErrNotInPendingTransaction
 	}
 	s.tc.attrs.tag = tag
 	return nil
@@ -845,7 +851,7 @@ func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.Commi
 	})
 
 	if err == ErrNotInReadWriteTransaction {
-		return spanner.CommitResponse{}, errors.New("read-write transaction is not running")
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
 	// Clear transaction context after commit (regardless of error)
@@ -867,7 +873,7 @@ func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
 	})
 
 	if err == ErrNotInReadWriteTransaction {
-		return errors.New("read-write transaction is not running")
+		return ErrNotInReadWriteTransaction
 	}
 
 	// Clear transaction context after rollback
@@ -941,7 +947,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 	})
 
 	if err == ErrNotInReadOnlyTransaction {
-		return errors.New("read-only transaction is not running")
+		return ErrNotInReadOnlyTransaction
 	}
 
 	s.clearTransactionContext()
@@ -950,7 +956,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 
 func (s *Session) ClosePendingTransaction() error {
 	if !s.InPendingTransaction() {
-		return errors.New("pending transaction is not running")
+		return ErrNotInPendingTransaction
 	}
 
 	s.clearTransactionContext()
@@ -981,9 +987,9 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 	return plan, metadata, err
 }
 
-// runUpdateOnTransaction executes a DML statement on the given read-write transaction
-// This is a helper function to be used within transaction closures to avoid direct tc access
-// The caller is responsible for setting sendHeartbeat flag in the transaction context if needed
+// runUpdateOnTransaction executes a DML statement on the given read-write transaction.
+// This is a helper function to be used within transaction closures to avoid direct tc access.
+// Note: sendHeartbeat flag is handled by withReadWriteTransactionUpdate, not by callers.
 func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
 	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
@@ -1077,7 +1083,11 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 	// Reset STATEMENT_TAG
 	s.systemVariables.RequestTag = ""
 
-	// Hold the lock for the entire operation to ensure atomicity
+	// Hold the lock for the entire operation to ensure atomicity.
+	// Performance impact: The single-lock approach adds minimal overhead for a CLI tool
+	// where queries are user-initiated and not high-frequency. The correctness guarantee
+	// (preventing transaction context changes mid-operation) outweighs the negligible
+	// performance cost.
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
 
@@ -1086,7 +1096,9 @@ func (s *Session) runQueryWithOptions(ctx context.Context, stmt spanner.Statemen
 		// We're in a transaction (either read-write or read-only)
 		if s.tc.txn == nil {
 			// This shouldn't happen - log the error and return a stopped iterator
-			err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", s.tc.attrs.mode)
+			// Capture mode for safe error message formatting
+			mode := s.tc.attrs.mode
+			err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", mode)
 			slog.Error("INTERNAL ERROR", "error", err)
 			return newStoppedIterator(), nil
 		}
@@ -1152,7 +1164,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 
 	result, err := s.withReadWriteTransactionUpdate(ctx, stmt, opts, fc)
 	if err == ErrNotInReadWriteTransaction {
-		return nil, nil, 0, nil, nil, errors.New("read-write transaction is not running")
+		return nil, nil, 0, nil, nil, ErrNotInReadWriteTransaction
 	}
 	if err != nil {
 		return nil, nil, 0, nil, nil, err
