@@ -919,11 +919,12 @@ func (s *Session) runQueryWithStatsOnTransaction(ctx context.Context, tx transac
 
 // runAnalyzeQueryOnTransaction executes an analyze query on the given transaction
 // This is a helper function to be used within transaction closures to avoid direct tc access
+// NOTE: This method is called from within transaction callbacks where tcMutex is already held.
 func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 	mode := sppb.ExecuteSqlRequest_PLAN
 	opts := spanner.QueryOptions{
 		Mode:     &mode,
-		Priority: s.currentPriorityWithLock(),
+		Priority: s.currentPriorityLocked(),
 	}
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
