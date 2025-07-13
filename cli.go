@@ -446,7 +446,7 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
 	done := make(chan struct{})
-	
+
 	go func() {
 		// wait to avoid corruption with first output of command
 		select {
@@ -555,7 +555,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // Ensure context is cancelled when function returns
-	
+
 	// Start interrupt handler in interactive mode only
 	if interactive {
 		go handleInterrupt(ctx, cancel)
@@ -720,7 +720,7 @@ func handleInterrupt(ctx context.Context, cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	defer signal.Stop(c)
-	
+
 	select {
 	case <-c:
 		cancel()

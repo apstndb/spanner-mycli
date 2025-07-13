@@ -74,7 +74,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	// Add cleanup function to ensure server goroutine exits
 	t.Cleanup(func() {
 		// Close the client session first (if not already closed)
-		clientSession.Close()
+		_ = clientSession.Close()
 		// This should cause the server Wait() to return
 		// Give it a moment to clean up
 		select {
@@ -113,7 +113,11 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	if err != nil {
 		t.Fatalf("Failed to setup MCP client-server: %v", err)
 	}
-	defer mcpClient.Close()
+	defer func() {
+		if err := mcpClient.Close(); err != nil {
+			t.Logf("Failed to close MCP client: %v", err)
+		}
+	}()
 
 	// Call the execute_statement tool using the MCP client
 	t.Logf("Executing statement via MCP client: %q", statement)
@@ -389,7 +393,11 @@ func TestRunMCP(t *testing.T) {
 		defer cancel()
 
 		client, server := testMCPClientServerSetup(t, ctx, session)
-		defer client.Close()
+		defer func() {
+			if err := client.Close(); err != nil {
+				t.Logf("Failed to close client: %v", err)
+			}
+		}()
 		// Just verify they're created successfully, no need to use them
 		_ = client
 		_ = server

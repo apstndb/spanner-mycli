@@ -330,12 +330,12 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 func (s *Session) clearTransactionContext() {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
-	
+
 	// Close the transaction context to stop any running heartbeat
 	if s.tc != nil {
 		s.tc.Close()
 	}
-	
+
 	s.tc = nil
 }
 
@@ -767,10 +767,10 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		txn:           txn,
 		heartbeatFunc: s.startHeartbeat,
 	}
-	
+
 	// Heartbeat will be started by EnableHeartbeat() after the first operation
 	// For implicit transactions, they commit immediately so heartbeat isn't needed
-	
+
 	return nil
 }
 
@@ -940,7 +940,8 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 // to avoid deadlock.
 //
 // CRITICAL: This method is part of a callback chain where tcMutex is already held:
-//   RunInNewOrExistRwTx -> withReadWriteTransactionContext -> withTransactionLocked -> callback -> runUpdateOnTransaction
+//
+//	RunInNewOrExistRwTx -> withReadWriteTransactionContext -> withTransactionLocked -> callback -> runUpdateOnTransaction
 //
 // Using non-locked versions of methods like TransactionAttrs(), CurrentPriority(),
 // or QueryOptions() here will cause a deadlock. Always use the *Locked variants.
@@ -1215,7 +1216,7 @@ func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorp
 func (s *Session) Close() {
 	// Close any active transaction context (which stops heartbeat)
 	s.clearTransactionContext()
-	
+
 	if s.client != nil {
 		s.client.Close()
 	}
@@ -1428,7 +1429,7 @@ func (s *Session) startHeartbeat(ctx context.Context) {
 					}
 					return nil
 				})
-				
+
 				// If we couldn't access the transaction, it might have been cleared
 				if err == ErrNotInReadWriteTransaction {
 					slog.Debug("heartbeat: transaction no longer active, exiting goroutine")
