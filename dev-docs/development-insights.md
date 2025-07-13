@@ -321,8 +321,59 @@ During the comprehensive flag testing implementation, several important patterns
 
 **Key Insight**: Test code should be written with future parallelization in mind, even if not currently using `t.Parallel()`. This future-proofs the test suite and prevents technical debt.
 
+## Concurrency and Thread Safety Patterns
+
+**Discovery**: CLI tools still need proper concurrency handling for background operations and future extensibility
+
+### Mutex Usage Evolution (Issue #371)
+
+The data race fix in Session.BeginReadWriteTransaction() led to comprehensive concurrency improvements:
+
+1. **Initial Problem**: Simple mutex addition revealed deeper architectural issues
+2. **Logical Race Conditions**: Check-and-act operations needed atomic execution
+3. **Solution Pattern**: Closure-based helpers guarantee mutex scope
+
+### Key Implementation Patterns
+
+#### Closure-Based Resource Access
+```go
+// BAD: Race between check and use
+if s.InReadWriteTransaction() {
+    s.tc.txn.Update(...) // tc might be nil!
+}
+
+// GOOD: Atomic check-and-use with closure
+err := s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+    return tx.Update(...)
+})
+```
+
+#### Heartbeat Optimization
+- **Problem**: Constant mutex acquisition every 5 seconds caused contention
+- **Solution**: Check-before-lock pattern using lock-free TransactionAttrs()
+- **Result**: Reduced lock contention from periodic to only-when-needed
+
+#### Testing Strategy for Unmockable Types
+- **Challenge**: Spanner types have unexported fields, preventing mocking
+- **Solution**: Two-tier testing approach
+  - Unit tests: Error paths and mutex behavior
+  - Integration tests: Real transaction behavior with emulator
+
+### Lessons Learned
+
+1. **Review-Driven Architecture**: Multiple review cycles led to better design
+2. **Performance vs Correctness**: Mutex overhead negligible for CLI usage patterns
+3. **Future-Proofing**: Proper concurrency patterns enable safe feature additions
+4. **Documentation Importance**: Explaining "why mutex in a CLI" prevents future confusion
+
+For detailed patterns, see:
+- [Concurrency Patterns](patterns/concurrency-patterns.md) - Mutex usage and goroutine management
+- [Transaction Patterns](patterns/transaction-patterns.md) - Transaction-specific concurrency handling
+
 ## Related Documentation
 
 - [System Variable Patterns](patterns/system-variables.md) - Implementation patterns for system variables
 - [Architecture Guide](architecture-guide.md) - Detailed architecture documentation
 - [Issue Management](issue-management.md) - GitHub workflow and processes
+- [Concurrency Patterns](patterns/concurrency-patterns.md) - Mutex usage and thread safety
+- [Transaction Patterns](patterns/transaction-patterns.md) - Transaction management patterns

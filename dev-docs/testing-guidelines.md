@@ -254,6 +254,60 @@ func TestWithResource(t *testing.T) {
 
 ## Common Testing Patterns
 
+### Testing Unmockable Types
+
+Some external types (like Spanner transactions) have unexported fields and cannot be mocked directly. Use a two-tier testing strategy:
+
+#### 1. Unit Tests for Logic and Error Paths
+Test the logic around the unmockable type without creating real instances:
+
+```go
+func TestTransactionHelpers_ErrorPaths(t *testing.T) {
+    // Test what happens when no transaction exists
+    s := &Session{tc: nil}
+    
+    err := s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+        t.Fatal("should not be called")
+        return nil
+    })
+    
+    if err != ErrNotInReadWriteTransaction {
+        t.Errorf("expected ErrNotInReadWriteTransaction, got %v", err)
+    }
+}
+```
+
+#### 2. Integration Tests with Real Instances
+Use integration tests with real instances (e.g., Spanner emulator) for actual behavior:
+
+```go
+func TestTransactionHelpers_Integration(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping integration test")
+    }
+    
+    // Setup real Spanner client with emulator
+    ctx := context.Background()
+    client, cleanup := setupTestClient(t)
+    defer cleanup()
+    
+    // Test with real transaction
+    txn, _ := client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteStmtBasedTransaction) error {
+        // Test real operations
+        iter := txn.Query(ctx, spanner.NewStatement("SELECT 1"))
+        defer iter.Stop()
+        _, err := iter.Next()
+        return err
+    })
+}
+```
+
+#### Best Practices for Unmockable Types
+1. **Separate concerns**: Test logic separately from external dependencies
+2. **Use interfaces**: Define interfaces for the behavior you need
+3. **Integration test coverage**: Ensure critical paths are tested with real instances
+4. **Document limitations**: Note in tests why mocking isn't possible
+
 ### Flag Testing
 When testing CLI flags, consider the following patterns implemented in `main_flags_test.go`:
 
