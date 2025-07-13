@@ -1346,10 +1346,16 @@ func (s *Session) startHeartbeat(ctx context.Context) {
 			// acquiring the mutex each time was causing test timeouts in parallel tests.
 			attrs := s.TransactionAttrs()
 
+			// Check for invalid states and exit if detected
+			if attrs.mode == transactionModeUndetermined || attrs.mode == "" {
+				slog.Debug("heartbeat: no active transaction, exiting goroutine")
+				return
+			}
+
 			// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
 			if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
 				// Use withReadWriteTransaction to safely access the transaction
-				_ = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+				err := s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
 					// Always use LOW priority for heartbeat to avoid interfering with real work
 					err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
 					if err != nil {
@@ -1357,6 +1363,12 @@ func (s *Session) startHeartbeat(ctx context.Context) {
 					}
 					return nil
 				})
+				
+				// If we couldn't access the transaction, it might have been cleared
+				if err == ErrNotInReadWriteTransaction {
+					slog.Debug("heartbeat: transaction no longer active, exiting goroutine")
+					return
+				}
 			}
 		}
 	}

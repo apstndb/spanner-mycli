@@ -445,20 +445,31 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
+	done := make(chan struct{})
+	
 	go func() {
 		// wait to avoid corruption with first output of command
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-done:
+			return
+		}
 
 		i := 0
 		for {
-			<-ticker.C
-			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(ttyWriter, "\r%s", mark)
-			i++
+			select {
+			case <-ticker.C:
+				mark := progressMarks[i%len(progressMarks)]
+				fmt.Fprintf(ttyWriter, "\r%s", mark)
+				i++
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	stop := func() {
+		close(done)
 		ticker.Stop()
 		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
