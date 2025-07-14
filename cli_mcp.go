@@ -54,10 +54,15 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		statement := strings.TrimSuffix(params.Arguments.Statement, ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
-			slog.Debug("MCP request failed",
+			slog.Debug("MCP request failed during parsing",
 				"error", err.Error(),
 				"duration", time.Since(start))
-			return nil, err
+			// Per MCP v0.2.0, return execution errors as tool output, not protocol errors.
+			return &mcp.CallToolResultFor[struct{}]{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
+				},
+			}, nil
 		}
 
 		// Create a string builder to capture the output
@@ -66,14 +71,18 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		// Execute the statement with the string builder as the output
 		// Protect concurrent access with mutex
 		mu.Lock()
+		defer mu.Unlock()
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
-		mu.Unlock()
-
 		if err != nil {
 			slog.Debug("MCP execution failed",
 				"error", err.Error(),
 				"duration", time.Since(start))
-			return nil, err
+			// Per MCP v0.2.0, return execution errors as tool output, not protocol errors.
+			return &mcp.CallToolResultFor[struct{}]{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
+				},
+			}, nil
 		}
 
 		result := &mcp.CallToolResultFor[struct{}]{
