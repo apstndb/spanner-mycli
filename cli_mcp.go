@@ -49,24 +49,20 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 	return func(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
 		start := time.Now()
 
-		// Log incoming request if debug is enabled
-		if cli.SystemVariables.MCPDebug {
-			slog.Debug("MCP request received",
-				"method", "tools/call",
-				"tool", "execute_statement",
-				"statement", params.Arguments.Statement,
-				"timestamp", start)
-		}
+		// Log incoming request if debug logging is enabled
+		slog.Debug("MCP request received",
+			"method", "tools/call",
+			"tool", "execute_statement",
+			"statement", params.Arguments.Statement,
+			"timestamp", start)
 
 		// Parse the statement
 		statement := strings.TrimSuffix(params.Arguments.Statement, ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
-			if cli.SystemVariables.MCPDebug {
-				slog.Debug("MCP request failed",
-					"error", err.Error(),
-					"duration", time.Since(start))
-			}
+			slog.Debug("MCP request failed",
+				"error", err.Error(),
+				"duration", time.Since(start))
 			return nil, err
 		}
 
@@ -76,11 +72,9 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		// Execute the statement with the string builder as the output
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
 		if err != nil {
-			if cli.SystemVariables.MCPDebug {
-				slog.Debug("MCP execution failed",
-					"error", err.Error(),
-					"duration", time.Since(start))
-			}
+			slog.Debug("MCP execution failed",
+				"error", err.Error(),
+				"duration", time.Since(start))
 			return nil, err
 		}
 
@@ -90,13 +84,11 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 			},
 		}
 
-		// Log response if debug is enabled
-		if cli.SystemVariables.MCPDebug {
-			slog.Debug("MCP response sent",
-				"output_length", len(sb.String()),
-				"duration", time.Since(start),
-				"output_preview", truncateString(sb.String(), 100))
-		}
+		// Log response if debug logging is enabled
+		slog.Debug("MCP response sent",
+			"output_length", len(sb.String()),
+			"duration", time.Since(start),
+			"output_preview", truncateString(sb.String(), 100))
 
 		return result, nil
 	}

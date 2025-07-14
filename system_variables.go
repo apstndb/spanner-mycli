@@ -152,7 +152,6 @@ type systemVariables struct {
 	ImpersonateServiceAccount string
 	EnableADCPlus             bool
 	MCP                       bool // CLI_MCP (read-only)
-	MCPDebug                  bool // CLI_MCP_DEBUG
 	AsyncDDL                  bool // CLI_ASYNC_DDL
 	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
@@ -771,10 +770,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: accessor{
 			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.MCP }),
 		},
-	},
-	"CLI_MCP_DEBUG": {
-		Description: "Enable debug logging for MCP requests and responses.",
-		Accessor:    boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.MCPDebug }),
 	},
 	"CLI_DATABASE_DIALECT": {
 		Description: "",
