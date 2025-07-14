@@ -2469,8 +2469,6 @@ github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKR
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.5.0 h1:WaWD0Wp3Yw1BZwyvT4bIf2XsXAA+vq9ZNxUKXXV/vZQ=
 github.com/apstndb/memebridge v0.5.0/go.mod h1:fPrWYKcg5/eaavD6RovT9qeq8K7bDhgLKOcGhqg6zo4=
-github.com/apstndb/spanemuboost v0.2.10 h1:4L0NtAIsJidTnNvI/+rSOv2+W4qYzICYC/klMzMB0x4=
-github.com/apstndb/spanemuboost v0.2.10/go.mod h1:KmsJ3/u6BZSA99E5jizrfSAjN3+6MSheruMsmGpLhTQ=
 github.com/apstndb/spanemuboost v0.2.11 h1:lJgklbfLo/mYfxXnIwvHn4bTwcrnFwimr0pJudERev0=
 github.com/apstndb/spanemuboost v0.2.11/go.mod h1:KmsJ3/u6BZSA99E5jizrfSAjN3+6MSheruMsmGpLhTQ=
 github.com/apstndb/spannerplan v0.1.3 h1:nFzTEvRL4yMzQeFdtWp3V0VaUidNA/o3T7HyIYIGk/U=
@@ -2921,8 +2919,8 @@ github.com/moby/sys/userns v0.1.0 h1:tVLXkFOxVu9A64/yh59slHVv9ahO9UIev4JZusOLG/g
 github.com/moby/sys/userns v0.1.0/go.mod h1:IHUYgu/kao6N8YZlp9Cf444ySSvCmDlmzUcYfDHOl28=
 github.com/moby/term v0.5.2 h1:6qk3FJAFDs6i/q3W/pQ97SX192qKfZgGjCQqfCJkgzQ=
 github.com/moby/term v0.5.2/go.mod h1:d3djjFCrjnB+fl8NJux+EJzu0msscUP+f8it8hPkFLc=
-github.com/modelcontextprotocol/go-sdk v0.0.0-20250625213837-ff0d746521c4 h1:FQT63ASJ/Y1MkqrIZiKDz3Ynqb7x1Ck5LU3FRBXgiqM=
-github.com/modelcontextprotocol/go-sdk v0.0.0-20250625213837-ff0d746521c4/go.mod h1:DcXfbr7yl7e35oMpzHfKw2nUYRjhIGS2uou/6tdsTB0=
+github.com/modelcontextprotocol/go-sdk v0.2.0 h1:PESNYOmyM1c369tRkzXLY5hHrazj8x9CY1Xu0fLCryM=
+github.com/modelcontextprotocol/go-sdk v0.2.0/go.mod h1:0sL9zUKKs2FTTkeCCVnKqbLJTw5TScefPAzojjU459E=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
@@ -3046,6 +3044,8 @@ github.com/tklauser/numcpus v0.9.0 h1:lmyCHtANi8aRUgkckBgoDk1nHCux3n2cgkJLXdQGPD
 github.com/tklauser/numcpus v0.9.0/go.mod h1:SN6Nq1O3VychhC1npsWostA+oW+VOQTxZrS604NSRyI=
 github.com/vbauerster/mpb/v8 v8.9.3 h1:PnMeF+sMvYv9u23l6DO6Q3+Mdj408mjLRXIzmUmU2Z8=
 github.com/vbauerster/mpb/v8 v8.9.3/go.mod h1:hxS8Hz4C6ijnppDSIX6LjG8FYJSoPo9iIOcE53Zik0c=
+github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
+github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 github.com/yudai/gojsondiff v1.0.0 h1:27cbfqXLVEJ1o8I6v3y9lg8Ydm53EKqHXAOMxEGlCOA=
 github.com/yudai/gojsondiff v1.0.0/go.mod h1:AY32+k2cwILAkW1fbgxQ5mUmMiZFgLIV+FBNExI05xg=
 github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 h1:BHyfKlQyqbsFN5p3IfnEUduWvb9is428/nNb5L3U01M=
