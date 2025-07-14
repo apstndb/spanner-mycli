@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/mattn/go-runewidth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/samber/lo"
 )
@@ -34,15 +35,9 @@ type ExecuteStatementArgs struct {
 	Statement string `json:"statement" jsonschema:"Valid spanner-mycli statement to execute"`
 }
 
-// truncateString truncates a string to maxLen characters, adding "..." if truncated
+// truncateString truncates a string to maxLen display width, adding "..." if truncated
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return "..."
-	}
-	return s[:maxLen-3] + "..."
+	return runewidth.Truncate(s, maxLen, "...")
 }
 
 // executeStatementHandler handles the execute_statement tool
