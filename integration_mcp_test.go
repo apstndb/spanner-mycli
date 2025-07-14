@@ -74,6 +74,20 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 		// Give the server a moment to initialize
 	}
 
+	// Add cleanup function to ensure server goroutine exits
+	t.Cleanup(func() {
+		// Close the client session first (if not already closed)
+		_ = clientSession.Close()
+		// This should cause the server Wait() to return
+		// Give it a moment to clean up
+		select {
+		case <-serverDone:
+			// Server exited cleanly
+		case <-time.After(1 * time.Second):
+			t.Log("Warning: MCP server did not exit cleanly")
+		}
+	})
+
 	return clientSession, mcpServer, nil
 }
 
