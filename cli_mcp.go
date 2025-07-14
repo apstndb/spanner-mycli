@@ -35,11 +35,6 @@ type ExecuteStatementArgs struct {
 	Statement string `json:"statement" jsonschema:"Valid spanner-mycli statement to execute"`
 }
 
-// truncateString truncates a string to maxLen display width, adding "..." if truncated
-func truncateString(s string, maxLen int) string {
-	return runewidth.Truncate(s, maxLen, "...")
-}
-
 // executeStatementHandler handles the execute_statement tool
 func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
 	// Mutex to protect concurrent access to cli.executeStatement
@@ -91,7 +86,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		slog.Debug("MCP response sent",
 			"output_length", len(sb.String()),
 			"duration", time.Since(start),
-			"output_preview", truncateString(sb.String(), 100))
+			"output_preview", runewidth.Truncate(sb.String(), 100, "..."))
 
 		return result, nil
 	}
