@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -46,6 +47,9 @@ func truncateString(s string, maxLen int) string {
 
 // executeStatementHandler handles the execute_statement tool
 func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+	// Mutex to protect concurrent access to cli.executeStatement
+	var mu sync.Mutex
+
 	return func(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
 		start := time.Now()
 
@@ -70,7 +74,11 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 		var sb strings.Builder
 
 		// Execute the statement with the string builder as the output
+		// Protect concurrent access with mutex
+		mu.Lock()
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
+		mu.Unlock()
+
 		if err != nil {
 			slog.Debug("MCP execution failed",
 				"error", err.Error(),
