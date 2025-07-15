@@ -38,6 +38,8 @@ type ExecuteStatementArgs struct {
 // executeStatementHandler handles the execute_statement tool
 func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
 	// Mutex to protect concurrent access to cli.executeStatement
+	// Note: This coarse-grained mutex serializes all MCP requests, which is acceptable
+	// because spanner-mycli's MCP server is designed for single-client use only.
 	var mu sync.Mutex
 
 	return func(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
