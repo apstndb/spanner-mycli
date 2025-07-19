@@ -750,7 +750,6 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --i
 > The Cloud Spanner Emulator has several limitations that affect spanner-mycli functionality. See the [official emulator limitations documentation](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for a complete list. Notable limitations include:
 > - Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported
 > - `EXPLAIN` and `EXPLAIN ANALYZE` are not supported and will result in an error
-> - Partitioned DML and Partitioned Queries are not supported
 
 ## Using Regional Endpoints
 
