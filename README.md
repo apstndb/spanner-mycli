@@ -389,7 +389,7 @@ spanner> SELECT 1 AS test;
 ### EXPLAIN
 
 > [!WARNING]
-> When using the Cloud Spanner Emulator, `EXPLAIN` does not return accurate query plans. The emulator's query mode PLAN implementation is limited and results may not reflect actual query execution behavior. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+> `EXPLAIN` is not supported when using the Cloud Spanner Emulator and will result in an error. The emulator does not provide query plans. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
 
 You can see query plan without query execution using the `EXPLAIN` client side statement.
 
@@ -419,7 +419,7 @@ Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https
 ### EXPLAIN ANALYZE
 
 > [!WARNING]
-> When using the Cloud Spanner Emulator, `EXPLAIN ANALYZE` does not return accurate query plans or execution profiles. The emulator's query mode PROFILE implementation is limited and results may not reflect actual query execution behavior. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+> `EXPLAIN ANALYZE` is not supported when using the Cloud Spanner Emulator and will result in an error. The emulator does not provide query plans or execution profiles. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
 
 You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
 You should know that it requires executing the query.
@@ -749,7 +749,7 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --i
 > [!WARNING]
 > The Cloud Spanner Emulator has several limitations that affect spanner-mycli functionality. See the [official emulator limitations documentation](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for a complete list. Notable limitations include:
 > - Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported
-> - Query plans from `EXPLAIN` and `EXPLAIN ANALYZE` are not accurate
+> - `EXPLAIN` and `EXPLAIN ANALYZE` are not supported and will result in an error
 > - Partitioned DML and Partitioned Queries are not supported
 
 ## Using Regional Endpoints
@@ -1010,7 +1010,7 @@ Empty set (8.763167ms)
 ```
 
 > [!NOTE]
-> The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
+> The embedded emulator has the same limitations as the standalone emulator. `EXPLAIN` and `EXPLAIN ANALYZE` are not supported and will result in an error. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
 
 ### Protocol Buffers support
 
@@ -1331,7 +1331,7 @@ spanner> SHOW SCHEMA UPDATE OPERATIONS;
 ### Split Points support
 
 > [!WARNING]
-> Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported by the Cloud Spanner Emulator. These commands will fail when running against the emulator. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+> Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported by the Cloud Spanner Emulator and will result in an error. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
 
 spanner-mycli can [manage split points](https://cloud.google.com/spanner/docs/create-manage-split-points) for [pre-splitting](https://cloud.google.com/spanner/docs/pre-splitting-overview.
 
