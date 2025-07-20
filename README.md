@@ -388,6 +388,9 @@ spanner> SELECT 1 AS test;
 
 ### EXPLAIN
 
+> [!WARNING]
+> The Cloud Spanner Emulator does not return query plans in PLAN mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+
 You can see query plan without query execution using the `EXPLAIN` client side statement.
 
 For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
@@ -414,6 +417,9 @@ Predicates(identified by ID):
 Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https://cloud.google.com/spanner/docs/sql-best-practices#optimize-query-execution) of the operator node.
 
 ### EXPLAIN ANALYZE
+
+> [!WARNING]
+> The Cloud Spanner Emulator does not return query plans in PROFILE mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN ANALYZE` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
 
 You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
 You should know that it requires executing the query.
@@ -740,6 +746,11 @@ $ unset SPANNER_EMULATOR_HOST
 $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
 
+> [!WARNING]
+> The Cloud Spanner Emulator has several limitations that affect spanner-mycli functionality. See the [official emulator limitations documentation](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for a complete list. Notable limitations include:
+> - Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported
+> - `EXPLAIN` and `EXPLAIN ANALYZE` will error (emulator doesn't return query plans)
+
 ## Using Regional Endpoints
 
 spanner-mycli supports connecting to [regional endpoints](https://cloud.google.com/spanner/docs/endpoints#available-regional-endpoints) for improved performance and reliability. You can specify a regional endpoint using either the `--endpoint` flag or the `--host` flag:
@@ -996,6 +1007,9 @@ emulator-project:emulator-instance:emulator-database
 +---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
 Empty set (8.763167ms)
 ```
+
+> [!NOTE]
+> The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
 
 ### Protocol Buffers support
 
@@ -1314,6 +1328,9 @@ spanner> SHOW SCHEMA UPDATE OPERATIONS;
 ```
 
 ### Split Points support
+
+> [!WARNING]
+> Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported by the Cloud Spanner Emulator and will result in an error. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
 
 spanner-mycli can [manage split points](https://cloud.google.com/spanner/docs/create-manage-split-points) for [pre-splitting](https://cloud.google.com/spanner/docs/pre-splitting-overview.
 
