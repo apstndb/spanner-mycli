@@ -1,5 +1,9 @@
 package main
 
+// This file contains output formatters for query results.
+// It implements various output formats (TABLE, CSV, HTML, XML, etc.) with proper error handling.
+// All formatters follow a consistent pattern where errors are propagated instead of logged and ignored.
+
 import (
 	"cmp"
 	"encoding/csv"

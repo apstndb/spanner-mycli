@@ -669,6 +669,7 @@ func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 }
 
 // displayResult displays the result of the statement execution.
+// It returns an error if the output operation fails.
 func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) error {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
