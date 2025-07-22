@@ -3,15 +3,11 @@ package main
 import (
 	"cmp"
 	_ "embed"
-	"encoding/csv"
-	"encoding/xml"
 	"fmt"
-	"html"
 	"io"
 	"iter"
 	"log/slog"
 	"math"
-	"regexp"
 	"slices"
 	"strings"
 	"text/template"
@@ -26,9 +22,6 @@ import (
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/renderer"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 )
 
@@ -80,13 +73,8 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 	return header.internalRender(verbose)
 }
 
-func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) {
-	// TODO(#388): Migrate all output functions to return errors for better error handling.
-	// Currently, only HTML and XML formats return errors as a first step toward
-	// improving error handling across all output formats.
-	mode := sysVars.CLIFormat
-
-	// screenWidth <= means no limit.
+func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) error {
+	// screenWidth <= 0 means no limit.
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt
 	}
@@ -101,134 +89,21 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
 				"rowCount", len(result.Rows))
 		}
-		return
+		return nil
 	}
 
-	switch mode {
-	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
-		rw := runewidthex.NewCondition()
-		rw.TabWidth = cmp.Or(int(sysVars.TabWidth), 4)
-
-		rows := result.Rows
-
-		var tableBuf strings.Builder
-		table := tablewriter.NewTable(&tableBuf,
-			tablewriter.WithRenderer(
-				renderer.NewBlueprint(tw.Rendition{Symbols: tw.NewSymbols(tw.StyleASCII)})),
-			tablewriter.WithHeaderAlignment(tw.AlignLeft),
-			tablewriter.WithTrimSpace(tw.Off),
-			tablewriter.WithHeaderAutoFormat(tw.Off),
-		).Configure(func(config *tablewriter.Config) {
-			config.Row.ColumnAligns = result.ColumnAlign
-			config.Row.Formatting.AutoWrap = tw.WrapNone
-		})
-
-		wc := &widthCalculator{Condition: rw}
-		adjustedWidths := calculateWidth(result, wc, screenWidth, rows)
-
-		headers := slices.Collect(hiter.Unify(
-			rw.Wrap,
-			hiter.Pairs(
-				slices.Values(renderTableHeader(result.TableHeader, sysVars.Verbose)),
-				slices.Values(adjustedWidths))),
-		)
-
-		if !sysVars.SkipColumnNames {
-			table.Header(headers)
-		}
-
-		for _, row := range rows {
-			wrappedColumns := slices.Collect(hiter.Unify(
-				rw.Wrap,
-				hiter.Pairs(slices.Values(row), slices.Values(adjustedWidths))),
-			)
-			if err := table.Append(wrappedColumns); err != nil {
-				slog.Error("tablewriter.Table.Append() failed", "err", err)
-			}
-		}
-
-		forceTableRender := sysVars.Verbose && len(headers) > 0
-
-		if forceTableRender || len(rows) > 0 {
-			if err := table.Render(); err != nil {
-				slog.Error("tablewriter.Table.Render() failed", "err", err)
-			}
-		}
-
-		s := strings.TrimSpace(tableBuf.String())
-		if mode == DisplayModeTableComment || mode == DisplayModeTableDetailComment {
-			s = strings.ReplaceAll(s, "\n", "\n ")
-			s = topLeftRe.ReplaceAllLiteralString(s, "/*")
-		}
-
-		if mode == DisplayModeTableComment {
-			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
-		}
-
-		if s != "" {
-			fmt.Fprintln(out, s)
-		}
-	case DisplayModeVertical:
-		maxLen := 0
-		for _, columnName := range columnNames {
-			if len(columnName) > maxLen {
-				maxLen = len(columnName)
-			}
-		}
-		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
-		for i, row := range result.Rows {
-			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
-			for j, column := range row { // j represents the index of the column in the row
-				var columnName string
-				if j < len(columnNames) {
-					columnName = columnNames[j]
-				} else {
-					// Use a default column name if row has more columns than headers
-					columnName = fmt.Sprintf("Column_%d", j+1)
-				}
-				fmt.Fprintf(out, format, columnName, column)
-			}
-		}
-	case DisplayModeTab:
-		if len(columnNames) > 0 {
-			if !sysVars.SkipColumnNames {
-				fmt.Fprintln(out, strings.Join(columnNames, "\t"))
-			}
-			for _, row := range result.Rows {
-				fmt.Fprintln(out, strings.Join(row, "\t"))
-			}
-		}
-	case DisplayModeHTML:
-		// Output data in HTML table format compatible with Google Cloud Spanner CLI.
-		// All values are properly escaped using html.EscapeString for security.
-		if err := printHTMLTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
-			slog.Error("printHTMLTable() failed", "err", err)
-		}
-	case DisplayModeXML:
-		// Output data in XML format compatible with Google Cloud Spanner CLI.
-		// All values are properly escaped using encoding/xml for security.
-		// Schema:
-		//   <resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-		//     <header>  <!-- optional, omitted when SkipColumnNames is true -->
-		//       <field>column1</field>
-		//       ...
-		//     </header>
-		//     <row>
-		//       <field>value1</field>
-		//       ...
-		//     </row>
-		//     ...
-		//   </resultset>
-		if err := printXMLResultSet(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
-			slog.Error("printXMLResultSet() failed", "err", err)
-		}
-	case DisplayModeCSV:
-		// Output data in CSV format using encoding/csv for RFC 4180 compliance.
-		// This provides automatic escaping of special characters (commas, quotes, newlines).
-		if err := printCSVTable(out, columnNames, result.Rows, sysVars.SkipColumnNames); err != nil {
-			slog.Error("printCSVTable() failed", "err", err)
-		}
+	// Create the appropriate formatter based on the display mode
+	formatter, err := NewFormatter(sysVars.CLIFormat)
+	if err != nil {
+		return fmt.Errorf("failed to create formatter: %w", err)
 	}
+
+	// Format and write the result
+	if err := formatter(out, result, columnNames, sysVars, screenWidth); err != nil {
+		return fmt.Errorf("formatting failed for mode %v: %w", sysVars.CLIFormat, err)
+	}
+
+	return nil
 }
 
 func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows []Row) []int {
@@ -237,7 +112,7 @@ func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows [
 	return calculateOptimalWidth(wc, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 }
 
-func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) {
+func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) error {
 	if sysVars.MarkdownCodeblock {
 		fmt.Fprintln(out, "```sql")
 	}
@@ -249,7 +124,9 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out, input+";")
 	}
 
-	printTableData(sysVars, screenWidth, out, result)
+	if err := printTableData(sysVars, screenWidth, out, result); err != nil {
+		return err
+	}
 
 	if len(result.Predicates) > 0 {
 		fmt.Fprintln(out, "Predicates(identified by ID):")
@@ -278,6 +155,8 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	if sysVars.MarkdownCodeblock {
 		fmt.Fprintln(out, "```")
 	}
+
+	return nil
 }
 
 type OutputContext struct {
@@ -573,179 +452,6 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	return adjustWidths
 }
 
-var (
-	topLeftRe     = regexp.MustCompile(`^\+`)
-	bottomRightRe = regexp.MustCompile(`\+$`)
-)
-
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
 	return field.GetName() + "\n" + formatTypeSimple(field.GetType())
-}
-
-// printHTMLTable outputs query results in HTML table format.
-// The format is compatible with Google Cloud Spanner CLI:
-//   - Uses uppercase HTML tags (TABLE, TR, TD, TH) for compatibility
-//   - Includes BORDER='1' attribute on TABLE element
-//   - All values are HTML-escaped using html.EscapeString for security
-//
-// Note: This function streams output row-by-row for memory efficiency.
-func printHTMLTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
-	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
-	}
-
-	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
-		return err
-	}
-
-	// Add header row unless skipping column names
-	if !skipColumnNames {
-		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
-			return err
-		}
-		for _, col := range columnNames {
-			if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
-			return err
-		}
-	}
-
-	// Add data rows
-	for _, row := range rows {
-		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
-			return err
-		}
-		for _, col := range row {
-			if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
-			return err
-		}
-	}
-
-	_, err := fmt.Fprintln(out, "</TABLE>")
-	return err
-}
-
-// xmlField represents a field element in XML output.
-type xmlField struct {
-	XMLName xml.Name `xml:"field"`
-	Value   string   `xml:",chardata"`
-}
-
-// xmlRow represents a row element containing multiple fields.
-type xmlRow struct {
-	XMLName xml.Name   `xml:"row"`
-	Fields  []xmlField `xml:"field"`
-}
-
-// xmlHeader represents the optional header element containing column names.
-type xmlHeader struct {
-	XMLName xml.Name   `xml:"header"`
-	Fields  []xmlField `xml:"field"`
-}
-
-// xmlResultSet represents the root element of the XML output.
-type xmlResultSet struct {
-	XMLName xml.Name   `xml:"resultset"`
-	XMLNS   string     `xml:"xmlns:xsi,attr"`
-	Header  *xmlHeader `xml:"header,omitempty"`
-	Rows    []xmlRow   `xml:"row"`
-}
-
-// printXMLResultSet outputs query results in XML format.
-// The format is compatible with Google Cloud Spanner CLI:
-//   - Uses XML declaration with single quotes: <?xml version='1.0'?>
-//   - Includes xmlns:xsi namespace for compatibility
-//   - All values are automatically XML-escaped by encoding/xml package
-//
-// Note: This implementation builds the entire result set in memory before
-// encoding. For very large result sets, consider using TAB format for
-// streaming output. This design prioritizes simplicity and consistency
-// with the TABLE format over memory efficiency.
-func printXMLResultSet(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
-	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
-	}
-
-	// Build the result set structure
-	resultSet := xmlResultSet{
-		XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
-		Rows:  make([]xmlRow, 0, len(rows)),
-	}
-
-	// Add header fields only if not skipping column names
-	if !skipColumnNames {
-		header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
-		for _, col := range columnNames {
-			header.Fields = append(header.Fields, xmlField{Value: col})
-		}
-		resultSet.Header = header
-	}
-
-	// Add rows
-	for _, row := range rows {
-		xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
-		for _, col := range row {
-			xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
-		}
-		resultSet.Rows = append(resultSet.Rows, xmlRow)
-	}
-
-	// Write XML declaration
-	if _, err := fmt.Fprintln(out, "<?xml version='1.0'?>"); err != nil {
-		return err
-	}
-
-	// Marshal the result set
-	encoder := xml.NewEncoder(out)
-	encoder.Indent("", "\t")
-	if err := encoder.Encode(resultSet); err != nil {
-		return fmt.Errorf("xml.Encoder.Encode() failed: %w", err)
-	}
-	_, err := fmt.Fprintln(out) // Add final newline
-	return err
-}
-
-// printCSVTable outputs query results in CSV format.
-// The format follows RFC 4180 with automatic escaping via encoding/csv.
-// Column headers are included unless skipColumnNames is true.
-//
-// Note: Spanner requires at least one column in SELECT queries, so columnNames
-// should never be empty for valid query results. The empty check is defensive
-// programming for edge cases like client-side statements or error conditions.
-func printCSVTable(out io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
-	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
-	}
-
-	csvWriter := csv.NewWriter(out)
-	// Defer Flush to ensure the buffer is written to the output, even on error.
-	defer csvWriter.Flush()
-
-	if !skipColumnNames {
-		if err := csvWriter.Write(columnNames); err != nil {
-			return err
-		}
-	}
-
-	for _, row := range rows {
-		if err := csvWriter.Write(row); err != nil {
-			return err
-		}
-	}
-
-	// The deferred Flush() will write any remaining buffered data.
-	// We must check for an error from the writer, which can happen
-	// during a Write or the final Flush.
-	if err := csvWriter.Error(); err != nil {
-		return fmt.Errorf("csv writer error: %w", err)
-	}
-
-	return nil
 }

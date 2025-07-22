@@ -76,7 +76,10 @@ func TestPrintTableDataHTML(t *testing.T) {
 				SkipColumnNames: tt.skipColNames,
 			}
 
-			printTableData(sysVars, 0, &buf, tt.result)
+			err := printTableData(sysVars, 0, &buf, tt.result)
+			if err != nil {
+				t.Errorf("printTableData() unexpected error: %v", err)
+			}
 
 			got := buf.String()
 
@@ -187,7 +190,10 @@ func TestPrintTableDataXML(t *testing.T) {
 				SkipColumnNames: tt.skipColNames,
 			}
 
-			printTableData(sysVars, 0, &buf, tt.result)
+			err := printTableData(sysVars, 0, &buf, tt.result)
+			if err != nil {
+				t.Errorf("printTableData() unexpected error: %v", err)
+			}
 
 			got := buf.String()
 
@@ -333,7 +339,10 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				CLIFormat: tt.mode,
 			}
 
-			printTableData(sysVars, 0, &buf, tt.result)
+			err := printTableData(sysVars, 0, &buf, tt.result)
+			if err != nil {
+				t.Errorf("printTableData() unexpected error: %v", err)
+			}
 
 			got := buf.String()
 			if tt.wantOutput && got == "" {
@@ -346,9 +355,11 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 }
 
 func TestHTMLAndXMLHelpers(t *testing.T) {
-	t.Run("printHTMLTable with empty input", func(t *testing.T) {
+	t.Run("formatHTML with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := printHTMLTable(&buf, []string{}, []Row{}, false)
+		result := &Result{Rows: []Row{}}
+		sysVars := &systemVariables{SkipColumnNames: false}
+		err := formatHTML(&buf, result, []string{}, sysVars, 0)
 		if err == nil {
 			t.Error("expected error for empty columns, got nil")
 		}
@@ -360,9 +371,11 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		}
 	})
 
-	t.Run("printXMLResultSet with empty input", func(t *testing.T) {
+	t.Run("formatXML with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := printXMLResultSet(&buf, []string{}, []Row{}, false)
+		result := &Result{Rows: []Row{}}
+		sysVars := &systemVariables{SkipColumnNames: false}
+		err := formatXML(&buf, result, []string{}, sysVars, 0)
 		if err == nil {
 			t.Error("expected error for empty columns, got nil")
 		}
@@ -374,9 +387,11 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		}
 	})
 
-	t.Run("printCSVTable with empty input", func(t *testing.T) {
+	t.Run("formatCSV with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := printCSVTable(&buf, []string{}, []Row{}, false)
+		result := &Result{Rows: []Row{}}
+		sysVars := &systemVariables{SkipColumnNames: false}
+		err := formatCSV(&buf, result, []string{}, sysVars, 0)
 		if err == nil {
 			t.Error("expected error for empty columns, got nil")
 		}
@@ -401,7 +416,9 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		err := printXMLResultSet(&buf, columns, rows, false)
+		result := &Result{Rows: rows}
+		sysVars := &systemVariables{SkipColumnNames: false}
+		err := formatXML(&buf, result, columns, sysVars, 0)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -507,7 +524,10 @@ func TestPrintTableDataCSV(t *testing.T) {
 				SkipColumnNames: tt.skipColNames,
 			}
 
-			printTableData(sysVars, 0, &buf, tt.result)
+			err := printTableData(sysVars, 0, &buf, tt.result)
+			if err != nil {
+				t.Errorf("printTableData() unexpected error: %v", err)
+			}
 
 			got := buf.String()
 			if got != tt.wantOutput {
