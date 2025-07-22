@@ -131,40 +131,35 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 // with column names on the left and values on the right.
 func formatVertical(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 	return writeBuffered(out, func(out io.Writer) error {
-		return writeVertical(out, result, columnNames)
-	})
-}
-
-// writeVertical writes the vertical format output to the provided writer.
-func writeVertical(w io.Writer, result *Result, columnNames []string) error {
-	if len(columnNames) == 0 {
-		return nil
-	}
-
-	maxLen := 0
-	for _, columnName := range columnNames {
-		if len(columnName) > maxLen {
-			maxLen = len(columnName)
+		if len(columnNames) == 0 {
+			return nil
 		}
-	}
 
-	format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
-
-	for i, row := range result.Rows {
-		fmt.Fprintf(w, "*************************** %d. row ***************************\n", i+1)
-		for j, column := range row {
-			var columnName string
-			if j < len(columnNames) {
-				columnName = columnNames[j]
-			} else {
-				// Use a default column name if row has more columns than headers
-				columnName = fmt.Sprintf("Column_%d", j+1)
+		maxLen := 0
+		for _, columnName := range columnNames {
+			if len(columnName) > maxLen {
+				maxLen = len(columnName)
 			}
-			fmt.Fprintf(w, format, columnName, column)
 		}
-	}
 
-	return nil
+		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
+
+		for i, row := range result.Rows {
+			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
+			for j, column := range row {
+				var columnName string
+				if j < len(columnNames) {
+					columnName = columnNames[j]
+				} else {
+					// Use a default column name if row has more columns than headers
+					columnName = fmt.Sprintf("Column_%d", j+1)
+				}
+				fmt.Fprintf(out, format, columnName, column)
+			}
+		}
+
+		return nil
+	})
 }
 
 // formatTab formats output as tab-separated values.
@@ -220,38 +215,33 @@ func formatCSV(out io.Writer, result *Result, columnNames []string, sysVars *sys
 // formatHTML formats output as an HTML table.
 func formatHTML(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 	return writeBuffered(out, func(out io.Writer) error {
-		return writeHTML(out, columnNames, result.Rows, sysVars.SkipColumnNames)
+		if len(columnNames) == 0 {
+			return fmt.Errorf("no columns to output")
+		}
+
+		fmt.Fprint(out, "<TABLE BORDER='1'>")
+
+		// Add header row unless skipping column names
+		if !sysVars.SkipColumnNames {
+			fmt.Fprint(out, "<TR>")
+			for _, col := range columnNames {
+				fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
+			}
+			fmt.Fprint(out, "</TR>")
+		}
+
+		// Add data rows
+		for _, row := range result.Rows {
+			fmt.Fprint(out, "<TR>")
+			for _, col := range row {
+				fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
+			}
+			fmt.Fprint(out, "</TR>")
+		}
+
+		fmt.Fprintln(out, "</TABLE>")
+		return nil
 	})
-}
-
-// writeHTML writes the HTML table to the provided writer.
-func writeHTML(w io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
-	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
-	}
-
-	fmt.Fprint(w, "<TABLE BORDER='1'>")
-
-	// Add header row unless skipping column names
-	if !skipColumnNames {
-		fmt.Fprint(w, "<TR>")
-		for _, col := range columnNames {
-			fmt.Fprintf(w, "<TH>%s</TH>", html.EscapeString(col))
-		}
-		fmt.Fprint(w, "</TR>")
-	}
-
-	// Add data rows
-	for _, row := range rows {
-		fmt.Fprint(w, "<TR>")
-		for _, col := range row {
-			fmt.Fprintf(w, "<TD>%s</TD>", html.EscapeString(col))
-		}
-		fmt.Fprint(w, "</TR>")
-	}
-
-	fmt.Fprintln(w, "</TABLE>")
-	return nil
 }
 
 // xmlField represents a field element in XML output.
@@ -283,52 +273,47 @@ type xmlResultSet struct {
 // formatXML formats output as XML.
 func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 	return writeBuffered(out, func(out io.Writer) error {
-		return writeXML(out, columnNames, result.Rows, sysVars.SkipColumnNames)
+		if len(columnNames) == 0 {
+			return fmt.Errorf("no columns to output")
+		}
+
+		// Build the result set structure
+		resultSet := xmlResultSet{
+			XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
+			Rows:  make([]xmlRow, 0, len(result.Rows)),
+		}
+
+		// Add header fields only if not skipping column names
+		if !sysVars.SkipColumnNames {
+			header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
+			for _, col := range columnNames {
+				header.Fields = append(header.Fields, xmlField{Value: col})
+			}
+			resultSet.Header = header
+		}
+
+		// Add rows
+		for _, row := range result.Rows {
+			xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
+			for _, col := range row {
+				xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
+			}
+			resultSet.Rows = append(resultSet.Rows, xmlRow)
+		}
+
+		// Write XML declaration
+		fmt.Fprintln(out, "<?xml version='1.0'?>")
+
+		// Marshal the result set
+		encoder := xml.NewEncoder(out)
+		encoder.Indent("", "\t")
+		if err := encoder.Encode(resultSet); err != nil {
+			return fmt.Errorf("xml encode failed: %w", err)
+		}
+		fmt.Fprintln(out) // Add final newline
+
+		return nil
 	})
-}
-
-// writeXML writes the XML output to the provided writer.
-func writeXML(w io.Writer, columnNames []string, rows []Row, skipColumnNames bool) error {
-	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
-	}
-
-	// Build the result set structure
-	resultSet := xmlResultSet{
-		XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
-		Rows:  make([]xmlRow, 0, len(rows)),
-	}
-
-	// Add header fields only if not skipping column names
-	if !skipColumnNames {
-		header := &xmlHeader{Fields: make([]xmlField, 0, len(columnNames))}
-		for _, col := range columnNames {
-			header.Fields = append(header.Fields, xmlField{Value: col})
-		}
-		resultSet.Header = header
-	}
-
-	// Add rows
-	for _, row := range rows {
-		xmlRow := xmlRow{Fields: make([]xmlField, 0, len(row))}
-		for _, col := range row {
-			xmlRow.Fields = append(xmlRow.Fields, xmlField{Value: col})
-		}
-		resultSet.Rows = append(resultSet.Rows, xmlRow)
-	}
-
-	// Write XML declaration
-	fmt.Fprintln(w, "<?xml version='1.0'?>")
-
-	// Marshal the result set
-	encoder := xml.NewEncoder(w)
-	encoder.Indent("", "\t")
-	if err := encoder.Encode(resultSet); err != nil {
-		return fmt.Errorf("xml encode failed: %w", err)
-	}
-	fmt.Fprintln(w) // Add final newline
-
-	return nil
 }
 
 // NewFormatter creates a new formatter function based on the display mode.
