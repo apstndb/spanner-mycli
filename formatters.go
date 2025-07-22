@@ -124,7 +124,9 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 		}
 
 		if s != "" {
-			fmt.Fprintln(w, s)
+			if _, err := fmt.Fprintln(w, s); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -149,7 +151,9 @@ func formatVertical(out io.Writer, result *Result, columnNames []string, sysVars
 		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
 
 		for i, row := range result.Rows {
-			fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1)
+			if _, err := fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1); err != nil {
+				return err
+			}
 			for j, column := range row {
 				var columnName string
 				if j < len(columnNames) {
@@ -158,7 +162,9 @@ func formatVertical(out io.Writer, result *Result, columnNames []string, sysVars
 					// Use a default column name if row has more columns than headers
 					columnName = fmt.Sprintf("Column_%d", j+1)
 				}
-				fmt.Fprintf(out, format, columnName, column)
+				if _, err := fmt.Fprintf(out, format, columnName, column); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -223,27 +229,43 @@ func formatHTML(out io.Writer, result *Result, columnNames []string, sysVars *sy
 			return fmt.Errorf("no columns to output")
 		}
 
-		fmt.Fprint(out, "<TABLE BORDER='1'>")
+		if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
+			return err
+		}
 
 		// Add header row unless skipping column names
 		if !sysVars.SkipColumnNames {
-			fmt.Fprint(out, "<TR>")
-			for _, col := range columnNames {
-				fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col))
+			if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+				return err
 			}
-			fmt.Fprint(out, "</TR>")
+			for _, col := range columnNames {
+				if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+				return err
+			}
 		}
 
 		// Add data rows
 		for _, row := range result.Rows {
-			fmt.Fprint(out, "<TR>")
-			for _, col := range row {
-				fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col))
+			if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+				return err
 			}
-			fmt.Fprint(out, "</TR>")
+			for _, col := range row {
+				if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+				return err
+			}
 		}
 
-		fmt.Fprintln(out, "</TABLE>")
+		if _, err := fmt.Fprintln(out, "</TABLE>"); err != nil {
+			return err
+		}
 		return nil
 	})
 }
@@ -306,7 +328,9 @@ func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *sys
 		}
 
 		// Write XML declaration
-		fmt.Fprintln(out, "<?xml version='1.0'?>")
+		if _, err := fmt.Fprintln(out, "<?xml version='1.0'?>"); err != nil {
+			return err
+		}
 
 		// Marshal the result set
 		encoder := xml.NewEncoder(out)
@@ -314,7 +338,9 @@ func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *sys
 		if err := encoder.Encode(resultSet); err != nil {
 			return fmt.Errorf("xml encode failed: %w", err)
 		}
-		fmt.Fprintln(out) // Add final newline
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		} // Add final newline
 
 		return nil
 	})
