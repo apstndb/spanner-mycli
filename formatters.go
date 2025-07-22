@@ -135,41 +135,40 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 
 // formatVertical formats output in vertical format where each row is displayed
 // with column names on the left and values on the right.
+// This is a streaming format that outputs row-by-row without buffering.
 func formatVertical(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-	return writeBuffered(out, func(out io.Writer) error {
-		if len(columnNames) == 0 {
-			return nil
-		}
+	if len(columnNames) == 0 {
+		return nil
+	}
 
-		maxLen := 0
-		for _, columnName := range columnNames {
-			if len(columnName) > maxLen {
-				maxLen = len(columnName)
+	maxLen := 0
+	for _, columnName := range columnNames {
+		if len(columnName) > maxLen {
+			maxLen = len(columnName)
+		}
+	}
+
+	format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
+
+	for i, row := range result.Rows {
+		if _, err := fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1); err != nil {
+			return err
+		}
+		for j, column := range row {
+			var columnName string
+			if j < len(columnNames) {
+				columnName = columnNames[j]
+			} else {
+				// Use a default column name if row has more columns than headers
+				columnName = fmt.Sprintf("Column_%d", j+1)
 			}
-		}
-
-		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
-
-		for i, row := range result.Rows {
-			if _, err := fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1); err != nil {
+			if _, err := fmt.Fprintf(out, format, columnName, column); err != nil {
 				return err
 			}
-			for j, column := range row {
-				var columnName string
-				if j < len(columnNames) {
-					columnName = columnNames[j]
-				} else {
-					// Use a default column name if row has more columns than headers
-					columnName = fmt.Sprintf("Column_%d", j+1)
-				}
-				if _, err := fmt.Fprintf(out, format, columnName, column); err != nil {
-					return err
-				}
-			}
 		}
+	}
 
-		return nil
-	})
+	return nil
 }
 
 // formatTab formats output as tab-separated values.
@@ -223,51 +222,50 @@ func formatCSV(out io.Writer, result *Result, columnNames []string, sysVars *sys
 }
 
 // formatHTML formats output as an HTML table.
+// This is a streaming format that outputs row-by-row without buffering.
 func formatHTML(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-	return writeBuffered(out, func(out io.Writer) error {
-		if len(columnNames) == 0 {
-			return fmt.Errorf("no columns to output")
-		}
+	if len(columnNames) == 0 {
+		return fmt.Errorf("no columns to output")
+	}
 
-		if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
+	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
+		return err
+	}
+
+	// Add header row unless skipping column names
+	if !sysVars.SkipColumnNames {
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
 			return err
 		}
-
-		// Add header row unless skipping column names
-		if !sysVars.SkipColumnNames {
-			if _, err := fmt.Fprint(out, "<TR>"); err != nil {
-				return err
-			}
-			for _, col := range columnNames {
-				if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
-					return err
-				}
-			}
-			if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+		for _, col := range columnNames {
+			if _, err := fmt.Fprintf(out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
 				return err
 			}
 		}
-
-		// Add data rows
-		for _, row := range result.Rows {
-			if _, err := fmt.Fprint(out, "<TR>"); err != nil {
-				return err
-			}
-			for _, col := range row {
-				if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
-					return err
-				}
-			}
-			if _, err := fmt.Fprint(out, "</TR>"); err != nil {
-				return err
-			}
-		}
-
-		if _, err := fmt.Fprintln(out, "</TABLE>"); err != nil {
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
 			return err
 		}
-		return nil
-	})
+	}
+
+	// Add data rows
+	for _, row := range result.Rows {
+		if _, err := fmt.Fprint(out, "<TR>"); err != nil {
+			return err
+		}
+		for _, col := range row {
+			if _, err := fmt.Fprintf(out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "</TR>"); err != nil {
+			return err
+		}
+	}
+
+	if _, err := fmt.Fprintln(out, "</TABLE>"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // xmlField represents a field element in XML output.
