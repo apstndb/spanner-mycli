@@ -15,6 +15,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 		skipColNames bool
 		wantContains []string
 		wantOutput   string
+		wantError    bool
 	}{
 		{
 			name: "simple HTML output",
@@ -65,6 +66,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: "",
+			wantError:  true,
 		},
 	}
 
@@ -77,8 +79,11 @@ func TestPrintTableDataHTML(t *testing.T) {
 			}
 
 			err := printTableData(sysVars, 0, &buf, tt.result)
+			if (err != nil) != tt.wantError {
+				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
+			}
 			if err != nil {
-				t.Errorf("printTableData() unexpected error: %v", err)
+				return
 			}
 
 			got := buf.String()
@@ -103,6 +108,7 @@ func TestPrintTableDataXML(t *testing.T) {
 		skipColNames    bool
 		wantContains    []string
 		wantNotContains []string
+		wantError       bool
 	}{
 		{
 			name: "simple XML output",
@@ -179,6 +185,7 @@ func TestPrintTableDataXML(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantContains: []string{},
+			wantError:    true,
 		},
 	}
 
@@ -191,8 +198,11 @@ func TestPrintTableDataXML(t *testing.T) {
 			}
 
 			err := printTableData(sysVars, 0, &buf, tt.result)
+			if (err != nil) != tt.wantError {
+				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
+			}
 			if err != nil {
-				t.Errorf("printTableData() unexpected error: %v", err)
+				return
 			}
 
 			got := buf.String()
@@ -290,6 +300,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 		mode       DisplayMode
 		result     *Result
 		wantOutput bool // whether we expect any output
+		wantError  bool
 	}{
 		{
 			name: "HTML with nil header and empty rows",
@@ -299,6 +310,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: false,
+			wantError:  true,
 		},
 		{
 			name: "XML with nil header and empty rows",
@@ -308,6 +320,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: false,
+			wantError:  true,
 		},
 		{
 			name: "HTML with empty column names but data rows",
@@ -317,6 +330,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{{"data"}},
 			},
 			wantOutput: false,
+			wantError:  true,
 		},
 		{
 			name: "All display modes with unicode data",
@@ -340,8 +354,11 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			}
 
 			err := printTableData(sysVars, 0, &buf, tt.result)
+			if (err != nil) != tt.wantError {
+				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
+			}
 			if err != nil {
-				t.Errorf("printTableData() unexpected error: %v", err)
+				return
 			}
 
 			got := buf.String()
@@ -439,6 +456,7 @@ func TestPrintTableDataCSV(t *testing.T) {
 		result       *Result
 		skipColNames bool
 		wantOutput   string
+		wantError    bool
 	}{
 		{
 			name: "simple CSV output",
@@ -495,6 +513,7 @@ func TestPrintTableDataCSV(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: "",
+			wantError:  true,
 		},
 		{
 			name: "CSV with quotes and newlines",
@@ -525,8 +544,11 @@ func TestPrintTableDataCSV(t *testing.T) {
 			}
 
 			err := printTableData(sysVars, 0, &buf, tt.result)
+			if (err != nil) != tt.wantError {
+				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
+			}
 			if err != nil {
-				t.Errorf("printTableData() unexpected error: %v", err)
+				return
 			}
 
 			got := buf.String()

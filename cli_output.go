@@ -81,15 +81,10 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 
 	columnNames := renderTableHeader(result.TableHeader, false)
 
-	// Early return if no columns - Spanner requires at least one column in SELECT,
-	// so this only happens for edge cases where no output is expected
-	if len(columnNames) == 0 {
-		// Log logic error where we have rows but no columns
-		if len(result.Rows) > 0 {
-			slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
-				"rowCount", len(result.Rows))
-		}
-		return nil
+	// Log logic error where we have rows but no columns
+	if len(columnNames) == 0 && len(result.Rows) > 0 {
+		slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
+			"rowCount", len(result.Rows))
 	}
 
 	// Create the appropriate formatter based on the display mode
@@ -99,6 +94,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	// Format and write the result
+	// Individual formatters handle empty columns appropriately for their format
 	if err := formatter(out, result, columnNames, sysVars, screenWidth); err != nil {
 		return fmt.Errorf("formatting failed for mode %v: %w", sysVars.CLIFormat, err)
 	}
