@@ -700,7 +700,9 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 	}
 
 	if interactive {
-		fmt.Fprintf(w, "\n")
+		if _, err := fmt.Fprintf(w, "\n"); err != nil {
+			return err
+		}
 	}
 
 	return nil
