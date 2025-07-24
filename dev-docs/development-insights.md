@@ -53,6 +53,16 @@ phantom shell issue-276-timeout-flag --tmux-horizontal
 - **Testing Strategy**: Comprehensive nil checks and error condition testing becomes critical
 - **Maintenance**: Error handling patterns should be consistent across similar components
 
+### Output Function Error Handling Pattern
+
+**Discovery**: Output functions following "log and continue" pattern should be refactored to propagate errors
+
+- **Design Pattern**: Use function types instead of interfaces for formatters to reduce boilerplate
+- **Atomic Output**: Implement buffered writing that only outputs on success to prevent partial output on errors
+- **Parameter Shadowing**: Use parameter shadowing in helper functions to prevent confusion between writers
+- **Function Consolidation**: When converting from structs to functions, merge unnecessary function pairs (e.g., formatXML/writeXML)
+- **Error Chain**: Establish clear error propagation: formatter → printTableData → printResult → displayResult → executeStatement
+
 ## Systematic Error Detection and Quality Improvement
 
 **Discovery**: Comprehensive error handling review reveals patterns and establishes sustainable practices
