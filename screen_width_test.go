@@ -119,9 +119,9 @@ func TestCLI_FIXED_WIDTH(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := &systemVariables{}
+			sysVars := newSystemVariablesWithDefaultsForTest()
 
-			err := sysVars.Set("CLI_FIXED_WIDTH", tt.value)
+			err := sysVars.SetFromSimple("CLI_FIXED_WIDTH", tt.value)
 			if (err != nil) != tt.err {
 				t.Errorf("Set(CLI_FIXED_WIDTH, %q) error = %v, wantErr %v", tt.value, err, tt.err)
 				return
