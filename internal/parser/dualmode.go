@@ -13,7 +13,7 @@ const (
 	// ParseModeGoogleSQL indicates the value comes from a SET statement in REPL
 	// and should follow GoogleSQL lexical structure.
 	ParseModeGoogleSQL ParseMode = iota
-	
+
 	// ParseModeSimple indicates the value comes from CLI flags or config files
 	// and uses simple string parsing without GoogleSQL rules.
 	ParseModeSimple
@@ -24,10 +24,10 @@ const (
 // different sources with different parsing rules.
 type DualModeParser[T any] interface {
 	Parser[T]
-	
+
 	// ParseWithMode parses a value using the specified mode.
 	ParseWithMode(value string, mode ParseMode) (T, error)
-	
+
 	// ParseAndValidateWithMode combines parsing and validation for a specific mode.
 	ParseAndValidateWithMode(value string, mode ParseMode) (T, error)
 }
@@ -45,7 +45,7 @@ func NewDualModeParser[T any](googleSQLParser, simpleParser Parser[T]) *BaseDual
 		googleSQLParser: googleSQLParser,
 		simpleParser:    simpleParser,
 	}
-	
+
 	// Default Parse uses GoogleSQL mode for backward compatibility
 	p.BaseParser = BaseParser[T]{
 		ParseFunc: func(value string) (T, error) {
@@ -53,7 +53,7 @@ func NewDualModeParser[T any](googleSQLParser, simpleParser Parser[T]) *BaseDual
 		},
 		ValidateFunc: p.validate,
 	}
-	
+
 	return p
 }
 
@@ -66,14 +66,14 @@ func (p *BaseDualModeParser[T]) ParseWithMode(value string, mode ParseMode) (T, 
 			return zero, fmt.Errorf("GoogleSQL parser not configured")
 		}
 		return p.googleSQLParser.Parse(value)
-		
+
 	case ParseModeSimple:
 		if p.simpleParser == nil {
 			var zero T
 			return zero, fmt.Errorf("simple parser not configured")
 		}
 		return p.simpleParser.Parse(value)
-		
+
 	default:
 		var zero T
 		return zero, fmt.Errorf("unknown parse mode: %v", mode)
@@ -87,12 +87,12 @@ func (p *BaseDualModeParser[T]) ParseAndValidateWithMode(value string, mode Pars
 		var zero T
 		return zero, err
 	}
-	
+
 	if err := p.validate(parsed); err != nil {
 		var zero T
 		return zero, err
 	}
-	
+
 	return parsed, nil
 }
 
@@ -104,14 +104,14 @@ func (p *BaseDualModeParser[T]) validate(value T) error {
 			return err
 		}
 	}
-	
+
 	// Also run simple parser validation if different
 	if p.simpleParser != nil && p.simpleParser != p.googleSQLParser {
 		if err := p.simpleParser.Validate(value); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -129,9 +129,9 @@ var DualModeIntParser = NewDualModeParser(
 
 // DualModeStringParser parses string values in both modes.
 // In GoogleSQL mode, it properly handles SQL string literals.
-// In simple mode, it just trims quotes without SQL escape sequences.
+// In simple mode, it preserves the value as-is.
 var DualModeStringParser = NewDualModeParser(
-	GoogleSQLStringParser,
+	GoogleSQLStringLiteralParser,
 	NewStringParser(),
 )
 

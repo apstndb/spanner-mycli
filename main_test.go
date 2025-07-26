@@ -538,7 +538,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// and those that are set later in run() (e.g., EnableProgressBar, CurrentSession, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
@@ -580,7 +580,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 
 	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
-		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns"), // Ignore template and function pointer comparisons
+		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
 	}
@@ -777,7 +777,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 
 			// Compare key fields
 			if diff := cmp.Diff(test.want, got,
-				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate"), // Ignore complex fields for this test
+				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {
 				t.Errorf("createSystemVariablesFromOptions() mismatch (-want +got):\n%s", diff)

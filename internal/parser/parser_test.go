@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-	
+
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 func TestBoolParser(t *testing.T) {
 	p := parser.NewBoolParser()
-	
+
 	tests := []struct {
 		name    string
 		input   string
@@ -21,16 +21,18 @@ func TestBoolParser(t *testing.T) {
 		{"true lowercase", "true", true, false},
 		{"TRUE uppercase", "TRUE", true, false},
 		{"false", "false", false, false},
-		{"1", "1", true, false},
-		{"0", "0", false, false},
-		{"yes", "yes", true, false},
-		{"no", "no", false, false},
-		{"on", "on", true, false},
-		{"off", "off", false, false},
+		{"FALSE uppercase", "FALSE", false, false},
+		{"with spaces", "  true  ", true, false},
+		{"1", "1", false, true},
+		{"0", "0", false, true},
+		{"yes", "yes", false, true},
+		{"no", "no", false, true},
+		{"on", "on", false, true},
+		{"off", "off", false, true},
 		{"invalid", "invalid", false, true},
 		{"empty", "", false, true},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := p.ParseAndValidate(tt.input)
@@ -48,7 +50,7 @@ func TestBoolParser(t *testing.T) {
 func TestIntParser(t *testing.T) {
 	t.Run("basic parsing", func(t *testing.T) {
 		p := parser.NewIntParser()
-		
+
 		tests := []struct {
 			name    string
 			input   string
@@ -62,7 +64,7 @@ func TestIntParser(t *testing.T) {
 			{"invalid", "abc", 0, true},
 			{"empty", "", 0, true},
 		}
-		
+
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				got, err := p.ParseAndValidate(tt.input)
@@ -76,10 +78,10 @@ func TestIntParser(t *testing.T) {
 			})
 		}
 	})
-	
+
 	t.Run("with range validation", func(t *testing.T) {
 		p := parser.NewIntParser().WithRange(1, 100)
-		
+
 		tests := []struct {
 			name    string
 			input   string
@@ -92,7 +94,7 @@ func TestIntParser(t *testing.T) {
 			{"below min", "0", 0, true},
 			{"above max", "101", 0, true},
 		}
-		
+
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				got, err := p.ParseAndValidate(tt.input)
@@ -110,7 +112,7 @@ func TestIntParser(t *testing.T) {
 
 func TestDurationParser(t *testing.T) {
 	p := parser.NewDurationParser()
-	
+
 	tests := []struct {
 		name    string
 		input   string
@@ -125,7 +127,7 @@ func TestDurationParser(t *testing.T) {
 		{"invalid", "abc", 0, true},
 		{"empty", "", 0, true},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := p.ParseAndValidate(tt.input)
@@ -147,13 +149,13 @@ func TestEnumParser(t *testing.T) {
 		Green
 		Blue
 	)
-	
+
 	p := parser.NewEnumParser(map[string]Color{
 		"RED":   Red,
 		"GREEN": Green,
 		"BLUE":  Blue,
 	})
-	
+
 	tests := []struct {
 		name    string
 		input   string
@@ -167,7 +169,7 @@ func TestEnumParser(t *testing.T) {
 		{"invalid", "YELLOW", 0, true},
 		{"empty", "", 0, true},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := p.ParseAndValidate(tt.input)
@@ -185,19 +187,19 @@ func TestEnumParser(t *testing.T) {
 func TestStringParser(t *testing.T) {
 	t.Run("simple parser", func(t *testing.T) {
 		p := parser.NewStringParser()
-		
+
 		tests := []struct {
 			name  string
 			input string
 			want  string
 		}{
 			{"simple string", "hello", "hello"},
-			{"with spaces", "  hello world  ", "hello world"},
+			{"with spaces", "  hello world  ", "  hello world  "},
 			{"keeps quotes", "'quoted'", "'quoted'"},
 			{"keeps double quotes", `"quoted"`, `"quoted"`},
 			{"empty", "", ""},
 		}
-		
+
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				got, err := p.ParseAndValidate(tt.input)
@@ -211,10 +213,10 @@ func TestStringParser(t *testing.T) {
 			})
 		}
 	})
-	
+
 	t.Run("quoted parser", func(t *testing.T) {
 		p := parser.NewQuotedStringParser()
-		
+
 		tests := []struct {
 			name  string
 			input string
@@ -227,7 +229,7 @@ func TestStringParser(t *testing.T) {
 			{"empty quotes", "''", ""},
 			{"no quotes empty", "", ""},
 		}
-		
+
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				got, err := p.ParseAndValidate(tt.input)
@@ -251,20 +253,20 @@ func TestChainValidators(t *testing.T) {
 		}
 		return nil
 	}
-	
+
 	isEven := func(v int64) error {
 		if v%2 != 0 {
 			return fmt.Errorf("value must be even")
 		}
 		return nil
 	}
-	
+
 	p := parser.WithValidation(
 		parser.NewIntParser(),
 		isPositive,
 		isEven,
 	)
-	
+
 	tests := []struct {
 		name    string
 		input   string
@@ -277,7 +279,7 @@ func TestChainValidators(t *testing.T) {
 		{"negative", "-2", 0, true, "positive"},
 		{"odd positive", "3", 0, true, "even"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := p.ParseAndValidate(tt.input)

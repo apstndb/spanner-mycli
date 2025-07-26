@@ -8,7 +8,7 @@ import (
 )
 
 // BoolParser parses boolean values.
-// It accepts: true, false, 1, 0, yes, no, on, off (case insensitive).
+// It accepts: true, false (case insensitive).
 type BoolParser struct {
 	BaseParser[bool]
 }
@@ -18,14 +18,14 @@ func NewBoolParser() *BoolParser {
 	return &BoolParser{
 		BaseParser: BaseParser[bool]{
 			ParseFunc: func(value string) (bool, error) {
-				// Handle additional boolean representations beyond strconv.ParseBool
+				// Only accept "true" and "false" (case insensitive)
 				switch strings.ToLower(strings.TrimSpace(value)) {
-				case "yes", "on":
+				case "true":
 					return true, nil
-				case "no", "off":
+				case "false":
 					return false, nil
 				default:
-					return strconv.ParseBool(value)
+					return false, fmt.Errorf("invalid boolean value: %q (expected true or false)", value)
 				}
 			},
 		},
@@ -137,18 +137,17 @@ type StringParser struct {
 	BaseParser[string]
 	minLen *int
 	maxLen *int
-	pattern *string
 }
 
 // NewStringParser creates a new string parser.
-// By default, it only trims whitespace without removing quotes.
-// This is suitable for CLI flags and config files where quotes are not part of the syntax.
+// By default, it returns the value as-is without any processing.
+// This is suitable for CLI flags and config files where values should be preserved exactly.
 func NewStringParser() *StringParser {
 	return &StringParser{
 		BaseParser: BaseParser[string]{
 			ParseFunc: func(value string) (string, error) {
-				// Just trim whitespace - no quote removal
-				return strings.TrimSpace(value), nil
+				// Return value as-is, no processing
+				return value, nil
 			},
 		},
 	}

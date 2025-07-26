@@ -37,6 +37,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+
+	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 type AutocommitDMLMode bool
@@ -155,6 +157,9 @@ type systemVariables struct {
 	AsyncDDL                  bool // CLI_ASYNC_DDL
 	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
+
+	// Registry holds the parser registry for system variables
+	Registry *sysvar.Registry
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
@@ -221,7 +226,7 @@ func (sv *systemVariables) ProjectPath() string {
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
-	return systemVariables{
+	sv := systemVariables{
 		// Java-spanner compatible defaults
 		ReturnCommitStats: true,
 		RPCPriority:       defaultPriority,
@@ -236,6 +241,11 @@ func newSystemVariablesWithDefaults() systemVariables {
 		VertexAIModel:        defaultVertexAIModel,
 		OutputTemplate:       defaultOutputFormat,
 	}
+
+	// Initialize the parser registry
+	sv.Registry = createSystemVariableRegistry(&sv)
+
+	return sv
 }
 
 type errSetterUnimplemented struct {

@@ -3,13 +3,13 @@ package sysvar
 import (
 	"fmt"
 	"strings"
-	
+
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
-// DualModeVariableParser wraps a dual-mode parser for system variables.
+// VariableParser wraps a parser for system variables.
 // It automatically selects the appropriate parsing mode based on the context.
-type DualModeVariableParser struct {
+type VariableParser struct {
 	Name        string
 	Description string
 	parser      interface{} // Will be DualModeParser[T] for some T
@@ -18,15 +18,15 @@ type DualModeVariableParser struct {
 	readOnly    bool
 }
 
-// NewDualModeVariableParser creates a system variable parser with dual-mode support.
-func NewDualModeVariableParser[T any](
+// NewVariableParser creates a system variable parser with dual-mode support.
+func NewVariableParser[T any](
 	name string,
 	description string,
 	parser parser.DualModeParser[T],
 	setter func(value T) error,
 	getter func() (T, bool),
-) *DualModeVariableParser {
-	return &DualModeVariableParser{
+) *VariableParser {
+	return &VariableParser{
 		Name:        name,
 		Description: description,
 		parser:      parser,
@@ -37,11 +37,11 @@ func NewDualModeVariableParser[T any](
 }
 
 // ParseAndSet parses a string value using the specified mode and sets it.
-func (vp *DualModeVariableParser) ParseAndSetWithMode(value string, mode parser.ParseMode) error {
+func (vp *VariableParser) ParseAndSetWithMode(value string, mode parser.ParseMode) error {
 	if vp.readOnly {
 		return fmt.Errorf("variable %s is read-only", vp.Name)
 	}
-	
+
 	// Type assertion to get the concrete parser type
 	switch p := vp.parser.(type) {
 	case parser.DualModeParser[bool]:
@@ -72,24 +72,24 @@ func (vp *DualModeVariableParser) ParseAndSetWithMode(value string, mode parser.
 		// For other types, use reflection or add more cases as needed
 		return fmt.Errorf("unsupported parser type for variable %s", vp.Name)
 	}
-	
+
 	return fmt.Errorf("type mismatch in setter for variable %s", vp.Name)
 }
 
-// DualModeRegistry manages system variable parsers with context awareness.
-type DualModeRegistry struct {
-	parsers map[string]*DualModeVariableParser
+// Registry manages system variable parsers with context awareness.
+type Registry struct {
+	parsers map[string]*VariableParser
 }
 
-// NewDualModeRegistry creates a new dual-mode registry.
-func NewDualModeRegistry() *DualModeRegistry {
-	return &DualModeRegistry{
-		parsers: make(map[string]*DualModeVariableParser),
+// NewRegistry creates a new variable registry.
+func NewRegistry() *Registry {
+	return &Registry{
+		parsers: make(map[string]*VariableParser),
 	}
 }
 
-// Register adds a dual-mode variable parser to the registry.
-func (r *DualModeRegistry) Register(parser *DualModeVariableParser) error {
+// Register adds a variable parser to the registry.
+func (r *Registry) Register(parser *VariableParser) error {
 	upperName := strings.ToUpper(parser.Name)
 	if _, exists := r.parsers[upperName]; exists {
 		return fmt.Errorf("variable %s already registered", upperName)
@@ -98,31 +98,33 @@ func (r *DualModeRegistry) Register(parser *DualModeVariableParser) error {
 	return nil
 }
 
-// SetFromREPL parses and sets a value from a SET statement (GoogleSQL mode).
-func (r *DualModeRegistry) SetFromREPL(name, value string) error {
+// SetFromGoogleSQL parses and sets a value using GoogleSQL syntax.
+// This is used for SET statements in REPL and SQL scripts.
+func (r *Registry) SetFromGoogleSQL(name, value string) error {
 	return r.setWithMode(name, value, parser.ParseModeGoogleSQL)
 }
 
-// SetFromCLI parses and sets a value from CLI flags or config (simple mode).
-func (r *DualModeRegistry) SetFromCLI(name, value string) error {
+// SetFromSimple parses and sets a value using simple syntax.
+// This is used for CLI flags and config files.
+func (r *Registry) SetFromSimple(name, value string) error {
 	return r.setWithMode(name, value, parser.ParseModeSimple)
 }
 
-func (r *DualModeRegistry) setWithMode(name, value string, mode parser.ParseMode) error {
+func (r *Registry) setWithMode(name, value string, mode parser.ParseMode) error {
 	upperName := strings.ToUpper(name)
 	p, exists := r.parsers[upperName]
 	if !exists {
 		return fmt.Errorf("unknown variable: %s", name)
 	}
-	
+
 	return p.ParseAndSetWithMode(value, mode)
 }
 
 // Example helper functions for creating dual-mode parsers
 
-// CreateDualModeBooleanParser creates a boolean parser with dual-mode support.
-func CreateDualModeBooleanParser(name, description string, getter func() bool, setter func(bool) error) *DualModeVariableParser {
-	return NewDualModeVariableParser(
+// CreateBooleanParser creates a boolean parser with dual-mode support.
+func CreateBooleanParser(name, description string, getter func() bool, setter func(bool) error) *VariableParser {
+	return NewVariableParser(
 		name,
 		description,
 		parser.DualModeBoolParser,
@@ -131,11 +133,11 @@ func CreateDualModeBooleanParser(name, description string, getter func() bool, s
 	)
 }
 
-// CreateDualModeStringParser creates a string parser with dual-mode support.
-// In REPL mode, it properly handles GoogleSQL string literals.
-// In CLI mode, it uses simple quote removal.
-func CreateDualModeStringParser(name, description string, getter func() string, setter func(string) error) *DualModeVariableParser {
-	return NewDualModeVariableParser(
+// CreateStringParser creates a string parser with dual-mode support.
+// In GoogleSQL mode, it properly handles GoogleSQL string literals.
+// In Simple mode, it preserves the value as-is.
+func CreateStringParser(name, description string, getter func() string, setter func(string) error) *VariableParser {
+	return NewVariableParser(
 		name,
 		description,
 		parser.DualModeStringParser,
@@ -144,20 +146,27 @@ func CreateDualModeStringParser(name, description string, getter func() string, 
 	)
 }
 
-// CreateDualModeIntegerParser creates an integer parser with dual-mode support.
-func CreateDualModeIntegerParser(name, description string, getter func() int64, setter func(int64) error, min, max *int64) *DualModeVariableParser {
+// CreateIntegerParser creates an integer parser with dual-mode support.
+func CreateIntegerParser(name, description string, getter func() int64, setter func(int64) error, min, max *int64) *VariableParser {
 	// Create parser with validation
 	var p parser.DualModeParser[int64]
-	
+
 	if min != nil || max != nil {
-		// Create validators for both parsers
-		googleSQLParser := parser.GoogleSQLIntParser
+		// Create simple parser with validation
 		simpleParser := parser.NewIntParser()
-		
+
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
-			// Add validation to GoogleSQL parser
-			validateRange := func(v int64) error {
+		} else if min != nil {
+			simpleParser = simpleParser.WithMin(*min)
+		} else if max != nil {
+			simpleParser = simpleParser.WithMax(*max)
+		}
+
+		// Create GoogleSQL parser with same validation
+		var googleSQLParser parser.Parser[int64]
+		if min != nil && max != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
 				if v < *min {
 					return fmt.Errorf("value %d is less than minimum %d", v, *min)
 				}
@@ -165,16 +174,31 @@ func CreateDualModeIntegerParser(name, description string, getter func() int64, 
 					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
 				}
 				return nil
-			}
-			googleSQLParser = parser.WithValidation(googleSQLParser, validateRange)
+			})
+		} else if min != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
+				if v < *min {
+					return fmt.Errorf("value %d is less than minimum %d", v, *min)
+				}
+				return nil
+			})
+		} else if max != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
+				if v > *max {
+					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
+				}
+				return nil
+			})
+		} else {
+			googleSQLParser = parser.GoogleSQLIntParser
 		}
-		
+
 		p = parser.NewDualModeParser(googleSQLParser, simpleParser)
 	} else {
 		p = parser.DualModeIntParser
 	}
-	
-	return NewDualModeVariableParser(
+
+	return NewVariableParser(
 		name,
 		description,
 		p,
@@ -183,9 +207,9 @@ func CreateDualModeIntegerParser(name, description string, getter func() int64, 
 	)
 }
 
-// CreateDualModeEnumParser creates an enum parser with dual-mode support.
-func CreateDualModeEnumParser[T comparable](name, description string, values map[string]T, getter func() T, setter func(T) error) *DualModeVariableParser {
-	return NewDualModeVariableParser(
+// CreateEnumParser creates an enum parser with dual-mode support.
+func CreateEnumParser[T comparable](name, description string, values map[string]T, getter func() T, setter func(T) error) *VariableParser {
+	return NewVariableParser(
 		name,
 		description,
 		parser.CreateDualModeEnumParser(values),

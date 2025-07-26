@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	
+
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
@@ -22,11 +22,11 @@ func NewMemefishLiteralParser[T any](extractFunc func(ast.Expr) (T, error)) *Mem
 	parser := &MemefishExprParser[T]{
 		extractFunc: extractFunc,
 	}
-	
+
 	parser.BaseParser = BaseParser[T]{
 		ParseFunc: parser.parseWithMemefish,
 	}
-	
+
 	return parser
 }
 
@@ -37,7 +37,7 @@ func (p *MemefishExprParser[T]) parseWithMemefish(value string) (T, error) {
 		var zero T
 		return zero, fmt.Errorf("invalid GoogleSQL expression: %w", err)
 	}
-	
+
 	return p.extractFunc(expr)
 }
 
@@ -49,9 +49,6 @@ var GoogleSQLStringParser = NewMemefishLiteralParser(func(expr ast.Expr) (string
 	case *ast.BytesLiteral:
 		// Convert bytes literal to string
 		return string(lit.Value), nil
-	case *ast.Ident:
-		// Allow unquoted identifiers as strings
-		return lit.Name, nil
 	default:
 		return "", fmt.Errorf("expected string literal, got %T", expr)
 	}
@@ -79,34 +76,22 @@ var GoogleSQLBoolParser = NewMemefishLiteralParser(func(expr ast.Expr) (bool, er
 
 // GoogleSQLIntParser parses GoogleSQL integer literals.
 var GoogleSQLIntParser = NewMemefishLiteralParser(func(expr ast.Expr) (int64, error) {
-	switch lit := expr.(type) {
-	case *ast.IntLiteral:
-		// Parse the string value based on the base
-		if lit.Base == 16 {
-			return strconv.ParseInt(lit.Value, 16, 64)
-		}
-		return strconv.ParseInt(lit.Value, 10, 64)
-	case *ast.UnaryExpr:
-		// Handle negative numbers
-		if lit.Op == ast.OpMinus {
-			if intLit, ok := lit.Expr.(*ast.IntLiteral); ok {
-				var val int64
-				var err error
-				if intLit.Base == 16 {
-					val, err = strconv.ParseInt(intLit.Value, 16, 64)
-				} else {
-					val, err = strconv.ParseInt(intLit.Value, 10, 64)
-				}
-				if err != nil {
-					return 0, err
-				}
-				return -val, nil
-			}
-		}
-		return 0, fmt.Errorf("expected integer literal, got unary expression %s", lit.SQL())
-	default:
+	intLit, ok := expr.(*ast.IntLiteral)
+	if !ok {
 		return 0, fmt.Errorf("expected integer literal, got %T", expr)
 	}
+
+	// When base is not 0, strconv.ParseInt doesn't handle the 0x prefix
+	// So we need to strip it for base 16
+	value := intLit.Value
+	if intLit.Base == 16 && len(value) > 2 && (value[:2] == "0x" || value[:2] == "0X") {
+		value = value[2:]
+	}
+	if intLit.Base == 16 && len(value) > 3 && value[0] == '-' && (value[1:3] == "0x" || value[1:3] == "0X") {
+		value = "-" + value[3:]
+	}
+
+	return strconv.ParseInt(value, intLit.Base, 64)
 })
 
 // GoogleSQLFloatParser parses GoogleSQL float literals.
@@ -115,43 +100,12 @@ var GoogleSQLFloatParser = NewMemefishLiteralParser(func(expr ast.Expr) (float64
 	case *ast.FloatLiteral:
 		return strconv.ParseFloat(lit.Value, 64)
 	case *ast.IntLiteral:
-		// Allow integers as floats
-		var intVal int64
-		var err error
-		if lit.Base == 16 {
-			intVal, err = strconv.ParseInt(lit.Value, 16, 64)
-		} else {
-			intVal, err = strconv.ParseInt(lit.Value, 10, 64)
-		}
+		// Allow integers as floats - reuse the int parser logic
+		intVal, err := GoogleSQLIntParser.Parse(expr.SQL())
 		if err != nil {
 			return 0, err
 		}
 		return float64(intVal), nil
-	case *ast.UnaryExpr:
-		// Handle negative numbers
-		if lit.Op == ast.OpMinus {
-			switch innerLit := lit.Expr.(type) {
-			case *ast.FloatLiteral:
-				val, err := strconv.ParseFloat(innerLit.Value, 64)
-				if err != nil {
-					return 0, err
-				}
-				return -val, nil
-			case *ast.IntLiteral:
-				var intVal int64
-				var err error
-				if innerLit.Base == 16 {
-					intVal, err = strconv.ParseInt(innerLit.Value, 16, 64)
-				} else {
-					intVal, err = strconv.ParseInt(innerLit.Value, 10, 64)
-				}
-				if err != nil {
-					return 0, err
-				}
-				return -float64(intVal), nil
-			}
-		}
-		return 0, fmt.Errorf("expected numeric literal, got unary expression %s", lit.SQL())
 	default:
 		return 0, fmt.Errorf("expected numeric literal, got %T", expr)
 	}
@@ -161,7 +115,7 @@ var GoogleSQLFloatParser = NewMemefishLiteralParser(func(expr ast.Expr) (float64
 func NewGoogleSQLEnumParser[T comparable](values map[string]T) *MemefishExprParser[T] {
 	return NewMemefishLiteralParser(func(expr ast.Expr) (T, error) {
 		var strValue string
-		
+
 		switch lit := expr.(type) {
 		case *ast.StringLiteral:
 			strValue = lit.Value
@@ -171,7 +125,7 @@ func NewGoogleSQLEnumParser[T comparable](values map[string]T) *MemefishExprPars
 			var zero T
 			return zero, fmt.Errorf("expected string literal or identifier for enum value, got %T", expr)
 		}
-		
+
 		// Try case-insensitive match first
 		upperValue := strings.ToUpper(strValue)
 		for k, v := range values {
@@ -179,94 +133,61 @@ func NewGoogleSQLEnumParser[T comparable](values map[string]T) *MemefishExprPars
 				return v, nil
 			}
 		}
-		
+
 		// Build error message
 		var validValues []string
 		for k := range values {
 			validValues = append(validValues, k)
 		}
-		
+
 		var zero T
 		return zero, fmt.Errorf("invalid enum value %q, must be one of: %s", strValue, strings.Join(validValues, ", "))
 	})
 }
 
-// CompatibleStringParser provides a parser that accepts both simple strings
-// and GoogleSQL string literals.
-type CompatibleStringParser struct {
+// StringLiteralParser parses GoogleSQL string literals efficiently using the lexer.
+type StringLiteralParser struct {
 	BaseParser[string]
-	googleSQLParser *MemefishExprParser[string]
-	simpleParser    *StringParser
 }
 
-// NewCompatibleStringParser creates a parser that tries simple parsing first,
-// then falls back to GoogleSQL parsing.
-func NewCompatibleStringParser() *CompatibleStringParser {
-	parser := &CompatibleStringParser{
-		googleSQLParser: GoogleSQLStringParser,
-		simpleParser:    NewStringParser(),
-	}
-	
+// NewStringLiteralParser creates a parser that uses memefish lexer for string literals.
+func NewStringLiteralParser() *StringLiteralParser {
+	parser := &StringLiteralParser{}
+
 	parser.BaseParser = BaseParser[string]{
-		ParseFunc: parser.parse,
+		ParseFunc: ParseGoogleSQLStringLiteral,
 	}
-	
+
 	return parser
 }
 
-func (p *CompatibleStringParser) parse(value string) (string, error) {
-	// First try simple parsing for common cases
-	trimmed := strings.TrimSpace(value)
-	
-	// If it doesn't look like a GoogleSQL literal, use simple parser
-	if !strings.HasPrefix(trimmed, "'") && !strings.HasPrefix(trimmed, "\"") &&
-		!strings.HasPrefix(trimmed, "r'") && !strings.HasPrefix(trimmed, "r\"") &&
-		!strings.HasPrefix(trimmed, "b'") && !strings.HasPrefix(trimmed, "b\"") {
-		return p.simpleParser.Parse(value)
-	}
-	
-	// Otherwise use GoogleSQL parser
-	return p.googleSQLParser.Parse(value)
-}
+// GoogleSQLStringLiteralParser is an optimized parser using the lexer directly.
+var GoogleSQLStringLiteralParser = NewStringLiteralParser()
 
-// UnquoteGoogleSQLString removes GoogleSQL string literal quotes and handles escape sequences.
-// This is useful when you need to process values that might be GoogleSQL string literals.
-func UnquoteGoogleSQLString(s string) string {
-	trimmed := strings.TrimSpace(s)
-	
-	// Try parsing as GoogleSQL expression
-	if expr, err := memefish.ParseExpr("", trimmed); err == nil {
-		if strLit, ok := expr.(*ast.StringLiteral); ok {
-			return strLit.Value
+// ParseGoogleSQLStringLiteral parses a GoogleSQL string literal using memefish.
+// It returns an error if the input is not a valid string literal.
+func ParseGoogleSQLStringLiteral(s string) (result string, err error) {
+	// Recover from panics that memefish might throw on invalid syntax
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("invalid string literal: %v", r)
 		}
-		if ident, ok := expr.(*ast.Ident); ok {
-			return ident.Name
-		}
+	}()
+
+	// Parse as expression
+	expr, err := memefish.ParseExpr("", s)
+	if err != nil {
+		return "", fmt.Errorf("invalid string literal: %w", err)
 	}
-	
-	// Fallback to simple unquoting
-	if len(trimmed) >= 2 {
-		if (trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"') ||
-			(trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'') {
-			// Handle basic escape sequences
-			unquoted := trimmed[1 : len(trimmed)-1]
-			unquoted = strings.ReplaceAll(unquoted, `\'`, `'`)
-			unquoted = strings.ReplaceAll(unquoted, `\"`, `"`)
-			unquoted = strings.ReplaceAll(unquoted, `\\`, `\`)
-			unquoted = strings.ReplaceAll(unquoted, `\n`, "\n")
-			unquoted = strings.ReplaceAll(unquoted, `\r`, "\r")
-			unquoted = strings.ReplaceAll(unquoted, `\t`, "\t")
-			
-			// Handle Unicode escape sequences \uXXXX and \UXXXXXXXX
-			if strings.Contains(unquoted, `\u`) || strings.Contains(unquoted, `\U`) {
-				if unquotedStr, err := strconv.Unquote(`"` + unquoted + `"`); err == nil {
-					return unquotedStr
-				}
-			}
-			
-			return unquoted
-		}
+
+	// Expect a string literal
+	switch lit := expr.(type) {
+	case *ast.StringLiteral:
+		return lit.Value, nil
+	case *ast.BytesLiteral:
+		// Convert bytes literal to string
+		return string(lit.Value), nil
+	default:
+		return "", fmt.Errorf("expected string literal, got %T", expr)
 	}
-	
-	return trimmed
 }

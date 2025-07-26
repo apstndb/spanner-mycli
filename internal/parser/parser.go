@@ -13,11 +13,11 @@ type Parser[T any] interface {
 	// Parse converts a string value to type T.
 	// It returns an error if the string cannot be parsed.
 	Parse(value string) (T, error)
-	
+
 	// Validate checks if a parsed value meets additional constraints.
 	// It returns an error if validation fails.
 	Validate(value T) error
-	
+
 	// ParseAndValidate combines parsing and validation in a single step.
 	// This is a convenience method that calls Parse followed by Validate.
 	ParseAndValidate(value string) (T, error)
@@ -54,12 +54,12 @@ func (p *BaseParser[T]) ParseAndValidate(value string) (T, error) {
 		var zero T
 		return zero, err
 	}
-	
+
 	if err := p.Validate(parsed); err != nil {
 		var zero T
 		return zero, err
 	}
-	
+
 	return parsed, nil
 }
 

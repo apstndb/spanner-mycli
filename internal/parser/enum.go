@@ -21,16 +21,16 @@ func NewEnumParser[T comparable](values map[string]T) *EnumParser[T] {
 	for k, v := range values {
 		normalizedValues[strings.ToUpper(k)] = v
 	}
-	
+
 	parser := &EnumParser[T]{
 		values:      normalizedValues,
 		caseMatters: false,
 	}
-	
+
 	parser.BaseParser = BaseParser[T]{
 		ParseFunc: parser.parseEnum,
 	}
-	
+
 	return parser
 }
 
@@ -50,22 +50,22 @@ func (p *EnumParser[T]) CaseSensitive() *EnumParser[T] {
 
 func (p *EnumParser[T]) parseEnum(value string) (T, error) {
 	trimmed := strings.TrimSpace(value)
-	
+
 	lookupKey := trimmed
 	if !p.caseMatters {
 		lookupKey = strings.ToUpper(lookupKey)
 	}
-	
+
 	if result, ok := p.values[lookupKey]; ok {
 		return result, nil
 	}
-	
+
 	// Build error message with valid values
 	var validValues []string
 	for k := range p.values {
 		validValues = append(validValues, k)
 	}
-	
+
 	var zero T
 	return zero, fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(validValues, ", "))
 }
