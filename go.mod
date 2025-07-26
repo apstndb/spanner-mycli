@@ -19,7 +19,7 @@ require (
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.6
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.6.0
+	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.18.0
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1
