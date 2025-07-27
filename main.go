@@ -666,6 +666,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
+	sysVars.initializeRegistry()
 
 	// Override with command-line options (only when explicitly provided)
 	sysVars.Project = opts.ProjectId
@@ -771,7 +772,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	// initialize default value
-	if err := sysVars.Set("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
+	if err := sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
 		return systemVariables{}, fmt.Errorf("parse error: %w", err)
 	}
 
@@ -796,13 +797,13 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	if opts.DatabaseDialect != "" {
-		if err := sysVars.Set("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
+		if err := sysVars.SetFromSimple("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
 		}
 	}
 
 	if opts.EnablePartitionedDML {
-		if err := sysVars.Set("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
+		if err := sysVars.SetFromSimple("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
 			return systemVariables{}, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
 		}
 	}
@@ -813,7 +814,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		if err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
-		if err := sysVars.Set("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
+		if err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
 	}
@@ -836,13 +837,13 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	if opts.QueryMode != "" {
-		if err := sysVars.Set("CLI_QUERY_MODE", opts.QueryMode); err != nil {
+		if err := sysVars.SetFromSimple("CLI_QUERY_MODE", opts.QueryMode); err != nil {
 			return systemVariables{}, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
 		}
 	}
 
 	if opts.TryPartitionQuery {
-		if err := sysVars.Set("CLI_TRY_PARTITION_QUERY", "TRUE"); err != nil {
+		if err := sysVars.SetFromSimple("CLI_TRY_PARTITION_QUERY", "TRUE"); err != nil {
 			return systemVariables{}, fmt.Errorf("failed to set CLI_TRY_PARTITION_QUERY: %w", err)
 		}
 	}
@@ -857,7 +858,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	for k, v := range sets {
-		if err := sysVars.Set(k, v); err != nil {
+		if err := sysVars.SetFromSimple(k, v); err != nil {
 			return systemVariables{}, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}
 	}

@@ -242,10 +242,24 @@ func newSystemVariablesWithDefaults() systemVariables {
 		OutputTemplate:       defaultOutputFormat,
 	}
 
-	// Initialize the parser registry
-	sv.Registry = createSystemVariableRegistry(&sv)
-
+	// Don't initialize registry here - it will be done after the struct is assigned
+	// to avoid closures capturing a pointer to the local copy
 	return sv
+}
+
+// initializeRegistry must be called after creating a systemVariables instance
+// to properly set up the parser registry. This ensures the closures in the
+// registry capture the correct instance.
+func (sv *systemVariables) initializeRegistry() {
+	sv.Registry = createSystemVariableRegistry(sv)
+}
+
+// newSystemVariablesWithDefaultsForTest creates a new systemVariables instance
+// with defaults and properly initialized registry for testing.
+func newSystemVariablesWithDefaultsForTest() *systemVariables {
+	sv := newSystemVariablesWithDefaults()
+	sv.initializeRegistry()
+	return &sv
 }
 
 type errSetterUnimplemented struct {
@@ -297,6 +311,15 @@ var sessionInitOnlyVariables = []string{
 
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
+	
+	// First check if the variable is in the new registry
+	if sv.Registry != nil && sv.Registry.Has(upperName) {
+		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
+		// TODO: Add context to determine if we're in Simple mode (CLI flags/config)
+		return sv.Registry.SetFromGoogleSQL(upperName, value)
+	}
+	
+	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)
@@ -326,6 +349,21 @@ func (sv *systemVariables) Set(name string, value string) error {
 	return a.Accessor.Setter(sv, upperName, value)
 }
 
+// SetFromSimple sets a system variable using Simple parsing mode.
+// This is used for command-line flags and config files where values
+// don't follow GoogleSQL syntax rules.
+func (sv *systemVariables) SetFromSimple(name string, value string) error {
+	upperName := strings.ToUpper(name)
+	
+	// First check if the variable is in the new registry
+	if sv.Registry != nil && sv.Registry.Has(upperName) {
+		return sv.Registry.SetFromSimple(upperName, value)
+	}
+	
+	// Fall back to Set for old system (which doesn't distinguish modes)
+	return sv.Set(name, value)
+}
+
 func (sv *systemVariables) Add(name string, value string) error {
 	upperName := strings.ToUpper(name)
 	a, ok := systemVariableDefMap[upperName]
@@ -341,6 +379,17 @@ func (sv *systemVariables) Add(name string, value string) error {
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
+	
+	// First check if the variable is in the new registry
+	if sv.Registry != nil && sv.Registry.Has(upperName) {
+		value, err := sv.Registry.Get(upperName)
+		if err != nil {
+			return nil, err
+		}
+		return singletonMap(name, value), nil
+	}
+	
+	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", name)

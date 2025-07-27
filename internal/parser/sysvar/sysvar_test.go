@@ -25,7 +25,7 @@ func TestRegistry(t *testing.T) {
 	registry := sysvar.NewRegistry()
 
 	// Register boolean variable
-	if err := registry.Register(sysvar.CreateBooleanParser(
+	if err := registry.Register(sysvar.NewBooleanParser(
 		"CLI_VERBOSE",
 		"Enable verbose output",
 		func() bool { return sysVars.Verbose },
@@ -38,7 +38,7 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Register integer with range
-	if err := registry.Register(sysvar.CreateIntegerParser(
+	if err := registry.Register(sysvar.NewIntegerParser(
 		"CLI_TAB_WIDTH",
 		"Tab width",
 		func() int64 { return sysVars.TabWidth },
@@ -52,7 +52,7 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Register string variable
-	if err := registry.Register(sysvar.CreateStringParser(
+	if err := registry.Register(sysvar.NewStringParser(
 		"OPTIMIZER_VERSION",
 		"Optimizer version",
 		func() string { return sysVars.OptimizerVersion },

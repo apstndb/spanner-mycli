@@ -9,8 +9,9 @@ import (
 // It supports case-insensitive matching and custom value mappings.
 type EnumParser[T comparable] struct {
 	BaseParser[T]
-	values      map[string]T
-	caseMatters bool
+	originalValues map[string]T // Store original values for case-sensitive mode
+	values         map[string]T
+	caseMatters    bool
 }
 
 // NewEnumParser creates a new enum parser with the given valid values.
@@ -23,8 +24,9 @@ func NewEnumParser[T comparable](values map[string]T) *EnumParser[T] {
 	}
 
 	parser := &EnumParser[T]{
-		values:      normalizedValues,
-		caseMatters: false,
+		originalValues: values, // Store the original map
+		values:         normalizedValues,
+		caseMatters:    false,
 	}
 
 	parser.BaseParser = BaseParser[T]{
@@ -37,12 +39,7 @@ func NewEnumParser[T comparable](values map[string]T) *EnumParser[T] {
 // CaseSensitive makes the enum parser case-sensitive.
 func (p *EnumParser[T]) CaseSensitive() *EnumParser[T] {
 	if !p.caseMatters {
-		// Rebuild the values map without normalization
-		originalValues := make(map[string]T)
-		for k, v := range p.values {
-			originalValues[k] = v
-		}
-		p.values = originalValues
+		p.values = p.originalValues // Use the original, non-normalized map
 		p.caseMatters = true
 	}
 	return p
