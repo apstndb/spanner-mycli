@@ -3,11 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	databasepb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	"github.com/samber/lo"
 )
 
 // createSystemVariableRegistry creates and configures the parser registry for system variables.
@@ -454,6 +457,151 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 	))
 	
+	// More boolean variables
+	
+	// Note: AUTOCOMMIT is handled in the old system (no direct field in systemVariables)
+	// Note: RETRY_ABORTS_INTERNALLY is handled in the old system (no direct field in systemVariables)
+	
+	// Note: CLI_FIXED_WIDTH is nullable int64, not boolean - remains in old system
+	// Note: CLI_INLINE_STATS is a string with complex parsing - remains in old system
+	
+	// CLI_SKIP_SYSTEM_COMMAND
+	mustRegister(sysvar.NewBooleanParser(
+		"CLI_SKIP_SYSTEM_COMMAND",
+		"Controls whether system commands are disabled.",
+		func() bool { return sv.SkipSystemCommand },
+		func(v bool) error {
+			sv.SkipSystemCommand = v
+			return nil
+		},
+	))
+	
+	// CLI_LOG_GRPC
+	mustRegister(sysvar.NewBooleanParser(
+		"CLI_LOG_GRPC",
+		"Enable gRPC logging.",
+		func() bool { return sv.LogGrpc },
+		func(v bool) error {
+			sv.LogGrpc = v
+			return nil
+		},
+	))
+	
+	// CLI_INSECURE
+	mustRegister(sysvar.NewBooleanParser(
+		"CLI_INSECURE",
+		"Skip TLS certificate verification (insecure).",
+		func() bool { return sv.Insecure },
+		func(v bool) error {
+			sv.Insecure = v
+			return nil
+		},
+	))
+	
+	// More string variables
+	
+	// CLI_ANALYZE_COLUMNS
+	mustRegister(sysvar.NewStringParser(
+		"CLI_ANALYZE_COLUMNS",
+		"Go template for analyzing column data.",
+		func() string { return sv.AnalyzeColumns },
+		func(v string) error {
+			sv.AnalyzeColumns = v
+			// TODO: Also update ParsedAnalyzeColumns
+			return nil
+		},
+	))
+	
+	// CLI_HISTORY_FILE
+	mustRegister(sysvar.NewStringParser(
+		"CLI_HISTORY_FILE",
+		"Path to the history file.",
+		func() string { return sv.HistoryFile },
+		func(v string) error {
+			sv.HistoryFile = v
+			return nil
+		},
+	))
+	
+	// CLI_PROJECT
+	mustRegister(sysvar.NewStringParser(
+		"CLI_PROJECT",
+		"GCP Project ID.",
+		func() string { return sv.Project },
+		func(v string) error {
+			sv.Project = v
+			return nil
+		},
+	))
+	
+	// CLI_INSTANCE
+	mustRegister(sysvar.NewStringParser(
+		"CLI_INSTANCE",
+		"Cloud Spanner instance ID.",
+		func() string { return sv.Instance },
+		func(v string) error {
+			sv.Instance = v
+			return nil
+		},
+	))
+	
+	// CLI_DATABASE
+	mustRegister(sysvar.NewStringParser(
+		"CLI_DATABASE",
+		"Cloud Spanner database ID.",
+		func() string { return sv.Database },
+		func(v string) error {
+			sv.Database = v
+			return nil
+		},
+	))
+	
+	// CLI_ROLE
+	mustRegister(sysvar.NewStringParser(
+		"CLI_ROLE",
+		"Cloud Spanner database role.",
+		func() string { return sv.Role },
+		func(v string) error {
+			sv.Role = v
+			return nil
+		},
+	))
+	
+	// Note: CLI_ENDPOINT is handled specially in the old system (parses to host/port)
+	
+	// CLI_IMPERSONATE_SERVICE_ACCOUNT
+	mustRegister(sysvar.NewStringParser(
+		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
+		"Service account to impersonate.",
+		func() string { return sv.ImpersonateServiceAccount },
+		func(v string) error {
+			sv.ImpersonateServiceAccount = v
+			return nil
+		},
+	))
+	
+	// TRANSACTION_TAG
+	mustRegister(sysvar.NewStringParser(
+		"TRANSACTION_TAG",
+		"A property of type STRING that contains the transaction tag for the next transaction.",
+		func() string { return sv.TransactionTag },
+		func(v string) error {
+			sv.TransactionTag = v
+			return nil
+		},
+	))
+	
+	// STATEMENT_TAG
+	mustRegister(sysvar.NewStringParser(
+		"STATEMENT_TAG",
+		"A property of type STRING that contains the request tag for the next statement.",
+		func() string { return sv.RequestTag },
+		func(v string) error {
+			sv.RequestTag = v
+			return nil
+		},
+	))
+	
 	// Duration variables
 	
 	// MAX_COMMIT_DELAY
@@ -483,8 +631,225 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		nil, nil, // No min/max constraints
 	))
 	
-	// More variable types will be added in subsequent commits...
-	// TODO: Add special variables (READ_ONLY_STALENESS, etc.)
+	// More enum variables
+	
+	// AUTOCOMMIT_DML_MODE
+	autocommitDMLModeValues := map[string]AutocommitDMLMode{
+		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
+		"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"AUTOCOMMIT_DML_MODE",
+		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
+		autocommitDMLModeValues,
+		func() AutocommitDMLMode { return sv.AutocommitDMLMode },
+		func(v AutocommitDMLMode) error {
+			sv.AutocommitDMLMode = v
+			return nil
+		},
+		func(v AutocommitDMLMode) string {
+			switch v {
+			case AutocommitDMLModeTransactional:
+				return "TRANSACTIONAL"
+			case AutocommitDMLModePartitionedNonAtomic:
+				return "PARTITIONED_NON_ATOMIC"
+			default:
+				return fmt.Sprintf("AutocommitDMLMode(%v)", v)
+			}
+		},
+	))
+	
+	// DEFAULT_ISOLATION_LEVEL
+	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
+		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"DEFAULT_ISOLATION_LEVEL",
+		"The transaction isolation level that is used by default for read/write transactions.",
+		isolationValues,
+		func() sppb.TransactionOptions_IsolationLevel { return sv.DefaultIsolationLevel },
+		func(v sppb.TransactionOptions_IsolationLevel) error {
+			sv.DefaultIsolationLevel = v
+			return nil
+		},
+		func(v sppb.TransactionOptions_IsolationLevel) string {
+			switch v {
+			case sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED:
+				return "ISOLATION_LEVEL_UNSPECIFIED"
+			default:
+				return fmt.Sprintf("IsolationLevel(%d)", v)
+			}
+		},
+	))
+	
+	// CLI_DATABASE_DIALECT
+	dialectValues := map[string]databasepb.DatabaseDialect{
+		"GOOGLE_STANDARD_SQL": databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
+		"POSTGRESQL":          databasepb.DatabaseDialect_POSTGRESQL,
+		"":                    databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"CLI_DATABASE_DIALECT",
+		"Database dialect for the session.",
+		dialectValues,
+		func() databasepb.DatabaseDialect { return sv.DatabaseDialect },
+		func(v databasepb.DatabaseDialect) error {
+			sv.DatabaseDialect = v
+			return nil
+		},
+		func(v databasepb.DatabaseDialect) string {
+			switch v {
+			case databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL:
+				return "GOOGLE_STANDARD_SQL"
+			case databasepb.DatabaseDialect_POSTGRESQL:
+				return "POSTGRESQL"
+			case databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED:
+				return ""
+			default:
+				return fmt.Sprintf("DatabaseDialect(%d)", v)
+			}
+		},
+	))
+	
+	// CLI_QUERY_MODE
+	queryModeValues := map[string]sppb.ExecuteSqlRequest_QueryMode{
+		"NORMAL":  sppb.ExecuteSqlRequest_NORMAL,
+		"PLAN":    sppb.ExecuteSqlRequest_PLAN,
+		"PROFILE": sppb.ExecuteSqlRequest_PROFILE,
+		"WITH_STATS": sppb.ExecuteSqlRequest_PROFILE, // Alias
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"CLI_QUERY_MODE",
+		"Query execution mode.",
+		queryModeValues,
+		func() sppb.ExecuteSqlRequest_QueryMode { 
+			if sv.QueryMode == nil {
+				return sppb.ExecuteSqlRequest_NORMAL
+			}
+			return *sv.QueryMode
+		},
+		func(v sppb.ExecuteSqlRequest_QueryMode) error {
+			sv.QueryMode = &v
+			return nil
+		},
+		func(v sppb.ExecuteSqlRequest_QueryMode) string {
+			switch v {
+			case sppb.ExecuteSqlRequest_NORMAL:
+				return "NORMAL"
+			case sppb.ExecuteSqlRequest_PLAN:
+				return "PLAN"
+			case sppb.ExecuteSqlRequest_PROFILE:
+				return "PROFILE"
+			default:
+				return fmt.Sprintf("QueryMode(%d)", v)
+			}
+		},
+	))
+	
+	// CLI_LOG_LEVEL
+	logLevelValues := map[string]string{
+		"DEBUG": "DEBUG",
+		"INFO":  "INFO",
+		"WARN":  "WARN",
+		"ERROR": "ERROR",
+	}
+	mustRegister(sysvar.NewStringEnumParser(
+		"CLI_LOG_LEVEL",
+		"Log level for the CLI.",
+		logLevelValues,
+		func() string { 
+			switch sv.LogLevel {
+			case slog.LevelDebug:
+				return "DEBUG"
+			case slog.LevelInfo:
+				return "INFO"
+			case slog.LevelWarn:
+				return "WARN"
+			case slog.LevelError:
+				return "ERROR"
+			default:
+				return "WARN"
+			}
+		},
+		func(v string) error {
+			level, err := SetLogLevel(v)
+			if err != nil {
+				return err
+			}
+			sv.LogLevel = level
+			return nil
+		},
+	))
+	
+	// More integer variables
+	
+	// Note: CLI_CURRENT_WIDTH is handled in the old system (no field in systemVariables)
+	
+	// CLI_PORT
+	mustRegister(sysvar.NewIntegerParser(
+		"CLI_PORT",
+		"Port number for connections.",
+		func() int64 { return int64(sv.Port) },
+		func(v int64) error {
+			if v < 0 || v > 65535 {
+				return fmt.Errorf("port must be between 0 and 65535")
+			}
+			sv.Port = int(v)
+			return nil
+		},
+		lo.ToPtr(int64(0)), lo.ToPtr(int64(65535)),
+	))
+	
+	// Read-only variables
+	
+	// READ_TIMESTAMP
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"READ_TIMESTAMP",
+		"The read timestamp of the most recent read-only transaction.",
+		func() string {
+			if sv.ReadTimestamp.IsZero() {
+				return "NULL"
+			}
+			return sv.ReadTimestamp.Format(time.RFC3339Nano)
+		},
+	))
+	
+	// COMMIT_TIMESTAMP
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"COMMIT_TIMESTAMP",
+		"The commit timestamp of the last read-write transaction that Spanner committed.",
+		func() string {
+			if sv.CommitTimestamp.IsZero() {
+				return "NULL"
+			}
+			return sv.CommitTimestamp.Format(time.RFC3339Nano)
+		},
+	))
+	
+	// CLI_MCP
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
+		"CLI_MCP",
+		"A read-only boolean indicating whether the connection is running as an MCP server.",
+		func() bool { return sv.MCP },
+	))
+	
+	// CLI_VERSION
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"CLI_VERSION",
+		"The version of spanner-mycli.",
+		func() string { return getVersion() },
+	))
+	
+	// Special variables with complex handling
+	// These remain in the old system for now as they require special parsing logic:
+	// - READ_ONLY_STALENESS (complex parsing logic)
+	// - CLI_OUTPUT_TEMPLATE_FILE (file handling)
+	// - CLI_PROTO_DESCRIPTOR_FILE (file handling)
+	// - CLI_DIRECT_READ (complex parsing)
+	// - CLI_PARSE_MODE (special enum)
+	// - CLI_EMULATOR_PLATFORM (architecture detection)
+	// - CLI_HOST (special parsing)
+	// - COMMIT_RESPONSE (complex result set)
 	
 	return registry
 }

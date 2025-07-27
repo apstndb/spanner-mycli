@@ -387,3 +387,37 @@ func (r *Registry) Get(name string) (string, error) {
 	
 	return p.GetValue()
 }
+
+// NewReadOnlyStringParser creates a read-only string variable parser.
+func NewReadOnlyStringParser(
+	name string,
+	description string,
+	getter func() string,
+) VariableParser {
+	return &TypedVariableParser[string]{
+		name:        name,
+		description: description,
+		parser:      parser.DualModeStringParser,
+		setter:      nil, // Read-only
+		getter:      getter,
+		formatter:   func(v string) string { return v },
+		readOnly:    true,
+	}
+}
+
+// NewReadOnlyBooleanParser creates a read-only boolean variable parser.
+func NewReadOnlyBooleanParser(
+	name string,
+	description string,
+	getter func() bool,
+) VariableParser {
+	return &TypedVariableParser[bool]{
+		name:        name,
+		description: description,
+		parser:      parser.DualModeBoolParser,
+		setter:      nil, // Read-only
+		getter:      getter,
+		formatter:   func(v bool) string { return strconv.FormatBool(v) },
+		readOnly:    true,
+	}
+}
