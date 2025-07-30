@@ -13,13 +13,13 @@ type testSystemVariables struct {
 	TabWidth         int64
 	StatementTimeout *time.Duration
 	OptimizerVersion string
-	CLIFormat        sysvar.DisplayMode
+	CLIFormat        string
 }
 
 func TestRegistry(t *testing.T) {
 	sysVars := &testSystemVariables{
 		TabWidth:  8,
-		CLIFormat: sysvar.DisplayModeTable,
+		CLIFormat: "TABLE",
 	}
 
 	registry := sysvar.NewRegistry()
@@ -179,33 +179,7 @@ func TestRegistry(t *testing.T) {
 }
 
 func TestPredefinedParsers(t *testing.T) {
-	t.Run("DisplayModeParser", func(t *testing.T) {
-		testCases := []struct {
-			input string
-			want  sysvar.DisplayMode
-		}{
-			{"TABLE", sysvar.DisplayModeTable},
-			{"table", sysvar.DisplayModeTable}, // Case insensitive
-			{"VERTICAL", sysvar.DisplayModeVertical},
-			{"CSV", sysvar.DisplayModeCSV},
-		}
-
-		for _, tc := range testCases {
-			got, err := sysvar.DisplayModeParser.Parse(tc.input)
-			if err != nil {
-				t.Errorf("Parse(%q) failed: %v", tc.input, err)
-				continue
-			}
-			if got != tc.want {
-				t.Errorf("Parse(%q) = %v, want %v", tc.input, got, tc.want)
-			}
-		}
-
-		// Invalid value
-		if _, err := sysvar.DisplayModeParser.Parse("INVALID"); err == nil {
-			t.Error("Expected error for invalid display mode")
-		}
-	})
+	// DisplayMode tests removed as DisplayMode is no longer in the sysvar package
 
 	t.Run("TimeoutParser", func(t *testing.T) {
 		// Valid timeout

@@ -311,14 +311,14 @@ var sessionInitOnlyVariables = []string{
 
 func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry != nil && sv.Registry.Has(upperName) {
 		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
 		// TODO: Add context to determine if we're in Simple mode (CLI flags/config)
 		return sv.Registry.SetFromGoogleSQL(upperName, value)
 	}
-	
+
 	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
@@ -354,12 +354,12 @@ func (sv *systemVariables) Set(name string, value string) error {
 // don't follow GoogleSQL syntax rules.
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	upperName := strings.ToUpper(name)
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry != nil && sv.Registry.Has(upperName) {
 		return sv.Registry.SetFromSimple(upperName, value)
 	}
-	
+
 	// Fall back to Set for old system (which doesn't distinguish modes)
 	return sv.Set(name, value)
 }
@@ -379,7 +379,7 @@ func (sv *systemVariables) Add(name string, value string) error {
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry != nil && sv.Registry.Has(upperName) {
 		value, err := sv.Registry.Get(upperName)
@@ -388,7 +388,7 @@ func (sv *systemVariables) Get(name string) (map[string]string, error) {
 		}
 		return singletonMap(name, value), nil
 	}
-	
+
 	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {

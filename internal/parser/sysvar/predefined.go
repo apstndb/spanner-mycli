@@ -7,32 +7,6 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
-// DisplayMode represents the output format for query results.
-type DisplayMode int
-
-const (
-	DisplayModeTable DisplayMode = iota
-	DisplayModeTableComment
-	DisplayModeTableDetailComment
-	DisplayModeVertical
-	DisplayModeTab
-	DisplayModeHTML
-	DisplayModeXML
-	DisplayModeCSV
-)
-
-// DisplayModeParser parses display mode values.
-var DisplayModeParser = parser.NewEnumParser(map[string]DisplayMode{
-	"TABLE":                DisplayModeTable,
-	"TABLE_COMMENT":        DisplayModeTableComment,
-	"TABLE_DETAIL_COMMENT": DisplayModeTableDetailComment,
-	"VERTICAL":             DisplayModeVertical,
-	"TAB":                  DisplayModeTab,
-	"HTML":                 DisplayModeHTML,
-	"XML":                  DisplayModeXML,
-	"CSV":                  DisplayModeCSV,
-})
-
 // PriorityParser parses RPC priority values.
 var PriorityParser = parser.NewEnumParser(map[string]sppb.RequestOptions_Priority{
 	"PRIORITY_UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
@@ -43,20 +17,6 @@ var PriorityParser = parser.NewEnumParser(map[string]sppb.RequestOptions_Priorit
 	"MEDIUM":               sppb.RequestOptions_PRIORITY_MEDIUM,
 	"PRIORITY_HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
 	"HIGH":                 sppb.RequestOptions_PRIORITY_HIGH,
-})
-
-// AutocommitDMLMode represents the autocommit mode for DML statements.
-type AutocommitDMLMode bool
-
-const (
-	AutocommitDMLModeTransactional        AutocommitDMLMode = false
-	AutocommitDMLModePartitionedNonAtomic AutocommitDMLMode = true
-)
-
-// AutocommitDMLModeParser parses autocommit DML mode values.
-var AutocommitDMLModeParser = parser.NewEnumParser(map[string]AutocommitDMLMode{
-	"TRANSACTIONAL":          AutocommitDMLModeTransactional,
-	"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
 })
 
 // IsolationLevelParser parses transaction isolation level values.

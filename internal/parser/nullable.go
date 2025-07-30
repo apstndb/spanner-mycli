@@ -25,13 +25,13 @@ func (p *NullableParser[T]) ParseAndValidateWithMode(s string, mode ParseMode) (
 	if strings.ToUpper(trimmed) == "NULL" {
 		return nil, nil
 	}
-	
+
 	// Parse as regular value
 	value, err := p.innerParser.ParseAndValidateWithMode(s, mode)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &value, nil
 }
 

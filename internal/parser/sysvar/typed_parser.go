@@ -56,7 +56,7 @@ func (vp *TypedVariableParser[T]) ParseAndSetWithMode(value string, mode parser.
 	if err != nil {
 		return fmt.Errorf("invalid value for %s: %w", vp.name, err)
 	}
-	
+
 	return vp.setter(parsed)
 }
 
@@ -232,14 +232,14 @@ func NewDurationParser(
 	min, max *time.Duration,
 ) VariableParser {
 	var p parser.DualModeParser[time.Duration]
-	
+
 	if min != nil || max != nil {
 		// Create parser with constraints
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
 		}
-		
+
 		// For GoogleSQL mode, wrap with validation
 		var googleSQLParser parser.Parser[time.Duration]
 		if min != nil && max != nil {
@@ -255,12 +255,12 @@ func NewDurationParser(
 		} else {
 			googleSQLParser = parser.GoogleSQLDurationParser
 		}
-		
+
 		p = parser.NewDualModeParser(googleSQLParser, simpleParser)
 	} else {
 		p = parser.DualModeDurationParser
 	}
-	
+
 	return &TypedVariableParser[time.Duration]{
 		name:        name,
 		description: description,
@@ -281,14 +281,14 @@ func NewNullableDurationParser(
 	min, max *time.Duration,
 ) VariableParser {
 	var innerParser parser.DualModeParser[time.Duration]
-	
+
 	if min != nil || max != nil {
 		// Create parser with constraints
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
 		}
-		
+
 		// For GoogleSQL mode, wrap with validation
 		var googleSQLParser parser.Parser[time.Duration]
 		if min != nil && max != nil {
@@ -304,33 +304,38 @@ func NewNullableDurationParser(
 		} else {
 			googleSQLParser = parser.GoogleSQLDurationParser
 		}
-		
+
 		innerParser = parser.NewDualModeParser(googleSQLParser, simpleParser)
 	} else {
 		innerParser = parser.DualModeDurationParser
 	}
-	
+
 	p := parser.NewNullableDurationParser(innerParser)
-	
+
 	return &TypedVariableParser[*time.Duration]{
 		name:        name,
 		description: description,
 		parser:      p,
 		setter:      setter,
 		getter:      getter,
-		formatter: func(v *time.Duration) string { 
+		formatter: func(v *time.Duration) string {
 			if v == nil {
 				return "NULL"
 			}
 			return v.String()
 		},
-		readOnly:    setter == nil,
+		readOnly: setter == nil,
 	}
 }
 
 // Registry manages system variable parsers.
 type Registry struct {
 	parsers map[string]VariableParser
+}
+
+// Parsers returns the parsers map for debugging
+func (r *Registry) Parsers() map[string]VariableParser {
+	return r.parsers
 }
 
 // NewRegistry creates a new variable registry.
@@ -384,7 +389,7 @@ func (r *Registry) Get(name string) (string, error) {
 	if !exists {
 		return "", fmt.Errorf("unknown variable: %s", name)
 	}
-	
+
 	return p.GetValue()
 }
 

@@ -13,7 +13,7 @@ func NewTransformParser[T, U any](innerParser Parser[T], transform func(T) (U, e
 		innerParser: innerParser,
 		transform:   transform,
 	}
-	
+
 	// Set up the BaseParser with proper parse function
 	p.BaseParser = BaseParser[U]{
 		ParseFunc: func(s string) (U, error) {
@@ -25,19 +25,19 @@ func NewTransformParser[T, U any](innerParser Parser[T], transform func(T) (U, e
 			return transform(value)
 		},
 	}
-	
+
 	return p
 }
 
 // ParseAndValidate parses using the inner parser and transforms the result.
 func (p *TransformParser[T, U]) ParseAndValidate(s string) (U, error) {
 	var zero U
-	
+
 	value, err := p.innerParser.ParseAndValidate(s)
 	if err != nil {
 		return zero, err
 	}
-	
+
 	return p.transform(value)
 }
 

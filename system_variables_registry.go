@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-	
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
+
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	databasepb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 	"github.com/samber/lo"
 )
 
@@ -17,16 +17,16 @@ import (
 // This function sets up all the system variable parsers with their getters and setters.
 func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	registry := sysvar.NewRegistry()
-	
+
 	// Helper function to register variables with panic on error
 	mustRegister := func(parser sysvar.VariableParser) {
 		if err := registry.Register(parser); err != nil {
 			panic(fmt.Sprintf("Failed to register %s: %v", parser.Name(), err))
 		}
 	}
-	
+
 	// Migrate simple boolean variables first
-	
+
 	// READONLY - Connection read-only mode
 	mustRegister(sysvar.NewBooleanParser(
 		"READONLY",
@@ -40,7 +40,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// AUTO_PARTITION_MODE
 	mustRegister(sysvar.NewBooleanParser(
 		"AUTO_PARTITION_MODE",
@@ -51,7 +51,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// RETURN_COMMIT_STATS
 	mustRegister(sysvar.NewBooleanParser(
 		"RETURN_COMMIT_STATS",
@@ -62,7 +62,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// AUTO_BATCH_DML
 	mustRegister(sysvar.NewBooleanParser(
 		"AUTO_BATCH_DML",
@@ -73,7 +73,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// DATA_BOOST_ENABLED
 	mustRegister(sysvar.NewBooleanParser(
 		"DATA_BOOST_ENABLED",
@@ -84,7 +84,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// EXCLUDE_TXN_FROM_CHANGE_STREAMS
 	mustRegister(sysvar.NewBooleanParser(
 		"EXCLUDE_TXN_FROM_CHANGE_STREAMS",
@@ -95,9 +95,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI variables - boolean
-	
+
 	// CLI_VERBOSE
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_VERBOSE",
@@ -108,7 +108,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ECHO_EXECUTED_DDL
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ECHO_EXECUTED_DDL",
@@ -119,7 +119,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ECHO_INPUT
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ECHO_INPUT",
@@ -130,7 +130,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_USE_PAGER
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_USE_PAGER",
@@ -141,7 +141,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_AUTOWRAP
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_AUTOWRAP",
@@ -152,7 +152,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ENABLE_HIGHLIGHT
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ENABLE_HIGHLIGHT",
@@ -163,7 +163,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_PROTOTEXT_MULTILINE
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_PROTOTEXT_MULTILINE",
@@ -174,7 +174,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_MARKDOWN_CODEBLOCK
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_MARKDOWN_CODEBLOCK",
@@ -185,7 +185,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_TRY_PARTITION_QUERY
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_TRY_PARTITION_QUERY",
@@ -196,7 +196,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_AUTO_CONNECT_AFTER_CREATE
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_AUTO_CONNECT_AFTER_CREATE",
@@ -207,7 +207,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ENABLE_PROGRESS_BAR
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ENABLE_PROGRESS_BAR",
@@ -218,7 +218,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ENABLE_ADC_PLUS
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ENABLE_ADC_PLUS",
@@ -229,7 +229,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ASYNC_DDL
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ASYNC_DDL",
@@ -240,7 +240,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_SKIP_COLUMN_NAMES
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_SKIP_COLUMN_NAMES",
@@ -251,7 +251,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_LINT_PLAN (special case with conditional getter)
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_LINT_PLAN",
@@ -262,9 +262,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// Integer variables
-	
+
 	// MAX_PARTITIONED_PARALLELISM
 	mustRegister(sysvar.NewIntegerParser(
 		"MAX_PARTITIONED_PARALLELISM",
@@ -276,7 +276,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 		nil, nil, // No min/max constraints
 	))
-	
+
 	// CLI_TAB_WIDTH
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_TAB_WIDTH",
@@ -288,7 +288,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 		nil, nil, // No min/max constraints
 	))
-	
+
 	// CLI_EXPLAIN_WRAP_WIDTH
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_EXPLAIN_WRAP_WIDTH",
@@ -300,9 +300,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 		nil, nil, // No min/max constraints
 	))
-	
+
 	// String variables
-	
+
 	// OPTIMIZER_VERSION
 	mustRegister(sysvar.NewStringParser(
 		"OPTIMIZER_VERSION",
@@ -313,7 +313,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// OPTIMIZER_STATISTICS_PACKAGE
 	mustRegister(sysvar.NewStringParser(
 		"OPTIMIZER_STATISTICS_PACKAGE",
@@ -324,7 +324,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_PROMPT
 	mustRegister(sysvar.NewStringParser(
 		"CLI_PROMPT",
@@ -335,7 +335,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_PROMPT2
 	mustRegister(sysvar.NewStringParser(
 		"CLI_PROMPT2",
@@ -346,7 +346,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_VERTEXAI_MODEL
 	mustRegister(sysvar.NewStringParser(
 		"CLI_VERTEXAI_MODEL",
@@ -357,7 +357,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_VERTEXAI_PROJECT
 	mustRegister(sysvar.NewStringParser(
 		"CLI_VERTEXAI_PROJECT",
@@ -368,9 +368,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// Enum variables
-	
+
 	// RPC_PRIORITY
 	priorityValues := map[string]sppb.RequestOptions_Priority{
 		"UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
@@ -393,7 +393,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return strings.TrimPrefix(v.String(), "PRIORITY_")
 		},
 	))
-	
+
 	// CLI_FORMAT
 	formatValues := map[string]DisplayMode{
 		"TABLE":                DisplayModeTable,
@@ -438,7 +438,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			}
 		},
 	))
-	
+
 	// CLI_EXPLAIN_FORMAT
 	explainFormatValues := map[string]explainFormat{
 		"":            explainFormatUnspecified,
@@ -456,15 +456,15 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// More boolean variables
-	
+
 	// Note: AUTOCOMMIT is handled in the old system (no direct field in systemVariables)
 	// Note: RETRY_ABORTS_INTERNALLY is handled in the old system (no direct field in systemVariables)
-	
+
 	// Note: CLI_FIXED_WIDTH is nullable int64, not boolean - remains in old system
 	// Note: CLI_INLINE_STATS is a string with complex parsing - remains in old system
-	
+
 	// CLI_SKIP_SYSTEM_COMMAND
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_SKIP_SYSTEM_COMMAND",
@@ -475,7 +475,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_LOG_GRPC
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_LOG_GRPC",
@@ -486,7 +486,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_INSECURE
 	mustRegister(sysvar.NewBooleanParser(
 		"CLI_INSECURE",
@@ -497,9 +497,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// More string variables
-	
+
 	// CLI_ANALYZE_COLUMNS
 	mustRegister(sysvar.NewStringParser(
 		"CLI_ANALYZE_COLUMNS",
@@ -511,7 +511,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_HISTORY_FILE
 	mustRegister(sysvar.NewStringParser(
 		"CLI_HISTORY_FILE",
@@ -522,7 +522,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_PROJECT
 	mustRegister(sysvar.NewStringParser(
 		"CLI_PROJECT",
@@ -533,7 +533,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_INSTANCE
 	mustRegister(sysvar.NewStringParser(
 		"CLI_INSTANCE",
@@ -544,7 +544,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_DATABASE
 	mustRegister(sysvar.NewStringParser(
 		"CLI_DATABASE",
@@ -555,7 +555,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// CLI_ROLE
 	mustRegister(sysvar.NewStringParser(
 		"CLI_ROLE",
@@ -566,9 +566,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// Note: CLI_ENDPOINT is handled specially in the old system (parses to host/port)
-	
+
 	// CLI_IMPERSONATE_SERVICE_ACCOUNT
 	mustRegister(sysvar.NewStringParser(
 		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
@@ -579,7 +579,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// TRANSACTION_TAG
 	mustRegister(sysvar.NewStringParser(
 		"TRANSACTION_TAG",
@@ -590,7 +590,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// STATEMENT_TAG
 	mustRegister(sysvar.NewStringParser(
 		"STATEMENT_TAG",
@@ -601,9 +601,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// Duration variables
-	
+
 	// MAX_COMMIT_DELAY
 	minDelay := time.Duration(0)
 	maxDelay := 500 * time.Millisecond
@@ -618,7 +618,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		&minDelay,
 		&maxDelay,
 	))
-	
+
 	// STATEMENT_TIMEOUT
 	mustRegister(sysvar.NewNullableDurationParser(
 		"STATEMENT_TIMEOUT",
@@ -630,9 +630,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 		nil, nil, // No min/max constraints
 	))
-	
+
 	// More enum variables
-	
+
 	// AUTOCOMMIT_DML_MODE
 	autocommitDMLModeValues := map[string]AutocommitDMLMode{
 		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
@@ -658,7 +658,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			}
 		},
 	))
-	
+
 	// DEFAULT_ISOLATION_LEVEL
 	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
 		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
@@ -681,7 +681,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			}
 		},
 	))
-	
+
 	// CLI_DATABASE_DIALECT
 	dialectValues := map[string]databasepb.DatabaseDialect{
 		"GOOGLE_STANDARD_SQL": databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
@@ -710,19 +710,19 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			}
 		},
 	))
-	
+
 	// CLI_QUERY_MODE
 	queryModeValues := map[string]sppb.ExecuteSqlRequest_QueryMode{
-		"NORMAL":  sppb.ExecuteSqlRequest_NORMAL,
-		"PLAN":    sppb.ExecuteSqlRequest_PLAN,
-		"PROFILE": sppb.ExecuteSqlRequest_PROFILE,
+		"NORMAL":     sppb.ExecuteSqlRequest_NORMAL,
+		"PLAN":       sppb.ExecuteSqlRequest_PLAN,
+		"PROFILE":    sppb.ExecuteSqlRequest_PROFILE,
 		"WITH_STATS": sppb.ExecuteSqlRequest_PROFILE, // Alias
 	}
 	mustRegister(sysvar.NewEnumParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
 		queryModeValues,
-		func() sppb.ExecuteSqlRequest_QueryMode { 
+		func() sppb.ExecuteSqlRequest_QueryMode {
 			if sv.QueryMode == nil {
 				return sppb.ExecuteSqlRequest_NORMAL
 			}
@@ -745,7 +745,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			}
 		},
 	))
-	
+
 	// CLI_LOG_LEVEL
 	logLevelValues := map[string]string{
 		"DEBUG": "DEBUG",
@@ -757,7 +757,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"CLI_LOG_LEVEL",
 		"Log level for the CLI.",
 		logLevelValues,
-		func() string { 
+		func() string {
 			switch sv.LogLevel {
 			case slog.LevelDebug:
 				return "DEBUG"
@@ -780,11 +780,11 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
-	
+
 	// More integer variables
-	
+
 	// Note: CLI_CURRENT_WIDTH is handled in the old system (no field in systemVariables)
-	
+
 	// CLI_PORT
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_PORT",
@@ -799,9 +799,9 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 		lo.ToPtr(int64(0)), lo.ToPtr(int64(65535)),
 	))
-	
+
 	// Read-only variables
-	
+
 	// READ_TIMESTAMP
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"READ_TIMESTAMP",
@@ -813,7 +813,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return sv.ReadTimestamp.Format(time.RFC3339Nano)
 		},
 	))
-	
+
 	// COMMIT_TIMESTAMP
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"COMMIT_TIMESTAMP",
@@ -825,21 +825,21 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return sv.CommitTimestamp.Format(time.RFC3339Nano)
 		},
 	))
-	
+
 	// CLI_MCP
 	mustRegister(sysvar.NewReadOnlyBooleanParser(
 		"CLI_MCP",
 		"A read-only boolean indicating whether the connection is running as an MCP server.",
 		func() bool { return sv.MCP },
 	))
-	
+
 	// CLI_VERSION
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_VERSION",
 		"The version of spanner-mycli.",
 		func() string { return getVersion() },
 	))
-	
+
 	// Special variables with complex handling
 	// These remain in the old system for now as they require special parsing logic:
 	// - READ_ONLY_STALENESS (complex parsing logic)
@@ -850,6 +850,6 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// - CLI_EMULATOR_PLATFORM (architecture detection)
 	// - CLI_HOST (special parsing)
 	// - COMMIT_RESPONSE (complex result set)
-	
+
 	return registry
 }

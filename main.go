@@ -521,35 +521,17 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return err
 	}
 
-	// CLI_FORMAT is set in initializeSystemVariables from opts.Set,
-	// but if not set there, it's set here based on interactive mode or format flags.
-	// This logic needs to be after sysVars is initialized.
-	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
-	if _, ok := sets["CLI_FORMAT"]; !ok {
-		// Individual format flags take precedence over --format for backward compatibility
-		switch {
-		case opts.HTML:
-			sysVars.CLIFormat = DisplayModeHTML
-		case opts.XML:
-			sysVars.CLIFormat = DisplayModeXML
-		case opts.CSV:
-			sysVars.CLIFormat = DisplayModeCSV
-		case opts.Table:
-			sysVars.CLIFormat = DisplayModeTable
-		case opts.Format != "":
-			// Handle --format flag using the common parser
-			mode, err := parseDisplayMode(opts.Format)
-			if err != nil {
-				// Invalid format will be caught by go-flags validation
-				// This is just a fallback
-				sysVars.CLIFormat = DisplayModeTable
-			} else {
-				sysVars.CLIFormat = mode
+	// Set default CLI_FORMAT for interactive/batch mode if not already set
+	if sysVars.CLIFormat == 0 {
+		// CLI_FORMAT was not set by flags or --set, apply defaults based on mode
+		if interactive {
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "TABLE"); err != nil {
+				return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
 			}
-		case interactive:
-			sysVars.CLIFormat = DisplayModeTable
-		default:
-			sysVars.CLIFormat = DisplayModeTab
+		} else {
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "TAB"); err != nil {
+				return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
+			}
 		}
 	}
 
@@ -666,7 +648,8 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
-	sysVars.initializeRegistry()
+	// Don't initialize registry here - it needs to be done after the final
+	// systemVariables is in its permanent location to avoid closure issues
 
 	// Override with command-line options (only when explicitly provided)
 	sysVars.Project = opts.ProjectId
@@ -771,6 +754,9 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		return systemVariables{}, err
 	}
 
+	// Initialize registry after sysVars is in its final location
+	sysVars.initializeRegistry()
+
 	// initialize default value
 	if err := sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
 		return systemVariables{}, fmt.Errorf("parse error: %w", err)
@@ -827,13 +813,14 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 
 	if opts.Priority != "" {
-		priority, err := parsePriority(opts.Priority)
-		if err != nil {
-			return systemVariables{}, fmt.Errorf("priority must be either HIGH, MEDIUM, or LOW: %w", err)
+		if err := sysVars.SetFromSimple("RPC_PRIORITY", opts.Priority); err != nil {
+			return systemVariables{}, fmt.Errorf("invalid value of --priority: %v: %w", opts.Priority, err)
 		}
-		sysVars.RPCPriority = priority
 	} else {
-		sysVars.RPCPriority = defaultPriority
+		// Only set default if not already set via registry
+		if err := sysVars.SetFromSimple("RPC_PRIORITY", "MEDIUM"); err != nil {
+			return systemVariables{}, fmt.Errorf("failed to set default RPC_PRIORITY: %w", err)
+		}
 	}
 
 	if opts.QueryMode != "" {
@@ -856,8 +843,42 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		sysVars.DirectedRead = directedRead
 	}
 
+	// Set CLI_FORMAT defaults based on flags before processing --set
+	// This allows --set CLI_FORMAT=X to override these defaults
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
+	// Debug: log what we have
+	if len(sets) > 0 {
+		slog.Debug("Processing --set values", "sets", sets)
+	}
+	if _, ok := sets["CLI_FORMAT"]; !ok {
+		// Individual format flags take precedence over --format for backward compatibility
+		switch {
+		case opts.HTML:
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "HTML"); err != nil {
+				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
+			}
+		case opts.XML:
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "XML"); err != nil {
+				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
+			}
+		case opts.CSV:
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "CSV"); err != nil {
+				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
+			}
+		case opts.Table:
+			if err := sysVars.SetFromSimple("CLI_FORMAT", "TABLE"); err != nil {
+				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
+			}
+		case opts.Format != "":
+			if err := sysVars.SetFromSimple("CLI_FORMAT", opts.Format); err != nil {
+				return systemVariables{}, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
+			}
+		}
+		// Note: Interactive mode defaults are handled in run() since we don't know
+		// if we're interactive at this point
+	}
 	for k, v := range sets {
+		slog.Debug("Setting variable from --set", "name", k, "value", v)
 		if err := sysVars.SetFromSimple(k, v); err != nil {
 			return systemVariables{}, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}
