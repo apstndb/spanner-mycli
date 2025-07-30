@@ -83,8 +83,8 @@ func TestRegistry(t *testing.T) {
 			{"false", false, false},
 			{"TRUE", true, false},
 			{"FALSE", false, false},
-			{"1", false, true},
-			{"0", false, true},
+			{"1", true, false},
+			{"0", false, false},
 			{"yes", false, true},
 			{"no", false, true},
 		}

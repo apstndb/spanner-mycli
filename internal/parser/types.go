@@ -8,7 +8,9 @@ import (
 )
 
 // BoolParser parses boolean values.
-// It accepts: true, false (case insensitive).
+// It uses strconv.ParseBool which accepts:
+// "1", "t", "T", "true", "TRUE", "True",
+// "0", "f", "F", "false", "FALSE", "False".
 type BoolParser struct {
 	BaseParser[bool]
 }
@@ -18,15 +20,7 @@ func NewBoolParser() *BoolParser {
 	return &BoolParser{
 		BaseParser: BaseParser[bool]{
 			ParseFunc: func(value string) (bool, error) {
-				// Only accept "true" and "false" (case insensitive)
-				switch strings.ToLower(strings.TrimSpace(value)) {
-				case "true":
-					return true, nil
-				case "false":
-					return false, nil
-				default:
-					return false, fmt.Errorf("invalid boolean value: %q (expected true or false)", value)
-				}
+				return strconv.ParseBool(strings.TrimSpace(value))
 			},
 		},
 	}
