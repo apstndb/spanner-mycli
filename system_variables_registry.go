@@ -99,157 +99,101 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// CLI variables - boolean
 
 	// CLI_VERBOSE
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_VERBOSE",
 		"Display verbose output.",
-		func() bool { return sv.Verbose },
-		func(v bool) error {
-			sv.Verbose = v
-			return nil
-		},
+		&sv.Verbose,
 	))
 
 	// CLI_ECHO_EXECUTED_DDL
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ECHO_EXECUTED_DDL",
 		"Echo executed DDL statements.",
-		func() bool { return sv.EchoExecutedDDL },
-		func(v bool) error {
-			sv.EchoExecutedDDL = v
-			return nil
-		},
+		&sv.EchoExecutedDDL,
 	))
 
 	// CLI_ECHO_INPUT
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ECHO_INPUT",
 		"Echo input statements.",
-		func() bool { return sv.EchoInput },
-		func(v bool) error {
-			sv.EchoInput = v
-			return nil
-		},
+		&sv.EchoInput,
 	))
 
 	// CLI_USE_PAGER
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_USE_PAGER",
 		"Enable pager for output.",
-		func() bool { return sv.UsePager },
-		func(v bool) error {
-			sv.UsePager = v
-			return nil
-		},
+		&sv.UsePager,
 	))
 
 	// CLI_AUTOWRAP
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_AUTOWRAP",
 		"Enable automatic line wrapping.",
-		func() bool { return sv.AutoWrap },
-		func(v bool) error {
-			sv.AutoWrap = v
-			return nil
-		},
+		&sv.AutoWrap,
 	))
 
 	// CLI_ENABLE_HIGHLIGHT
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ENABLE_HIGHLIGHT",
 		"Enable syntax highlighting.",
-		func() bool { return sv.EnableHighlight },
-		func(v bool) error {
-			sv.EnableHighlight = v
-			return nil
-		},
+		&sv.EnableHighlight,
 	))
 
 	// CLI_PROTOTEXT_MULTILINE
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_PROTOTEXT_MULTILINE",
 		"Enable multiline prototext output.",
-		func() bool { return sv.MultilineProtoText },
-		func(v bool) error {
-			sv.MultilineProtoText = v
-			return nil
-		},
+		&sv.MultilineProtoText,
 	))
 
 	// CLI_MARKDOWN_CODEBLOCK
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_MARKDOWN_CODEBLOCK",
 		"Enable markdown codeblock output.",
-		func() bool { return sv.MarkdownCodeblock },
-		func(v bool) error {
-			sv.MarkdownCodeblock = v
-			return nil
-		},
+		&sv.MarkdownCodeblock,
 	))
 
 	// CLI_TRY_PARTITION_QUERY
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_TRY_PARTITION_QUERY",
 		"A boolean indicating whether to test query for partition compatibility instead of executing it.",
-		func() bool { return sv.TryPartitionQuery },
-		func(v bool) error {
-			sv.TryPartitionQuery = v
-			return nil
-		},
+		&sv.TryPartitionQuery,
 	))
 
 	// CLI_AUTO_CONNECT_AFTER_CREATE
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_AUTO_CONNECT_AFTER_CREATE",
 		"A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
-		func() bool { return sv.AutoConnectAfterCreate },
-		func(v bool) error {
-			sv.AutoConnectAfterCreate = v
-			return nil
-		},
+		&sv.AutoConnectAfterCreate,
 	))
 
 	// CLI_ENABLE_PROGRESS_BAR
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ENABLE_PROGRESS_BAR",
 		"A boolean indicating whether to display progress bars during operations. The default is false.",
-		func() bool { return sv.EnableProgressBar },
-		func(v bool) error {
-			sv.EnableProgressBar = v
-			return nil
-		},
+		&sv.EnableProgressBar,
 	))
 
 	// CLI_ENABLE_ADC_PLUS
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ENABLE_ADC_PLUS",
 		"A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
-		func() bool { return sv.EnableADCPlus },
-		func(v bool) error {
-			sv.EnableADCPlus = v
-			return nil
-		},
+		&sv.EnableADCPlus,
 	))
 
 	// CLI_ASYNC_DDL
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_ASYNC_DDL",
 		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
-		func() bool { return sv.AsyncDDL },
-		func(v bool) error {
-			sv.AsyncDDL = v
-			return nil
-		},
+		&sv.AsyncDDL,
 	))
 
 	// CLI_SKIP_COLUMN_NAMES
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_SKIP_COLUMN_NAMES",
 		"A boolean indicating whether to suppress column headers in output. The default is false.",
-		func() bool { return sv.SkipColumnNames },
-		func(v bool) error {
-			sv.SkipColumnNames = v
-			return nil
-		},
+		&sv.SkipColumnNames,
 	))
 
 	// CLI_LINT_PLAN (special case with conditional getter)
@@ -304,69 +248,45 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// String variables
 
 	// OPTIMIZER_VERSION
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"OPTIMIZER_VERSION",
 		"A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
-		func() string { return sv.OptimizerVersion },
-		func(v string) error {
-			sv.OptimizerVersion = v
-			return nil
-		},
+		&sv.OptimizerVersion,
 	))
 
 	// OPTIMIZER_STATISTICS_PACKAGE
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"OPTIMIZER_STATISTICS_PACKAGE",
 		"A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
-		func() string { return sv.OptimizerStatisticsPackage },
-		func(v string) error {
-			sv.OptimizerStatisticsPackage = v
-			return nil
-		},
+		&sv.OptimizerStatisticsPackage,
 	))
 
 	// CLI_PROMPT
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_PROMPT",
 		"Custom prompt for spanner-mycli.",
-		func() string { return sv.Prompt },
-		func(v string) error {
-			sv.Prompt = v
-			return nil
-		},
+		&sv.Prompt,
 	))
 
 	// CLI_PROMPT2
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_PROMPT2",
 		"Custom continuation prompt for spanner-mycli.",
-		func() string { return sv.Prompt2 },
-		func(v string) error {
-			sv.Prompt2 = v
-			return nil
-		},
+		&sv.Prompt2,
 	))
 
 	// CLI_VERTEXAI_MODEL
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_VERTEXAI_MODEL",
 		"Vertex AI model for natural language features.",
-		func() string { return sv.VertexAIModel },
-		func(v string) error {
-			sv.VertexAIModel = v
-			return nil
-		},
+		&sv.VertexAIModel,
 	))
 
 	// CLI_VERTEXAI_PROJECT
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_VERTEXAI_PROJECT",
 		"Vertex AI project for natural language features.",
-		func() string { return sv.VertexAIProject },
-		func(v string) error {
-			sv.VertexAIProject = v
-			return nil
-		},
+		&sv.VertexAIProject,
 	))
 
 	// Enum variables

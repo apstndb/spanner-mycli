@@ -86,6 +86,24 @@ func NewBooleanParser(
 	}
 }
 
+// NewSimpleBooleanParser creates a boolean variable parser from a pointer.
+// This is a convenience function for simple cases where the variable is just a field.
+func NewSimpleBooleanParser(
+	name string,
+	description string,
+	field *bool,
+) VariableParser {
+	return NewBooleanParser(
+		name,
+		description,
+		func() bool { return *field },
+		func(v bool) error {
+			*field = v
+			return nil
+		},
+	)
+}
+
 // NewStringParser creates a string variable parser.
 func NewStringParser(
 	name string,
@@ -102,6 +120,24 @@ func NewStringParser(
 		formatter:   func(v string) string { return v },
 		readOnly:    setter == nil,
 	}
+}
+
+// NewSimpleStringParser creates a string variable parser from a pointer.
+// This is a convenience function for simple cases where the variable is just a field.
+func NewSimpleStringParser(
+	name string,
+	description string,
+	field *string,
+) VariableParser {
+	return NewStringParser(
+		name,
+		description,
+		func() string { return *field },
+		func(v string) error {
+			*field = v
+			return nil
+		},
+	)
 }
 
 // NewIntegerParser creates an integer variable parser with optional range validation.
