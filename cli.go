@@ -336,7 +336,8 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel()
+	go handleInterrupt(ctx, cancel)
 
 	for _, stmt := range stmts {
 		if _, ok := stmt.(*ExitStatement); ok {
@@ -391,7 +392,7 @@ func (c *Cli) PrintBatchError(err error) {
 	printError(c.GetErrStream(), err)
 }
 
-func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) {
+func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) error {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
 		w = c.GetWriter()
@@ -404,7 +405,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 
 		split, err := shellquote.Split(pagerpath)
 		if err != nil {
-			return
+			return fmt.Errorf("failed to parse pager command: %w", err)
 		}
 		cmd = exec.CommandContext(context.Background(), split[0], split[1:]...)
 
@@ -416,7 +417,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 		err = cmd.Start()
 		if err != nil {
 			slog.Error("failed to start pager command", "err", err)
-			return
+			return fmt.Errorf("failed to start pager: %w", err)
 		}
 		defer func() {
 			err := pw.Close()
@@ -429,7 +430,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 			}
 		}()
 	}
-	printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
+	return printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
 }
 
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
@@ -444,20 +445,31 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
+	done := make(chan struct{})
+
 	go func() {
 		// wait to avoid corruption with first output of command
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-done:
+			return
+		}
 
 		i := 0
 		for {
-			<-ticker.C
-			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(ttyWriter, "\r%s", mark)
-			i++
+			select {
+			case <-ticker.C:
+				mark := progressMarks[i%len(progressMarks)]
+				fmt.Fprintf(ttyWriter, "\r%s", mark)
+				i++
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	stop := func() {
+		close(done)
 		ticker.Stop()
 		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
@@ -542,7 +554,12 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		w = c.GetWriter()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel() // Ensure context is cancelled when function returns
+
+	// Start interrupt handler in interactive mode only
+	if interactive {
+		go handleInterrupt(ctx, cancel)
+	}
 
 	// Setup progress mark and timing
 	t0 := time.Now()
@@ -587,7 +604,9 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 
 	// Display the result (skip for meta commands)
 	if _, isMetaCommand := stmt.(MetaCommandStatement); !isMetaCommand {
-		c.displayResult(result, interactive, input, w)
+		if err := c.displayResult(result, interactive, input, w); err != nil {
+			return "", fmt.Errorf("failed to display result: %w", err)
+		}
 	}
 
 	return result.PreInput, nil
@@ -667,7 +686,8 @@ func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 }
 
 // displayResult displays the result of the statement execution.
-func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) {
+// It returns an error if the output operation fails.
+func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) error {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
 		w = c.GetWriter()
@@ -692,16 +712,29 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 		}
 	}
 
-	c.PrintResult(size, result, interactive, input, w)
+	if err := c.PrintResult(size, result, interactive, input, w); err != nil {
+		return err
+	}
 
 	if interactive {
-		fmt.Fprintf(w, "\n")
+		if _, err := fmt.Fprintf(w, "\n"); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func handleInterrupt(cancel context.CancelFunc) {
+func handleInterrupt(ctx context.Context, cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	<-c
-	cancel()
+	defer signal.Stop(c)
+
+	select {
+	case <-c:
+		cancel()
+	case <-ctx.Done():
+		// Context cancelled, exit gracefully
+		return
+	}
 }

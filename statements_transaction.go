@@ -84,20 +84,23 @@ type SetTransactionStatement struct {
 
 func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{IsMutation: true}
-	if !session.InPendingTransaction() {
-		// nop
+
+	// Get transaction attributes atomically to avoid check-then-act race
+	attrs := session.TransactionAttrsWithLock()
+	if attrs.mode != transactionModePending {
+		// nop - not in pending transaction
 		return result, nil
 	}
 
 	if s.IsReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, attrs.priority)
 		if err != nil {
 			return nil, err
 		}
 		result.Timestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, session.tc.isolationLevel, session.tc.priority)
+		err := session.BeginReadWriteTransaction(ctx, attrs.isolationLevel, attrs.priority)
 		if err != nil {
 			return nil, err
 		}

@@ -342,7 +342,10 @@ Empty set
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
 				out := &bytes.Buffer{}
-				printResult(test.sysVars, test.screenWidth, out, test.result, false, test.input)
+				err := printResult(test.sysVars, test.screenWidth, out, test.result, false, test.input)
+				if err != nil {
+					t.Errorf("printResult() unexpected error: %v", err)
+				}
 
 				got := out.String()
 				if diff := cmp.Diff(test.want, got); diff != "" {
@@ -362,7 +365,10 @@ Empty set
 			),
 			IsMutation: false,
 		}
-		printResult(&systemVariables{CLIFormat: DisplayModeVertical}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: DisplayModeVertical}, math.MaxInt, out, result, false, "")
+		if err != nil {
+			t.Errorf("printResult() unexpected error: %v", err)
+		}
 
 		expected := strings.TrimPrefix(`
 *************************** 1. row ***************************
@@ -389,7 +395,10 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		printResult(&systemVariables{CLIFormat: DisplayModeTab}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: DisplayModeTab}, math.MaxInt, out, result, false, "")
+		if err != nil {
+			t.Errorf("printResult() unexpected error: %v", err)
+		}
 
 		expected := "foo\tbar\n" +
 			"1\t2\n" +
@@ -411,7 +420,10 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		printResult(&systemVariables{CLIFormat: DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		if err != nil {
+			t.Errorf("printResult() unexpected error: %v", err)
+		}
 
 		expected := strings.TrimPrefix(`
 +---+---+
@@ -436,7 +448,10 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		printResult(&systemVariables{CLIFormat: DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		if err != nil {
+			t.Errorf("printResult() unexpected error: %v", err)
+		}
 
 		expected := "1\t2\n" +
 			"3\t4\n"
@@ -617,7 +632,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			prompt:  "%t> ",
 			sysVars: &systemVariables{},
 			session: &Session{
-				tc: &transactionContext{mode: transactionModeReadWrite},
+				tc: &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}},
 			},
 			want: "(rw txn)> ",
 		},
@@ -625,7 +640,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "transaction status - read-only",
 			prompt: "%t> ",
 			session: &Session{
-				tc: &transactionContext{mode: transactionModeReadOnly},
+				tc: &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}},
 			},
 			want: "(ro txn)> ",
 		},
@@ -809,7 +824,10 @@ optimizer statistics: auto_20250421_21_29_41UTC
 			}
 
 			var sb strings.Builder
-			printResult(tcase.sysVars, 0, &sb, result, false, "")
+			err = printResult(tcase.sysVars, 0, &sb, result, false, "")
+			if err != nil {
+				t.Errorf("printResult() unexpected error: %v", err)
+			}
 
 			if diff := cmp.Diff(tcase.want, sb.String()); diff != "" {
 				t.Errorf("result differ: %v", diff)
@@ -1123,7 +1141,10 @@ func TestCli_PrintResult(t *testing.T) {
 				SystemVariables: sysVars,
 			}
 
-			cli.PrintResult(80, tt.result, tt.interactive, tt.input, outBuf)
+			err := cli.PrintResult(80, tt.result, tt.interactive, tt.input, outBuf)
+			if err != nil {
+				t.Errorf("PrintResult() unexpected error: %v", err)
+			}
 
 			got := outBuf.String()
 			t.Logf("PrintResult() got = %q, want %q", got, tt.wantOut)

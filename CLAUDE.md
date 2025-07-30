@@ -47,6 +47,7 @@ When testing compatibility or referencing behavior, be specific about which impl
 6. **PR merge process**: Before merging, if additional commits have been pushed since the initial review, request an updated summary by commenting `/gemini summary`. An initial summary is generated automatically, so this is only for updates. Then, use `go tool gh-helper reviews wait` (**DO NOT** use `--request-review`)
 7. **Squash merge commits**: MUST include descriptive summary of PR changes in squash commit message
 8. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify the exact comment ID to avoid editing the wrong comment
+9. **GitHub checks must pass**: All GitHub Actions checks MUST pass before merging AND during review cycles. Even if local tests pass, always investigate failing GitHub checks - do NOT assume failures are unrelated to PR changes or transient. Fix all check failures immediately to ensure reviewers can properly assess changes and prevent accumulating technical debt.
 
 ## Essential Commands
 
@@ -59,6 +60,7 @@ When testing compatibility or referencing behavior, be specific about which impl
 make check                    # REQUIRED before ANY push (runs test && lint && fmt-check)
 make build                    # Build the application
 make test-quick               # Quick tests during development
+make fmt                      # Format code with gofmt, goimports, and gofumpt
 make help-dev                 # Show all available development commands
 
 # Development tools (Go 1.24 tool management: make build-tools)
@@ -82,7 +84,7 @@ go tool gh-helper issues show 248 --include-sub  # Show issue with sub-issues st
 # Review response workflow (for subsequent pushes)
 go tool gh-helper reviews fetch <PR> > tmp/review-data.yaml  # Fetch all review data
 go tool gh-helper reviews fetch <PR> --threads-only          # Only fetch thread data
-go tool gh-helper reviews fetch <PR> --needs-reply-only      # Only threads needing replies
+go tool gh-helper reviews fetch <PR> --unresolved-only       # Only unresolved threads
 go tool gh-helper reviews fetch <PR> --exclude-urls          # Exclude URLs from output
 # Create fix plan in tmp/fix-plan.md, make changes, commit & push
 go tool gh-helper reviews wait <PR> --request-review # Request Gemini review
@@ -105,6 +107,10 @@ go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31  # By d
 # Output format examples (YAML default, JSON with --json)
 go tool gh-helper reviews fetch 306 | gojq --yaml-input '.threads[] | select(.needsReply)'
 go tool gh-helper reviews fetch 306 --json | jq '.threads[] | select(.needsReply) | .id'
+
+# New: Built-in jq filtering (no external tools needed)
+go tool gh-helper reviews fetch 306 --jq '.threads[] | select(.needsReply)'
+go tool gh-helper node-id issue/123 pull/456  # Get GraphQL node IDs
 ```
 
 ## Core Architecture Overview

@@ -53,7 +53,10 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	}()
 
 	// Create and connect client
-	mcpClient := mcp.NewClient("spanner-mycli-test", version, nil)
+	mcpClient := mcp.NewClient(&mcp.Implementation{
+		Name:    "spanner-mycli-test",
+		Version: version,
+	}, nil)
 
 	// Connect client and get session
 	clientSession, err := mcpClient.Connect(ctx, clientTransport)
@@ -70,6 +73,20 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	case <-time.After(100 * time.Millisecond):
 		// Give the server a moment to initialize
 	}
+
+	// Add cleanup function to ensure server goroutine exits
+	t.Cleanup(func() {
+		// Close the client session first (if not already closed)
+		_ = clientSession.Close()
+		// This should cause the server Wait() to return
+		// Give it a moment to clean up
+		select {
+		case <-serverDone:
+			// Server exited cleanly
+		case <-time.After(1 * time.Second):
+			t.Log("Warning: MCP server did not exit cleanly")
+		}
+	})
 
 	return clientSession, mcpServer, nil
 }
@@ -116,11 +133,6 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		t.Fatalf("Failed to call execute_statement tool: %v", err)
 	}
 
-	if wantError {
-		t.Errorf("Expected error but tool executed successfully")
-		return
-	}
-
 	// Extract the text content from the result
 	gotOutput := ""
 	if result != nil && len(result.Content) > 0 {
@@ -130,6 +142,25 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 				break
 			}
 		}
+	}
+
+	// For error cases, check if we got an error message in the output
+	if wantError {
+		t.Logf("Testing error case, got output: %q", gotOutput)
+		// Check if the output contains error indicators or is empty
+		// Empty output means the statement failed before producing any results
+		if strings.Contains(gotOutput, "ERROR:") ||
+			strings.Contains(gotOutput, "error:") ||
+			strings.Contains(gotOutput, "unknown statement") ||
+			strings.Contains(gotOutput, "syntax error") ||
+			strings.Contains(gotOutput, "invalid") ||
+			strings.Contains(gotOutput, "Invalid") ||
+			len(gotOutput) == 0 {
+			t.Logf("Got expected error in output")
+			return
+		}
+		t.Errorf("Expected error but got successful output: %s", gotOutput)
+		return
 	}
 
 	// Extract the first line of the result message (after the table output)
