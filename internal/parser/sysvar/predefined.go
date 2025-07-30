@@ -1,33 +1,46 @@
 package sysvar
 
 import (
+	"strings"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
+// Helper function to create enum parser from protobuf generated maps.
+// It automatically generates short names by removing the prefix.
+func protobufEnumParser[T ~int32](enumMap map[string]int32, prefix string) parser.Parser[T] {
+	values := make(map[string]T)
+	for name, value := range enumMap {
+		// Add full name
+		values[name] = T(value)
+		// Add short name if it has the prefix
+		if strings.HasPrefix(name, prefix) {
+			shortName := strings.TrimPrefix(name, prefix)
+			values[shortName] = T(value)
+		}
+	}
+	return parser.NewEnumParser(values)
+}
+
 // PriorityParser parses RPC priority values.
-var PriorityParser = parser.NewEnumParser(map[string]sppb.RequestOptions_Priority{
-	"PRIORITY_UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-	"UNSPECIFIED":          sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-	"PRIORITY_LOW":         sppb.RequestOptions_PRIORITY_LOW,
-	"LOW":                  sppb.RequestOptions_PRIORITY_LOW,
-	"PRIORITY_MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
-	"MEDIUM":               sppb.RequestOptions_PRIORITY_MEDIUM,
-	"PRIORITY_HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
-	"HIGH":                 sppb.RequestOptions_PRIORITY_HIGH,
-})
+// Special case: supports both full and short forms.
+var PriorityParser = protobufEnumParser[sppb.RequestOptions_Priority](
+	sppb.RequestOptions_Priority_value,
+	"PRIORITY_",
+)
 
 // IsolationLevelParser parses transaction isolation level values.
+// Uses protobuf generated map, only short forms (no prefix).
 var IsolationLevelParser = parser.NewEnumParser(map[string]sppb.TransactionOptions_IsolationLevel{
-	"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-	"UNSPECIFIED":                 sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-	"SERIALIZABLE":                sppb.TransactionOptions_SERIALIZABLE,
-	"REPEATABLE_READ":             sppb.TransactionOptions_REPEATABLE_READ,
+	"UNSPECIFIED":     sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+	"SERIALIZABLE":    sppb.TransactionOptions_SERIALIZABLE,
+	"REPEATABLE_READ": sppb.TransactionOptions_REPEATABLE_READ,
 })
 
 // QueryModeParser parses query mode values.
+// Uses short forms only (no prefix).
 var QueryModeParser = parser.NewEnumParser(map[string]sppb.ExecuteSqlRequest_QueryMode{
 	"NORMAL":              sppb.ExecuteSqlRequest_NORMAL,
 	"PLAN":                sppb.ExecuteSqlRequest_PLAN,
@@ -44,12 +57,21 @@ const (
 	ExplainFormatCompact     ExplainFormat = "COMPACT"
 )
 
+// Helper to create map from string constants
+func makeStringEnumMap[T ~string](values ...T) map[string]T {
+	m := make(map[string]T)
+	for _, v := range values {
+		m[string(v)] = v
+	}
+	return m
+}
+
 // ExplainFormatParser parses explain format values.
-var ExplainFormatParser = parser.NewEnumParser(map[string]ExplainFormat{
-	"CURRENT":     ExplainFormatCurrent,
-	"TRADITIONAL": ExplainFormatTraditional,
-	"COMPACT":     ExplainFormatCompact,
-})
+var ExplainFormatParser = parser.NewEnumParser(makeStringEnumMap(
+	ExplainFormatCurrent,
+	ExplainFormatTraditional,
+	ExplainFormatCompact,
+))
 
 // Common parser instances with validation
 

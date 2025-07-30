@@ -415,27 +415,13 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 		func(v DisplayMode) string {
-			// Map DisplayMode to string
-			switch v {
-			case DisplayModeTable:
-				return "TABLE"
-			case DisplayModeTableComment:
-				return "TABLE_COMMENT"
-			case DisplayModeTableDetailComment:
-				return "TABLE_DETAIL_COMMENT"
-			case DisplayModeVertical:
-				return "VERTICAL"
-			case DisplayModeTab:
-				return "TAB"
-			case DisplayModeHTML:
-				return "HTML"
-			case DisplayModeXML:
-				return "XML"
-			case DisplayModeCSV:
-				return "CSV"
-			default:
-				return fmt.Sprintf("DisplayMode(%d)", v)
+			// Reverse map lookup for DisplayMode
+			for name, value := range formatValues {
+				if value == v {
+					return name
+				}
 			}
+			return fmt.Sprintf("DisplayMode(%d)", v)
 		},
 	))
 
@@ -648,14 +634,13 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 		func(v AutocommitDMLMode) string {
-			switch v {
-			case AutocommitDMLModeTransactional:
-				return "TRANSACTIONAL"
-			case AutocommitDMLModePartitionedNonAtomic:
-				return "PARTITIONED_NON_ATOMIC"
-			default:
-				return fmt.Sprintf("AutocommitDMLMode(%v)", v)
+			// Reverse map lookup for AutocommitDMLMode
+			for name, value := range autocommitDMLModeValues {
+				if value == v {
+					return name
+				}
 			}
+			return fmt.Sprintf("AutocommitDMLMode(%v)", v)
 		},
 	))
 
@@ -673,12 +658,12 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 		func(v sppb.TransactionOptions_IsolationLevel) string {
-			switch v {
-			case sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED:
-				return "ISOLATION_LEVEL_UNSPECIFIED"
-			default:
-				return fmt.Sprintf("IsolationLevel(%d)", v)
+			// Use protobuf String() method to get full name, then extract short form
+			fullName := v.String()
+			if strings.HasPrefix(fullName, "ISOLATION_LEVEL_") {
+				return strings.TrimPrefix(fullName, "ISOLATION_LEVEL_")
 			}
+			return fullName
 		},
 	))
 
