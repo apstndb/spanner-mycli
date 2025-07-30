@@ -333,11 +333,6 @@ type Registry struct {
 	parsers map[string]VariableParser
 }
 
-// Parsers returns the parsers map for debugging
-func (r *Registry) Parsers() map[string]VariableParser {
-	return r.parsers
-}
-
 // NewRegistry creates a new variable registry.
 func NewRegistry() *Registry {
 	return &Registry{

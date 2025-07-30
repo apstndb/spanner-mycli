@@ -846,10 +846,6 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	// Set CLI_FORMAT defaults based on flags before processing --set
 	// This allows --set CLI_FORMAT=X to override these defaults
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
-	// Debug: log what we have
-	if len(sets) > 0 {
-		slog.Debug("Processing --set values", "sets", sets)
-	}
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		// Individual format flags take precedence over --format for backward compatibility
 		switch {
@@ -878,7 +874,6 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		// if we're interactive at this point
 	}
 	for k, v := range sets {
-		slog.Debug("Setting variable from --set", "name", k, "value", v)
 		if err := sysVars.SetFromSimple(k, v); err != nil {
 			return systemVariables{}, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}

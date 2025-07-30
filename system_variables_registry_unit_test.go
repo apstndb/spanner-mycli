@@ -96,7 +96,7 @@ func TestInitializeSystemVariables_SetValues(t *testing.T) {
 	if sysVars.Registry == nil {
 		t.Error("Registry is nil!")
 	} else {
-		t.Logf("Registry has %v variables", len(sysVars.Registry.Parsers()))
+		// Registry is initialized properly
 		if sysVars.Registry.Has("CLI_FORMAT") {
 			t.Log("Registry has CLI_FORMAT")
 		} else {
