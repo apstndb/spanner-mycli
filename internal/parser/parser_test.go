@@ -213,36 +213,6 @@ func TestStringParser(t *testing.T) {
 			})
 		}
 	})
-
-	t.Run("quoted parser", func(t *testing.T) {
-		p := parser.NewQuotedStringParser()
-
-		tests := []struct {
-			name  string
-			input string
-			want  string
-		}{
-			{"simple string", "hello", "hello"},
-			{"with spaces", "  hello world  ", "hello world"},
-			{"single quotes", "'quoted'", "quoted"},
-			{"double quotes", `"quoted"`, "quoted"},
-			{"empty quotes", "''", ""},
-			{"no quotes empty", "", ""},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				got, err := p.ParseAndValidate(tt.input)
-				if err != nil {
-					t.Errorf("ParseAndValidate() unexpected error = %v", err)
-					return
-				}
-				if got != tt.want {
-					t.Errorf("ParseAndValidate() = %q, want %q", got, tt.want)
-				}
-			})
-		}
-	})
 }
 
 func TestChainValidators(t *testing.T) {

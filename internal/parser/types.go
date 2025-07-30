@@ -147,26 +147,6 @@ func NewStringParser() *StringParser {
 	}
 }
 
-// NewQuotedStringParser creates a string parser that removes quotes.
-// This is useful when quotes are part of the input syntax but not the value.
-func NewQuotedStringParser() *StringParser {
-	return &StringParser{
-		BaseParser: BaseParser[string]{
-			ParseFunc: func(value string) (string, error) {
-				// Remove surrounding quotes if present
-				trimmed := strings.TrimSpace(value)
-				if len(trimmed) >= 2 {
-					if (trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"') ||
-						(trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'') {
-						return trimmed[1 : len(trimmed)-1], nil
-					}
-				}
-				return trimmed, nil
-			},
-		},
-	}
-}
-
 // WithLengthRange adds length validation.
 func (p *StringParser) WithLengthRange(min, max int) *StringParser {
 	p.minLen = &min

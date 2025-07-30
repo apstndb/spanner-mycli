@@ -55,23 +55,12 @@ var GoogleSQLStringParser = NewMemefishLiteralParser(func(expr ast.Expr) (string
 })
 
 // GoogleSQLBoolParser parses GoogleSQL boolean literals.
+// TRUE/FALSE are parsed as BoolLiteral by memefish, not as Ident.
 var GoogleSQLBoolParser = NewMemefishLiteralParser(func(expr ast.Expr) (bool, error) {
-	switch lit := expr.(type) {
-	case *ast.BoolLiteral:
+	if lit, ok := expr.(*ast.BoolLiteral); ok {
 		return lit.Value, nil
-	case *ast.Ident:
-		// Handle TRUE/FALSE identifiers
-		switch strings.ToUpper(lit.Name) {
-		case "TRUE":
-			return true, nil
-		case "FALSE":
-			return false, nil
-		default:
-			return false, fmt.Errorf("expected boolean literal or TRUE/FALSE, got %q", lit.Name)
-		}
-	default:
-		return false, fmt.Errorf("expected boolean literal, got %T", expr)
 	}
+	return false, fmt.Errorf("expected boolean literal, got %T", expr)
 })
 
 // GoogleSQLIntParser parses GoogleSQL integer literals.
