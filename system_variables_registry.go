@@ -42,58 +42,38 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// AUTO_PARTITION_MODE
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"AUTO_PARTITION_MODE",
 		"A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
-		func() bool { return sv.AutoPartitionMode },
-		func(v bool) error {
-			sv.AutoPartitionMode = v
-			return nil
-		},
+		&sv.AutoPartitionMode,
 	))
 
 	// RETURN_COMMIT_STATS
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"RETURN_COMMIT_STATS",
 		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
-		func() bool { return sv.ReturnCommitStats },
-		func(v bool) error {
-			sv.ReturnCommitStats = v
-			return nil
-		},
+		&sv.ReturnCommitStats,
 	))
 
 	// AUTO_BATCH_DML
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"AUTO_BATCH_DML",
 		"A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
-		func() bool { return sv.AutoBatchDML },
-		func(v bool) error {
-			sv.AutoBatchDML = v
-			return nil
-		},
+		&sv.AutoBatchDML,
 	))
 
 	// DATA_BOOST_ENABLED
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"DATA_BOOST_ENABLED",
 		"A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
-		func() bool { return sv.DataBoostEnabled },
-		func(v bool) error {
-			sv.DataBoostEnabled = v
-			return nil
-		},
+		&sv.DataBoostEnabled,
 	))
 
 	// EXCLUDE_TXN_FROM_CHANGE_STREAMS
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"EXCLUDE_TXN_FROM_CHANGE_STREAMS",
 		"Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
-		func() bool { return sv.ExcludeTxnFromChangeStreams },
-		func(v bool) error {
-			sv.ExcludeTxnFromChangeStreams = v
-			return nil
-		},
+		&sv.ExcludeTxnFromChangeStreams,
 	))
 
 	// CLI variables - boolean
@@ -197,52 +177,33 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// CLI_LINT_PLAN (special case with conditional getter)
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_LINT_PLAN",
 		"Enable query plan linting.",
-		func() bool { return sv.LintPlan },
-		func(v bool) error {
-			sv.LintPlan = v
-			return nil
-		},
+		&sv.LintPlan,
 	))
 
 	// Integer variables
 
 	// MAX_PARTITIONED_PARALLELISM
-	mustRegister(sysvar.NewIntegerParser(
+	mustRegister(sysvar.NewSimpleIntegerParser(
 		"MAX_PARTITIONED_PARALLELISM",
 		"A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
-		func() int64 { return sv.MaxPartitionedParallelism },
-		func(v int64) error {
-			sv.MaxPartitionedParallelism = v
-			return nil
-		},
-		nil, nil, // No min/max constraints
+		&sv.MaxPartitionedParallelism,
 	))
 
 	// CLI_TAB_WIDTH
-	mustRegister(sysvar.NewIntegerParser(
+	mustRegister(sysvar.NewSimpleIntegerParser(
 		"CLI_TAB_WIDTH",
 		"Tab width. It is used for expanding tabs.",
-		func() int64 { return sv.TabWidth },
-		func(v int64) error {
-			sv.TabWidth = v
-			return nil
-		},
-		nil, nil, // No min/max constraints
+		&sv.TabWidth,
 	))
 
 	// CLI_EXPLAIN_WRAP_WIDTH
-	mustRegister(sysvar.NewIntegerParser(
+	mustRegister(sysvar.NewSimpleIntegerParser(
 		"CLI_EXPLAIN_WRAP_WIDTH",
 		"Controls query plan wrap width. It effects only operators column contents",
-		func() int64 { return sv.ExplainWrapWidth },
-		func(v int64) error {
-			sv.ExplainWrapWidth = v
-			return nil
-		},
-		nil, nil, // No min/max constraints
+		&sv.ExplainWrapWidth,
 	))
 
 	// String variables
@@ -372,36 +333,24 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// Note: CLI_INLINE_STATS is a string with complex parsing - remains in old system
 
 	// CLI_SKIP_SYSTEM_COMMAND
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_SKIP_SYSTEM_COMMAND",
 		"Controls whether system commands are disabled.",
-		func() bool { return sv.SkipSystemCommand },
-		func(v bool) error {
-			sv.SkipSystemCommand = v
-			return nil
-		},
+		&sv.SkipSystemCommand,
 	))
 
 	// CLI_LOG_GRPC
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_LOG_GRPC",
 		"Enable gRPC logging.",
-		func() bool { return sv.LogGrpc },
-		func(v bool) error {
-			sv.LogGrpc = v
-			return nil
-		},
+		&sv.LogGrpc,
 	))
 
 	// CLI_INSECURE
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_INSECURE",
 		"Skip TLS certificate verification (insecure).",
-		func() bool { return sv.Insecure },
-		func(v bool) error {
-			sv.Insecure = v
-			return nil
-		},
+		&sv.Insecure,
 	))
 
 	// More string variables
@@ -419,93 +368,61 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// CLI_HISTORY_FILE
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_HISTORY_FILE",
 		"Path to the history file.",
-		func() string { return sv.HistoryFile },
-		func(v string) error {
-			sv.HistoryFile = v
-			return nil
-		},
+		&sv.HistoryFile,
 	))
 
 	// CLI_PROJECT
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_PROJECT",
 		"GCP Project ID.",
-		func() string { return sv.Project },
-		func(v string) error {
-			sv.Project = v
-			return nil
-		},
+		&sv.Project,
 	))
 
 	// CLI_INSTANCE
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_INSTANCE",
 		"Cloud Spanner instance ID.",
-		func() string { return sv.Instance },
-		func(v string) error {
-			sv.Instance = v
-			return nil
-		},
+		&sv.Instance,
 	))
 
 	// CLI_DATABASE
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_DATABASE",
 		"Cloud Spanner database ID.",
-		func() string { return sv.Database },
-		func(v string) error {
-			sv.Database = v
-			return nil
-		},
+		&sv.Database,
 	))
 
 	// CLI_ROLE
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_ROLE",
 		"Cloud Spanner database role.",
-		func() string { return sv.Role },
-		func(v string) error {
-			sv.Role = v
-			return nil
-		},
+		&sv.Role,
 	))
 
 	// Note: CLI_ENDPOINT is handled specially in the old system (parses to host/port)
 
 	// CLI_IMPERSONATE_SERVICE_ACCOUNT
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
 		"Service account to impersonate.",
-		func() string { return sv.ImpersonateServiceAccount },
-		func(v string) error {
-			sv.ImpersonateServiceAccount = v
-			return nil
-		},
+		&sv.ImpersonateServiceAccount,
 	))
 
 	// TRANSACTION_TAG
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"TRANSACTION_TAG",
 		"A property of type STRING that contains the transaction tag for the next transaction.",
-		func() string { return sv.TransactionTag },
-		func(v string) error {
-			sv.TransactionTag = v
-			return nil
-		},
+		&sv.TransactionTag,
 	))
 
 	// STATEMENT_TAG
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(sysvar.NewSimpleStringParser(
 		"STATEMENT_TAG",
 		"A property of type STRING that contains the request tag for the next statement.",
-		func() string { return sv.RequestTag },
-		func(v string) error {
-			sv.RequestTag = v
-			return nil
-		},
+		&sv.RequestTag,
 	))
 
 	// Duration variables

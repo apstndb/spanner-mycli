@@ -140,6 +140,25 @@ func NewSimpleStringParser(
 	)
 }
 
+// NewSimpleIntegerParser creates an integer variable parser from a pointer.
+// This is a convenience function for simple cases where the variable is just a field.
+func NewSimpleIntegerParser(
+	name string,
+	description string,
+	field *int64,
+) VariableParser {
+	return NewIntegerParser(
+		name,
+		description,
+		func() int64 { return *field },
+		func(v int64) error {
+			*field = v
+			return nil
+		},
+		nil, nil, // No constraints
+	)
+}
+
 // NewIntegerParser creates an integer variable parser with optional range validation.
 func NewIntegerParser(
 	name string,
