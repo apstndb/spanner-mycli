@@ -666,7 +666,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// These remain in the old system for now as they require special parsing logic:
 	// - READ_ONLY_STALENESS (complex parsing logic)
 	// - CLI_OUTPUT_TEMPLATE_FILE (file handling)
-	// - CLI_PROTO_DESCRIPTOR_FILE (file handling)
+	// - CLI_PROTO_DESCRIPTOR_FILE (file handling, requires Add/Append support)
 	// - CLI_DIRECT_READ (complex parsing)
 	// - CLI_PARSE_MODE (special enum)
 	// - CLI_EMULATOR_PLATFORM (architecture detection)

@@ -384,6 +384,11 @@ func NewNullableDurationParser(
 }
 
 // Registry manages system variable parsers.
+// 
+// Note: The current implementation only supports Set and Get operations.
+// Add/Append operations are not yet supported. Variables that require
+// append functionality (like CLI_PROTO_DESCRIPTOR_FILE) must remain in
+// the legacy system until this feature is implemented.
 type Registry struct {
 	parsers map[string]VariableParser
 }
