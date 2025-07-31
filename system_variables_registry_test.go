@@ -5,6 +5,8 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/internal/parser"
+	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 func TestSystemVariableRegistry(t *testing.T) {
@@ -392,4 +394,145 @@ func TestReadOnlyTransactionCheck(t *testing.T) {
 	// This test would require a more complex setup with actual session and transaction
 	// For now, we'll skip this test as it requires deeper integration
 	t.Skip("Skipping transaction check test - requires full session setup")
+}
+
+func TestParseModeEnum(t *testing.T) {
+	// Create a test systemVariables instance
+	sv := &systemVariables{}
+	registry := createSystemVariableRegistry(sv)
+
+	t.Run("Set with GoogleSQL mode", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			input string
+			want  parseMode
+			err   bool
+		}{
+			{"identifier FALLBACK", "FALLBACK", parseModeFallback, false},
+			{"identifier NO_MEMEFISH", "NO_MEMEFISH", parseModeNoMemefish, false},
+			{"identifier MEMEFISH_ONLY", "MEMEFISH_ONLY", parseMemefishOnly, false},
+			{"identifier UNSPECIFIED", "UNSPECIFIED", parseModeUnspecified, false},
+			{"string literal FALLBACK", `"FALLBACK"`, parseModeFallback, false},
+			{"string literal NO_MEMEFISH", `"NO_MEMEFISH"`, parseModeNoMemefish, false},
+			{"string literal MEMEFISH_ONLY", `"MEMEFISH_ONLY"`, parseMemefishOnly, false},
+			{"string literal UNSPECIFIED", `"UNSPECIFIED"`, parseModeUnspecified, false},
+			{"empty string", `""`, parseModeUnspecified, false},
+			{"invalid value", `"INVALID"`, "", true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := registry.SetFromGoogleSQL("CLI_PARSE_MODE", tt.input)
+				if (err != nil) != tt.err {
+					t.Errorf("SetFromGoogleSQL() error = %v, wantErr %v", err, tt.err)
+					return
+				}
+				if !tt.err && sv.BuildStatementMode != tt.want {
+					t.Errorf("SetFromGoogleSQL() set %v, want %v", sv.BuildStatementMode, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("Set with Simple mode", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			input string
+			want  parseMode
+			err   bool
+		}{
+			{"uppercase FALLBACK", "FALLBACK", parseModeFallback, false},
+			{"lowercase fallback", "fallback", parseModeFallback, false},
+			{"mixed case FaLLbAcK", "FaLLbAcK", parseModeFallback, false},
+			{"with spaces", "  FALLBACK  ", parseModeFallback, false},
+			{"empty string", "", parseModeUnspecified, false},
+			{"invalid value", "INVALID", "", true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := registry.SetFromSimple("CLI_PARSE_MODE", tt.input)
+				if (err != nil) != tt.err {
+					t.Errorf("SetFromSimple() error = %v, wantErr %v", err, tt.err)
+					return
+				}
+				if !tt.err && sv.BuildStatementMode != tt.want {
+					t.Errorf("SetFromSimple() set %v, want %v", sv.BuildStatementMode, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("GetValue returns string representation", func(t *testing.T) {
+		tests := []struct {
+			mode parseMode
+			want string
+		}{
+			{parseModeFallback, "FALLBACK"},
+			{parseModeNoMemefish, "NO_MEMEFISH"},
+			{parseMemefishOnly, "MEMEFISH_ONLY"},
+			{parseModeUnspecified, ""}, // Empty string for unspecified in new behavior
+		}
+
+		for _, tt := range tests {
+			sv.BuildStatementMode = tt.mode
+			value, err := registry.Get("CLI_PARSE_MODE")
+			if err != nil {
+				t.Fatalf("Get() failed: %v", err)
+			}
+			if value != tt.want {
+				t.Errorf("Get() = %q, want %q for mode %v", value, tt.want, tt.mode)
+			}
+		}
+	})
+}
+
+func TestEnumParsersSimplification(t *testing.T) {
+	// Test that NewSimpleEnumParser works correctly for various enum types
+	t.Run("string enum", func(t *testing.T) {
+		type testEnum string
+		const (
+			enumValue1 testEnum = "VALUE1"
+			enumValue2 testEnum = "VALUE2"
+		)
+
+		var currentValue testEnum
+		p := sysvar.NewSimpleEnumParser(
+			"TEST_ENUM",
+			"Test enum",
+			map[string]testEnum{
+				"VALUE1": enumValue1,
+				"VALUE2": enumValue2,
+			},
+			func() testEnum { return currentValue },
+			func(v testEnum) error { currentValue = v; return nil },
+		)
+
+		// Test GoogleSQL mode
+		err := p.ParseAndSetWithMode(`"VALUE1"`, parser.ParseModeGoogleSQL)
+		if err != nil {
+			t.Fatalf("ParseAndSetWithMode failed: %v", err)
+		}
+		if currentValue != enumValue1 {
+			t.Errorf("Expected %v, got %v", enumValue1, currentValue)
+		}
+
+		// Test Simple mode
+		err = p.ParseAndSetWithMode("VALUE2", parser.ParseModeSimple)
+		if err != nil {
+			t.Fatalf("ParseAndSetWithMode failed: %v", err)
+		}
+		if currentValue != enumValue2 {
+			t.Errorf("Expected %v, got %v", enumValue2, currentValue)
+		}
+
+		// Test GetValue
+		value, err := p.GetValue()
+		if err != nil {
+			t.Fatalf("GetValue failed: %v", err)
+		}
+		if value != "VALUE2" {
+			t.Errorf("GetValue() = %q, want %q", value, "VALUE2")
+		}
+	})
 }

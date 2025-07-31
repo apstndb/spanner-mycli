@@ -383,8 +383,53 @@ func NewNullableDurationParser(
 	}
 }
 
+// NewTypedVariableParser creates a new TypedVariableParser for custom types.
+// This is useful for creating parsers for application-specific enums and types.
+func NewTypedVariableParser[T any](
+	name string,
+	description string,
+	parser parser.DualModeParser[T],
+	getter func() T,
+	setter func(T) error,
+	formatter func(T) string,
+) VariableParser {
+	return &TypedVariableParser[T]{
+		name:        name,
+		description: description,
+		parser:      parser,
+		setter:      setter,
+		getter:      getter,
+		formatter:   formatter,
+		readOnly:    setter == nil,
+	}
+}
+
+// NewSimpleEnumParser creates an enum variable parser with standard behavior.
+// It automatically creates dual-mode parsing for both GoogleSQL and Simple modes.
+// The formatter uses fmt.Sprint to convert the enum value to string.
+func NewSimpleEnumParser[T comparable](
+	name string,
+	description string,
+	enumValues map[string]T,
+	getter func() T,
+	setter func(T) error,
+) VariableParser {
+	return &TypedVariableParser[T]{
+		name:        name,
+		description: description,
+		parser: parser.NewDualModeParser(
+			parser.NewGoogleSQLEnumParser(enumValues),
+			parser.NewEnumParser(enumValues),
+		),
+		setter:    setter,
+		getter:    getter,
+		formatter: func(v T) string { return fmt.Sprint(v) },
+		readOnly:  setter == nil,
+	}
+}
+
 // Registry manages system variable parsers.
-// 
+//
 // Note: The current implementation only supports Set and Get operations.
 // Add/Append operations are not yet supported. Variables that require
 // append functionality (like CLI_PROTO_DESCRIPTOR_FILE) must remain in

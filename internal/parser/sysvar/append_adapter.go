@@ -71,13 +71,13 @@ func (r *Registry) appendWithMode(name, value string, mode parser.ParseMode) err
 	if !exists {
 		return fmt.Errorf("unknown variable: %s", name)
 	}
-	
+
 	// Check if the parser supports append
 	appendable, ok := p.(AppendableVariableParser)
 	if !ok {
 		return fmt.Errorf("variable %s does not support append operations", name)
 	}
-	
+
 	return appendable.AppendWithMode(value, mode)
 }
 

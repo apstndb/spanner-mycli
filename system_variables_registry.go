@@ -255,16 +255,15 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// Enum variables
 
 	// RPC_PRIORITY
-	priorityValues := map[string]sppb.RequestOptions_Priority{
-		"UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		"LOW":         sppb.RequestOptions_PRIORITY_LOW,
-		"MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
-		"HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
-	}
 	mustRegister(sysvar.NewEnumParser(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
-		priorityValues,
+		map[string]sppb.RequestOptions_Priority{
+			"UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			"LOW":         sppb.RequestOptions_PRIORITY_LOW,
+			"MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
+			"HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
+		},
 		func() sppb.RequestOptions_Priority { return sv.RPCPriority },
 		func(v sppb.RequestOptions_Priority) error {
 			sv.RPCPriority = v
@@ -309,16 +308,15 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// CLI_EXPLAIN_FORMAT
-	explainFormatValues := map[string]explainFormat{
-		"":            explainFormatUnspecified,
-		"CURRENT":     explainFormatCurrent,
-		"TRADITIONAL": explainFormatTraditional,
-		"COMPACT":     explainFormatCompact,
-	}
-	mustRegister(sysvar.NewStringEnumParser(
+	mustRegister(sysvar.NewSimpleEnumParser(
 		"CLI_EXPLAIN_FORMAT",
 		"Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.",
-		explainFormatValues,
+		map[string]explainFormat{
+			"":            explainFormatUnspecified,
+			"CURRENT":     explainFormatCurrent,
+			"TRADITIONAL": explainFormatTraditional,
+			"COMPACT":     explainFormatCompact,
+		},
 		func() explainFormat { return sv.ExplainFormat },
 		func(v explainFormat) error {
 			sv.ExplainFormat = v
@@ -708,12 +706,29 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		nil, // No additional validation needed - readFileDescriptorProtoFromFile does validation
 	))
 
+	// CLI_PARSE_MODE
+	mustRegister(sysvar.NewSimpleEnumParser(
+		"CLI_PARSE_MODE",
+		"Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED",
+		map[string]parseMode{
+			"FALLBACK":      parseModeFallback,
+			"NO_MEMEFISH":   parseModeNoMemefish,
+			"MEMEFISH_ONLY": parseMemefishOnly,
+			"UNSPECIFIED":   parseModeUnspecified,
+			"":              parseModeUnspecified, // Allow empty string
+		},
+		func() parseMode { return sv.BuildStatementMode },
+		func(v parseMode) error {
+			sv.BuildStatementMode = v
+			return nil
+		},
+	))
+
 	// Special variables with complex handling
 	// These remain in the old system for now as they require special parsing logic:
 	// - READ_ONLY_STALENESS (complex parsing logic)
 	// - CLI_OUTPUT_TEMPLATE_FILE (file handling)
 	// - CLI_DIRECT_READ (complex parsing)
-	// - CLI_PARSE_MODE (special enum)
 	// - CLI_EMULATOR_PLATFORM (architecture detection)
 	// - CLI_HOST (special parsing)
 	// - COMMIT_RESPONSE (complex result set)

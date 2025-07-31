@@ -366,7 +366,7 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 
 func (sv *systemVariables) Add(name string, value string) error {
 	upperName := strings.ToUpper(name)
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry != nil && sv.Registry.Has(upperName) {
 		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
@@ -376,7 +376,7 @@ func (sv *systemVariables) Add(name string, value string) error {
 		}
 		return fmt.Errorf("variable %s does not support ADD operation", upperName)
 	}
-	
+
 	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
