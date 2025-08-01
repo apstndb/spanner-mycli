@@ -27,6 +27,12 @@ type simpleBoolVar struct {
 	field *bool
 }
 
+type simpleIntVar struct {
+	name  string
+	desc  string
+	field *int64
+}
+
 type readOnlyStringVar struct {
 	name   string
 	desc   string
@@ -59,6 +65,12 @@ func registerSimpleBooleans(registry *sysvar.Registry, vars []simpleBoolVar) {
 func registerSimpleStrings(registry *sysvar.Registry, vars []simpleStringVar) {
 	registerMultiple(registry, vars, func(v simpleStringVar) sysvar.VariableParser {
 		return sysvar.NewSimpleStringParser(v.name, v.desc, v.field)
+	})
+}
+
+func registerSimpleIntegers(registry *sysvar.Registry, vars []simpleIntVar) {
+	registerMultiple(registry, vars, func(v simpleIntVar) sysvar.VariableParser {
+		return sysvar.NewSimpleIntegerParser(v.name, v.desc, v.field)
 	})
 }
 
@@ -122,11 +134,10 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		{"EXCLUDE_TXN_FROM_CHANGE_STREAMS", "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).", &sv.ExcludeTxnFromChangeStreams},
 	})
 
-	mustRegister(sysvar.NewSimpleIntegerParser(
-		"MAX_PARTITIONED_PARALLELISM",
-		"A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
-		&sv.MaxPartitionedParallelism,
-	))
+	// Integer configuration
+	registerSimpleIntegers(registry, []simpleIntVar{
+		{"MAX_PARTITIONED_PARALLELISM", "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`", &sv.MaxPartitionedParallelism},
+	})
 
 	// DEFAULT_ISOLATION_LEVEL
 	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
@@ -280,11 +291,11 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		nil, nil, // No min/max constraints
 	))
 
-	mustRegister(sysvar.NewSimpleIntegerParser(
-		"CLI_TAB_WIDTH",
-		"Tab width. It is used for expanding tabs.",
-		&sv.TabWidth,
-	))
+	// Display and formatting integers
+	registerSimpleIntegers(registry, []simpleIntVar{
+		{"CLI_TAB_WIDTH", "Tab width. It is used for expanding tabs.", &sv.TabWidth},
+		{"CLI_EXPLAIN_WRAP_WIDTH", "Controls query plan wrap width. It effects only operators column contents", &sv.ExplainWrapWidth},
+	})
 
 	// CLI_EXPLAIN_FORMAT
 	mustRegister(sysvar.NewSimpleEnumParser(
@@ -298,12 +309,6 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		},
 		sysvar.GetValue(&sv.ExplainFormat),
 		sysvar.SetValue(&sv.ExplainFormat),
-	))
-
-	mustRegister(sysvar.NewSimpleIntegerParser(
-		"CLI_EXPLAIN_WRAP_WIDTH",
-		"Controls query plan wrap width. It effects only operators column contents",
-		&sv.ExplainWrapWidth,
 	))
 
 	mustRegister(sysvar.NewStringParser(
