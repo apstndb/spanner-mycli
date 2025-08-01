@@ -135,10 +135,35 @@ var DualModeStringParser = NewDualModeParser(
 	NewStringParser(),
 )
 
+// NewDelegatingGoogleSQLParser creates a GoogleSQL parser that extracts string literals
+// and delegates the actual parsing to another parser. This is useful for string-based
+// parsers that need GoogleSQL literal handling but have their own parsing logic.
+//
+// Note: This approach doesn't work for enum parsers because GoogleSQL enum values can be
+// either string literals ('VALUE') or identifiers (VALUE), requiring special handling.
+func NewDelegatingGoogleSQLParser[T any](delegateParser Parser[T]) Parser[T] {
+	return &BaseParser[T]{
+		ParseFunc: func(value string) (T, error) {
+			// First extract the string literal using GoogleSQL parser
+			str, err := GoogleSQLStringParser.Parse(value)
+			if err != nil {
+				var zero T
+				return zero, err
+			}
+			// Then delegate to the actual parser
+			return delegateParser.Parse(str)
+		},
+	}
+}
+
 // CreateDualModeEnumParser creates an enum parser that works in both modes.
+// In GoogleSQL mode, it handles string literals and identifiers, then delegates to the enum parser.
+// In simple mode, it uses the enum parser directly.
 func CreateDualModeEnumParser[T comparable](values map[string]T) *BaseDualModeParser[T] {
+	enumParser := NewEnumParser(values)
 	return NewDualModeParser(
+		// For GoogleSQL mode, we still need the special parser that handles identifiers
 		NewGoogleSQLEnumParser(values),
-		NewEnumParser(values),
+		enumParser,
 	)
 }
