@@ -116,61 +116,6 @@ func TestCreateDurationRangeParser(t *testing.T) {
 	})
 }
 
-func TestCreateEnumVariableParser(t *testing.T) {
-	type TestEnum int
-	const (
-		TestEnumA TestEnum = iota
-		TestEnumB
-		TestEnumC
-	)
-
-	var currentValue TestEnum
-	varParser := sysvar.CreateEnumVariableParser(
-		"TEST_ENUM",
-		"Test enum variable",
-		map[string]TestEnum{
-			"A": TestEnumA,
-			"B": TestEnumB,
-			"C": TestEnumC,
-		},
-		func() TestEnum { return currentValue },
-		func(v TestEnum) error { currentValue = v; return nil },
-		func(v TestEnum) string {
-			switch v {
-			case TestEnumA:
-				return "A"
-			case TestEnumB:
-				return "B"
-			case TestEnumC:
-				return "C"
-			default:
-				return "UNKNOWN"
-			}
-		},
-	)
-
-	// Test parsing
-	if err := varParser.ParseAndSetWithMode("B", parser.ParseModeSimple); err != nil {
-		t.Fatalf("ParseAndSetWithMode failed: %v", err)
-	}
-	if currentValue != TestEnumB {
-		t.Errorf("Expected TestEnumB, got %v", currentValue)
-	}
-
-	// Test formatting
-	got, err := varParser.GetValue()
-	if err != nil {
-		t.Fatalf("GetValue failed: %v", err)
-	}
-	if got != "B" {
-		t.Errorf("Expected 'B', got %q", got)
-	}
-
-	// Test invalid value
-	if err := varParser.ParseAndSetWithMode("D", parser.ParseModeSimple); err == nil {
-		t.Error("Expected error for invalid enum value")
-	}
-}
 
 func TestCreateStringEnumVariableParser(t *testing.T) {
 	type LogLevel string

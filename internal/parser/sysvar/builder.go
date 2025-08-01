@@ -102,24 +102,6 @@ func CreateDurationRangeParser(opts *RangeParserOptions[time.Duration]) parser.D
 
 // Common validation helpers for system variables
 
-// CreateEnumVariableParser creates a variable parser for enum types with string formatting.
-func CreateEnumVariableParser[T comparable](
-	name, description string,
-	values map[string]T,
-	getter func() T,
-	setter func(T) error,
-	formatter func(T) string,
-) VariableParser {
-	return NewTypedVariableParser(
-		name,
-		description,
-		parser.CreateDualModeEnumParser(values),
-		getter,
-		setter,
-		formatter,
-	)
-}
-
 // CreateStringEnumVariableParser creates a variable parser for string-based enums.
 func CreateStringEnumVariableParser[T ~string](
 	name, description string,
@@ -127,10 +109,10 @@ func CreateStringEnumVariableParser[T ~string](
 	getter func() T,
 	setter func(T) error,
 ) VariableParser {
-	return CreateEnumVariableParser(
+	return NewTypedVariableParser(
 		name,
 		description,
-		values,
+		parser.CreateDualModeEnumParser(values),
 		getter,
 		setter,
 		func(v T) string { return string(v) },
@@ -167,10 +149,10 @@ func CreateProtobufEnumVariableParserWithAutoFormatter[T interface {
 		return fullName
 	}
 
-	return CreateEnumVariableParser(
+	return NewTypedVariableParser(
 		name,
 		description,
-		values,
+		parser.CreateDualModeEnumParser(values),
 		getter,
 		setter,
 		formatter,
