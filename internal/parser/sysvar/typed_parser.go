@@ -76,6 +76,25 @@ func (vp *TypedVariableParser[T]) GetValue() (string, error) {
 
 // Helper functions for creating typed parsers
 
+// createTypedParser is a generic helper to create TypedVariableParser instances
+func createTypedParser[T any](
+	name, description string,
+	p parser.DualModeParser[T],
+	getter func() T,
+	setter func(T) error,
+	formatter func(T) string,
+) VariableParser {
+	return &TypedVariableParser[T]{
+		name:        name,
+		description: description,
+		parser:      p,
+		setter:      setter,
+		getter:      getter,
+		formatter:   formatter,
+		readOnly:    setter == nil,
+	}
+}
+
 // NewBooleanParser creates a boolean variable parser.
 func NewBooleanParser(
 	name string,
@@ -83,15 +102,7 @@ func NewBooleanParser(
 	getter func() bool,
 	setter func(bool) error,
 ) VariableParser {
-	return &TypedVariableParser[bool]{
-		name:        name,
-		description: description,
-		parser:      parser.DualModeBoolParser,
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatBool,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, parser.DualModeBoolParser, getter, setter, FormatBool)
 }
 
 // NewSimpleBooleanParser creates a boolean variable parser from a pointer.

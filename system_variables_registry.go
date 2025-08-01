@@ -26,11 +26,44 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		}
 	}
 
+	// Helper to register multiple simple boolean parsers
+	registerSimpleBooleans := func(vars []struct {
+		name  string
+		desc  string
+		field *bool
+	}) {
+		for _, v := range vars {
+			mustRegister(sysvar.NewSimpleBooleanParser(v.name, v.desc, v.field))
+		}
+	}
+
+	// Helper to register multiple read-only string parsers
+	registerReadOnlyStrings := func(vars []struct {
+		name   string
+		desc   string
+		getter func() string
+	}) {
+		for _, v := range vars {
+			mustRegister(sysvar.NewReadOnlyStringParser(v.name, v.desc, v.getter))
+		}
+	}
+
+	// Helper to register multiple read-only boolean parsers
+	registerReadOnlyBooleans := func(vars []struct {
+		name   string
+		desc   string
+		getter func() bool
+	}) {
+		for _, v := range vars {
+			mustRegister(sysvar.NewReadOnlyBooleanParser(v.name, v.desc, v.getter))
+		}
+	}
+
 	// Register java-spanner compatible variables for compatibility with Java client
-	registerJavaSpannerCompatibleVariables(registry, sv, mustRegister)
+	registerJavaSpannerCompatibleVariables(registry, sv, mustRegister, registerSimpleBooleans)
 
 	// Register spanner-mycli specific CLI variables
-	registerSpannerMyCLIVariables(registry, sv, mustRegister)
+	registerSpannerMyCLIVariables(registry, sv, mustRegister, registerSimpleBooleans, registerReadOnlyStrings, registerReadOnlyBooleans)
 
 	return registry
 }
@@ -38,7 +71,11 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 // registerJavaSpannerCompatibleVariables registers variables that maintain compatibility
 // with the java-spanner client library. These variables follow the same naming conventions
 // and behavior as the Java implementation.
-func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser), registerSimpleBooleans func([]struct {
+	name  string
+	desc  string
+	field *bool
+})) {
 	// Connection control
 	mustRegister(sysvar.NewBooleanParser(
 		"READONLY",
@@ -53,24 +90,23 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		},
 	))
 
-	// Query execution
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"AUTO_PARTITION_MODE",
-		"A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
-		&sv.AutoPartitionMode,
-	))
+	// Java-Spanner boolean variables
+	registerSimpleBooleans([]struct {
+		name  string
+		desc  string
+		field *bool
+	}{
+		{"AUTO_PARTITION_MODE", "A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.", &sv.AutoPartitionMode},
+		{"RETURN_COMMIT_STATS", "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.", &sv.ReturnCommitStats},
+		{"AUTO_BATCH_DML", "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.", &sv.AutoBatchDML},
+		{"DATA_BOOST_ENABLED", "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.", &sv.DataBoostEnabled},
+		{"EXCLUDE_TXN_FROM_CHANGE_STREAMS", "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).", &sv.ExcludeTxnFromChangeStreams},
+	})
 
 	mustRegister(sysvar.NewSimpleIntegerParser(
 		"MAX_PARTITIONED_PARALLELISM",
 		"A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
 		&sv.MaxPartitionedParallelism,
-	))
-
-	// Transaction control
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"RETURN_COMMIT_STATS",
-		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
-		&sv.ReturnCommitStats,
 	))
 
 	// DEFAULT_ISOLATION_LEVEL
@@ -107,13 +143,6 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		&maxDelay,
 	))
 
-	// DML execution
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"AUTO_BATCH_DML",
-		"A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
-		&sv.AutoBatchDML,
-	))
-
 	// AUTOCOMMIT_DML_MODE
 	autocommitDMLModeValues := map[string]AutocommitDMLMode{
 		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
@@ -134,20 +163,6 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 			}
 			return fmt.Sprintf("AutocommitDMLMode(%v)", v)
 		},
-	))
-
-	// Performance features
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"DATA_BOOST_ENABLED",
-		"A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
-		&sv.DataBoostEnabled,
-	))
-
-	// Change streams
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"EXCLUDE_TXN_FROM_CHANGE_STREAMS",
-		"Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
-		&sv.ExcludeTxnFromChangeStreams,
 	))
 
 	// Optimizer configuration
@@ -209,7 +224,19 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 // registerSpannerMyCLIVariables registers variables specific to spanner-mycli.
 // These variables use the CLI_ prefix and provide additional functionality
 // beyond what the java-spanner client offers.
-func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser), registerSimpleBooleans func([]struct {
+	name  string
+	desc  string
+	field *bool
+}), registerReadOnlyStrings func([]struct {
+	name   string
+	desc   string
+	getter func() string
+}), registerReadOnlyBooleans func([]struct {
+	name   string
+	desc   string
+	getter func() bool
+})) {
 	// Output formatting variables
 	// CLI_FORMAT
 	formatValues := map[string]DisplayMode{
@@ -239,11 +266,18 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		},
 	))
 
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_SKIP_COLUMN_NAMES",
-		"A boolean indicating whether to suppress column headers in output. The default is false.",
-		&sv.SkipColumnNames,
-	))
+	// Output formatting boolean variables
+	registerSimpleBooleans([]struct {
+		name  string
+		desc  string
+		field *bool
+	}{
+		{"CLI_SKIP_COLUMN_NAMES", "A boolean indicating whether to suppress column headers in output. The default is false.", &sv.SkipColumnNames},
+		{"CLI_AUTOWRAP", "Enable automatic line wrapping.", &sv.AutoWrap},
+		{"CLI_ENABLE_HIGHLIGHT", "Enable syntax highlighting.", &sv.EnableHighlight},
+		{"CLI_PROTOTEXT_MULTILINE", "Enable multiline prototext output.", &sv.MultilineProtoText},
+		{"CLI_MARKDOWN_CODEBLOCK", "Enable markdown codeblock output.", &sv.MarkdownCodeblock},
+	})
 
 	mustRegister(sysvar.NewNullableIntParser(
 		"CLI_FIXED_WIDTH",
@@ -260,30 +294,6 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"CLI_TAB_WIDTH",
 		"Tab width. It is used for expanding tabs.",
 		&sv.TabWidth,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_AUTOWRAP",
-		"Enable automatic line wrapping.",
-		&sv.AutoWrap,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ENABLE_HIGHLIGHT",
-		"Enable syntax highlighting.",
-		&sv.EnableHighlight,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_PROTOTEXT_MULTILINE",
-		"Enable multiline prototext output.",
-		&sv.MultilineProtoText,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_MARKDOWN_CODEBLOCK",
-		"Enable markdown codeblock output.",
-		&sv.MarkdownCodeblock,
 	))
 
 	// CLI_EXPLAIN_FORMAT
@@ -318,6 +328,16 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// User interface and interaction variables
+	registerSimpleBooleans([]struct {
+		name  string
+		desc  string
+		field *bool
+	}{
+		{"CLI_USE_PAGER", "Enable pager for output.", &sv.UsePager},
+		{"CLI_ENABLE_PROGRESS_BAR", "A boolean indicating whether to display progress bars during operations. The default is false.", &sv.EnableProgressBar},
+		{"CLI_SKIP_SYSTEM_COMMAND", "Controls whether system commands are disabled.", &sv.SkipSystemCommand},
+	})
+
 	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_PROMPT",
 		"Custom prompt for spanner-mycli.",
@@ -331,24 +351,6 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		sysvar.SetValue(&sv.Prompt2),
 	))
 
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_USE_PAGER",
-		"Enable pager for output.",
-		&sv.UsePager,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ENABLE_PROGRESS_BAR",
-		"A boolean indicating whether to display progress bars during operations. The default is false.",
-		&sv.EnableProgressBar,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_SKIP_SYSTEM_COMMAND",
-		"Controls whether system commands are disabled.",
-		&sv.SkipSystemCommand,
-	))
-
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_HISTORY_FILE",
 		"Path to the history file.",
@@ -356,29 +358,16 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Debug and logging variables
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_VERBOSE",
-		"Display verbose output.",
-		&sv.Verbose,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ECHO_EXECUTED_DDL",
-		"Echo executed DDL statements.",
-		&sv.EchoExecutedDDL,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ECHO_INPUT",
-		"Echo input statements.",
-		&sv.EchoInput,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_LINT_PLAN",
-		"Enable query plan linting.",
-		&sv.LintPlan,
-	))
+	registerSimpleBooleans([]struct {
+		name  string
+		desc  string
+		field *bool
+	}{
+		{"CLI_VERBOSE", "Display verbose output.", &sv.Verbose},
+		{"CLI_ECHO_EXECUTED_DDL", "Echo executed DDL statements.", &sv.EchoExecutedDDL},
+		{"CLI_ECHO_INPUT", "Echo input statements.", &sv.EchoInput},
+		{"CLI_LINT_PLAN", "Enable query plan linting.", &sv.LintPlan},
+	})
 
 	// CLI_LOG_LEVEL
 	mustRegister(sysvar.CreateStringEnumVariableParser(
@@ -415,22 +404,18 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Read-only debug variables
-	readOnlyBoolVars := []struct {
+	registerReadOnlyBooleans([]struct {
 		name   string
 		desc   string
 		getter func() bool
 	}{
 		{"CLI_LOG_GRPC", "Enable gRPC logging.", sysvar.GetValue(&sv.LogGrpc)},
 		{"CLI_INSECURE", "Skip TLS certificate verification (insecure).", sysvar.GetValue(&sv.Insecure)},
-	}
-
-	for _, v := range readOnlyBoolVars {
-		mustRegister(sysvar.NewReadOnlyBooleanParser(v.name, v.desc, v.getter))
-	}
+	})
 
 	// Session and connection information (read-only)
-	// Define read-only string variables as a slice for cleaner registration
-	readOnlyStringVars := []struct {
+	// Session and connection information (read-only)
+	registerReadOnlyStrings([]struct {
 		name   string
 		desc   string
 		getter func() string
@@ -441,11 +426,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_ROLE", "Cloud Spanner database role.", sysvar.GetValue(&sv.Role)},
 		{"CLI_HOST", "Host on which Spanner server is located", sysvar.GetValue(&sv.Host)},
 		{"CLI_IMPERSONATE_SERVICE_ACCOUNT", "Service account to impersonate.", sysvar.GetValue(&sv.ImpersonateServiceAccount)},
-	}
-
-	for _, v := range readOnlyStringVars {
-		mustRegister(sysvar.NewReadOnlyStringParser(v.name, v.desc, v.getter))
-	}
+	})
 
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_PORT",
@@ -536,23 +517,15 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Query execution features
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_TRY_PARTITION_QUERY",
-		"A boolean indicating whether to test query for partition compatibility instead of executing it.",
-		&sv.TryPartitionQuery,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_AUTO_CONNECT_AFTER_CREATE",
-		"A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
-		&sv.AutoConnectAfterCreate,
-	))
-
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ASYNC_DDL",
-		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
-		&sv.AsyncDDL,
-	))
+	registerSimpleBooleans([]struct {
+		name  string
+		desc  string
+		field *bool
+	}{
+		{"CLI_TRY_PARTITION_QUERY", "A boolean indicating whether to test query for partition compatibility instead of executing it.", &sv.TryPartitionQuery},
+		{"CLI_AUTO_CONNECT_AFTER_CREATE", "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.", &sv.AutoConnectAfterCreate},
+		{"CLI_ASYNC_DDL", "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.", &sv.AsyncDDL},
+	})
 
 	// CLI_DATABASE_DIALECT
 	dialectValues := map[string]databasepb.DatabaseDialect{
