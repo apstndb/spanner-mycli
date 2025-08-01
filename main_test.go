@@ -15,6 +15,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -560,6 +561,36 @@ func Test_initializeSystemVariables(t *testing.T) {
 				t.Errorf("initializeSystemVariables() Params mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
+	// Test the specific case of using --set flag to set CLI_FORMAT
+	var gopts globalOptions
+	parser := flags.NewParser(&gopts, flags.Default)
+
+	args := []string{
+		"--project", "p",
+		"--instance", "i",
+		"--database", "d",
+		"--execute", "SELECT 1",
+		"--set", "CLI_FORMAT=VERTICAL",
+	}
+
+	_, err := parser.ParseArgs(args)
+	if err != nil {
+		t.Fatalf("Failed to parse args: %v", err)
+	}
+
+	// Initialize system variables
+	sysVars, err := initializeSystemVariables(&gopts.Spanner)
+	if err != nil {
+		t.Fatalf("Failed to initialize: %v", err)
+	}
+
+	// Check that CLI_FORMAT was properly set
+	if sysVars.CLIFormat != DisplayModeVertical {
+		t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, DisplayModeVertical)
 	}
 }
 
