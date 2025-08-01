@@ -469,6 +469,10 @@ func singletonMap[K comparable, V any](k K, v V) map[K]V {
 	return map[K]V{k: v}
 }
 
+// parseTimeString parses timestamp strings from spanner.TimestampBound.String() output.
+// This is NOT for parsing user input - user input is handled by parseTimestampBound.
+// The format matches time.Time.String() default format, which is what TimestampBound.String()
+// uses internally for readTimestamp and minReadTimestamp modes.
 func parseTimeString(s string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s)
 }
