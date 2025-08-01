@@ -107,23 +107,3 @@ var StringParser = parser.NewStringParser()
 
 // OptionalStringParser parses optional string values (can be NULL).
 var OptionalStringParser = parser.NewOptionalParser(StringParser)
-
-// OptionalIntParser creates a parser for optional integer values.
-func NewOptionalIntParser() parser.Parser[*int64] {
-	return parser.NewOptionalParser(IntParser)
-}
-
-// NewOptionalIntParserWithRange creates a parser for optional integer values with range validation.
-func NewOptionalIntParserWithRange(min, max int64) parser.Parser[*int64] {
-	return parser.WithRangeValidation(parser.NewOptionalParser(IntParser), min, max)
-}
-
-// NewOptionalDurationParser creates a parser for optional duration values.
-func NewOptionalDurationParser() parser.Parser[*time.Duration] {
-	return parser.NewOptionalParser(DurationParser)
-}
-
-// NewOptionalDurationParserWithRange creates a parser for optional duration values with range validation.
-func NewOptionalDurationParserWithRange(min, max time.Duration) parser.Parser[*time.Duration] {
-	return parser.WithRangeValidation(parser.NewOptionalParser(DurationParser), min, max)
-}

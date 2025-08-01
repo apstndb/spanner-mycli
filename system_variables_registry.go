@@ -27,9 +27,20 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		}
 	}
 
-	// Migrate simple boolean variables first
+	// Register java-spanner compatible variables for compatibility with Java client
+	registerJavaSpannerCompatibleVariables(registry, sv, mustRegister)
 
-	// READONLY - Connection read-only mode
+	// Register spanner-mycli specific CLI variables
+	registerSpannerMyCLIVariables(registry, sv, mustRegister)
+
+	return registry
+}
+
+// registerJavaSpannerCompatibleVariables registers variables that maintain compatibility
+// with the java-spanner client library. These variables follow the same naming conventions
+// and behavior as the Java implementation.
+func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Connection control
 	mustRegister(sysvar.NewBooleanParser(
 		"READONLY",
 		"A boolean indicating whether or not the connection is in read-only mode. The default is false.",
@@ -43,219 +54,129 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 	))
 
-	// AUTO_PARTITION_MODE
+	// Query execution
 	mustRegister(sysvar.NewSimpleBooleanParser(
 		"AUTO_PARTITION_MODE",
 		"A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
 		&sv.AutoPartitionMode,
 	))
 
-	// RETURN_COMMIT_STATS
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"RETURN_COMMIT_STATS",
-		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
-		&sv.ReturnCommitStats,
-	))
-
-	// AUTO_BATCH_DML
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"AUTO_BATCH_DML",
-		"A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
-		&sv.AutoBatchDML,
-	))
-
-	// DATA_BOOST_ENABLED
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"DATA_BOOST_ENABLED",
-		"A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
-		&sv.DataBoostEnabled,
-	))
-
-	// EXCLUDE_TXN_FROM_CHANGE_STREAMS
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"EXCLUDE_TXN_FROM_CHANGE_STREAMS",
-		"Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
-		&sv.ExcludeTxnFromChangeStreams,
-	))
-
-	// CLI variables - boolean
-
-	// CLI_VERBOSE
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_VERBOSE",
-		"Display verbose output.",
-		&sv.Verbose,
-	))
-
-	// CLI_ECHO_EXECUTED_DDL
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ECHO_EXECUTED_DDL",
-		"Echo executed DDL statements.",
-		&sv.EchoExecutedDDL,
-	))
-
-	// CLI_ECHO_INPUT
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ECHO_INPUT",
-		"Echo input statements.",
-		&sv.EchoInput,
-	))
-
-	// CLI_USE_PAGER
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_USE_PAGER",
-		"Enable pager for output.",
-		&sv.UsePager,
-	))
-
-	// CLI_AUTOWRAP
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_AUTOWRAP",
-		"Enable automatic line wrapping.",
-		&sv.AutoWrap,
-	))
-
-	// CLI_ENABLE_HIGHLIGHT
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ENABLE_HIGHLIGHT",
-		"Enable syntax highlighting.",
-		&sv.EnableHighlight,
-	))
-
-	// CLI_PROTOTEXT_MULTILINE
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_PROTOTEXT_MULTILINE",
-		"Enable multiline prototext output.",
-		&sv.MultilineProtoText,
-	))
-
-	// CLI_MARKDOWN_CODEBLOCK
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_MARKDOWN_CODEBLOCK",
-		"Enable markdown codeblock output.",
-		&sv.MarkdownCodeblock,
-	))
-
-	// CLI_TRY_PARTITION_QUERY
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_TRY_PARTITION_QUERY",
-		"A boolean indicating whether to test query for partition compatibility instead of executing it.",
-		&sv.TryPartitionQuery,
-	))
-
-	// CLI_AUTO_CONNECT_AFTER_CREATE
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_AUTO_CONNECT_AFTER_CREATE",
-		"A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
-		&sv.AutoConnectAfterCreate,
-	))
-
-	// CLI_ENABLE_PROGRESS_BAR
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ENABLE_PROGRESS_BAR",
-		"A boolean indicating whether to display progress bars during operations. The default is false.",
-		&sv.EnableProgressBar,
-	))
-
-	// CLI_ENABLE_ADC_PLUS - Session-init-only variable
-	mustRegister(sysvar.NewBooleanParser(
-		"CLI_ENABLE_ADC_PLUS",
-		"A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
-		sysvar.GetValue(&sv.EnableADCPlus),
-		sysvar.SetSessionInitOnly(&sv.EnableADCPlus, "CLI_ENABLE_ADC_PLUS", &sv.CurrentSession),
-	))
-
-	// CLI_ASYNC_DDL
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_ASYNC_DDL",
-		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
-		&sv.AsyncDDL,
-	))
-
-	// CLI_SKIP_COLUMN_NAMES
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_SKIP_COLUMN_NAMES",
-		"A boolean indicating whether to suppress column headers in output. The default is false.",
-		&sv.SkipColumnNames,
-	))
-
-	// CLI_LINT_PLAN (special case with conditional getter)
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_LINT_PLAN",
-		"Enable query plan linting.",
-		&sv.LintPlan,
-	))
-
-	// Integer variables
-
-	// MAX_PARTITIONED_PARALLELISM
 	mustRegister(sysvar.NewSimpleIntegerParser(
 		"MAX_PARTITIONED_PARALLELISM",
 		"A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
 		&sv.MaxPartitionedParallelism,
 	))
 
-	// CLI_TAB_WIDTH
-	mustRegister(sysvar.NewSimpleIntegerParser(
-		"CLI_TAB_WIDTH",
-		"Tab width. It is used for expanding tabs.",
-		&sv.TabWidth,
+	// Transaction control
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"RETURN_COMMIT_STATS",
+		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+		&sv.ReturnCommitStats,
 	))
 
-	// CLI_EXPLAIN_WRAP_WIDTH
-	mustRegister(sysvar.NewSimpleIntegerParser(
-		"CLI_EXPLAIN_WRAP_WIDTH",
-		"Controls query plan wrap width. It effects only operators column contents",
-		&sv.ExplainWrapWidth,
+	// DEFAULT_ISOLATION_LEVEL
+	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
+		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+		"SERIALIZABLE":                sppb.TransactionOptions_SERIALIZABLE,
+		"REPEATABLE_READ":             sppb.TransactionOptions_REPEATABLE_READ,
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"DEFAULT_ISOLATION_LEVEL",
+		"The transaction isolation level that is used by default for read/write transactions.",
+		isolationValues,
+		sysvar.GetValue(&sv.DefaultIsolationLevel),
+		sysvar.SetValue(&sv.DefaultIsolationLevel),
+		func(v sppb.TransactionOptions_IsolationLevel) string {
+			// Use protobuf String() method to get full name, then extract short form
+			fullName := v.String()
+			if strings.HasPrefix(fullName, "ISOLATION_LEVEL_") {
+				return strings.TrimPrefix(fullName, "ISOLATION_LEVEL_")
+			}
+			return fullName
+		},
 	))
 
-	// String variables
+	mustRegister(sysvar.NewSimpleStringParser(
+		"TRANSACTION_TAG",
+		"A property of type STRING that contains the transaction tag for the next transaction.",
+		&sv.TransactionTag,
+	))
 
-	// OPTIMIZER_VERSION
+	mustRegister(sysvar.NewSimpleStringParser(
+		"STATEMENT_TAG",
+		"A property of type STRING that contains the request tag for the next statement.",
+		&sv.RequestTag,
+	))
+
+	// MAX_COMMIT_DELAY
+	minDelay := time.Duration(0)
+	maxDelay := 500 * time.Millisecond
+	mustRegister(sysvar.NewNullableDurationParser(
+		"MAX_COMMIT_DELAY",
+		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
+		sysvar.GetValue(&sv.MaxCommitDelay),
+		sysvar.SetValue(&sv.MaxCommitDelay),
+		&minDelay,
+		&maxDelay,
+	))
+
+	// DML execution
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"AUTO_BATCH_DML",
+		"A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
+		&sv.AutoBatchDML,
+	))
+
+	// AUTOCOMMIT_DML_MODE
+	autocommitDMLModeValues := map[string]AutocommitDMLMode{
+		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
+		"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
+	}
+	mustRegister(sysvar.NewEnumParser(
+		"AUTOCOMMIT_DML_MODE",
+		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
+		autocommitDMLModeValues,
+		sysvar.GetValue(&sv.AutocommitDMLMode),
+		sysvar.SetValue(&sv.AutocommitDMLMode),
+		func(v AutocommitDMLMode) string {
+			// Reverse map lookup for AutocommitDMLMode
+			for name, value := range autocommitDMLModeValues {
+				if value == v {
+					return name
+				}
+			}
+			return fmt.Sprintf("AutocommitDMLMode(%v)", v)
+		},
+	))
+
+	// Performance features
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"DATA_BOOST_ENABLED",
+		"A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
+		&sv.DataBoostEnabled,
+	))
+
+	// Change streams
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"EXCLUDE_TXN_FROM_CHANGE_STREAMS",
+		"Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
+		&sv.ExcludeTxnFromChangeStreams,
+	))
+
+	// Optimizer configuration
 	mustRegister(sysvar.NewSimpleStringParser(
 		"OPTIMIZER_VERSION",
 		"A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
 		&sv.OptimizerVersion,
 	))
 
-	// OPTIMIZER_STATISTICS_PACKAGE
 	mustRegister(sysvar.NewSimpleStringParser(
 		"OPTIMIZER_STATISTICS_PACKAGE",
 		"A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
 		&sv.OptimizerStatisticsPackage,
 	))
 
-	// CLI_PROMPT
-	mustRegister(sysvar.NewSimpleStringParser(
-		"CLI_PROMPT",
-		"Custom prompt for spanner-mycli.",
-		&sv.Prompt,
-	))
-
-	// CLI_PROMPT2
-	mustRegister(sysvar.NewSimpleStringParser(
-		"CLI_PROMPT2",
-		"Custom continuation prompt for spanner-mycli.",
-		&sv.Prompt2,
-	))
-
-	// CLI_VERTEXAI_MODEL
-	mustRegister(sysvar.NewSimpleStringParser(
-		"CLI_VERTEXAI_MODEL",
-		"Vertex AI model for natural language features.",
-		&sv.VertexAIModel,
-	))
-
-	// CLI_VERTEXAI_PROJECT
-	mustRegister(sysvar.NewSimpleStringParser(
-		"CLI_VERTEXAI_PROJECT",
-		"Vertex AI project for natural language features.",
-		&sv.VertexAIProject,
-	))
-
-	// Enum variables
-
-	// RPC_PRIORITY
+	// RPC configuration
 	mustRegister(sysvar.NewEnumParser(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
@@ -278,6 +199,64 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 	))
 
+	// Statement timeout
+	mustRegister(sysvar.NewNullableDurationParser(
+		"STATEMENT_TIMEOUT",
+		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
+		sysvar.GetValue(&sv.StatementTimeout),
+		sysvar.SetValue(&sv.StatementTimeout),
+		lo.ToPtr(time.Duration(0)), nil, // Min: 0, no max
+	))
+
+	// Read-only timestamps (java-spanner compatible)
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"READ_TIMESTAMP",
+		"The read timestamp of the most recent read-only transaction.",
+		func() string {
+			if sv.ReadTimestamp.IsZero() {
+				return "NULL"
+			}
+			return sv.ReadTimestamp.Format(time.RFC3339Nano)
+		},
+	))
+
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"COMMIT_TIMESTAMP",
+		"The commit timestamp of the last read-write transaction that Spanner committed.",
+		func() string {
+			if sv.CommitTimestamp.IsZero() {
+				return "NULL"
+			}
+			return sv.CommitTimestamp.Format(time.RFC3339Nano)
+		},
+	))
+}
+
+// registerSpannerMyCLIVariables registers variables specific to spanner-mycli.
+// These variables use the CLI_ prefix and provide additional functionality
+// beyond what the java-spanner client offers.
+func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Output formatting
+	registerCLIOutputVariables(registry, sv, mustRegister)
+
+	// User interface and interaction
+	registerCLIUserInterfaceVariables(registry, sv, mustRegister)
+
+	// Debug and logging
+	registerCLIDebugVariables(registry, sv, mustRegister)
+
+	// Session and connection information (read-only)
+	registerCLISessionVariables(registry, sv, mustRegister)
+
+	// External integrations
+	registerCLIIntegrationVariables(registry, sv, mustRegister)
+
+	// Query execution features
+	registerCLIQueryVariables(registry, sv, mustRegister)
+}
+
+// registerCLIOutputVariables registers CLI variables related to output formatting
+func registerCLIOutputVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
 	// CLI_FORMAT
 	formatValues := map[string]DisplayMode{
 		"TABLE":                DisplayModeTable,
@@ -306,6 +285,53 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 	))
 
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_SKIP_COLUMN_NAMES",
+		"A boolean indicating whether to suppress column headers in output. The default is false.",
+		&sv.SkipColumnNames,
+	))
+
+	mustRegister(sysvar.NewNullableIntParser(
+		"CLI_FIXED_WIDTH",
+		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
+		func() *int64 { return sv.FixedWidth },
+		func(v *int64) error {
+			sv.FixedWidth = v
+			return nil
+		},
+		nil, nil, // No min/max constraints
+	))
+
+	mustRegister(sysvar.NewSimpleIntegerParser(
+		"CLI_TAB_WIDTH",
+		"Tab width. It is used for expanding tabs.",
+		&sv.TabWidth,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_AUTOWRAP",
+		"Enable automatic line wrapping.",
+		&sv.AutoWrap,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_ENABLE_HIGHLIGHT",
+		"Enable syntax highlighting.",
+		&sv.EnableHighlight,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_PROTOTEXT_MULTILINE",
+		"Enable multiline prototext output.",
+		&sv.MultilineProtoText,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_MARKDOWN_CODEBLOCK",
+		"Enable markdown codeblock output.",
+		&sv.MarkdownCodeblock,
+	))
+
 	// CLI_EXPLAIN_FORMAT
 	mustRegister(sysvar.NewSimpleEnumParser(
 		"CLI_EXPLAIN_FORMAT",
@@ -320,51 +346,12 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		sysvar.SetValue(&sv.ExplainFormat),
 	))
 
-	// More boolean variables
-
-	// Note: AUTOCOMMIT is handled in the old system (no direct field in systemVariables)
-	// Note: RETRY_ABORTS_INTERNALLY is handled in the old system (no direct field in systemVariables)
-
-	// CLI_FIXED_WIDTH
-	mustRegister(sysvar.NewNullableIntParser(
-		"CLI_FIXED_WIDTH",
-		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
-		func() *int64 { return sv.FixedWidth },
-		func(v *int64) error {
-			sv.FixedWidth = v
-			return nil
-		},
-		nil, nil, // No min/max constraints
+	mustRegister(sysvar.NewSimpleIntegerParser(
+		"CLI_EXPLAIN_WRAP_WIDTH",
+		"Controls query plan wrap width. It effects only operators column contents",
+		&sv.ExplainWrapWidth,
 	))
 
-	// Note: CLI_INLINE_STATS is a string with complex parsing - remains in old system
-
-	// CLI_SKIP_SYSTEM_COMMAND
-	mustRegister(sysvar.NewSimpleBooleanParser(
-		"CLI_SKIP_SYSTEM_COMMAND",
-		"Controls whether system commands are disabled.",
-		&sv.SkipSystemCommand,
-	))
-
-	// CLI_LOG_GRPC
-	// Read-only: gRPC logging configuration is set at startup and cannot be changed during session
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
-		"CLI_LOG_GRPC",
-		"Enable gRPC logging.",
-		sysvar.GetValue(&sv.LogGrpc),
-	))
-
-	// CLI_INSECURE
-	// Read-only: TLS verification setting is established at connection time and cannot be changed
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
-		"CLI_INSECURE",
-		"Skip TLS certificate verification (insecure).",
-		sysvar.GetValue(&sv.Insecure),
-	))
-
-	// More string variables
-
-	// CLI_ANALYZE_COLUMNS
 	mustRegister(sysvar.NewStringParser(
 		"CLI_ANALYZE_COLUMNS",
 		"Go template for analyzing column data.",
@@ -375,138 +362,270 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			return nil
 		},
 	))
+}
 
-	// CLI_HISTORY_FILE
-	// Read-only: History file path is set at startup and cannot be changed during session
+// registerCLIUserInterfaceVariables registers CLI variables related to user interface
+func registerCLIUserInterfaceVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	mustRegister(sysvar.NewSimpleStringParser(
+		"CLI_PROMPT",
+		"Custom prompt for spanner-mycli.",
+		&sv.Prompt,
+	))
+
+	mustRegister(sysvar.NewStringParser(
+		"CLI_PROMPT2",
+		"Custom continuation prompt for spanner-mycli.",
+		sysvar.GetValue(&sv.Prompt2),
+		sysvar.SetValue(&sv.Prompt2),
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_USE_PAGER",
+		"Enable pager for output.",
+		&sv.UsePager,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_ENABLE_PROGRESS_BAR",
+		"A boolean indicating whether to display progress bars during operations. The default is false.",
+		&sv.EnableProgressBar,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_SKIP_SYSTEM_COMMAND",
+		"Controls whether system commands are disabled.",
+		&sv.SkipSystemCommand,
+	))
+
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_HISTORY_FILE",
 		"Path to the history file.",
 		sysvar.GetValue(&sv.HistoryFile),
 	))
+}
 
-	// CLI_PROJECT
-	// Read-only: Project ID is part of the database connection path and cannot be changed after session creation
+// registerCLIDebugVariables registers CLI variables related to debugging and logging
+func registerCLIDebugVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_VERBOSE",
+		"Display verbose output.",
+		&sv.Verbose,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_ECHO_EXECUTED_DDL",
+		"Echo executed DDL statements.",
+		&sv.EchoExecutedDDL,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_ECHO_INPUT",
+		"Echo input statements.",
+		&sv.EchoInput,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_LINT_PLAN",
+		"Enable query plan linting.",
+		&sv.LintPlan,
+	))
+
+	// CLI_LOG_LEVEL
+	logLevelValues := map[string]string{
+		"DEBUG": "DEBUG",
+		"INFO":  "INFO",
+		"WARN":  "WARN",
+		"ERROR": "ERROR",
+	}
+	mustRegister(sysvar.NewStringEnumParser(
+		"CLI_LOG_LEVEL",
+		"Log level for the CLI.",
+		logLevelValues,
+		func() string {
+			switch sv.LogLevel {
+			case slog.LevelDebug:
+				return "DEBUG"
+			case slog.LevelInfo:
+				return "INFO"
+			case slog.LevelWarn:
+				return "WARN"
+			case slog.LevelError:
+				return "ERROR"
+			default:
+				return "WARN"
+			}
+		},
+		func(v string) error {
+			level, err := SetLogLevel(v)
+			if err != nil {
+				return err
+			}
+			sv.LogLevel = level
+			return nil
+		},
+	))
+
+	// Read-only debug variables
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
+		"CLI_LOG_GRPC",
+		"Enable gRPC logging.",
+		sysvar.GetValue(&sv.LogGrpc),
+	))
+
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
+		"CLI_INSECURE",
+		"Skip TLS certificate verification (insecure).",
+		sysvar.GetValue(&sv.Insecure),
+	))
+}
+
+// registerCLISessionVariables registers read-only CLI variables related to session information
+func registerCLISessionVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_PROJECT",
 		"GCP Project ID.",
 		sysvar.GetValue(&sv.Project),
 	))
 
-	// CLI_INSTANCE
-	// Read-only: Instance ID is part of the database connection path and cannot be changed after session creation
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_INSTANCE",
 		"Cloud Spanner instance ID.",
 		sysvar.GetValue(&sv.Instance),
 	))
 
-	// CLI_DATABASE
-	// Read-only: Database ID is part of the connection and can only be changed via USE statement
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_DATABASE",
 		"Cloud Spanner database ID.",
 		sysvar.GetValue(&sv.Database),
 	))
 
-	// CLI_ROLE
-	// Read-only: Database role is set at connection time and cannot be changed during session
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_ROLE",
 		"Cloud Spanner database role.",
 		sysvar.GetValue(&sv.Role),
 	))
 
-	// Note: CLI_ENDPOINT is handled specially in the old system (parses to host/port)
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"CLI_HOST",
+		"Host on which Spanner server is located",
+		sysvar.GetValue(&sv.Host),
+	))
 
-	// CLI_IMPERSONATE_SERVICE_ACCOUNT
-	// Read-only: Service account impersonation is configured at authentication time and cannot be changed
+	mustRegister(sysvar.NewIntegerParser(
+		"CLI_PORT",
+		"Port number for connections.",
+		func() int64 { return int64(sv.Port) },
+		nil,      // No setter - read-only
+		nil, nil, // No min/max validation needed for read-only
+	))
+
 	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
 		"Service account to impersonate.",
 		sysvar.GetValue(&sv.ImpersonateServiceAccount),
 	))
 
-	// TRANSACTION_TAG
+	// Session-init-only variable
+	mustRegister(sysvar.NewBooleanParser(
+		"CLI_ENABLE_ADC_PLUS",
+		"A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
+		sysvar.GetValue(&sv.EnableADCPlus),
+		sysvar.SetSessionInitOnly(&sv.EnableADCPlus, "CLI_ENABLE_ADC_PLUS", &sv.CurrentSession),
+	))
+
+	// CLI_MCP
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
+		"CLI_MCP",
+		"A read-only boolean indicating whether the connection is running as an MCP server.",
+		sysvar.GetValue(&sv.MCP),
+	))
+
+	// CLI_VERSION
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"CLI_VERSION",
+		"The version of spanner-mycli.",
+		func() string { return getVersion() },
+	))
+}
+
+// registerCLIIntegrationVariables registers CLI variables for external integrations
+func registerCLIIntegrationVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Vertex AI integration
 	mustRegister(sysvar.NewSimpleStringParser(
-		"TRANSACTION_TAG",
-		"A property of type STRING that contains the transaction tag for the next transaction.",
-		&sv.TransactionTag,
+		"CLI_VERTEXAI_MODEL",
+		"Vertex AI model for natural language features.",
+		&sv.VertexAIModel,
 	))
 
-	// STATEMENT_TAG
 	mustRegister(sysvar.NewSimpleStringParser(
-		"STATEMENT_TAG",
-		"A property of type STRING that contains the request tag for the next statement.",
-		&sv.RequestTag,
+		"CLI_VERTEXAI_PROJECT",
+		"Vertex AI project for natural language features.",
+		&sv.VertexAIProject,
 	))
 
-	// Duration variables
+	// Proto descriptor files
+	mustRegister(sysvar.NewProtoDescriptorFileParser(
+		"CLI_PROTO_DESCRIPTOR_FILE",
+		"Comma-separated list of proto descriptor files. Supports ADD to append files.",
+		func() []string { return sv.ProtoDescriptorFile },
+		func(files []string) error {
+			// Set operation - replace all files
+			if len(files) == 0 {
+				sv.ProtoDescriptorFile = []string{}
+				sv.ProtoDescriptor = nil
+				return nil
+			}
 
-	// MAX_COMMIT_DELAY
-	minDelay := time.Duration(0)
-	maxDelay := 500 * time.Millisecond
-	mustRegister(sysvar.NewNullableDurationParser(
-		"MAX_COMMIT_DELAY",
-		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
-		sysvar.GetValue(&sv.MaxCommitDelay),
-		sysvar.SetValue(&sv.MaxCommitDelay),
-		&minDelay,
-		&maxDelay,
-	))
-
-	// STATEMENT_TIMEOUT
-	mustRegister(sysvar.NewNullableDurationParser(
-		"STATEMENT_TIMEOUT",
-		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
-		sysvar.GetValue(&sv.StatementTimeout),
-		sysvar.SetValue(&sv.StatementTimeout),
-		lo.ToPtr(time.Duration(0)), nil, // Min: 0, no max
-	))
-
-	// More enum variables
-
-	// AUTOCOMMIT_DML_MODE
-	autocommitDMLModeValues := map[string]AutocommitDMLMode{
-		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
-		"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
-	}
-	mustRegister(sysvar.NewEnumParser(
-		"AUTOCOMMIT_DML_MODE",
-		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
-		autocommitDMLModeValues,
-		sysvar.GetValue(&sv.AutocommitDMLMode),
-		sysvar.SetValue(&sv.AutocommitDMLMode),
-		func(v AutocommitDMLMode) string {
-			// Reverse map lookup for AutocommitDMLMode
-			for name, value := range autocommitDMLModeValues {
-				if value == v {
-					return name
+			var fileDescriptorSet *descriptorpb.FileDescriptorSet
+			for _, filename := range files {
+				fds, err := readFileDescriptorProtoFromFile(filename)
+				if err != nil {
+					return err
 				}
+				fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
 			}
-			return fmt.Sprintf("AutocommitDMLMode(%v)", v)
+
+			sv.ProtoDescriptorFile = files
+			sv.ProtoDescriptor = fileDescriptorSet
+			return nil
 		},
+		func(filename string) error {
+			// Add operation - append a file
+			fds, err := readFileDescriptorProtoFromFile(filename)
+			if err != nil {
+				return err
+			}
+
+			if !slices.Contains(sv.ProtoDescriptorFile, filename) {
+				sv.ProtoDescriptorFile = slices.Concat(sv.ProtoDescriptorFile, sliceOf(filename))
+				sv.ProtoDescriptor = &descriptorpb.FileDescriptorSet{File: slices.Concat(sv.ProtoDescriptor.GetFile(), fds.GetFile())}
+			} else {
+				sv.ProtoDescriptor = mergeFDS(sv.ProtoDescriptor, fds)
+			}
+			return nil
+		},
+		nil, // No additional validation needed - readFileDescriptorProtoFromFile does validation
+	))
+}
+
+// registerCLIQueryVariables registers CLI variables related to query execution
+func registerCLIQueryVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_TRY_PARTITION_QUERY",
+		"A boolean indicating whether to test query for partition compatibility instead of executing it.",
+		&sv.TryPartitionQuery,
 	))
 
-	// DEFAULT_ISOLATION_LEVEL
-	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
-		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-		"SERIALIZABLE":                sppb.TransactionOptions_SERIALIZABLE,
-		"REPEATABLE_READ":             sppb.TransactionOptions_REPEATABLE_READ,
-	}
-	mustRegister(sysvar.NewEnumParser(
-		"DEFAULT_ISOLATION_LEVEL",
-		"The transaction isolation level that is used by default for read/write transactions.",
-		isolationValues,
-		sysvar.GetValue(&sv.DefaultIsolationLevel),
-		sysvar.SetValue(&sv.DefaultIsolationLevel),
-		func(v sppb.TransactionOptions_IsolationLevel) string {
-			// Use protobuf String() method to get full name, then extract short form
-			fullName := v.String()
-			if strings.HasPrefix(fullName, "ISOLATION_LEVEL_") {
-				return strings.TrimPrefix(fullName, "ISOLATION_LEVEL_")
-			}
-			return fullName
-		},
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_AUTO_CONNECT_AFTER_CREATE",
+		"A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
+		&sv.AutoConnectAfterCreate,
+	))
+
+	mustRegister(sysvar.NewSimpleBooleanParser(
+		"CLI_ASYNC_DDL",
+		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
+		&sv.AsyncDDL,
 	))
 
 	// CLI_DATABASE_DIALECT
@@ -573,147 +692,6 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		},
 	))
 
-	// CLI_LOG_LEVEL
-	logLevelValues := map[string]string{
-		"DEBUG": "DEBUG",
-		"INFO":  "INFO",
-		"WARN":  "WARN",
-		"ERROR": "ERROR",
-	}
-	mustRegister(sysvar.NewStringEnumParser(
-		"CLI_LOG_LEVEL",
-		"Log level for the CLI.",
-		logLevelValues,
-		func() string {
-			switch sv.LogLevel {
-			case slog.LevelDebug:
-				return "DEBUG"
-			case slog.LevelInfo:
-				return "INFO"
-			case slog.LevelWarn:
-				return "WARN"
-			case slog.LevelError:
-				return "ERROR"
-			default:
-				return "WARN"
-			}
-		},
-		func(v string) error {
-			level, err := SetLogLevel(v)
-			if err != nil {
-				return err
-			}
-			sv.LogLevel = level
-			return nil
-		},
-	))
-
-	// More integer variables
-
-	// Note: CLI_CURRENT_WIDTH is handled in the old system (no field in systemVariables)
-
-	// CLI_HOST
-	// Read-only: Connection endpoint is established at session creation and cannot be changed
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_HOST",
-		"Host on which Spanner server is located",
-		sysvar.GetValue(&sv.Host),
-	))
-
-	// CLI_PORT
-	// Read-only: Connection endpoint is established at session creation and cannot be changed
-	mustRegister(sysvar.NewIntegerParser(
-		"CLI_PORT",
-		"Port number for connections.",
-		func() int64 { return int64(sv.Port) },
-		nil,      // No setter - read-only
-		nil, nil, // No min/max validation needed for read-only
-	))
-
-	// Read-only variables
-
-	// READ_TIMESTAMP
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"READ_TIMESTAMP",
-		"The read timestamp of the most recent read-only transaction.",
-		func() string {
-			if sv.ReadTimestamp.IsZero() {
-				return "NULL"
-			}
-			return sv.ReadTimestamp.Format(time.RFC3339Nano)
-		},
-	))
-
-	// COMMIT_TIMESTAMP
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"COMMIT_TIMESTAMP",
-		"The commit timestamp of the last read-write transaction that Spanner committed.",
-		func() string {
-			if sv.CommitTimestamp.IsZero() {
-				return "NULL"
-			}
-			return sv.CommitTimestamp.Format(time.RFC3339Nano)
-		},
-	))
-
-	// CLI_MCP
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
-		"CLI_MCP",
-		"A read-only boolean indicating whether the connection is running as an MCP server.",
-		sysvar.GetValue(&sv.MCP),
-	))
-
-	// CLI_VERSION
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_VERSION",
-		"The version of spanner-mycli.",
-		func() string { return getVersion() },
-	))
-
-	// CLI_PROTO_DESCRIPTOR_FILE - supports both Set and Add operations
-	mustRegister(sysvar.NewProtoDescriptorFileParser(
-		"CLI_PROTO_DESCRIPTOR_FILE",
-		"Comma-separated list of proto descriptor files. Supports ADD to append files.",
-		func() []string { return sv.ProtoDescriptorFile },
-		func(files []string) error {
-			// Set operation - replace all files
-			if len(files) == 0 {
-				sv.ProtoDescriptorFile = []string{}
-				sv.ProtoDescriptor = nil
-				return nil
-			}
-
-			var fileDescriptorSet *descriptorpb.FileDescriptorSet
-			for _, filename := range files {
-				fds, err := readFileDescriptorProtoFromFile(filename)
-				if err != nil {
-					return err
-				}
-				fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
-			}
-
-			sv.ProtoDescriptorFile = files
-			sv.ProtoDescriptor = fileDescriptorSet
-			return nil
-		},
-		func(filename string) error {
-			// Add operation - append a file
-			fds, err := readFileDescriptorProtoFromFile(filename)
-			if err != nil {
-				return err
-			}
-
-			if !slices.Contains(sv.ProtoDescriptorFile, filename) {
-				sv.ProtoDescriptorFile = slices.Concat(sv.ProtoDescriptorFile, sliceOf(filename))
-				sv.ProtoDescriptor = &descriptorpb.FileDescriptorSet{File: slices.Concat(sv.ProtoDescriptor.GetFile(), fds.GetFile())}
-			} else {
-				sv.ProtoDescriptor = mergeFDS(sv.ProtoDescriptor, fds)
-			}
-			return nil
-		},
-		nil, // No additional validation needed - readFileDescriptorProtoFromFile does validation
-	))
-
 	// CLI_PARSE_MODE
 	mustRegister(sysvar.NewSimpleEnumParser(
 		"CLI_PARSE_MODE",
@@ -728,15 +706,4 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		sysvar.GetValue(&sv.BuildStatementMode),
 		sysvar.SetValue(&sv.BuildStatementMode),
 	))
-
-	// Special variables with complex handling
-	// These remain in the old system for now as they require special parsing logic:
-	// - READ_ONLY_STALENESS (complex parsing logic)
-	// - CLI_OUTPUT_TEMPLATE_FILE (file handling)
-	// - CLI_DIRECT_READ (complex parsing)
-	// - CLI_EMULATOR_PLATFORM (architecture detection)
-	// - CLI_HOST (special parsing)
-	// - COMMIT_RESPONSE (complex result set)
-
-	return registry
 }
