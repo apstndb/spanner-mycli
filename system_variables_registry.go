@@ -83,28 +83,29 @@ func registerReadOnlyVariables[T any](
 func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	registry := sysvar.NewRegistry()
 
-	// Helper function to register variables with panic on error
-	mustRegister := func(parser sysvar.VariableParser) {
-		if err := registry.Register(parser); err != nil {
-			panic(fmt.Sprintf("Failed to register %s: %v", parser.Name(), err))
-		}
-	}
-
 	// Register java-spanner compatible variables for compatibility with Java client
-	registerJavaSpannerCompatibleVariables(registry, sv, mustRegister)
+	registerJavaSpannerCompatibleVariables(registry, sv)
 
 	// Register spanner-mycli specific CLI variables
-	registerSpannerMyCLIVariables(registry, sv, mustRegister)
+	registerSpannerMyCLIVariables(registry, sv)
 
 	return registry
+}
+
+// mustRegister registers a variable parser with the registry and panics on error.
+// This is used during initialization where registration failures are fatal.
+func mustRegister(registry *sysvar.Registry, parser sysvar.VariableParser) {
+	if err := registry.Register(parser); err != nil {
+		panic(fmt.Sprintf("Failed to register %s: %v", parser.Name(), err))
+	}
 }
 
 // registerJavaSpannerCompatibleVariables registers variables that maintain compatibility
 // with the java-spanner client library. These variables follow the same naming conventions
 // and behavior as the Java implementation.
-func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *systemVariables) {
 	// Connection control
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(registry, sysvar.NewBooleanParser(
 		"READONLY",
 		"A boolean indicating whether or not the connection is in read-only mode. The default is false.",
 		sysvar.GetValue(&sv.ReadOnly),
@@ -132,7 +133,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, parser.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
-	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
 		sppb.TransactionOptions_IsolationLevel_value,
@@ -150,7 +151,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	// MAX_COMMIT_DELAY
 	minDelay := time.Duration(0)
 	maxDelay := 500 * time.Millisecond
-	mustRegister(sysvar.NewNullableDurationParser(
+	mustRegister(registry, sysvar.NewNullableDurationParser(
 		"MAX_COMMIT_DELAY",
 		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
 		sysvar.GetValue(&sv.MaxCommitDelay),
@@ -164,7 +165,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
 		"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
 	}
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumParser(
 		"AUTOCOMMIT_DML_MODE",
 		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
 		autocommitDMLModeValues,
@@ -188,7 +189,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	// RPC configuration
-	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
 		sppb.RequestOptions_Priority_value,
@@ -198,7 +199,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Statement timeout
-	mustRegister(sysvar.NewNullableDurationParser(
+	mustRegister(registry, sysvar.NewNullableDurationParser(
 		"STATEMENT_TIMEOUT",
 		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
 		sysvar.GetValue(&sv.StatementTimeout),
@@ -207,7 +208,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Read-only timestamps (java-spanner compatible)
-	mustRegister(sysvar.NewReadOnlyStringParser(
+	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"READ_TIMESTAMP",
 		"The read timestamp of the most recent read-only transaction.",
 		func() string {
@@ -218,7 +219,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		},
 	))
 
-	mustRegister(sysvar.NewReadOnlyStringParser(
+	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"COMMIT_TIMESTAMP",
 		"The commit timestamp of the last read-write transaction that Spanner committed.",
 		func() string {
@@ -233,7 +234,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 // registerSpannerMyCLIVariables registers variables specific to spanner-mycli.
 // These variables use the CLI_ prefix and provide additional functionality
 // beyond what the java-spanner client offers.
-func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables) {
 	// Output formatting variables
 	// CLI_FORMAT
 	formatValues := map[string]DisplayMode{
@@ -246,7 +247,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"XML":                  DisplayModeXML,
 		"CSV":                  DisplayModeCSV,
 	}
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumParser(
 		"CLI_FORMAT",
 		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
 		formatValues,
@@ -272,7 +273,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_MARKDOWN_CODEBLOCK", "Enable markdown codeblock output.", &sv.MarkdownCodeblock},
 	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
-	mustRegister(sysvar.NewNullableIntParser(
+	mustRegister(registry, sysvar.NewNullableIntParser(
 		"CLI_FIXED_WIDTH",
 		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
 		func() *int64 { return sv.FixedWidth },
@@ -290,7 +291,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, parser.DualModeIntParser, sysvar.FormatInt)
 
 	// CLI_EXPLAIN_FORMAT
-	mustRegister(sysvar.NewSimpleEnumParser(
+	mustRegister(registry, sysvar.NewSimpleEnumParser(
 		"CLI_EXPLAIN_FORMAT",
 		"Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.",
 		map[string]explainFormat{
@@ -303,7 +304,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		sysvar.SetValue(&sv.ExplainFormat),
 	))
 
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(registry, sysvar.NewStringParser(
 		"CLI_ANALYZE_COLUMNS",
 		"Go template for analyzing column data.",
 		sysvar.GetValue(&sv.AnalyzeColumns),
@@ -326,14 +327,14 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_PROMPT", "Custom prompt for spanner-mycli.", &sv.Prompt},
 	}, parser.DualModeStringParser, sysvar.FormatString)
 
-	mustRegister(sysvar.NewStringParser(
+	mustRegister(registry, sysvar.NewStringParser(
 		"CLI_PROMPT2",
 		"Custom continuation prompt for spanner-mycli.",
 		sysvar.GetValue(&sv.Prompt2),
 		sysvar.SetValue(&sv.Prompt2),
 	))
 
-	mustRegister(sysvar.NewReadOnlyStringParser(
+	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"CLI_HISTORY_FILE",
 		"Path to the history file.",
 		sysvar.GetValue(&sv.HistoryFile),
@@ -348,7 +349,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_LOG_LEVEL
-	mustRegister(sysvar.CreateStringEnumVariableParser(
+	mustRegister(registry, sysvar.CreateStringEnumVariableParser(
 		"CLI_LOG_LEVEL",
 		"Log level for the CLI.",
 		map[string]string{
@@ -397,7 +398,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_IMPERSONATE_SERVICE_ACCOUNT", "Service account to impersonate.", sysvar.GetValue(&sv.ImpersonateServiceAccount)},
 	}, parser.DualModeStringParser, sysvar.FormatString)
 
-	mustRegister(sysvar.NewIntegerParser(
+	mustRegister(registry, sysvar.NewIntegerParser(
 		"CLI_PORT",
 		"Port number for connections.",
 		func() int64 { return int64(sv.Port) },
@@ -406,7 +407,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Session-init-only variable
-	mustRegister(sysvar.NewBooleanParser(
+	mustRegister(registry, sysvar.NewBooleanParser(
 		"CLI_ENABLE_ADC_PLUS",
 		"A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
 		sysvar.GetValue(&sv.EnableADCPlus),
@@ -414,14 +415,14 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// CLI_MCP
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
+	mustRegister(registry, sysvar.NewReadOnlyBooleanParser(
 		"CLI_MCP",
 		"A read-only boolean indicating whether the connection is running as an MCP server.",
 		sysvar.GetValue(&sv.MCP),
 	))
 
 	// CLI_VERSION
-	mustRegister(sysvar.NewReadOnlyStringParser(
+	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"CLI_VERSION",
 		"The version of spanner-mycli.",
 		func() string { return getVersion() },
@@ -435,7 +436,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	// Proto descriptor files
-	mustRegister(sysvar.NewProtoDescriptorFileParser(
+	mustRegister(registry, sysvar.NewProtoDescriptorFileParser(
 		"CLI_PROTO_DESCRIPTOR_FILE",
 		"Comma-separated list of proto descriptor files. Supports ADD to append files.",
 		func() []string { return sv.ProtoDescriptorFile },
@@ -491,7 +492,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"POSTGRESQL":          databasepb.DatabaseDialect_POSTGRESQL,
 		"":                    databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
 	}
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumParser(
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
 		dialectValues,
@@ -521,7 +522,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"PROFILE":    sppb.ExecuteSqlRequest_PROFILE,
 		"WITH_STATS": sppb.ExecuteSqlRequest_PROFILE, // Alias
 	}
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
 		queryModeValues,
@@ -550,7 +551,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// CLI_PARSE_MODE
-	mustRegister(sysvar.NewSimpleEnumParser(
+	mustRegister(registry, sysvar.NewSimpleEnumParser(
 		"CLI_PARSE_MODE",
 		"Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED",
 		map[string]parseMode{
