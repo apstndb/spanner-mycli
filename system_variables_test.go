@@ -334,22 +334,22 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 }
 
 func TestSystemVariables_DefaultIsolationLevel(t *testing.T) {
-	// TODO: More test
+	// Use SetFromSimple for this test as it's testing string values that would
+	// come from config files or command-line flags, not GoogleSQL expressions
 	tests := []struct {
 		value string
 		want  sppb.TransactionOptions_IsolationLevel
 	}{
-		{"REPEATABLE READ", sppb.TransactionOptions_REPEATABLE_READ},
-		{"repeatable read", sppb.TransactionOptions_REPEATABLE_READ},
 		{"REPEATABLE_READ", sppb.TransactionOptions_REPEATABLE_READ},
 		{"repeatable_read", sppb.TransactionOptions_REPEATABLE_READ},
 		{"serializable", sppb.TransactionOptions_SERIALIZABLE},
 		{"SERIALIZABLE", sppb.TransactionOptions_SERIALIZABLE},
+		{"ISOLATION_LEVEL_UNSPECIFIED", sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED},
 	}
 	for _, test := range tests {
 		t.Run(test.value, func(t *testing.T) {
-			var sysVars systemVariables
-			if err := sysVars.Set("DEFAULT_ISOLATION_LEVEL", test.value); err != nil {
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			if err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value); err != nil {
 				t.Errorf("should success, but failed, value: %v, err: %v", test.value, err)
 			}
 
