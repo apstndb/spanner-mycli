@@ -146,36 +146,7 @@ func NewEnumParser[T comparable](
 	return createTypedParser(name, description, parser.CreateDualModeEnumParser(values), getter, setter, formatter)
 }
 
-// NewEnumParserWithStringer creates an enum parser using the type's String() method.
-// This is useful for types that implement fmt.Stringer.
-func NewEnumParserWithStringer[T interface {
-	comparable
-	fmt.Stringer
-}](
-	name string,
-	description string,
-	values map[string]T,
-	getter func() T,
-	setter func(T) error,
-) VariableParser {
-	return NewEnumParser(name, description, values, getter, setter, func(v T) string {
-		return v.String()
-	})
-}
 
-// NewStringEnumParser creates an enum parser for string-based enum types.
-// The formatter simply returns the string value as-is.
-func NewStringEnumParser[T ~string](
-	name string,
-	description string,
-	values map[string]T,
-	getter func() T,
-	setter func(T) error,
-) VariableParser {
-	return NewEnumParser(name, description, values, getter, setter, func(v T) string {
-		return string(v)
-	})
-}
 
 // NewDurationParser creates a duration variable parser.
 func NewDurationParser(

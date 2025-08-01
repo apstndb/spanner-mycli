@@ -21,28 +21,6 @@ type AppendableTypedVariableParser[T any] struct {
 	appender func(T) error // Function to append a parsed value
 }
 
-// NewAppendableStringSliceParser creates a parser for string slice variables that support append.
-func NewAppendableStringSliceParser(
-	name string,
-	description string,
-	getter func() []string,
-	setter func([]string) error,
-	appender func(string) error,
-) AppendableVariableParser {
-	// Create appendable wrapper
-	return &AppendableTypedVariableParser[string]{
-		TypedVariableParser: &TypedVariableParser[string]{
-			name:        name,
-			description: description,
-			parser:      parser.DualModeStringParser,
-			setter:      nil, // Individual setter not used for append
-			getter:      func() string { return strings.Join(getter(), ",") },
-			formatter:   func(v string) string { return v },
-			readOnly:    false,
-		},
-		appender: appender,
-	}
-}
 
 // AppendWithMode implements AppendableVariableParser.
 func (avp *AppendableTypedVariableParser[T]) AppendWithMode(value string, mode parser.ParseMode) error {

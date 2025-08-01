@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/internal/parser"
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
@@ -214,51 +213,6 @@ func TestCreateStringEnumVariableParser(t *testing.T) {
 	}
 }
 
-func TestCreateProtobufEnumVariableParser(t *testing.T) {
-	var currentPriority sppb.RequestOptions_Priority
-	varParser := sysvar.CreateProtobufEnumVariableParser(
-		"RPC_PRIORITY",
-		"RPC priority",
-		sppb.RequestOptions_Priority_value,
-		"PRIORITY_",
-		func() sppb.RequestOptions_Priority { return currentPriority },
-		func(v sppb.RequestOptions_Priority) error { currentPriority = v; return nil },
-		func(v sppb.RequestOptions_Priority) string {
-			// Strip prefix for display
-			fullName := v.String()
-			if len(fullName) > 9 && fullName[:9] == "PRIORITY_" {
-				return fullName[9:]
-			}
-			return fullName
-		},
-	)
-
-	// Test with short name
-	if err := varParser.ParseAndSetWithMode("HIGH", parser.ParseModeSimple); err != nil {
-		t.Fatalf("ParseAndSetWithMode(HIGH) failed: %v", err)
-	}
-	if currentPriority != sppb.RequestOptions_PRIORITY_HIGH {
-		t.Errorf("Expected PRIORITY_HIGH, got %v", currentPriority)
-	}
-
-	// Test with full name
-	if err := varParser.ParseAndSetWithMode("PRIORITY_LOW", parser.ParseModeSimple); err != nil {
-		t.Fatalf("ParseAndSetWithMode(PRIORITY_LOW) failed: %v", err)
-	}
-	if currentPriority != sppb.RequestOptions_PRIORITY_LOW {
-		t.Errorf("Expected PRIORITY_LOW, got %v", currentPriority)
-	}
-
-	// Test formatting
-	got, err := varParser.GetValue()
-	if err != nil {
-		t.Fatalf("GetValue failed: %v", err)
-	}
-	if got != "LOW" {
-		t.Errorf("Expected 'LOW', got %q", got)
-	}
-}
-
 func TestFormatters(t *testing.T) {
 	t.Run("FormatBool", func(t *testing.T) {
 		if got := sysvar.FormatBool(true); got != "TRUE" {
@@ -316,60 +270,5 @@ func TestFormatters(t *testing.T) {
 		}
 	})
 
-	t.Run("FormatStringer", func(t *testing.T) {
-		priority := sppb.RequestOptions_PRIORITY_HIGH
-		if got := sysvar.FormatStringer(priority); got != "PRIORITY_HIGH" {
-			t.Errorf("FormatStringer(PRIORITY_HIGH) = %q, want 'PRIORITY_HIGH'", got)
-		}
-	})
 }
 
-func TestVariableBuilder(t *testing.T) {
-	var testValue string
-
-	builder := sysvar.NewVariable[string]("TEST_VAR", "Test variable").
-		WithParser(parser.DualModeStringParser).
-		WithGetter(func() string { return testValue }).
-		WithSetter(func(v string) error { testValue = v; return nil }).
-		WithFormatter(func(v string) string { return v })
-
-	variable := builder.Build()
-
-	// Test basic properties
-	if variable.Name() != "TEST_VAR" {
-		t.Errorf("Name() = %q, want 'TEST_VAR'", variable.Name())
-	}
-	if variable.Description() != "Test variable" {
-		t.Errorf("Description() = %q, want 'Test variable'", variable.Description())
-	}
-	if variable.IsReadOnly() {
-		t.Error("Variable should not be read-only")
-	}
-
-	// Test set and get
-	if err := variable.ParseAndSetWithMode("test value", parser.ParseModeSimple); err != nil {
-		t.Fatalf("ParseAndSetWithMode failed: %v", err)
-	}
-	got, err := variable.GetValue()
-	if err != nil {
-		t.Fatalf("GetValue failed: %v", err)
-	}
-	if got != "test value" {
-		t.Errorf("GetValue() = %q, want 'test value'", got)
-	}
-
-	// Test read-only builder
-	roBuilder := sysvar.NewVariable[string]("RO_VAR", "Read-only variable").
-		WithParser(parser.DualModeStringParser).
-		WithGetter(func() string { return "constant" }).
-		WithFormatter(func(v string) string { return v }).
-		ReadOnly()
-
-	roVariable := roBuilder.Build()
-	if !roVariable.IsReadOnly() {
-		t.Error("Variable should be read-only")
-	}
-	if err := roVariable.ParseAndSetWithMode("new value", parser.ParseModeSimple); err == nil {
-		t.Error("Expected error when setting read-only variable")
-	}
-}

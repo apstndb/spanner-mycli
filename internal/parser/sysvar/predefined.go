@@ -3,7 +3,7 @@
 //
 // Most parsers are created inline using builder functions from builder.go.
 // For examples of creating parsers, see:
-// - CreateProtobufEnumVariableParser for protobuf enums with prefix stripping
+// - CreateProtobufEnumVariableParserWithAutoFormatter for protobuf enums with prefix stripping
 // - CreateStringEnumVariableParser for string-based enums
 // - CreateIntRangeParser for integers with range validation
 // - CreateDurationRangeParser for durations with range validation

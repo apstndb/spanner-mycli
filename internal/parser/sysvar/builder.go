@@ -9,78 +9,6 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
-// VariableBuilder provides a fluent interface for building system variable parsers.
-// This reduces boilerplate and makes variable registration more consistent.
-type VariableBuilder[T any] struct {
-	name        string
-	description string
-	parser      parser.DualModeParser[T]
-	getter      func() T
-	setter      func(T) error
-	formatter   func(T) string
-}
-
-// NewVariable creates a new variable builder.
-func NewVariable[T any](name, description string) *VariableBuilder[T] {
-	return &VariableBuilder[T]{
-		name:        name,
-		description: description,
-	}
-}
-
-// WithParser sets the dual-mode parser.
-func (b *VariableBuilder[T]) WithParser(p parser.DualModeParser[T]) *VariableBuilder[T] {
-	b.parser = p
-	return b
-}
-
-// WithGetter sets the getter function.
-func (b *VariableBuilder[T]) WithGetter(getter func() T) *VariableBuilder[T] {
-	b.getter = getter
-	return b
-}
-
-// WithSetter sets the setter function.
-func (b *VariableBuilder[T]) WithSetter(setter func(T) error) *VariableBuilder[T] {
-	b.setter = setter
-	return b
-}
-
-// WithFormatter sets the formatter function.
-func (b *VariableBuilder[T]) WithFormatter(formatter func(T) string) *VariableBuilder[T] {
-	b.formatter = formatter
-	return b
-}
-
-// ReadOnly marks the variable as read-only (no setter).
-func (b *VariableBuilder[T]) ReadOnly() *VariableBuilder[T] {
-	b.setter = nil
-	return b
-}
-
-// Build creates the final VariableParser.
-func (b *VariableBuilder[T]) Build() VariableParser {
-	if b.parser == nil {
-		panic(fmt.Sprintf("parser not set for variable %s", b.name))
-	}
-	if b.getter == nil {
-		panic(fmt.Sprintf("getter not set for variable %s", b.name))
-	}
-	if b.formatter == nil {
-		panic(fmt.Sprintf("formatter not set for variable %s", b.name))
-	}
-
-	return &TypedVariableParser[T]{
-		name:        b.name,
-		description: b.description,
-		parser:      b.parser,
-		getter:      b.getter,
-		setter:      b.setter,
-		formatter:   b.formatter,
-		readOnly:    b.setter == nil,
-	}
-}
-
 // Common formatter functions
 
 // FormatBool formats a boolean value as uppercase TRUE/FALSE.
@@ -101,11 +29,6 @@ func FormatDuration(v time.Duration) string {
 // FormatString formats a string value (identity function).
 func FormatString(v string) string {
 	return v
-}
-
-// FormatStringer formats any type that implements fmt.Stringer.
-func FormatStringer[T fmt.Stringer](v T) string {
-	return v.String()
 }
 
 // FormatNullable creates a formatter for nullable types.
@@ -214,35 +137,6 @@ func CreateStringEnumVariableParser[T ~string](
 	)
 }
 
-// CreateProtobufEnumVariableParser creates a variable parser for protobuf enums with optional prefix stripping.
-func CreateProtobufEnumVariableParser[T ~int32](
-	name, description string,
-	enumMap map[string]int32,
-	prefix string,
-	getter func() T,
-	setter func(T) error,
-	formatter func(T) string,
-) VariableParser {
-	// Build values map with both full and short names
-	values := make(map[string]T)
-	for enumName, enumValue := range enumMap {
-		values[enumName] = T(enumValue)
-		if prefix != "" && strings.HasPrefix(enumName, prefix) {
-			shortName := strings.TrimPrefix(enumName, prefix)
-			values[shortName] = T(enumValue)
-		}
-	}
-
-	return CreateEnumVariableParser(
-		name,
-		description,
-		values,
-		getter,
-		setter,
-		formatter,
-	)
-}
-
 // CreateProtobufEnumVariableParserWithAutoFormatter creates a variable parser for protobuf enums
 // that automatically strips the prefix in the formatter.
 func CreateProtobufEnumVariableParserWithAutoFormatter[T interface {
@@ -255,6 +149,16 @@ func CreateProtobufEnumVariableParserWithAutoFormatter[T interface {
 	getter func() T,
 	setter func(T) error,
 ) VariableParser {
+	// Build values map with both full and short names
+	values := make(map[string]T)
+	for enumName, enumValue := range enumMap {
+		values[enumName] = T(enumValue)
+		if prefix != "" && strings.HasPrefix(enumName, prefix) {
+			shortName := strings.TrimPrefix(enumName, prefix)
+			values[shortName] = T(enumValue)
+		}
+	}
+
 	formatter := func(v T) string {
 		fullName := v.String()
 		if prefix != "" && strings.HasPrefix(fullName, prefix) {
@@ -263,11 +167,10 @@ func CreateProtobufEnumVariableParserWithAutoFormatter[T interface {
 		return fullName
 	}
 
-	return CreateProtobufEnumVariableParser(
+	return CreateEnumVariableParser(
 		name,
 		description,
-		enumMap,
-		prefix,
+		values,
 		getter,
 		setter,
 		formatter,
