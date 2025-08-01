@@ -58,8 +58,8 @@ func TestRegistryIntegration(t *testing.T) {
 		sv := newSystemVariablesWithDefaults()
 
 		// READ_ONLY_STALENESS is not migrated yet (complex parsing)
-		// Using a simple duration value that the old parser accepts
-		if err := sv.SetFromSimple("READ_ONLY_STALENESS", "5m"); err != nil {
+		// Using a format that the old parser accepts
+		if err := sv.SetFromSimple("READ_ONLY_STALENESS", "EXACT_STALENESS 5m"); err != nil {
 			t.Fatalf("Failed to set unmigrated variable: %v", err)
 		}
 
