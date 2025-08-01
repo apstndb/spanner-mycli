@@ -9,41 +9,31 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/internal/parser"
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 // Types for variable registration helpers
-type simpleStringVar struct {
+type simpleVar[T any] struct {
 	name  string
 	desc  string
-	field *string
+	field *T
 }
 
-type simpleBoolVar struct {
-	name  string
-	desc  string
-	field *bool
-}
-
-type simpleIntVar struct {
-	name  string
-	desc  string
-	field *int64
-}
-
-type readOnlyStringVar struct {
+type readOnlyVar[T any] struct {
 	name   string
 	desc   string
-	getter func() string
+	getter func() T
 }
 
-type readOnlyBoolVar struct {
-	name   string
-	desc   string
-	getter func() bool
-}
+// Legacy type aliases for compatibility
+type simpleStringVar = simpleVar[string]
+type simpleBoolVar = simpleVar[bool]
+type simpleIntVar = simpleVar[int64]
+type readOnlyStringVar = readOnlyVar[string]
+type readOnlyBoolVar = readOnlyVar[bool]
 
 // Generic helper to register multiple variables with a parser factory
 func registerMultiple[T any](registry *sysvar.Registry, vars []T, parserFactory func(T) sysvar.VariableParser) {
@@ -55,35 +45,66 @@ func registerMultiple[T any](registry *sysvar.Registry, vars []T, parserFactory 
 	}
 }
 
-// Type-safe helper functions for common parser types
-func registerSimpleBooleans(registry *sysvar.Registry, vars []simpleBoolVar) {
-	registerMultiple(registry, vars, func(v simpleBoolVar) sysvar.VariableParser {
-		return sysvar.NewSimpleBooleanParser(v.name, v.desc, v.field)
+// Generic helper to register simple variables with field pointers
+func registerSimpleVariables[T any](
+	registry *sysvar.Registry,
+	vars []simpleVar[T],
+	dualModeParser parser.DualModeParser[T],
+	formatter func(T) string,
+) {
+	registerMultiple(registry, vars, func(v simpleVar[T]) sysvar.VariableParser {
+		return sysvar.NewTypedVariableParser(
+			v.name,
+			v.desc,
+			dualModeParser,
+			func() T { return *v.field },
+			func(val T) error {
+				*v.field = val
+				return nil
+			},
+			formatter,
+		)
 	})
+}
+
+// Type-safe helper functions for common parser types (using the generic function)
+func registerSimpleBooleans(registry *sysvar.Registry, vars []simpleBoolVar) {
+	registerSimpleVariables(registry, vars, parser.DualModeBoolParser, sysvar.FormatBool)
 }
 
 func registerSimpleStrings(registry *sysvar.Registry, vars []simpleStringVar) {
-	registerMultiple(registry, vars, func(v simpleStringVar) sysvar.VariableParser {
-		return sysvar.NewSimpleStringParser(v.name, v.desc, v.field)
-	})
+	registerSimpleVariables(registry, vars, parser.DualModeStringParser, sysvar.FormatString)
 }
 
 func registerSimpleIntegers(registry *sysvar.Registry, vars []simpleIntVar) {
-	registerMultiple(registry, vars, func(v simpleIntVar) sysvar.VariableParser {
-		return sysvar.NewSimpleIntegerParser(v.name, v.desc, v.field)
+	registerSimpleVariables(registry, vars, parser.DualModeIntParser, sysvar.FormatInt)
+}
+
+// Generic helper to register read-only variables
+func registerReadOnlyVariables[T any](
+	registry *sysvar.Registry,
+	vars []readOnlyVar[T],
+	dualModeParser parser.DualModeParser[T],
+	formatter func(T) string,
+) {
+	registerMultiple(registry, vars, func(v readOnlyVar[T]) sysvar.VariableParser {
+		return sysvar.NewTypedVariableParser(
+			v.name,
+			v.desc,
+			dualModeParser,
+			v.getter,
+			nil, // Read-only, no setter
+			formatter,
+		)
 	})
 }
 
 func registerReadOnlyStrings(registry *sysvar.Registry, vars []readOnlyStringVar) {
-	registerMultiple(registry, vars, func(v readOnlyStringVar) sysvar.VariableParser {
-		return sysvar.NewReadOnlyStringParser(v.name, v.desc, v.getter)
-	})
+	registerReadOnlyVariables(registry, vars, parser.DualModeStringParser, sysvar.FormatString)
 }
 
 func registerReadOnlyBooleans(registry *sysvar.Registry, vars []readOnlyBoolVar) {
-	registerMultiple(registry, vars, func(v readOnlyBoolVar) sysvar.VariableParser {
-		return sysvar.NewReadOnlyBooleanParser(v.name, v.desc, v.getter)
-	})
+	registerReadOnlyVariables(registry, vars, parser.DualModeBoolParser, sysvar.FormatBool)
 }
 
 // createSystemVariableRegistry creates and configures the parser registry for system variables.
