@@ -210,27 +210,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 // These variables use the CLI_ prefix and provide additional functionality
 // beyond what the java-spanner client offers.
 func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
-	// Output formatting
-	registerCLIOutputVariables(registry, sv, mustRegister)
-
-	// User interface and interaction
-	registerCLIUserInterfaceVariables(registry, sv, mustRegister)
-
-	// Debug and logging
-	registerCLIDebugVariables(registry, sv, mustRegister)
-
-	// Session and connection information (read-only)
-	registerCLISessionVariables(registry, sv, mustRegister)
-
-	// External integrations
-	registerCLIIntegrationVariables(registry, sv, mustRegister)
-
-	// Query execution features
-	registerCLIQueryVariables(registry, sv, mustRegister)
-}
-
-// registerCLIOutputVariables registers CLI variables related to output formatting
-func registerCLIOutputVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Output formatting variables
 	// CLI_FORMAT
 	formatValues := map[string]DisplayMode{
 		"TABLE":                DisplayModeTable,
@@ -336,10 +316,8 @@ func registerCLIOutputVariables(registry *sysvar.Registry, sv *systemVariables, 
 			return nil
 		},
 	))
-}
 
-// registerCLIUserInterfaceVariables registers CLI variables related to user interface
-func registerCLIUserInterfaceVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// User interface and interaction variables
 	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_PROMPT",
 		"Custom prompt for spanner-mycli.",
@@ -376,10 +354,8 @@ func registerCLIUserInterfaceVariables(registry *sysvar.Registry, sv *systemVari
 		"Path to the history file.",
 		sysvar.GetValue(&sv.HistoryFile),
 	))
-}
 
-// registerCLIDebugVariables registers CLI variables related to debugging and logging
-func registerCLIDebugVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Debug and logging variables
 	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_VERBOSE",
 		"Display verbose output.",
@@ -439,50 +415,37 @@ func registerCLIDebugVariables(registry *sysvar.Registry, sv *systemVariables, m
 	))
 
 	// Read-only debug variables
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
-		"CLI_LOG_GRPC",
-		"Enable gRPC logging.",
-		sysvar.GetValue(&sv.LogGrpc),
-	))
+	readOnlyBoolVars := []struct {
+		name   string
+		desc   string
+		getter func() bool
+	}{
+		{"CLI_LOG_GRPC", "Enable gRPC logging.", sysvar.GetValue(&sv.LogGrpc)},
+		{"CLI_INSECURE", "Skip TLS certificate verification (insecure).", sysvar.GetValue(&sv.Insecure)},
+	}
 
-	mustRegister(sysvar.NewReadOnlyBooleanParser(
-		"CLI_INSECURE",
-		"Skip TLS certificate verification (insecure).",
-		sysvar.GetValue(&sv.Insecure),
-	))
-}
+	for _, v := range readOnlyBoolVars {
+		mustRegister(sysvar.NewReadOnlyBooleanParser(v.name, v.desc, v.getter))
+	}
 
-// registerCLISessionVariables registers read-only CLI variables related to session information
-func registerCLISessionVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_PROJECT",
-		"GCP Project ID.",
-		sysvar.GetValue(&sv.Project),
-	))
+	// Session and connection information (read-only)
+	// Define read-only string variables as a slice for cleaner registration
+	readOnlyStringVars := []struct {
+		name   string
+		desc   string
+		getter func() string
+	}{
+		{"CLI_PROJECT", "GCP Project ID.", sysvar.GetValue(&sv.Project)},
+		{"CLI_INSTANCE", "Cloud Spanner instance ID.", sysvar.GetValue(&sv.Instance)},
+		{"CLI_DATABASE", "Cloud Spanner database ID.", sysvar.GetValue(&sv.Database)},
+		{"CLI_ROLE", "Cloud Spanner database role.", sysvar.GetValue(&sv.Role)},
+		{"CLI_HOST", "Host on which Spanner server is located", sysvar.GetValue(&sv.Host)},
+		{"CLI_IMPERSONATE_SERVICE_ACCOUNT", "Service account to impersonate.", sysvar.GetValue(&sv.ImpersonateServiceAccount)},
+	}
 
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_INSTANCE",
-		"Cloud Spanner instance ID.",
-		sysvar.GetValue(&sv.Instance),
-	))
-
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_DATABASE",
-		"Cloud Spanner database ID.",
-		sysvar.GetValue(&sv.Database),
-	))
-
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_ROLE",
-		"Cloud Spanner database role.",
-		sysvar.GetValue(&sv.Role),
-	))
-
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_HOST",
-		"Host on which Spanner server is located",
-		sysvar.GetValue(&sv.Host),
-	))
+	for _, v := range readOnlyStringVars {
+		mustRegister(sysvar.NewReadOnlyStringParser(v.name, v.desc, v.getter))
+	}
 
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_PORT",
@@ -490,12 +453,6 @@ func registerCLISessionVariables(registry *sysvar.Registry, sv *systemVariables,
 		func() int64 { return int64(sv.Port) },
 		nil,      // No setter - read-only
 		nil, nil, // No min/max validation needed for read-only
-	))
-
-	mustRegister(sysvar.NewReadOnlyStringParser(
-		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
-		"Service account to impersonate.",
-		sysvar.GetValue(&sv.ImpersonateServiceAccount),
 	))
 
 	// Session-init-only variable
@@ -519,10 +476,8 @@ func registerCLISessionVariables(registry *sysvar.Registry, sv *systemVariables,
 		"The version of spanner-mycli.",
 		func() string { return getVersion() },
 	))
-}
 
-// registerCLIIntegrationVariables registers CLI variables for external integrations
-func registerCLIIntegrationVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// External integrations
 	// Vertex AI integration
 	mustRegister(sysvar.NewSimpleStringParser(
 		"CLI_VERTEXAI_MODEL",
@@ -579,10 +534,8 @@ func registerCLIIntegrationVariables(registry *sysvar.Registry, sv *systemVariab
 		},
 		nil, // No additional validation needed - readFileDescriptorProtoFromFile does validation
 	))
-}
 
-// registerCLIQueryVariables registers CLI variables related to query execution
-func registerCLIQueryVariables(registry *sysvar.Registry, sv *systemVariables, mustRegister func(sysvar.VariableParser)) {
+	// Query execution features
 	mustRegister(sysvar.NewSimpleBooleanParser(
 		"CLI_TRY_PARTITION_QUERY",
 		"A boolean indicating whether to test query for partition compatibility instead of executing it.",

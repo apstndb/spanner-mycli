@@ -45,75 +45,51 @@ func TestRangeParserOptions(t *testing.T) {
 	})
 }
 
+// testParserCases is a helper to test valid and invalid cases for a parser
+func testParserCases(t *testing.T, p parser.DualModeParser[int64], validCases, invalidCases []string) {
+	t.Helper()
+	for _, tc := range validCases {
+		if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
+			t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
+		}
+	}
+	for _, tc := range invalidCases {
+		if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err == nil {
+			t.Errorf("Expected error for value %s", tc)
+		}
+	}
+}
+
 func TestCreateIntRangeParser(t *testing.T) {
 	t.Run("no range", func(t *testing.T) {
 		p := sysvar.CreateIntRangeParser(nil)
-
-		// Should accept any valid int64
-		testCases := []string{"-1000", "0", "1000", "9223372036854775807"}
-		for _, tc := range testCases {
-			if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
-				t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
-			}
-		}
+		testParserCases(t, p, 
+			[]string{"-1000", "0", "1000", "9223372036854775807"},
+			nil)
 	})
 
 	t.Run("with min", func(t *testing.T) {
 		min := int64(10)
 		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Min: &min})
-
-		// Valid values
-		if _, err := p.ParseAndValidateWithMode("10", parser.ParseModeSimple); err != nil {
-			t.Errorf("ParseAndValidate(10) failed: %v", err)
-		}
-		if _, err := p.ParseAndValidateWithMode("100", parser.ParseModeSimple); err != nil {
-			t.Errorf("ParseAndValidate(100) failed: %v", err)
-		}
-
-		// Invalid value
-		if _, err := p.ParseAndValidateWithMode("5", parser.ParseModeSimple); err == nil {
-			t.Error("Expected error for value below minimum")
-		}
+		testParserCases(t, p, 
+			[]string{"10", "100"},
+			[]string{"5"})
 	})
 
 	t.Run("with max", func(t *testing.T) {
 		max := int64(100)
 		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Max: &max})
-
-		// Valid values
-		if _, err := p.ParseAndValidateWithMode("0", parser.ParseModeSimple); err != nil {
-			t.Errorf("ParseAndValidate(0) failed: %v", err)
-		}
-		if _, err := p.ParseAndValidateWithMode("100", parser.ParseModeSimple); err != nil {
-			t.Errorf("ParseAndValidate(100) failed: %v", err)
-		}
-
-		// Invalid value
-		if _, err := p.ParseAndValidateWithMode("200", parser.ParseModeSimple); err == nil {
-			t.Error("Expected error for value above maximum")
-		}
+		testParserCases(t, p,
+			[]string{"0", "100"},
+			[]string{"200"})
 	})
 
 	t.Run("with range", func(t *testing.T) {
-		min := int64(10)
-		max := int64(100)
+		min, max := int64(10), int64(100)
 		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Min: &min, Max: &max})
-
-		// Valid values
-		testCases := []string{"10", "50", "100"}
-		for _, tc := range testCases {
-			if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
-				t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
-			}
-		}
-
-		// Invalid values
-		invalidCases := []string{"5", "200", "-10"}
-		for _, tc := range invalidCases {
-			if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err == nil {
-				t.Errorf("Expected error for value %s", tc)
-			}
-		}
+		testParserCases(t, p,
+			[]string{"10", "50", "100"},
+			[]string{"5", "200", "-10"})
 	})
 }
 
