@@ -472,24 +472,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
 		},
 	},
-	"DEFAULT_ISOLATION_LEVEL": {
-		Description: "The transaction isolation level that is used by default for read/write transactions.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				v := strings.Join(strings.Fields(strings.ToUpper(unquoteString(value))), "_")
-				isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
-				if ok {
-					this.DefaultIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
-				} else {
-					return fmt.Errorf("invalid isolation level: %v", v)
-				}
-				return nil
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, this.DefaultIsolationLevel.String()), nil
-			},
-		},
-	},
 	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
 	"CLI_OUTPUT_TEMPLATE_FILE": {
 		Description: "Go text/template for formatting the output of the CLI.",
@@ -674,12 +656,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				this.Port = port
 				return nil
 			},
-		},
-	},
-	"CLI_HOST": {
-		Description: "Host on which Spanner server is located",
-		Accessor: accessor{
-			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Host }),
 		},
 	},
 	"CLI_PORT": {
@@ -868,18 +844,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"CLI_AUTO_CONNECT_AFTER_CREATE": {
-		Description: "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.AutoConnectAfterCreate
-		}),
-	},
-	"CLI_ENABLE_PROGRESS_BAR": {
-		Description: "A boolean indicating whether to display progress bars during operations. The default is false.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.EnableProgressBar
-		}),
-	},
 	// Session behavior variables - Getter only to avoid runtime session state changes
 	"CLI_IMPERSONATE_SERVICE_ACCOUNT": {
 		Description: "Service account email for impersonation.",
@@ -908,12 +872,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return &variables.SkipSystemCommand
 			}),
 		},
-	},
-	"CLI_SKIP_COLUMN_NAMES": {
-		Description: "A boolean indicating whether to suppress column headers in output. The default is false.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.SkipColumnNames
-		}),
 	},
 }
 
