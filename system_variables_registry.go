@@ -28,22 +28,6 @@ type readOnlyVar[T any] struct {
 	getter func() T
 }
 
-// Legacy type aliases for compatibility
-type simpleStringVar = simpleVar[string]
-type simpleBoolVar = simpleVar[bool]
-type simpleIntVar = simpleVar[int64]
-type readOnlyStringVar = readOnlyVar[string]
-type readOnlyBoolVar = readOnlyVar[bool]
-
-// Generic helper to register multiple variables with a parser factory
-func registerMultiple[T any](registry *sysvar.Registry, vars []T, parserFactory func(T) sysvar.VariableParser) {
-	for _, v := range vars {
-		parser := parserFactory(v)
-		if err := registry.Register(parser); err != nil {
-			panic(fmt.Sprintf("Failed to register %s: %v", parser.Name(), err))
-		}
-	}
-}
 
 // Generic helper to register simple variables with field pointers
 func registerSimpleVariables[T any](
@@ -52,8 +36,8 @@ func registerSimpleVariables[T any](
 	dualModeParser parser.DualModeParser[T],
 	formatter func(T) string,
 ) {
-	registerMultiple(registry, vars, func(v simpleVar[T]) sysvar.VariableParser {
-		return sysvar.NewTypedVariableParser(
+	for _, v := range vars {
+		parser := sysvar.NewTypedVariableParser(
 			v.name,
 			v.desc,
 			dualModeParser,
@@ -64,21 +48,12 @@ func registerSimpleVariables[T any](
 			},
 			formatter,
 		)
-	})
+		if err := registry.Register(parser); err != nil {
+			panic(fmt.Sprintf("Failed to register %s: %v", v.name, err))
+		}
+	}
 }
 
-// Type-safe helper functions for common parser types (using the generic function)
-func registerSimpleBooleans(registry *sysvar.Registry, vars []simpleBoolVar) {
-	registerSimpleVariables(registry, vars, parser.DualModeBoolParser, sysvar.FormatBool)
-}
-
-func registerSimpleStrings(registry *sysvar.Registry, vars []simpleStringVar) {
-	registerSimpleVariables(registry, vars, parser.DualModeStringParser, sysvar.FormatString)
-}
-
-func registerSimpleIntegers(registry *sysvar.Registry, vars []simpleIntVar) {
-	registerSimpleVariables(registry, vars, parser.DualModeIntParser, sysvar.FormatInt)
-}
 
 // Generic helper to register read-only variables
 func registerReadOnlyVariables[T any](
@@ -87,8 +62,8 @@ func registerReadOnlyVariables[T any](
 	dualModeParser parser.DualModeParser[T],
 	formatter func(T) string,
 ) {
-	registerMultiple(registry, vars, func(v readOnlyVar[T]) sysvar.VariableParser {
-		return sysvar.NewTypedVariableParser(
+	for _, v := range vars {
+		parser := sysvar.NewTypedVariableParser(
 			v.name,
 			v.desc,
 			dualModeParser,
@@ -96,16 +71,12 @@ func registerReadOnlyVariables[T any](
 			nil, // Read-only, no setter
 			formatter,
 		)
-	})
+		if err := registry.Register(parser); err != nil {
+			panic(fmt.Sprintf("Failed to register %s: %v", v.name, err))
+		}
+	}
 }
 
-func registerReadOnlyStrings(registry *sysvar.Registry, vars []readOnlyStringVar) {
-	registerReadOnlyVariables(registry, vars, parser.DualModeStringParser, sysvar.FormatString)
-}
-
-func registerReadOnlyBooleans(registry *sysvar.Registry, vars []readOnlyBoolVar) {
-	registerReadOnlyVariables(registry, vars, parser.DualModeBoolParser, sysvar.FormatBool)
-}
 
 // createSystemVariableRegistry creates and configures the parser registry for system variables.
 // This function sets up all the system variable parsers with their getters and setters.
@@ -147,18 +118,18 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Java-Spanner boolean variables
-	registerSimpleBooleans(registry, []simpleBoolVar{
+	registerSimpleVariables(registry, []simpleVar[bool]{
 		{"AUTO_PARTITION_MODE", "A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.", &sv.AutoPartitionMode},
 		{"RETURN_COMMIT_STATS", "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.", &sv.ReturnCommitStats},
 		{"AUTO_BATCH_DML", "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.", &sv.AutoBatchDML},
 		{"DATA_BOOST_ENABLED", "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.", &sv.DataBoostEnabled},
 		{"EXCLUDE_TXN_FROM_CHANGE_STREAMS", "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).", &sv.ExcludeTxnFromChangeStreams},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// Integer configuration
-	registerSimpleIntegers(registry, []simpleIntVar{
+	registerSimpleVariables(registry, []simpleVar[int64]{
 		{"MAX_PARTITIONED_PARALLELISM", "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`", &sv.MaxPartitionedParallelism},
-	})
+	}, parser.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
 	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
@@ -171,10 +142,10 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Transaction tagging
-	registerSimpleStrings(registry, []simpleStringVar{
+	registerSimpleVariables(registry, []simpleVar[string]{
 		{"TRANSACTION_TAG", "A property of type STRING that contains the transaction tag for the next transaction.", &sv.TransactionTag},
 		{"STATEMENT_TAG", "A property of type STRING that contains the request tag for the next statement.", &sv.RequestTag},
-	})
+	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	// MAX_COMMIT_DELAY
 	minDelay := time.Duration(0)
@@ -211,10 +182,10 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Optimizer configuration
-	registerSimpleStrings(registry, []simpleStringVar{
+	registerSimpleVariables(registry, []simpleVar[string]{
 		{"OPTIMIZER_VERSION", "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.", &sv.OptimizerVersion},
 		{"OPTIMIZER_STATISTICS_PACKAGE", "A property of type STRING indicating the current optimizer statistics package that is used by this connection.", &sv.OptimizerStatisticsPackage},
-	})
+	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	// RPC configuration
 	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
@@ -293,13 +264,13 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Output formatting boolean variables
-	registerSimpleBooleans(registry, []simpleBoolVar{
+	registerSimpleVariables(registry, []simpleVar[bool]{
 		{"CLI_SKIP_COLUMN_NAMES", "A boolean indicating whether to suppress column headers in output. The default is false.", &sv.SkipColumnNames},
 		{"CLI_AUTOWRAP", "Enable automatic line wrapping.", &sv.AutoWrap},
 		{"CLI_ENABLE_HIGHLIGHT", "Enable syntax highlighting.", &sv.EnableHighlight},
 		{"CLI_PROTOTEXT_MULTILINE", "Enable multiline prototext output.", &sv.MultilineProtoText},
 		{"CLI_MARKDOWN_CODEBLOCK", "Enable markdown codeblock output.", &sv.MarkdownCodeblock},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	mustRegister(sysvar.NewNullableIntParser(
 		"CLI_FIXED_WIDTH",
@@ -313,10 +284,10 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Display and formatting integers
-	registerSimpleIntegers(registry, []simpleIntVar{
+	registerSimpleVariables(registry, []simpleVar[int64]{
 		{"CLI_TAB_WIDTH", "Tab width. It is used for expanding tabs.", &sv.TabWidth},
 		{"CLI_EXPLAIN_WRAP_WIDTH", "Controls query plan wrap width. It effects only operators column contents", &sv.ExplainWrapWidth},
-	})
+	}, parser.DualModeIntParser, sysvar.FormatInt)
 
 	// CLI_EXPLAIN_FORMAT
 	mustRegister(sysvar.NewSimpleEnumParser(
@@ -344,16 +315,16 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// User interface and interaction variables
-	registerSimpleBooleans(registry, []simpleBoolVar{
+	registerSimpleVariables(registry, []simpleVar[bool]{
 		{"CLI_USE_PAGER", "Enable pager for output.", &sv.UsePager},
 		{"CLI_ENABLE_PROGRESS_BAR", "A boolean indicating whether to display progress bars during operations. The default is false.", &sv.EnableProgressBar},
 		{"CLI_SKIP_SYSTEM_COMMAND", "Controls whether system commands are disabled.", &sv.SkipSystemCommand},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// Prompt configuration
-	registerSimpleStrings(registry, []simpleStringVar{
+	registerSimpleVariables(registry, []simpleVar[string]{
 		{"CLI_PROMPT", "Custom prompt for spanner-mycli.", &sv.Prompt},
-	})
+	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	mustRegister(sysvar.NewStringParser(
 		"CLI_PROMPT2",
@@ -369,12 +340,12 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Debug and logging variables
-	registerSimpleBooleans(registry, []simpleBoolVar{
+	registerSimpleVariables(registry, []simpleVar[bool]{
 		{"CLI_VERBOSE", "Display verbose output.", &sv.Verbose},
 		{"CLI_ECHO_EXECUTED_DDL", "Echo executed DDL statements.", &sv.EchoExecutedDDL},
 		{"CLI_ECHO_INPUT", "Echo input statements.", &sv.EchoInput},
 		{"CLI_LINT_PLAN", "Enable query plan linting.", &sv.LintPlan},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_LOG_LEVEL
 	mustRegister(sysvar.CreateStringEnumVariableParser(
@@ -411,20 +382,20 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Read-only debug variables
-	registerReadOnlyBooleans(registry, []readOnlyBoolVar{
+	registerReadOnlyVariables(registry, []readOnlyVar[bool]{
 		{"CLI_LOG_GRPC", "Enable gRPC logging.", sysvar.GetValue(&sv.LogGrpc)},
 		{"CLI_INSECURE", "Skip TLS certificate verification (insecure).", sysvar.GetValue(&sv.Insecure)},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// Session and connection information (read-only)
-	registerReadOnlyStrings(registry, []readOnlyStringVar{
+	registerReadOnlyVariables(registry, []readOnlyVar[string]{
 		{"CLI_PROJECT", "GCP Project ID.", sysvar.GetValue(&sv.Project)},
 		{"CLI_INSTANCE", "Cloud Spanner instance ID.", sysvar.GetValue(&sv.Instance)},
 		{"CLI_DATABASE", "Cloud Spanner database ID.", sysvar.GetValue(&sv.Database)},
 		{"CLI_ROLE", "Cloud Spanner database role.", sysvar.GetValue(&sv.Role)},
 		{"CLI_HOST", "Host on which Spanner server is located", sysvar.GetValue(&sv.Host)},
 		{"CLI_IMPERSONATE_SERVICE_ACCOUNT", "Service account to impersonate.", sysvar.GetValue(&sv.ImpersonateServiceAccount)},
-	})
+	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_PORT",
@@ -458,10 +429,10 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 
 	// External integrations
 	// Vertex AI integration
-	registerSimpleStrings(registry, []simpleStringVar{
+	registerSimpleVariables(registry, []simpleVar[string]{
 		{"CLI_VERTEXAI_MODEL", "Vertex AI model for natural language features.", &sv.VertexAIModel},
 		{"CLI_VERTEXAI_PROJECT", "Vertex AI project for natural language features.", &sv.VertexAIProject},
-	})
+	}, parser.DualModeStringParser, sysvar.FormatString)
 
 	// Proto descriptor files
 	mustRegister(sysvar.NewProtoDescriptorFileParser(
@@ -508,11 +479,11 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// Query execution features
-	registerSimpleBooleans(registry, []simpleBoolVar{
+	registerSimpleVariables(registry, []simpleVar[bool]{
 		{"CLI_TRY_PARTITION_QUERY", "A boolean indicating whether to test query for partition compatibility instead of executing it.", &sv.TryPartitionQuery},
 		{"CLI_AUTO_CONNECT_AFTER_CREATE", "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.", &sv.AutoConnectAfterCreate},
 		{"CLI_ASYNC_DDL", "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.", &sv.AsyncDDL},
-	})
+	}, parser.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_DATABASE_DIALECT
 	dialectValues := map[string]databasepb.DatabaseDialect{
