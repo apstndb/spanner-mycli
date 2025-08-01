@@ -709,47 +709,9 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"CLI_PROMPT": {
-		Description: "",
-		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
-	},
 	"CLI_PROMPT2": {
 		Description: "",
 		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
-	},
-	"CLI_PROJECT": {
-		Description: "",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, this.Project), nil
-			},
-		},
-	},
-	"CLI_INSTANCE": {
-		Description: "",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, this.Instance), nil
-			},
-		},
-	},
-	"CLI_DATABASE": {
-		Description: "Current database name. Empty string when in detached mode.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				// Return empty string for detached mode, actual database name when connected
-				if this.CurrentSession != nil && this.CurrentSession.IsDetached() {
-					return singletonMap(name, ""), nil
-				}
-				return singletonMap(name, this.Database), nil
-			},
-		},
-	},
-	"CLI_TAB_WIDTH": {
-		Description: "Tab width. It is used for expanding tabs.",
-		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
-			return &variables.TabWidth
-		}),
 	},
 	"CLI_PROTO_DESCRIPTOR_FILE": {
 		Description: "",
@@ -799,23 +761,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
 			return &variables.ExplainWrapWidth
 		}),
-	},
-	"CLI_EXPLAIN_FORMAT": {
-		Description: "Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, string(this.ExplainFormat)), nil
-			},
-			Setter: func(this *systemVariables, name, value string) error {
-				format, err := parseExplainFormat(unquoteString(value))
-				if err != nil {
-					return err
-				}
-
-				this.ExplainFormat = format
-				return nil
-			},
-		},
 	},
 	"CLI_INLINE_STATS": {
 		Description: "<name>:<template>, ...",
