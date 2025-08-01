@@ -105,23 +105,6 @@ func NewBooleanParser(
 	return createTypedParser(name, description, parser.DualModeBoolParser, getter, setter, FormatBool)
 }
 
-// NewSimpleBooleanParser creates a boolean variable parser from a pointer.
-// This is a convenience function for simple cases where the variable is just a field.
-func NewSimpleBooleanParser(
-	name string,
-	description string,
-	field *bool,
-) VariableParser {
-	return NewBooleanParser(
-		name,
-		description,
-		func() bool { return *field },
-		func(v bool) error {
-			*field = v
-			return nil
-		},
-	)
-}
 
 // NewStringParser creates a string variable parser.
 func NewStringParser(
@@ -133,42 +116,7 @@ func NewStringParser(
 	return createTypedParser(name, description, parser.DualModeStringParser, getter, setter, FormatString)
 }
 
-// NewSimpleStringParser creates a string variable parser from a pointer.
-// This is a convenience function for simple cases where the variable is just a field.
-func NewSimpleStringParser(
-	name string,
-	description string,
-	field *string,
-) VariableParser {
-	return NewStringParser(
-		name,
-		description,
-		func() string { return *field },
-		func(v string) error {
-			*field = v
-			return nil
-		},
-	)
-}
 
-// NewSimpleIntegerParser creates an integer variable parser from a pointer.
-// This is a convenience function for simple cases where the variable is just a field.
-func NewSimpleIntegerParser(
-	name string,
-	description string,
-	field *int64,
-) VariableParser {
-	return NewIntegerParser(
-		name,
-		description,
-		func() int64 { return *field },
-		func(v int64) error {
-			*field = v
-			return nil
-		},
-		nil, nil, // No constraints
-	)
-}
 
 // NewIntegerParser creates an integer variable parser with optional range validation.
 func NewIntegerParser(

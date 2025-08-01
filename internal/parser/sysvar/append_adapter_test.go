@@ -118,10 +118,14 @@ func TestRegistryAppendSupport(t *testing.T) {
 	registry := sysvar.NewRegistry()
 
 	// Register a regular variable
-	regularVar := sysvar.NewSimpleStringParser(
+	regularVar := sysvar.NewStringParser(
 		"REGULAR_VAR",
 		"Regular variable",
-		&testString,
+		func() string { return testString },
+		func(v string) error {
+			testString = v
+			return nil
+		},
 	)
 	if err := registry.Register(regularVar); err != nil {
 		t.Fatalf("Register failed: %v", err)
