@@ -75,15 +75,11 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// DEFAULT_ISOLATION_LEVEL
-	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
-		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-		"SERIALIZABLE":                sppb.TransactionOptions_SERIALIZABLE,
-		"REPEATABLE_READ":             sppb.TransactionOptions_REPEATABLE_READ,
-	}
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(sysvar.CreateProtobufEnumVariableParser(
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
-		isolationValues,
+		sppb.TransactionOptions_IsolationLevel_value,
+		"ISOLATION_LEVEL_",
 		sysvar.GetValue(&sv.DefaultIsolationLevel),
 		sysvar.SetValue(&sv.DefaultIsolationLevel),
 		func(v sppb.TransactionOptions_IsolationLevel) string {
@@ -177,19 +173,11 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// RPC configuration
-	mustRegister(sysvar.NewEnumParser(
+	mustRegister(sysvar.CreateProtobufEnumVariableParser(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
-		map[string]sppb.RequestOptions_Priority{
-			"PRIORITY_UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			"PRIORITY_LOW":         sppb.RequestOptions_PRIORITY_LOW,
-			"PRIORITY_MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
-			"PRIORITY_HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
-			"UNSPECIFIED":          sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			"LOW":                  sppb.RequestOptions_PRIORITY_LOW,
-			"MEDIUM":               sppb.RequestOptions_PRIORITY_MEDIUM,
-			"HIGH":                 sppb.RequestOptions_PRIORITY_HIGH,
-		},
+		sppb.RequestOptions_Priority_value,
+		"PRIORITY_",
 		sysvar.GetValue(&sv.RPCPriority),
 		sysvar.SetValue(&sv.RPCPriority),
 		func(v sppb.RequestOptions_Priority) string {
@@ -431,16 +419,15 @@ func registerCLIDebugVariables(registry *sysvar.Registry, sv *systemVariables, m
 	))
 
 	// CLI_LOG_LEVEL
-	logLevelValues := map[string]string{
-		"DEBUG": "DEBUG",
-		"INFO":  "INFO",
-		"WARN":  "WARN",
-		"ERROR": "ERROR",
-	}
-	mustRegister(sysvar.NewStringEnumParser(
+	mustRegister(sysvar.CreateStringEnumVariableParser(
 		"CLI_LOG_LEVEL",
 		"Log level for the CLI.",
-		logLevelValues,
+		map[string]string{
+			"DEBUG": "DEBUG",
+			"INFO":  "INFO",
+			"WARN":  "WARN",
+			"ERROR": "ERROR",
+		},
 		func() string {
 			switch sv.LogLevel {
 			case slog.LevelDebug:

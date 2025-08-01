@@ -176,3 +176,69 @@ func CreateDurationRangeParser(opts *RangeParserOptions[time.Duration]) parser.D
 		parser.CreateDurationRangeValidator(opts.Min, opts.Max),
 	)
 }
+
+// Common validation helpers for system variables
+
+// CreateEnumVariableParser creates a variable parser for enum types with string formatting.
+func CreateEnumVariableParser[T comparable](
+	name, description string,
+	values map[string]T,
+	getter func() T,
+	setter func(T) error,
+	formatter func(T) string,
+) VariableParser {
+	return NewTypedVariableParser(
+		name,
+		description,
+		parser.CreateDualModeEnumParser(values),
+		getter,
+		setter,
+		formatter,
+	)
+}
+
+// CreateStringEnumVariableParser creates a variable parser for string-based enums.
+func CreateStringEnumVariableParser[T ~string](
+	name, description string,
+	values map[string]T,
+	getter func() T,
+	setter func(T) error,
+) VariableParser {
+	return CreateEnumVariableParser(
+		name,
+		description,
+		values,
+		getter,
+		setter,
+		func(v T) string { return string(v) },
+	)
+}
+
+// CreateProtobufEnumVariableParser creates a variable parser for protobuf enums with optional prefix stripping.
+func CreateProtobufEnumVariableParser[T ~int32](
+	name, description string,
+	enumMap map[string]int32,
+	prefix string,
+	getter func() T,
+	setter func(T) error,
+	formatter func(T) string,
+) VariableParser {
+	// Build values map with both full and short names
+	values := make(map[string]T)
+	for enumName, enumValue := range enumMap {
+		values[enumName] = T(enumValue)
+		if prefix != "" && strings.HasPrefix(enumName, prefix) {
+			shortName := strings.TrimPrefix(enumName, prefix)
+			values[shortName] = T(enumValue)
+		}
+	}
+
+	return CreateEnumVariableParser(
+		name,
+		description,
+		values,
+		getter,
+		setter,
+		formatter,
+	)
+}
