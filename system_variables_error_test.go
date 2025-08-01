@@ -75,51 +75,51 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 			name:      "invalid duration value",
 			varName:   "STATEMENT_TIMEOUT",
 			value:     "invalid-duration",
-			wantError: "invalid timeout format: time: invalid duration \"invalid-duration\"",
+			wantError: "time: invalid duration",
 		},
 		{
 			name:      "invalid statement timeout negative",
 			varName:   "STATEMENT_TIMEOUT",
 			value:     "-1s",
-			wantError: "timeout cannot be negative",
+			wantError: "less than minimum",
 		},
 		{
 			name:      "invalid default isolation level",
 			varName:   "DEFAULT_ISOLATION_LEVEL",
 			value:     "INVALID_LEVEL",
-			wantError: "invalid isolation level: INVALID_LEVEL",
+			wantError: "invalid value \"INVALID_LEVEL\", must be one of:",
 		},
 		// CLI_FORMAT doesn't return error for invalid values, it just ignores them
 		{
 			name:      "invalid autocommit dml mode",
 			varName:   "AUTOCOMMIT_DML_MODE",
 			value:     "INVALID_MODE",
-			wantError: "invalid AUTOCOMMIT_DML_MODE value: INVALID_MODE",
+			wantError: "invalid value \"INVALID_MODE\", must be one of:",
 		},
 		{
 			name:      "invalid cli parse mode",
 			varName:   "CLI_PARSE_MODE",
 			value:     "INVALID_MODE",
-			wantError: "invalid value: INVALID_MODE",
+			wantError: "invalid value \"INVALID_MODE\", must be one of:",
 		},
 		{
 			name:      "invalid cli query mode",
 			varName:   "CLI_QUERY_MODE",
 			value:     "INVALID_MODE",
-			wantError: "invalid value: INVALID_MODE",
+			wantError: "invalid value \"INVALID_MODE\", must be one of:",
 		},
 		{
 			name:      "invalid rpc priority",
 			varName:   "RPC_PRIORITY",
 			value:     "INVALID_PRIORITY",
-			wantError: "invalid priority: \"PRIORITY_INVALID_PRIORITY\"",
+			wantError: "invalid value \"INVALID_PRIORITY\", must be one of:",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sv := newSystemVariablesWithDefaultsForTest()
-			err := sv.Set(tt.varName, tt.value)
+			err := sv.SetFromSimple(tt.varName, tt.value)
 			if err == nil {
 				t.Fatal("expected error but got nil")
 			}
