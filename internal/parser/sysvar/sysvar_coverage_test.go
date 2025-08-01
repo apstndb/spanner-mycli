@@ -2,7 +2,12 @@ package sysvar
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
 // TestGetValueNoGetter tests error when getter is nil
@@ -128,5 +133,202 @@ func TestCreateProtobufEnumVariableParserEdgeCases(t *testing.T) {
 	}
 	if got != "99" {
 		t.Errorf("Expected '99' for unknown value, got %q", got)
+	}
+}
+
+// TestBaseParserParseWithoutParseFunc tests Parse method when ParseFunc is nil
+func TestBaseParserParseWithoutParseFunc(t *testing.T) {
+	parser := &baseParser[int]{}
+	_, err := parser.Parse("123")
+	if err == nil {
+		t.Error("Expected error when ParseFunc is nil")
+	}
+	if err.Error() != "parse function not implemented" {
+		t.Errorf("Expected 'parse function not implemented', got %v", err)
+	}
+}
+
+// TestWithValidationOriginalError tests WithValidation when original parser returns error
+func TestWithValidationOriginalError(t *testing.T) {
+	originalParser := &baseParser[int]{
+		ParseFunc: func(s string) (int, error) {
+			return 0, fmt.Errorf("original parse error")
+		},
+		ValidateFunc: func(v int) error {
+			return fmt.Errorf("original validation error")
+		},
+	}
+
+	wrapped := WithValidation(originalParser, func(v int) error {
+		return fmt.Errorf("additional validation error")
+	})
+
+	// Test that original validation error is returned first
+	err := wrapped.Validate(42)
+	if err == nil {
+		t.Error("Expected error from original validation")
+	}
+	if err.Error() != "original validation error" {
+		t.Errorf("Expected 'original validation error', got %v", err)
+	}
+}
+
+// TestCreateDualModeParserWithValidationWithNilValidator tests with nil validator
+func TestCreateDualModeParserWithValidationWithNilValidator(t *testing.T) {
+	googleSQLParser := NewStringParser()
+	simpleParser := NewStringParser()
+
+	// Create dual-mode parser with nil validator
+	dualParser := CreateDualModeParserWithValidation(googleSQLParser, simpleParser, nil)
+
+	// Should work without validation
+	_, err := dualParser.ParseWithMode("test", ParseModeGoogleSQL)
+	if err != nil {
+		t.Errorf("Unexpected error with nil validator: %v", err)
+	}
+}
+
+// TestParseIntLiteralWithNegativeHex tests parseIntLiteral with negative hex values
+func TestParseIntLiteralWithNegativeHex(t *testing.T) {
+	intLit := &ast.IntLiteral{
+		Value: "-0xFF",
+		Base:  16,
+	}
+
+	result, err := parseIntLiteral(intLit)
+	if err != nil {
+		t.Errorf("Unexpected error parsing negative hex: %v", err)
+	}
+	if result != -255 {
+		t.Errorf("Expected -255, got %d", result)
+	}
+}
+
+// TestNewDualModeParserDefaultBehavior tests default Parse method behavior
+func TestNewDualModeParserDefaultBehavior(t *testing.T) {
+	googleSQLParser := NewStringParser()
+	simpleParser := &baseParser[string]{
+		ParseFunc: func(s string) (string, error) {
+			return "simple: " + s, nil
+		},
+	}
+
+	dualParser := NewDualModeParser(googleSQLParser, simpleParser)
+
+	// Default Parse should use GoogleSQL mode
+	result, err := dualParser.Parse("test")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	// GoogleSQL parser returns input as-is
+	if result != "test" {
+		t.Errorf("Expected 'test' from GoogleSQL mode, got %v", result)
+	}
+}
+
+// TestNewDelegatingGoogleSQLParserWithInvalidInput tests error handling
+func TestNewDelegatingGoogleSQLParserWithInvalidInput(t *testing.T) {
+	delegateParser := NewStringParser()
+	googleSQLParser := newDelegatingGoogleSQLParser(delegateParser)
+
+	// Test with invalid GoogleSQL string literal
+	_, err := googleSQLParser.Parse("not a string literal")
+	if err == nil {
+		t.Error("Expected error for invalid GoogleSQL string literal")
+	}
+}
+
+// TestTypedVariableParserGetValueWithNilGetter tests GetValue when getter is nil
+func TestTypedVariableParserGetValueWithNilGetter(t *testing.T) {
+	vp := &TypedVariableParser[string]{
+		name:   "TEST_VAR",
+		getter: nil,
+	}
+
+	_, err := vp.GetValue()
+	if err == nil {
+		t.Error("Expected error when getter is nil")
+	}
+	if !strings.Contains(err.Error(), "no getter configured") {
+		t.Errorf("Expected 'no getter configured' error, got %v", err)
+	}
+}
+
+// TestTypedVariableParserGetValueWithNilFormatter tests GetValue when formatter is nil
+func TestTypedVariableParserGetValueWithNilFormatter(t *testing.T) {
+	testValue := 42
+	vp := &TypedVariableParser[int]{
+		name:      "TEST_VAR",
+		getter:    func() int { return testValue },
+		formatter: nil, // No formatter
+	}
+
+	value, err := vp.GetValue()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	// Should use default formatting (fmt.Sprintf("%v", value))
+	if value != "42" {
+		t.Errorf("Expected '42' with default formatting, got %q", value)
+	}
+}
+
+// TestTypedVariableParserParseAndSetWithModeSetterError tests setter error handling
+func TestTypedVariableParserParseAndSetWithModeSetterError(t *testing.T) {
+	parser := DualModeStringParser
+	setter := func(v string) error {
+		return fmt.Errorf("setter error")
+	}
+	getter := func() string { return "" }
+
+	vp := NewTypedVariableParser("TEST_VAR", "Test variable", parser, getter, setter, FormatString)
+	typedVP := vp.(*TypedVariableParser[string])
+
+	err := typedVP.ParseAndSetWithMode("value", ParseModeSimple)
+	if err == nil {
+		t.Error("Expected error from setter")
+	}
+	if !strings.Contains(err.Error(), "setter error") {
+		t.Errorf("Expected 'setter error', got %v", err)
+	}
+}
+
+// TestNewNullableDurationVariableParserWithoutRange tests without min/max
+func TestNewNullableDurationVariableParserWithoutRange(t *testing.T) {
+	var value *time.Duration
+	getter := func() *time.Duration { return value }
+	setter := func(v *time.Duration) error { value = v; return nil }
+
+	// Create parser without min/max constraints
+	parser := NewNullableDurationVariableParser("TEST_DURATION", "Test duration", getter, setter, nil, nil)
+
+	// Should accept any duration
+	err := parser.ParseAndSetWithMode("1h30m", ParseModeSimple)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if value == nil || *value != 90*time.Minute {
+		t.Errorf("Expected 90 minutes, got %v", value)
+	}
+}
+
+// TestNewNullableIntVariableParserWithoutRange tests without min/max
+func TestNewNullableIntVariableParserWithoutRange(t *testing.T) {
+	var value *int64
+	getter := func() *int64 { return value }
+	setter := func(v *int64) error { value = v; return nil }
+
+	// Create parser without min/max constraints
+	parser := NewNullableIntVariableParser("TEST_INT", "Test int", getter, setter, nil, nil)
+
+	// Should accept any integer
+	err := parser.ParseAndSetWithMode("12345", ParseModeSimple)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if value == nil || *value != 12345 {
+		t.Errorf("Expected 12345, got %v", value)
 	}
 }
