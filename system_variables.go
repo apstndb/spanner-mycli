@@ -781,37 +781,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			}),
 		},
 	},
-	"CLI_PARSE_MODE": {
-		Description: "",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.BuildStatementMode == parseModeUnspecified {
-					return nil, errIgnored
-				}
-				return singletonMap(name, string(this.BuildStatementMode)), nil
-			},
-			Setter: func(this *systemVariables, name, value string) error {
-				s := strings.ToUpper(unquoteString(value))
-				switch s {
-				case string(parseModeFallback),
-					string(parseMemefishOnly),
-					string(parseModeNoMemefish),
-					string(parseModeUnspecified):
-
-					this.BuildStatementMode = parseMode(s)
-					return nil
-				default:
-					return fmt.Errorf("invalid value: %v", s)
-				}
-			},
-		},
-	},
-	"CLI_INSECURE": {
-		Description: "",
-		Accessor: accessor{
-			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
-		},
-	},
 	"CLI_LOG_LEVEL": {
 		Description: "",
 		Accessor: accessor{
@@ -837,52 +806,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			}),
 		},
 	},
-	"CLI_LINT_PLAN": {
-		Description: "",
-		Accessor: accessor{
-			Getter: boolGetter(func(sysVars *systemVariables) *bool {
-				return lo.Ternary(sysVars.LintPlan, lo.ToPtr(sysVars.LintPlan), nil)
-			}),
-			Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
-		},
-	},
-	"CLI_USE_PAGER": {
-		Description: "",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.UsePager
-		}),
-	},
-	"CLI_AUTOWRAP": {
-		Description: "",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.AutoWrap
-		}),
-	},
-	"CLI_FIXED_WIDTH": {
-		Description: "Set fixed width to overwrite wrap width for CLI_AUTOWRAP.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				if strings.ToUpper(value) == "NULL" {
-					this.FixedWidth = nil
-					return nil
-				}
-
-				width, err := strconv.ParseInt(value, 10, 64)
-				if err != nil {
-					return err
-				}
-
-				this.FixedWidth = &width
-				return nil
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.FixedWidth == nil {
-					return singletonMap(name, "NULL"), nil
-				}
-				return singletonMap(name, strconv.FormatInt(*this.FixedWidth, 10)), nil
-			},
-		},
-	},
 	"CLI_CURRENT_WIDTH": {
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
@@ -898,12 +821,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return singletonMap(name, "NULL"), nil
 			},
 		},
-	},
-	"CLI_ENABLE_HIGHLIGHT": {
-		Description: "",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.EnableHighlight
-		}),
 	},
 	"CLI_PROTOTEXT_MULTILINE": {
 		Description: "",
