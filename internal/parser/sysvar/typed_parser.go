@@ -539,7 +539,82 @@ func NewReadOnlyBooleanParser(
 		parser:      parser.DualModeBoolParser,
 		setter:      nil, // Read-only
 		getter:      getter,
-		formatter:   func(v bool) string { return strconv.FormatBool(v) },
+		formatter:   func(v bool) string { return strings.ToUpper(strconv.FormatBool(v)) },
 		readOnly:    true,
+	}
+}
+
+// NewNullableIntParser creates a nullable integer variable parser.
+func NewNullableIntParser(
+	name string,
+	description string,
+	getter func() *int64,
+	setter func(*int64) error,
+	min, max *int64,
+) VariableParser {
+	var innerParser parser.DualModeParser[int64]
+
+	if min != nil || max != nil {
+		// Create simple parser with validation
+		simpleParser := parser.NewIntParser()
+
+		if min != nil && max != nil {
+			simpleParser = simpleParser.WithRange(*min, *max)
+		} else if min != nil {
+			simpleParser = simpleParser.WithMin(*min)
+		} else if max != nil {
+			simpleParser = simpleParser.WithMax(*max)
+		}
+
+		// Create GoogleSQL parser with same validation
+		var googleSQLParser parser.Parser[int64]
+		if min != nil && max != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
+				if v < *min {
+					return fmt.Errorf("value %d is less than minimum %d", v, *min)
+				}
+				if v > *max {
+					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
+				}
+				return nil
+			})
+		} else if min != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
+				if v < *min {
+					return fmt.Errorf("value %d is less than minimum %d", v, *min)
+				}
+				return nil
+			})
+		} else if max != nil {
+			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
+				if v > *max {
+					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
+				}
+				return nil
+			})
+		} else {
+			googleSQLParser = parser.GoogleSQLIntParser
+		}
+
+		innerParser = parser.NewDualModeParser(googleSQLParser, simpleParser)
+	} else {
+		innerParser = parser.DualModeIntParser
+	}
+
+	p := parser.NewNullableIntParser(innerParser)
+
+	return &TypedVariableParser[*int64]{
+		name:        name,
+		description: description,
+		parser:      p,
+		setter:      setter,
+		getter:      getter,
+		formatter: func(v *int64) string {
+			if v == nil {
+				return "NULL"
+			}
+			return strconv.FormatInt(*v, 10)
+		},
+		readOnly: setter == nil,
 	}
 }

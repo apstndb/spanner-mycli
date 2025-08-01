@@ -268,7 +268,7 @@ type errSetterUnimplemented struct {
 }
 
 func (e errSetterUnimplemented) Error() string {
-	return fmt.Sprintf("variable %s is read-only", e.Name)
+	return fmt.Sprintf("unimplemented setter: %v", e.Name)
 }
 
 type errGetterUnimplemented struct {
@@ -373,6 +373,11 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 }
 
 func (sv *systemVariables) Add(name string, value string) error {
+	// Add method is called from REPL/SQL scripts, so it uses GoogleSQL mode
+	return sv.AddFromGoogleSQL(name, value)
+}
+
+func (sv *systemVariables) AddFromGoogleSQL(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
 	// Ensure registry is initialized
@@ -380,8 +385,6 @@ func (sv *systemVariables) Add(name string, value string) error {
 	
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
-		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
-		// TODO: Add context to determine if we're in Simple mode (CLI flags/config)
 		if sv.Registry.HasAppendSupport(upperName) {
 			return sv.Registry.AppendFromGoogleSQL(upperName, value)
 		}
@@ -389,6 +392,33 @@ func (sv *systemVariables) Add(name string, value string) error {
 	}
 
 	// Fall back to the old system
+	a, ok := systemVariableDefMap[upperName]
+	if !ok {
+		return fmt.Errorf("unknown variable name: %v", name)
+	}
+	if a.Accessor.Adder == nil {
+		return errAdderUnimplemented{name}
+	}
+
+	return a.Accessor.Adder(sv, upperName, value)
+}
+
+func (sv *systemVariables) AddFromSimple(name string, value string) error {
+	upperName := strings.ToUpper(name)
+
+	// Ensure registry is initialized
+	sv.ensureRegistry()
+	
+	// First check if the variable is in the new registry
+	if sv.Registry.Has(upperName) {
+		if sv.Registry.HasAppendSupport(upperName) {
+			return sv.Registry.AppendFromSimple(upperName, value)
+		}
+		return fmt.Errorf("variable %s does not support ADD operation", upperName)
+	}
+
+	// Fall back to the old system - the old system doesn't distinguish modes
+	// so we just call the adder as before
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)

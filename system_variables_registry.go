@@ -157,11 +157,12 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		&sv.EnableProgressBar,
 	))
 
-	// CLI_ENABLE_ADC_PLUS
-	mustRegister(sysvar.NewSimpleBooleanParser(
+	// CLI_ENABLE_ADC_PLUS - Session-init-only variable
+	mustRegister(sysvar.NewBooleanParser(
 		"CLI_ENABLE_ADC_PLUS",
 		"A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
-		&sv.EnableADCPlus,
+		sysvar.GetValue(&sv.EnableADCPlus),
+		sysvar.SetSessionInitOnly(&sv.EnableADCPlus, "CLI_ENABLE_ADC_PLUS", &sv.CurrentSession),
 	))
 
 	// CLI_ASYNC_DDL
@@ -324,7 +325,18 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// Note: AUTOCOMMIT is handled in the old system (no direct field in systemVariables)
 	// Note: RETRY_ABORTS_INTERNALLY is handled in the old system (no direct field in systemVariables)
 
-	// Note: CLI_FIXED_WIDTH is nullable int64, not boolean - remains in old system
+	// CLI_FIXED_WIDTH
+	mustRegister(sysvar.NewNullableIntParser(
+		"CLI_FIXED_WIDTH",
+		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
+		func() *int64 { return sv.FixedWidth },
+		func(v *int64) error {
+			sv.FixedWidth = v
+			return nil
+		},
+		nil, nil, // No min/max constraints
+	))
+
 	// Note: CLI_INLINE_STATS is a string with complex parsing - remains in old system
 
 	// CLI_SKIP_SYSTEM_COMMAND

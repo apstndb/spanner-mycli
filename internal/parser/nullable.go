@@ -49,3 +49,8 @@ func (p *NullableParser[T]) ParseAndValidate(s string) (*T, error) {
 func NewNullableDurationParser(innerParser DualModeParser[time.Duration]) *NullableParser[time.Duration] {
 	return NewNullableParser(innerParser)
 }
+
+// NewNullableIntParser creates a nullable integer parser.
+func NewNullableIntParser(innerParser DualModeParser[int64]) *NullableParser[int64] {
+	return NewNullableParser(innerParser)
+}

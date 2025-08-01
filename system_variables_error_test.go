@@ -55,9 +55,9 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 		},
 		{
 			name:      "read-only variable with nil setter",
-			varName:   "AUTOCOMMIT", // This has only Getter, no Setter
+			varName:   "AUTOCOMMIT", // This has no Accessor at all
 			value:     "true",
-			wantError: "variable AUTOCOMMIT is read-only",
+			wantError: "unimplemented setter: AUTOCOMMIT",
 		},
 		{
 			name:      "invalid boolean value",
@@ -176,7 +176,7 @@ func TestSystemVariables_Add_Errors(t *testing.T) {
 			name:      "variable without adder",
 			varName:   "CLI_VERBOSE", // This has Setter but no Adder
 			value:     "true",
-			wantError: "unimplemented adder: CLI_VERBOSE",
+			wantError: "does not support ADD operation",
 		},
 	}
 

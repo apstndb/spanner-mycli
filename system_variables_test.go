@@ -76,7 +76,7 @@ func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
 			var sysVars systemVariables
 			var lastErr error
 			for _, value := range test.values {
-				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
+				if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
 					lastErr = err
 					if !test.wantError {
 						t.Errorf("unexpected error for value %q: %v", value, err)
@@ -251,7 +251,7 @@ func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
 
 			// Add descriptor files
 			for _, file := range test.descriptorFiles {
-				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
+				if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
 					t.Fatalf("Failed to add descriptor file %s: %v", file, err)
 				}
 			}

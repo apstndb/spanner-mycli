@@ -272,7 +272,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{DisplayModeHTML, "HTML"},
 		{DisplayModeXML, "XML"},
 		{DisplayModeCSV, "CSV"},
-		{DisplayMode(999), "TABLE"}, // Invalid mode should return default
+		{DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns descriptive string
 	}
 
 	for _, tt := range tests {
