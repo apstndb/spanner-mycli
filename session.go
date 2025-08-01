@@ -221,6 +221,9 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 	newSystemVariables.Database = s.Database
 	newSystemVariables.Role = s.Role
 
+	// Initialize registry for the new systemVariables instance
+	newSystemVariables.initializeRegistry()
+
 	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
 	if err != nil {
 		return nil, err
@@ -251,6 +254,11 @@ func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (
 	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""
 	newSystemVariables.Role = ""
+
+	// Initialize registry for the new systemVariables instance
+	// This is necessary because the registry holds references to the fields
+	// in the systemVariables struct, so we can't simply copy it
+	newSystemVariables.initializeRegistry()
 
 	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
 	if err != nil {
