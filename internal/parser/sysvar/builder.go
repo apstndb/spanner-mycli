@@ -242,3 +242,34 @@ func CreateProtobufEnumVariableParser[T ~int32](
 		formatter,
 	)
 }
+
+// CreateProtobufEnumVariableParserWithAutoFormatter creates a variable parser for protobuf enums
+// that automatically strips the prefix in the formatter.
+func CreateProtobufEnumVariableParserWithAutoFormatter[T interface {
+	~int32
+	fmt.Stringer
+}](
+	name, description string,
+	enumMap map[string]int32,
+	prefix string,
+	getter func() T,
+	setter func(T) error,
+) VariableParser {
+	formatter := func(v T) string {
+		fullName := v.String()
+		if prefix != "" && strings.HasPrefix(fullName, prefix) {
+			return strings.TrimPrefix(fullName, prefix)
+		}
+		return fullName
+	}
+
+	return CreateProtobufEnumVariableParser(
+		name,
+		description,
+		enumMap,
+		prefix,
+		getter,
+		setter,
+		formatter,
+	)
+}

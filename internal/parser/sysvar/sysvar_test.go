@@ -8,6 +8,15 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
+// Test-only parsers
+var (
+	// timeoutParser parses timeout values (0 or positive).
+	timeoutParser = parser.NewDurationParser().WithMin(0)
+
+	// portParser parses port numbers (0-65535).
+	portParser = parser.NewIntParser().WithRange(0, 65535)
+)
+
 type testSystemVariables struct {
 	Verbose          bool
 	TabWidth         int64
@@ -183,7 +192,7 @@ func TestPredefinedParsers(t *testing.T) {
 
 	t.Run("TimeoutParser", func(t *testing.T) {
 		// Valid timeout
-		got, err := sysvar.TimeoutParser.Parse("10s")
+		got, err := timeoutParser.Parse("10s")
 		if err != nil {
 			t.Fatalf("Parse failed: %v", err)
 		}
@@ -192,19 +201,19 @@ func TestPredefinedParsers(t *testing.T) {
 		}
 
 		// No maximum limit - 2h should be valid
-		if _, err := sysvar.TimeoutParser.Parse("2h"); err != nil {
+		if _, err := timeoutParser.Parse("2h"); err != nil {
 			t.Errorf("Parse(2h) failed: %v", err)
 		}
 
 		// Negative value
-		if _, err := sysvar.TimeoutParser.ParseAndValidate("-5s"); err == nil {
+		if _, err := timeoutParser.ParseAndValidate("-5s"); err == nil {
 			t.Error("Expected error for negative timeout")
 		}
 	})
 
 	t.Run("PortParser", func(t *testing.T) {
 		// Valid port
-		got, err := sysvar.PortParser.Parse("8080")
+		got, err := portParser.Parse("8080")
 		if err != nil {
 			t.Fatalf("Parse failed: %v", err)
 		}
@@ -213,14 +222,14 @@ func TestPredefinedParsers(t *testing.T) {
 		}
 
 		// Valid port 0 (allowed now)
-		if _, err := sysvar.PortParser.Parse("0"); err != nil {
+		if _, err := portParser.Parse("0"); err != nil {
 			t.Errorf("Parse(0) failed: %v", err)
 		}
 
 		// Invalid ports
 		testCases := []string{"70000", "-1", "abc"}
 		for _, tc := range testCases {
-			if _, err := sysvar.PortParser.ParseAndValidate(tc); err == nil {
+			if _, err := portParser.ParseAndValidate(tc); err == nil {
 				t.Errorf("Expected error for invalid port %q", tc)
 			}
 		}

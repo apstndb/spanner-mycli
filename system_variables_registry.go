@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -75,21 +74,13 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// DEFAULT_ISOLATION_LEVEL
-	mustRegister(sysvar.CreateProtobufEnumVariableParser(
+	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
 		sppb.TransactionOptions_IsolationLevel_value,
 		"ISOLATION_LEVEL_",
 		sysvar.GetValue(&sv.DefaultIsolationLevel),
 		sysvar.SetValue(&sv.DefaultIsolationLevel),
-		func(v sppb.TransactionOptions_IsolationLevel) string {
-			// Use protobuf String() method to get full name, then extract short form
-			fullName := v.String()
-			if strings.HasPrefix(fullName, "ISOLATION_LEVEL_") {
-				return strings.TrimPrefix(fullName, "ISOLATION_LEVEL_")
-			}
-			return fullName
-		},
 	))
 
 	mustRegister(sysvar.NewSimpleStringParser(
@@ -173,18 +164,13 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// RPC configuration
-	mustRegister(sysvar.CreateProtobufEnumVariableParser(
+	mustRegister(sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
 		sppb.RequestOptions_Priority_value,
 		"PRIORITY_",
 		sysvar.GetValue(&sv.RPCPriority),
 		sysvar.SetValue(&sv.RPCPriority),
-		func(v sppb.RequestOptions_Priority) string {
-			// Strip PRIORITY_ prefix for display to match user expectations
-			// v.String() returns "PRIORITY_HIGH" but users expect just "HIGH"
-			return strings.TrimPrefix(v.String(), "PRIORITY_")
-		},
 	))
 
 	// Statement timeout
