@@ -5,12 +5,8 @@ import (
 )
 
 // GoogleSQLDurationParser parses duration from GoogleSQL string literals.
-var GoogleSQLDurationParser = WithTransform(
-	GoogleSQLStringLiteralParser,
-	func(s string) (time.Duration, error) {
-		return time.ParseDuration(s)
-	},
-)
+// It extracts the string literal and delegates to the standard duration parser.
+var GoogleSQLDurationParser = NewDelegatingGoogleSQLParser(NewDurationParser())
 
 // DualModeDurationParser provides dual-mode parsing for duration values.
 var DualModeDurationParser = NewDualModeParser[time.Duration](

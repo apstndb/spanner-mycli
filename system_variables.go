@@ -318,7 +318,7 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 
 	// Ensure registry is initialized
 	sv.ensureRegistry()
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
 		return sv.Registry.SetFromGoogleSQL(upperName, value)
@@ -362,7 +362,7 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 
 	// Ensure registry is initialized
 	sv.ensureRegistry()
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
 		return sv.Registry.SetFromSimple(upperName, value)
@@ -382,7 +382,7 @@ func (sv *systemVariables) AddFromGoogleSQL(name string, value string) error {
 
 	// Ensure registry is initialized
 	sv.ensureRegistry()
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
 		if sv.Registry.HasAppendSupport(upperName) {
@@ -408,7 +408,7 @@ func (sv *systemVariables) AddFromSimple(name string, value string) error {
 
 	// Ensure registry is initialized
 	sv.ensureRegistry()
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
 		if sv.Registry.HasAppendSupport(upperName) {
@@ -435,7 +435,7 @@ func (sv *systemVariables) Get(name string) (map[string]string, error) {
 
 	// Ensure registry is initialized
 	sv.ensureRegistry()
-	
+
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
 		value, err := sv.Registry.Get(upperName)

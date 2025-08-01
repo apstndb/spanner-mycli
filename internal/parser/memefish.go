@@ -3,14 +3,20 @@ package parser
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
 // MemefishExprParser parses values using memefish to ensure GoogleSQL compatibility.
-// It can parse expressions and extract literal values.
+// It parses expressions according to GoogleSQL syntax rules and extracts typed values.
+//
+// This parser is used for SET statements in the REPL where values must follow
+// GoogleSQL lexical structure:
+//   - Strings: 'single quotes', "double quotes", r'raw strings'
+//   - Numbers: 123, -456, 3.14, 1e10
+//   - Booleans: TRUE, FALSE (parsed as BoolLiteral, not identifiers)
+//   - NULL: NULL (parsed as NullLiteral)
 type MemefishExprParser[T any] struct {
 	BaseParser[T]
 	extractFunc func(ast.Expr) (T, error)
@@ -41,18 +47,8 @@ func (p *MemefishExprParser[T]) parseWithMemefish(value string) (T, error) {
 	return p.extractFunc(expr)
 }
 
-// GoogleSQLStringParser parses GoogleSQL string literals.
-var GoogleSQLStringParser = NewMemefishLiteralParser(func(expr ast.Expr) (string, error) {
-	switch lit := expr.(type) {
-	case *ast.StringLiteral:
-		return lit.Value, nil
-	case *ast.BytesLiteral:
-		// Convert bytes literal to string
-		return string(lit.Value), nil
-	default:
-		return "", fmt.Errorf("expected string literal, got %T", expr)
-	}
-})
+// GoogleSQLStringParser is an alias for GoogleSQLStringLiteralParser for backward compatibility.
+var GoogleSQLStringParser = GoogleSQLStringLiteralParser
 
 // GoogleSQLBoolParser parses GoogleSQL boolean literals.
 // TRUE/FALSE are parsed as BoolLiteral by memefish, not as Ident.
@@ -100,37 +96,22 @@ var GoogleSQLFloatParser = NewMemefishLiteralParser(func(expr ast.Expr) (float64
 	}
 })
 
-// GoogleSQLEnumParser parses enum values using GoogleSQL string/identifier syntax.
+// GoogleSQLEnumParser parses enum values from GoogleSQL string literals.
+// It only accepts string literals since SET statements require string values.
 func NewGoogleSQLEnumParser[T comparable](values map[string]T) *MemefishExprParser[T] {
+	// Create a simple enum parser to reuse its logic
+	enumParser := NewEnumParser(values)
+
 	return NewMemefishLiteralParser(func(expr ast.Expr) (T, error) {
-		var strValue string
-
-		switch lit := expr.(type) {
-		case *ast.StringLiteral:
-			strValue = lit.Value
-		case *ast.Ident:
-			strValue = lit.Name
-		default:
+		// Extract string literal
+		strLit, ok := expr.(*ast.StringLiteral)
+		if !ok {
 			var zero T
-			return zero, fmt.Errorf("expected string literal or identifier for enum value, got %T", expr)
+			return zero, fmt.Errorf("expected string literal for enum value, got %T", expr)
 		}
 
-		// Try case-insensitive match first
-		upperValue := strings.ToUpper(strValue)
-		for k, v := range values {
-			if strings.ToUpper(k) == upperValue {
-				return v, nil
-			}
-		}
-
-		// Build error message
-		var validValues []string
-		for k := range values {
-			validValues = append(validValues, k)
-		}
-
-		var zero T
-		return zero, fmt.Errorf("invalid enum value %q, must be one of: %s", strValue, strings.Join(validValues, ", "))
+		// Delegate to the enum parser for actual parsing and validation
+		return enumParser.Parse(strLit.Value)
 	})
 }
 

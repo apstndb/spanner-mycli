@@ -179,9 +179,8 @@ func NewIntegerParser(
 	var p parser.DualModeParser[int64]
 
 	if min != nil || max != nil {
-		// Create simple parser with validation
+		// Create simple parser with built-in range validation
 		simpleParser := parser.NewIntParser()
-
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
 		} else if min != nil {
@@ -190,37 +189,12 @@ func NewIntegerParser(
 			simpleParser = simpleParser.WithMax(*max)
 		}
 
-		// Create GoogleSQL parser with same validation
-		var googleSQLParser parser.Parser[int64]
-		if min != nil && max != nil {
-			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
-				if v < *min {
-					return fmt.Errorf("value %d is less than minimum %d", v, *min)
-				}
-				if v > *max {
-					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
-				}
-				return nil
-			})
-		} else if min != nil {
-			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
-				if v < *min {
-					return fmt.Errorf("value %d is less than minimum %d", v, *min)
-				}
-				return nil
-			})
-		} else if max != nil {
-			googleSQLParser = parser.WithValidation(parser.GoogleSQLIntParser, func(v int64) error {
-				if v > *max {
-					return fmt.Errorf("value %d is greater than maximum %d", v, *max)
-				}
-				return nil
-			})
-		} else {
-			googleSQLParser = parser.GoogleSQLIntParser
-		}
-
-		p = parser.NewDualModeParser(googleSQLParser, simpleParser)
+		// Create dual-mode parser with the same validation
+		p = parser.CreateDualModeParserWithValidation(
+			parser.GoogleSQLIntParser,
+			simpleParser,
+			parser.CreateRangeValidator(min, max),
+		)
 	} else {
 		p = parser.DualModeIntParser
 	}
@@ -298,7 +272,7 @@ func NewDurationParser(
 	var p parser.DualModeParser[time.Duration]
 
 	if min != nil || max != nil {
-		// Create parser with constraints
+		// Create simple parser with built-in range validation
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
@@ -308,23 +282,12 @@ func NewDurationParser(
 			simpleParser = simpleParser.WithMax(*max)
 		}
 
-		// For GoogleSQL mode, wrap with validation
-		var googleSQLParser parser.Parser[time.Duration]
-		if min != nil || max != nil {
-			googleSQLParser = parser.WithValidation(parser.GoogleSQLDurationParser, func(v time.Duration) error {
-				if min != nil && v < *min {
-					return fmt.Errorf("duration %s is less than minimum %s", v, *min)
-				}
-				if max != nil && v > *max {
-					return fmt.Errorf("duration %s is greater than maximum %s", v, *max)
-				}
-				return nil
-			})
-		} else {
-			googleSQLParser = parser.GoogleSQLDurationParser
-		}
-
-		p = parser.NewDualModeParser(googleSQLParser, simpleParser)
+		// Create dual-mode parser with the same validation
+		p = parser.CreateDualModeParserWithValidation(
+			parser.GoogleSQLDurationParser,
+			simpleParser,
+			parser.CreateDurationRangeValidator(min, max),
+		)
 	} else {
 		p = parser.DualModeDurationParser
 	}
@@ -351,7 +314,7 @@ func NewNullableDurationParser(
 	var innerParser parser.DualModeParser[time.Duration]
 
 	if min != nil || max != nil {
-		// Create parser with constraints
+		// Create simple parser with built-in range validation
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
@@ -361,23 +324,12 @@ func NewNullableDurationParser(
 			simpleParser = simpleParser.WithMax(*max)
 		}
 
-		// For GoogleSQL mode, wrap with validation
-		var googleSQLParser parser.Parser[time.Duration]
-		if min != nil || max != nil {
-			googleSQLParser = parser.WithValidation(parser.GoogleSQLDurationParser, func(v time.Duration) error {
-				if min != nil && v < *min {
-					return fmt.Errorf("duration %s is less than minimum %s", v, *min)
-				}
-				if max != nil && v > *max {
-					return fmt.Errorf("duration %s is greater than maximum %s", v, *max)
-				}
-				return nil
-			})
-		} else {
-			googleSQLParser = parser.GoogleSQLDurationParser
-		}
-
-		innerParser = parser.NewDualModeParser(googleSQLParser, simpleParser)
+		// Create dual-mode parser with the same validation
+		innerParser = parser.CreateDualModeParserWithValidation(
+			parser.GoogleSQLDurationParser,
+			simpleParser,
+			parser.CreateDurationRangeValidator(min, max),
+		)
 	} else {
 		innerParser = parser.DualModeDurationParser
 	}
@@ -434,14 +386,11 @@ func NewSimpleEnumParser[T comparable](
 	return &TypedVariableParser[T]{
 		name:        name,
 		description: description,
-		parser: parser.NewDualModeParser(
-			parser.NewGoogleSQLEnumParser(enumValues),
-			parser.NewEnumParser(enumValues),
-		),
-		setter:    setter,
-		getter:    getter,
-		formatter: func(v T) string { return fmt.Sprint(v) },
-		readOnly:  setter == nil,
+		parser:      parser.CreateDualModeEnumParser(enumValues),
+		setter:      setter,
+		getter:      getter,
+		formatter:   func(v T) string { return fmt.Sprint(v) },
+		readOnly:    setter == nil,
 	}
 }
 

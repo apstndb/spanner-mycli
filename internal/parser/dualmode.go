@@ -1,5 +1,3 @@
-// Package parser provides dual-mode parsing support for system variables
-// that can accept values from both GoogleSQL SET statements and CLI/config sources.
 package parser
 
 import (
@@ -22,6 +20,18 @@ const (
 // DualModeParser can parse values in both GoogleSQL and simple modes.
 // This is essential for system variables that need to accept values from
 // different sources with different parsing rules.
+//
+// Example usage:
+//
+//	// In REPL (GoogleSQL mode):
+//	SET OPTIMIZER_VERSION = 'LATEST';  // String must be quoted
+//	SET TAB_WIDTH = 4;                 // Numbers are literals
+//
+//	// In CLI flags (Simple mode):
+//	--set OPTIMIZER_VERSION=LATEST     // No quotes needed
+//	--set TAB_WIDTH=4                  // Same as GoogleSQL for numbers
+//
+// The dual-mode parser ensures correct parsing based on the value source.
 type DualModeParser[T any] interface {
 	Parser[T]
 
@@ -157,13 +167,13 @@ func NewDelegatingGoogleSQLParser[T any](delegateParser Parser[T]) Parser[T] {
 }
 
 // CreateDualModeEnumParser creates an enum parser that works in both modes.
-// In GoogleSQL mode, it handles string literals and identifiers, then delegates to the enum parser.
+// In GoogleSQL mode, it extracts string literals and delegates to the enum parser.
 // In simple mode, it uses the enum parser directly.
+// This ensures consistent enum value parsing between both modes.
 func CreateDualModeEnumParser[T comparable](values map[string]T) *BaseDualModeParser[T] {
 	enumParser := NewEnumParser(values)
 	return NewDualModeParser(
-		// For GoogleSQL mode, we still need the special parser that handles identifiers
-		NewGoogleSQLEnumParser(values),
+		NewDelegatingGoogleSQLParser(enumParser),
 		enumParser,
 	)
 }

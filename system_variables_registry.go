@@ -626,7 +626,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"CLI_PORT",
 		"Port number for connections.",
 		func() int64 { return int64(sv.Port) },
-		nil, // No setter - read-only
+		nil,      // No setter - read-only
 		nil, nil, // No min/max validation needed for read-only
 	))
 

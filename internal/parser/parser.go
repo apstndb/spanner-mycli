@@ -1,6 +1,49 @@
 // Package parser provides a generic framework for parsing and validating values
 // from string representations. It is designed to unify parsing logic across
 // system variables, CLI arguments, and configuration files.
+//
+// # Overview
+//
+// The parser framework addresses the complexity of handling values from different
+// sources with appropriate parsing rules for each context:
+//
+//   - GoogleSQL mode: For REPL SET statements, follows GoogleSQL lexical structure
+//   - Simple mode: For CLI flags and config files, direct value usage
+//
+// # Key Design Principles
+//
+//  1. Type Safety Through Generics: All parsers are strongly typed using Go generics,
+//     providing compile-time type checking and eliminating runtime type assertions.
+//
+//  2. Dual-Mode Parsing: System variables can receive values from two distinct sources
+//     requiring different parsing rules:
+//     - GoogleSQL Mode: Must follow GoogleSQL syntax (e.g., 'quoted strings', numeric literals)
+//     - Simple Mode: Direct string values without SQL parsing rules
+//
+//  3. Composable Validation: Validation logic is separated from parsing and can be
+//     composed using helper functions like WithValidation.
+//
+//  4. No Default Whitespace Trimming: After analysis of go-flags behavior, the framework
+//     does not trim whitespace by default as go-flags already handles this appropriately.
+//
+// # Usage Examples
+//
+//	// Create a duration parser with range validation
+//	parser := WithValidation(
+//	    NewDurationParser(),
+//	    func(d time.Duration) error {
+//	        if d < 0 || d > time.Hour {
+//	            return fmt.Errorf("duration must be between 0 and 1 hour")
+//	        }
+//	        return nil
+//	    },
+//	)
+//
+//	// Create a dual-mode parser for system variables
+//	dualParser := NewDualModeParser(
+//	    GoogleSQLDurationParser,  // For SET statements
+//	    NewDurationParser(),      // For CLI/config
+//	)
 package parser
 
 import (

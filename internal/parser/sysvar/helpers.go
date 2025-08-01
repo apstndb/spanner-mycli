@@ -6,9 +6,12 @@ import "fmt"
 // This is useful for simplifying getter functions in system variable parsers.
 //
 // Example:
-//   getter: GetValue(&sv.RPCPriority)
+//
+//	getter: GetValue(&sv.RPCPriority)
+//
 // Instead of:
-//   getter: func() sppb.RequestOptions_Priority { return sv.RPCPriority }
+//
+//	getter: func() sppb.RequestOptions_Priority { return sv.RPCPriority }
 func GetValue[T any](ptr *T) func() T {
 	return func() T {
 		return *ptr
@@ -19,9 +22,12 @@ func GetValue[T any](ptr *T) func() T {
 // This is useful for simplifying setter functions in system variable parsers.
 //
 // Example:
-//   setter: SetValue(&sv.RPCPriority)
+//
+//	setter: SetValue(&sv.RPCPriority)
+//
 // Instead of:
-//   setter: func(v sppb.RequestOptions_Priority) error { sv.RPCPriority = v; return nil }
+//
+//	setter: func(v sppb.RequestOptions_Priority) error { sv.RPCPriority = v; return nil }
 func SetValue[T any](ptr *T) func(T) error {
 	return func(v T) error {
 		*ptr = v
@@ -34,15 +40,18 @@ func SetValue[T any](ptr *T) func(T) error {
 // changed after the session is established.
 //
 // Example:
-//   setter: SetSessionInitOnly(&sv.EnableADCPlus, "CLI_ENABLE_ADC_PLUS", &sv.CurrentSession)
+//
+//	setter: SetSessionInitOnly(&sv.EnableADCPlus, "CLI_ENABLE_ADC_PLUS", &sv.CurrentSession)
+//
 // Instead of:
-//   setter: func(v bool) error {
-//     if sv.CurrentSession != nil {
-//       return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
-//     }
-//     sv.EnableADCPlus = v
-//     return nil
-//   }
+//
+//	setter: func(v bool) error {
+//	  if sv.CurrentSession != nil {
+//	    return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
+//	  }
+//	  sv.EnableADCPlus = v
+//	  return nil
+//	}
 func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) func(T) error {
 	return func(v T) error {
 		if *sessionPtr != nil {
@@ -52,4 +61,3 @@ func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) fu
 		return nil
 	}
 }
-

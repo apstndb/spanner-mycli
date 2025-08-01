@@ -262,7 +262,8 @@ func TestSystemVariableRegistry(t *testing.T) {
 	// Test enum variables
 	t.Run("RPC_PRIORITY", func(t *testing.T) {
 		// Test setting RPC_PRIORITY (now migrated)
-		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "HIGH"); err != nil {
+		// In GoogleSQL mode, enum values must be string literals
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "'HIGH'"); err != nil {
 			t.Errorf("Failed to set RPC_PRIORITY: %v", err)
 		}
 		if sv.RPCPriority != sppb.RequestOptions_PRIORITY_HIGH {
@@ -270,7 +271,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test case insensitivity
-		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "low"); err != nil {
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "'low'"); err != nil {
 			t.Errorf("Failed to set RPC_PRIORITY with lowercase: %v", err)
 		}
 		if sv.RPCPriority != sppb.RequestOptions_PRIORITY_LOW {
@@ -278,14 +279,15 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test invalid value
-		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "INVALID"); err == nil {
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "'INVALID'"); err == nil {
 			t.Error("Expected error for invalid priority value")
 		}
 	})
 
 	t.Run("CLI_FORMAT", func(t *testing.T) {
 		// Test setting display format
-		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "CSV"); err != nil {
+		// In GoogleSQL mode, enum values must be string literals
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "'CSV'"); err != nil {
 			t.Errorf("Failed to set CLI_FORMAT: %v", err)
 		}
 		if sv.CLIFormat != DisplayModeCSV {
@@ -293,7 +295,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test another format
-		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "VERTICAL"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "'VERTICAL'"); err != nil {
 			t.Errorf("Failed to set CLI_FORMAT to VERTICAL: %v", err)
 		}
 		if sv.CLIFormat != DisplayModeVertical {
@@ -301,14 +303,15 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test invalid format
-		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "INVALID_FORMAT"); err == nil {
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "'INVALID_FORMAT'"); err == nil {
 			t.Error("Expected error for invalid format value")
 		}
 	})
 
 	t.Run("CLI_EXPLAIN_FORMAT", func(t *testing.T) {
 		// Test setting explain format
-		if err := sv.SetFromGoogleSQL("CLI_EXPLAIN_FORMAT", "COMPACT"); err != nil {
+		// In GoogleSQL mode, enum values must be string literals
+		if err := sv.SetFromGoogleSQL("CLI_EXPLAIN_FORMAT", "'COMPACT'"); err != nil {
 			t.Errorf("Failed to set CLI_EXPLAIN_FORMAT: %v", err)
 		}
 		if sv.ExplainFormat != explainFormatCompact {
@@ -408,10 +411,10 @@ func TestParseModeEnum(t *testing.T) {
 			want  parseMode
 			err   bool
 		}{
-			{"identifier FALLBACK", "FALLBACK", parseModeFallback, false},
-			{"identifier NO_MEMEFISH", "NO_MEMEFISH", parseModeNoMemefish, false},
-			{"identifier MEMEFISH_ONLY", "MEMEFISH_ONLY", parseMemefishOnly, false},
-			{"identifier UNSPECIFIED", "UNSPECIFIED", parseModeUnspecified, false},
+			{"identifier FALLBACK", "FALLBACK", "", true},           // Identifiers not allowed in GoogleSQL mode
+			{"identifier NO_MEMEFISH", "NO_MEMEFISH", "", true},     // Identifiers not allowed in GoogleSQL mode
+			{"identifier MEMEFISH_ONLY", "MEMEFISH_ONLY", "", true}, // Identifiers not allowed in GoogleSQL mode
+			{"identifier UNSPECIFIED", "UNSPECIFIED", "", true},     // Identifiers not allowed in GoogleSQL mode
 			{"string literal FALLBACK", `"FALLBACK"`, parseModeFallback, false},
 			{"string literal NO_MEMEFISH", `"NO_MEMEFISH"`, parseModeNoMemefish, false},
 			{"string literal MEMEFISH_ONLY", `"MEMEFISH_ONLY"`, parseMemefishOnly, false},

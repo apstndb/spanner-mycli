@@ -368,7 +368,8 @@ func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, strin
 	value                              string
 	want                               map[string]string
 	unimplementedSet, unimplementedGet bool
-}) {
+},
+) {
 	sysVars := testCase.sysVars
 	if sysVars == nil {
 		sysVars = newSystemVariablesWithDefaultsForTest()
@@ -425,7 +426,7 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 				sv.ReadTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 				return sv
 			}(),
-			want:    singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
+			want: singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
 		},
 		{
 			desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", unimplementedSet: true,
@@ -434,7 +435,7 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 				sv.CommitTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 				return sv
 			}(),
-			want:    singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
+			want: singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
 		},
 		{
 			desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", unimplementedSet: true,

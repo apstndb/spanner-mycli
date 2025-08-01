@@ -3,6 +3,9 @@ package parser
 import (
 	"strings"
 	"time"
+
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
 // NullableParser wraps a parser to handle NULL values.
@@ -20,10 +23,23 @@ func NewNullableParser[T any](innerParser DualModeParser[T]) *NullableParser[T] 
 
 // ParseAndValidateWithMode parses a value that can be NULL.
 func (p *NullableParser[T]) ParseAndValidateWithMode(s string, mode ParseMode) (*T, error) {
-	// Check for NULL (case-insensitive)
-	trimmed := strings.TrimSpace(s)
-	if strings.ToUpper(trimmed) == "NULL" {
-		return nil, nil
+	// In GoogleSQL mode, check if it's a NULL literal
+	if mode == ParseModeGoogleSQL {
+		// Try to parse as an expression to check for NULL literal
+		expr, err := memefish.ParseExpr("", s)
+		if err == nil {
+			if _, ok := expr.(*ast.NullLiteral); ok {
+				return nil, nil
+			}
+		}
+		// If not a NULL literal, fall through to parse as regular value
+	} else {
+		// In simple mode, we also accept "NULL" as a special case for compatibility
+		// This allows CLI flags and config files to use NULL to unset nullable variables
+		trimmed := strings.TrimSpace(s)
+		if strings.ToUpper(trimmed) == "NULL" {
+			return nil, nil
+		}
 	}
 
 	// Parse as regular value
