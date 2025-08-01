@@ -33,7 +33,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewBooleanParser(
 		"READONLY",
 		"A boolean indicating whether or not the connection is in read-only mode. The default is false.",
-		func() bool { return sv.ReadOnly },
+		sysvar.GetValue(&sv.ReadOnly),
 		func(v bool) error {
 			if sv.CurrentSession != nil && (sv.CurrentSession.InReadOnlyTransaction() || sv.CurrentSession.InReadWriteTransaction()) {
 				return errors.New("can't change READONLY when there is a active transaction")
@@ -268,11 +268,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			"MEDIUM":               sppb.RequestOptions_PRIORITY_MEDIUM,
 			"HIGH":                 sppb.RequestOptions_PRIORITY_HIGH,
 		},
-		func() sppb.RequestOptions_Priority { return sv.RPCPriority },
-		func(v sppb.RequestOptions_Priority) error {
-			sv.RPCPriority = v
-			return nil
-		},
+		sysvar.GetValue(&sv.RPCPriority),
+		sysvar.SetValue(&sv.RPCPriority),
 		func(v sppb.RequestOptions_Priority) string {
 			// Strip PRIORITY_ prefix for display to match user expectations
 			// v.String() returns "PRIORITY_HIGH" but users expect just "HIGH"
@@ -295,11 +292,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"CLI_FORMAT",
 		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
 		formatValues,
-		func() DisplayMode { return sv.CLIFormat },
-		func(v DisplayMode) error {
-			sv.CLIFormat = v
-			return nil
-		},
+		sysvar.GetValue(&sv.CLIFormat),
+		sysvar.SetValue(&sv.CLIFormat),
 		func(v DisplayMode) string {
 			// Reverse map lookup for DisplayMode
 			for name, value := range formatValues {
@@ -321,11 +315,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			"TRADITIONAL": explainFormatTraditional,
 			"COMPACT":     explainFormatCompact,
 		},
-		func() explainFormat { return sv.ExplainFormat },
-		func(v explainFormat) error {
-			sv.ExplainFormat = v
-			return nil
-		},
+		sysvar.GetValue(&sv.ExplainFormat),
+		sysvar.SetValue(&sv.ExplainFormat),
 	))
 
 	// More boolean variables
@@ -363,7 +354,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewStringParser(
 		"CLI_ANALYZE_COLUMNS",
 		"Go template for analyzing column data.",
-		func() string { return sv.AnalyzeColumns },
+		sysvar.GetValue(&sv.AnalyzeColumns),
 		func(v string) error {
 			sv.AnalyzeColumns = v
 			// TODO: Also update ParsedAnalyzeColumns
@@ -437,11 +428,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewNullableDurationParser(
 		"MAX_COMMIT_DELAY",
 		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
-		func() *time.Duration { return sv.MaxCommitDelay },
-		func(v *time.Duration) error {
-			sv.MaxCommitDelay = v
-			return nil
-		},
+		sysvar.GetPointer(&sv.MaxCommitDelay),
+		sysvar.SetPointer(&sv.MaxCommitDelay),
 		&minDelay,
 		&maxDelay,
 	))
@@ -450,11 +438,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewNullableDurationParser(
 		"STATEMENT_TIMEOUT",
 		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
-		func() *time.Duration { return sv.StatementTimeout },
-		func(v *time.Duration) error {
-			sv.StatementTimeout = v
-			return nil
-		},
+		sysvar.GetPointer(&sv.StatementTimeout),
+		sysvar.SetPointer(&sv.StatementTimeout),
 		lo.ToPtr(time.Duration(0)), nil, // Min: 0, no max
 	))
 
@@ -469,11 +454,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"AUTOCOMMIT_DML_MODE",
 		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
 		autocommitDMLModeValues,
-		func() AutocommitDMLMode { return sv.AutocommitDMLMode },
-		func(v AutocommitDMLMode) error {
-			sv.AutocommitDMLMode = v
-			return nil
-		},
+		sysvar.GetValue(&sv.AutocommitDMLMode),
+		sysvar.SetValue(&sv.AutocommitDMLMode),
 		func(v AutocommitDMLMode) string {
 			// Reverse map lookup for AutocommitDMLMode
 			for name, value := range autocommitDMLModeValues {
@@ -495,11 +477,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
 		isolationValues,
-		func() sppb.TransactionOptions_IsolationLevel { return sv.DefaultIsolationLevel },
-		func(v sppb.TransactionOptions_IsolationLevel) error {
-			sv.DefaultIsolationLevel = v
-			return nil
-		},
+		sysvar.GetValue(&sv.DefaultIsolationLevel),
+		sysvar.SetValue(&sv.DefaultIsolationLevel),
 		func(v sppb.TransactionOptions_IsolationLevel) string {
 			// Use protobuf String() method to get full name, then extract short form
 			fullName := v.String()
@@ -658,7 +637,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewReadOnlyBooleanParser(
 		"CLI_MCP",
 		"A read-only boolean indicating whether the connection is running as an MCP server.",
-		func() bool { return sv.MCP },
+		sysvar.GetValue(&sv.MCP),
 	))
 
 	// CLI_VERSION
@@ -723,11 +702,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			"UNSPECIFIED":   parseModeUnspecified,
 			"":              parseModeUnspecified, // Allow empty string
 		},
-		func() parseMode { return sv.BuildStatementMode },
-		func(v parseMode) error {
-			sv.BuildStatementMode = v
-			return nil
-		},
+		sysvar.GetValue(&sv.BuildStatementMode),
+		sysvar.SetValue(&sv.BuildStatementMode),
 	))
 
 	// Special variables with complex handling
