@@ -130,15 +130,7 @@ func NewStringParser(
 	getter func() string,
 	setter func(string) error,
 ) VariableParser {
-	return &TypedVariableParser[string]{
-		name:        name,
-		description: description,
-		parser:      parser.DualModeStringParser,
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatString,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, parser.DualModeStringParser, getter, setter, FormatString)
 }
 
 // NewSimpleStringParser creates a string variable parser from a pointer.
@@ -191,15 +183,7 @@ func NewIntegerParser(
 		opts = &RangeParserOptions[int64]{Min: min, Max: max}
 	}
 
-	return &TypedVariableParser[int64]{
-		name:        name,
-		description: description,
-		parser:      CreateIntRangeParser(opts),
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatInt,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, CreateIntRangeParser(opts), getter, setter, FormatInt)
 }
 
 // NewEnumParser creates an enum variable parser for any comparable type.
@@ -211,15 +195,7 @@ func NewEnumParser[T comparable](
 	setter func(T) error,
 	formatter func(T) string,
 ) VariableParser {
-	return &TypedVariableParser[T]{
-		name:        name,
-		description: description,
-		parser:      parser.CreateDualModeEnumParser(values),
-		setter:      setter,
-		getter:      getter,
-		formatter:   formatter,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, parser.CreateDualModeEnumParser(values), getter, setter, formatter)
 }
 
 // NewEnumParserWithStringer creates an enum parser using the type's String() method.
@@ -266,15 +242,7 @@ func NewDurationParser(
 		opts = &RangeParserOptions[time.Duration]{Min: min, Max: max}
 	}
 
-	return &TypedVariableParser[time.Duration]{
-		name:        name,
-		description: description,
-		parser:      CreateDurationRangeParser(opts),
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatDuration,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, CreateDurationRangeParser(opts), getter, setter, FormatDuration)
 }
 
 // NewNullableDurationParser creates a nullable duration variable parser.
@@ -293,15 +261,7 @@ func NewNullableDurationParser(
 	innerParser := CreateDurationRangeParser(opts)
 	p := parser.NewNullableDurationParser(innerParser)
 
-	return &TypedVariableParser[*time.Duration]{
-		name:        name,
-		description: description,
-		parser:      p,
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatNullable(FormatDuration),
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, p, getter, setter, FormatNullable(FormatDuration))
 }
 
 // NewTypedVariableParser creates a new TypedVariableParser for custom types.
@@ -314,15 +274,7 @@ func NewTypedVariableParser[T any](
 	setter func(T) error,
 	formatter func(T) string,
 ) VariableParser {
-	return &TypedVariableParser[T]{
-		name:        name,
-		description: description,
-		parser:      parser,
-		setter:      setter,
-		getter:      getter,
-		formatter:   formatter,
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, parser, getter, setter, formatter)
 }
 
 // NewSimpleEnumParser creates an enum variable parser with standard behavior.
@@ -335,15 +287,7 @@ func NewSimpleEnumParser[T comparable](
 	getter func() T,
 	setter func(T) error,
 ) VariableParser {
-	return &TypedVariableParser[T]{
-		name:        name,
-		description: description,
-		parser:      parser.CreateDualModeEnumParser(enumValues),
-		setter:      setter,
-		getter:      getter,
-		formatter:   func(v T) string { return fmt.Sprint(v) },
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, parser.CreateDualModeEnumParser(enumValues), getter, setter, func(v T) string { return fmt.Sprint(v) })
 }
 
 // Registry manages system variable parsers.
@@ -417,15 +361,7 @@ func NewReadOnlyStringParser(
 	description string,
 	getter func() string,
 ) VariableParser {
-	return &TypedVariableParser[string]{
-		name:        name,
-		description: description,
-		parser:      parser.DualModeStringParser,
-		setter:      nil, // Read-only
-		getter:      getter,
-		formatter:   FormatString,
-		readOnly:    true,
-	}
+	return createTypedParser(name, description, parser.DualModeStringParser, getter, nil, FormatString)
 }
 
 // NewReadOnlyBooleanParser creates a read-only boolean variable parser.
@@ -434,15 +370,7 @@ func NewReadOnlyBooleanParser(
 	description string,
 	getter func() bool,
 ) VariableParser {
-	return &TypedVariableParser[bool]{
-		name:        name,
-		description: description,
-		parser:      parser.DualModeBoolParser,
-		setter:      nil, // Read-only
-		getter:      getter,
-		formatter:   FormatBool,
-		readOnly:    true,
-	}
+	return createTypedParser(name, description, parser.DualModeBoolParser, getter, nil, FormatBool)
 }
 
 // NewNullableIntParser creates a nullable integer variable parser.
@@ -461,13 +389,5 @@ func NewNullableIntParser(
 	innerParser := CreateIntRangeParser(opts)
 	p := parser.NewNullableIntParser(innerParser)
 
-	return &TypedVariableParser[*int64]{
-		name:        name,
-		description: description,
-		parser:      p,
-		setter:      setter,
-		getter:      getter,
-		formatter:   FormatNullable(FormatInt),
-		readOnly:    setter == nil,
-	}
+	return createTypedParser(name, description, p, getter, setter, FormatNullable(FormatInt))
 }
