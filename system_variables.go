@@ -490,12 +490,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"AUTO_PARTITION_MODE": {
-		Description: "A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.AutoPartitionMode
-		}),
-	},
 	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
 	"CLI_OUTPUT_TEMPLATE_FILE": {
 		Description: "Go text/template for formatting the output of the CLI.",
@@ -514,88 +508,7 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			}),
 		},
 	},
-	"MAX_COMMIT_DELAY": {
-		Description: "The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				if strings.ToUpper(value) == "NULL" {
-					this.MaxCommitDelay = nil
-					return nil
-				}
-
-				duration, err := time.ParseDuration(unquoteString(value))
-				if err != nil {
-					return fmt.Errorf("failed to parse duration %s: %w", value, err)
-				}
-
-				this.MaxCommitDelay = &duration
-				return nil
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.MaxCommitDelay == nil {
-					return singletonMap(name, "NULL"), errIgnored
-				}
-
-				return singletonMap(name, this.MaxCommitDelay.String()), nil
-			},
-		},
-	},
 	"RETRY_ABORTS_INTERNALLY": {Description: "A boolean indicating whether the connection automatically retries aborted transactions. The default is true."},
-	"MAX_PARTITIONED_PARALLELISM": {
-		Description: "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
-		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
-			return &variables.MaxPartitionedParallelism
-		}),
-	},
-	"AUTOCOMMIT_DML_MODE": {
-		Description: "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				switch unquoteString(value) {
-				case "PARTITIONED_NON_ATOMIC":
-					this.AutocommitDMLMode = AutocommitDMLModePartitionedNonAtomic
-					return nil
-				case "TRANSACTIONAL":
-					this.AutocommitDMLMode = AutocommitDMLModeTransactional
-					return nil
-				default:
-					return fmt.Errorf("invalid AUTOCOMMIT_DML_MODE value: %v", value)
-				}
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name,
-					lo.Ternary(this.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic, "PARTITIONED_NON_ATOMIC", "TRANSACTIONAL")), nil
-			},
-		},
-	},
-	"STATEMENT_TIMEOUT": {
-		Description: "A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.StatementTimeout == nil {
-					return singletonMap(name, "10m"), nil
-				}
-				return singletonMap(name, this.StatementTimeout.String()), nil
-			},
-			Setter: func(this *systemVariables, name, value string) error {
-				timeout, err := time.ParseDuration(unquoteString(value))
-				if err != nil {
-					return fmt.Errorf("invalid timeout format: %v", err)
-				}
-				if timeout < 0 {
-					return fmt.Errorf("timeout cannot be negative")
-				}
-				this.StatementTimeout = &timeout
-				return nil
-			},
-		},
-	},
-	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
-		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.ExcludeTxnFromChangeStreams
-		}),
-	},
 	"READ_ONLY_STALENESS": {
 		Description: "A property of type `STRING` indicating the current read-only staleness setting that Spanner uses for read-only transactions and single read-only queries.",
 		Accessor: accessor{
@@ -643,118 +556,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				}
 			},
 			nil,
-		},
-	},
-	"OPTIMIZER_VERSION": {
-		Description: "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
-		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
-			return &sysVars.OptimizerVersion
-		}),
-	},
-	"OPTIMIZER_STATISTICS_PACKAGE": {
-		Description: "A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
-		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
-			return &sysVars.OptimizerStatisticsPackage
-		}),
-	},
-	"RETURN_COMMIT_STATS": {
-		Description: "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.ReturnCommitStats
-		}),
-	},
-	"AUTO_BATCH_DML": {
-		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
-		Accessor: boolAccessor(func(variables *systemVariables) *bool {
-			return &variables.AutoBatchDML
-		}),
-	},
-	"DATA_BOOST_ENABLED": {
-		Description: "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
-		Accessor: boolAccessor(func(sysVars *systemVariables) *bool {
-			return &sysVars.DataBoostEnabled
-		}),
-	},
-	"RPC_PRIORITY": {
-		Description: "A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				s := unquoteString(value)
-
-				p, err := parsePriority(s)
-				if err != nil {
-					return err
-				}
-
-				this.RPCPriority = p
-				return nil
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
-			},
-		},
-	},
-	"TRANSACTION_TAG": {
-		Description: "A property of type STRING that contains the transaction tag for the next transaction.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				if this.CurrentSession == nil {
-					return errors.New("invalid state: current session is not populated")
-				}
-
-				return this.CurrentSession.setTransactionTag(unquoteString(value))
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.CurrentSession == nil {
-					return singletonMap(name, ""), errIgnored
-				}
-
-				tag := this.CurrentSession.getTransactionTag()
-				if tag == "" {
-					return singletonMap(name, ""), errIgnored
-				}
-
-				return singletonMap(name, tag), nil
-			},
-		},
-	},
-	"STATEMENT_TAG": {
-		Description: "A property of type STRING that contains the request tag for the next statement.",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				this.RequestTag = unquoteString(value)
-				return nil
-			},
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.RequestTag == "" {
-					return nil, errIgnored
-				}
-
-				return singletonMap(name, this.RequestTag), nil
-			},
-		},
-	},
-	"READ_TIMESTAMP": {
-		Description: "The read timestamp of the most recent read-only transaction.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.ReadTimestamp.IsZero() {
-					return nil, errIgnored
-				}
-				return singletonMap(name, this.ReadTimestamp.Format(time.RFC3339Nano)), nil
-			},
-		},
-	},
-	"COMMIT_TIMESTAMP": {
-		Description: "The commit timestamp of the last read-write transaction that Spanner committed.",
-		Accessor: accessor{
-			Getter: func(this *systemVariables, name string) (map[string]string, error) {
-				if this.CommitTimestamp.IsZero() {
-					return nil, errIgnored
-				}
-				s := this.CommitTimestamp.Format(time.RFC3339Nano)
-				return singletonMap(name, s), nil
-			},
 		},
 	},
 	"COMMIT_RESPONSE": {
@@ -836,12 +637,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
-	"CLI_MCP": {
-		Description: "A read-only boolean indicating whether the connection is running as an MCP server.",
-		Accessor: accessor{
-			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.MCP }),
-		},
-	},
 	"CLI_DATABASE_DIALECT": {
 		Description: "",
 		Accessor: accessor{
@@ -857,30 +652,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 		},
-	},
-	"CLI_ECHO_EXECUTED_DDL": {
-		Description: "",
-		Accessor: accessor{
-			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.EchoExecutedDDL }),
-			Setter: func(this *systemVariables, name, value string) error {
-				b, err := strconv.ParseBool(value)
-				if err != nil {
-					return err
-				}
-				this.EchoExecutedDDL = b
-				return nil
-			},
-		},
-	},
-	"CLI_ROLE": {
-		Description: "",
-		Accessor: accessor{
-			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
-		},
-	},
-	"CLI_ECHO_INPUT": {
-		Description: "",
-		Accessor:    boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
 	},
 	"CLI_ENDPOINT": {
 		Description: "",
@@ -937,26 +708,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				), ",")), nil
 			},
 		},
-	},
-	"CLI_HISTORY_FILE": {
-		Description: "",
-		Accessor: accessor{
-			Getter: stringGetter(
-				func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
-			),
-		},
-	},
-	"CLI_VERTEXAI_MODEL": {
-		Description: "",
-		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
-			return &sysVars.VertexAIModel
-		}),
-	},
-	"CLI_VERTEXAI_PROJECT": {
-		Description: "",
-		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
-			return &sysVars.VertexAIProject
-		}),
 	},
 	"CLI_PROMPT": {
 		Description: "",
@@ -1064,28 +815,6 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				this.ExplainFormat = format
 				return nil
 			},
-		},
-	},
-	"CLI_ANALYZE_COLUMNS": {
-		Description: "<name>:<template>[:<alignment>], ...",
-		Accessor: accessor{
-			Setter: func(this *systemVariables, name, value string) error {
-				def, err := customListToTableRenderDefs(unquoteString(value))
-				if err != nil {
-					return err
-				}
-
-				if err != nil {
-					return err
-				}
-
-				this.AnalyzeColumns = value
-				this.ParsedAnalyzeColumns = def
-				return nil
-			},
-			Getter: stringGetter(func(sysVars *systemVariables) *string {
-				return &sysVars.AnalyzeColumns
-			}),
 		},
 	},
 	"CLI_INLINE_STATS": {
