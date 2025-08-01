@@ -335,17 +335,19 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// CLI_LOG_GRPC
-	mustRegister(sysvar.NewSimpleBooleanParser(
+	// Read-only: gRPC logging configuration is set at startup and cannot be changed during session
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
 		"CLI_LOG_GRPC",
 		"Enable gRPC logging.",
-		&sv.LogGrpc,
+		sysvar.GetValue(&sv.LogGrpc),
 	))
 
 	// CLI_INSECURE
-	mustRegister(sysvar.NewSimpleBooleanParser(
+	// Read-only: TLS verification setting is established at connection time and cannot be changed
+	mustRegister(sysvar.NewReadOnlyBooleanParser(
 		"CLI_INSECURE",
 		"Skip TLS certificate verification (insecure).",
-		&sv.Insecure,
+		sysvar.GetValue(&sv.Insecure),
 	))
 
 	// More string variables
@@ -363,47 +365,53 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	))
 
 	// CLI_HISTORY_FILE
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: History file path is set at startup and cannot be changed during session
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_HISTORY_FILE",
 		"Path to the history file.",
-		&sv.HistoryFile,
+		sysvar.GetValue(&sv.HistoryFile),
 	))
 
 	// CLI_PROJECT
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: Project ID is part of the database connection path and cannot be changed after session creation
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_PROJECT",
 		"GCP Project ID.",
-		&sv.Project,
+		sysvar.GetValue(&sv.Project),
 	))
 
 	// CLI_INSTANCE
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: Instance ID is part of the database connection path and cannot be changed after session creation
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_INSTANCE",
 		"Cloud Spanner instance ID.",
-		&sv.Instance,
+		sysvar.GetValue(&sv.Instance),
 	))
 
 	// CLI_DATABASE
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: Database ID is part of the connection and can only be changed via USE statement
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_DATABASE",
 		"Cloud Spanner database ID.",
-		&sv.Database,
+		sysvar.GetValue(&sv.Database),
 	))
 
 	// CLI_ROLE
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: Database role is set at connection time and cannot be changed during session
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_ROLE",
 		"Cloud Spanner database role.",
-		&sv.Role,
+		sysvar.GetValue(&sv.Role),
 	))
 
 	// Note: CLI_ENDPOINT is handled specially in the old system (parses to host/port)
 
 	// CLI_IMPERSONATE_SERVICE_ACCOUNT
-	mustRegister(sysvar.NewSimpleStringParser(
+	// Read-only: Service account impersonation is configured at authentication time and cannot be changed
+	mustRegister(sysvar.NewReadOnlyStringParser(
 		"CLI_IMPERSONATE_SERVICE_ACCOUNT",
 		"Service account to impersonate.",
-		&sv.ImpersonateServiceAccount,
+		sysvar.GetValue(&sv.ImpersonateServiceAccount),
 	))
 
 	// TRANSACTION_TAG
@@ -428,8 +436,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewNullableDurationParser(
 		"MAX_COMMIT_DELAY",
 		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
-		sysvar.GetPointer(&sv.MaxCommitDelay),
-		sysvar.SetPointer(&sv.MaxCommitDelay),
+		sysvar.GetValue(&sv.MaxCommitDelay),
+		sysvar.SetValue(&sv.MaxCommitDelay),
 		&minDelay,
 		&maxDelay,
 	))
@@ -438,8 +446,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	mustRegister(sysvar.NewNullableDurationParser(
 		"STATEMENT_TIMEOUT",
 		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
-		sysvar.GetPointer(&sv.StatementTimeout),
-		sysvar.SetPointer(&sv.StatementTimeout),
+		sysvar.GetValue(&sv.StatementTimeout),
+		sysvar.SetValue(&sv.StatementTimeout),
 		lo.ToPtr(time.Duration(0)), nil, // Min: 0, no max
 	))
 
@@ -592,19 +600,22 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 
 	// Note: CLI_CURRENT_WIDTH is handled in the old system (no field in systemVariables)
 
+	// CLI_HOST
+	// Read-only: Connection endpoint is established at session creation and cannot be changed
+	mustRegister(sysvar.NewReadOnlyStringParser(
+		"CLI_HOST",
+		"Host on which Spanner server is located",
+		sysvar.GetValue(&sv.Host),
+	))
+
 	// CLI_PORT
+	// Read-only: Connection endpoint is established at session creation and cannot be changed
 	mustRegister(sysvar.NewIntegerParser(
 		"CLI_PORT",
 		"Port number for connections.",
 		func() int64 { return int64(sv.Port) },
-		func(v int64) error {
-			if v < 0 || v > 65535 {
-				return fmt.Errorf("port must be between 0 and 65535")
-			}
-			sv.Port = int(v)
-			return nil
-		},
-		lo.ToPtr(int64(0)), lo.ToPtr(int64(65535)),
+		nil, // No setter - read-only
+		nil, nil, // No min/max validation needed for read-only
 	))
 
 	// Read-only variables

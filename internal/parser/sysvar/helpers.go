@@ -27,29 +27,3 @@ func SetValue[T any](ptr *T) func(T) error {
 	}
 }
 
-// GetPointer returns a getter function that retrieves a pointer from a pointer-to-pointer.
-// This is useful for fields that are already pointers (nullable values).
-//
-// Example:
-//   getter: GetPointer(&sv.StatementTimeout)
-// Instead of:
-//   getter: func() *time.Duration { return sv.StatementTimeout }
-func GetPointer[T any](ptr **T) func() *T {
-	return func() *T {
-		return *ptr
-	}
-}
-
-// SetPointer returns a setter function that updates a pointer value.
-// This is useful for fields that are pointers (nullable values).
-//
-// Example:
-//   setter: SetPointer(&sv.StatementTimeout)
-// Instead of:
-//   setter: func(v *time.Duration) error { sv.StatementTimeout = v; return nil }
-func SetPointer[T any](ptr **T) func(*T) error {
-	return func(v *T) error {
-		*ptr = v
-		return nil
-	}
-}
