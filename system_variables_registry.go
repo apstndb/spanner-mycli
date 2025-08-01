@@ -9,7 +9,6 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/internal/parser"
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -32,7 +31,7 @@ type readOnlyVar[T any] struct {
 func registerSimpleVariables[T any](
 	registry *sysvar.Registry,
 	vars []simpleVar[T],
-	dualModeParser parser.DualModeParser[T],
+	dualModeParser sysvar.DualModeParser[T],
 	formatter func(T) string,
 ) {
 	for _, v := range vars {
@@ -57,7 +56,7 @@ func registerSimpleVariables[T any](
 func registerReadOnlyVariables[T any](
 	registry *sysvar.Registry,
 	vars []readOnlyVar[T],
-	dualModeParser parser.DualModeParser[T],
+	dualModeParser sysvar.DualModeParser[T],
 	formatter func(T) string,
 ) {
 	for _, v := range vars {
@@ -122,12 +121,12 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		{"AUTO_BATCH_DML", "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.", &sv.AutoBatchDML},
 		{"DATA_BOOST_ENABLED", "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.", &sv.DataBoostEnabled},
 		{"EXCLUDE_TXN_FROM_CHANGE_STREAMS", "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).", &sv.ExcludeTxnFromChangeStreams},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// Integer configuration
 	registerSimpleVariables(registry, []simpleVar[int64]{
 		{"MAX_PARTITIONED_PARALLELISM", "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`", &sv.MaxPartitionedParallelism},
-	}, parser.DualModeIntParser, sysvar.FormatInt)
+	}, sysvar.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
 	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
@@ -143,12 +142,12 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	registerSimpleVariables(registry, []simpleVar[string]{
 		{"TRANSACTION_TAG", "A property of type STRING that contains the transaction tag for the next transaction.", &sv.TransactionTag},
 		{"STATEMENT_TAG", "A property of type STRING that contains the request tag for the next statement.", &sv.RequestTag},
-	}, parser.DualModeStringParser, sysvar.FormatString)
+	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
 	// MAX_COMMIT_DELAY
 	minDelay := time.Duration(0)
 	maxDelay := 500 * time.Millisecond
-	mustRegister(registry, sysvar.NewNullableDurationParser(
+	mustRegister(registry, sysvar.NewNullableDurationVariableParser(
 		"MAX_COMMIT_DELAY",
 		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
 		sysvar.GetValue(&sv.MaxCommitDelay),
@@ -162,7 +161,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		"TRANSACTIONAL":          AutocommitDMLModeTransactional,
 		"PARTITIONED_NON_ATOMIC": AutocommitDMLModePartitionedNonAtomic,
 	}
-	mustRegister(registry, sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"AUTOCOMMIT_DML_MODE",
 		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
 		autocommitDMLModeValues,
@@ -183,7 +182,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	registerSimpleVariables(registry, []simpleVar[string]{
 		{"OPTIMIZER_VERSION", "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.", &sv.OptimizerVersion},
 		{"OPTIMIZER_STATISTICS_PACKAGE", "A property of type STRING indicating the current optimizer statistics package that is used by this connection.", &sv.OptimizerStatisticsPackage},
-	}, parser.DualModeStringParser, sysvar.FormatString)
+	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
 	// RPC configuration
 	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
@@ -196,7 +195,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	))
 
 	// Statement timeout
-	mustRegister(registry, sysvar.NewNullableDurationParser(
+	mustRegister(registry, sysvar.NewNullableDurationVariableParser(
 		"STATEMENT_TIMEOUT",
 		"A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
 		sysvar.GetValue(&sv.StatementTimeout),
@@ -244,7 +243,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"XML":                  DisplayModeXML,
 		"CSV":                  DisplayModeCSV,
 	}
-	mustRegister(registry, sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_FORMAT",
 		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
 		formatValues,
@@ -268,9 +267,9 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_ENABLE_HIGHLIGHT", "Enable syntax highlighting.", &sv.EnableHighlight},
 		{"CLI_PROTOTEXT_MULTILINE", "Enable multiline prototext output.", &sv.MultilineProtoText},
 		{"CLI_MARKDOWN_CODEBLOCK", "Enable markdown codeblock output.", &sv.MarkdownCodeblock},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
-	mustRegister(registry, sysvar.NewNullableIntParser(
+	mustRegister(registry, sysvar.NewNullableIntVariableParser(
 		"CLI_FIXED_WIDTH",
 		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
 		func() *int64 { return sv.FixedWidth },
@@ -285,7 +284,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	registerSimpleVariables(registry, []simpleVar[int64]{
 		{"CLI_TAB_WIDTH", "Tab width. It is used for expanding tabs.", &sv.TabWidth},
 		{"CLI_EXPLAIN_WRAP_WIDTH", "Controls query plan wrap width. It effects only operators column contents", &sv.ExplainWrapWidth},
-	}, parser.DualModeIntParser, sysvar.FormatInt)
+	}, sysvar.DualModeIntParser, sysvar.FormatInt)
 
 	// CLI_EXPLAIN_FORMAT
 	mustRegister(registry, sysvar.NewSimpleEnumParser(
@@ -301,7 +300,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		sysvar.SetValue(&sv.ExplainFormat),
 	))
 
-	mustRegister(registry, sysvar.NewStringParser(
+	mustRegister(registry, sysvar.NewStringVariableParser(
 		"CLI_ANALYZE_COLUMNS",
 		"Go template for analyzing column data.",
 		sysvar.GetValue(&sv.AnalyzeColumns),
@@ -317,14 +316,14 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_USE_PAGER", "Enable pager for output.", &sv.UsePager},
 		{"CLI_ENABLE_PROGRESS_BAR", "A boolean indicating whether to display progress bars during operations. The default is false.", &sv.EnableProgressBar},
 		{"CLI_SKIP_SYSTEM_COMMAND", "Controls whether system commands are disabled.", &sv.SkipSystemCommand},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// Prompt configuration
 	registerSimpleVariables(registry, []simpleVar[string]{
 		{"CLI_PROMPT", "Custom prompt for spanner-mycli.", &sv.Prompt},
-	}, parser.DualModeStringParser, sysvar.FormatString)
+	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
-	mustRegister(registry, sysvar.NewStringParser(
+	mustRegister(registry, sysvar.NewStringVariableParser(
 		"CLI_PROMPT2",
 		"Custom continuation prompt for spanner-mycli.",
 		sysvar.GetValue(&sv.Prompt2),
@@ -343,10 +342,10 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_ECHO_EXECUTED_DDL", "Echo executed DDL statements.", &sv.EchoExecutedDDL},
 		{"CLI_ECHO_INPUT", "Echo input statements.", &sv.EchoInput},
 		{"CLI_LINT_PLAN", "Enable query plan linting.", &sv.LintPlan},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_LOG_LEVEL
-	mustRegister(registry, sysvar.CreateStringEnumVariableParser(
+	mustRegister(registry, sysvar.CreateStringEnumVariableParser[string](
 		"CLI_LOG_LEVEL",
 		"Log level for the CLI.",
 		map[string]string{
@@ -383,7 +382,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	registerReadOnlyVariables(registry, []readOnlyVar[bool]{
 		{"CLI_LOG_GRPC", "Enable gRPC logging.", sysvar.GetValue(&sv.LogGrpc)},
 		{"CLI_INSECURE", "Skip TLS certificate verification (insecure).", sysvar.GetValue(&sv.Insecure)},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// Session and connection information (read-only)
 	registerReadOnlyVariables(registry, []readOnlyVar[string]{
@@ -393,9 +392,9 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_ROLE", "Cloud Spanner database role.", sysvar.GetValue(&sv.Role)},
 		{"CLI_HOST", "Host on which Spanner server is located", sysvar.GetValue(&sv.Host)},
 		{"CLI_IMPERSONATE_SERVICE_ACCOUNT", "Service account to impersonate.", sysvar.GetValue(&sv.ImpersonateServiceAccount)},
-	}, parser.DualModeStringParser, sysvar.FormatString)
+	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
-	mustRegister(registry, sysvar.NewIntegerParser(
+	mustRegister(registry, sysvar.NewIntegerVariableParser(
 		"CLI_PORT",
 		"Port number for connections.",
 		func() int64 { return int64(sv.Port) },
@@ -430,7 +429,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	registerSimpleVariables(registry, []simpleVar[string]{
 		{"CLI_VERTEXAI_MODEL", "Vertex AI model for natural language features.", &sv.VertexAIModel},
 		{"CLI_VERTEXAI_PROJECT", "Vertex AI project for natural language features.", &sv.VertexAIProject},
-	}, parser.DualModeStringParser, sysvar.FormatString)
+	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
 	// Proto descriptor files
 	mustRegister(registry, sysvar.NewProtoDescriptorFileParser(
@@ -481,7 +480,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		{"CLI_TRY_PARTITION_QUERY", "A boolean indicating whether to test query for partition compatibility instead of executing it.", &sv.TryPartitionQuery},
 		{"CLI_AUTO_CONNECT_AFTER_CREATE", "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.", &sv.AutoConnectAfterCreate},
 		{"CLI_ASYNC_DDL", "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.", &sv.AsyncDDL},
-	}, parser.DualModeBoolParser, sysvar.FormatBool)
+	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_DATABASE_DIALECT
 	dialectValues := map[string]databasepb.DatabaseDialect{
@@ -489,7 +488,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"POSTGRESQL":          databasepb.DatabaseDialect_POSTGRESQL,
 		"":                    databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
 	}
-	mustRegister(registry, sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
 		dialectValues,
@@ -519,7 +518,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"PROFILE":    sppb.ExecuteSqlRequest_PROFILE,
 		"WITH_STATS": sppb.ExecuteSqlRequest_PROFILE, // Alias
 	}
-	mustRegister(registry, sysvar.NewEnumParser(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
 		queryModeValues,

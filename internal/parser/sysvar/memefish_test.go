@@ -1,9 +1,7 @@
-package parser_test
+package sysvar
 
 import (
 	"testing"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 func TestParseGoogleSQLStringLiteral(t *testing.T) {
@@ -87,7 +85,7 @@ line`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseGoogleSQLStringLiteral(tt.input)
+			got, err := ParseGoogleSQLStringLiteral(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseGoogleSQLStringLiteral() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -101,7 +99,7 @@ line`,
 
 func TestGoogleSQLStringLiteralParser(t *testing.T) {
 	// Test that the parser instance works correctly
-	parser := parser.GoogleSQLStringLiteralParser
+	parser := GoogleSQLStringLiteralParser
 
 	// Valid string
 	got, err := parser.Parse("'test string'")
@@ -122,7 +120,7 @@ func TestGoogleSQLStringLiteralParser(t *testing.T) {
 func TestDualModeStringParser(t *testing.T) {
 	t.Run("GoogleSQL mode", func(t *testing.T) {
 		// Should only accept string literals
-		got, err := parser.DualModeStringParser.ParseWithMode("'quoted string'", parser.ParseModeGoogleSQL)
+		got, err := DualModeStringParser.ParseWithMode("'quoted string'", ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseWithMode() failed: %v", err)
 		}
@@ -131,7 +129,7 @@ func TestDualModeStringParser(t *testing.T) {
 		}
 
 		// Should reject identifiers
-		_, err = parser.DualModeStringParser.ParseWithMode("unquoted", parser.ParseModeGoogleSQL)
+		_, err = DualModeStringParser.ParseWithMode("unquoted", ParseModeGoogleSQL)
 		if err == nil {
 			t.Error("Expected error for unquoted identifier in GoogleSQL mode")
 		}
@@ -139,7 +137,7 @@ func TestDualModeStringParser(t *testing.T) {
 
 	t.Run("Simple mode", func(t *testing.T) {
 		// Should accept any string as-is
-		got, err := parser.DualModeStringParser.ParseWithMode("unquoted value", parser.ParseModeSimple)
+		got, err := DualModeStringParser.ParseWithMode("unquoted value", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseWithMode() failed: %v", err)
 		}
@@ -148,7 +146,7 @@ func TestDualModeStringParser(t *testing.T) {
 		}
 
 		// Should preserve quotes if present
-		got, err = parser.DualModeStringParser.ParseWithMode("'quoted'", parser.ParseModeSimple)
+		got, err = DualModeStringParser.ParseWithMode("'quoted'", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseWithMode() failed: %v", err)
 		}

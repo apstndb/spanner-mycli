@@ -3,8 +3,6 @@ package sysvar
 import (
 	"fmt"
 	"strings"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 // AppendableVariableParser extends VariableParser to support append operations.
@@ -12,22 +10,22 @@ import (
 type AppendableVariableParser interface {
 	VariableParser
 	// AppendWithMode appends a value using the specified parse mode.
-	AppendWithMode(value string, mode parser.ParseMode) error
+	AppendWithMode(value string, mode ParseMode) error
 }
 
 // Registry extensions for append support.
 
 // AppendFromGoogleSQL appends a value using GoogleSQL syntax.
 func (r *Registry) AppendFromGoogleSQL(name, value string) error {
-	return r.appendWithMode(name, value, parser.ParseModeGoogleSQL)
+	return r.appendWithMode(name, value, ParseModeGoogleSQL)
 }
 
 // AppendFromSimple appends a value using simple syntax.
 func (r *Registry) AppendFromSimple(name, value string) error {
-	return r.appendWithMode(name, value, parser.ParseModeSimple)
+	return r.appendWithMode(name, value, ParseModeSimple)
 }
 
-func (r *Registry) appendWithMode(name, value string, mode parser.ParseMode) error {
+func (r *Registry) appendWithMode(name, value string, mode ParseMode) error {
 	upperName := strings.ToUpper(name)
 	p, exists := r.parsers[upperName]
 	if !exists {

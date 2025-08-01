@@ -1,11 +1,8 @@
-package sysvar_test
+package sysvar
 
 import (
 	"fmt"
 	"testing"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 func TestProtoDescriptorFileParser(t *testing.T) {
@@ -13,7 +10,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 	var setterCalled bool
 	var lastAppended string
 
-	p := sysvar.NewProtoDescriptorFileParser(
+	p := NewProtoDescriptorFileParser(
 		"TEST_PROTO_FILES",
 		"Test proto files",
 		func() []string { return files },
@@ -32,7 +29,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 
 	t.Run("Set operation with GoogleSQL mode", func(t *testing.T) {
 		setterCalled = false
-		err := p.ParseAndSetWithMode(`"file1.proto,file2.proto"`, parser.ParseModeGoogleSQL)
+		err := p.ParseAndSetWithMode(`"file1.proto,file2.proto"`, ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode failed: %v", err)
 		}
@@ -55,7 +52,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 
 	t.Run("Set operation with Simple mode", func(t *testing.T) {
 		setterCalled = false
-		err := p.ParseAndSetWithMode("file3.proto,file4.proto", parser.ParseModeSimple)
+		err := p.ParseAndSetWithMode("file3.proto,file4.proto", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode failed: %v", err)
 		}
@@ -74,7 +71,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 
 		// ProtoDescriptorFileParser implements AppendableVariableParser, so we can call AppendWithMode directly
 
-		err := p.AppendWithMode(`"new.proto"`, parser.ParseModeGoogleSQL)
+		err := p.AppendWithMode(`"new.proto"`, ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("AppendWithMode failed: %v", err)
 		}
@@ -92,7 +89,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 
 		// ProtoDescriptorFileParser implements AppendableVariableParser, so we can call AppendWithMode directly
 
-		err := p.AppendWithMode("another.proto", parser.ParseModeSimple)
+		err := p.AppendWithMode("another.proto", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("AppendWithMode failed: %v", err)
 		}
@@ -105,7 +102,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 	})
 
 	t.Run("Empty set clears files", func(t *testing.T) {
-		err := p.ParseAndSetWithMode(`""`, parser.ParseModeGoogleSQL)
+		err := p.ParseAndSetWithMode(`""`, ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode failed: %v", err)
 		}
@@ -115,7 +112,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 
 		// Test empty string in Simple mode
 		files = []string{"test.proto"}
-		err = p.ParseAndSetWithMode("", parser.ParseModeSimple)
+		err = p.ParseAndSetWithMode("", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode (simple) failed: %v", err)
 		}
@@ -126,10 +123,10 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 }
 
 func TestRegistryAppendSupport(t *testing.T) {
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
 	// Register a regular variable
-	regularVar := sysvar.NewStringParser(
+	regularVar := NewStringVariableParser(
 		"REGULAR_VAR",
 		"Regular variable",
 		func() string { return testString },
@@ -144,7 +141,7 @@ func TestRegistryAppendSupport(t *testing.T) {
 
 	// Register an appendable variable
 	var files []string
-	appendableVar := sysvar.NewProtoDescriptorFileParser(
+	appendableVar := NewProtoDescriptorFileParser(
 		"APPENDABLE_VAR",
 		"Appendable variable",
 		func() []string { return files },
@@ -184,7 +181,7 @@ var testString string // Used in tests
 
 func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	var files []string
-	p := sysvar.NewProtoDescriptorFileParser(
+	p := NewProtoDescriptorFileParser(
 		"PROTO_FILES",
 		"Proto descriptor files",
 		func() []string { return files },
@@ -212,18 +209,18 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	}
 
 	// Test validation error in set
-	if err := p.ParseAndSetWithMode("invalid.pb", parser.ParseModeSimple); err == nil {
+	if err := p.ParseAndSetWithMode("invalid.pb", ParseModeSimple); err == nil {
 		t.Error("Expected validation error for invalid.pb")
 	}
 
 	// Test validation error in append
-	if err := p.AppendWithMode("invalid.pb", parser.ParseModeSimple); err == nil {
+	if err := p.AppendWithMode("invalid.pb", ParseModeSimple); err == nil {
 		t.Error("Expected validation error for invalid.pb in append")
 	}
 
 	// Test append with existing file (should call appender anyway)
 	files = []string{"existing.pb"}
-	if err := p.AppendWithMode("existing.pb", parser.ParseModeSimple); err != nil {
+	if err := p.AppendWithMode("existing.pb", ParseModeSimple); err != nil {
 		t.Fatalf("AppendWithMode(existing.pb) failed: %v", err)
 	}
 	// Files should still have appended the duplicate
@@ -232,27 +229,27 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	}
 
 	// Test unsupported parse mode
-	if err := p.ParseAndSetWithMode("test", parser.ParseMode(999)); err == nil {
+	if err := p.ParseAndSetWithMode("test", ParseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode")
 	}
-	if err := p.AppendWithMode("test", parser.ParseMode(999)); err == nil {
+	if err := p.AppendWithMode("test", ParseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode in append")
 	}
 
 	// Test invalid GoogleSQL string literal in ParseAndSetWithMode
-	if err := p.ParseAndSetWithMode("unclosed'", parser.ParseModeGoogleSQL); err == nil {
+	if err := p.ParseAndSetWithMode("unclosed'", ParseModeGoogleSQL); err == nil {
 		t.Error("Expected error for invalid GoogleSQL string")
 	}
 
 	// Test invalid GoogleSQL string literal in AppendWithMode
-	if err := p.AppendWithMode("unclosed'", parser.ParseModeGoogleSQL); err == nil {
+	if err := p.AppendWithMode("unclosed'", ParseModeGoogleSQL); err == nil {
 		t.Error("Expected error for invalid GoogleSQL string in append")
 	}
 }
 
 func TestProtoDescriptorFileParserReadOnly(t *testing.T) {
 	// Create a read-only parser (no setter and no appender)
-	parser := sysvar.NewProtoDescriptorFileParser(
+	parser := NewProtoDescriptorFileParser(
 		"RO_PROTO",
 		"Read-only proto files",
 		func() []string { return []string{"file1.pb", "file2.pb"} },
@@ -268,10 +265,10 @@ func TestProtoDescriptorFileParserReadOnly(t *testing.T) {
 }
 
 func TestAppendFromSimple(t *testing.T) {
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
 	var files []string
-	parser := sysvar.NewProtoDescriptorFileParser(
+	parser := NewProtoDescriptorFileParser(
 		"TEST_FILES",
 		"Test files",
 		func() []string { return files },

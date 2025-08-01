@@ -276,7 +276,22 @@ gh issue create --body-file tmp/issue_body.md
 go test -short ./...    # Unit tests only
 make all               # Format and validate everything (recommended before push)
 make all-quick         # Format + quick tests + lint (for development)
+make test-coverage     # Run tests with coverage report
 ```
+
+### Test Coverage Strategy
+- **Reusable packages** (`internal/parser/*`): Aim for 100% coverage
+  - These packages are designed for reuse and should be thoroughly tested
+  - Remove unused code rather than leaving it untested
+- **Main package**: Maintain reasonable coverage (>65%)
+  - Focus on critical paths and error handling
+  - Integration tests are valuable here
+- **Coverage measurement**: Use `-coverpkg=./...` for accurate cross-package coverage
+- **Best practices**:
+  - Add tests when adding new functionality
+  - Remove dead code to improve coverage
+  - Test both success and error paths
+  - Use table-driven tests for comprehensive coverage
 
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)

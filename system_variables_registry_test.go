@@ -5,7 +5,6 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/internal/parser"
 	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
@@ -500,7 +499,7 @@ func TestEnumParsersSimplification(t *testing.T) {
 		)
 
 		var currentValue testEnum
-		p := sysvar.NewSimpleEnumParser(
+		p := sysvar.NewSimpleEnumParser[testEnum](
 			"TEST_ENUM",
 			"Test enum",
 			map[string]testEnum{
@@ -512,7 +511,7 @@ func TestEnumParsersSimplification(t *testing.T) {
 		)
 
 		// Test GoogleSQL mode
-		err := p.ParseAndSetWithMode(`"VALUE1"`, parser.ParseModeGoogleSQL)
+		err := p.ParseAndSetWithMode(`"VALUE1"`, sysvar.ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode failed: %v", err)
 		}
@@ -521,7 +520,7 @@ func TestEnumParsersSimplification(t *testing.T) {
 		}
 
 		// Test Simple mode
-		err = p.ParseAndSetWithMode("VALUE2", parser.ParseModeSimple)
+		err = p.ParseAndSetWithMode("VALUE2", sysvar.ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseAndSetWithMode failed: %v", err)
 		}

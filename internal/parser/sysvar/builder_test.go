@@ -1,43 +1,40 @@
-package sysvar_test
+package sysvar
 
 import (
 	"testing"
 	"time"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 func TestRangeParserOptions(t *testing.T) {
 	t.Run("HasRange", func(t *testing.T) {
 		// No options
-		var opts *sysvar.RangeParserOptions[int64]
+		var opts *RangeParserOptions[int64]
 		if opts.HasRange() {
 			t.Error("nil options should not have range")
 		}
 
 		// Empty options
-		opts = &sysvar.RangeParserOptions[int64]{}
+		opts = &RangeParserOptions[int64]{}
 		if opts.HasRange() {
 			t.Error("empty options should not have range")
 		}
 
 		// With min only
 		min := int64(10)
-		opts = &sysvar.RangeParserOptions[int64]{Min: &min}
+		opts = &RangeParserOptions[int64]{Min: &min}
 		if !opts.HasRange() {
 			t.Error("options with min should have range")
 		}
 
 		// With max only
 		max := int64(100)
-		opts = &sysvar.RangeParserOptions[int64]{Max: &max}
+		opts = &RangeParserOptions[int64]{Max: &max}
 		if !opts.HasRange() {
 			t.Error("options with max should have range")
 		}
 
 		// With both
-		opts = &sysvar.RangeParserOptions[int64]{Min: &min, Max: &max}
+		opts = &RangeParserOptions[int64]{Min: &min, Max: &max}
 		if !opts.HasRange() {
 			t.Error("options with min and max should have range")
 		}
@@ -45,15 +42,15 @@ func TestRangeParserOptions(t *testing.T) {
 }
 
 // testParserCases is a helper to test valid and invalid cases for a parser
-func testParserCases(t *testing.T, p parser.DualModeParser[int64], validCases, invalidCases []string) {
+func testParserCases(t *testing.T, p DualModeParser[int64], validCases, invalidCases []string) {
 	t.Helper()
 	for _, tc := range validCases {
-		if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode(tc, ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
 		}
 	}
 	for _, tc := range invalidCases {
-		if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err == nil {
+		if _, err := p.ParseAndValidateWithMode(tc, ParseModeSimple); err == nil {
 			t.Errorf("Expected error for value %s", tc)
 		}
 	}
@@ -61,7 +58,7 @@ func testParserCases(t *testing.T, p parser.DualModeParser[int64], validCases, i
 
 func TestCreateIntRangeParser(t *testing.T) {
 	t.Run("no range", func(t *testing.T) {
-		p := sysvar.CreateIntRangeParser(nil)
+		p := CreateIntRangeParser(nil)
 		testParserCases(t, p,
 			[]string{"-1000", "0", "1000", "9223372036854775807"},
 			nil)
@@ -69,7 +66,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with min", func(t *testing.T) {
 		min := int64(10)
-		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Min: &min})
+		p := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min})
 		testParserCases(t, p,
 			[]string{"10", "100"},
 			[]string{"5"})
@@ -77,7 +74,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with max", func(t *testing.T) {
 		max := int64(100)
-		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Max: &max})
+		p := CreateIntRangeParser(&RangeParserOptions[int64]{Max: &max})
 		testParserCases(t, p,
 			[]string{"0", "100"},
 			[]string{"200"})
@@ -85,7 +82,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with range", func(t *testing.T) {
 		min, max := int64(10), int64(100)
-		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Min: &min, Max: &max})
+		p := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min, Max: &max})
 		testParserCases(t, p,
 			[]string{"10", "50", "100"},
 			[]string{"5", "200", "-10"})
@@ -96,12 +93,12 @@ func TestCreateDurationRangeParser(t *testing.T) {
 	t.Run("with range", func(t *testing.T) {
 		min := time.Duration(0)
 		max := 500 * time.Millisecond
-		p := sysvar.CreateDurationRangeParser(&sysvar.RangeParserOptions[time.Duration]{Min: &min, Max: &max})
+		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Min: &min, Max: &max})
 
 		// Valid values
 		testCases := []string{"0s", "100ms", "500ms"}
 		for _, tc := range testCases {
-			if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
+			if _, err := p.ParseAndValidateWithMode(tc, ParseModeSimple); err != nil {
 				t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
 			}
 		}
@@ -109,7 +106,7 @@ func TestCreateDurationRangeParser(t *testing.T) {
 		// Invalid values
 		invalidCases := []string{"-1s", "1s", "600ms"}
 		for _, tc := range invalidCases {
-			if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err == nil {
+			if _, err := p.ParseAndValidateWithMode(tc, ParseModeSimple); err == nil {
 				t.Errorf("Expected error for value %s", tc)
 			}
 		}
@@ -117,36 +114,36 @@ func TestCreateDurationRangeParser(t *testing.T) {
 
 	t.Run("with min only", func(t *testing.T) {
 		min := 100 * time.Millisecond
-		p := sysvar.CreateDurationRangeParser(&sysvar.RangeParserOptions[time.Duration]{Min: &min})
+		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Min: &min})
 
 		// Valid values
-		if _, err := p.ParseAndValidateWithMode("100ms", parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode("100ms", ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(100ms) failed: %v", err)
 		}
-		if _, err := p.ParseAndValidateWithMode("1s", parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode("1s", ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(1s) failed: %v", err)
 		}
 
 		// Invalid value
-		if _, err := p.ParseAndValidateWithMode("50ms", parser.ParseModeSimple); err == nil {
+		if _, err := p.ParseAndValidateWithMode("50ms", ParseModeSimple); err == nil {
 			t.Error("Expected error for value below minimum")
 		}
 	})
 
 	t.Run("with max only", func(t *testing.T) {
 		max := 500 * time.Millisecond
-		p := sysvar.CreateDurationRangeParser(&sysvar.RangeParserOptions[time.Duration]{Max: &max})
+		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Max: &max})
 
 		// Valid values
-		if _, err := p.ParseAndValidateWithMode("100ms", parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode("100ms", ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(100ms) failed: %v", err)
 		}
-		if _, err := p.ParseAndValidateWithMode("500ms", parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode("500ms", ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(500ms) failed: %v", err)
 		}
 
 		// Invalid value
-		if _, err := p.ParseAndValidateWithMode("1s", parser.ParseModeSimple); err == nil {
+		if _, err := p.ParseAndValidateWithMode("1s", ParseModeSimple); err == nil {
 			t.Error("Expected error for value above maximum")
 		}
 	})
@@ -162,7 +159,7 @@ func TestCreateStringEnumVariableParser(t *testing.T) {
 	)
 
 	currentLevel := LogLevelWarn
-	varParser := sysvar.CreateStringEnumVariableParser(
+	varParser := NewSimpleEnumParser(
 		"LOG_LEVEL",
 		"Log level",
 		map[string]LogLevel{
@@ -176,7 +173,7 @@ func TestCreateStringEnumVariableParser(t *testing.T) {
 	)
 
 	// Test parsing
-	if err := varParser.ParseAndSetWithMode("ERROR", parser.ParseModeSimple); err != nil {
+	if err := varParser.ParseAndSetWithMode("ERROR", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentLevel != LogLevelError {
@@ -195,10 +192,10 @@ func TestCreateStringEnumVariableParser(t *testing.T) {
 
 func TestFormatters(t *testing.T) {
 	t.Run("FormatBool", func(t *testing.T) {
-		if got := sysvar.FormatBool(true); got != "TRUE" {
+		if got := FormatBool(true); got != "TRUE" {
 			t.Errorf("FormatBool(true) = %q, want 'TRUE'", got)
 		}
-		if got := sysvar.FormatBool(false); got != "FALSE" {
+		if got := FormatBool(false); got != "FALSE" {
 			t.Errorf("FormatBool(false) = %q, want 'FALSE'", got)
 		}
 	})
@@ -213,7 +210,7 @@ func TestFormatters(t *testing.T) {
 			{12345, "12345"},
 		}
 		for _, tc := range testCases {
-			if got := sysvar.FormatInt(tc.value); got != tc.want {
+			if got := FormatInt(tc.value); got != tc.want {
 				t.Errorf("FormatInt(%d) = %q, want %q", tc.value, got, tc.want)
 			}
 		}
@@ -229,14 +226,14 @@ func TestFormatters(t *testing.T) {
 			{time.Hour + 30*time.Minute, "1h30m0s"},
 		}
 		for _, tc := range testCases {
-			if got := sysvar.FormatDuration(tc.value); got != tc.want {
+			if got := FormatDuration(tc.value); got != tc.want {
 				t.Errorf("FormatDuration(%v) = %q, want %q", tc.value, got, tc.want)
 			}
 		}
 	})
 
 	t.Run("FormatNullable", func(t *testing.T) {
-		formatter := sysvar.FormatNullable(sysvar.FormatInt)
+		formatter := FormatNullable(FormatInt)
 
 		// Test nil
 		if got := formatter(nil); got != "NULL" {

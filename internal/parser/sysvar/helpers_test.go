@@ -1,16 +1,14 @@
-package sysvar_test
+package sysvar
 
 import (
 	"errors"
 	"testing"
-
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 func TestGetValue(t *testing.T) {
 	t.Run("returns closure over value", func(t *testing.T) {
 		value := "test"
-		getter := sysvar.GetValue(&value)
+		getter := GetValue(&value)
 
 		if got := getter(); got != "test" {
 			t.Errorf("getter() = %q, want %q", got, "test")
@@ -25,13 +23,13 @@ func TestGetValue(t *testing.T) {
 
 	t.Run("works with different types", func(t *testing.T) {
 		intValue := 42
-		intGetter := sysvar.GetValue(&intValue)
+		intGetter := GetValue(&intValue)
 		if got := intGetter(); got != 42 {
 			t.Errorf("intGetter() = %d, want %d", got, 42)
 		}
 
 		boolValue := true
-		boolGetter := sysvar.GetValue(&boolValue)
+		boolGetter := GetValue(&boolValue)
 		if got := boolGetter(); got != true {
 			t.Errorf("boolGetter() = %v, want %v", got, true)
 		}
@@ -41,7 +39,7 @@ func TestGetValue(t *testing.T) {
 func TestSetValue(t *testing.T) {
 	t.Run("sets value through pointer", func(t *testing.T) {
 		var value string
-		setter := sysvar.SetValue(&value)
+		setter := SetValue(&value)
 
 		if err := setter("test"); err != nil {
 			t.Fatalf("setter failed: %v", err)
@@ -54,7 +52,7 @@ func TestSetValue(t *testing.T) {
 
 	t.Run("works with different types", func(t *testing.T) {
 		var intValue int
-		intSetter := sysvar.SetValue(&intValue)
+		intSetter := SetValue(&intValue)
 		if err := intSetter(42); err != nil {
 			t.Fatalf("intSetter failed: %v", err)
 		}
@@ -63,7 +61,7 @@ func TestSetValue(t *testing.T) {
 		}
 
 		var boolValue bool
-		boolSetter := sysvar.SetValue(&boolValue)
+		boolSetter := SetValue(&boolValue)
 		if err := boolSetter(true); err != nil {
 			t.Fatalf("boolSetter failed: %v", err)
 		}
@@ -81,7 +79,7 @@ func TestSetSessionInitOnly(t *testing.T) {
 	t.Run("allows setting when session is nil", func(t *testing.T) {
 		var value string
 		var session *mockSession
-		setter := sysvar.SetSessionInitOnly(&value, "TEST_VAR", &session)
+		setter := SetSessionInitOnly(&value, "TEST_VAR", &session)
 
 		if err := setter("test"); err != nil {
 			t.Fatalf("setter failed: %v", err)
@@ -95,7 +93,7 @@ func TestSetSessionInitOnly(t *testing.T) {
 	t.Run("allows setting when session pointer points to nil", func(t *testing.T) {
 		var value string
 		var session *mockSession = nil
-		setter := sysvar.SetSessionInitOnly(&value, "TEST_VAR", &session)
+		setter := SetSessionInitOnly(&value, "TEST_VAR", &session)
 
 		if err := setter("test"); err != nil {
 			t.Fatalf("setter failed: %v", err)
@@ -109,7 +107,7 @@ func TestSetSessionInitOnly(t *testing.T) {
 	t.Run("prevents setting when session exists", func(t *testing.T) {
 		var value string
 		session := &mockSession{active: true}
-		setter := sysvar.SetSessionInitOnly(&value, "TEST_VAR", &session)
+		setter := SetSessionInitOnly(&value, "TEST_VAR", &session)
 
 		err := setter("test")
 		if err == nil {
@@ -130,7 +128,7 @@ func TestSetSessionInitOnly(t *testing.T) {
 	t.Run("works with different types", func(t *testing.T) {
 		var intValue int
 		var session *mockSession
-		intSetter := sysvar.SetSessionInitOnly(&intValue, "TEST_INT", &session)
+		intSetter := SetSessionInitOnly(&intValue, "TEST_INT", &session)
 
 		if err := intSetter(42); err != nil {
 			t.Fatalf("intSetter failed: %v", err)

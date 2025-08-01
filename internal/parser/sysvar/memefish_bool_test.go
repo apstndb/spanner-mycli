@@ -1,9 +1,7 @@
-package parser_test
+package sysvar
 
 import (
 	"testing"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 func TestGoogleSQLBoolParser(t *testing.T) {
@@ -60,7 +58,7 @@ func TestGoogleSQLBoolParser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.GoogleSQLBoolParser.Parse(tt.input)
+			got, err := GoogleSQLBoolParser.Parse(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GoogleSQLBoolParser.Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return

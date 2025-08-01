@@ -1,22 +1,19 @@
-package sysvar_test
+package sysvar
 
 import (
 	"errors"
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 // Test-only parsers
 var (
 	// timeoutParser parses timeout values (0 or positive).
-	timeoutParser = parser.NewDurationParser().WithMin(0)
+	timeoutParser = NewDurationParser().WithMin(0)
 
 	// portParser parses port numbers (0-65535).
-	portParser = parser.NewIntParser().WithRange(0, 65535)
+	portParser = NewIntParser().WithRange(0, 65535)
 )
 
 type testSystemVariables struct {
@@ -33,10 +30,10 @@ func TestRegistry(t *testing.T) {
 		CLIFormat: "TABLE",
 	}
 
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
 	// Register boolean variable
-	if err := registry.Register(sysvar.NewBooleanParser(
+	if err := registry.Register(NewBooleanParser(
 		"CLI_VERBOSE",
 		"Enable verbose output",
 		func() bool { return sysVars.Verbose },
@@ -49,7 +46,7 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Register integer with range
-	if err := registry.Register(sysvar.NewIntegerParser(
+	if err := registry.Register(NewIntegerVariableParser(
 		"CLI_TAB_WIDTH",
 		"Tab width",
 		func() int64 { return sysVars.TabWidth },
@@ -63,7 +60,7 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Register string variable
-	if err := registry.Register(sysvar.NewStringParser(
+	if err := registry.Register(NewStringVariableParser(
 		"OPTIMIZER_VERSION",
 		"Optimizer version",
 		func() string { return sysVars.OptimizerVersion },
@@ -198,7 +195,7 @@ func TestNewEnumParser(t *testing.T) {
 	)
 
 	currentPriority := PriorityLow
-	enumParser := sysvar.NewEnumParser(
+	enumParser := NewEnumVariableParser(
 		"PRIORITY",
 		"Task priority",
 		map[string]Priority{
@@ -231,7 +228,7 @@ func TestNewEnumParser(t *testing.T) {
 	}
 
 	// Test parsing and setting
-	if err := enumParser.ParseAndSetWithMode("HIGH", parser.ParseModeSimple); err != nil {
+	if err := enumParser.ParseAndSetWithMode("HIGH", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentPriority != PriorityHigh {
@@ -248,7 +245,7 @@ func TestNewEnumParser(t *testing.T) {
 	}
 
 	// Test invalid value
-	if err := enumParser.ParseAndSetWithMode("INVALID", parser.ParseModeSimple); err == nil {
+	if err := enumParser.ParseAndSetWithMode("INVALID", ParseModeSimple); err == nil {
 		t.Error("Expected error for invalid enum value")
 	}
 }
@@ -262,7 +259,7 @@ func TestNewSimpleEnumParser(t *testing.T) {
 	)
 
 	currentStatus := StatusPending
-	simpleEnumParser := sysvar.NewSimpleEnumParser(
+	simpleEnumParser := NewSimpleEnumParser(
 		"STATUS",
 		"Item status",
 		map[string]Status{
@@ -278,7 +275,7 @@ func TestNewSimpleEnumParser(t *testing.T) {
 	)
 
 	// Test parsing and setting
-	if err := simpleEnumParser.ParseAndSetWithMode("ACTIVE", parser.ParseModeSimple); err != nil {
+	if err := simpleEnumParser.ParseAndSetWithMode("ACTIVE", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentStatus != StatusActive {
@@ -300,7 +297,7 @@ func TestNewNullableDurationParser(t *testing.T) {
 	min := 1 * time.Second
 	max := 1 * time.Hour
 
-	nullDurParser := sysvar.NewNullableDurationParser(
+	nullDurParser := NewNullableDurationVariableParser(
 		"TIMEOUT",
 		"Request timeout",
 		func() *time.Duration { return timeout },
@@ -313,7 +310,7 @@ func TestNewNullableDurationParser(t *testing.T) {
 	)
 
 	// Test setting NULL
-	if err := nullDurParser.ParseAndSetWithMode("NULL", parser.ParseModeSimple); err != nil {
+	if err := nullDurParser.ParseAndSetWithMode("NULL", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode(NULL) failed: %v", err)
 	}
 	if timeout != nil {
@@ -330,7 +327,7 @@ func TestNewNullableDurationParser(t *testing.T) {
 	}
 
 	// Test setting valid duration
-	if err := nullDurParser.ParseAndSetWithMode("30s", parser.ParseModeSimple); err != nil {
+	if err := nullDurParser.ParseAndSetWithMode("30s", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode(30s) failed: %v", err)
 	}
 	if timeout == nil || *timeout != 30*time.Second {
@@ -347,19 +344,19 @@ func TestNewNullableDurationParser(t *testing.T) {
 	}
 
 	// Test range validation - too small
-	if err := nullDurParser.ParseAndSetWithMode("500ms", parser.ParseModeSimple); err == nil {
+	if err := nullDurParser.ParseAndSetWithMode("500ms", ParseModeSimple); err == nil {
 		t.Error("Expected error for duration below minimum")
 	}
 
 	// Test range validation - too large
-	if err := nullDurParser.ParseAndSetWithMode("2h", parser.ParseModeSimple); err == nil {
+	if err := nullDurParser.ParseAndSetWithMode("2h", ParseModeSimple); err == nil {
 		t.Error("Expected error for duration above maximum")
 	}
 }
 
 func TestNewReadOnlyStringParser(t *testing.T) {
 	version := "v1.2.3"
-	roStringParser := sysvar.NewReadOnlyStringParser(
+	roStringParser := NewReadOnlyStringParser(
 		"VERSION",
 		"Application version",
 		func() string { return version },
@@ -384,14 +381,14 @@ func TestNewReadOnlyStringParser(t *testing.T) {
 	}
 
 	// Test setting value should fail
-	if err := roStringParser.ParseAndSetWithMode("v2.0.0", parser.ParseModeSimple); err == nil {
+	if err := roStringParser.ParseAndSetWithMode("v2.0.0", ParseModeSimple); err == nil {
 		t.Error("Expected error when setting read-only variable")
 	}
 }
 
 func TestNewReadOnlyBooleanParser(t *testing.T) {
 	debugMode := true
-	roBoolParser := sysvar.NewReadOnlyBooleanParser(
+	roBoolParser := NewReadOnlyBooleanParser(
 		"DEBUG_MODE",
 		"Debug mode status",
 		func() bool { return debugMode },
@@ -422,7 +419,7 @@ func TestNewReadOnlyBooleanParser(t *testing.T) {
 	}
 
 	// Test setting value should fail
-	if err := roBoolParser.ParseAndSetWithMode("true", parser.ParseModeSimple); err == nil {
+	if err := roBoolParser.ParseAndSetWithMode("true", ParseModeSimple); err == nil {
 		t.Error("Expected error when setting read-only variable")
 	}
 }
@@ -432,20 +429,23 @@ func TestNewNullableIntParser(t *testing.T) {
 	min := int64(0)
 	max := int64(10)
 
-	nullIntParser := sysvar.NewNullableIntParser(
+	// Create nullable int parser using the generic pattern
+	baseIntParser := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min, Max: &max})
+	nullableIntParser := NewNullableParser(baseIntParser)
+	nullIntParser := NewTypedVariableParser(
 		"MAX_RETRIES",
 		"Maximum retry attempts",
+		nullableIntParser,
 		func() *int64 { return maxRetries },
 		func(i *int64) error {
 			maxRetries = i
 			return nil
 		},
-		&min,
-		&max,
+		FormatNullable(FormatInt),
 	)
 
 	// Test setting NULL
-	if err := nullIntParser.ParseAndSetWithMode("NULL", parser.ParseModeSimple); err != nil {
+	if err := nullIntParser.ParseAndSetWithMode("NULL", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode(NULL) failed: %v", err)
 	}
 	if maxRetries != nil {
@@ -462,7 +462,7 @@ func TestNewNullableIntParser(t *testing.T) {
 	}
 
 	// Test setting valid integer
-	if err := nullIntParser.ParseAndSetWithMode("5", parser.ParseModeSimple); err != nil {
+	if err := nullIntParser.ParseAndSetWithMode("5", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode(5) failed: %v", err)
 	}
 	if maxRetries == nil || *maxRetries != 5 {
@@ -479,12 +479,12 @@ func TestNewNullableIntParser(t *testing.T) {
 	}
 
 	// Test range validation - negative
-	if err := nullIntParser.ParseAndSetWithMode("-1", parser.ParseModeSimple); err == nil {
+	if err := nullIntParser.ParseAndSetWithMode("-1", ParseModeSimple); err == nil {
 		t.Error("Expected error for negative value")
 	}
 
 	// Test range validation - too large
-	if err := nullIntParser.ParseAndSetWithMode("11", parser.ParseModeSimple); err == nil {
+	if err := nullIntParser.ParseAndSetWithMode("11", ParseModeSimple); err == nil {
 		t.Error("Expected error for value above maximum")
 	}
 }
@@ -541,7 +541,7 @@ func TestPredefinedParsers(t *testing.T) {
 func TestDualModeParsing(t *testing.T) {
 	t.Run("integer parsing modes", func(t *testing.T) {
 		// Simple mode
-		got, err := parser.DualModeIntParser.ParseAndValidateWithMode("42", parser.ParseModeSimple)
+		got, err := DualModeIntParser.ParseAndValidateWithMode("42", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseWithMode failed: %v", err)
 		}
@@ -550,7 +550,7 @@ func TestDualModeParsing(t *testing.T) {
 		}
 
 		// GoogleSQL mode with hex
-		got, err = parser.DualModeIntParser.ParseAndValidateWithMode("0x2A", parser.ParseModeGoogleSQL)
+		got, err = DualModeIntParser.ParseAndValidateWithMode("0x2A", ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseWithMode hex failed: %v", err)
 		}
@@ -559,7 +559,7 @@ func TestDualModeParsing(t *testing.T) {
 		}
 
 		// GoogleSQL mode with negative
-		got, err = parser.DualModeIntParser.ParseAndValidateWithMode("-42", parser.ParseModeGoogleSQL)
+		got, err = DualModeIntParser.ParseAndValidateWithMode("-42", ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseWithMode negative failed: %v", err)
 		}
@@ -570,7 +570,7 @@ func TestDualModeParsing(t *testing.T) {
 
 	t.Run("string parsing modes", func(t *testing.T) {
 		// Simple mode - no quote processing
-		got, err := parser.DualModeStringParser.ParseAndValidateWithMode("'quoted'", parser.ParseModeSimple)
+		got, err := DualModeStringParser.ParseAndValidateWithMode("'quoted'", ParseModeSimple)
 		if err != nil {
 			t.Fatalf("ParseWithMode failed: %v", err)
 		}
@@ -579,7 +579,7 @@ func TestDualModeParsing(t *testing.T) {
 		}
 
 		// GoogleSQL mode - proper string literal
-		got, err = parser.DualModeStringParser.ParseAndValidateWithMode("'quoted'", parser.ParseModeGoogleSQL)
+		got, err = DualModeStringParser.ParseAndValidateWithMode("'quoted'", ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseWithMode GoogleSQL failed: %v", err)
 		}
@@ -588,7 +588,7 @@ func TestDualModeParsing(t *testing.T) {
 		}
 
 		// GoogleSQL escape sequences
-		got, err = parser.DualModeStringParser.ParseAndValidateWithMode(`'line1\nline2'`, parser.ParseModeGoogleSQL)
+		got, err = DualModeStringParser.ParseAndValidateWithMode(`'line1\nline2'`, ParseModeGoogleSQL)
 		if err != nil {
 			t.Fatalf("ParseWithMode escape failed: %v", err)
 		}
@@ -603,7 +603,7 @@ func ptr[T any](v T) *T {
 }
 
 func TestErrVariableReadOnly(t *testing.T) {
-	err := &sysvar.ErrVariableReadOnly{Name: "TEST_VAR"}
+	err := &ErrVariableReadOnly{Name: "TEST_VAR"}
 	expected := "variable TEST_VAR is read-only"
 	if err.Error() != expected {
 		t.Errorf("Error() = %q, want %q", err.Error(), expected)
@@ -611,7 +611,7 @@ func TestErrVariableReadOnly(t *testing.T) {
 }
 
 func TestTypedVariableParserDescription(t *testing.T) {
-	parser := sysvar.NewBooleanParser(
+	parser := NewBooleanParser(
 		"TEST_BOOL",
 		"Test description",
 		func() bool { return true },
@@ -628,7 +628,7 @@ func TestNewDurationParser(t *testing.T) {
 	min := 1 * time.Second
 	max := 10 * time.Second
 
-	durationParser := sysvar.NewDurationParser(
+	durationParser := NewDurationVariableParser(
 		"TIMEOUT",
 		"Request timeout",
 		func() time.Duration { return duration },
@@ -641,7 +641,7 @@ func TestNewDurationParser(t *testing.T) {
 	)
 
 	// Test setting valid duration
-	if err := durationParser.ParseAndSetWithMode("3s", parser.ParseModeSimple); err != nil {
+	if err := durationParser.ParseAndSetWithMode("3s", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if duration != 3*time.Second {
@@ -658,21 +658,21 @@ func TestNewDurationParser(t *testing.T) {
 	}
 
 	// Test range validation - too small
-	if err := durationParser.ParseAndSetWithMode("500ms", parser.ParseModeSimple); err == nil {
+	if err := durationParser.ParseAndSetWithMode("500ms", ParseModeSimple); err == nil {
 		t.Error("Expected error for duration below minimum")
 	}
 
 	// Test range validation - too large
-	if err := durationParser.ParseAndSetWithMode("15s", parser.ParseModeSimple); err == nil {
+	if err := durationParser.ParseAndSetWithMode("15s", ParseModeSimple); err == nil {
 		t.Error("Expected error for duration above maximum")
 	}
 }
 
 func TestRegistryHas(t *testing.T) {
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
 	// Register a variable
-	if err := registry.Register(sysvar.NewBooleanParser(
+	if err := registry.Register(NewBooleanParser(
 		"TEST_VAR",
 		"Test variable",
 		func() bool { return false },
@@ -698,10 +698,10 @@ func TestRegistryHas(t *testing.T) {
 }
 
 func TestRegistryGet(t *testing.T) {
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
 	boolValue := true
-	if err := registry.Register(sysvar.NewBooleanParser(
+	if err := registry.Register(NewBooleanParser(
 		"TEST_BOOL",
 		"Test boolean",
 		func() bool { return boolValue },
@@ -728,7 +728,7 @@ func TestRegistryGet(t *testing.T) {
 
 func TestAppendableVariableParser(t *testing.T) {
 	var files []string
-	parser := sysvar.NewProtoDescriptorFileParser(
+	parser := NewProtoDescriptorFileParser(
 		"PROTO_FILES",
 		"Proto descriptor files",
 		func() []string { return files },
@@ -740,7 +740,7 @@ func TestAppendableVariableParser(t *testing.T) {
 		nil, // No validation for test
 	)
 
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 	if err := registry.Register(parser); err != nil {
 		t.Fatalf("Failed to register parser: %v", err)
 	}
@@ -775,7 +775,7 @@ func TestAppendableVariableParser(t *testing.T) {
 	}
 
 	// Test HasAppendSupport for non-appendable variable
-	if err := registry.Register(sysvar.NewBooleanParser(
+	if err := registry.Register(NewBooleanParser(
 		"NON_APPENDABLE",
 		"Non-appendable variable",
 		func() bool { return false },
@@ -839,7 +839,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
 	currentValue := TestProtobufEnum_VALUE_A
 
 	// Create parser
-	p := sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	p := CreateProtobufEnumVariableParserWithAutoFormatter(
 		"TEST_ENUM",
 		"Test protobuf enum",
 		enumMap,
@@ -849,7 +849,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
 	)
 
 	// Test parsing with short name
-	if err := p.ParseAndSetWithMode("VALUE_B", parser.ParseModeSimple); err != nil {
+	if err := p.ParseAndSetWithMode("VALUE_B", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentValue != TestProtobufEnum_VALUE_B {
@@ -857,7 +857,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
 	}
 
 	// Test parsing with full name
-	if err := p.ParseAndSetWithMode("TestProtobufEnum_UNKNOWN", parser.ParseModeSimple); err != nil {
+	if err := p.ParseAndSetWithMode("TestProtobufEnum_UNKNOWN", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode with full name failed: %v", err)
 	}
 	if currentValue != TestProtobufEnum_UNKNOWN {
@@ -875,7 +875,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
 	}
 
 	// Test invalid value
-	if err := p.ParseAndSetWithMode("INVALID", parser.ParseModeSimple); err == nil {
+	if err := p.ParseAndSetWithMode("INVALID", ParseModeSimple); err == nil {
 		t.Error("Expected error for invalid enum value")
 	}
 
@@ -912,7 +912,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatterNoPrefix(t *testing.T)
 	currentValue := SimpleEnum_A
 
 	// Create parser with a prefix that won't match
-	p := sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	p := CreateProtobufEnumVariableParserWithAutoFormatter(
 		"SIMPLE_ENUM",
 		"Simple enum without matching prefix",
 		enumMap,
@@ -932,7 +932,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatterNoPrefix(t *testing.T)
 }
 
 func TestFormatString(t *testing.T) {
-	if got := sysvar.FormatString("hello"); got != "hello" {
+	if got := FormatString("hello"); got != "hello" {
 		t.Errorf("FormatString(\"hello\") = %q, want %q", got, "hello")
 	}
 }
@@ -946,7 +946,7 @@ func TestNewEnumParserWithFormatter(t *testing.T) {
 	)
 
 	currentColor := Red
-	colorParser := sysvar.NewEnumParser(
+	colorParser := NewEnumVariableParser(
 		"COLOR",
 		"Color setting",
 		map[string]Color{
@@ -974,7 +974,7 @@ func TestNewEnumParserWithFormatter(t *testing.T) {
 	)
 
 	// Test setting value
-	if err := colorParser.ParseAndSetWithMode("GREEN", parser.ParseModeSimple); err != nil {
+	if err := colorParser.ParseAndSetWithMode("GREEN", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentColor != Green {
@@ -1000,7 +1000,7 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 	)
 
 	currentMode := ModeA
-	modeParser := sysvar.NewSimpleEnumParser(
+	modeParser := NewSimpleEnumParser(
 		"MODE",
 		"Operating mode",
 		map[string]Mode{
@@ -1016,7 +1016,7 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 	)
 
 	// Test setting value
-	if err := modeParser.ParseAndSetWithMode("B", parser.ParseModeSimple); err != nil {
+	if err := modeParser.ParseAndSetWithMode("B", ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
 	}
 	if currentMode != ModeB {
@@ -1034,7 +1034,7 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 }
 
 func TestTypedVariableParserReadOnly(t *testing.T) {
-	roParser := sysvar.NewReadOnlyStringParser(
+	roParser := NewReadOnlyStringParser(
 		"RO_VAR",
 		"Read-only variable",
 		func() string { return "readonly value" },
@@ -1046,13 +1046,13 @@ func TestTypedVariableParserReadOnly(t *testing.T) {
 	}
 
 	// Test ParseAndSetWithMode should fail
-	err := roParser.ParseAndSetWithMode("new value", parser.ParseModeSimple)
+	err := roParser.ParseAndSetWithMode("new value", ParseModeSimple)
 	if err == nil {
 		t.Error("Expected error when setting read-only variable")
 	}
 
 	// Check error type
-	var roErr *sysvar.ErrVariableReadOnly
+	var roErr *ErrVariableReadOnly
 	if !errors.As(err, &roErr) {
 		t.Errorf("Expected ErrVariableReadOnly, got %T", err)
 	}
@@ -1060,28 +1060,28 @@ func TestTypedVariableParserReadOnly(t *testing.T) {
 
 func TestCreateDurationRangeParserNoRange(t *testing.T) {
 	// Test with nil options
-	p := sysvar.CreateDurationRangeParser(nil)
+	p := CreateDurationRangeParser(nil)
 
 	// Should accept any valid duration
 	testCases := []string{"1ns", "1h", "999h", "-5s"}
 	for _, tc := range testCases {
-		if _, err := p.ParseAndValidateWithMode(tc, parser.ParseModeSimple); err != nil {
+		if _, err := p.ParseAndValidateWithMode(tc, ParseModeSimple); err != nil {
 			t.Errorf("ParseAndValidate(%s) failed: %v", tc, err)
 		}
 	}
 }
 
 func TestRegistryDuplicateRegistration(t *testing.T) {
-	registry := sysvar.NewRegistry()
+	registry := NewRegistry()
 
-	parser1 := sysvar.NewBooleanParser(
+	parser1 := NewBooleanParser(
 		"DUP_VAR",
 		"First parser",
 		func() bool { return false },
 		func(bool) error { return nil },
 	)
 
-	parser2 := sysvar.NewBooleanParser(
+	parser2 := NewBooleanParser(
 		"dup_var", // Different case, but should still conflict
 		"Second parser",
 		func() bool { return true },
@@ -1102,7 +1102,7 @@ func TestRegistryDuplicateRegistration(t *testing.T) {
 func TestNewReadOnlyParsers(t *testing.T) {
 	t.Run("NewReadOnlyStringParser", func(t *testing.T) {
 		value := "test value"
-		p := sysvar.NewReadOnlyStringParser(
+		p := NewReadOnlyStringParser(
 			"RO_STRING",
 			"Read-only string",
 			func() string { return value },
@@ -1127,14 +1127,14 @@ func TestNewReadOnlyParsers(t *testing.T) {
 		}
 
 		// Test setting should fail
-		if err := p.ParseAndSetWithMode("new", parser.ParseModeSimple); err == nil {
+		if err := p.ParseAndSetWithMode("new", ParseModeSimple); err == nil {
 			t.Error("Expected error when setting read-only variable")
 		}
 	})
 
 	t.Run("NewReadOnlyBooleanParser", func(t *testing.T) {
 		value := true
-		p := sysvar.NewReadOnlyBooleanParser(
+		p := NewReadOnlyBooleanParser(
 			"RO_BOOL",
 			"Read-only boolean",
 			func() bool { return value },
@@ -1165,7 +1165,7 @@ func TestNewReadOnlyParsers(t *testing.T) {
 		}
 
 		// Test setting should fail
-		if err := p.ParseAndSetWithMode("true", parser.ParseModeSimple); err == nil {
+		if err := p.ParseAndSetWithMode("true", ParseModeSimple); err == nil {
 			t.Error("Expected error when setting read-only variable")
 		}
 	})

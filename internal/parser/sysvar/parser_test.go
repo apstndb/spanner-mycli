@@ -1,16 +1,14 @@
-package parser_test
+package sysvar
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 func TestBoolParser(t *testing.T) {
-	p := parser.NewBoolParser()
+	p := NewBoolParser()
 
 	tests := []struct {
 		name    string
@@ -49,7 +47,7 @@ func TestBoolParser(t *testing.T) {
 
 func TestIntParser(t *testing.T) {
 	t.Run("basic parsing", func(t *testing.T) {
-		p := parser.NewIntParser()
+		p := NewIntParser()
 
 		tests := []struct {
 			name    string
@@ -80,7 +78,7 @@ func TestIntParser(t *testing.T) {
 	})
 
 	t.Run("with range validation", func(t *testing.T) {
-		p := parser.NewIntParser().WithRange(1, 100)
+		p := NewIntParser().WithRange(1, 100)
 
 		tests := []struct {
 			name    string
@@ -111,7 +109,7 @@ func TestIntParser(t *testing.T) {
 }
 
 func TestDurationParser(t *testing.T) {
-	p := parser.NewDurationParser()
+	p := NewDurationParser()
 
 	tests := []struct {
 		name    string
@@ -142,7 +140,7 @@ func TestDurationParser(t *testing.T) {
 	}
 }
 
-func TestEnumParser(t *testing.T) {
+func TestGenericEnumParser(t *testing.T) {
 	type Color int
 	const (
 		Red Color = iota
@@ -150,7 +148,7 @@ func TestEnumParser(t *testing.T) {
 		Blue
 	)
 
-	p := parser.NewEnumParser(map[string]Color{
+	p := NewEnumParser(map[string]Color{
 		"RED":   Red,
 		"GREEN": Green,
 		"BLUE":  Blue,
@@ -186,7 +184,7 @@ func TestEnumParser(t *testing.T) {
 
 func TestStringParser(t *testing.T) {
 	t.Run("simple parser", func(t *testing.T) {
-		p := parser.NewStringParser()
+		p := NewStringParser()
 
 		tests := []struct {
 			name  string
@@ -231,8 +229,8 @@ func TestChainValidators(t *testing.T) {
 		return nil
 	}
 
-	p := parser.WithValidation(
-		parser.NewIntParser(),
+	p := WithValidation(
+		NewIntParser(),
 		isPositive,
 		isEven,
 	)

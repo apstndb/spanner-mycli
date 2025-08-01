@@ -1,16 +1,14 @@
-package parser_test
+package sysvar
 
 import (
 	"testing"
 	"time"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 func TestCreateRangeValidator(t *testing.T) {
 	t.Run("no constraints", func(t *testing.T) {
-		validator := parser.CreateRangeValidator[int](nil, nil)
-		
+		validator := CreateRangeValidator[int](nil, nil)
+
 		// Should accept any value
 		testCases := []int{-1000, 0, 1000, 999999}
 		for _, v := range testCases {
@@ -19,11 +17,11 @@ func TestCreateRangeValidator(t *testing.T) {
 			}
 		}
 	})
-	
+
 	t.Run("min constraint only", func(t *testing.T) {
 		min := 10
-		validator := parser.CreateRangeValidator(&min, nil)
-		
+		validator := CreateRangeValidator(&min, nil)
+
 		// Valid values
 		validCases := []int{10, 11, 100, 1000}
 		for _, v := range validCases {
@@ -31,7 +29,7 @@ func TestCreateRangeValidator(t *testing.T) {
 				t.Errorf("validator(%d) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values
 		invalidCases := []int{9, 0, -10}
 		for _, v := range invalidCases {
@@ -45,11 +43,11 @@ func TestCreateRangeValidator(t *testing.T) {
 			}
 		}
 	})
-	
+
 	t.Run("max constraint only", func(t *testing.T) {
 		max := 100
-		validator := parser.CreateRangeValidator(nil, &max)
-		
+		validator := CreateRangeValidator(nil, &max)
+
 		// Valid values
 		validCases := []int{-100, 0, 50, 100}
 		for _, v := range validCases {
@@ -57,7 +55,7 @@ func TestCreateRangeValidator(t *testing.T) {
 				t.Errorf("validator(%d) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values
 		invalidCases := []int{101, 200, 1000}
 		for _, v := range invalidCases {
@@ -71,11 +69,11 @@ func TestCreateRangeValidator(t *testing.T) {
 			}
 		}
 	})
-	
+
 	t.Run("both constraints", func(t *testing.T) {
 		min, max := 10, 100
-		validator := parser.CreateRangeValidator(&min, &max)
-		
+		validator := CreateRangeValidator(&min, &max)
+
 		// Valid values
 		validCases := []int{10, 50, 100}
 		for _, v := range validCases {
@@ -83,23 +81,23 @@ func TestCreateRangeValidator(t *testing.T) {
 				t.Errorf("validator(%d) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values - too small
 		if err := validator(9); err == nil {
 			t.Error("expected error for value below minimum")
 		}
-		
+
 		// Invalid values - too large
 		if err := validator(101); err == nil {
 			t.Error("expected error for value above maximum")
 		}
 	})
-	
+
 	t.Run("works with different numeric types", func(t *testing.T) {
 		// Test with float64
 		minFloat, maxFloat := 1.5, 10.5
-		floatValidator := parser.CreateRangeValidator(&minFloat, &maxFloat)
-		
+		floatValidator := CreateRangeValidator(&minFloat, &maxFloat)
+
 		if err := floatValidator(5.5); err != nil {
 			t.Errorf("floatValidator(5.5) failed: %v", err)
 		}
@@ -109,11 +107,11 @@ func TestCreateRangeValidator(t *testing.T) {
 		if err := floatValidator(11.0); err == nil {
 			t.Error("expected error for float above maximum")
 		}
-		
+
 		// Test with int64
 		minInt64, maxInt64 := int64(0), int64(65535)
-		int64Validator := parser.CreateRangeValidator(&minInt64, &maxInt64)
-		
+		int64Validator := CreateRangeValidator(&minInt64, &maxInt64)
+
 		if err := int64Validator(8080); err != nil {
 			t.Errorf("int64Validator(8080) failed: %v", err)
 		}
@@ -128,8 +126,8 @@ func TestCreateRangeValidator(t *testing.T) {
 
 func TestCreateDurationRangeValidator(t *testing.T) {
 	t.Run("no constraints", func(t *testing.T) {
-		validator := parser.CreateDurationRangeValidator(nil, nil)
-		
+		validator := CreateDurationRangeValidator(nil, nil)
+
 		// Should accept any duration
 		testCases := []time.Duration{
 			-10 * time.Second,
@@ -143,11 +141,11 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 			}
 		}
 	})
-	
+
 	t.Run("min constraint only", func(t *testing.T) {
 		min := time.Duration(0)
-		validator := parser.CreateDurationRangeValidator(&min, nil)
-		
+		validator := CreateDurationRangeValidator(&min, nil)
+
 		// Valid values
 		validCases := []time.Duration{0, 1 * time.Second, 1 * time.Hour}
 		for _, v := range validCases {
@@ -155,7 +153,7 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 				t.Errorf("validator(%v) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values
 		err := validator(-1 * time.Second)
 		if err == nil {
@@ -166,11 +164,11 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 			t.Errorf("error = %q, want %q", err.Error(), expectedMsg)
 		}
 	})
-	
+
 	t.Run("max constraint only", func(t *testing.T) {
 		max := 500 * time.Millisecond
-		validator := parser.CreateDurationRangeValidator(nil, &max)
-		
+		validator := CreateDurationRangeValidator(nil, &max)
+
 		// Valid values
 		validCases := []time.Duration{0, 100 * time.Millisecond, 500 * time.Millisecond}
 		for _, v := range validCases {
@@ -178,7 +176,7 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 				t.Errorf("validator(%v) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values
 		err := validator(1 * time.Second)
 		if err == nil {
@@ -189,12 +187,12 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 			t.Errorf("error = %q, want %q", err.Error(), expectedMsg)
 		}
 	})
-	
+
 	t.Run("both constraints", func(t *testing.T) {
 		min := time.Duration(0)
 		max := 500 * time.Millisecond
-		validator := parser.CreateDurationRangeValidator(&min, &max)
-		
+		validator := CreateDurationRangeValidator(&min, &max)
+
 		// Valid values
 		validCases := []time.Duration{0, 250 * time.Millisecond, 500 * time.Millisecond}
 		for _, v := range validCases {
@@ -202,12 +200,12 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 				t.Errorf("validator(%v) failed: %v", v, err)
 			}
 		}
-		
+
 		// Invalid values - negative
 		if err := validator(-1 * time.Second); err == nil {
 			t.Error("expected error for negative duration")
 		}
-		
+
 		// Invalid values - too large
 		if err := validator(600 * time.Millisecond); err == nil {
 			t.Error("expected error for duration above maximum")

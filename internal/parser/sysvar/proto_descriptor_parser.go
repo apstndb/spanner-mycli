@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
 // ProtoDescriptorFileParser is a specialized parser for CLI_PROTO_DESCRIPTOR_FILE.
@@ -51,13 +49,13 @@ func (p *ProtoDescriptorFileParser) Description() string {
 // ParseAndSetWithMode implements VariableParser.
 // For GoogleSQL mode, expects a string literal containing comma-separated paths.
 // For Simple mode, expects comma-separated paths without quotes.
-func (p *ProtoDescriptorFileParser) ParseAndSetWithMode(value string, mode parser.ParseMode) error {
+func (p *ProtoDescriptorFileParser) ParseAndSetWithMode(value string, mode ParseMode) error {
 	var paths []string
 
 	switch mode {
-	case parser.ParseModeGoogleSQL:
+	case ParseModeGoogleSQL:
 		// Parse as GoogleSQL string literal
-		parsed, err := parser.GoogleSQLStringParser.Parse(value)
+		parsed, err := GoogleSQLStringParser.Parse(value)
 		if err != nil {
 			return fmt.Errorf("invalid string literal: %w", err)
 		}
@@ -66,7 +64,7 @@ func (p *ProtoDescriptorFileParser) ParseAndSetWithMode(value string, mode parse
 		} else {
 			paths = strings.Split(parsed, ",")
 		}
-	case parser.ParseModeSimple:
+	case ParseModeSimple:
 		// Parse as simple comma-separated string
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -109,18 +107,18 @@ func (p *ProtoDescriptorFileParser) IsReadOnly() bool {
 // AppendWithMode implements AppendableVariableParser.
 // For GoogleSQL mode, expects a string literal containing a single path.
 // For Simple mode, expects a single path without quotes.
-func (p *ProtoDescriptorFileParser) AppendWithMode(value string, mode parser.ParseMode) error {
+func (p *ProtoDescriptorFileParser) AppendWithMode(value string, mode ParseMode) error {
 	var path string
 	var err error
 
 	switch mode {
-	case parser.ParseModeGoogleSQL:
+	case ParseModeGoogleSQL:
 		// Parse as GoogleSQL string literal
-		path, err = parser.GoogleSQLStringParser.Parse(value)
+		path, err = GoogleSQLStringParser.Parse(value)
 		if err != nil {
 			return fmt.Errorf("invalid string literal: %w", err)
 		}
-	case parser.ParseModeSimple:
+	case ParseModeSimple:
 		// Use as-is
 		path = strings.TrimSpace(value)
 	default:
