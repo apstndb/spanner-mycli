@@ -112,7 +112,7 @@ func TestProtoDescriptorFileParser(t *testing.T) {
 		if len(files) != 0 {
 			t.Errorf("Files = %v, want empty", files)
 		}
-		
+
 		// Test empty string in Simple mode
 		files = []string{"test.proto"}
 		err = p.ParseAndSetWithMode("", parser.ParseModeSimple)
@@ -200,27 +200,27 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 			return nil
 		},
 	)
-	
+
 	// Test Description
 	if p.Description() != "Proto descriptor files" {
 		t.Errorf("Description() = %q, want %q", p.Description(), "Proto descriptor files")
 	}
-	
+
 	// Test IsReadOnly (should be false since we have setter and appender)
 	if p.IsReadOnly() {
 		t.Error("Expected IsReadOnly to return false")
 	}
-	
+
 	// Test validation error in set
 	if err := p.ParseAndSetWithMode("invalid.pb", parser.ParseModeSimple); err == nil {
 		t.Error("Expected validation error for invalid.pb")
 	}
-	
+
 	// Test validation error in append
 	if err := p.AppendWithMode("invalid.pb", parser.ParseModeSimple); err == nil {
 		t.Error("Expected validation error for invalid.pb in append")
 	}
-	
+
 	// Test append with existing file (should call appender anyway)
 	files = []string{"existing.pb"}
 	if err := p.AppendWithMode("existing.pb", parser.ParseModeSimple); err != nil {
@@ -230,7 +230,7 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	if len(files) != 2 {
 		t.Errorf("Expected 2 files after appending duplicate, got %d", len(files))
 	}
-	
+
 	// Test unsupported parse mode
 	if err := p.ParseAndSetWithMode("test", parser.ParseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode")
@@ -238,12 +238,12 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	if err := p.AppendWithMode("test", parser.ParseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode in append")
 	}
-	
+
 	// Test invalid GoogleSQL string literal in ParseAndSetWithMode
 	if err := p.ParseAndSetWithMode("unclosed'", parser.ParseModeGoogleSQL); err == nil {
 		t.Error("Expected error for invalid GoogleSQL string")
 	}
-	
+
 	// Test invalid GoogleSQL string literal in AppendWithMode
 	if err := p.AppendWithMode("unclosed'", parser.ParseModeGoogleSQL); err == nil {
 		t.Error("Expected error for invalid GoogleSQL string in append")
@@ -260,7 +260,7 @@ func TestProtoDescriptorFileParserReadOnly(t *testing.T) {
 		nil, // No appender
 		nil,
 	)
-	
+
 	// Test IsReadOnly
 	if !parser.IsReadOnly() {
 		t.Error("Expected IsReadOnly to return true when setter and appender are nil")
@@ -269,7 +269,7 @@ func TestProtoDescriptorFileParserReadOnly(t *testing.T) {
 
 func TestAppendFromSimple(t *testing.T) {
 	registry := sysvar.NewRegistry()
-	
+
 	var files []string
 	parser := sysvar.NewProtoDescriptorFileParser(
 		"TEST_FILES",
@@ -282,11 +282,11 @@ func TestAppendFromSimple(t *testing.T) {
 		},
 		nil,
 	)
-	
+
 	if err := registry.Register(parser); err != nil {
 		t.Fatalf("Failed to register parser: %v", err)
 	}
-	
+
 	// Test AppendFromSimple
 	if err := registry.AppendFromSimple("TEST_FILES", "test.txt"); err != nil {
 		t.Fatalf("AppendFromSimple failed: %v", err)
@@ -294,16 +294,9 @@ func TestAppendFromSimple(t *testing.T) {
 	if len(files) != 1 || files[0] != "test.txt" {
 		t.Errorf("files = %v, want [test.txt]", files)
 	}
-	
+
 	// Test append to non-existent variable
 	if err := registry.AppendFromSimple("NON_EXISTENT", "value"); err == nil {
 		t.Error("Expected error when appending to non-existent variable")
 	}
-}
-
-func TestAppendableTypedVariableParserAppendWithMode(t *testing.T) {
-	// AppendableTypedVariableParser is an internal implementation detail
-	// It's tested indirectly through ProtoDescriptorFileParser which uses it internally
-	// The AppendWithMode method is exercised through the tests above
-	t.Skip("AppendableTypedVariableParser.AppendWithMode is tested through ProtoDescriptorFileParser")
 }

@@ -105,7 +105,6 @@ func NewBooleanParser(
 	return createTypedParser(name, description, parser.DualModeBoolParser, getter, setter, FormatBool)
 }
 
-
 // NewStringParser creates a string variable parser.
 func NewStringParser(
 	name string,
@@ -115,8 +114,6 @@ func NewStringParser(
 ) VariableParser {
 	return createTypedParser(name, description, parser.DualModeStringParser, getter, setter, FormatString)
 }
-
-
 
 // NewIntegerParser creates an integer variable parser with optional range validation.
 func NewIntegerParser(
@@ -145,8 +142,6 @@ func NewEnumParser[T comparable](
 ) VariableParser {
 	return createTypedParser(name, description, parser.CreateDualModeEnumParser(values), getter, setter, formatter)
 }
-
-
 
 // NewDurationParser creates a duration variable parser.
 func NewDurationParser(

@@ -197,7 +197,7 @@ func TestNewEnumParser(t *testing.T) {
 		PriorityHigh
 	)
 
-	var currentPriority Priority = PriorityLow
+	currentPriority := PriorityLow
 	enumParser := sysvar.NewEnumParser(
 		"PRIORITY",
 		"Task priority",
@@ -261,7 +261,7 @@ func TestNewSimpleEnumParser(t *testing.T) {
 		StatusPending  Status = "PENDING"
 	)
 
-	var currentStatus Status = StatusPending
+	currentStatus := StatusPending
 	simpleEnumParser := sysvar.NewSimpleEnumParser(
 		"STATUS",
 		"Item status",
@@ -299,7 +299,7 @@ func TestNewNullableDurationParser(t *testing.T) {
 	var timeout *time.Duration
 	min := 1 * time.Second
 	max := 1 * time.Hour
-	
+
 	nullDurParser := sysvar.NewNullableDurationParser(
 		"TIMEOUT",
 		"Request timeout",
@@ -431,7 +431,7 @@ func TestNewNullableIntParser(t *testing.T) {
 	var maxRetries *int64
 	min := int64(0)
 	max := int64(10)
-	
+
 	nullIntParser := sysvar.NewNullableIntParser(
 		"MAX_RETRIES",
 		"Maximum retry attempts",
@@ -617,17 +617,17 @@ func TestTypedVariableParserDescription(t *testing.T) {
 		func() bool { return true },
 		func(bool) error { return nil },
 	)
-	
+
 	if parser.Description() != "Test description" {
 		t.Errorf("Description() = %q, want %q", parser.Description(), "Test description")
 	}
 }
 
 func TestNewDurationParser(t *testing.T) {
-	var duration time.Duration = 5 * time.Second
+	duration := 5 * time.Second
 	min := 1 * time.Second
 	max := 10 * time.Second
-	
+
 	durationParser := sysvar.NewDurationParser(
 		"TIMEOUT",
 		"Request timeout",
@@ -639,7 +639,7 @@ func TestNewDurationParser(t *testing.T) {
 		&min,
 		&max,
 	)
-	
+
 	// Test setting valid duration
 	if err := durationParser.ParseAndSetWithMode("3s", parser.ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
@@ -647,7 +647,7 @@ func TestNewDurationParser(t *testing.T) {
 	if duration != 3*time.Second {
 		t.Errorf("duration = %v, want 3s", duration)
 	}
-	
+
 	// Test getting value
 	value, err := durationParser.GetValue()
 	if err != nil {
@@ -656,12 +656,12 @@ func TestNewDurationParser(t *testing.T) {
 	if value != "3s" {
 		t.Errorf("GetValue() = %q, want %q", value, "3s")
 	}
-	
+
 	// Test range validation - too small
 	if err := durationParser.ParseAndSetWithMode("500ms", parser.ParseModeSimple); err == nil {
 		t.Error("Expected error for duration below minimum")
 	}
-	
+
 	// Test range validation - too large
 	if err := durationParser.ParseAndSetWithMode("15s", parser.ParseModeSimple); err == nil {
 		t.Error("Expected error for duration above maximum")
@@ -670,7 +670,7 @@ func TestNewDurationParser(t *testing.T) {
 
 func TestRegistryHas(t *testing.T) {
 	registry := sysvar.NewRegistry()
-	
+
 	// Register a variable
 	if err := registry.Register(sysvar.NewBooleanParser(
 		"TEST_VAR",
@@ -680,17 +680,17 @@ func TestRegistryHas(t *testing.T) {
 	)); err != nil {
 		t.Fatalf("Failed to register TEST_VAR: %v", err)
 	}
-	
+
 	// Test Has with exact case
 	if !registry.Has("TEST_VAR") {
 		t.Error("Expected Has(\"TEST_VAR\") to return true")
 	}
-	
+
 	// Test Has with different case (should still work)
 	if !registry.Has("test_var") {
 		t.Error("Expected Has(\"test_var\") to return true")
 	}
-	
+
 	// Test Has with non-existent variable
 	if registry.Has("NON_EXISTENT") {
 		t.Error("Expected Has(\"NON_EXISTENT\") to return false")
@@ -699,8 +699,8 @@ func TestRegistryHas(t *testing.T) {
 
 func TestRegistryGet(t *testing.T) {
 	registry := sysvar.NewRegistry()
-	
-	var boolValue bool = true
+
+	boolValue := true
 	if err := registry.Register(sysvar.NewBooleanParser(
 		"TEST_BOOL",
 		"Test boolean",
@@ -709,7 +709,7 @@ func TestRegistryGet(t *testing.T) {
 	)); err != nil {
 		t.Fatalf("Failed to register TEST_BOOL: %v", err)
 	}
-	
+
 	// Test Get with existing variable
 	value, err := registry.Get("TEST_BOOL")
 	if err != nil {
@@ -718,7 +718,7 @@ func TestRegistryGet(t *testing.T) {
 	if value != "TRUE" {
 		t.Errorf("Get() = %q, want %q", value, "TRUE")
 	}
-	
+
 	// Test Get with non-existent variable
 	_, err = registry.Get("NON_EXISTENT")
 	if err == nil {
@@ -733,18 +733,18 @@ func TestAppendableVariableParser(t *testing.T) {
 		"Proto descriptor files",
 		func() []string { return files },
 		func(f []string) error { files = f; return nil },
-		func(f string) error { 
+		func(f string) error {
 			files = append(files, f)
-			return nil 
+			return nil
 		},
 		nil, // No validation for test
 	)
-	
+
 	registry := sysvar.NewRegistry()
 	if err := registry.Register(parser); err != nil {
 		t.Fatalf("Failed to register parser: %v", err)
 	}
-	
+
 	// Test initial set
 	if err := registry.SetFromSimple("PROTO_FILES", "file1.pb,file2.pb"); err != nil {
 		t.Fatalf("SetFromSimple failed: %v", err)
@@ -752,7 +752,7 @@ func TestAppendableVariableParser(t *testing.T) {
 	if len(files) != 2 || files[0] != "file1.pb" || files[1] != "file2.pb" {
 		t.Errorf("files = %v, want [file1.pb, file2.pb]", files)
 	}
-	
+
 	// Test append with GoogleSQL mode
 	if err := registry.AppendFromGoogleSQL("PROTO_FILES", "'file3.pb'"); err != nil {
 		t.Fatalf("AppendFromGoogleSQL failed: %v", err)
@@ -760,7 +760,7 @@ func TestAppendableVariableParser(t *testing.T) {
 	if len(files) != 3 || files[2] != "file3.pb" {
 		t.Errorf("files = %v, want [file1.pb, file2.pb, file3.pb]", files)
 	}
-	
+
 	// Test append with Simple mode
 	if err := registry.AppendFromSimple("PROTO_FILES", "file4.pb"); err != nil {
 		t.Fatalf("AppendFromSimple failed: %v", err)
@@ -768,12 +768,12 @@ func TestAppendableVariableParser(t *testing.T) {
 	if len(files) != 4 || files[3] != "file4.pb" {
 		t.Errorf("files = %v, want [file1.pb, file2.pb, file3.pb, file4.pb]", files)
 	}
-	
+
 	// Test HasAppendSupport
 	if !registry.HasAppendSupport("PROTO_FILES") {
 		t.Error("Expected HasAppendSupport to return true for PROTO_FILES")
 	}
-	
+
 	// Test HasAppendSupport for non-appendable variable
 	if err := registry.Register(sysvar.NewBooleanParser(
 		"NON_APPENDABLE",
@@ -783,39 +783,152 @@ func TestAppendableVariableParser(t *testing.T) {
 	)); err != nil {
 		t.Fatalf("Failed to register NON_APPENDABLE: %v", err)
 	}
-	
+
 	if registry.HasAppendSupport("NON_APPENDABLE") {
 		t.Error("Expected HasAppendSupport to return false for NON_APPENDABLE")
 	}
-	
+
 	// Test HasAppendSupport for non-existent variable
 	if registry.HasAppendSupport("NON_EXISTENT") {
 		t.Error("Expected HasAppendSupport to return false for non-existent variable")
 	}
-	
+
 	// Test append on non-appendable variable
 	if err := registry.AppendFromSimple("NON_APPENDABLE", "value"); err == nil {
 		t.Error("Expected error when appending to non-appendable variable")
 	}
-	
+
 	// Test append on non-existent variable
 	if err := registry.AppendFromSimple("NON_EXISTENT", "value"); err == nil {
 		t.Error("Expected error when appending to non-existent variable")
 	}
 }
 
+// Define a mock protobuf-style enum type for testing
+type TestProtobufEnum int32
 
-func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
-	// Note: This is a test to ensure the function exists and can be called
-	// The actual implementation is marked as 0% coverage but is not used in production
-	// We can't easily test it without proper protobuf enum types
-	t.Skip("CreateProtobufEnumVariableParserWithAutoFormatter is not used in production")
+const (
+	TestProtobufEnum_UNKNOWN TestProtobufEnum = 0
+	TestProtobufEnum_VALUE_A TestProtobufEnum = 1
+	TestProtobufEnum_VALUE_B TestProtobufEnum = 2
+)
+
+// String implements fmt.Stringer for TestProtobufEnum
+func (e TestProtobufEnum) String() string {
+	switch e {
+	case TestProtobufEnum_UNKNOWN:
+		return "TestProtobufEnum_UNKNOWN"
+	case TestProtobufEnum_VALUE_A:
+		return "TestProtobufEnum_VALUE_A"
+	case TestProtobufEnum_VALUE_B:
+		return "TestProtobufEnum_VALUE_B"
+	default:
+		return fmt.Sprintf("TestProtobufEnum(%d)", e)
+	}
 }
 
-func TestAppendableTypedVariableParser(t *testing.T) {
-	// AppendableTypedVariableParser is an internal implementation detail
-	// It's tested indirectly through ProtoDescriptorFileParser
-	t.Skip("AppendableTypedVariableParser is an internal implementation detail")
+func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
+	// Create enum map for parsing (should use full names)
+	enumMap := map[string]int32{
+		"TestProtobufEnum_UNKNOWN": int32(TestProtobufEnum_UNKNOWN),
+		"TestProtobufEnum_VALUE_A": int32(TestProtobufEnum_VALUE_A),
+		"TestProtobufEnum_VALUE_B": int32(TestProtobufEnum_VALUE_B),
+	}
+
+	// Current value
+	currentValue := TestProtobufEnum_VALUE_A
+
+	// Create parser
+	p := sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+		"TEST_ENUM",
+		"Test protobuf enum",
+		enumMap,
+		"TestProtobufEnum_",
+		func() TestProtobufEnum { return currentValue },
+		func(v TestProtobufEnum) error { currentValue = v; return nil },
+	)
+
+	// Test parsing with short name
+	if err := p.ParseAndSetWithMode("VALUE_B", parser.ParseModeSimple); err != nil {
+		t.Fatalf("ParseAndSetWithMode failed: %v", err)
+	}
+	if currentValue != TestProtobufEnum_VALUE_B {
+		t.Errorf("Expected TestProtobufEnum_VALUE_B, got %v", currentValue)
+	}
+
+	// Test parsing with full name
+	if err := p.ParseAndSetWithMode("TestProtobufEnum_UNKNOWN", parser.ParseModeSimple); err != nil {
+		t.Fatalf("ParseAndSetWithMode with full name failed: %v", err)
+	}
+	if currentValue != TestProtobufEnum_UNKNOWN {
+		t.Errorf("Expected TestProtobufEnum_UNKNOWN, got %v", currentValue)
+	}
+
+	// Test formatting (should strip prefix)
+	currentValue = TestProtobufEnum_VALUE_A
+	got, err := p.GetValue()
+	if err != nil {
+		t.Fatalf("GetValue failed: %v", err)
+	}
+	if got != "VALUE_A" {
+		t.Errorf("GetValue() = %q, want %q", got, "VALUE_A")
+	}
+
+	// Test invalid value
+	if err := p.ParseAndSetWithMode("INVALID", parser.ParseModeSimple); err == nil {
+		t.Error("Expected error for invalid enum value")
+	}
+
+	// Test formatter with value that doesn't have the prefix
+	// This tests the else branch in the formatter function
+	// We need to create a custom test for this since normal enums always have the prefix
+}
+
+// SimpleEnum for testing enum without expected prefix
+type SimpleEnum int32
+
+const (
+	SimpleEnum_A SimpleEnum = 1
+	SimpleEnum_B SimpleEnum = 2
+)
+
+func (e SimpleEnum) String() string {
+	switch e {
+	case SimpleEnum_A:
+		return "A" // No prefix
+	case SimpleEnum_B:
+		return "B" // No prefix
+	default:
+		return fmt.Sprintf("SimpleEnum(%d)", e)
+	}
+}
+
+func TestCreateProtobufEnumVariableParserWithAutoFormatterNoPrefix(t *testing.T) {
+	enumMap := map[string]int32{
+		"A": int32(SimpleEnum_A),
+		"B": int32(SimpleEnum_B),
+	}
+
+	currentValue := SimpleEnum_A
+
+	// Create parser with a prefix that won't match
+	p := sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+		"SIMPLE_ENUM",
+		"Simple enum without matching prefix",
+		enumMap,
+		"NonExistent_", // This prefix won't match our values
+		func() SimpleEnum { return currentValue },
+		func(v SimpleEnum) error { currentValue = v; return nil },
+	)
+
+	// Test formatting - should return the value as-is since prefix doesn't match
+	got, err := p.GetValue()
+	if err != nil {
+		t.Fatalf("GetValue failed: %v", err)
+	}
+	if got != "A" {
+		t.Errorf("GetValue() = %q, want %q", got, "A")
+	}
 }
 
 func TestFormatString(t *testing.T) {
@@ -831,8 +944,8 @@ func TestNewEnumParserWithFormatter(t *testing.T) {
 		Green
 		Blue
 	)
-	
-	var currentColor Color = Red
+
+	currentColor := Red
 	colorParser := sysvar.NewEnumParser(
 		"COLOR",
 		"Color setting",
@@ -859,7 +972,7 @@ func TestNewEnumParserWithFormatter(t *testing.T) {
 			}
 		},
 	)
-	
+
 	// Test setting value
 	if err := colorParser.ParseAndSetWithMode("GREEN", parser.ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
@@ -867,7 +980,7 @@ func TestNewEnumParserWithFormatter(t *testing.T) {
 	if currentColor != Green {
 		t.Errorf("currentColor = %v, want %v", currentColor, Green)
 	}
-	
+
 	// Test getting value with formatter
 	value, err := colorParser.GetValue()
 	if err != nil {
@@ -885,8 +998,8 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 		ModeB Mode = "B"
 		ModeC Mode = "C"
 	)
-	
-	var currentMode Mode = ModeA
+
+	currentMode := ModeA
 	modeParser := sysvar.NewSimpleEnumParser(
 		"MODE",
 		"Operating mode",
@@ -901,7 +1014,7 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 			return nil
 		},
 	)
-	
+
 	// Test setting value
 	if err := modeParser.ParseAndSetWithMode("B", parser.ParseModeSimple); err != nil {
 		t.Fatalf("ParseAndSetWithMode failed: %v", err)
@@ -909,7 +1022,7 @@ func TestNewSimpleEnumParserWithFormatter(t *testing.T) {
 	if currentMode != ModeB {
 		t.Errorf("currentMode = %v, want %v", currentMode, ModeB)
 	}
-	
+
 	// Test getting value (should use fmt.Sprint)
 	value, err := modeParser.GetValue()
 	if err != nil {
@@ -926,18 +1039,18 @@ func TestTypedVariableParserReadOnly(t *testing.T) {
 		"Read-only variable",
 		func() string { return "readonly value" },
 	)
-	
+
 	// Test IsReadOnly
 	if !roParser.IsReadOnly() {
 		t.Error("Expected IsReadOnly to return true")
 	}
-	
+
 	// Test ParseAndSetWithMode should fail
 	err := roParser.ParseAndSetWithMode("new value", parser.ParseModeSimple)
 	if err == nil {
 		t.Error("Expected error when setting read-only variable")
 	}
-	
+
 	// Check error type
 	var roErr *sysvar.ErrVariableReadOnly
 	if !errors.As(err, &roErr) {
@@ -948,7 +1061,7 @@ func TestTypedVariableParserReadOnly(t *testing.T) {
 func TestCreateDurationRangeParserNoRange(t *testing.T) {
 	// Test with nil options
 	p := sysvar.CreateDurationRangeParser(nil)
-	
+
 	// Should accept any valid duration
 	testCases := []string{"1ns", "1h", "999h", "-5s"}
 	for _, tc := range testCases {
@@ -960,32 +1073,31 @@ func TestCreateDurationRangeParserNoRange(t *testing.T) {
 
 func TestRegistryDuplicateRegistration(t *testing.T) {
 	registry := sysvar.NewRegistry()
-	
+
 	parser1 := sysvar.NewBooleanParser(
 		"DUP_VAR",
 		"First parser",
 		func() bool { return false },
 		func(bool) error { return nil },
 	)
-	
+
 	parser2 := sysvar.NewBooleanParser(
 		"dup_var", // Different case, but should still conflict
 		"Second parser",
 		func() bool { return true },
 		func(bool) error { return nil },
 	)
-	
+
 	// First registration should succeed
 	if err := registry.Register(parser1); err != nil {
 		t.Fatalf("First registration failed: %v", err)
 	}
-	
+
 	// Second registration should fail
 	if err := registry.Register(parser2); err == nil {
 		t.Error("Expected error for duplicate registration")
 	}
 }
-
 
 func TestNewReadOnlyParsers(t *testing.T) {
 	t.Run("NewReadOnlyStringParser", func(t *testing.T) {
@@ -995,16 +1107,16 @@ func TestNewReadOnlyParsers(t *testing.T) {
 			"Read-only string",
 			func() string { return value },
 		)
-		
+
 		// Test basic properties
 		if p.Name() != "RO_STRING" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "RO_STRING")
 		}
-		
+
 		if !p.IsReadOnly() {
 			t.Error("Expected IsReadOnly to return true")
 		}
-		
+
 		// Test GetValue
 		got, err := p.GetValue()
 		if err != nil {
@@ -1013,13 +1125,13 @@ func TestNewReadOnlyParsers(t *testing.T) {
 		if got != "test value" {
 			t.Errorf("GetValue() = %q, want %q", got, "test value")
 		}
-		
+
 		// Test setting should fail
 		if err := p.ParseAndSetWithMode("new", parser.ParseModeSimple); err == nil {
 			t.Error("Expected error when setting read-only variable")
 		}
 	})
-	
+
 	t.Run("NewReadOnlyBooleanParser", func(t *testing.T) {
 		value := true
 		p := sysvar.NewReadOnlyBooleanParser(
@@ -1027,12 +1139,12 @@ func TestNewReadOnlyParsers(t *testing.T) {
 			"Read-only boolean",
 			func() bool { return value },
 		)
-		
+
 		// Test basic properties
 		if !p.IsReadOnly() {
 			t.Error("Expected IsReadOnly to return true")
 		}
-		
+
 		// Test GetValue
 		got, err := p.GetValue()
 		if err != nil {
@@ -1041,7 +1153,7 @@ func TestNewReadOnlyParsers(t *testing.T) {
 		if got != "TRUE" {
 			t.Errorf("GetValue() = %q, want %q", got, "TRUE")
 		}
-		
+
 		// Change underlying value
 		value = false
 		got, err = p.GetValue()
@@ -1051,7 +1163,7 @@ func TestNewReadOnlyParsers(t *testing.T) {
 		if got != "FALSE" {
 			t.Errorf("GetValue() = %q, want %q", got, "FALSE")
 		}
-		
+
 		// Test setting should fail
 		if err := p.ParseAndSetWithMode("true", parser.ParseModeSimple); err == nil {
 			t.Error("Expected error when setting read-only variable")

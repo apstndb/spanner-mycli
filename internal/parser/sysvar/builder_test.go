@@ -62,7 +62,7 @@ func testParserCases(t *testing.T, p parser.DualModeParser[int64], validCases, i
 func TestCreateIntRangeParser(t *testing.T) {
 	t.Run("no range", func(t *testing.T) {
 		p := sysvar.CreateIntRangeParser(nil)
-		testParserCases(t, p, 
+		testParserCases(t, p,
 			[]string{"-1000", "0", "1000", "9223372036854775807"},
 			nil)
 	})
@@ -70,7 +70,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 	t.Run("with min", func(t *testing.T) {
 		min := int64(10)
 		p := sysvar.CreateIntRangeParser(&sysvar.RangeParserOptions[int64]{Min: &min})
-		testParserCases(t, p, 
+		testParserCases(t, p,
 			[]string{"10", "100"},
 			[]string{"5"})
 	})
@@ -114,8 +114,43 @@ func TestCreateDurationRangeParser(t *testing.T) {
 			}
 		}
 	})
-}
 
+	t.Run("with min only", func(t *testing.T) {
+		min := 100 * time.Millisecond
+		p := sysvar.CreateDurationRangeParser(&sysvar.RangeParserOptions[time.Duration]{Min: &min})
+
+		// Valid values
+		if _, err := p.ParseAndValidateWithMode("100ms", parser.ParseModeSimple); err != nil {
+			t.Errorf("ParseAndValidate(100ms) failed: %v", err)
+		}
+		if _, err := p.ParseAndValidateWithMode("1s", parser.ParseModeSimple); err != nil {
+			t.Errorf("ParseAndValidate(1s) failed: %v", err)
+		}
+
+		// Invalid value
+		if _, err := p.ParseAndValidateWithMode("50ms", parser.ParseModeSimple); err == nil {
+			t.Error("Expected error for value below minimum")
+		}
+	})
+
+	t.Run("with max only", func(t *testing.T) {
+		max := 500 * time.Millisecond
+		p := sysvar.CreateDurationRangeParser(&sysvar.RangeParserOptions[time.Duration]{Max: &max})
+
+		// Valid values
+		if _, err := p.ParseAndValidateWithMode("100ms", parser.ParseModeSimple); err != nil {
+			t.Errorf("ParseAndValidate(100ms) failed: %v", err)
+		}
+		if _, err := p.ParseAndValidateWithMode("500ms", parser.ParseModeSimple); err != nil {
+			t.Errorf("ParseAndValidate(500ms) failed: %v", err)
+		}
+
+		// Invalid value
+		if _, err := p.ParseAndValidateWithMode("1s", parser.ParseModeSimple); err == nil {
+			t.Error("Expected error for value above maximum")
+		}
+	})
+}
 
 func TestCreateStringEnumVariableParser(t *testing.T) {
 	type LogLevel string
@@ -214,6 +249,4 @@ func TestFormatters(t *testing.T) {
 			t.Errorf("FormatNullable(&42) = %q, want '42'", got)
 		}
 	})
-
 }
-

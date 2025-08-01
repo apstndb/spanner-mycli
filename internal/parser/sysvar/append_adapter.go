@@ -15,22 +15,6 @@ type AppendableVariableParser interface {
 	AppendWithMode(value string, mode parser.ParseMode) error
 }
 
-// AppendableTypedVariableParser extends TypedVariableParser to support append operations.
-type AppendableTypedVariableParser[T any] struct {
-	*TypedVariableParser[T]
-	appender func(T) error // Function to append a parsed value
-}
-
-
-// AppendWithMode implements AppendableVariableParser.
-func (avp *AppendableTypedVariableParser[T]) AppendWithMode(value string, mode parser.ParseMode) error {
-	parsed, err := avp.parser.ParseAndValidateWithMode(value, mode)
-	if err != nil {
-		return fmt.Errorf("failed to parse value for append: %w", err)
-	}
-	return avp.appender(parsed)
-}
-
 // Registry extensions for append support.
 
 // AppendFromGoogleSQL appends a value using GoogleSQL syntax.

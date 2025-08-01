@@ -28,7 +28,6 @@ type readOnlyVar[T any] struct {
 	getter func() T
 }
 
-
 // Generic helper to register simple variables with field pointers
 func registerSimpleVariables[T any](
 	registry *sysvar.Registry,
@@ -54,7 +53,6 @@ func registerSimpleVariables[T any](
 	}
 }
 
-
 // Generic helper to register read-only variables
 func registerReadOnlyVariables[T any](
 	registry *sysvar.Registry,
@@ -76,7 +74,6 @@ func registerReadOnlyVariables[T any](
 		}
 	}
 }
-
 
 // createSystemVariableRegistry creates and configures the parser registry for system variables.
 // This function sets up all the system variable parsers with their getters and setters.
