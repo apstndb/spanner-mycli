@@ -57,7 +57,7 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 			name:      "read-only variable with nil setter",
 			varName:   "AUTOCOMMIT", // This has only Getter, no Setter
 			value:     "true",
-			wantError: "unimplemented setter: AUTOCOMMIT",
+			wantError: "variable AUTOCOMMIT is read-only",
 		},
 		{
 			name:      "invalid boolean value",
@@ -201,9 +201,9 @@ func TestSystemVariables_CaseInsensitive(t *testing.T) {
 	for _, varName := range testCases {
 		t.Run("Set_"+varName, func(t *testing.T) {
 			sv := &systemVariables{}
-			err := sv.Set(varName, "true")
+			err := sv.SetFromGoogleSQL(varName, "true")
 			if err != nil {
-				t.Errorf("Set(%s) failed: %v", varName, err)
+				t.Errorf("SetFromGoogleSQL(%s) failed: %v", varName, err)
 			}
 
 			// Verify that Get works with the same case
@@ -220,9 +220,9 @@ func TestSystemVariables_CaseInsensitive(t *testing.T) {
 
 	// Test cross-case: Set with one case, Get with another
 	t.Run("CrossCase", func(t *testing.T) {
-		sv := &systemVariables{}
+		sv := newSystemVariablesWithDefaultsForTest()
 		// Set with lowercase
-		err := sv.Set("cli_verbose", "true")
+		err := sv.SetFromGoogleSQL("cli_verbose", "true")
 		if err != nil {
 			t.Errorf("Set(cli_verbose) failed: %v", err)
 		}

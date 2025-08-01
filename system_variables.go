@@ -267,7 +267,7 @@ type errSetterUnimplemented struct {
 }
 
 func (e errSetterUnimplemented) Error() string {
-	return fmt.Sprintf("unimplemented setter: %v", e.Name)
+	return fmt.Sprintf("variable %s is read-only", e.Name)
 }
 
 type errGetterUnimplemented struct {
@@ -309,7 +309,10 @@ var sessionInitOnlyVariables = []string{
 	// "CLI_ENABLE_CLIENT_METRICS",
 }
 
-func (sv *systemVariables) Set(name string, value string) error {
+// SetFromGoogleSQL sets a system variable using GoogleSQL parsing mode.
+// This is used for SET statements in REPL and SQL scripts where values
+// are parsed as GoogleSQL expressions (e.g., TRUE, 'string value').
+func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
 	// First check if the variable is in the new registry
@@ -360,8 +363,8 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 		return sv.Registry.SetFromSimple(upperName, value)
 	}
 
-	// Fall back to Set for old system (which doesn't distinguish modes)
-	return sv.Set(name, value)
+	// Fall back to SetFromGoogleSQL for old system (which doesn't distinguish modes)
+	return sv.SetFromGoogleSQL(name, value)
 }
 
 func (sv *systemVariables) Add(name string, value string) error {
