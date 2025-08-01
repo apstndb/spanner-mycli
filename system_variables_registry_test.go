@@ -21,7 +21,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting through registry (GoogleSQL mode)
-		if err := sv.Set("READONLY", "TRUE"); err != nil {
+		if err := sv.SetFromGoogleSQL("READONLY", "TRUE"); err != nil {
 			t.Fatalf("Failed to set READONLY: %v", err)
 		}
 		if !sv.ReadOnly {
@@ -38,7 +38,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting back to false
-		if err := sv.Set("READONLY", "FALSE"); err != nil {
+		if err := sv.SetFromGoogleSQL("READONLY", "FALSE"); err != nil {
 			t.Fatalf("Failed to set READONLY to false: %v", err)
 		}
 		if sv.ReadOnly {
@@ -46,7 +46,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test case insensitivity
-		if err := sv.Set("readonly", "true"); err != nil {
+		if err := sv.SetFromGoogleSQL("readonly", "true"); err != nil {
 			t.Fatalf("Failed to set readonly (lowercase): %v", err)
 		}
 		if !sv.ReadOnly {
@@ -61,7 +61,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting
-		if err := sv.Set("AUTO_PARTITION_MODE", "TRUE"); err != nil {
+		if err := sv.SetFromGoogleSQL("AUTO_PARTITION_MODE", "TRUE"); err != nil {
 			t.Fatalf("Failed to set AUTO_PARTITION_MODE: %v", err)
 		}
 		if !sv.AutoPartitionMode {
@@ -85,7 +85,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting to false
-		if err := sv.Set("RETURN_COMMIT_STATS", "FALSE"); err != nil {
+		if err := sv.SetFromGoogleSQL("RETURN_COMMIT_STATS", "FALSE"); err != nil {
 			t.Fatalf("Failed to set RETURN_COMMIT_STATS: %v", err)
 		}
 		if sv.ReturnCommitStats {
@@ -100,7 +100,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting
-		if err := sv.Set("CLI_VERBOSE", "TRUE"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_VERBOSE", "TRUE"); err != nil {
 			t.Fatalf("Failed to set CLI_VERBOSE: %v", err)
 		}
 		if !sv.Verbose {
@@ -121,7 +121,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		for _, value := range testCases {
-			if err := sv.Set("CLI_VERBOSE", value); err == nil {
+			if err := sv.SetFromGoogleSQL("CLI_VERBOSE", value); err == nil {
 				t.Errorf("Expected error for invalid boolean value %q, but got none", value)
 			}
 		}
@@ -129,7 +129,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 
 	t.Run("Unknown variable", func(t *testing.T) {
 		// Test setting unknown variable
-		if err := sv.Set("UNKNOWN_VARIABLE", "value"); err == nil {
+		if err := sv.SetFromGoogleSQL("UNKNOWN_VARIABLE", "value"); err == nil {
 			t.Error("Expected error for unknown variable")
 		}
 
@@ -142,7 +142,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 	t.Run("Fallback to old system", func(t *testing.T) {
 		// Test a variable that's not yet migrated (should fall back to old system)
 		// For example, READ_ONLY_STALENESS is a special variable not yet migrated
-		if err := sv.Set("READ_ONLY_STALENESS", "STRONG"); err != nil {
+		if err := sv.SetFromGoogleSQL("READ_ONLY_STALENESS", "STRONG"); err != nil {
 			t.Fatalf("Failed to set READ_ONLY_STALENESS (should use old system): %v", err)
 		}
 
@@ -163,7 +163,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting value
-		if err := sv.Set("CLI_TAB_WIDTH", "8"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_TAB_WIDTH", "8"); err != nil {
 			t.Errorf("Failed to set CLI_TAB_WIDTH: %v", err)
 		}
 		if sv.TabWidth != 8 {
@@ -182,7 +182,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 
 	t.Run("MAX_PARTITIONED_PARALLELISM", func(t *testing.T) {
 		// Test setting negative value (should be allowed since no constraints)
-		if err := sv.Set("MAX_PARTITIONED_PARALLELISM", "-1"); err != nil {
+		if err := sv.SetFromGoogleSQL("MAX_PARTITIONED_PARALLELISM", "-1"); err != nil {
 			t.Errorf("Failed to set MAX_PARTITIONED_PARALLELISM: %v", err)
 		}
 		if sv.MaxPartitionedParallelism != -1 {
@@ -190,7 +190,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting positive value
-		if err := sv.Set("MAX_PARTITIONED_PARALLELISM", "100"); err != nil {
+		if err := sv.SetFromGoogleSQL("MAX_PARTITIONED_PARALLELISM", "100"); err != nil {
 			t.Errorf("Failed to set MAX_PARTITIONED_PARALLELISM: %v", err)
 		}
 		if sv.MaxPartitionedParallelism != 100 {
@@ -200,12 +200,12 @@ func TestSystemVariableRegistry(t *testing.T) {
 
 	t.Run("Invalid integer values", func(t *testing.T) {
 		// Test invalid integer
-		if err := sv.Set("CLI_TAB_WIDTH", "not_a_number"); err == nil {
+		if err := sv.SetFromGoogleSQL("CLI_TAB_WIDTH", "not_a_number"); err == nil {
 			t.Error("Expected error for invalid integer value")
 		}
 
 		// Test floating point (should fail)
-		if err := sv.Set("CLI_TAB_WIDTH", "3.14"); err == nil {
+		if err := sv.SetFromGoogleSQL("CLI_TAB_WIDTH", "3.14"); err == nil {
 			t.Error("Expected error for floating point value")
 		}
 	})
@@ -214,7 +214,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 	t.Run("OPTIMIZER_VERSION", func(t *testing.T) {
 		// Test setting OPTIMIZER_VERSION (now migrated)
 		// In GoogleSQL mode, strings need to be quoted
-		if err := sv.Set("OPTIMIZER_VERSION", `"LATEST"`); err != nil {
+		if err := sv.SetFromGoogleSQL("OPTIMIZER_VERSION", `"LATEST"`); err != nil {
 			t.Errorf("Failed to set OPTIMIZER_VERSION: %v", err)
 		}
 		if sv.OptimizerVersion != "LATEST" {
@@ -222,7 +222,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting numeric version
-		if err := sv.Set("OPTIMIZER_VERSION", `"2"`); err != nil {
+		if err := sv.SetFromGoogleSQL("OPTIMIZER_VERSION", `"2"`); err != nil {
 			t.Errorf("Failed to set OPTIMIZER_VERSION to numeric: %v", err)
 		}
 		if sv.OptimizerVersion != "2" {
@@ -233,7 +233,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 	t.Run("CLI_PROMPT", func(t *testing.T) {
 		// Test setting custom prompt - need to use quoted strings in GoogleSQL mode
 		customPrompt := "mydb> "
-		if err := sv.Set("CLI_PROMPT", `"mydb> "`); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_PROMPT", `"mydb> "`); err != nil {
 			t.Errorf("Failed to set CLI_PROMPT: %v", err)
 		}
 		if sv.Prompt != customPrompt {
@@ -251,7 +251,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 
 		// Test with escape sequences
 		// GoogleSQL interprets \t as a tab character
-		if err := sv.Set("CLI_PROMPT", `"hello\tworld"`); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_PROMPT", `"hello\tworld"`); err != nil {
 			t.Errorf("Failed to set CLI_PROMPT with tab: %v", err)
 		}
 		if sv.Prompt != "hello\tworld" {
@@ -262,7 +262,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 	// Test enum variables
 	t.Run("RPC_PRIORITY", func(t *testing.T) {
 		// Test setting RPC_PRIORITY (now migrated)
-		if err := sv.Set("RPC_PRIORITY", "HIGH"); err != nil {
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "HIGH"); err != nil {
 			t.Errorf("Failed to set RPC_PRIORITY: %v", err)
 		}
 		if sv.RPCPriority != sppb.RequestOptions_PRIORITY_HIGH {
@@ -270,7 +270,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test case insensitivity
-		if err := sv.Set("RPC_PRIORITY", "low"); err != nil {
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "low"); err != nil {
 			t.Errorf("Failed to set RPC_PRIORITY with lowercase: %v", err)
 		}
 		if sv.RPCPriority != sppb.RequestOptions_PRIORITY_LOW {
@@ -278,14 +278,14 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test invalid value
-		if err := sv.Set("RPC_PRIORITY", "INVALID"); err == nil {
+		if err := sv.SetFromGoogleSQL("RPC_PRIORITY", "INVALID"); err == nil {
 			t.Error("Expected error for invalid priority value")
 		}
 	})
 
 	t.Run("CLI_FORMAT", func(t *testing.T) {
 		// Test setting display format
-		if err := sv.Set("CLI_FORMAT", "CSV"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "CSV"); err != nil {
 			t.Errorf("Failed to set CLI_FORMAT: %v", err)
 		}
 		if sv.CLIFormat != DisplayModeCSV {
@@ -293,7 +293,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test another format
-		if err := sv.Set("CLI_FORMAT", "VERTICAL"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "VERTICAL"); err != nil {
 			t.Errorf("Failed to set CLI_FORMAT to VERTICAL: %v", err)
 		}
 		if sv.CLIFormat != DisplayModeVertical {
@@ -301,14 +301,14 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test invalid format
-		if err := sv.Set("CLI_FORMAT", "INVALID_FORMAT"); err == nil {
+		if err := sv.SetFromGoogleSQL("CLI_FORMAT", "INVALID_FORMAT"); err == nil {
 			t.Error("Expected error for invalid format value")
 		}
 	})
 
 	t.Run("CLI_EXPLAIN_FORMAT", func(t *testing.T) {
 		// Test setting explain format
-		if err := sv.Set("CLI_EXPLAIN_FORMAT", "COMPACT"); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_EXPLAIN_FORMAT", "COMPACT"); err != nil {
 			t.Errorf("Failed to set CLI_EXPLAIN_FORMAT: %v", err)
 		}
 		if sv.ExplainFormat != explainFormatCompact {
@@ -316,7 +316,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test empty string (unspecified)
-		if err := sv.Set("CLI_EXPLAIN_FORMAT", `""`); err != nil {
+		if err := sv.SetFromGoogleSQL("CLI_EXPLAIN_FORMAT", `""`); err != nil {
 			t.Errorf("Failed to set CLI_EXPLAIN_FORMAT to empty: %v", err)
 		}
 		if sv.ExplainFormat != explainFormatUnspecified {
@@ -327,7 +327,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 	// Test duration variables
 	t.Run("MAX_COMMIT_DELAY", func(t *testing.T) {
 		// Test setting valid duration
-		if err := sv.Set("MAX_COMMIT_DELAY", `"100ms"`); err != nil {
+		if err := sv.SetFromGoogleSQL("MAX_COMMIT_DELAY", `"100ms"`); err != nil {
 			t.Errorf("Failed to set MAX_COMMIT_DELAY: %v", err)
 		}
 		if sv.MaxCommitDelay == nil || *sv.MaxCommitDelay != 100*time.Millisecond {
@@ -335,7 +335,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test setting NULL
-		if err := sv.Set("MAX_COMMIT_DELAY", "NULL"); err != nil {
+		if err := sv.SetFromGoogleSQL("MAX_COMMIT_DELAY", "NULL"); err != nil {
 			t.Errorf("Failed to set MAX_COMMIT_DELAY to NULL: %v", err)
 		}
 		if sv.MaxCommitDelay != nil {
@@ -343,19 +343,19 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test max value constraint (500ms)
-		if err := sv.Set("MAX_COMMIT_DELAY", `"600ms"`); err == nil {
+		if err := sv.SetFromGoogleSQL("MAX_COMMIT_DELAY", `"600ms"`); err == nil {
 			t.Error("Expected error for duration exceeding 500ms")
 		}
 
 		// Test negative duration
-		if err := sv.Set("MAX_COMMIT_DELAY", `"-100ms"`); err == nil {
+		if err := sv.SetFromGoogleSQL("MAX_COMMIT_DELAY", `"-100ms"`); err == nil {
 			t.Error("Expected error for negative duration")
 		}
 	})
 
 	t.Run("STATEMENT_TIMEOUT", func(t *testing.T) {
 		// Test setting duration
-		if err := sv.Set("STATEMENT_TIMEOUT", `"5m"`); err != nil {
+		if err := sv.SetFromGoogleSQL("STATEMENT_TIMEOUT", `"5m"`); err != nil {
 			t.Errorf("Failed to set STATEMENT_TIMEOUT: %v", err)
 		}
 		if sv.StatementTimeout == nil || *sv.StatementTimeout != 5*time.Minute {
@@ -372,7 +372,7 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 
 		// Test NULL
-		if err := sv.Set("STATEMENT_TIMEOUT", "NULL"); err != nil {
+		if err := sv.SetFromGoogleSQL("STATEMENT_TIMEOUT", "NULL"); err != nil {
 			t.Errorf("Failed to set STATEMENT_TIMEOUT to NULL: %v", err)
 		}
 		if sv.StatementTimeout != nil {

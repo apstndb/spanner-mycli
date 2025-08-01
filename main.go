@@ -754,9 +754,6 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		return systemVariables{}, err
 	}
 
-	// Initialize registry after sysVars is in its final location
-	sysVars.initializeRegistry()
-
 	// initialize default value
 	if err := sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
 		return systemVariables{}, fmt.Errorf("parse error: %w", err)

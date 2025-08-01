@@ -16,7 +16,7 @@ func TestRegistryIntegration(t *testing.T) {
 		}
 
 		// Set through registry (GoogleSQL mode)
-		if err := sv.Set("READONLY", "TRUE"); err != nil {
+		if err := sv.SetFromGoogleSQL("READONLY", "TRUE"); err != nil {
 			t.Fatalf("Failed to set READONLY: %v", err)
 		}
 		if !sv.ReadOnly {
@@ -35,12 +35,11 @@ func TestRegistryIntegration(t *testing.T) {
 
 	t.Run("new parser rejects old boolean formats", func(t *testing.T) {
 		sv := newSystemVariablesWithDefaults()
-		sv.initializeRegistry()
 
 		// These should fail with the new parser
 		invalidValues := []string{"1", "0", "yes", "no", "on", "off"}
 		for _, value := range invalidValues {
-			if err := sv.Set("CLI_VERBOSE", value); err == nil {
+			if err := sv.SetFromGoogleSQL("CLI_VERBOSE", value); err == nil {
 				t.Errorf("Expected error for invalid boolean value %q", value)
 			}
 		}
@@ -48,7 +47,7 @@ func TestRegistryIntegration(t *testing.T) {
 		// These should work
 		validValues := []string{"true", "false", "TRUE", "FALSE", "True", "False"}
 		for _, value := range validValues {
-			if err := sv.Set("CLI_VERBOSE", value); err != nil {
+			if err := sv.SetFromGoogleSQL("CLI_VERBOSE", value); err != nil {
 				t.Errorf("Failed to set CLI_VERBOSE with valid value %q: %v", value, err)
 			}
 		}

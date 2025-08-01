@@ -812,7 +812,7 @@ func TestSystemVariablesSetGetGoogleSQLMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			test := test
-			testSystemVariableSetGet(t, (*systemVariables).Set, "Set", test)
+			testSystemVariableSetGet(t, (*systemVariables).SetFromGoogleSQL, "SetFromGoogleSQL", test)
 		})
 	}
 }
@@ -868,7 +868,7 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaultsForTest()
-			err := sysVars.Set("CLI_ENDPOINT", tt.value)
+			err := sysVars.SetFromSimple("CLI_ENDPOINT", tt.value)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -1239,8 +1239,8 @@ func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaults()
-			err := sysVars.Set("CLI_SKIP_COLUMN_NAMES", tt.value)
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1375,7 +1375,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			}
 
 			// Test Set operation
-			err := sv.Set(tt.variableCase, tt.setValue)
+			err := sv.SetFromSimple(tt.variableCase, tt.setValue)
 
 			// Check error expectation
 			if tt.expectError {

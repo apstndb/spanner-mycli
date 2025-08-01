@@ -9,7 +9,6 @@ import (
 func TestSystemVariablesRegistry_BasicOperations(t *testing.T) {
 	// Create system variables with registry
 	sv := newSystemVariablesWithDefaults()
-	sv.initializeRegistry()
 
 	t.Run("CLI_FORMAT setting", func(t *testing.T) {
 		// Test setting via SetFromSimple

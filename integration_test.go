@@ -106,7 +106,6 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}
-	sysVars.initializeRegistry()
 	session, err = NewSession(ctx, sysVars, options...)
 	if err != nil {
 		return nil, err

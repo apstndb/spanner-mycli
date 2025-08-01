@@ -243,11 +243,10 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sysVars := &systemVariables{
-				CLIFormat: DisplayModeTable,
-			}
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			sysVars.CLIFormat = DisplayModeTable
 
-			err := sysVars.Set("CLI_FORMAT", tt.setValue)
+			err := sysVars.SetFromSimple("CLI_FORMAT", tt.setValue)
 
 			if (err != nil) != tt.wantError {
 				t.Errorf("Set() error = %v, wantError %v", err, tt.wantError)

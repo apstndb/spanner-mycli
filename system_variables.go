@@ -247,18 +247,19 @@ func newSystemVariablesWithDefaults() systemVariables {
 	return sv
 }
 
-// initializeRegistry must be called after creating a systemVariables instance
-// to properly set up the parser registry. This ensures the closures in the
-// registry capture the correct instance.
-func (sv *systemVariables) initializeRegistry() {
-	sv.Registry = createSystemVariableRegistry(sv)
+// ensureRegistry initializes the registry if it hasn't been initialized yet.
+// This allows lazy initialization on first use, eliminating the need for
+// explicit initialization calls.
+func (sv *systemVariables) ensureRegistry() {
+	if sv.Registry == nil {
+		sv.Registry = createSystemVariableRegistry(sv)
+	}
 }
 
 // newSystemVariablesWithDefaultsForTest creates a new systemVariables instance
-// with defaults and properly initialized registry for testing.
+// with defaults for testing.
 func newSystemVariablesWithDefaultsForTest() *systemVariables {
 	sv := newSystemVariablesWithDefaults()
-	sv.initializeRegistry()
 	return &sv
 }
 
@@ -315,10 +316,11 @@ var sessionInitOnlyVariables = []string{
 func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
+	// Ensure registry is initialized
+	sv.ensureRegistry()
+	
 	// First check if the variable is in the new registry
-	if sv.Registry != nil && sv.Registry.Has(upperName) {
-		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
-		// TODO: Add context to determine if we're in Simple mode (CLI flags/config)
+	if sv.Registry.Has(upperName) {
 		return sv.Registry.SetFromGoogleSQL(upperName, value)
 	}
 
@@ -358,8 +360,11 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
+	// Ensure registry is initialized
+	sv.ensureRegistry()
+	
 	// First check if the variable is in the new registry
-	if sv.Registry != nil && sv.Registry.Has(upperName) {
+	if sv.Registry.Has(upperName) {
 		return sv.Registry.SetFromSimple(upperName, value)
 	}
 
@@ -370,8 +375,11 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 func (sv *systemVariables) Add(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
+	// Ensure registry is initialized
+	sv.ensureRegistry()
+	
 	// First check if the variable is in the new registry
-	if sv.Registry != nil && sv.Registry.Has(upperName) {
+	if sv.Registry.Has(upperName) {
 		// For now, assume we're in GoogleSQL mode (REPL/SQL scripts)
 		// TODO: Add context to determine if we're in Simple mode (CLI flags/config)
 		if sv.Registry.HasAppendSupport(upperName) {
@@ -395,8 +403,11 @@ func (sv *systemVariables) Add(name string, value string) error {
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
 
+	// Ensure registry is initialized
+	sv.ensureRegistry()
+	
 	// First check if the variable is in the new registry
-	if sv.Registry != nil && sv.Registry.Has(upperName) {
+	if sv.Registry.Has(upperName) {
 		value, err := sv.Registry.Get(upperName)
 		if err != nil {
 			return nil, err
