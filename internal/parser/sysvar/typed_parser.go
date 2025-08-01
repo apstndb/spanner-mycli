@@ -9,6 +9,15 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/parser"
 )
 
+// ErrVariableReadOnly is returned when attempting to set a read-only variable.
+type ErrVariableReadOnly struct {
+	Name string
+}
+
+func (e *ErrVariableReadOnly) Error() string {
+	return fmt.Sprintf("variable %s is read-only", e.Name)
+}
+
 // VariableParser is the interface that all typed variable parsers must implement.
 // This allows the registry to handle different types uniformly without reflection.
 type VariableParser interface {
@@ -49,7 +58,7 @@ func (vp *TypedVariableParser[T]) IsReadOnly() bool {
 // ParseAndSetWithMode parses a string value using the specified mode and sets it.
 func (vp *TypedVariableParser[T]) ParseAndSetWithMode(value string, mode parser.ParseMode) error {
 	if vp.readOnly {
-		return fmt.Errorf("variable %s is read-only", vp.name)
+		return &ErrVariableReadOnly{Name: vp.name}
 	}
 
 	parsed, err := vp.parser.ParseAndValidateWithMode(value, mode)
@@ -293,16 +302,20 @@ func NewDurationParser(
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
+		} else if min != nil {
+			simpleParser = simpleParser.WithMin(*min)
+		} else if max != nil {
+			simpleParser = simpleParser.WithMax(*max)
 		}
 
 		// For GoogleSQL mode, wrap with validation
 		var googleSQLParser parser.Parser[time.Duration]
-		if min != nil && max != nil {
+		if min != nil || max != nil {
 			googleSQLParser = parser.WithValidation(parser.GoogleSQLDurationParser, func(v time.Duration) error {
-				if v < *min {
+				if min != nil && v < *min {
 					return fmt.Errorf("duration %s is less than minimum %s", v, *min)
 				}
-				if v > *max {
+				if max != nil && v > *max {
 					return fmt.Errorf("duration %s is greater than maximum %s", v, *max)
 				}
 				return nil
@@ -342,16 +355,20 @@ func NewNullableDurationParser(
 		simpleParser := parser.NewDurationParser()
 		if min != nil && max != nil {
 			simpleParser = simpleParser.WithRange(*min, *max)
+		} else if min != nil {
+			simpleParser = simpleParser.WithMin(*min)
+		} else if max != nil {
+			simpleParser = simpleParser.WithMax(*max)
 		}
 
 		// For GoogleSQL mode, wrap with validation
 		var googleSQLParser parser.Parser[time.Duration]
-		if min != nil && max != nil {
+		if min != nil || max != nil {
 			googleSQLParser = parser.WithValidation(parser.GoogleSQLDurationParser, func(v time.Duration) error {
-				if v < *min {
+				if min != nil && v < *min {
 					return fmt.Errorf("duration %s is less than minimum %s", v, *min)
 				}
-				if v > *max {
+				if max != nil && v > *max {
 					return fmt.Errorf("duration %s is greater than maximum %s", v, *max)
 				}
 				return nil

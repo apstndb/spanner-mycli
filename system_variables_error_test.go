@@ -118,7 +118,7 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sv := &systemVariables{}
+			sv := newSystemVariablesWithDefaultsForTest()
 			err := sv.Set(tt.varName, tt.value)
 			if err == nil {
 				t.Fatal("expected error but got nil")

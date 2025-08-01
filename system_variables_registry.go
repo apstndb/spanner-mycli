@@ -259,10 +259,14 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
 		map[string]sppb.RequestOptions_Priority{
-			"UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			"LOW":         sppb.RequestOptions_PRIORITY_LOW,
-			"MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
-			"HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
+			"PRIORITY_UNSPECIFIED": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			"PRIORITY_LOW":         sppb.RequestOptions_PRIORITY_LOW,
+			"PRIORITY_MEDIUM":      sppb.RequestOptions_PRIORITY_MEDIUM,
+			"PRIORITY_HIGH":        sppb.RequestOptions_PRIORITY_HIGH,
+			"UNSPECIFIED":          sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			"LOW":                  sppb.RequestOptions_PRIORITY_LOW,
+			"MEDIUM":               sppb.RequestOptions_PRIORITY_MEDIUM,
+			"HIGH":                 sppb.RequestOptions_PRIORITY_HIGH,
 		},
 		func() sppb.RequestOptions_Priority { return sv.RPCPriority },
 		func(v sppb.RequestOptions_Priority) error {
@@ -451,7 +455,7 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 			sv.StatementTimeout = v
 			return nil
 		},
-		nil, nil, // No min/max constraints
+		lo.ToPtr(time.Duration(0)), nil, // Min: 0, no max
 	))
 
 	// More enum variables
@@ -484,6 +488,8 @@ func createSystemVariableRegistry(sv *systemVariables) *sysvar.Registry {
 	// DEFAULT_ISOLATION_LEVEL
 	isolationValues := map[string]sppb.TransactionOptions_IsolationLevel{
 		"ISOLATION_LEVEL_UNSPECIFIED": sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+		"SERIALIZABLE":                sppb.TransactionOptions_SERIALIZABLE,
+		"REPEATABLE_READ":             sppb.TransactionOptions_REPEATABLE_READ,
 	}
 	mustRegister(sysvar.NewEnumParser(
 		"DEFAULT_ISOLATION_LEVEL",
