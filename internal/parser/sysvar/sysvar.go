@@ -586,6 +586,43 @@ func SetValue[T any](ptr *T) func(T) error {
 	}
 }
 
+// SetPointerValue returns a setter function that sets a pointer field to point to the given value.
+// This is useful for nullable fields where the field itself is a pointer.
+//
+// Example:
+//
+//	setter: SetPointerValue(&sv.QueryMode)
+//
+// Instead of:
+//
+//	setter: func(v sppb.ExecuteSqlRequest_QueryMode) error { sv.QueryMode = &v; return nil }
+func SetPointerValue[T any](ptr **T) func(T) error {
+	return func(v T) error {
+		*ptr = &v
+		return nil
+	}
+}
+
+// SliceToEnumMap converts a slice of string-based enum values to a map for use with enum parsers.
+// This is useful for enums where the constant value is the same as its string representation.
+//
+// Example:
+//
+//	type ExplainFormat string
+//	const (
+//	    ExplainFormatCurrent = "CURRENT"
+//	    ExplainFormatCompact = "COMPACT"
+//	)
+//	enumMap := SliceToEnumMap([]ExplainFormat{ExplainFormatCurrent, ExplainFormatCompact})
+//	// Results in: map[string]ExplainFormat{"CURRENT": "CURRENT", "COMPACT": "COMPACT"}
+func SliceToEnumMap[T ~string](values []T) map[string]T {
+	m := make(map[string]T, len(values))
+	for _, v := range values {
+		m[string(v)] = v
+	}
+	return m
+}
+
 // SetSessionInitOnly returns a setter that only allows changes before a session is created.
 // This is used for variables that affect session initialization and cannot be changed afterwards.
 func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) func(T) error {
@@ -595,6 +632,37 @@ func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) fu
 		}
 		*ptr = v
 		return nil
+	}
+}
+
+// GetConvertedValue returns a getter function that retrieves a value and converts it to another type.
+// This is useful when the storage type differs from the variable type.
+//
+// Example:
+//
+//	getter: GetConvertedValue(&sv.Port, func(p int) int64 { return int64(p) })
+//
+// Or with built-in conversions:
+//
+//	getter: GetConvertedValue(&sv.Port, int64)
+func GetConvertedValue[From, To any](ptr *From, convert func(From) To) func() To {
+	return func() To {
+		return convert(*ptr)
+	}
+}
+
+// GetValueOrDefault returns a getter function for nullable fields that returns a default value when nil.
+// This is useful for optional configuration with defaults.
+//
+// Example:
+//
+//	getter: GetValueOrDefault(&sv.QueryMode, sppb.ExecuteSqlRequest_NORMAL)
+func GetValueOrDefault[T any](ptr **T, defaultValue T) func() T {
+	return func() T {
+		if *ptr == nil {
+			return defaultValue
+		}
+		return **ptr
 	}
 }
 
