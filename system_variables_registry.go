@@ -134,7 +134,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, sysvar.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
-	sysvar.RegisterProtobufEnum(registry,
+	sysvar.RegisterProtobufEnumWithAliases(registry,
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
 		sppb.TransactionOptions_IsolationLevel_value,
@@ -453,7 +453,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_DATABASE_DIALECT
-	sysvar.RegisterProtobufEnum(registry,
+	sysvar.RegisterProtobufEnumWithAliases(registry,
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
 		databasepb.DatabaseDialect_value,

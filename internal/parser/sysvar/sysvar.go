@@ -784,7 +784,6 @@ func CreateStringEnumVariableParser[T ~string](
 // - Extracts values from the _value map
 // - Strips prefixes for user-friendly names
 // - Formats output with prefix stripped
-// - Handles aliases (like "" for UNSPECIFIED)
 //
 // Example:
 //
@@ -801,14 +800,41 @@ func RegisterProtobufEnum[T ~int32](
 	prefix string,
 	getter func() T,
 	setter func(T) error,
-	aliases ...map[T][]string, // Optional aliases parameter
 ) {
-	var aliasMap map[T][]string
-	if len(aliases) > 0 {
-		aliasMap = aliases[0]
-	}
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, nil)
+	formatter := FormatProtobufEnum[T](prefix)
+	parser := NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
 
-	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliasMap)
+	if err := registry.Register(parser); err != nil {
+		panic(fmt.Sprintf("Failed to register %s: %v", name, err))
+	}
+}
+
+// RegisterProtobufEnumWithAliases registers a protobuf enum variable with custom aliases.
+// This is the same as RegisterProtobufEnum but allows specifying additional aliases
+// for enum values (like "" or "UNSPECIFIED" for the zero value).
+//
+// Example:
+//
+//	sysvar.RegisterProtobufEnumWithAliases(registry,
+//	    "DEFAULT_ISOLATION_LEVEL", "Transaction isolation level",
+//	    sppb.TransactionOptions_IsolationLevel_value, "ISOLATION_LEVEL_",
+//	    sysvar.GetValue(&sv.DefaultIsolationLevel),
+//	    sysvar.SetValue(&sv.DefaultIsolationLevel),
+//	    map[sppb.TransactionOptions_IsolationLevel][]string{
+//	        sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED: {"UNSPECIFIED"},
+//	    },
+//	)
+func RegisterProtobufEnumWithAliases[T ~int32](
+	registry *Registry,
+	name, description string,
+	enumValueMap map[string]int32,
+	prefix string,
+	getter func() T,
+	setter func(T) error,
+	aliases map[T][]string,
+) {
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliases)
 	formatter := FormatProtobufEnum[T](prefix)
 	parser := NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
 
@@ -826,14 +852,23 @@ func CreateProtobufEnumParser[T ~int32](
 	prefix string,
 	getter func() T,
 	setter func(T) error,
-	aliases ...map[T][]string,
 ) VariableParser {
-	var aliasMap map[T][]string
-	if len(aliases) > 0 {
-		aliasMap = aliases[0]
-	}
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, nil)
+	formatter := FormatProtobufEnum[T](prefix)
+	return NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
+}
 
-	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliasMap)
+// CreateProtobufEnumParserWithAliases creates a parser for protobuf enums with aliases.
+// This is the same as CreateProtobufEnumParser but allows specifying additional aliases.
+func CreateProtobufEnumParserWithAliases[T ~int32](
+	name, description string,
+	enumValueMap map[string]int32,
+	prefix string,
+	getter func() T,
+	setter func(T) error,
+	aliases map[T][]string,
+) VariableParser {
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliases)
 	formatter := FormatProtobufEnum[T](prefix)
 	return NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
 }
