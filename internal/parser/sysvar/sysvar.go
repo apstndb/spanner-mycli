@@ -477,6 +477,62 @@ func formatNullable[T any](innerFormatter func(T) string) func(*T) string {
 	}
 }
 
+// FormatProtobufEnum creates a formatter for protobuf enums that:
+// 1. Returns empty string for zero value (UNSPECIFIED)
+// 2. Strips the given prefix from the enum name
+// 3. Falls back to the enum's String() method if available
+//
+// Example:
+//
+//	FormatProtobufEnum[sppb.RequestOptions_Priority]("PRIORITY_")
+//
+// Would format:
+//   - PRIORITY_UNSPECIFIED (0) -> ""
+//   - PRIORITY_HIGH (3) -> "HIGH"
+func FormatProtobufEnum[T ~int32](prefix string) func(T) string {
+	return func(v T) string {
+		// Return empty string for zero value (UNSPECIFIED)
+		if v == 0 {
+			return ""
+		}
+
+		// Use String() method if available
+		if stringer, ok := any(v).(fmt.Stringer); ok {
+			s := stringer.String()
+			// Strip prefix if present
+			if prefix != "" {
+				return strings.TrimPrefix(s, prefix)
+			}
+			return s
+		}
+
+		// Fallback to numeric representation
+		return fmt.Sprintf("%d", v)
+	}
+}
+
+// FormatEnumFromMap creates a formatter that performs reverse lookup in the enum map.
+// This is useful for local enum types that don't implement fmt.Stringer.
+// Returns the type name with value for unmapped values.
+//
+// Example:
+//
+//	FormatEnumFromMap("DisplayMode", formatValues)
+//
+// Would look up the value in formatValues map and return the key.
+func FormatEnumFromMap[T comparable](typeName string, enumMap map[string]T) func(T) string {
+	return func(v T) string {
+		// Reverse lookup in the map
+		for name, value := range enumMap {
+			if value == v {
+				return name
+			}
+		}
+		// Fallback to type(value) format
+		return fmt.Sprintf("%s(%v)", typeName, v)
+	}
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

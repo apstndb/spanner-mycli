@@ -172,15 +172,7 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 		autocommitDMLModeValues,
 		sysvar.GetValue(&sv.AutocommitDMLMode),
 		sysvar.SetValue(&sv.AutocommitDMLMode),
-		func(v AutocommitDMLMode) string {
-			// Reverse map lookup for AutocommitDMLMode
-			for name, value := range autocommitDMLModeValues {
-				if value == v {
-					return name
-				}
-			}
-			return fmt.Sprintf("AutocommitDMLMode(%v)", v)
-		},
+		sysvar.FormatEnumFromMap("AutocommitDMLMode", autocommitDMLModeValues),
 	))
 
 	// Optimizer configuration
@@ -254,15 +246,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		formatValues,
 		sysvar.GetValue(&sv.CLIFormat),
 		sysvar.SetValue(&sv.CLIFormat),
-		func(v DisplayMode) string {
-			// Reverse map lookup for DisplayMode
-			for name, value := range formatValues {
-				if value == v {
-					return name
-				}
-			}
-			return fmt.Sprintf("DisplayMode(%d)", v)
-		},
+		sysvar.FormatEnumFromMap("DisplayMode", formatValues),
 	))
 
 	// Output formatting boolean variables
@@ -487,18 +471,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		dialectValues,
 		sysvar.GetValue(&sv.DatabaseDialect),
 		sysvar.SetValue(&sv.DatabaseDialect),
-		func(v databasepb.DatabaseDialect) string {
-			switch v {
-			case databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL:
-				return "GOOGLE_STANDARD_SQL"
-			case databasepb.DatabaseDialect_POSTGRESQL:
-				return "POSTGRESQL"
-			case databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED:
-				return ""
-			default:
-				return fmt.Sprintf("DatabaseDialect(%d)", v)
-			}
-		},
+		sysvar.FormatProtobufEnum[databasepb.DatabaseDialect](""),
 	))
 
 	// CLI_QUERY_MODE
@@ -522,18 +495,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 			sv.QueryMode = &v
 			return nil
 		},
-		func(v sppb.ExecuteSqlRequest_QueryMode) string {
-			switch v {
-			case sppb.ExecuteSqlRequest_NORMAL:
-				return "NORMAL"
-			case sppb.ExecuteSqlRequest_PLAN:
-				return "PLAN"
-			case sppb.ExecuteSqlRequest_PROFILE:
-				return "PROFILE"
-			default:
-				return fmt.Sprintf("QueryMode(%d)", v)
-			}
-		},
+		sysvar.FormatProtobufEnum[sppb.ExecuteSqlRequest_QueryMode](""),
 	))
 
 	// CLI_PARSE_MODE
