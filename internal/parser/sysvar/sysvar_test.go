@@ -839,7 +839,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatter(t *testing.T) {
 	currentValue := TestProtobufEnum_VALUE_A
 
 	// Create parser
-	p := CreateProtobufEnumVariableParserWithAutoFormatter(
+	p := CreateProtobufEnumParser(
 		"TEST_ENUM",
 		"Test protobuf enum",
 		enumMap,
@@ -912,7 +912,7 @@ func TestCreateProtobufEnumVariableParserWithAutoFormatterNoPrefix(t *testing.T)
 	currentValue := SimpleEnum_A
 
 	// Create parser with a prefix that won't match
-	p := CreateProtobufEnumVariableParserWithAutoFormatter(
+	p := CreateProtobufEnumParser(
 		"SIMPLE_ENUM",
 		"Simple enum without matching prefix",
 		enumMap,

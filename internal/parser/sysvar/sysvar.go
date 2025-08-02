@@ -779,38 +779,63 @@ func CreateStringEnumVariableParser[T ~string](
 	return createTypedParser(name, description, parser, getter, setter, FormatString)
 }
 
-// CreateProtobufEnumVariableParserWithAutoFormatter creates a parser for protobuf enums
-// with automatic formatting based on the enum descriptor.
-func CreateProtobufEnumVariableParserWithAutoFormatter[T ~int32](
-	name string,
-	description string,
-	enumValues map[string]int32,
+// RegisterProtobufEnum is the simplest way to register a protobuf enum variable.
+// It automatically handles all the common patterns:
+// - Extracts values from the _value map
+// - Strips prefixes for user-friendly names
+// - Formats output with prefix stripped
+// - Handles aliases (like "" for UNSPECIFIED)
+//
+// Example:
+//
+//	sysvar.RegisterProtobufEnum(registry,
+//	    "RPC_PRIORITY", "Priority for requests",
+//	    sppb.RequestOptions_Priority_value, "PRIORITY_",
+//	    sysvar.GetValue(&sv.RPCPriority),
+//	    sysvar.SetValue(&sv.RPCPriority),
+//	)
+func RegisterProtobufEnum[T ~int32](
+	registry *Registry,
+	name, description string,
+	enumValueMap map[string]int32,
 	prefix string,
 	getter func() T,
 	setter func(T) error,
+	aliases ...map[T][]string, // Optional aliases parameter
+) {
+	var aliasMap map[T][]string
+	if len(aliases) > 0 {
+		aliasMap = aliases[0]
+	}
+
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliasMap)
+	formatter := FormatProtobufEnum[T](prefix)
+	parser := NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
+
+	if err := registry.Register(parser); err != nil {
+		panic(fmt.Sprintf("Failed to register %s: %v", name, err))
+	}
+}
+
+// CreateProtobufEnumParser creates a parser for protobuf enums with custom getter/setter logic.
+// Use this when you need special handling like nullable fields or default values.
+// For simple cases, use RegisterProtobufEnum instead.
+func CreateProtobufEnumParser[T ~int32](
+	name, description string,
+	enumValueMap map[string]int32,
+	prefix string,
+	getter func() T,
+	setter func(T) error,
+	aliases ...map[T][]string,
 ) VariableParser {
-	// Convert generic enum values to the specific type
-	typedValues := make(map[string]T)
-	for k, v := range enumValues {
-		// Include both the original key and the trimmed version
-		typedValues[k] = T(v)
-		typedValues[strings.TrimPrefix(k, prefix)] = T(v)
+	var aliasMap map[T][]string
+	if len(aliases) > 0 {
+		aliasMap = aliases[0]
 	}
 
-	// Create a formatter that uses the enum descriptor
-	formatter := func(v T) string {
-		// First, try to find the value in the original enumValues map
-		// and return the trimmed version
-		for fullName, value := range enumValues {
-			if T(value) == v {
-				return strings.TrimPrefix(fullName, prefix)
-			}
-		}
-		// Fallback to generic formatting
-		return fmt.Sprintf("%v", v)
-	}
-
-	return NewEnumVariableParser(name, description, typedValues, getter, setter, formatter)
+	enumMap := BuildProtobufEnumMap[T](enumValueMap, prefix, aliasMap)
+	formatter := FormatProtobufEnum[T](prefix)
+	return NewEnumVariableParser(name, description, enumMap, getter, setter, formatter)
 }
 
 // BuildProtobufEnumMap creates an enum map from protobuf enum values with automatic prefix handling.

@@ -115,7 +115,7 @@ func TestCreateProtobufEnumVariableParserEdgeCases(t *testing.T) {
 
 	currentValue := int32(99) // Value not in map
 
-	p := CreateProtobufEnumVariableParserWithAutoFormatter(
+	p := CreateProtobufEnumParser(
 		"TEST_ENUM",
 		"Test enum",
 		enumValues,

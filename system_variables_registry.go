@@ -134,20 +134,17 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, sysvar.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
-	mustRegister(registry, sysvar.NewEnumVariableParser(
+	sysvar.RegisterProtobufEnum(registry,
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
-		sysvar.BuildProtobufEnumMap[sppb.TransactionOptions_IsolationLevel](
-			sppb.TransactionOptions_IsolationLevel_value,
-			"ISOLATION_LEVEL_",
-			map[sppb.TransactionOptions_IsolationLevel][]string{
-				sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED: {"UNSPECIFIED"},
-			},
-		),
+		sppb.TransactionOptions_IsolationLevel_value,
+		"ISOLATION_LEVEL_",
 		sysvar.GetValue(&sv.DefaultIsolationLevel),
 		sysvar.SetValue(&sv.DefaultIsolationLevel),
-		sysvar.FormatProtobufEnum[sppb.TransactionOptions_IsolationLevel]("ISOLATION_LEVEL_"),
-	))
+		map[sppb.TransactionOptions_IsolationLevel][]string{
+			sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED: {"UNSPECIFIED"},
+		},
+	)
 
 	// Transaction tagging
 	registerSimpleVariables(registry, []simpleVar[string]{
@@ -188,18 +185,14 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
 	// RPC configuration
-	mustRegister(registry, sysvar.NewEnumVariableParser(
+	sysvar.RegisterProtobufEnum(registry,
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
-		sysvar.BuildProtobufEnumMap[sppb.RequestOptions_Priority](
-			sppb.RequestOptions_Priority_value,
-			"PRIORITY_",
-			nil, // No aliases needed
-		),
+		sppb.RequestOptions_Priority_value,
+		"PRIORITY_",
 		sysvar.GetValue(&sv.RPCPriority),
 		sysvar.SetValue(&sv.RPCPriority),
-		sysvar.FormatProtobufEnum[sppb.RequestOptions_Priority]("PRIORITY_"),
-	))
+	)
 
 	// Statement timeout
 	mustRegister(registry, sysvar.NewNullableDurationVariableParser(
@@ -460,33 +453,26 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_DATABASE_DIALECT
-	mustRegister(registry, sysvar.NewEnumVariableParser(
+	sysvar.RegisterProtobufEnum(registry,
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
-		sysvar.BuildProtobufEnumMap[databasepb.DatabaseDialect](
-			databasepb.DatabaseDialect_value,
-			"", // No prefix to strip
-			map[databasepb.DatabaseDialect][]string{
-				databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED: {""},
-			},
-		),
+		databasepb.DatabaseDialect_value,
+		"", // No prefix to strip
 		sysvar.GetValue(&sv.DatabaseDialect),
 		sysvar.SetValue(&sv.DatabaseDialect),
-		sysvar.FormatProtobufEnum[databasepb.DatabaseDialect](""),
-	))
+		map[databasepb.DatabaseDialect][]string{
+			databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED: {""},
+		},
+	)
 
 	// CLI_QUERY_MODE
-	mustRegister(registry, sysvar.NewEnumVariableParser(
+	mustRegister(registry, sysvar.CreateProtobufEnumParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
-		sysvar.BuildProtobufEnumMap[sppb.ExecuteSqlRequest_QueryMode](
-			sppb.ExecuteSqlRequest_QueryMode_value,
-			"",  // No prefix to strip
-			nil, // No aliases needed - all values are in the protobuf enum
-		),
+		sppb.ExecuteSqlRequest_QueryMode_value,
+		"", // No prefix to strip
 		sysvar.GetValueOrDefault(&sv.QueryMode, sppb.ExecuteSqlRequest_NORMAL),
 		sysvar.SetPointerValue(&sv.QueryMode),
-		sysvar.FormatProtobufEnum[sppb.ExecuteSqlRequest_QueryMode](""),
 	))
 
 	// CLI_PARSE_MODE
