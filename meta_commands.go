@@ -184,7 +184,8 @@ func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Res
 	// Add a trailing space to the prompt for better UX (separation between prompt and input)
 	// This ensures compatibility with Google Cloud Spanner CLI behavior
 	promptWithSpace := p.PromptString + " "
-	if err := session.systemVariables.Set("CLI_PROMPT", promptWithSpace); err != nil {
+	// Use SetFromSimple since meta commands provide raw strings, not GoogleSQL expressions
+	if err := session.systemVariables.SetFromSimple("CLI_PROMPT", promptWithSpace); err != nil {
 		return nil, fmt.Errorf("failed to set prompt: %w", err)
 	}
 	return &Result{}, nil

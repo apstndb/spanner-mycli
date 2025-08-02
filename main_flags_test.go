@@ -280,7 +280,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			name:        "invalid priority value",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
 			wantErr:     true,
-			errContains: "priority must be either HIGH, MEDIUM, or LOW",
+			errContains: "must be one of:",
 		},
 		{
 			name:    "valid priority HIGH",
@@ -1012,7 +1012,7 @@ func TestFlagErrorMessages(t *testing.T) {
 		{
 			name:           "invalid enum shows valid options",
 			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
-			wantErrKeyword: "priority must be either HIGH, MEDIUM, or LOW",
+			wantErrKeyword: "must be one of:",
 		},
 		{
 			name:           "invalid directed read shows format",

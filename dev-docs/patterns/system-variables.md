@@ -64,13 +64,8 @@ var sessionInitOnlyVariables = []string{
     // Add more variables here as needed
 }
 
-// In systemVariableDefMap
-"CLI_ENABLE_ADC_PLUS": {
-    Description: "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
-    Accessor: boolAccessor(func(variables *systemVariables) *bool {
-        return &variables.EnableADCPlus
-    }),
-},
+// In the struct with sysvar tags
+EnableADCPlus bool `sysvar:"name=CLI_ENABLE_ADC_PLUS,desc='A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.',setter=setEnableADCPlus"`
 ```
 
 **Behavior**:
