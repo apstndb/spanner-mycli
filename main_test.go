@@ -15,6 +15,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -538,7 +539,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// and those that are set later in run() (e.g., EnableProgressBar, CurrentSession, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
@@ -563,6 +564,36 @@ func Test_initializeSystemVariables(t *testing.T) {
 	}
 }
 
+func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
+	// Test the specific case of using --set flag to set CLI_FORMAT
+	var gopts globalOptions
+	parser := flags.NewParser(&gopts, flags.Default)
+
+	args := []string{
+		"--project", "p",
+		"--instance", "i",
+		"--database", "d",
+		"--execute", "SELECT 1",
+		"--set", "CLI_FORMAT=VERTICAL",
+	}
+
+	_, err := parser.ParseArgs(args)
+	if err != nil {
+		t.Fatalf("Failed to parse args: %v", err)
+	}
+
+	// Initialize system variables
+	sysVars, err := initializeSystemVariables(&gopts.Spanner)
+	if err != nil {
+		t.Fatalf("Failed to initialize: %v", err)
+	}
+
+	// Check that CLI_FORMAT was properly set
+	if sysVars.CLIFormat != DisplayModeVertical {
+		t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, DisplayModeVertical)
+	}
+}
+
 func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	got := newSystemVariablesWithDefaults()
 
@@ -580,7 +611,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 
 	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
-		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns"), // Ignore template and function pointer comparisons
+		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
 	}
@@ -777,7 +808,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 
 			// Compare key fields
 			if diff := cmp.Diff(test.want, got,
-				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate"), // Ignore complex fields for this test
+				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {
 				t.Errorf("createSystemVariablesFromOptions() mismatch (-want +got):\n%s", diff)

@@ -21,12 +21,8 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 			StreamManager: teeManager,
 		}
 
-		// Get the accessor for CLI_CURRENT_WIDTH
-		metadata := systemVariableDefMap["CLI_CURRENT_WIDTH"]
-		getter := metadata.Accessor.Getter
-
-		// Call the getter
-		result, err := getter(sysVars, "CLI_CURRENT_WIDTH")
+		// Get the value using the Get facade method
+		result, err := sysVars.Get("CLI_CURRENT_WIDTH")
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -52,12 +48,8 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 			StreamManager: teeManager,
 		}
 
-		// Get the accessor for CLI_CURRENT_WIDTH
-		metadata := systemVariableDefMap["CLI_CURRENT_WIDTH"]
-		getter := metadata.Accessor.Getter
-
-		// Call the getter
-		result, err := getter(sysVars, "CLI_CURRENT_WIDTH")
+		// Get the value using the Get facade method
+		result, err := sysVars.Get("CLI_CURRENT_WIDTH")
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
