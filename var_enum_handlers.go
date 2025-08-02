@@ -181,6 +181,11 @@ func QueryModeVar(ptr *sppb.ExecuteSqlRequest_QueryMode, desc string) *ProtoEnum
 
 // DisplayModeVar creates an enum handler for DisplayMode
 func DisplayModeVar(ptr *DisplayMode, desc string) *EnumVar[DisplayMode] {
+	// Cannot use the enumMap helper for DisplayMode because:
+	// 1. The String() method returns "DisplayModeTable" etc.
+	// 2. But we need "TABLE", "TABLE_COMMENT", "TABLE_DETAIL_COMMENT" as keys
+	// 3. Simply removing "DisplayMode" prefix would produce "Table", "TableComment" etc.
+	// 4. The underscores in the expected format don't match the camelCase in String() output
 	return &EnumVar[DisplayMode]{
 		ptr: ptr,
 		values: map[string]DisplayMode{
@@ -213,13 +218,21 @@ func ParseModeVar(ptr *parseMode, desc string) *EnumVar[parseMode] {
 
 // ExplainFormatVar creates an enum handler for explainFormat
 func ExplainFormatVar(ptr *explainFormat, desc string) *EnumVar[explainFormat] {
+	// Generate map from slice using string(v) conversion
+	values := []explainFormat{
+		explainFormatCurrent,
+		explainFormatTraditional,
+		explainFormatCompact,
+	}
+
+	m := make(map[string]explainFormat, len(values))
+	for _, v := range values {
+		m[string(v)] = v
+	}
+
 	return &EnumVar[explainFormat]{
-		ptr: ptr,
-		values: map[string]explainFormat{
-			"CURRENT":     explainFormatCurrent,
-			"TRADITIONAL": explainFormatTraditional,
-			"COMPACT":     explainFormatCompact,
-		},
+		ptr:         ptr,
+		values:      m,
 		description: desc,
 	}
 }
