@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"time"
 
@@ -276,11 +277,8 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	mustRegister(registry, sysvar.NewNullableIntVariableParser(
 		"CLI_FIXED_WIDTH",
 		"If set, limits output width to the specified number of characters. NULL means automatic width detection.",
-		func() *int64 { return sv.FixedWidth },
-		func(v *int64) error {
-			sv.FixedWidth = v
-			return nil
-		},
+		sysvar.GetValue(&sv.FixedWidth),
+		sysvar.SetValue(&sv.FixedWidth),
 		nil, nil, // No min/max constraints
 	))
 
@@ -349,37 +347,28 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_LOG_LEVEL
-	mustRegister(registry, sysvar.CreateStringEnumVariableParser[string](
+	// Use enum parser with slog.Level's String() values
+	logLevelValues := map[string]slog.Level{
+		"DEBUG": slog.LevelDebug,
+		"INFO":  slog.LevelInfo,
+		"WARN":  slog.LevelWarn,
+		"ERROR": slog.LevelError,
+	}
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_LOG_LEVEL",
 		"Log level for the CLI.",
-		map[string]string{
-			"DEBUG": "DEBUG",
-			"INFO":  "INFO",
-			"WARN":  "WARN",
-			"ERROR": "ERROR",
-		},
-		func() string {
-			switch sv.LogLevel {
-			case slog.LevelDebug:
-				return "DEBUG"
-			case slog.LevelInfo:
-				return "INFO"
-			case slog.LevelWarn:
-				return "WARN"
-			case slog.LevelError:
-				return "ERROR"
-			default:
-				return "WARN"
-			}
-		},
-		func(v string) error {
-			level, err := SetLogLevel(v)
-			if err != nil {
-				return err
-			}
-			sv.LogLevel = level
+		logLevelValues,
+		sysvar.GetValue(&sv.LogLevel),
+		func(v slog.Level) error {
+			sv.LogLevel = v
+			// Re-initialize the logger with the new level
+			h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+				Level: v,
+			}))
+			slog.SetDefault(h)
 			return nil
 		},
+		slog.Level.String,
 	))
 
 	// Read-only debug variables
@@ -425,7 +414,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"CLI_VERSION",
 		"The version of spanner-mycli.",
-		func() string { return getVersion() },
+		getVersion,
 	))
 
 	// External integrations
@@ -439,7 +428,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	mustRegister(registry, sysvar.NewProtoDescriptorFileParser(
 		"CLI_PROTO_DESCRIPTOR_FILE",
 		"Comma-separated list of proto descriptor files. Supports ADD to append files.",
-		func() []string { return sv.ProtoDescriptorFile },
+		sysvar.GetValue(&sv.ProtoDescriptorFile),
 		func(files []string) error {
 			// Set operation - replace all files
 			if len(files) == 0 {
@@ -496,11 +485,8 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
 		dialectValues,
-		func() databasepb.DatabaseDialect { return sv.DatabaseDialect },
-		func(v databasepb.DatabaseDialect) error {
-			sv.DatabaseDialect = v
-			return nil
-		},
+		sysvar.GetValue(&sv.DatabaseDialect),
+		sysvar.SetValue(&sv.DatabaseDialect),
 		func(v databasepb.DatabaseDialect) string {
 			switch v {
 			case databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL:
