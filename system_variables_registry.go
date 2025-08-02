@@ -450,15 +450,19 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	}, sysvar.DualModeBoolParser, sysvar.FormatBool)
 
 	// CLI_DATABASE_DIALECT
-	dialectValues := map[string]databasepb.DatabaseDialect{
-		"GOOGLE_STANDARD_SQL": databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-		"POSTGRESQL":          databasepb.DatabaseDialect_POSTGRESQL,
-		"":                    databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
-	}
 	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
-		dialectValues,
+		sysvar.BuildEnumMapWithAliases(
+			[]databasepb.DatabaseDialect{
+				databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
+				databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
+				databasepb.DatabaseDialect_POSTGRESQL,
+			},
+			map[databasepb.DatabaseDialect][]string{
+				databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED: {""},
+			},
+		),
 		sysvar.GetValue(&sv.DatabaseDialect),
 		sysvar.SetValue(&sv.DatabaseDialect),
 		sysvar.FormatProtobufEnum[databasepb.DatabaseDialect](""),
