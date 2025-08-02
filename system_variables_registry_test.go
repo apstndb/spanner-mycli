@@ -538,3 +538,110 @@ func TestEnumParsersSimplification(t *testing.T) {
 		}
 	})
 }
+
+// TestCLIAnalyzeColumnsAndInlineStats verifies that CLI_ANALYZE_COLUMNS and CLI_INLINE_STATS
+// properly parse and store their template definitions.
+func TestCLIAnalyzeColumnsAndInlineStats(t *testing.T) {
+	t.Run("CLI_ANALYZE_COLUMNS", func(t *testing.T) {
+		sv := newSystemVariablesWithDefaultsForTest()
+		registry := createSystemVariableRegistry(sv)
+
+		// Test valid template
+		validTemplate := "Col1:{{.Col1}},Col2:{{.Col2}}:LEFT"
+		err := registry.SetFromSimple("CLI_ANALYZE_COLUMNS", validTemplate)
+		if err != nil {
+			t.Fatalf("Failed to set CLI_ANALYZE_COLUMNS: %v", err)
+		}
+
+		// Verify string value is stored
+		if sv.AnalyzeColumns != validTemplate {
+			t.Errorf("Expected AnalyzeColumns to be %q, got %q", validTemplate, sv.AnalyzeColumns)
+		}
+
+		// Verify ParsedAnalyzeColumns is not nil and has correct count
+		if sv.ParsedAnalyzeColumns == nil {
+			t.Fatal("ParsedAnalyzeColumns should not be nil")
+		}
+		if len(sv.ParsedAnalyzeColumns) != 2 {
+			t.Fatalf("Expected 2 parsed columns, got %d", len(sv.ParsedAnalyzeColumns))
+		}
+
+		// Test with invalid template (should fail)
+		invalidTemplate := "Col1:{{.Unclosed"
+		err = registry.SetFromSimple("CLI_ANALYZE_COLUMNS", invalidTemplate)
+		if err == nil {
+			t.Error("Expected error for invalid template")
+		}
+
+		// Test with GoogleSQL mode
+		err = registry.SetFromGoogleSQL("CLI_ANALYZE_COLUMNS", `"Header:{{.Value}}:CENTER"`)
+		if err != nil {
+			t.Fatalf("Failed to set CLI_ANALYZE_COLUMNS in GoogleSQL mode: %v", err)
+		}
+		if sv.AnalyzeColumns != "Header:{{.Value}}:CENTER" {
+			t.Errorf("Expected AnalyzeColumns to be updated")
+		}
+		if len(sv.ParsedAnalyzeColumns) != 1 {
+			t.Errorf("Expected 1 parsed column after update")
+		}
+	})
+
+	t.Run("CLI_INLINE_STATS", func(t *testing.T) {
+		sv := newSystemVariablesWithDefaultsForTest()
+		registry := createSystemVariableRegistry(sv)
+
+		// Test valid template
+		validTemplate := "cpu:{{.Cpu.Total}},mem:{{.Memory.Used}}"
+		err := registry.SetFromSimple("CLI_INLINE_STATS", validTemplate)
+		if err != nil {
+			t.Fatalf("Failed to set CLI_INLINE_STATS: %v", err)
+		}
+
+		// Verify string value is stored
+		if sv.InlineStats != validTemplate {
+			t.Errorf("Expected InlineStats to be %q, got %q", validTemplate, sv.InlineStats)
+		}
+
+		// Verify ParsedInlineStats is not nil and has correct count
+		if sv.ParsedInlineStats == nil {
+			t.Fatal("ParsedInlineStats should not be nil")
+		}
+		if len(sv.ParsedInlineStats) != 2 {
+			t.Fatalf("Expected 2 parsed stats, got %d", len(sv.ParsedInlineStats))
+		}
+
+		// Test with invalid format (should fail)
+		invalidTemplate := "no colon separator"
+		err = registry.SetFromSimple("CLI_INLINE_STATS", invalidTemplate)
+		if err == nil {
+			t.Error("Expected error for invalid format")
+		}
+
+		// Test with GoogleSQL mode
+		err = registry.SetFromGoogleSQL("CLI_INLINE_STATS", `'rows:{{.Rows.Total}}'`)
+		if err != nil {
+			t.Fatalf("Failed to set CLI_INLINE_STATS in GoogleSQL mode: %v", err)
+		}
+		if sv.InlineStats != "rows:{{.Rows.Total}}" {
+			t.Errorf("Expected InlineStats to be updated")
+		}
+		if len(sv.ParsedInlineStats) != 1 {
+			t.Errorf("Expected 1 parsed stat after update")
+		}
+	})
+
+	t.Run("Default values", func(t *testing.T) {
+		// Test that default system variables have ParsedAnalyzeColumns initialized
+		sv := newSystemVariablesWithDefaultsForTest()
+
+		if sv.ParsedAnalyzeColumns == nil {
+			t.Error("Default ParsedAnalyzeColumns should not be nil")
+		}
+
+		// The default should have been parsed from DefaultAnalyzeColumns
+		expectedCount := len(DefaultParsedAnalyzeColumns)
+		if len(sv.ParsedAnalyzeColumns) != expectedCount {
+			t.Errorf("Expected %d default parsed columns, got %d", expectedCount, len(sv.ParsedAnalyzeColumns))
+		}
+	})
+}
