@@ -886,30 +886,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 }
 
-type explainFormat string
-
-const (
-	explainFormatUnspecified explainFormat = ""
-	explainFormatCurrent     explainFormat = "CURRENT"
-	explainFormatTraditional explainFormat = "TRADITIONAL"
-	explainFormatCompact     explainFormat = "COMPACT"
-)
-
-func parseExplainFormat(s string) (explainFormat, error) {
-	switch strings.ToUpper(s) {
-	case "COMPACT":
-		return explainFormatCompact, nil
-	case "CURRENT":
-		return explainFormatCurrent, nil
-	case "TRADITIONAL":
-		return explainFormatTraditional, nil
-	case "":
-		return explainFormatUnspecified, nil
-	default:
-		return "", fmt.Errorf("parse error: unknown explain format: %s", s)
-	}
-}
-
 // Helper functions for HandleSubmatch implementations
 
 func parseTransaction(s string) (isReadOnly bool, err error) {

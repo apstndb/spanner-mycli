@@ -968,7 +968,7 @@ TABLE Singers (42)
 		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseMemefishOnly, parseModeUnspecified}
 		t.Run(test.desc, func(t *testing.T) {
 			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
 					if slices.Contains(test.skipParseModes, mode) {
 						t.Skipf("skip by skipParseModes")
 					}
@@ -996,7 +996,7 @@ TABLE Singers (42)
 			}
 
 			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
 					if slices.Contains(test.skipParseModes, mode) {
 						t.Skip("skip by skipParseModes")
 					}

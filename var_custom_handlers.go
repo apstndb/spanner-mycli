@@ -242,37 +242,13 @@ func (t *TemplateVar) IsReadOnly() bool {
 	return false
 }
 
-// AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE
-type AutocommitDMLModeVar struct {
-	ptr         *AutocommitDMLMode
-	description string
-}
-
-func (a *AutocommitDMLModeVar) Get() (string, error) {
-	if *a.ptr == AutocommitDMLModeTransactional {
-		return "TRANSACTIONAL", nil
+// AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE using enumer-generated methods
+func AutocommitDMLModeVar(ptr *AutocommitDMLMode, desc string) *EnumVar[AutocommitDMLMode] {
+	return &EnumVar[AutocommitDMLMode]{
+		ptr:         ptr,
+		values:      enumerValues(AutocommitDMLModeValues()),
+		description: desc,
 	}
-	return "PARTITIONED_NON_ATOMIC", nil
-}
-
-func (a *AutocommitDMLModeVar) Set(value string) error {
-	switch strings.ToUpper(value) {
-	case "TRANSACTIONAL":
-		*a.ptr = AutocommitDMLModeTransactional
-	case "PARTITIONED_NON_ATOMIC":
-		*a.ptr = AutocommitDMLModePartitionedNonAtomic
-	default:
-		return fmt.Errorf("invalid value \"%s\", must be one of: TRANSACTIONAL, PARTITIONED_NON_ATOMIC", value)
-	}
-	return nil
-}
-
-func (a *AutocommitDMLModeVar) Description() string {
-	return a.description
-}
-
-func (a *AutocommitDMLModeVar) IsReadOnly() bool {
-	return false
 }
 
 // LogLevelVar handles CLI_LOG_LEVEL
@@ -286,24 +262,20 @@ func (l *LogLevelVar) Get() (string, error) {
 }
 
 func (l *LogLevelVar) Set(value string) error {
-	// First try parsing as level string
-	switch strings.ToUpper(value) {
-	case "DEBUG":
-		*l.ptr = slog.LevelDebug
-	case "INFO":
-		*l.ptr = slog.LevelInfo
-	case "WARN", "WARNING":
+	// Special handling for "WARNING" alias which slog doesn't recognize
+	if strings.EqualFold(value, "WARNING") {
 		*l.ptr = slog.LevelWarn
-	case "ERROR":
-		*l.ptr = slog.LevelError
-	default:
-		// Try parsing as number
-		var level slog.Level
-		if err := level.UnmarshalText([]byte(value)); err != nil {
-			return fmt.Errorf("invalid log level: %s", value)
-		}
-		*l.ptr = level
+		return nil
 	}
+
+	// Use slog.Level's built-in UnmarshalText for everything else
+	// This handles: DEBUG, INFO, WARN, ERROR (case-insensitive)
+	// and numeric offsets like "DEBUG+4", "INFO-8"
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(value)); err != nil {
+		return fmt.Errorf("invalid log level: %s", value)
+	}
+	*l.ptr = level
 	return nil
 }
 

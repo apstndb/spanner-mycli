@@ -35,13 +35,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
-type AutocommitDMLMode bool
-
-const (
-	AutocommitDMLModeTransactional        AutocommitDMLMode = false
-	AutocommitDMLModePartitionedNonAtomic AutocommitDMLMode = true
-)
-
 type LastQueryCache struct {
 	QueryPlan  *sppb.QueryPlan
 	QueryStats map[string]any

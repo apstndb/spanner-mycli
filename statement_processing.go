@@ -207,15 +207,6 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
-type parseMode string
-
-const (
-	parseModeUnspecified parseMode = ""
-	parseModeFallback    parseMode = "FALLBACK"
-	parseModeNoMemefish  parseMode = "NO_MEMEFISH"
-	parseMemefishOnly    parseMode = "MEMEFISH_ONLY"
-)
-
 var (
 	operatorColumnName       = "Operator <execution_method> (metadata, ...)"
 	operatorColumnNameLength = int64(len(operatorColumnName))
