@@ -429,42 +429,38 @@ func (r *VarRegistry) registerAll() {
 	// Note: COMMIT_RESPONSE and CLI_DIRECT_READ require special handling outside the registry
 }
 
-// parseGoogleSQLValue parses GoogleSQL-style values
-func parseGoogleSQLValue(value string) string {
+// parseGoogleSQLValue parses GoogleSQL-style values using memefish
+func parseGoogleSQLValue(value string) (result string) {
 	value = strings.TrimSpace(value)
 
-	// Try to parse as a string literal using memefish
-	if (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) ||
-		(strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
-		// Parse using memefish to handle escape sequences properly
-		if parsed, err := parseGoogleSQLString(value); err == nil {
-			return parsed
+	// Protect against panics from memefish.
+	// While memefish.ParseExpr normally returns errors, it panics in some cases:
+	// - Unclosed string literals (e.g., 'hello or "world)
+	// - Unclosed triple-quoted strings (e.g., ''')
+	// Without this recovery, entering an unclosed string in SET statements
+	// would crash spanner-mycli entirely.
+	defer func() {
+		if r := recover(); r != nil {
+			// If memefish panics, return the original value
+			result = value
 		}
-		// Fallback to simple quote stripping if parsing fails
-		return value[1 : len(value)-1]
-	}
+	}()
 
-	// Handle boolean literals
-	if strings.EqualFold(value, "TRUE") || strings.EqualFold(value, "FALSE") {
-		return strings.ToLower(value)
-	}
-
-	// Everything else passes through
-	return value
-}
-
-// parseGoogleSQLString parses a GoogleSQL string literal using memefish
-func parseGoogleSQLString(s string) (string, error) {
-	// Parse as expression
-	expr, err := memefish.ParseExpr("", s)
+	// Try to parse as an expression using memefish
+	expr, err := memefish.ParseExpr("", value)
 	if err != nil {
-		return "", err
+		// If parsing fails, return the original value
+		return value
 	}
 
-	// Expect a string literal
-	lit, ok := expr.(*ast.StringLiteral)
-	if !ok {
-		return "", fmt.Errorf("expected string literal, got %T", expr)
+	// Handle different literal types
+	switch lit := expr.(type) {
+	case *ast.StringLiteral:
+		return lit.Value
+	case *ast.BoolLiteral:
+		return strconv.FormatBool(lit.Value)
+	default:
+		// For other expressions, return the original value
+		return value
 	}
-	return lit.Value, nil
 }
