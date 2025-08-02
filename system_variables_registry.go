@@ -465,33 +465,39 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	))
 
 	// CLI_QUERY_MODE
-	queryModeValues := map[string]sppb.ExecuteSqlRequest_QueryMode{
-		"NORMAL":     sppb.ExecuteSqlRequest_NORMAL,
-		"PLAN":       sppb.ExecuteSqlRequest_PLAN,
-		"PROFILE":    sppb.ExecuteSqlRequest_PROFILE,
-		"WITH_STATS": sppb.ExecuteSqlRequest_PROFILE, // Alias
-	}
 	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
-		queryModeValues,
+		sysvar.BuildEnumMapWithAliases(
+			[]sppb.ExecuteSqlRequest_QueryMode{
+				sppb.ExecuteSqlRequest_NORMAL,
+				sppb.ExecuteSqlRequest_PLAN,
+				sppb.ExecuteSqlRequest_PROFILE,
+			},
+			map[sppb.ExecuteSqlRequest_QueryMode][]string{
+				sppb.ExecuteSqlRequest_PROFILE: {"WITH_STATS"}, // Alias
+			},
+		),
 		sysvar.GetValueOrDefault(&sv.QueryMode, sppb.ExecuteSqlRequest_NORMAL),
 		sysvar.SetPointerValue(&sv.QueryMode),
 		sysvar.FormatProtobufEnum[sppb.ExecuteSqlRequest_QueryMode](""),
 	))
 
 	// CLI_PARSE_MODE
-	parseModeValues := map[string]parseMode{
-		"FALLBACK":      parseModeFallback,
-		"NO_MEMEFISH":   parseModeNoMemefish,
-		"MEMEFISH_ONLY": parseMemefishOnly,
-		"UNSPECIFIED":   parseModeUnspecified,
-		"":              parseModeUnspecified, // Allow empty string
-	}
 	mustRegister(registry, sysvar.NewSimpleEnumParser(
 		"CLI_PARSE_MODE",
 		"Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED",
-		parseModeValues,
+		sysvar.BuildEnumMapWithAliases(
+			[]parseMode{
+				parseModeUnspecified, // ""
+				parseModeFallback,    // "FALLBACK"
+				parseModeNoMemefish,  // "NO_MEMEFISH"
+				parseMemefishOnly,    // "MEMEFISH_ONLY"
+			},
+			map[parseMode][]string{
+				parseModeUnspecified: {"UNSPECIFIED"}, // Alias for ""
+			},
+		),
 		sysvar.GetValue(&sv.BuildStatementMode),
 		sysvar.SetValue(&sv.BuildStatementMode),
 	))

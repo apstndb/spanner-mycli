@@ -623,6 +623,61 @@ func SliceToEnumMap[T ~string](values []T) map[string]T {
 	return m
 }
 
+// BuildEnumMapWithAliases creates an enum map from values and their aliases.
+// For string-based enums, the primary value is automatically derived using string(v).
+// For other types that implement fmt.Stringer, it uses v.String().
+// Additional aliases can be specified in the aliases map.
+//
+// Example:
+//
+//	// For string enums:
+//	enumMap := BuildEnumMapWithAliases(
+//	    []parseMode{parseModeUnspecified, parseModeFallback, parseModeNoMemefish},
+//	    map[parseMode][]string{
+//	        parseModeUnspecified: {"UNSPECIFIED"},  // "" is auto-added, this adds "UNSPECIFIED" as alias
+//	    },
+//	)
+//
+//	// For protobuf enums:
+//	enumMap := BuildEnumMapWithAliases(
+//	    []sppb.ExecuteSqlRequest_QueryMode{
+//	        sppb.ExecuteSqlRequest_NORMAL,
+//	        sppb.ExecuteSqlRequest_PLAN,
+//	        sppb.ExecuteSqlRequest_PROFILE,
+//	    },
+//	    map[sppb.ExecuteSqlRequest_QueryMode][]string{
+//	        sppb.ExecuteSqlRequest_PROFILE: {"WITH_STATS"},  // "PROFILE" is auto-added
+//	    },
+//	)
+func BuildEnumMapWithAliases[T comparable](values []T, aliases map[T][]string) map[string]T {
+	m := make(map[string]T)
+
+	for _, v := range values {
+		// Get the primary string representation
+		var primaryKey string
+		if str, ok := any(v).(string); ok {
+			primaryKey = str
+		} else if stringer, ok := any(v).(fmt.Stringer); ok {
+			primaryKey = stringer.String()
+		} else {
+			// For types that don't implement Stringer, use fmt.Sprint
+			primaryKey = fmt.Sprint(v)
+		}
+
+		// Add the primary key
+		m[primaryKey] = v
+
+		// Add any aliases
+		if aliasKeys, ok := aliases[v]; ok {
+			for _, alias := range aliasKeys {
+				m[alias] = v
+			}
+		}
+	}
+
+	return m
+}
+
 // SetSessionInitOnly returns a setter that only allows changes before a session is created.
 // This is used for variables that affect session initialization and cannot be changed afterwards.
 func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) func(T) error {
