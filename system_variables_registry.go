@@ -134,13 +134,19 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, sysvar.DualModeIntParser, sysvar.FormatInt)
 
 	// DEFAULT_ISOLATION_LEVEL
-	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"DEFAULT_ISOLATION_LEVEL",
 		"The transaction isolation level that is used by default for read/write transactions.",
-		sppb.TransactionOptions_IsolationLevel_value,
-		"ISOLATION_LEVEL_",
+		sysvar.BuildProtobufEnumMap[sppb.TransactionOptions_IsolationLevel](
+			sppb.TransactionOptions_IsolationLevel_value,
+			"ISOLATION_LEVEL_",
+			map[sppb.TransactionOptions_IsolationLevel][]string{
+				sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED: {"UNSPECIFIED"},
+			},
+		),
 		sysvar.GetValue(&sv.DefaultIsolationLevel),
 		sysvar.SetValue(&sv.DefaultIsolationLevel),
+		sysvar.FormatProtobufEnum[sppb.TransactionOptions_IsolationLevel]("ISOLATION_LEVEL_"),
 	))
 
 	// Transaction tagging
@@ -182,13 +188,17 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	}, sysvar.DualModeStringParser, sysvar.FormatString)
 
 	// RPC configuration
-	mustRegister(registry, sysvar.CreateProtobufEnumVariableParserWithAutoFormatter(
+	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"RPC_PRIORITY",
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
-		sppb.RequestOptions_Priority_value,
-		"PRIORITY_",
+		sysvar.BuildProtobufEnumMap[sppb.RequestOptions_Priority](
+			sppb.RequestOptions_Priority_value,
+			"PRIORITY_",
+			nil, // No aliases needed
+		),
 		sysvar.GetValue(&sv.RPCPriority),
 		sysvar.SetValue(&sv.RPCPriority),
+		sysvar.FormatProtobufEnum[sppb.RequestOptions_Priority]("PRIORITY_"),
 	))
 
 	// Statement timeout
@@ -453,12 +463,9 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_DATABASE_DIALECT",
 		"Database dialect for the session.",
-		sysvar.BuildEnumMapWithAliases(
-			[]databasepb.DatabaseDialect{
-				databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED,
-				databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-				databasepb.DatabaseDialect_POSTGRESQL,
-			},
+		sysvar.BuildProtobufEnumMap[databasepb.DatabaseDialect](
+			databasepb.DatabaseDialect_value,
+			"", // No prefix to strip
 			map[databasepb.DatabaseDialect][]string{
 				databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED: {""},
 			},
@@ -472,12 +479,9 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 	mustRegister(registry, sysvar.NewEnumVariableParser(
 		"CLI_QUERY_MODE",
 		"Query execution mode.",
-		sysvar.BuildEnumMapWithAliases(
-			[]sppb.ExecuteSqlRequest_QueryMode{
-				sppb.ExecuteSqlRequest_NORMAL,
-				sppb.ExecuteSqlRequest_PLAN,
-				sppb.ExecuteSqlRequest_PROFILE,
-			},
+		sysvar.BuildProtobufEnumMap[sppb.ExecuteSqlRequest_QueryMode](
+			sppb.ExecuteSqlRequest_QueryMode_value,
+			"", // No prefix to strip
 			map[sppb.ExecuteSqlRequest_QueryMode][]string{
 				sppb.ExecuteSqlRequest_PROFILE: {"WITH_STATS"}, // Alias
 			},
