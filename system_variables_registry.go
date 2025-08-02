@@ -481,10 +481,8 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"Query execution mode.",
 		sysvar.BuildProtobufEnumMap[sppb.ExecuteSqlRequest_QueryMode](
 			sppb.ExecuteSqlRequest_QueryMode_value,
-			"", // No prefix to strip
-			map[sppb.ExecuteSqlRequest_QueryMode][]string{
-				sppb.ExecuteSqlRequest_PROFILE: {"WITH_STATS"}, // Alias
-			},
+			"",  // No prefix to strip
+			nil, // No aliases needed - all values are in the protobuf enum
 		),
 		sysvar.GetValueOrDefault(&sv.QueryMode, sppb.ExecuteSqlRequest_NORMAL),
 		sysvar.SetPointerValue(&sv.QueryMode),
