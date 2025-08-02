@@ -204,23 +204,13 @@ func registerJavaSpannerCompatibleVariables(registry *sysvar.Registry, sv *syste
 	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"READ_TIMESTAMP",
 		"The read timestamp of the most recent read-only transaction.",
-		func() string {
-			if sv.ReadTimestamp.IsZero() {
-				return "NULL"
-			}
-			return sv.ReadTimestamp.Format(time.RFC3339Nano)
-		},
+		sysvar.FormatTimestamp(&sv.ReadTimestamp),
 	))
 
 	mustRegister(registry, sysvar.NewReadOnlyStringParser(
 		"COMMIT_TIMESTAMP",
 		"The commit timestamp of the last read-write transaction that Spanner committed.",
-		func() string {
-			if sv.CommitTimestamp.IsZero() {
-				return "NULL"
-			}
-			return sv.CommitTimestamp.Format(time.RFC3339Nano)
-		},
+		sysvar.FormatTimestamp(&sv.CommitTimestamp),
 	))
 }
 

@@ -467,6 +467,22 @@ func formatDuration(v time.Duration) string {
 	return v.String()
 }
 
+// FormatTimestamp creates a formatter function that formats a time.Time value
+// as RFC3339Nano or "NULL" if zero. This is used for timestamp system variables
+// like READ_TIMESTAMP and COMMIT_TIMESTAMP.
+//
+// Example:
+//
+//	getter: FormatTimestamp(&sv.ReadTimestamp)
+func FormatTimestamp(ptr *time.Time) func() string {
+	return func() string {
+		if ptr.IsZero() {
+			return "NULL"
+		}
+		return ptr.Format(time.RFC3339Nano)
+	}
+}
+
 // formatNullable creates a formatter for nullable values.
 func formatNullable[T any](innerFormatter func(T) string) func(*T) string {
 	return func(v *T) string {
