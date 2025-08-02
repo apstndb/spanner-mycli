@@ -60,75 +60,88 @@ type LastQueryCache struct {
 // modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
-	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
-	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
-	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
-	ReadTimestamp               time.Time                    // READ_TIMESTAMP
-	OptimizerVersion            string                       // OPTIMIZER_VERSION
-	OptimizerStatisticsPackage  string                       // OPTIMIZER_STATISTICS_PACKAGE
-	CommitResponse              *sppb.CommitResponse         // COMMIT_RESPONSE
-	CommitTimestamp             time.Time                    // COMMIT_TIMESTAMP
-	TransactionTag              string                       // TRANSACTION_TAG
-	RequestTag                  string                       // STATEMENT_TAG
-	ReadOnly                    bool                         // READONLY
-	DataBoostEnabled            bool                         // DATA_BOOST_ENABLED
-	AutoBatchDML                bool                         // AUTO_BATCH_DML
-	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
-	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
-	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
-	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
-	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
-	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
+	AutoPartitionMode bool                         `sysvar:"name=AUTO_PARTITION_MODE,desc='A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.'"`
+	RPCPriority       sppb.RequestOptions_Priority `sysvar:"name=RPC_PRIORITY,desc=\"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.\",type=proto_enum,proto=sppb.RequestOptions_Priority,prefix=PRIORITY_"`
+	// Complex type - requires custom parser
+	ReadOnlyStaleness *spanner.TimestampBound `sysvar:"name=READ_ONLY_STALENESS,desc='A property of type STRING for read-only transactions with flexible staleness.',type=manual"`
+	// Read-only with custom formatter
+	ReadTimestamp              time.Time `sysvar:"name=READ_TIMESTAMP,desc='The read timestamp of the most recent read-only transaction.',readonly,getter=formatReadTimestamp"`
+	OptimizerVersion           string    `sysvar:"name=OPTIMIZER_VERSION,desc='A property of type STRING indicating the optimizer version. The version is either an integer string or LATEST.'"`
+	OptimizerStatisticsPackage string    `sysvar:"name=OPTIMIZER_STATISTICS_PACKAGE,desc='A property of type STRING indicating the current optimizer statistics package that is used by this connection.'"`
+	// Complex type - not exposed in registry
+	CommitResponse *sppb.CommitResponse `sysvar:"name=COMMIT_RESPONSE,desc='The most recent commit response from Spanner.',type=manual"`
+	// Read-only with custom formatter
+	CommitTimestamp             time.Time      `sysvar:"name=COMMIT_TIMESTAMP,desc='The commit timestamp of the last read-write transaction that Spanner committed.',readonly,getter=formatCommitTimestamp"`
+	TransactionTag              string         `sysvar:"name=TRANSACTION_TAG,desc='A property of type STRING that contains the transaction tag for the next transaction.'"`
+	RequestTag                  string         `sysvar:"name=STATEMENT_TAG,desc='A property of type STRING that contains the request tag for the next statement.'"`
+	ReadOnly                    bool           `sysvar:"name=READONLY,desc='A boolean indicating whether or not the connection is in read-only mode. The default is false.',setter=setReadOnly"`
+	DataBoostEnabled            bool           `sysvar:"name=DATA_BOOST_ENABLED,desc='A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.'"`
+	AutoBatchDML                bool           `sysvar:"name=AUTO_BATCH_DML,desc='A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.'"`
+	ExcludeTxnFromChangeStreams bool           `sysvar:"name=EXCLUDE_TXN_FROM_CHANGE_STREAMS,desc='Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).'"`
+	MaxCommitDelay              *time.Duration `sysvar:"name=MAX_COMMIT_DELAY,desc='The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.',type=nullable_duration,min=time.Duration(0),max=500 * time.Millisecond"`
+	MaxPartitionedParallelism   int64          `sysvar:"name=MAX_PARTITIONED_PARALLELISM,desc='A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY'"`
+	// Custom enum type
+	AutocommitDMLMode AutocommitDMLMode `sysvar:"name=AUTOCOMMIT_DML_MODE,desc='A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.',type=manual"`
+	StatementTimeout  *time.Duration    `sysvar:"name=STATEMENT_TIMEOUT,desc='A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). Default is 10m.',type=nullable_duration,min=time.Duration(0)"`
+	ReturnCommitStats bool              `sysvar:"name=RETURN_COMMIT_STATS,desc='A property of type BOOL indicating whether statistics should be returned for transactions on this connection.'"`
 
-	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
+	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel `sysvar:"name=DEFAULT_ISOLATION_LEVEL,desc='The transaction isolation level that is used by default for read/write transactions.',type=proto_enum,proto=sppb.TransactionOptions_IsolationLevel,prefix=ISOLATION_LEVEL_,aliases=sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED:UNSPECIFIED"`
 
 	// CLI_* variables
 
-	CLIFormat   DisplayMode // CLI_FORMAT
-	Project     string      // CLI_PROJECT
-	Instance    string      // CLI_INSTANCE
-	Database    string      // CLI_DATABASE
-	Verbose     bool        // CLI_VERBOSE
-	Prompt      string      // CLI_PROMPT
-	Prompt2     string      // CLI_PROMPT2
-	HistoryFile string      // CLI_HISTORY_FILE
+	// Custom enum type
+	CLIFormat   DisplayMode `sysvar:"name=CLI_FORMAT,desc='Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).',type=manual"`
+	Project     string      `sysvar:"name=CLI_PROJECT,desc='GCP Project ID.',readonly"`
+	Instance    string      `sysvar:"name=CLI_INSTANCE,desc='Cloud Spanner instance ID.',readonly"`
+	Database    string      `sysvar:"name=CLI_DATABASE,desc='Cloud Spanner database ID.',readonly"`
+	Verbose     bool        `sysvar:"name=CLI_VERBOSE,desc='Display verbose output.'"`
+	Prompt      string      `sysvar:"name=CLI_PROMPT,desc='Custom prompt for spanner-mycli.'"`
+	Prompt2     string      `sysvar:"name=CLI_PROMPT2,desc='Custom continuation prompt for spanner-mycli.',setter=setPrompt2"`
+	HistoryFile string      `sysvar:"name=CLI_HISTORY_FILE,desc='Path to the history file.',readonly"`
 
-	DirectedRead *sppb.DirectedReadOptions // CLI_DIRECT_READ
+	// Complex type - custom parser
+	DirectedRead *sppb.DirectedReadOptions `sysvar:"name=CLI_DIRECT_READ,desc='Configuration for directed reads.',type=manual"`
 
-	ProtoDescriptorFile []string  // CLI_PROTO_DESCRIPTOR_FILE
-	BuildStatementMode  parseMode // CLI_PARSE_MODE
-	Insecure            bool      // CLI_INSECURE
-	LogGrpc             bool      // CLI_LOG_GRPC
-	LintPlan            bool      // CLI_LINT_PLAN
-	UsePager            bool      // CLI_USE_PAGER
-	AutoWrap            bool      // CLI_AUTOWRAP
-	FixedWidth          *int64    // CLI_FIXED_WIDTH
-	EnableHighlight     bool      // CLI_ENABLE_HIGHLIGHT
-	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
+	// Complex parser with ADD support
+	ProtoDescriptorFile []string `sysvar:"name=CLI_PROTO_DESCRIPTOR_FILE,desc='Comma-separated list of proto descriptor files. Supports ADD to append files.',type=manual"`
+	// Custom enum with aliases
+	BuildStatementMode parseMode `sysvar:"name=CLI_PARSE_MODE,desc='Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED',type=manual"`
+	Insecure           bool      `sysvar:"name=CLI_INSECURE,desc='Skip TLS certificate verification (insecure).',readonly"`
+	LogGrpc            bool      `sysvar:"name=CLI_LOG_GRPC,desc='Enable gRPC logging.',readonly"`
+	LintPlan           bool      `sysvar:"name=CLI_LINT_PLAN,desc='Enable query plan linting.'"`
+	UsePager           bool      `sysvar:"name=CLI_USE_PAGER,desc='Enable pager for output.'"`
+	AutoWrap           bool      `sysvar:"name=CLI_AUTOWRAP,desc='Enable automatic line wrapping.'"`
+	FixedWidth         *int64    `sysvar:"name=CLI_FIXED_WIDTH,desc='If set, limits output width to the specified number of characters. NULL means automatic width detection.',type=nullable_int"`
+	EnableHighlight    bool      `sysvar:"name=CLI_ENABLE_HIGHLIGHT,desc='Enable syntax highlighting.'"`
+	MultilineProtoText bool      `sysvar:"name=CLI_PROTOTEXT_MULTILINE,desc='Enable multiline prototext output.'"`
+	MarkdownCodeblock  bool      `sysvar:"name=CLI_MARKDOWN_CODEBLOCK,desc='Enable markdown codeblock output.'"`
 
-	QueryMode         *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
-	TryPartitionQuery bool                              // CLI_TRY_PARTITION_QUERY
+	QueryMode         *sppb.ExecuteSqlRequest_QueryMode `sysvar:"name=CLI_QUERY_MODE,desc='Query execution mode.',type=proto_enum,proto=sppb.ExecuteSqlRequest_QueryMode,getter=getQueryMode,setter=setQueryMode"`
+	TryPartitionQuery bool                              `sysvar:"name=CLI_TRY_PARTITION_QUERY,desc='A boolean indicating whether to test query for partition compatibility instead of executing it.'"`
 
-	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
-	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
-	DatabaseDialect    databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
-	EchoExecutedDDL    bool                       // CLI_ECHO_EXECUTED_DDL
-	Role               string                     // CLI_ROLE
-	EchoInput          bool                       // CLI_ECHO_INPUT
-	Host               string                     // CLI_HOST
-	Port               int                        // CLI_PORT
-	EmulatorPlatform   string                     // CLI_EMULATOR_PLATFORM
-	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
-	TabWidth           int64                      // CLI_TAB_WIDTH
-	LogLevel           slog.Level                 // CLI_LOG_LEVEL
+	VertexAIProject    string                     `sysvar:"name=CLI_VERTEXAI_PROJECT,desc='Vertex AI project for natural language features.'"`
+	VertexAIModel      string                     `sysvar:"name=CLI_VERTEXAI_MODEL,desc='Vertex AI model for natural language features.'"`
+	DatabaseDialect    databasepb.DatabaseDialect `sysvar:"name=CLI_DATABASE_DIALECT,desc='Database dialect for the session.',type=proto_enum,proto=databasepb.DatabaseDialect,aliases=databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED:"`
+	EchoExecutedDDL    bool                       `sysvar:"name=CLI_ECHO_EXECUTED_DDL,desc='Echo executed DDL statements.'"`
+	Role               string                     `sysvar:"name=CLI_ROLE,desc='Cloud Spanner database role.',readonly"`
+	EchoInput          bool                       `sysvar:"name=CLI_ECHO_INPUT,desc='Echo input statements.'"`
+	Host               string                     `sysvar:"name=CLI_HOST,desc='Host on which Spanner server is located',readonly"`
+	Port               int                        `sysvar:"name=CLI_PORT,desc='Port number for connections.',readonly,getter=getPortAsInt64"`
+	EmulatorPlatform   string                     `sysvar:"name=CLI_EMULATOR_PLATFORM,desc='Container platform used by embedded emulator.',readonly"`
+	OutputTemplateFile string                     // Not exposed as system variable
+	TabWidth           int64                      `sysvar:"name=CLI_TAB_WIDTH,desc='Tab width. It is used for expanding tabs.'"`
+	// Custom enum with setter
+	LogLevel slog.Level `sysvar:"name=CLI_LOG_LEVEL,desc='Log level for the CLI.',type=manual,setter=setLogLevel"`
 
-	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
-	InlineStats    string // CLI_INLINE_STATS
+	// Custom template parser with side effects
+	AnalyzeColumns string `sysvar:"name=CLI_ANALYZE_COLUMNS,desc='Go template for analyzing column data.',type=manual"`
+	// Custom template parser
+	InlineStats string `sysvar:"name=CLI_INLINE_STATS,desc='<name>:<template>, ...',type=manual"`
 
-	ExplainFormat          explainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth       int64         // CLI_EXPLAIN_WRAP_WIDTH
-	AutoConnectAfterCreate bool          // CLI_AUTO_CONNECT_AFTER_CREATE
+	// Custom enum type
+	ExplainFormat          explainFormat `sysvar:"name=CLI_EXPLAIN_FORMAT,desc='Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.',type=manual"`
+	ExplainWrapWidth       int64         `sysvar:"name=CLI_EXPLAIN_WRAP_WIDTH,desc='Controls query plan wrap width. It effects only operators column contents'"`
+	AutoConnectAfterCreate bool          `sysvar:"name=CLI_AUTO_CONNECT_AFTER_CREATE,desc='A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.'"`
 
 	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
@@ -150,16 +163,31 @@ type systemVariables struct {
 	StreamManager *StreamManager
 
 	// TODO: Expose as CLI_*
-	EnableProgressBar         bool
-	ImpersonateServiceAccount string
-	EnableADCPlus             bool
-	MCP                       bool // CLI_MCP (read-only)
-	AsyncDDL                  bool // CLI_ASYNC_DDL
-	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
-	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
+	EnableProgressBar         bool   `sysvar:"name=CLI_ENABLE_PROGRESS_BAR,desc='A boolean indicating whether to display progress bars during operations. The default is false.'"`
+	ImpersonateServiceAccount string `sysvar:"name=CLI_IMPERSONATE_SERVICE_ACCOUNT,desc='Service account to impersonate.',readonly"`
+	EnableADCPlus             bool   `sysvar:"name=CLI_ENABLE_ADC_PLUS,desc='A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.',setter=setEnableADCPlus"`
+	MCP                       bool   `sysvar:"name=CLI_MCP,desc='A read-only boolean indicating whether the connection is running as an MCP server.',readonly"`                // CLI_MCP (read-only)
+	AsyncDDL                  bool   `sysvar:"name=CLI_ASYNC_DDL,desc='A boolean indicating whether DDL statements should be executed asynchronously. The default is false.'"` // CLI_ASYNC_DDL
+	SkipSystemCommand         bool   `sysvar:"name=CLI_SKIP_SYSTEM_COMMAND,desc='Controls whether system commands are disabled.'"`                                             // CLI_SKIP_SYSTEM_COMMAND
+	SkipColumnNames           bool   `sysvar:"name=CLI_SKIP_COLUMN_NAMES,desc='A boolean indicating whether to suppress column headers in output. The default is false.'"`     // CLI_SKIP_COLUMN_NAMES
 
 	// Registry holds the parser registry for system variables
 	Registry *sysvar.Registry
+
+	// Computed variables (using underscore fields with struct tags)
+	_ struct{} `sysvar:"name=CLI_VERSION,desc='The version of spanner-mycli.',readonly,getter=getCLIVersion"`
+	_ struct{} `sysvar:"name=CLI_CURRENT_WIDTH,desc='Current terminal width. Returns NULL if not connected to a terminal.',readonly,getter=getCLICurrentWidth"`
+	_ struct{} `sysvar:"name=CLI_ENDPOINT,desc='Host and port for connections (host:port format).',getter=getCLIEndpoint,setter=setCLIEndpoint"`
+
+	// Unimplemented variables (kept for compatibility)
+	Autocommit            bool `sysvar:"name=AUTOCOMMIT,desc='A boolean indicating whether or not the connection is in autocommit mode. The default is true.',type=unimplemented"`
+	RetryAbortsInternally bool `sysvar:"name=RETRY_ABORTS_INTERNALLY,desc='A boolean indicating whether the connection automatically retries aborted transactions. The default is true.',type=unimplemented"`
+
+	// Complex setter with side effects
+	_ struct{} `sysvar:"name=CLI_OUTPUT_TEMPLATE_FILE,desc='Go text/template for formatting the output of the CLI.',getter=getCLIOutputTemplateFile,setter=setCLIOutputTemplateFile"`
+
+	// Multi-value getters (special handling needed)
+	_ struct{} `sysvar:"name=COMMIT_RESPONSE,desc='Returns a result set with one row and two columns, COMMIT_TIMESTAMP and MUTATION_COUNT.',type=manual"`
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
@@ -326,7 +354,12 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
-		return sv.Registry.SetFromGoogleSQL(upperName, value)
+		err := sv.Registry.SetFromGoogleSQL(upperName, value)
+		// Convert unimplemented errors to legacy error types for compatibility
+		if err != nil && strings.Contains(err.Error(), "is not implemented") {
+			return errSetterUnimplemented{name}
+		}
+		return err
 	}
 
 	// Fall back to the old system
@@ -363,9 +396,8 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 // This is used for command-line flags and config files where values
 // don't follow GoogleSQL syntax rules.
 //
-// Like SetFromGoogleSQL, this method acts as a facade during migration,
-// checking the new registry first before falling back to systemVariableDefMap.
-// TODO: Remove the fallback logic once all variables are migrated to sysvar.Registry
+// This method checks the new registry first before falling back to systemVariableDefMap
+// for legacy compatibility. Most variables are now handled by the unified registry system.
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
@@ -374,7 +406,12 @@ func (sv *systemVariables) SetFromSimple(name string, value string) error {
 
 	// First check if the variable is in the new registry
 	if sv.Registry.Has(upperName) {
-		return sv.Registry.SetFromSimple(upperName, value)
+		err := sv.Registry.SetFromSimple(upperName, value)
+		// Convert unimplemented errors to legacy error types for compatibility
+		if err != nil && strings.Contains(err.Error(), "is not implemented") {
+			return errSetterUnimplemented{name}
+		}
+		return err
 	}
 
 	// Fall back to SetFromGoogleSQL for old system (which doesn't distinguish modes)
@@ -449,6 +486,10 @@ func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	if sv.Registry.Has(upperName) {
 		value, err := sv.Registry.Get(upperName)
 		if err != nil {
+			// Convert unimplemented errors to legacy error types for compatibility
+			if strings.Contains(err.Error(), "is not implemented") {
+				return nil, errGetterUnimplemented{name}
+			}
 			return nil, err
 		}
 		return singletonMap(name, value), nil
@@ -509,6 +550,9 @@ func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
 	return nil
 }
 
+// systemVariableDefMap contains legacy variables that haven't been migrated to the new system yet.
+// TODO: Migrate COMMIT_RESPONSE and CLI_DIRECT_READ to the new registry system,
+// then remove this map and all fallback logic.
 var systemVariableDefMap = map[string]systemVariableDef{
 	"READONLY": {
 		Description: "A boolean indicating whether or not the connection is in read-only mode. The default is false.",

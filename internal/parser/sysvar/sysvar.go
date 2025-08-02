@@ -483,6 +483,48 @@ func FormatTimestamp(ptr *time.Time) func() string {
 	}
 }
 
+// unimplementedVariableParser represents a system variable that is not yet implemented.
+type unimplementedVariableParser struct {
+	name        string
+	description string
+}
+
+// Name returns the variable name.
+func (u *unimplementedVariableParser) Name() string {
+	return u.name
+}
+
+// Description returns the variable description.
+func (u *unimplementedVariableParser) Description() string {
+	return u.description
+}
+
+// ParseAndSetWithMode always returns an error for unimplemented variables.
+func (u *unimplementedVariableParser) ParseAndSetWithMode(value string, mode parseMode) error {
+	return fmt.Errorf("%s is not implemented", u.name)
+}
+
+// GetValue always returns an error for unimplemented variables.
+func (u *unimplementedVariableParser) GetValue() (string, error) {
+	return "", fmt.Errorf("%s is not implemented", u.name)
+}
+
+// IsReadOnly returns false for unimplemented variables.
+func (u *unimplementedVariableParser) IsReadOnly() bool {
+	return false
+}
+
+// NewUnimplementedVariableParser creates a parser for unimplemented variables.
+// These variables return an error when accessed, indicating they are not yet implemented.
+// The returned parser integrates with the existing error handling system by wrapping
+// errors appropriately.
+func NewUnimplementedVariableParser(name, description string) VariableParser {
+	return &unimplementedVariableParser{
+		name:        name,
+		description: description,
+	}
+}
+
 // formatNullable creates a formatter for nullable values.
 func formatNullable[T any](innerFormatter func(T) string) func(*T) string {
 	return func(v *T) string {
@@ -544,8 +586,10 @@ func FormatEnumFromMap[T comparable](typeName string, enumMap map[string]T) func
 				return name
 			}
 		}
-		// Fallback to type(value) format
-		return fmt.Sprintf("%s(%v)", typeName, v)
+		// Fallback: just return the value as string
+		// If the type implements fmt.Stringer or has a custom String() method,
+		// it will be used. Otherwise, Go's default formatting is used.
+		return fmt.Sprint(v)
 	}
 }
 

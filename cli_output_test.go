@@ -272,7 +272,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{DisplayModeHTML, "HTML"},
 		{DisplayModeXML, "XML"},
 		{DisplayModeCSV, "CSV"},
-		{DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns descriptive string
+		{DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns Go's default format
 	}
 
 	for _, tt := range tests {

@@ -138,11 +138,11 @@ func TestSystemVariableRegistry(t *testing.T) {
 		}
 	})
 
-	t.Run("Fallback to old system", func(t *testing.T) {
-		// Test a variable that's not yet migrated (should fall back to old system)
-		// For example, READ_ONLY_STALENESS is a special variable not yet migrated
-		if err := sv.SetFromGoogleSQL("READ_ONLY_STALENESS", "STRONG"); err != nil {
-			t.Fatalf("Failed to set READ_ONLY_STALENESS (should use old system): %v", err)
+	t.Run("READ_ONLY_STALENESS - migrated to new system", func(t *testing.T) {
+		// READ_ONLY_STALENESS is now in the new registry with custom parsing
+		// In GoogleSQL mode, string values need to be quoted
+		if err := sv.SetFromGoogleSQL("READ_ONLY_STALENESS", "'STRONG'"); err != nil {
+			t.Fatalf("Failed to set READ_ONLY_STALENESS: %v", err)
 		}
 
 		result, err := sv.Get("READ_ONLY_STALENESS")
