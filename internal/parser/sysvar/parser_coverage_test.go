@@ -9,7 +9,7 @@ import (
 // TestIntParserWithMinMax tests WithMin and WithMax methods
 func TestIntParserWithMinMax(t *testing.T) {
 	t.Run("WithMin", func(t *testing.T) {
-		p := NewIntParser().WithMin(10)
+		p := newIntParser().WithMin(10)
 
 		// Valid value
 		got, err := p.ParseAndValidate("15")
@@ -28,7 +28,7 @@ func TestIntParserWithMinMax(t *testing.T) {
 	})
 
 	t.Run("WithMax", func(t *testing.T) {
-		p := NewIntParser().WithMax(100)
+		p := newIntParser().WithMax(100)
 
 		// Valid value
 		got, err := p.ParseAndValidate("50")
@@ -50,7 +50,7 @@ func TestIntParserWithMinMax(t *testing.T) {
 // TestDurationParserWithRange tests WithRange and WithMax methods
 func TestDurationParserWithRange(t *testing.T) {
 	t.Run("WithRange", func(t *testing.T) {
-		p := NewDurationParser().WithRange(1*time.Second, 10*time.Second)
+		p := newDurationParser().WithRange(1*time.Second, 10*time.Second)
 
 		// Valid value
 		got, err := p.ParseAndValidate("5s")
@@ -75,7 +75,7 @@ func TestDurationParserWithRange(t *testing.T) {
 	})
 
 	t.Run("WithMax", func(t *testing.T) {
-		p := NewDurationParser().WithMax(1 * time.Hour)
+		p := newDurationParser().WithMax(1 * time.Hour)
 
 		// Valid value
 		got, err := p.ParseAndValidate("30m")
@@ -96,7 +96,7 @@ func TestDurationParserWithRange(t *testing.T) {
 
 // TestStringParserWithLengthRange tests string validation
 func TestStringParserWithLengthRange(t *testing.T) {
-	p := NewStringParser().WithLengthRange(3, 10)
+	p := newStringParser().WithLengthRange(3, 10)
 
 	// Valid length
 	got, err := p.ParseAndValidate("hello")
@@ -120,9 +120,9 @@ func TestStringParserWithLengthRange(t *testing.T) {
 	}
 }
 
-// TestEnumStringParser tests NewEnumStringParser
+// TestEnumStringParser tests newEnumStringParser
 func TestEnumStringParser(t *testing.T) {
-	p := NewEnumStringParser("ACTIVE", "INACTIVE", "PENDING")
+	p := newEnumStringParser("ACTIVE", "INACTIVE", "PENDING")
 
 	// Valid value
 	got, err := p.ParseAndValidate("ACTIVE")
@@ -149,14 +149,14 @@ func TestEnumStringParser(t *testing.T) {
 	}
 }
 
-// TestEnumIntParser tests NewEnumIntParser
+// TestEnumIntParser tests newEnumParser
 func TestEnumIntParser(t *testing.T) {
 	values := map[string]int{
 		"LOW":    1,
 		"MEDIUM": 5,
 		"HIGH":   10,
 	}
-	p := NewEnumIntParser(values)
+	p := newEnumParser(values)
 
 	// Valid value
 	got, err := p.ParseAndValidate("HIGH")
@@ -277,7 +277,7 @@ func TestCreateStringEnumVariableParserFunc(t *testing.T) {
 
 // TestNullableParserMethods tests Parse and Validate methods on nullable parser
 func TestNullableParserMethods(t *testing.T) {
-	p := NewNullableParser(DualModeIntParser)
+	p := newNullableParser(DualModeIntParser)
 
 	// Test Parse method
 	got, err := p.Parse("42")
@@ -310,9 +310,9 @@ func TestCreateDualModeParserWithValidationErrors(t *testing.T) {
 		return nil
 	}
 
-	p := CreateDualModeParserWithValidation(
+	p := createDualModeParserWithValidation(
 		GoogleSQLIntParser,
-		NewIntParser(),
+		newIntParser(),
 		validator,
 	)
 

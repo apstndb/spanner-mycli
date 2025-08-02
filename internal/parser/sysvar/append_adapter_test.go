@@ -229,10 +229,10 @@ func TestProtoDescriptorFileParserEdgeCases(t *testing.T) {
 	}
 
 	// Test unsupported parse mode
-	if err := p.ParseAndSetWithMode("test", ParseMode(999)); err == nil {
+	if err := p.ParseAndSetWithMode("test", parseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode")
 	}
-	if err := p.AppendWithMode("test", ParseMode(999)); err == nil {
+	if err := p.AppendWithMode("test", parseMode(999)); err == nil {
 		t.Error("Expected error for unsupported parse mode in append")
 	}
 

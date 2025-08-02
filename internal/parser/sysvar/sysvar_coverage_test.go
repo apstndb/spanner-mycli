@@ -6,13 +6,11 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
 // TestGetValueNoGetter tests error when getter is nil
 func TestGetValueNoGetter(t *testing.T) {
-	parser := &TypedVariableParser[string]{
+	parser := &typedVariableParser[string]{
 		name:      "TEST",
 		getter:    nil, // No getter
 		formatter: FormatString,
@@ -38,7 +36,7 @@ func TestMemefishParseError(t *testing.T) {
 // TestGoogleSQLParserRecoverFromPanic tests panic recovery
 func TestGoogleSQLParserRecoverFromPanic(t *testing.T) {
 	// Test with input that might cause panic in memefish
-	_, err := ParseGoogleSQLStringLiteral("'unclosed string")
+	_, err := parseGoogleSQLStringLiteral("'unclosed string")
 	if err == nil {
 		t.Error("Expected error for unclosed string")
 	}
@@ -49,7 +47,7 @@ func TestDualModeParserUnknownMode(t *testing.T) {
 	p := DualModeBoolParser
 
 	// Use an invalid parse mode
-	_, err := p.ParseWithMode("true", ParseMode(999))
+	_, err := p.ParseWithMode("true", parseMode(999))
 	if err == nil {
 		t.Error("Expected error for unknown parse mode")
 	}
@@ -94,11 +92,11 @@ func TestDelegatingGoogleSQLParserError(t *testing.T) {
 
 // TestHelperFunctions tests various helper functions
 func TestHelperFunctions(t *testing.T) {
-	t.Run("RangeParserOptions", func(t *testing.T) {
+	t.Run("rangeParserOptions", func(t *testing.T) {
 		// Test that range parser options work correctly
 		min := 10
 		max := 100
-		opts := &RangeParserOptions[int]{Min: &min, Max: &max}
+		opts := &rangeParserOptions[int]{Min: &min, Max: &max}
 
 		// This is just to ensure the struct is used
 		if opts.Min == nil || *opts.Min != 10 {
@@ -148,7 +146,7 @@ func TestBaseParserParseWithoutParseFunc(t *testing.T) {
 	}
 }
 
-// TestWithValidationOriginalError tests WithValidation when original parser returns error
+// TestwithValidationOriginalError tests withValidation when original parser returns error
 func TestWithValidationOriginalError(t *testing.T) {
 	originalParser := &baseParser[int]{
 		ParseFunc: func(s string) (int, error) {
@@ -159,7 +157,7 @@ func TestWithValidationOriginalError(t *testing.T) {
 		},
 	}
 
-	wrapped := WithValidation(originalParser, func(v int) error {
+	wrapped := withValidation(originalParser, func(v int) error {
 		return fmt.Errorf("additional validation error")
 	})
 
@@ -173,13 +171,13 @@ func TestWithValidationOriginalError(t *testing.T) {
 	}
 }
 
-// TestCreateDualModeParserWithValidationWithNilValidator tests with nil validator
+// TestcreateDualModeParserWithValidationWithNilValidator tests with nil validator
 func TestCreateDualModeParserWithValidationWithNilValidator(t *testing.T) {
-	googleSQLParser := NewStringParser()
-	simpleParser := NewStringParser()
+	googleSQLParser := newStringParser()
+	simpleParser := newStringParser()
 
 	// Create dual-mode parser with nil validator
-	dualParser := CreateDualModeParserWithValidation(googleSQLParser, simpleParser, nil)
+	dualParser := createDualModeParserWithValidation(googleSQLParser, simpleParser, nil)
 
 	// Should work without validation
 	_, err := dualParser.ParseWithMode("test", ParseModeGoogleSQL)
@@ -188,14 +186,10 @@ func TestCreateDualModeParserWithValidationWithNilValidator(t *testing.T) {
 	}
 }
 
-// TestParseIntLiteralWithNegativeHex tests parseIntLiteral with negative hex values
-func TestParseIntLiteralWithNegativeHex(t *testing.T) {
-	intLit := &ast.IntLiteral{
-		Value: "-0xFF",
-		Base:  16,
-	}
-
-	result, err := parseIntLiteral(intLit)
+// TestGoogleSQLIntParserWithNegativeHex tests GoogleSQLIntParser with negative hex values
+func TestGoogleSQLIntParserWithNegativeHex(t *testing.T) {
+	// Test negative hex parsing through the public API
+	result, err := GoogleSQLIntParser.Parse("-0xFF")
 	if err != nil {
 		t.Errorf("Unexpected error parsing negative hex: %v", err)
 	}
@@ -204,16 +198,16 @@ func TestParseIntLiteralWithNegativeHex(t *testing.T) {
 	}
 }
 
-// TestNewDualModeParserDefaultBehavior tests default Parse method behavior
+// TestnewDualModeParserDefaultBehavior tests default Parse method behavior
 func TestNewDualModeParserDefaultBehavior(t *testing.T) {
-	googleSQLParser := NewStringParser()
+	googleSQLParser := newStringParser()
 	simpleParser := &baseParser[string]{
 		ParseFunc: func(s string) (string, error) {
 			return "simple: " + s, nil
 		},
 	}
 
-	dualParser := NewDualModeParser(googleSQLParser, simpleParser)
+	dualParser := newDualModeParser(googleSQLParser, simpleParser)
 
 	// Default Parse should use GoogleSQL mode
 	result, err := dualParser.Parse("test")
@@ -228,7 +222,7 @@ func TestNewDualModeParserDefaultBehavior(t *testing.T) {
 
 // TestNewDelegatingGoogleSQLParserWithInvalidInput tests error handling
 func TestNewDelegatingGoogleSQLParserWithInvalidInput(t *testing.T) {
-	delegateParser := NewStringParser()
+	delegateParser := newStringParser()
 	googleSQLParser := newDelegatingGoogleSQLParser(delegateParser)
 
 	// Test with invalid GoogleSQL string literal
@@ -240,7 +234,7 @@ func TestNewDelegatingGoogleSQLParserWithInvalidInput(t *testing.T) {
 
 // TestTypedVariableParserGetValueWithNilGetter tests GetValue when getter is nil
 func TestTypedVariableParserGetValueWithNilGetter(t *testing.T) {
-	vp := &TypedVariableParser[string]{
+	vp := &typedVariableParser[string]{
 		name:   "TEST_VAR",
 		getter: nil,
 	}
@@ -257,7 +251,7 @@ func TestTypedVariableParserGetValueWithNilGetter(t *testing.T) {
 // TestTypedVariableParserGetValueWithNilFormatter tests GetValue when formatter is nil
 func TestTypedVariableParserGetValueWithNilFormatter(t *testing.T) {
 	testValue := 42
-	vp := &TypedVariableParser[int]{
+	vp := &typedVariableParser[int]{
 		name:      "TEST_VAR",
 		getter:    func() int { return testValue },
 		formatter: nil, // No formatter
@@ -282,7 +276,7 @@ func TestTypedVariableParserParseAndSetWithModeSetterError(t *testing.T) {
 	getter := func() string { return "" }
 
 	vp := NewTypedVariableParser("TEST_VAR", "Test variable", parser, getter, setter, FormatString)
-	typedVP := vp.(*TypedVariableParser[string])
+	typedVP := vp.(*typedVariableParser[string])
 
 	err := typedVP.ParseAndSetWithMode("value", ParseModeSimple)
 	if err == nil {
@@ -330,5 +324,30 @@ func TestNewNullableIntVariableParserWithoutRange(t *testing.T) {
 
 	if value == nil || *value != 12345 {
 		t.Errorf("Expected 12345, got %v", value)
+	}
+}
+
+// TestgoogleSQLIntParserEdgeCases tests edge cases for integer parsing
+func TestGoogleSQLIntParserEdgeCases(t *testing.T) {
+	// Test that non-integer literals are rejected
+	testCases := []struct {
+		input   string
+		wantErr bool
+	}{
+		{"3.14", true},         // float literal
+		{"TRUE", true},         // boolean
+		{"'123'", true},        // string literal
+		{"NULL", true},         // null literal
+		{"CURRENT_DATE", true}, // identifier
+	}
+
+	for _, tc := range testCases {
+		_, err := GoogleSQLIntParser.Parse(tc.input)
+		if tc.wantErr && err == nil {
+			t.Errorf("Expected error for input %q", tc.input)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("Unexpected error for input %q: %v", tc.input, err)
+		}
 	}
 }

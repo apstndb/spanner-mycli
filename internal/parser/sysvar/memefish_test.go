@@ -85,13 +85,13 @@ line`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseGoogleSQLStringLiteral(tt.input)
+			got, err := parseGoogleSQLStringLiteral(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseGoogleSQLStringLiteral() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseGoogleSQLStringLiteral() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("ParseGoogleSQLStringLiteral() = %q, want %q", got, tt.want)
+				t.Errorf("parseGoogleSQLStringLiteral() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -99,7 +99,7 @@ line`,
 
 func TestGoogleSQLStringLiteralParser(t *testing.T) {
 	// Test that the parser instance works correctly
-	parser := GoogleSQLStringLiteralParser
+	parser := googleSQLStringLiteralParser
 
 	// Valid string
 	got, err := parser.Parse("'test string'")

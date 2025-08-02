@@ -7,7 +7,7 @@ import (
 
 func TestCreateRangeValidator(t *testing.T) {
 	t.Run("no constraints", func(t *testing.T) {
-		validator := CreateRangeValidator[int](nil, nil)
+		validator := createRangeValidator[int](nil, nil)
 
 		// Should accept any value
 		testCases := []int{-1000, 0, 1000, 999999}
@@ -20,7 +20,7 @@ func TestCreateRangeValidator(t *testing.T) {
 
 	t.Run("min constraint only", func(t *testing.T) {
 		min := 10
-		validator := CreateRangeValidator(&min, nil)
+		validator := createRangeValidator(&min, nil)
 
 		// Valid values
 		validCases := []int{10, 11, 100, 1000}
@@ -46,7 +46,7 @@ func TestCreateRangeValidator(t *testing.T) {
 
 	t.Run("max constraint only", func(t *testing.T) {
 		max := 100
-		validator := CreateRangeValidator(nil, &max)
+		validator := createRangeValidator(nil, &max)
 
 		// Valid values
 		validCases := []int{-100, 0, 50, 100}
@@ -72,7 +72,7 @@ func TestCreateRangeValidator(t *testing.T) {
 
 	t.Run("both constraints", func(t *testing.T) {
 		min, max := 10, 100
-		validator := CreateRangeValidator(&min, &max)
+		validator := createRangeValidator(&min, &max)
 
 		// Valid values
 		validCases := []int{10, 50, 100}
@@ -96,7 +96,7 @@ func TestCreateRangeValidator(t *testing.T) {
 	t.Run("works with different numeric types", func(t *testing.T) {
 		// Test with float64
 		minFloat, maxFloat := 1.5, 10.5
-		floatValidator := CreateRangeValidator(&minFloat, &maxFloat)
+		floatValidator := createRangeValidator(&minFloat, &maxFloat)
 
 		if err := floatValidator(5.5); err != nil {
 			t.Errorf("floatValidator(5.5) failed: %v", err)
@@ -110,7 +110,7 @@ func TestCreateRangeValidator(t *testing.T) {
 
 		// Test with int64
 		minInt64, maxInt64 := int64(0), int64(65535)
-		int64Validator := CreateRangeValidator(&minInt64, &maxInt64)
+		int64Validator := createRangeValidator(&minInt64, &maxInt64)
 
 		if err := int64Validator(8080); err != nil {
 			t.Errorf("int64Validator(8080) failed: %v", err)
@@ -126,7 +126,7 @@ func TestCreateRangeValidator(t *testing.T) {
 
 func TestCreateDurationRangeValidator(t *testing.T) {
 	t.Run("no constraints", func(t *testing.T) {
-		validator := CreateDurationRangeValidator(nil, nil)
+		validator := createDurationRangeValidator(nil, nil)
 
 		// Should accept any duration
 		testCases := []time.Duration{
@@ -144,7 +144,7 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 
 	t.Run("min constraint only", func(t *testing.T) {
 		min := time.Duration(0)
-		validator := CreateDurationRangeValidator(&min, nil)
+		validator := createDurationRangeValidator(&min, nil)
 
 		// Valid values
 		validCases := []time.Duration{0, 1 * time.Second, 1 * time.Hour}
@@ -167,7 +167,7 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 
 	t.Run("max constraint only", func(t *testing.T) {
 		max := 500 * time.Millisecond
-		validator := CreateDurationRangeValidator(nil, &max)
+		validator := createDurationRangeValidator(nil, &max)
 
 		// Valid values
 		validCases := []time.Duration{0, 100 * time.Millisecond, 500 * time.Millisecond}
@@ -191,7 +191,7 @@ func TestCreateDurationRangeValidator(t *testing.T) {
 	t.Run("both constraints", func(t *testing.T) {
 		min := time.Duration(0)
 		max := 500 * time.Millisecond
-		validator := CreateDurationRangeValidator(&min, &max)
+		validator := createDurationRangeValidator(&min, &max)
 
 		// Valid values
 		validCases := []time.Duration{0, 250 * time.Millisecond, 500 * time.Millisecond}

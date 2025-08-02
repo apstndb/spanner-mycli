@@ -8,7 +8,7 @@ import (
 )
 
 func TestBoolParser(t *testing.T) {
-	p := NewBoolParser()
+	p := newBoolParser()
 
 	tests := []struct {
 		name    string
@@ -47,7 +47,7 @@ func TestBoolParser(t *testing.T) {
 
 func TestIntParser(t *testing.T) {
 	t.Run("basic parsing", func(t *testing.T) {
-		p := NewIntParser()
+		p := newIntParser()
 
 		tests := []struct {
 			name    string
@@ -78,7 +78,7 @@ func TestIntParser(t *testing.T) {
 	})
 
 	t.Run("with range validation", func(t *testing.T) {
-		p := NewIntParser().WithRange(1, 100)
+		p := newIntParser().WithRange(1, 100)
 
 		tests := []struct {
 			name    string
@@ -109,7 +109,7 @@ func TestIntParser(t *testing.T) {
 }
 
 func TestDurationParser(t *testing.T) {
-	p := NewDurationParser()
+	p := newDurationParser()
 
 	tests := []struct {
 		name    string
@@ -148,7 +148,7 @@ func TestGenericEnumParser(t *testing.T) {
 		Blue
 	)
 
-	p := NewEnumParser(map[string]Color{
+	p := newEnumParser(map[string]Color{
 		"RED":   Red,
 		"GREEN": Green,
 		"BLUE":  Blue,
@@ -184,7 +184,7 @@ func TestGenericEnumParser(t *testing.T) {
 
 func TestStringParser(t *testing.T) {
 	t.Run("simple parser", func(t *testing.T) {
-		p := NewStringParser()
+		p := newStringParser()
 
 		tests := []struct {
 			name  string
@@ -229,8 +229,8 @@ func TestChainValidators(t *testing.T) {
 		return nil
 	}
 
-	p := WithValidation(
-		NewIntParser(),
+	p := withValidation(
+		newIntParser(),
 		isPositive,
 		isEven,
 	)

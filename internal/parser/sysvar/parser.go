@@ -92,8 +92,8 @@ func chainValidators[T any](validators ...validator[T]) validator[T] {
 	}
 }
 
-// WithValidation wraps an existing parser with additional validation.
-func WithValidation[T any](p parser[T], validators ...validator[T]) parser[T] {
+// withValidation wraps an existing parser with additional validation.
+func withValidation[T any](p parser[T], validators ...validator[T]) parser[T] {
 	return &baseParser[T]{
 		ParseFunc: p.Parse,
 		ValidateFunc: func(value T) error {
@@ -111,17 +111,17 @@ func WithValidation[T any](p parser[T], validators ...validator[T]) parser[T] {
 // Basic Type Parsers
 // ============================================================================
 
-// BoolParser parses boolean values.
+// boolParser parses boolean values.
 // It uses strconv.ParseBool which accepts:
 // "1", "t", "T", "true", "TRUE", "True",
 // "0", "f", "F", "false", "FALSE", "False".
-type BoolParser struct {
+type boolParser struct {
 	baseParser[bool]
 }
 
-// NewBoolParser creates a new boolean parser.
-func NewBoolParser() *BoolParser {
-	return &BoolParser{
+// newBoolParser creates a new boolean parser.
+func newBoolParser() *boolParser {
+	return &boolParser{
 		baseParser: baseParser[bool]{
 			ParseFunc: func(value string) (bool, error) {
 				return strconv.ParseBool(strings.TrimSpace(value))
@@ -130,16 +130,16 @@ func NewBoolParser() *BoolParser {
 	}
 }
 
-// IntParser parses integer values with optional range validation.
-type IntParser struct {
+// intParser parses integer values with optional range validation.
+type intParser struct {
 	baseParser[int64]
 	min *int64
 	max *int64
 }
 
-// NewIntParser creates a new integer parser.
-func NewIntParser() *IntParser {
-	return &IntParser{
+// newIntParser creates a new integer parser.
+func newIntParser() *intParser {
+	return &intParser{
 		baseParser: baseParser[int64]{
 			ParseFunc: func(value string) (int64, error) {
 				return strconv.ParseInt(strings.TrimSpace(value), 10, 64)
@@ -149,7 +149,7 @@ func NewIntParser() *IntParser {
 }
 
 // WithRange adds range validation to the integer parser.
-func (p *IntParser) WithRange(min, max int64) *IntParser {
+func (p *intParser) WithRange(min, max int64) *intParser {
 	p.min = &min
 	p.max = &max
 	p.ValidateFunc = p.validateRange
@@ -157,20 +157,20 @@ func (p *IntParser) WithRange(min, max int64) *IntParser {
 }
 
 // WithMin adds minimum value validation.
-func (p *IntParser) WithMin(min int64) *IntParser {
+func (p *intParser) WithMin(min int64) *intParser {
 	p.min = &min
 	p.ValidateFunc = p.validateRange
 	return p
 }
 
 // WithMax adds maximum value validation.
-func (p *IntParser) WithMax(max int64) *IntParser {
+func (p *intParser) WithMax(max int64) *intParser {
 	p.max = &max
 	p.ValidateFunc = p.validateRange
 	return p
 }
 
-func (p *IntParser) validateRange(value int64) error {
+func (p *intParser) validateRange(value int64) error {
 	if p.min != nil && value < *p.min {
 		return fmt.Errorf("value %d is less than minimum %d", value, *p.min)
 	}
@@ -180,16 +180,16 @@ func (p *IntParser) validateRange(value int64) error {
 	return nil
 }
 
-// DurationParser parses duration values with optional range validation.
-type DurationParser struct {
+// durationParser parses duration values with optional range validation.
+type durationParser struct {
 	baseParser[time.Duration]
 	min *time.Duration
 	max *time.Duration
 }
 
-// NewDurationParser creates a new duration parser.
-func NewDurationParser() *DurationParser {
-	return &DurationParser{
+// newDurationParser creates a new duration parser.
+func newDurationParser() *durationParser {
+	return &durationParser{
 		baseParser: baseParser[time.Duration]{
 			ParseFunc: func(value string) (time.Duration, error) {
 				return time.ParseDuration(strings.TrimSpace(value))
@@ -199,7 +199,7 @@ func NewDurationParser() *DurationParser {
 }
 
 // WithRange adds range validation to the duration parser.
-func (p *DurationParser) WithRange(min, max time.Duration) *DurationParser {
+func (p *durationParser) WithRange(min, max time.Duration) *durationParser {
 	p.min = &min
 	p.max = &max
 	p.ValidateFunc = p.validateRange
@@ -207,20 +207,20 @@ func (p *DurationParser) WithRange(min, max time.Duration) *DurationParser {
 }
 
 // WithMin adds minimum duration validation.
-func (p *DurationParser) WithMin(min time.Duration) *DurationParser {
+func (p *durationParser) WithMin(min time.Duration) *durationParser {
 	p.min = &min
 	p.ValidateFunc = p.validateRange
 	return p
 }
 
 // WithMax adds maximum duration validation.
-func (p *DurationParser) WithMax(max time.Duration) *DurationParser {
+func (p *durationParser) WithMax(max time.Duration) *durationParser {
 	p.max = &max
 	p.ValidateFunc = p.validateRange
 	return p
 }
 
-func (p *DurationParser) validateRange(value time.Duration) error {
+func (p *durationParser) validateRange(value time.Duration) error {
 	if p.min != nil && value < *p.min {
 		return fmt.Errorf("duration %v is less than minimum %v", value, *p.min)
 	}
@@ -230,18 +230,18 @@ func (p *DurationParser) validateRange(value time.Duration) error {
 	return nil
 }
 
-// StringParser parses string values with optional validation.
-type StringParser struct {
+// stringParser parses string values with optional validation.
+type stringParser struct {
 	baseParser[string]
 	minLen *int
 	maxLen *int
 }
 
-// NewStringParser creates a new string parser.
+// newStringParser creates a new string parser.
 // By default, it returns the value as-is without any processing.
 // This is suitable for CLI flags and config files where values should be preserved exactly.
-func NewStringParser() *StringParser {
-	return &StringParser{
+func newStringParser() *stringParser {
+	return &stringParser{
 		baseParser: baseParser[string]{
 			ParseFunc: func(value string) (string, error) {
 				// Return value as-is, no processing
@@ -252,14 +252,14 @@ func NewStringParser() *StringParser {
 }
 
 // WithLengthRange adds length validation.
-func (p *StringParser) WithLengthRange(min, max int) *StringParser {
+func (p *stringParser) WithLengthRange(min, max int) *stringParser {
 	p.minLen = &min
 	p.maxLen = &max
 	p.ValidateFunc = p.validateString
 	return p
 }
 
-func (p *StringParser) validateString(value string) error {
+func (p *stringParser) validateString(value string) error {
 	if p.minLen != nil && len(value) < *p.minLen {
 		return fmt.Errorf("string length %d is less than minimum %d", len(value), *p.minLen)
 	}
@@ -273,25 +273,25 @@ func (p *StringParser) validateString(value string) error {
 // Enum Parser
 // ============================================================================
 
-// EnumParser parses string values into enum types.
+// enumParser parses string values into enum types.
 // It supports case-insensitive matching and custom value mappings.
-type EnumParser[T comparable] struct {
+type enumParser[T comparable] struct {
 	baseParser[T]
 	originalValues map[string]T // Store original values for case-sensitive mode
 	values         map[string]T
 	caseMatters    bool
 }
 
-// NewEnumParser creates a new enum parser with the given valid values.
+// newEnumParser creates a new enum parser with the given valid values.
 // By default, it performs case-insensitive matching.
-func NewEnumParser[T comparable](values map[string]T) *EnumParser[T] {
+func newEnumParser[T comparable](values map[string]T) *enumParser[T] {
 	// Create case-insensitive map by default
 	normalizedValues := make(map[string]T)
 	for k, v := range values {
 		normalizedValues[strings.ToUpper(k)] = v
 	}
 
-	parser := &EnumParser[T]{
+	parser := &enumParser[T]{
 		originalValues: values, // Store the original map
 		values:         normalizedValues,
 		caseMatters:    false,
@@ -305,7 +305,7 @@ func NewEnumParser[T comparable](values map[string]T) *EnumParser[T] {
 }
 
 // CaseSensitive makes the enum parser case-sensitive.
-func (p *EnumParser[T]) CaseSensitive() *EnumParser[T] {
+func (p *enumParser[T]) CaseSensitive() *enumParser[T] {
 	if !p.caseMatters {
 		p.values = p.originalValues // Use the original, non-normalized map
 		p.caseMatters = true
@@ -313,7 +313,7 @@ func (p *EnumParser[T]) CaseSensitive() *EnumParser[T] {
 	return p
 }
 
-func (p *EnumParser[T]) parseEnum(value string) (T, error) {
+func (p *enumParser[T]) parseEnum(value string) (T, error) {
 	trimmed := strings.TrimSpace(value)
 
 	lookupKey := trimmed
@@ -335,32 +335,24 @@ func (p *EnumParser[T]) parseEnum(value string) (T, error) {
 	return zero, fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(validValues, ", "))
 }
 
-// EnumStringParser is a convenience type for string enums.
-type EnumStringParser = EnumParser[string]
+// enumStringParser is a convenience type for string enums.
+type enumStringParser = enumParser[string]
 
-// NewEnumStringParser creates a parser for string enum values.
-func NewEnumStringParser(values ...string) *EnumStringParser {
+// newEnumStringParser creates a parser for string enum values.
+func newEnumStringParser(values ...string) *enumStringParser {
 	valueMap := make(map[string]string)
 	for _, v := range values {
 		valueMap[v] = v
 	}
-	return NewEnumParser(valueMap)
-}
-
-// EnumIntParser is a convenience type for int enums.
-type EnumIntParser = EnumParser[int]
-
-// NewEnumIntParser creates a parser for int enum values from a map.
-func NewEnumIntParser(values map[string]int) *EnumIntParser {
-	return NewEnumParser(values)
+	return newEnumParser(valueMap)
 }
 
 // ============================================================================
 // Validation Helpers
 // ============================================================================
 
-// CreateRangeValidator creates a validation function for numeric types with min/max constraints.
-func CreateRangeValidator[T interface {
+// createRangeValidator creates a validation function for numeric types with min/max constraints.
+func createRangeValidator[T interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
 		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
 		~float32 | ~float64
@@ -376,8 +368,8 @@ func CreateRangeValidator[T interface {
 	}
 }
 
-// CreateDurationRangeValidator creates a validation function for duration values with min/max constraints.
-func CreateDurationRangeValidator(min, max *time.Duration) func(time.Duration) error {
+// createDurationRangeValidator creates a validation function for duration values with min/max constraints.
+func createDurationRangeValidator(min, max *time.Duration) func(time.Duration) error {
 	return func(v time.Duration) error {
 		if min != nil && v < *min {
 			return fmt.Errorf("duration %s is less than minimum %s", v, *min)
@@ -389,9 +381,8 @@ func CreateDurationRangeValidator(min, max *time.Duration) func(time.Duration) e
 	}
 }
 
-// CreateDualModeParserWithValidation creates a dual-mode parser with the same validation applied to both modes.
-// CreateDualModeParserWithValidation creates a dual-mode parser with the same validation applied to both modes.
-func CreateDualModeParserWithValidation[T any](
+// createDualModeParserWithValidation creates a dual-mode parser with the same validation applied to both modes.
+func createDualModeParserWithValidation[T any](
 	googleSQLBaseParser parser[T],
 	simpleBaseParser parser[T],
 	validator func(T) error,
@@ -399,12 +390,12 @@ func CreateDualModeParserWithValidation[T any](
 	var googleSQLParser, simpleParser parser[T]
 
 	if validator != nil {
-		googleSQLParser = WithValidation(googleSQLBaseParser, validator)
-		simpleParser = WithValidation(simpleBaseParser, validator)
+		googleSQLParser = withValidation(googleSQLBaseParser, validator)
+		simpleParser = withValidation(simpleBaseParser, validator)
 	} else {
 		googleSQLParser = googleSQLBaseParser
 		simpleParser = simpleBaseParser
 	}
 
-	return NewDualModeParser(googleSQLParser, simpleParser)
+	return newDualModeParser(googleSQLParser, simpleParser)
 }

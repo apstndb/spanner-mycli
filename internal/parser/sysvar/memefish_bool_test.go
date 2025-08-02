@@ -60,11 +60,11 @@ func TestGoogleSQLBoolParser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := GoogleSQLBoolParser.Parse(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GoogleSQLBoolParser.Parse() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("googleSQLBoolParser.Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("GoogleSQLBoolParser.Parse() = %v, want %v", got, tt.want)
+				t.Errorf("googleSQLBoolParser.Parse() = %v, want %v", got, tt.want)
 			}
 		})
 	}

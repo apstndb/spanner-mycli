@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// AppendableVariableParser extends VariableParser to support append operations.
+// appendableVariableParser extends VariableParser to support append operations.
 // This is used for variables that can accumulate values rather than just replacing them.
-type AppendableVariableParser interface {
+type appendableVariableParser interface {
 	VariableParser
 	// AppendWithMode appends a value using the specified parse mode.
-	AppendWithMode(value string, mode ParseMode) error
+	AppendWithMode(value string, mode parseMode) error
 }
 
 // Registry extensions for append support.
@@ -25,7 +25,7 @@ func (r *Registry) AppendFromSimple(name, value string) error {
 	return r.appendWithMode(name, value, ParseModeSimple)
 }
 
-func (r *Registry) appendWithMode(name, value string, mode ParseMode) error {
+func (r *Registry) appendWithMode(name, value string, mode parseMode) error {
 	upperName := strings.ToUpper(name)
 	p, exists := r.parsers[upperName]
 	if !exists {
@@ -33,7 +33,7 @@ func (r *Registry) appendWithMode(name, value string, mode ParseMode) error {
 	}
 
 	// Check if the parser supports append
-	appendable, ok := p.(AppendableVariableParser)
+	appendable, ok := p.(appendableVariableParser)
 	if !ok {
 		return fmt.Errorf("variable %s does not support append operations", name)
 	}
@@ -48,6 +48,6 @@ func (r *Registry) HasAppendSupport(name string) bool {
 	if !exists {
 		return false
 	}
-	_, ok := p.(AppendableVariableParser)
+	_, ok := p.(appendableVariableParser)
 	return ok
 }

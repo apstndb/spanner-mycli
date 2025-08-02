@@ -12,7 +12,7 @@ func TestEnumParser(t *testing.T) {
 			"WARN":  "warn",
 			"ERROR": "error",
 		}
-		p := NewEnumParser(values)
+		p := newEnumParser(values)
 
 		tests := []struct {
 			name    string
@@ -49,7 +49,7 @@ func TestEnumParser(t *testing.T) {
 			"MEDIUM": 5,
 			"HIGH":   10,
 		}
-		p := NewEnumParser(values)
+		p := newEnumParser(values)
 
 		tests := []struct {
 			name    string
@@ -85,7 +85,7 @@ func TestEnumParser(t *testing.T) {
 		}
 
 		t.Run("case insensitive (default)", func(t *testing.T) {
-			p := NewEnumParser(values)
+			p := newEnumParser(values)
 
 			// Exact case should work
 			got, err := p.ParseAndValidate("Debug")
@@ -108,7 +108,7 @@ func TestEnumParser(t *testing.T) {
 
 		t.Run("case sensitive (when enabled)", func(t *testing.T) {
 			// Test case-sensitive mode
-			p := NewEnumParser(values).CaseSensitive()
+			p := newEnumParser(values).CaseSensitive()
 
 			// Only exact case should work
 			got, err := p.ParseAndValidate("Debug")
@@ -145,7 +145,7 @@ func TestCreateDualModeEnumParser(t *testing.T) {
 		"INACTIVE": StatusInactive,
 	}
 
-	p := CreateDualModeEnumParser(enumValues)
+	p := createDualModeEnumParser(enumValues)
 
 	t.Run("Simple mode", func(t *testing.T) {
 		got, err := p.ParseAndValidateWithMode("ACTIVE", ParseModeSimple)

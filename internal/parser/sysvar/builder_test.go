@@ -8,34 +8,34 @@ import (
 func TestRangeParserOptions(t *testing.T) {
 	t.Run("HasRange", func(t *testing.T) {
 		// No options
-		var opts *RangeParserOptions[int64]
-		if opts.HasRange() {
+		var opts *rangeParserOptions[int64]
+		if opts.hasRange() {
 			t.Error("nil options should not have range")
 		}
 
 		// Empty options
-		opts = &RangeParserOptions[int64]{}
-		if opts.HasRange() {
+		opts = &rangeParserOptions[int64]{}
+		if opts.hasRange() {
 			t.Error("empty options should not have range")
 		}
 
 		// With min only
 		min := int64(10)
-		opts = &RangeParserOptions[int64]{Min: &min}
-		if !opts.HasRange() {
+		opts = &rangeParserOptions[int64]{Min: &min}
+		if !opts.hasRange() {
 			t.Error("options with min should have range")
 		}
 
 		// With max only
 		max := int64(100)
-		opts = &RangeParserOptions[int64]{Max: &max}
-		if !opts.HasRange() {
+		opts = &rangeParserOptions[int64]{Max: &max}
+		if !opts.hasRange() {
 			t.Error("options with max should have range")
 		}
 
 		// With both
-		opts = &RangeParserOptions[int64]{Min: &min, Max: &max}
-		if !opts.HasRange() {
+		opts = &rangeParserOptions[int64]{Min: &min, Max: &max}
+		if !opts.hasRange() {
 			t.Error("options with min and max should have range")
 		}
 	})
@@ -58,7 +58,7 @@ func testParserCases(t *testing.T, p DualModeParser[int64], validCases, invalidC
 
 func TestCreateIntRangeParser(t *testing.T) {
 	t.Run("no range", func(t *testing.T) {
-		p := CreateIntRangeParser(nil)
+		p := createIntRangeParser(nil)
 		testParserCases(t, p,
 			[]string{"-1000", "0", "1000", "9223372036854775807"},
 			nil)
@@ -66,7 +66,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with min", func(t *testing.T) {
 		min := int64(10)
-		p := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min})
+		p := createIntRangeParser(&rangeParserOptions[int64]{Min: &min})
 		testParserCases(t, p,
 			[]string{"10", "100"},
 			[]string{"5"})
@@ -74,7 +74,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with max", func(t *testing.T) {
 		max := int64(100)
-		p := CreateIntRangeParser(&RangeParserOptions[int64]{Max: &max})
+		p := createIntRangeParser(&rangeParserOptions[int64]{Max: &max})
 		testParserCases(t, p,
 			[]string{"0", "100"},
 			[]string{"200"})
@@ -82,7 +82,7 @@ func TestCreateIntRangeParser(t *testing.T) {
 
 	t.Run("with range", func(t *testing.T) {
 		min, max := int64(10), int64(100)
-		p := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min, Max: &max})
+		p := createIntRangeParser(&rangeParserOptions[int64]{Min: &min, Max: &max})
 		testParserCases(t, p,
 			[]string{"10", "50", "100"},
 			[]string{"5", "200", "-10"})
@@ -93,7 +93,7 @@ func TestCreateDurationRangeParser(t *testing.T) {
 	t.Run("with range", func(t *testing.T) {
 		min := time.Duration(0)
 		max := 500 * time.Millisecond
-		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Min: &min, Max: &max})
+		p := createDurationRangeParser(&rangeParserOptions[time.Duration]{Min: &min, Max: &max})
 
 		// Valid values
 		testCases := []string{"0s", "100ms", "500ms"}
@@ -114,7 +114,7 @@ func TestCreateDurationRangeParser(t *testing.T) {
 
 	t.Run("with min only", func(t *testing.T) {
 		min := 100 * time.Millisecond
-		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Min: &min})
+		p := createDurationRangeParser(&rangeParserOptions[time.Duration]{Min: &min})
 
 		// Valid values
 		if _, err := p.ParseAndValidateWithMode("100ms", ParseModeSimple); err != nil {
@@ -132,7 +132,7 @@ func TestCreateDurationRangeParser(t *testing.T) {
 
 	t.Run("with max only", func(t *testing.T) {
 		max := 500 * time.Millisecond
-		p := CreateDurationRangeParser(&RangeParserOptions[time.Duration]{Max: &max})
+		p := createDurationRangeParser(&rangeParserOptions[time.Duration]{Max: &max})
 
 		// Valid values
 		if _, err := p.ParseAndValidateWithMode("100ms", ParseModeSimple); err != nil {
@@ -226,14 +226,14 @@ func TestFormatters(t *testing.T) {
 			{time.Hour + 30*time.Minute, "1h30m0s"},
 		}
 		for _, tc := range testCases {
-			if got := FormatDuration(tc.value); got != tc.want {
-				t.Errorf("FormatDuration(%v) = %q, want %q", tc.value, got, tc.want)
+			if got := formatDuration(tc.value); got != tc.want {
+				t.Errorf("formatDuration(%v) = %q, want %q", tc.value, got, tc.want)
 			}
 		}
 	})
 
 	t.Run("FormatNullable", func(t *testing.T) {
-		formatter := FormatNullable(FormatInt)
+		formatter := formatNullable(FormatInt)
 
 		// Test nil
 		if got := formatter(nil); got != "NULL" {

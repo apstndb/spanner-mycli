@@ -7,7 +7,7 @@ import (
 
 func TestNullableParser(t *testing.T) {
 	t.Run("NullableDurationParser", func(t *testing.T) {
-		innerParser := DualModeDurationParser
+		innerParser := dualModeDurationParser
 		p := newNullableDuration(innerParser)
 
 		t.Run("Parse NULL in GoogleSQL mode", func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestNullableParser(t *testing.T) {
 	t.Run("Generic NullableParser", func(t *testing.T) {
 		// Test with a custom type
 		innerParser := DualModeBoolParser
-		p := NewNullableParser(innerParser)
+		p := newNullableParser(innerParser)
 
 		t.Run("Parse NULL", func(t *testing.T) {
 			result, err := p.ParseAndValidateWithMode("NULL", ParseModeSimple)

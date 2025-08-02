@@ -35,14 +35,14 @@ func (e *ErrVariableReadOnly) Error() string {
 type VariableParser interface {
 	Name() string
 	Description() string
-	ParseAndSetWithMode(value string, mode ParseMode) error
+	ParseAndSetWithMode(value string, mode parseMode) error
 	GetValue() (string, error)
 	IsReadOnly() bool
 }
 
-// TypedVariableParser provides a generic implementation of VariableParser for any type T.
+// typedVariableParser provides a generic implementation of VariableParser for any type T.
 // This struct encapsulates type-specific parsing and formatting logic.
-type TypedVariableParser[T any] struct {
+type typedVariableParser[T any] struct {
 	name        string
 	description string
 	parser      DualModeParser[T]
@@ -53,17 +53,17 @@ type TypedVariableParser[T any] struct {
 }
 
 // Name returns the variable name.
-func (vp *TypedVariableParser[T]) Name() string {
+func (vp *typedVariableParser[T]) Name() string {
 	return vp.name
 }
 
 // Description returns the variable description.
-func (vp *TypedVariableParser[T]) Description() string {
+func (vp *typedVariableParser[T]) Description() string {
 	return vp.description
 }
 
 // ParseAndSetWithMode parses a value and sets the variable using the specified mode.
-func (vp *TypedVariableParser[T]) ParseAndSetWithMode(value string, mode ParseMode) error {
+func (vp *typedVariableParser[T]) ParseAndSetWithMode(value string, mode parseMode) error {
 	if vp.readOnly || vp.setter == nil {
 		return &ErrVariableReadOnly{Name: vp.name}
 	}
@@ -81,7 +81,7 @@ func (vp *TypedVariableParser[T]) ParseAndSetWithMode(value string, mode ParseMo
 }
 
 // GetValue returns the formatted value of the variable.
-func (vp *TypedVariableParser[T]) GetValue() (string, error) {
+func (vp *typedVariableParser[T]) GetValue() (string, error) {
 	if vp.getter == nil {
 		return "", fmt.Errorf("%s: no getter configured", vp.name)
 	}
@@ -96,7 +96,7 @@ func (vp *TypedVariableParser[T]) GetValue() (string, error) {
 }
 
 // IsReadOnly returns true if the variable is read-only.
-func (vp *TypedVariableParser[T]) IsReadOnly() bool {
+func (vp *typedVariableParser[T]) IsReadOnly() bool {
 	return vp.readOnly
 }
 
@@ -108,8 +108,8 @@ func createTypedParser[T any](
 	getter func() T,
 	setter func(T) error,
 	formatter func(T) string,
-) *TypedVariableParser[T] {
-	return &TypedVariableParser[T]{
+) *typedVariableParser[T] {
+	return &typedVariableParser[T]{
 		name:        name,
 		description: description,
 		parser:      parser,
@@ -152,11 +152,11 @@ func NewIntegerVariableParser(
 	setter func(int64) error,
 	min, max *int64,
 ) VariableParser {
-	var opts *RangeParserOptions[int64]
+	var opts *rangeParserOptions[int64]
 	if min != nil || max != nil {
-		opts = &RangeParserOptions[int64]{Min: min, Max: max}
+		opts = &rangeParserOptions[int64]{Min: min, Max: max}
 	}
-	parser := CreateIntRangeParser(opts)
+	parser := createIntRangeParser(opts)
 	return createTypedParser(name, description, parser, getter, setter, FormatInt)
 }
 
@@ -169,24 +169,24 @@ func NewEnumVariableParser[T comparable](
 	setter func(T) error,
 	formatter func(T) string,
 ) VariableParser {
-	parser := CreateDualModeEnumParser(values)
+	parser := createDualModeEnumParser(values)
 	return createTypedParser(name, description, parser, getter, setter, formatter)
 }
 
-// NewDurationVariableParser creates a duration variable parser with optional range constraints.
-func NewDurationVariableParser(
+// newDurationVariableParser creates a duration variable parser with optional range constraints.
+func newDurationVariableParser(
 	name string,
 	description string,
 	getter func() time.Duration,
 	setter func(time.Duration) error,
 	min, max *time.Duration,
 ) VariableParser {
-	var opts *RangeParserOptions[time.Duration]
+	var opts *rangeParserOptions[time.Duration]
 	if min != nil || max != nil {
-		opts = &RangeParserOptions[time.Duration]{Min: min, Max: max}
+		opts = &rangeParserOptions[time.Duration]{Min: min, Max: max}
 	}
-	parser := CreateDurationRangeParser(opts)
-	return createTypedParser(name, description, parser, getter, setter, FormatDuration)
+	parser := createDurationRangeParser(opts)
+	return createTypedParser(name, description, parser, getter, setter, formatDuration)
 }
 
 // NewNullableDurationVariableParser creates a nullable duration variable parser.
@@ -199,13 +199,13 @@ func NewNullableDurationVariableParser(
 ) VariableParser {
 	var baseParser DualModeParser[time.Duration]
 	if min != nil || max != nil {
-		opts := &RangeParserOptions[time.Duration]{Min: min, Max: max}
-		baseParser = CreateDurationRangeParser(opts)
+		opts := &rangeParserOptions[time.Duration]{Min: min, Max: max}
+		baseParser = createDurationRangeParser(opts)
 	} else {
-		baseParser = DualModeDurationParser
+		baseParser = dualModeDurationParser
 	}
-	nullableParser := NewNullableParser(baseParser)
-	return NewTypedVariableParser(name, description, nullableParser, getter, setter, FormatNullable(FormatDuration))
+	nullableParser := newNullableParser(baseParser)
+	return NewTypedVariableParser(name, description, nullableParser, getter, setter, formatNullable(formatDuration))
 }
 
 // NewTypedVariableParser creates a variable parser with a custom dual-mode parser.
@@ -353,13 +353,13 @@ func NewNullableIntVariableParser(
 ) VariableParser {
 	var baseParser DualModeParser[int64]
 	if min != nil || max != nil {
-		opts := &RangeParserOptions[int64]{Min: min, Max: max}
-		baseParser = CreateIntRangeParser(opts)
+		opts := &rangeParserOptions[int64]{Min: min, Max: max}
+		baseParser = createIntRangeParser(opts)
 	} else {
 		baseParser = DualModeIntParser
 	}
-	nullableParser := NewNullableParser(baseParser)
-	return NewTypedVariableParser(name, description, nullableParser, getter, setter, FormatNullable(FormatInt))
+	nullableParser := newNullableParser(baseParser)
+	return NewTypedVariableParser(name, description, nullableParser, getter, setter, formatNullable(FormatInt))
 }
 
 // ============================================================================
@@ -372,15 +372,15 @@ type nullableParser[T any] struct {
 	innerParser DualModeParser[T]
 }
 
-// NewNullableParser creates a parser that accepts NULL values.
-func NewNullableParser[T any](innerParser DualModeParser[T]) *nullableParser[T] {
+// newNullableParser creates a parser that accepts NULL values.
+func newNullableParser[T any](innerParser DualModeParser[T]) *nullableParser[T] {
 	return &nullableParser[T]{
 		innerParser: innerParser,
 	}
 }
 
 // ParseAndValidateWithMode parses a value that can be NULL.
-func (p *nullableParser[T]) ParseAndValidateWithMode(s string, mode ParseMode) (*T, error) {
+func (p *nullableParser[T]) ParseAndValidateWithMode(s string, mode parseMode) (*T, error) {
 	// In GoogleSQL mode, check if it's a NULL literal
 	if mode == ParseModeGoogleSQL {
 		// Try to parse as an expression to check for NULL literal
@@ -410,7 +410,7 @@ func (p *nullableParser[T]) ParseAndValidateWithMode(s string, mode ParseMode) (
 }
 
 // ParseWithMode implements the DualModeParser interface.
-func (p *nullableParser[T]) ParseWithMode(s string, mode ParseMode) (*T, error) {
+func (p *nullableParser[T]) ParseWithMode(s string, mode parseMode) (*T, error) {
 	// Just parse without validation
 	return p.ParseAndValidateWithMode(s, mode)
 }
@@ -431,15 +431,15 @@ func (p *nullableParser[T]) ParseAndValidate(s string) (*T, error) {
 }
 
 // newNullableDuration creates a nullable duration parser.
-// This is a convenience function for NewNullableParser[time.Duration].
+// This is a convenience function for newNullableParser[time.Duration].
 func newNullableDuration(innerParser DualModeParser[time.Duration]) *nullableParser[time.Duration] {
-	return NewNullableParser(innerParser)
+	return newNullableParser(innerParser)
 }
 
 // newNullableInt creates a nullable integer parser.
-// This is a convenience function for NewNullableParser[int64].
+// This is a convenience function for newNullableParser[int64].
 func newNullableInt(innerParser DualModeParser[int64]) *nullableParser[int64] {
-	return NewNullableParser(innerParser)
+	return newNullableParser(innerParser)
 }
 
 // ============================================================================
@@ -461,13 +461,13 @@ func FormatString(v string) string {
 	return v
 }
 
-// FormatDuration formats a duration value.
-func FormatDuration(v time.Duration) string {
+// formatDuration formats a duration value.
+func formatDuration(v time.Duration) string {
 	return v.String()
 }
 
-// FormatNullable creates a formatter for nullable values.
-func FormatNullable[T any](innerFormatter func(T) string) func(*T) string {
+// formatNullable creates a formatter for nullable values.
+func formatNullable[T any](innerFormatter func(T) string) func(*T) string {
 	return func(v *T) string {
 		if v == nil {
 			return "NULL"
@@ -529,41 +529,41 @@ func SetSessionInitOnly[T any, S any](ptr *T, varName string, sessionPtr **S) fu
 // Builder Pattern Support
 // ============================================================================
 
-// RangeParserOptions holds options for creating range-validated parsers.
-type RangeParserOptions[T any] struct {
+// rangeParserOptions holds options for creating range-validated parsers.
+type rangeParserOptions[T any] struct {
 	Min *T
 	Max *T
 }
 
-// HasRange returns true if either Min or Max is set.
-func (opts *RangeParserOptions[T]) HasRange() bool {
+// hasRange returns true if either Min or Max is set.
+func (opts *rangeParserOptions[T]) hasRange() bool {
 	return opts != nil && (opts.Min != nil || opts.Max != nil)
 }
 
-// CreateIntRangeParser creates a dual-mode integer parser with range validation.
-func CreateIntRangeParser(opts *RangeParserOptions[int64]) DualModeParser[int64] {
+// createIntRangeParser creates a dual-mode integer parser with range validation.
+func createIntRangeParser(opts *rangeParserOptions[int64]) DualModeParser[int64] {
 	if opts == nil || (opts.Min == nil && opts.Max == nil) {
 		return DualModeIntParser
 	}
 
-	validator := CreateRangeValidator(opts.Min, opts.Max)
-	return CreateDualModeParserWithValidation(
+	validator := createRangeValidator(opts.Min, opts.Max)
+	return createDualModeParserWithValidation(
 		GoogleSQLIntParser,
-		NewIntParser(),
+		newIntParser(),
 		validator,
 	)
 }
 
-// CreateDurationRangeParser creates a dual-mode duration parser with range validation.
-func CreateDurationRangeParser(opts *RangeParserOptions[time.Duration]) DualModeParser[time.Duration] {
+// createDurationRangeParser creates a dual-mode duration parser with range validation.
+func createDurationRangeParser(opts *rangeParserOptions[time.Duration]) DualModeParser[time.Duration] {
 	if opts == nil || (opts.Min == nil && opts.Max == nil) {
-		return DualModeDurationParser
+		return dualModeDurationParser
 	}
 
-	validator := CreateDurationRangeValidator(opts.Min, opts.Max)
-	return CreateDualModeParserWithValidation(
-		GoogleSQLDurationParser,
-		NewDurationParser(),
+	validator := createDurationRangeValidator(opts.Min, opts.Max)
+	return createDualModeParserWithValidation(
+		googleSQLDurationParser,
+		newDurationParser(),
 		validator,
 	)
 }
@@ -577,7 +577,7 @@ func CreateStringEnumVariableParser[T ~string](
 	getter func() string,
 	setter func(string) error,
 ) VariableParser {
-	parser := CreateDualModeEnumParser(values)
+	parser := createDualModeEnumParser(values)
 	return createTypedParser(name, description, parser, getter, setter, FormatString)
 }
 

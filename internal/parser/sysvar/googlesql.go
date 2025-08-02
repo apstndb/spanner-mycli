@@ -58,8 +58,8 @@ func (p *memefishExprParser[T]) parseWithMemefish(value string) (T, error) {
 	return p.extractFunc(expr)
 }
 
-// GoogleSQLStringParser is an alias for GoogleSQLStringLiteralParser for backward compatibility.
-var GoogleSQLStringParser = GoogleSQLStringLiteralParser
+// googleSQLStringParser is an alias for googleSQLStringLiteralParser for backward compatibility.
+var googleSQLStringParser = googleSQLStringLiteralParser
 
 // GoogleSQLBoolParser parses GoogleSQL boolean literals.
 // TRUE/FALSE are parsed as BoolLiteral by memefish, not as Ident.
@@ -70,9 +70,13 @@ var GoogleSQLBoolParser = newMemefishLiteralParser(func(expr ast.Expr) (bool, er
 	return false, fmt.Errorf("expected boolean literal, got %T", expr)
 })
 
-// parseIntLiteral parses an IntLiteral AST node to int64.
-// This is a shared function used by both GoogleSQLIntParser and GoogleSQLFloatParser.
-func parseIntLiteral(intLit *ast.IntLiteral) (int64, error) {
+// GoogleSQLIntParser parses GoogleSQL integer literals.
+var GoogleSQLIntParser = newMemefishLiteralParser(func(expr ast.Expr) (int64, error) {
+	intLit, ok := expr.(*ast.IntLiteral)
+	if !ok {
+		return 0, fmt.Errorf("expected integer literal, got %T", expr)
+	}
+
 	// When base is not 0, strconv.ParseInt expects the number without prefix.
 	// memefish includes the 0x/0X prefix in the Value field for base 16.
 	value := intLit.Value
@@ -84,32 +88,6 @@ func parseIntLiteral(intLit *ast.IntLiteral) (int64, error) {
 	}
 
 	return strconv.ParseInt(value, intLit.Base, 64)
-}
-
-// GoogleSQLIntParser parses GoogleSQL integer literals.
-var GoogleSQLIntParser = newMemefishLiteralParser(func(expr ast.Expr) (int64, error) {
-	intLit, ok := expr.(*ast.IntLiteral)
-	if !ok {
-		return 0, fmt.Errorf("expected integer literal, got %T", expr)
-	}
-	return parseIntLiteral(intLit)
-})
-
-// GoogleSQLFloatParser parses GoogleSQL float literals.
-var GoogleSQLFloatParser = newMemefishLiteralParser(func(expr ast.Expr) (float64, error) {
-	switch lit := expr.(type) {
-	case *ast.FloatLiteral:
-		return strconv.ParseFloat(lit.Value, 64)
-	case *ast.IntLiteral:
-		// Allow integers as floats
-		intVal, err := parseIntLiteral(lit)
-		if err != nil {
-			return 0, err
-		}
-		return float64(intVal), nil
-	default:
-		return 0, fmt.Errorf("expected numeric literal, got %T", expr)
-	}
 })
 
 // stringLiteralParser parses GoogleSQL string literals efficiently using the lexer.
@@ -122,18 +100,18 @@ func newStringLiteralParser() *stringLiteralParser {
 	parser := &stringLiteralParser{}
 
 	parser.baseParser = baseParser[string]{
-		ParseFunc: ParseGoogleSQLStringLiteral,
+		ParseFunc: parseGoogleSQLStringLiteral,
 	}
 
 	return parser
 }
 
-// GoogleSQLStringLiteralParser is an optimized parser using the lexer directly.
-var GoogleSQLStringLiteralParser = newStringLiteralParser()
+// googleSQLStringLiteralParser is an optimized parser using the lexer directly.
+var googleSQLStringLiteralParser = newStringLiteralParser()
 
-// ParseGoogleSQLStringLiteral parses a GoogleSQL string literal using memefish.
+// parseGoogleSQLStringLiteral parses a GoogleSQL string literal using memefish.
 // It returns an error if the input is not a valid string literal.
-func ParseGoogleSQLStringLiteral(s string) (result string, err error) {
+func parseGoogleSQLStringLiteral(s string) (result string, err error) {
 	// Recover from panics that memefish might throw on invalid syntax
 	defer func() {
 		if r := recover(); r != nil {
@@ -163,12 +141,12 @@ func ParseGoogleSQLStringLiteral(s string) (result string, err error) {
 // Dual-Mode Parser Support
 // ============================================================================
 
-// ParseMode represents the parsing mode for system variables.
-type ParseMode int
+// parseMode represents the parsing mode for system variables.
+type parseMode int
 
 const (
 	// ParseModeGoogleSQL represents GoogleSQL parsing mode (for REPL SET statements).
-	ParseModeGoogleSQL ParseMode = iota
+	ParseModeGoogleSQL parseMode = iota
 	// ParseModeSimple represents simple parsing mode (for CLI flags and config files).
 	ParseModeSimple
 )
@@ -178,21 +156,21 @@ const (
 type DualModeParser[T any] interface {
 	parser[T]
 	// ParseWithMode parses a value using the specified mode.
-	ParseWithMode(value string, mode ParseMode) (T, error)
+	ParseWithMode(value string, mode parseMode) (T, error)
 	// ParseAndValidateWithMode parses and validates a value using the specified mode.
-	ParseAndValidateWithMode(value string, mode ParseMode) (T, error)
+	ParseAndValidateWithMode(value string, mode parseMode) (T, error)
 }
 
-// BaseDualModeParser provides a foundation for dual-mode parsers.
-type BaseDualModeParser[T any] struct {
+// baseDualModeParser provides a foundation for dual-mode parsers.
+type baseDualModeParser[T any] struct {
 	baseParser[T]
 	googleSQLParser parser[T]
 	simpleParser    parser[T]
 }
 
-// NewDualModeParser creates a parser that supports both parsing modes.
-func NewDualModeParser[T any](googleSQLParser, simpleParser parser[T]) *BaseDualModeParser[T] {
-	p := &BaseDualModeParser[T]{
+// newDualModeParser creates a parser that supports both parsing modes.
+func newDualModeParser[T any](googleSQLParser, simpleParser parser[T]) *baseDualModeParser[T] {
+	p := &baseDualModeParser[T]{
 		googleSQLParser: googleSQLParser,
 		simpleParser:    simpleParser,
 	}
@@ -209,7 +187,7 @@ func NewDualModeParser[T any](googleSQLParser, simpleParser parser[T]) *BaseDual
 }
 
 // ParseWithMode implements DualModeParser interface.
-func (p *BaseDualModeParser[T]) ParseWithMode(value string, mode ParseMode) (T, error) {
+func (p *baseDualModeParser[T]) ParseWithMode(value string, mode parseMode) (T, error) {
 	switch mode {
 	case ParseModeGoogleSQL:
 		// GoogleSQL mode may have specific error handling
@@ -229,7 +207,7 @@ func (p *BaseDualModeParser[T]) ParseWithMode(value string, mode ParseMode) (T, 
 }
 
 // ParseAndValidateWithMode implements DualModeParser interface.
-func (p *BaseDualModeParser[T]) ParseAndValidateWithMode(value string, mode ParseMode) (T, error) {
+func (p *baseDualModeParser[T]) ParseAndValidateWithMode(value string, mode parseMode) (T, error) {
 	// Parse using the specified mode
 	parsed, err := p.ParseWithMode(value, mode)
 	if err != nil {
@@ -247,7 +225,7 @@ func (p *BaseDualModeParser[T]) ParseAndValidateWithMode(value string, mode Pars
 }
 
 // validate runs validation for both parsers if they have validation.
-func (p *BaseDualModeParser[T]) validate(value T) error {
+func (p *baseDualModeParser[T]) validate(value T) error {
 	// Run GoogleSQL parser's validation if it exists
 	if err := p.googleSQLParser.Validate(value); err != nil {
 		return err
@@ -264,24 +242,24 @@ func (p *BaseDualModeParser[T]) validate(value T) error {
 // DualModeBoolParser parses boolean values in both modes.
 // In GoogleSQL mode, it accepts only TRUE/FALSE literals.
 // In simple mode, it uses strconv.ParseBool for flexibility.
-var DualModeBoolParser = NewDualModeParser(
+var DualModeBoolParser = newDualModeParser(
 	GoogleSQLBoolParser,
-	NewBoolParser(),
+	newBoolParser(),
 )
 
 // DualModeIntParser parses integer values in both modes.
 // Both modes support the same integer parsing logic.
-var DualModeIntParser = NewDualModeParser(
+var DualModeIntParser = newDualModeParser(
 	GoogleSQLIntParser,
-	NewIntParser(),
+	newIntParser(),
 )
 
 // DualModeStringParser parses string values in both modes.
 // In GoogleSQL mode, it properly handles SQL string literals.
 // In simple mode, it preserves the value as-is.
-var DualModeStringParser = NewDualModeParser(
-	GoogleSQLStringLiteralParser,
-	NewStringParser(),
+var DualModeStringParser = newDualModeParser(
+	googleSQLStringLiteralParser,
+	newStringParser(),
 )
 
 // newDelegatingGoogleSQLParser creates a GoogleSQL parser that extracts string literals
@@ -294,7 +272,7 @@ func newDelegatingGoogleSQLParser[T any](delegateParser parser[T]) parser[T] {
 	return &baseParser[T]{
 		ParseFunc: func(value string) (T, error) {
 			// First extract the string literal using GoogleSQL parser
-			str, err := GoogleSQLStringParser.Parse(value)
+			str, err := googleSQLStringParser.Parse(value)
 			if err != nil {
 				var zero T
 				return zero, err
@@ -305,27 +283,24 @@ func newDelegatingGoogleSQLParser[T any](delegateParser parser[T]) parser[T] {
 	}
 }
 
-// CreateDualModeEnumParser creates an enum parser that works in both modes.
+// createDualModeEnumParser creates an enum parser that works in both modes.
 // In GoogleSQL mode, it extracts string literals and delegates to the enum parser.
 // In simple mode, it uses the enum parser directly.
 // This ensures consistent enum value parsing between both modes.
-func CreateDualModeEnumParser[T comparable](values map[string]T) *BaseDualModeParser[T] {
-	enumParser := NewEnumParser(values)
-	return NewDualModeParser(
+func createDualModeEnumParser[T comparable](values map[string]T) *baseDualModeParser[T] {
+	enumParser := newEnumParser(values)
+	return newDualModeParser(
 		newDelegatingGoogleSQLParser(enumParser),
 		enumParser,
 	)
 }
 
-// GoogleSQLDurationParser parses duration from GoogleSQL string literals.
+// googleSQLDurationParser parses duration from GoogleSQL string literals.
 // It extracts the string literal and delegates to the standard duration parser.
-var GoogleSQLDurationParser = newDelegatingGoogleSQLParser(NewDurationParser())
+var googleSQLDurationParser = newDelegatingGoogleSQLParser(newDurationParser())
 
-// DualModeDurationParser provides dual-mode parsing for duration values.
-var DualModeDurationParser = NewDualModeParser[time.Duration](
-	GoogleSQLDurationParser,
-	NewDurationParser(),
+// dualModeDurationParser provides dual-mode parsing for duration values.
+var dualModeDurationParser = newDualModeParser[time.Duration](
+	googleSQLDurationParser,
+	newDurationParser(),
 )
-
-// NullableDualModeDurationParser provides nullable dual-mode parsing for duration values.
-var NullableDualModeDurationParser = NewNullableParser(DualModeDurationParser)

@@ -10,10 +10,10 @@ import (
 // Test-only parsers
 var (
 	// timeoutParser parses timeout values (0 or positive).
-	timeoutParser = NewDurationParser().WithMin(0)
+	timeoutParser = newDurationParser().WithMin(0)
 
 	// portParser parses port numbers (0-65535).
-	portParser = NewIntParser().WithRange(0, 65535)
+	portParser = newIntParser().WithRange(0, 65535)
 )
 
 type testSystemVariables struct {
@@ -430,8 +430,8 @@ func TestNewNullableIntParser(t *testing.T) {
 	max := int64(10)
 
 	// Create nullable int parser using the generic pattern
-	baseIntParser := CreateIntRangeParser(&RangeParserOptions[int64]{Min: &min, Max: &max})
-	nullableIntParser := NewNullableParser(baseIntParser)
+	baseIntParser := createIntRangeParser(&rangeParserOptions[int64]{Min: &min, Max: &max})
+	nullableIntParser := newNullableParser(baseIntParser)
 	nullIntParser := NewTypedVariableParser(
 		"MAX_RETRIES",
 		"Maximum retry attempts",
@@ -441,7 +441,7 @@ func TestNewNullableIntParser(t *testing.T) {
 			maxRetries = i
 			return nil
 		},
-		FormatNullable(FormatInt),
+		formatNullable(FormatInt),
 	)
 
 	// Test setting NULL
@@ -628,7 +628,7 @@ func TestNewDurationParser(t *testing.T) {
 	min := 1 * time.Second
 	max := 10 * time.Second
 
-	durationParser := NewDurationVariableParser(
+	durationParser := newDurationVariableParser(
 		"TIMEOUT",
 		"Request timeout",
 		func() time.Duration { return duration },
@@ -1060,7 +1060,7 @@ func TestTypedVariableParserReadOnly(t *testing.T) {
 
 func TestCreateDurationRangeParserNoRange(t *testing.T) {
 	// Test with nil options
-	p := CreateDurationRangeParser(nil)
+	p := createDurationRangeParser(nil)
 
 	// Should accept any valid duration
 	testCases := []string{"1ns", "1h", "999h", "-5s"}

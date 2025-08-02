@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// ProtoDescriptorFileParser is a specialized parser for CLI_PROTO_DESCRIPTOR_FILE.
+// protoDescriptorFileParser is a specialized parser for CLI_PROTO_DESCRIPTOR_FILE.
 // It supports both Set (replace all files) and Add (append a file) operations.
-type ProtoDescriptorFileParser struct {
+type protoDescriptorFileParser struct {
 	name        string
 	description string
 	getter      func() []string
@@ -25,8 +25,8 @@ func NewProtoDescriptorFileParser(
 	setter func([]string) error,
 	appender func(string) error,
 	validator func(string) error,
-) AppendableVariableParser {
-	return &ProtoDescriptorFileParser{
+) appendableVariableParser {
+	return &protoDescriptorFileParser{
 		name:        name,
 		description: description,
 		getter:      getter,
@@ -37,25 +37,25 @@ func NewProtoDescriptorFileParser(
 }
 
 // Name returns the variable name.
-func (p *ProtoDescriptorFileParser) Name() string {
+func (p *protoDescriptorFileParser) Name() string {
 	return p.name
 }
 
 // Description returns the variable description.
-func (p *ProtoDescriptorFileParser) Description() string {
+func (p *protoDescriptorFileParser) Description() string {
 	return p.description
 }
 
 // ParseAndSetWithMode implements VariableParser.
 // For GoogleSQL mode, expects a string literal containing comma-separated paths.
 // For Simple mode, expects comma-separated paths without quotes.
-func (p *ProtoDescriptorFileParser) ParseAndSetWithMode(value string, mode ParseMode) error {
+func (p *protoDescriptorFileParser) ParseAndSetWithMode(value string, mode parseMode) error {
 	var paths []string
 
 	switch mode {
 	case ParseModeGoogleSQL:
 		// Parse as GoogleSQL string literal
-		parsed, err := GoogleSQLStringParser.Parse(value)
+		parsed, err := googleSQLStringParser.Parse(value)
 		if err != nil {
 			return fmt.Errorf("invalid string literal: %w", err)
 		}
@@ -94,27 +94,27 @@ func (p *ProtoDescriptorFileParser) ParseAndSetWithMode(value string, mode Parse
 }
 
 // GetValue implements VariableParser.
-func (p *ProtoDescriptorFileParser) GetValue() (string, error) {
+func (p *protoDescriptorFileParser) GetValue() (string, error) {
 	files := p.getter()
 	return strings.Join(files, ","), nil
 }
 
 // IsReadOnly implements VariableParser.
-func (p *ProtoDescriptorFileParser) IsReadOnly() bool {
+func (p *protoDescriptorFileParser) IsReadOnly() bool {
 	return p.setter == nil && p.appender == nil
 }
 
 // AppendWithMode implements AppendableVariableParser.
 // For GoogleSQL mode, expects a string literal containing a single path.
 // For Simple mode, expects a single path without quotes.
-func (p *ProtoDescriptorFileParser) AppendWithMode(value string, mode ParseMode) error {
+func (p *protoDescriptorFileParser) AppendWithMode(value string, mode parseMode) error {
 	var path string
 	var err error
 
 	switch mode {
 	case ParseModeGoogleSQL:
 		// Parse as GoogleSQL string literal
-		path, err = GoogleSQLStringParser.Parse(value)
+		path, err = googleSQLStringParser.Parse(value)
 		if err != nil {
 			return fmt.Errorf("invalid string literal: %w", err)
 		}
