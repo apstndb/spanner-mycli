@@ -1,6 +1,9 @@
 build:
 	go build
 
+generate:
+	go generate ./...
+
 build-tools:
 	# Install development tools using Go 1.24 tool management
 	# gh-helper: Generic GitHub operations (reviews, threads) - managed via go.mod tool directive

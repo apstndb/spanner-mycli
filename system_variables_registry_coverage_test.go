@@ -32,18 +32,25 @@ func TestMustRegisterPanic(t *testing.T) {
 	mustRegister(registry, parser)
 }
 
-// TestRegisterHelpersCoverage tests edge cases in register helpers
-func TestRegisterHelpersCoverage(t *testing.T) {
-	registry := sysvar.NewRegistry()
+// TestGeneratedRegistration tests that generated registration works
+func TestGeneratedRegistration(t *testing.T) {
+	sv := newSystemVariablesWithDefaultsForTest()
+	registry := createSystemVariableRegistry(sv)
 
-	// Test registerSimpleVariables with empty slice
-	registerSimpleVariables(registry, []simpleVar[bool]{}, sysvar.DualModeBoolParser, sysvar.FormatBool)
+	// Check that some key variables are registered
+	vars := []string{
+		"AUTO_PARTITION_MODE",
+		"RPC_PRIORITY",
+		"READONLY",
+		"CLI_FORMAT",
+		"CLI_VERSION",
+	}
 
-	// Test registerReadOnlyVariables with empty slice
-	registerReadOnlyVariables(registry, []readOnlyVar[string]{}, sysvar.DualModeStringParser, sysvar.FormatString)
-
-	// These should not panic
-	t.Log("Empty slice registration completed without panic")
+	for _, name := range vars {
+		if _, err := registry.Get(name); err != nil {
+			t.Errorf("Expected variable %s to be registered, but got error: %v", name, err)
+		}
+	}
 }
 
 // TestSystemVariablesCoverage tests various edge cases
