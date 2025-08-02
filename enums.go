@@ -2,52 +2,52 @@ package main
 
 // DisplayMode represents different output display formats
 //
-//go:generate enumer -type=DisplayMode -linecomment
+//go:generate enumer -type=DisplayMode -trimprefix=DisplayMode -transform=snake_upper
 type DisplayMode int
 
 const (
-	DisplayModeTable              DisplayMode = iota // TABLE
-	DisplayModeTableComment                          // TABLE_COMMENT
-	DisplayModeTableDetailComment                    // TABLE_DETAIL_COMMENT
-	DisplayModeVertical                              // VERTICAL
-	DisplayModeTab                                   // TAB
-	DisplayModeHTML                                  // HTML
-	DisplayModeXML                                   // XML
-	DisplayModeCSV                                   // CSV
+	DisplayModeTable DisplayMode = iota
+	DisplayModeTableComment
+	DisplayModeTableDetailComment
+	DisplayModeVertical
+	DisplayModeTab
+	DisplayModeHTML
+	DisplayModeXML
+	DisplayModeCSV
 )
 
 // AutocommitDMLMode represents the DML autocommit behavior
 //
-//go:generate enumer -type=AutocommitDMLMode -linecomment
+//go:generate enumer -type=AutocommitDMLMode -trimprefix=AutocommitDMLMode -transform=snake_upper
 type AutocommitDMLMode int
 
 const (
-	AutocommitDMLModeTransactional        AutocommitDMLMode = iota // TRANSACTIONAL
-	AutocommitDMLModePartitionedNonAtomic                          // PARTITIONED_NON_ATOMIC
+	AutocommitDMLModeTransactional AutocommitDMLMode = iota
+	AutocommitDMLModePartitionedNonAtomic
 )
 
 // parseMode represents statement parsing behavior
 //
-//go:generate enumer -type=parseMode -linecomment
+//go:generate enumer -type=parseMode -trimprefix=parseMode -transform=snake_upper
 type parseMode int
 
 const (
-	parseModeUnspecified parseMode = iota // UNSPECIFIED
-	parseModeFallback                     // FALLBACK
-	parseModeNoMemefish                   // NO_MEMEFISH
-	parseMemefishOnly                     // MEMEFISH_ONLY
+	parseModeUnspecified parseMode = iota
+	parseModeFallback
+	parseModeNoMemefish
+	parseModeMemefishOnly
 )
 
 // explainFormat represents EXPLAIN output format
 //
-//go:generate enumer -type=explainFormat -linecomment
+//go:generate enumer -type=explainFormat -trimprefix=explainFormat -transform=snake_upper
 type explainFormat int
 
 const (
-	explainFormatUnspecified explainFormat = iota //
-	explainFormatCurrent                          // CURRENT
-	explainFormatTraditional                      // TRADITIONAL
-	explainFormatCompact                          // COMPACT
+	explainFormatUnspecified explainFormat = iota
+	explainFormatCurrent
+	explainFormatTraditional
+	explainFormatCompact
 )
 
 // Wrapper functions to maintain compatibility

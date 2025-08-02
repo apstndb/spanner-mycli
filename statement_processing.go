@@ -298,7 +298,7 @@ func getParserForMode(mode parseMode) (statementParseFunc, error) {
 			BuildCLIStatement,
 			BuildNativeStatementLexical,
 		), nil
-	case parseMemefishOnly:
+	case parseModeMemefishOnly:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementMemefish,

@@ -589,7 +589,7 @@ func TestBuildStatement(t *testing.T) {
 			desc:           "GRAPH statement",
 			input:          "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:           &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
-			skipParseModes: []parseMode{parseMemefishOnly},
+			skipParseModes: []parseMode{parseModeMemefishOnly},
 		},
 		{
 			desc:  "EXPLAIN GRAPH statement",
@@ -965,7 +965,7 @@ TABLE Singers (42)
 			want:  &HelpVariablesStatement{},
 		},
 	} {
-		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseMemefishOnly, parseModeUnspecified}
+		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseModeMemefishOnly, parseModeUnspecified}
 		t.Run(test.desc, func(t *testing.T) {
 			for _, mode := range modes {
 				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
