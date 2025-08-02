@@ -106,6 +106,8 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}
+	// Initialize the registry
+	sysVars.ensureRegistry()
 	session, err = NewSession(ctx, sysVars, options...)
 	if err != nil {
 		return nil, err
@@ -182,6 +184,8 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 			Database:         "",                      // No database for admin-only mode
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
+		// Initialize the registry
+		sysVars.ensureRegistry()
 
 		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
 		if err != nil {

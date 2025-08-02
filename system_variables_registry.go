@@ -13,7 +13,7 @@ import (
 	"spheric.cloud/xiter"
 )
 
-// ensureRegistry initializes the registry if needed
+// ensureRegistry initializes the registry if needed.
 func (sv *systemVariables) ensureRegistry() {
 	if sv.Registry == nil {
 		sv.Registry = NewVarRegistry(sv)
@@ -120,6 +120,10 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
 
 	// Special case for COMMIT_RESPONSE
+	// This variable returns multiple key-value pairs (COMMIT_TIMESTAMP and MUTATION_COUNT)
+	// which doesn't fit the single-string return type of the Variable interface.
+	// This behavior is maintained for java-spanner compatibility where SHOW VARIABLE
+	// COMMIT_RESPONSE returns both values as a result set.
 	if upperName == "COMMIT_RESPONSE" {
 		if sv.CommitResponse == nil {
 			return nil, errIgnored
