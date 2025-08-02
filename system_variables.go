@@ -313,6 +313,11 @@ var sessionInitOnlyVariables = []string{
 // SetFromGoogleSQL sets a system variable using GoogleSQL parsing mode.
 // This is used for SET statements in REPL and SQL scripts where values
 // are parsed as GoogleSQL expressions (e.g., TRUE, 'string value').
+//
+// This method acts as a facade during the migration from systemVariableDefMap
+// to the new sysvar.Registry. It first attempts to use the new registry,
+// then falls back to the legacy system for unmigrated variables.
+// TODO: Remove the fallback logic once all variables are migrated to sysvar.Registry
 func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 	upperName := strings.ToUpper(name)
 
@@ -357,6 +362,10 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 // SetFromSimple sets a system variable using Simple parsing mode.
 // This is used for command-line flags and config files where values
 // don't follow GoogleSQL syntax rules.
+//
+// Like SetFromGoogleSQL, this method acts as a facade during migration,
+// checking the new registry first before falling back to systemVariableDefMap.
+// TODO: Remove the fallback logic once all variables are migrated to sysvar.Registry
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	upperName := strings.ToUpper(name)
 

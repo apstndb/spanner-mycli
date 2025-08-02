@@ -27,7 +27,9 @@ type readOnlyVar[T any] struct {
 	getter func() T
 }
 
-// Generic helper to register simple variables with field pointers
+// registerSimpleVariables registers read-write variables with simple field pointers.
+// This is intentionally separate from registerReadOnlyVariables to maintain a clear
+// distinction between mutable and immutable system variables at the type level.
 func registerSimpleVariables[T any](
 	registry *sysvar.Registry,
 	vars []simpleVar[T],
@@ -52,7 +54,9 @@ func registerSimpleVariables[T any](
 	}
 }
 
-// Generic helper to register read-only variables
+// registerReadOnlyVariables registers read-only variables that only have getters.
+// Keeping this separate from registerSimpleVariables ensures compile-time safety
+// and makes the read-only nature of these variables explicit in the code structure.
 func registerReadOnlyVariables[T any](
 	registry *sysvar.Registry,
 	vars []readOnlyVar[T],

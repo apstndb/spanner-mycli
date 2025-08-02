@@ -221,8 +221,9 @@ func NewTypedVariableParser[T any](
 	return createTypedParser(name, description, parser, getter, setter, formatter)
 }
 
-// NewSimpleEnumParser creates an enum parser that works directly with string values.
-// This is useful for simple string enums where the parsed value is the same as the formatted value.
+// NewSimpleEnumParser creates an enum parser for custom enum types (e.g., type MyEnum string).
+// Use this when you have a typed enum and need custom formatting behavior.
+// Example: type ExplainFormat string with values like explainFormatCurrent, explainFormatCompact
 func NewSimpleEnumParser[T ~string](
 	name string,
 	description string,
@@ -568,8 +569,10 @@ func createDurationRangeParser(opts *rangeParserOptions[time.Duration]) DualMode
 	)
 }
 
-// CreateStringEnumVariableParser creates a variable parser for enums that use string values directly.
-// This is simpler than NewEnumVariableParser when the enum values are just strings.
+// CreateStringEnumVariableParser creates a parser for simple string-to-string mappings.
+// Use this for configuration values where the key and value are identical strings.
+// Example: log levels like "DEBUG" -> "DEBUG", "INFO" -> "INFO"
+// This differs from NewSimpleEnumParser which is for typed enums (type MyEnum string).
 func CreateStringEnumVariableParser[T ~string](
 	name string,
 	description string,
