@@ -11,28 +11,28 @@ This document provides detailed patterns and best practices for implementing sys
 1. **Naming Convention**: CLI-specific variables **MUST** use `CLI_` prefix to distinguish from java-spanner JDBC properties
 
 2. **Access Control Design**:
-   - **Presentation layer variables** (display, formatting): Use `boolAccessor()` or `stringAccessor()` for full read/write access
-   - **Session behavior variables** (authentication, connection settings): Use explicit `accessor{Getter: ...}` for read-only access to prevent runtime session state changes
+   - **Presentation layer variables** (display, formatting): Use standard VarHandler with read/write access
+   - **Session behavior variables** (authentication, connection settings): Use read-only VarHandler to prevent runtime session state changes
 
 3. **Implementation Template**:
    ```go
-   // Read/write variable
-   "CLI_VARIABLE_NAME": {
-       Description: "Clear description of purpose and default value",
-       Accessor: boolAccessor(func(variables *systemVariables) *bool {
-           return &variables.FieldName
-       }),
-   },
+   // In system_variables_registry.go
    
-   // Read-only variable (session behavior)
-   "CLI_SESSION_VARIABLE": {
-       Description: "Clear description with read-only nature explained",
-       Accessor: accessor{
-           Getter: stringGetter(func(variables *systemVariables) *string {
-               return &variables.FieldName
-           }),
-       },
-   },
+   // Read/write variable (boolean)
+   r.Register("CLI_VARIABLE_NAME", 
+       BoolVar(&sv.FieldName).
+           WithDescription("Clear description of purpose and default value"))
+   
+   // Read/write variable (string)
+   r.Register("CLI_STRING_VARIABLE",
+       StringVar(&sv.FieldName).
+           WithDescription("Description of the variable"))
+   
+   // Read-only variable
+   r.Register("CLI_READ_ONLY_VARIABLE",
+       NewReadOnlyVar(
+           func() (string, error) { return sv.FieldName, nil },
+           "Description explaining read-only nature"))
    ```
 
 4. **Testing Requirements**: Add comprehensive test cases to `system_variables_test.go` covering both successful operations and proper error handling for unimplemented setters
@@ -41,37 +41,38 @@ This document provides detailed patterns and best practices for implementing sys
 
 ### Architecture Guidelines
 
-- **Pattern**: Use `boolAccessor()` and `stringAccessor()` for read/write variables, explicit `accessor{Getter: ...}` for read-only variables
+- **Pattern**: Use generic VarHandler types (BoolVar, StringVar, IntVar, etc.) for type-safe variable handling
 - **Architecture**: Session behavior variables should be read-only to prevent runtime session state changes that could cause inconsistencies
-- **Error Handling**: Proper use of `errSetterUnimplemented` and `errGetterUnimplemented` for consistent error reporting
-- **Testing Strategy**: System variables test pattern in `system_variables_test.go` covers both SET/GET operations and proper error handling for unimplemented setters
-- **Code Organization**: System variable definitions follow clear patterns that make adding new variables straightforward
+- **Error Handling**: The registry automatically handles type validation and returns appropriate errors
+- **Testing Strategy**: System variables test pattern in `system_variables_test.go` covers both SET/GET operations and proper error handling
+- **Code Organization**: All variable registrations are centralized in `system_variables_registry.go`
 
 ### Session-Init-Only Variables
 
-Some variables can only be set before session creation because they control client initialization behavior that cannot be changed after the session is established. These are defined in the `sessionInitOnlyVariables` map in `system_variables.go`.
+Some variables can only be set before session creation because they control client initialization behavior that cannot be changed after the session is established.
 
 **Implementation Pattern**:
-1. Add the variable name to `sessionInitOnlyVariables` slice
-2. Use standard accessor (e.g., `boolAccessor`) - the validation is automatic
-3. Document in the Description that it must be set before session creation
+1. Use a custom validator that checks if session exists
+2. Document in the Description that it must be set before session creation
 
 **Example**:
 ```go
-// In sessionInitOnlyVariables slice
-var sessionInitOnlyVariables = []string{
-    "CLI_ENABLE_ADC_PLUS",
-    // Add more variables here as needed
-}
-
-// In the struct with sysvar tags
-EnableADCPlus bool `sysvar:"name=CLI_ENABLE_ADC_PLUS,desc='A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.',setter=setEnableADCPlus"`
+// In system_variables_registry.go
+r.Register("CLI_ENABLE_ADC_PLUS",
+    BoolVar(&sv.EnableADCPlus).
+        WithValidator(func(v bool) error {
+            if sv.CurrentSession != nil {
+                return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
+            }
+            return nil
+        }).
+        WithDescription("A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."))
 ```
 
 **Behavior**:
 - Can be set via `--set` flag before session creation
-- After session creation, any attempt to set the value will return an error
-- The validation in `systemVariables.Set()` handles case-insensitive variable names correctly
+- After session creation, any attempt to set the value will return an error with a clear message
+- The registry handles case-insensitive variable names automatically
 
 ### Development Workflow
 
@@ -129,7 +130,7 @@ if opts.Timeout != "" {
     }
     
     // Then set the system variable
-    if err := sysVars.Set("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
+    if err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
         return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
     }
 }
@@ -234,13 +235,10 @@ if session.systemVariables.AsyncDDL {
 
 **Implementation Template**:
 ```go
-// System variable definition
-"CLI_ASYNC_DDL": {
-    Description: "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
-    Accessor: boolAccessor(func(variables *systemVariables) *bool {
-        return &variables.AsyncDDL
-    }),
-},
+// In system_variables_registry.go
+r.Register("CLI_ASYNC_DDL",
+    BoolVar(&sv.AsyncDDL).
+        WithDescription("A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))
 
 // CLI flag mapping in createSystemVariablesFromOptions
 sysVars.AsyncDDL = opts.Async
@@ -260,7 +258,7 @@ sysVars.AsyncDDL = opts.Async
 ```go
 // Validation before system variable assignment
 if opts.ComplexFlag != "" {
-    if err := sysVars.Set("CLI_COMPLEX_FLAG", opts.ComplexFlag); err != nil {
+    if err := sysVars.SetFromSimple("CLI_COMPLEX_FLAG", opts.ComplexFlag); err != nil {
         return systemVariables{}, fmt.Errorf("invalid value of --complex-flag: %v: %w", opts.ComplexFlag, err)
     }
 }
