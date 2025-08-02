@@ -177,5 +177,4 @@ tool (
 	github.com/apstndb/gh-dev-tools/gh-helper
 	github.com/apstndb/github-schema-go/cmd/github-schema
 	github.com/dmarkham/enumer
-	golang.org/x/tools/cmd/stringer
 )
