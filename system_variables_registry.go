@@ -284,7 +284,7 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"Go template for analyzing column data.",
 		sysvar.GetValue(&sv.AnalyzeColumns),
 		func(v string) error {
-			def, err := customListToTableRenderDefs(unquoteString(v))
+			def, err := customListToTableRenderDefs(v)
 			if err != nil {
 				return err
 			}
@@ -300,13 +300,12 @@ func registerSpannerMyCLIVariables(registry *sysvar.Registry, sv *systemVariable
 		"<name>:<template>, ...",
 		sysvar.GetValue(&sv.InlineStats),
 		func(v string) error {
-			unquoted := unquoteString(v)
-			defs, err := parseInlineStatsDefs(unquoted)
+			defs, err := parseInlineStatsDefs(v)
 			if err != nil {
 				return err
 			}
 
-			sv.InlineStats = unquoted
+			sv.InlineStats = v
 			sv.ParsedInlineStats = defs
 			return nil
 		},
