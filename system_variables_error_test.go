@@ -183,7 +183,7 @@ func TestSystemVariables_Add_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sv := &systemVariables{}
-			err := sv.Add(tt.varName, tt.value)
+			err := sv.AddFromGoogleSQL(tt.varName, tt.value)
 			if err == nil {
 				t.Fatal("expected error but got nil")
 			}

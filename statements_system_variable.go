@@ -96,7 +96,7 @@ type SetAddStatement struct {
 func (s *SetAddStatement) isDetachedCompatible() {}
 
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
+	if err := session.systemVariables.AddFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil

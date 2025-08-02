@@ -121,10 +121,10 @@ func TestAddFromGoogleSQL(t *testing.T) {
 	})
 }
 
-// TestAdd tests the Add method (which delegates to AddFromGoogleSQL)
+// TestAdd tests the AddFromGoogleSQL method
 func TestAdd(t *testing.T) {
 	sv := newSystemVariablesWithDefaults()
-	err := sv.Add("UNKNOWN_VAR", "'value'")
+	err := sv.AddFromGoogleSQL("UNKNOWN_VAR", "'value'")
 	if err == nil {
 		t.Error("Expected error for unknown variable")
 	}

@@ -524,14 +524,12 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	// Set default CLI_FORMAT for interactive/batch mode if not already set
 	if sysVars.CLIFormat == 0 {
 		// CLI_FORMAT was not set by flags or --set, apply defaults based on mode
+		defaultFormat := "TAB"
 		if interactive {
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "TABLE"); err != nil {
-				return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
-			}
-		} else {
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "TAB"); err != nil {
-				return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
-			}
+			defaultFormat = "TABLE"
+		}
+		if err := sysVars.SetFromSimple("CLI_FORMAT", defaultFormat); err != nil {
+			return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
 		}
 	}
 
@@ -804,7 +802,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
-		if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
+		if err := sysVars.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
 			return systemVariables{}, fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
 		}
 	}
@@ -845,26 +843,26 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		// Individual format flags take precedence over --format for backward compatibility
+		var formatValue string
 		switch {
 		case opts.HTML:
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "HTML"); err != nil {
-				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
+			formatValue = "HTML"
 		case opts.XML:
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "XML"); err != nil {
-				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
+			formatValue = "XML"
 		case opts.CSV:
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "CSV"); err != nil {
-				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
+			formatValue = "CSV"
 		case opts.Table:
-			if err := sysVars.SetFromSimple("CLI_FORMAT", "TABLE"); err != nil {
-				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
+			formatValue = "TABLE"
 		case opts.Format != "":
-			if err := sysVars.SetFromSimple("CLI_FORMAT", opts.Format); err != nil {
-				return systemVariables{}, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
+			formatValue = opts.Format
+		}
+
+		if formatValue != "" {
+			if err := sysVars.SetFromSimple("CLI_FORMAT", formatValue); err != nil {
+				if opts.Format != "" {
+					return systemVariables{}, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
+				}
+				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
 			}
 		}
 		// Note: Interactive mode defaults are handled in run() since we don't know

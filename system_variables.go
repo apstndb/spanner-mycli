@@ -54,7 +54,7 @@ type LastQueryCache struct {
 // modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
-	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE`
+	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
 	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
 	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
 	ReadTimestamp               time.Time                    // READ_TIMESTAMP
@@ -284,11 +284,6 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	sv.ensureRegistry()
 	return sv.setFromSimple(name, value)
-}
-
-func (sv *systemVariables) Add(name string, value string) error {
-	// Add method is called from REPL/SQL scripts, so it uses GoogleSQL mode
-	return sv.AddFromGoogleSQL(name, value)
 }
 
 func (sv *systemVariables) AddFromGoogleSQL(name string, value string) error {

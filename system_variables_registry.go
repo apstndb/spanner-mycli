@@ -32,10 +32,11 @@ func (sv *systemVariables) setFromGoogleSQL(name string, value string) error {
 	err := sv.Registry.Set(upperName, value, true)
 	// Convert to legacy error types for compatibility
 	if err != nil {
-		if strings.Contains(err.Error(), "read-only") {
+		if errors.Is(err, errSetterReadOnly) {
 			return errSetterReadOnly
 		}
-		if strings.Contains(err.Error(), "unknown variable") {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
 	}
@@ -60,10 +61,11 @@ func (sv *systemVariables) setFromSimple(name string, value string) error {
 	err := sv.Registry.Set(upperName, value, false)
 	// Convert to legacy error types for compatibility
 	if err != nil {
-		if strings.Contains(err.Error(), "read-only") {
+		if errors.Is(err, errSetterReadOnly) {
 			return errSetterReadOnly
 		}
-		if strings.Contains(err.Error(), "unknown variable") {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
 		if errors.Is(err, errSetterUnimplemented{}) {
@@ -82,10 +84,12 @@ func (sv *systemVariables) addFromGoogleSQL(name string, value string) error {
 	err := sv.Registry.Add(name, value)
 	// Convert to legacy error types for compatibility
 	if err != nil {
-		if strings.Contains(err.Error(), "ADD not supported") {
+		var addErr *ErrAddNotSupported
+		if errors.As(err, &addErr) {
 			return fmt.Errorf("%s does not support ADD operation", name)
 		}
-		if strings.Contains(err.Error(), "unknown variable") {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
 	}
@@ -98,10 +102,12 @@ func (sv *systemVariables) addFromSimple(name string, value string) error {
 	err := sv.Registry.Add(name, value)
 	// Convert to legacy error types for compatibility
 	if err != nil {
-		if strings.Contains(err.Error(), "ADD not supported") {
+		var addErr *ErrAddNotSupported
+		if errors.As(err, &addErr) {
 			return fmt.Errorf("%s does not support ADD operation", name)
 		}
-		if strings.Contains(err.Error(), "unknown variable") {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
 	}
@@ -145,7 +151,8 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 		if errors.Is(err, errGetterUnimplemented{}) {
 			return nil, errGetterUnimplemented{name}
 		}
-		if strings.Contains(err.Error(), "unknown variable") {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
 			return nil, fmt.Errorf("unknown variable name: %v", name)
 		}
 		return nil, err

@@ -315,7 +315,7 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			sysVars := test.setup()
-			err := sysVars.Add(test.varName, test.value)
+			err := sysVars.AddFromGoogleSQL(test.varName, test.value)
 
 			if test.wantError {
 				if err == nil {

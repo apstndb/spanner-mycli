@@ -44,7 +44,7 @@ func (r *VarRegistry) RegisterWithAdd(name string, v Variable, addFunc func(stri
 func (r *VarRegistry) Get(name string) (string, error) {
 	v, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return "", fmt.Errorf("unknown variable: %s", name)
+		return "", &ErrUnknownVariable{Name: name}
 	}
 	value, err := v.Get()
 	if err != nil {
@@ -57,7 +57,7 @@ func (r *VarRegistry) Get(name string) (string, error) {
 func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 	v, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return fmt.Errorf("unknown variable: %s", name)
+		return &ErrUnknownVariable{Name: name}
 	}
 
 	// Parse GoogleSQL value if needed
@@ -74,13 +74,13 @@ func (r *VarRegistry) Add(name, value string) error {
 
 	// First check if the variable exists
 	if _, ok := r.vars[upperName]; !ok {
-		return fmt.Errorf("unknown variable: %s", name)
+		return &ErrUnknownVariable{Name: name}
 	}
 
 	// Then check if it supports ADD
 	addFunc, ok := r.addHandlers[upperName]
 	if !ok {
-		return fmt.Errorf("ADD not supported for %s", name)
+		return &ErrAddNotSupported{Name: name}
 	}
 	return addFunc(value)
 }
@@ -89,7 +89,7 @@ func (r *VarRegistry) Add(name, value string) error {
 func (r *VarRegistry) GetDescription(name string) (string, error) {
 	v, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return "", fmt.Errorf("unknown variable: %s", name)
+		return "", &ErrUnknownVariable{Name: name}
 	}
 	return v.Description(), nil
 }
@@ -98,7 +98,7 @@ func (r *VarRegistry) GetDescription(name string) (string, error) {
 func (r *VarRegistry) IsReadOnly(name string) (bool, error) {
 	v, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return false, fmt.Errorf("unknown variable: %s", name)
+		return false, &ErrUnknownVariable{Name: name}
 	}
 	return v.IsReadOnly(), nil
 }
