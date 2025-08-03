@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	"github.com/k0kubun/pp/v3"
@@ -148,7 +149,7 @@ ORDER BY INTERVAL_END DESC`,
 	}
 
 	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats,
-		explainFormatUnspecified, 0)
+		enums.ExplainFormatUnspecified, 0)
 }
 
 func formatStats(stats *queryProfilesRow) string {

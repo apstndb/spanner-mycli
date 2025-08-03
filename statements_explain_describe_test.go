@@ -8,6 +8,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	"github.com/apstndb/spannerplan/stats"
@@ -387,7 +388,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), nil, explainFormatTraditional, 0)
+			got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}

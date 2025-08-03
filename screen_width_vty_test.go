@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/creack/pty"
 )
 
@@ -159,7 +160,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), tty, os.Stderr),
 				AutoWrap:      tt.autowrap,
 				FixedWidth:    tt.fixedWidth,
-				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
 			}
 			// Set the TTY stream in StreamManager
 			sysVars.StreamManager.SetTtyStream(tty)

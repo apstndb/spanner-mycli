@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 func TestPrintTableDataHTML(t *testing.T) {
@@ -74,7 +75,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			sysVars := &systemVariables{
-				CLIFormat:       DisplayModeHTML,
+				CLIFormat:       enums.DisplayModeHTML,
 				SkipColumnNames: tt.skipColNames,
 			}
 
@@ -193,7 +194,7 @@ func TestPrintTableDataXML(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			sysVars := &systemVariables{
-				CLIFormat:       DisplayModeXML,
+				CLIFormat:       enums.DisplayModeXML,
 				SkipColumnNames: tt.skipColNames,
 			}
 
@@ -226,25 +227,25 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 	tests := []struct {
 		name      string
 		setValue  string
-		wantMode  DisplayMode
+		wantMode  enums.DisplayMode
 		wantError bool
 	}{
-		{"set TABLE", "TABLE", DisplayModeTable, false},
-		{"set VERTICAL", "VERTICAL", DisplayModeVertical, false},
-		{"set TAB", "TAB", DisplayModeTab, false},
-		{"set HTML", "HTML", DisplayModeHTML, false},
-		{"set XML", "XML", DisplayModeXML, false},
-		{"set CSV", "CSV", DisplayModeCSV, false},
-		{"set html lowercase", "html", DisplayModeHTML, false},
-		{"set xml lowercase", "xml", DisplayModeXML, false},
-		{"set csv lowercase", "csv", DisplayModeCSV, false},
-		{"set invalid", "INVALID", DisplayModeTable, true},
+		{"set TABLE", "TABLE", enums.DisplayModeTable, false},
+		{"set VERTICAL", "VERTICAL", enums.DisplayModeVertical, false},
+		{"set TAB", "TAB", enums.DisplayModeTab, false},
+		{"set HTML", "HTML", enums.DisplayModeHTML, false},
+		{"set XML", "XML", enums.DisplayModeXML, false},
+		{"set CSV", "CSV", enums.DisplayModeCSV, false},
+		{"set html lowercase", "html", enums.DisplayModeHTML, false},
+		{"set xml lowercase", "xml", enums.DisplayModeXML, false},
+		{"set csv lowercase", "csv", enums.DisplayModeCSV, false},
+		{"set invalid", "INVALID", enums.DisplayModeTable, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaultsForTest()
-			sysVars.CLIFormat = DisplayModeTable
+			sysVars.CLIFormat = enums.DisplayModeTable
 
 			err := sysVars.SetFromSimple("CLI_FORMAT", tt.setValue)
 
@@ -261,18 +262,18 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 
 func TestCLIFormatSystemVariableGetter(t *testing.T) {
 	tests := []struct {
-		mode    DisplayMode
+		mode    enums.DisplayMode
 		wantStr string
 	}{
-		{DisplayModeTable, "TABLE"},
-		{DisplayModeTableComment, "TABLE_COMMENT"},
-		{DisplayModeTableDetailComment, "TABLE_DETAIL_COMMENT"},
-		{DisplayModeVertical, "VERTICAL"},
-		{DisplayModeTab, "TAB"},
-		{DisplayModeHTML, "HTML"},
-		{DisplayModeXML, "XML"},
-		{DisplayModeCSV, "CSV"},
-		{DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns Go's default format
+		{enums.DisplayModeTable, "TABLE"},
+		{enums.DisplayModeTableComment, "TABLE_COMMENT"},
+		{enums.DisplayModeTableDetailComment, "TABLE_DETAIL_COMMENT"},
+		{enums.DisplayModeVertical, "VERTICAL"},
+		{enums.DisplayModeTab, "TAB"},
+		{enums.DisplayModeHTML, "HTML"},
+		{enums.DisplayModeXML, "XML"},
+		{enums.DisplayModeCSV, "CSV"},
+		{enums.DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns Go's default format
 	}
 
 	for _, tt := range tests {
@@ -296,14 +297,14 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 func TestPrintTableDataEdgeCases(t *testing.T) {
 	tests := []struct {
 		name       string
-		mode       DisplayMode
+		mode       enums.DisplayMode
 		result     *Result
 		wantOutput bool // whether we expect any output
 		wantError  bool
 	}{
 		{
 			name: "HTML with nil header and empty rows",
-			mode: DisplayModeHTML,
+			mode: enums.DisplayModeHTML,
 			result: &Result{
 				TableHeader: nil,
 				Rows:        []Row{},
@@ -313,7 +314,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 		},
 		{
 			name: "XML with nil header and empty rows",
-			mode: DisplayModeXML,
+			mode: enums.DisplayModeXML,
 			result: &Result{
 				TableHeader: nil,
 				Rows:        []Row{},
@@ -323,7 +324,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 		},
 		{
 			name: "HTML with empty column names but data rows",
-			mode: DisplayModeHTML,
+			mode: enums.DisplayModeHTML,
 			result: &Result{
 				TableHeader: nil,
 				Rows:        []Row{{"data"}},
@@ -333,7 +334,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 		},
 		{
 			name: "All display modes with unicode data",
-			mode: DisplayModeHTML,
+			mode: enums.DisplayModeHTML,
 			result: &Result{
 				TableHeader: toTableHeader("列1", "列2"),
 				Rows: []Row{
@@ -538,7 +539,7 @@ func TestPrintTableDataCSV(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			sysVars := &systemVariables{
-				CLIFormat:       DisplayModeCSV,
+				CLIFormat:       enums.DisplayModeCSV,
 				SkipColumnNames: tt.skipColNames,
 			}
 

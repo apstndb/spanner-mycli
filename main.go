@@ -35,6 +35,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
@@ -605,7 +606,7 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 
 	// Validate format string if provided
 	if opts.Format != "" {
-		if _, err := parseDisplayMode(opts.Format); err != nil {
+		if _, err := enums.DisplayModeString(opts.Format); err != nil {
 			return err
 		}
 	}

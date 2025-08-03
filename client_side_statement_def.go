@@ -10,6 +10,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
@@ -351,7 +352,13 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
-			format, err := parseExplainFormat(lo.FromPtr(options["FORMAT"]))
+			formatStr := lo.FromPtr(options["FORMAT"])
+			var format enums.ExplainFormat
+			if formatStr == "" {
+				format = enums.ExplainFormatUnspecified
+			} else {
+				format, err = enums.ExplainFormatString(formatStr)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}

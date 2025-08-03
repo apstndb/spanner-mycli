@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -243,10 +244,10 @@ func (t *TemplateVar) IsReadOnly() bool {
 }
 
 // AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE using enumer-generated methods
-func AutocommitDMLModeVar(ptr *AutocommitDMLMode, desc string) *EnumVar[AutocommitDMLMode] {
-	return &EnumVar[AutocommitDMLMode]{
+func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode, desc string) *EnumVar[enums.AutocommitDMLMode] {
+	return &EnumVar[enums.AutocommitDMLMode]{
 		ptr:         ptr,
-		values:      enumerValues(AutocommitDMLModeValues()),
+		values:      enumerValues(enums.AutocommitDMLModeValues()),
 		description: desc,
 	}
 }

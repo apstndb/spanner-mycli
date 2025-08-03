@@ -32,7 +32,7 @@ test-coverage:
 	@echo "🧪 Running tests with coverage..."
 	@go test -coverpkg=./... ./... -coverprofile=tmp/coverage.out.tmp
 	@echo "🔧 Excluding generated files from coverage..."
-	@grep -v '_enumer\.go' tmp/coverage.out.tmp > tmp/coverage.out || true
+	@grep -E -v '(_enumer\.go|enums/.*_enumer\.go)' tmp/coverage.out.tmp > tmp/coverage.out || true
 	@rm -f tmp/coverage.out.tmp
 	@echo "📊 Generating coverage report..."
 	@go tool cover -html=tmp/coverage.out -o tmp/coverage.html

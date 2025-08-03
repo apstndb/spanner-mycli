@@ -26,6 +26,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	"github.com/apstndb/spannerplan/protoyaml"
@@ -41,7 +42,7 @@ import (
 type ExplainStatement struct {
 	Explain string
 	IsDML   bool
-	Format  explainFormat
+	Format  enums.ExplainFormat
 	Width   int64
 }
 
@@ -57,7 +58,7 @@ func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Resu
 
 type ExplainAnalyzeStatement struct {
 	Query  string
-	Format explainFormat
+	Format enums.ExplainFormat
 	Width  int64
 }
 
@@ -69,7 +70,7 @@ func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session)
 
 type ExplainAnalyzeDmlStatement struct {
 	Dml    string
-	Format explainFormat
+	Format enums.ExplainFormat
 	Width  int64
 }
 
@@ -81,7 +82,7 @@ func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Sessi
 
 type ExplainLastQueryStatement struct {
 	Analyze bool
-	Format  explainFormat
+	Format  enums.ExplainFormat
 	Width   int64
 }
 
@@ -224,7 +225,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format explainFormat, width int64) (*Result, error) {
+func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format enums.ExplainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
 		return nil, err
@@ -249,8 +250,8 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	return result, nil
 }
 
-func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format explainFormat, width int64) (*Result, error) {
-	format = lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat)
+func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format enums.ExplainFormat, width int64) (*Result, error) {
+	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
 	rows, predicates, err := processPlanWithoutStats(queryPlan, format, width)
 	if err != nil {
@@ -268,7 +269,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 	return result, nil
 }
 
-func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format explainFormat, width int64) (*Result, error) {
+func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -311,11 +312,11 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 }
 
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
-	format explainFormat, width int64,
+	format enums.ExplainFormat, width int64,
 ) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
 	inlines := sysVars.ParsedInlineStats
-	format = lo.Ternary(format != explainFormatUnspecified, format, sysVars.ExplainFormat)
+	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
 
 	rows, predicates, err := processPlan(plan, def, inlines, format, width)
@@ -366,7 +367,7 @@ func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Al
 	return columnNames, columnAlign
 }
 
-func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format explainFormat, width int64) (*Result, error) {
+func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -396,11 +397,11 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	return result, nil
 }
 
-func processPlanWithoutStats(plan *sppb.QueryPlan, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
+func processPlanWithoutStats(plan *sppb.QueryPlan, format enums.ExplainFormat, width int64) (rows []Row, predicates []string, err error) {
 	return processPlan(plan, nil, nil, format, width)
 }
 
-func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format explainFormat, width int64) (rows []Row, predicates []string, err error) {
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format enums.ExplainFormat, width int64) (rows []Row, predicates []string, err error) {
 	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), inlineStatsDefs, format, width)
 	if err != nil {
 		return nil, nil, err
@@ -557,16 +558,16 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 	return result.Plan, result.CommitResponse.CommitTs, result.Metadata, nil
 }
 
-func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format explainFormat, width int64) ([]plantree.RowWithPredicates, error) {
+func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format enums.ExplainFormat, width int64) ([]plantree.RowWithPredicates, error) {
 	var options []plantree.Option
 	switch format {
-	case explainFormatCurrent, explainFormatUnspecified:
+	case enums.ExplainFormatCurrent, enums.ExplainFormatUnspecified:
 		options = append(options, plantree.WithQueryPlanOptions(
 			spannerplan.WithExecutionMethodFormat(spannerplan.ExecutionMethodFormatAngle),
 			spannerplan.WithKnownFlagFormat(spannerplan.KnownFlagFormatLabel),
 			spannerplan.WithTargetMetadataFormat(spannerplan.TargetMetadataFormatOn),
 		))
-	case explainFormatCompact:
+	case enums.ExplainFormatCompact:
 		options = append(options,
 			plantree.EnableCompact(),
 			plantree.WithQueryPlanOptions(
@@ -574,7 +575,7 @@ func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format
 				spannerplan.WithKnownFlagFormat(spannerplan.KnownFlagFormatLabel),
 				spannerplan.WithTargetMetadataFormat(spannerplan.TargetMetadataFormatOn),
 			))
-	case explainFormatTraditional:
+	case enums.ExplainFormatTraditional:
 		// nop because it is default bformat in plantree.ProcessPlan.
 	}
 

@@ -31,6 +31,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
@@ -147,7 +148,7 @@ func TestBuildCommands(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.Desc, func(t *testing.T) {
-			got, err := buildCommands(test.Input, parseModeFallback)
+			got, err := buildCommands(test.Input, enums.ParseModeFallback)
 			if test.ExpectError && err == nil {
 				t.Errorf("expect error but not error, input: %v", test.Input)
 			}
@@ -177,7 +178,7 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTable: simple table",
 				sysVars: &systemVariables{
-					CLIFormat: DisplayModeTable,
+					CLIFormat: enums.DisplayModeTable,
 				},
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
@@ -199,7 +200,7 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTableComment: simple table",
 				sysVars: &systemVariables{
-					CLIFormat: DisplayModeTableComment,
+					CLIFormat: enums.DisplayModeTableComment,
 				},
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
@@ -221,7 +222,7 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTableCommentDetail, echo, verbose, markdown",
 				sysVars: &systemVariables{
-					CLIFormat:         DisplayModeTableDetailComment,
+					CLIFormat:         enums.DisplayModeTableDetailComment,
 					EchoInput:         true,
 					Verbose:           true,
 					MarkdownCodeblock: true,
@@ -251,7 +252,7 @@ Empty set
 			{
 				desc: "DisplayModeTable: most preceding column name",
 				sysVars: &systemVariables{
-					CLIFormat: DisplayModeTable,
+					CLIFormat: enums.DisplayModeTable,
 					Verbose:   true,
 				},
 				screenWidth: 20,
@@ -281,7 +282,7 @@ Empty set
 			{
 				desc: "DisplayModeTable: also respect column type",
 				sysVars: &systemVariables{
-					CLIFormat: DisplayModeTable,
+					CLIFormat: enums.DisplayModeTable,
 					Verbose:   true,
 				},
 				screenWidth: 19,
@@ -311,7 +312,7 @@ Empty set
 			{
 				desc: "DisplayModeTable: also respect column value",
 				sysVars: &systemVariables{
-					CLIFormat: DisplayModeTable,
+					CLIFormat: enums.DisplayModeTable,
 					Verbose:   true,
 				},
 				screenWidth: 25,
@@ -365,7 +366,7 @@ Empty set
 			),
 			IsMutation: false,
 		}
-		err := printResult(&systemVariables{CLIFormat: DisplayModeVertical}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeVertical}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -395,7 +396,7 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		err := printResult(&systemVariables{CLIFormat: DisplayModeTab}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -420,7 +421,7 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		err := printResult(&systemVariables{CLIFormat: DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -448,7 +449,7 @@ bar: 4
 			),
 			IsMutation: false,
 		}
-		err := printResult(&systemVariables{CLIFormat: DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -664,7 +665,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "custom system variable",
 			prompt: "Format: %{CLI_FORMAT}",
 			sysVars: &systemVariables{
-				CLIFormat: DisplayModeTable,
+				CLIFormat: enums.DisplayModeTable,
 			},
 			want: "Format: TABLE",
 		},
@@ -818,7 +819,7 @@ optimizer statistics: auto_20250421_21_29_41UTC
 	for _, tcase := range tcases {
 		t.Run(tcase.desc, func(t *testing.T) {
 			stats := protostruct.DecodeToMap(tcase.resultSetStats.QueryStats)
-			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats, explainFormatUnspecified, 0)
+			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats, enums.ExplainFormatUnspecified, 0)
 			if err != nil {
 				t.Errorf("shouldn't fail, but: %v", err)
 			}
@@ -1134,7 +1135,7 @@ func TestCli_PrintResult(t *testing.T) {
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
 				UsePager:      tt.usePager,
-				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
 				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
@@ -1241,7 +1242,7 @@ func TestCli_parseStatement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			cli := &Cli{
-				SystemVariables: &systemVariables{BuildStatementMode: parseModeFallback},
+				SystemVariables: &systemVariables{BuildStatementMode: enums.ParseModeFallback},
 			}
 			got, err := cli.parseStatement(tt.input)
 
@@ -1359,8 +1360,8 @@ func TestCli_executeSourceFile(t *testing.T) {
 			// Setup session and CLI
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				BuildStatementMode: parseModeFallback,
-				CLIFormat:          DisplayModeTab,
+				BuildStatementMode: enums.ParseModeFallback,
+				CLIFormat:          enums.DisplayModeTab,
 				StreamManager:      NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			session := &Session{systemVariables: sysVars}

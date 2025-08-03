@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -63,7 +64,7 @@ type systemVariables struct {
 	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
 	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
 	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
-	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
+	AutocommitDMLMode           enums.AutocommitDMLMode      // AUTOCOMMIT_DML_MODE
 	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
 	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
 
@@ -71,28 +72,28 @@ type systemVariables struct {
 
 	// CLI_* variables
 
-	CLIFormat   DisplayMode // CLI_FORMAT
-	Project     string      // CLI_PROJECT
-	Instance    string      // CLI_INSTANCE
-	Database    string      // CLI_DATABASE
-	Verbose     bool        // CLI_VERBOSE
-	Prompt      string      // CLI_PROMPT
-	Prompt2     string      // CLI_PROMPT2
-	HistoryFile string      // CLI_HISTORY_FILE
+	CLIFormat   enums.DisplayMode // CLI_FORMAT
+	Project     string            // CLI_PROJECT
+	Instance    string            // CLI_INSTANCE
+	Database    string            // CLI_DATABASE
+	Verbose     bool              // CLI_VERBOSE
+	Prompt      string            // CLI_PROMPT
+	Prompt2     string            // CLI_PROMPT2
+	HistoryFile string            // CLI_HISTORY_FILE
 
 	DirectedRead *sppb.DirectedReadOptions // CLI_DIRECT_READ
 
-	ProtoDescriptorFile []string  // CLI_PROTO_DESCRIPTOR_FILE
-	BuildStatementMode  parseMode // CLI_PARSE_MODE
-	Insecure            bool      // CLI_INSECURE
-	LogGrpc             bool      // CLI_LOG_GRPC
-	LintPlan            bool      // CLI_LINT_PLAN
-	UsePager            bool      // CLI_USE_PAGER
-	AutoWrap            bool      // CLI_AUTOWRAP
-	FixedWidth          *int64    // CLI_FIXED_WIDTH
-	EnableHighlight     bool      // CLI_ENABLE_HIGHLIGHT
-	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
+	ProtoDescriptorFile []string        // CLI_PROTO_DESCRIPTOR_FILE
+	BuildStatementMode  enums.ParseMode // CLI_PARSE_MODE
+	Insecure            bool            // CLI_INSECURE
+	LogGrpc             bool            // CLI_LOG_GRPC
+	LintPlan            bool            // CLI_LINT_PLAN
+	UsePager            bool            // CLI_USE_PAGER
+	AutoWrap            bool            // CLI_AUTOWRAP
+	FixedWidth          *int64          // CLI_FIXED_WIDTH
+	EnableHighlight     bool            // CLI_ENABLE_HIGHLIGHT
+	MultilineProtoText  bool            // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock   bool            // CLI_MARKDOWN_CODEBLOCK
 
 	QueryMode         *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
 	TryPartitionQuery bool                              // CLI_TRY_PARTITION_QUERY
@@ -113,9 +114,9 @@ type systemVariables struct {
 	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
 	InlineStats    string // CLI_INLINE_STATS
 
-	ExplainFormat          explainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth       int64         // CLI_EXPLAIN_WRAP_WIDTH
-	AutoConnectAfterCreate bool          // CLI_AUTO_CONNECT_AFTER_CREATE
+	ExplainFormat          enums.ExplainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth       int64               // CLI_EXPLAIN_WRAP_WIDTH
+	AutoConnectAfterCreate bool                // CLI_AUTO_CONNECT_AFTER_CREATE
 
 	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet

@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/creack/pty"
@@ -121,9 +122,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 				QueryMode:                 sppb.ExecuteSqlRequest_PLAN.Enum(),
 				ReadOnlyStaleness:         lo.ToPtr(spanner.StrongRead()),
 				DatabaseDialect:           databasepb.DatabaseDialect_POSTGRESQL,
-				AutocommitDMLMode:         AutocommitDMLModePartitionedNonAtomic,
+				AutocommitDMLMode:         enums.AutocommitDMLModePartitionedNonAtomic,
 				ProtoDescriptorFile:       []string{"testdata/protos/singer.proto"},
-				CLIFormat:                 DisplayModeVertical,
+				CLIFormat:                 enums.DisplayModeVertical,
 				ReadOnly:                  true,
 				DirectedRead: &sppb.DirectedReadOptions{
 					Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
@@ -589,8 +590,8 @@ func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
 	}
 
 	// Check that CLI_FORMAT was properly set
-	if sysVars.CLIFormat != DisplayModeVertical {
-		t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, DisplayModeVertical)
+	if sysVars.CLIFormat != enums.DisplayModeVertical {
+		t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, enums.DisplayModeVertical)
 	}
 }
 

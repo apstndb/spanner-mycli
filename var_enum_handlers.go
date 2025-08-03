@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // EnumVar handles enum-like variables
@@ -189,28 +190,28 @@ func enumerValues[T fmt.Stringer](values []T) map[string]T {
 }
 
 // DisplayModeVar creates an enum handler for DisplayMode
-func DisplayModeVar(ptr *DisplayMode, desc string) *EnumVar[DisplayMode] {
-	return &EnumVar[DisplayMode]{
+func DisplayModeVar(ptr *enums.DisplayMode, desc string) *EnumVar[enums.DisplayMode] {
+	return &EnumVar[enums.DisplayMode]{
 		ptr:         ptr,
-		values:      enumerValues(DisplayModeValues()),
+		values:      enumerValues(enums.DisplayModeValues()),
 		description: desc,
 	}
 }
 
-// ParseModeVar creates an enum handler for parseMode
-func ParseModeVar(ptr *parseMode, desc string) *EnumVar[parseMode] {
-	return &EnumVar[parseMode]{
+// ParseModeVar creates an enum handler for ParseMode
+func ParseModeVar(ptr *enums.ParseMode, desc string) *EnumVar[enums.ParseMode] {
+	return &EnumVar[enums.ParseMode]{
 		ptr:         ptr,
-		values:      enumerValues(parseModeValues()),
+		values:      enumerValues(enums.ParseModeValues()),
 		description: desc,
 	}
 }
 
-// ExplainFormatVar creates an enum handler for explainFormat
-func ExplainFormatVar(ptr *explainFormat, desc string) *EnumVar[explainFormat] {
-	return &EnumVar[explainFormat]{
+// ExplainFormatVar creates an enum handler for ExplainFormat
+func ExplainFormatVar(ptr *enums.ExplainFormat, desc string) *EnumVar[enums.ExplainFormat] {
+	return &EnumVar[enums.ExplainFormat]{
 		ptr:         ptr,
-		values:      enumerValues(explainFormatValues()),
+		values:      enumerValues(enums.ExplainFormatValues()),
 		description: desc,
 	}
 }

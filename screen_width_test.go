@@ -6,6 +6,8 @@ import (
 	"math"
 	"strconv"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // TestCli_displayResult tests the displayResult method
@@ -55,7 +57,7 @@ func TestCli_displayResult(t *testing.T) {
 			sysVars := &systemVariables{
 				AutoWrap:      tt.autowrap,
 				FixedWidth:    tt.fixedWidth,
-				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
 				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{

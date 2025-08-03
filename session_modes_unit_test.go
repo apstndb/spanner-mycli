@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -19,7 +20,7 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 		Project:   "test-project",
 		Instance:  "test-instance",
 		Database:  "",
-		CLIFormat: DisplayModeTable,
+		CLIFormat: enums.DisplayModeTable,
 		Verbose:   false,
 		ReadOnly:  false,
 		Prompt:    "spanner> ",

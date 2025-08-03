@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
@@ -297,7 +298,7 @@ func (r *VarRegistry) registerAll() {
 			"Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation."),
 		customSetter: func(value string) error {
 			if value == "" {
-				sv.ExplainFormat = explainFormatUnspecified
+				sv.ExplainFormat = enums.ExplainFormatUnspecified
 				return nil
 			}
 			return ExplainFormatVar(&sv.ExplainFormat, "").Set(value)

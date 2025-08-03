@@ -31,6 +31,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"google.golang.org/api/option/internaloption"
@@ -1269,7 +1270,7 @@ func TestStatements(t *testing.T) {
 			var gots []*Result
 			for i, s := range tt.stmt {
 				// begin
-				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, parseModeNoMemefish)
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, enums.ParseModeNoMemefish)
 				if err != nil {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}

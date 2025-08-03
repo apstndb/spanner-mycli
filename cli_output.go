@@ -16,6 +16,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-runewidthex"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-sprout/sprout"
 	"github.com/go-sprout/sprout/group/hermetic"
 	"github.com/mattn/go-runewidth"
@@ -105,7 +106,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
 	}
 
-	if sysVars.CLIFormat == DisplayModeTableDetailComment {
+	if sysVars.CLIFormat == enums.DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
 
