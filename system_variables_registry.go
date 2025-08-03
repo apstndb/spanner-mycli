@@ -29,6 +29,11 @@ func (sv *systemVariables) setFromGoogleSQL(name string, value string) error {
 		return errSetterUnimplemented{name}
 	}
 
+	// Special case for CLI_DIRECT_READ (unimplemented setter)
+	if upperName == "CLI_DIRECT_READ" {
+		return errSetterUnimplemented{name}
+	}
+
 	err := sv.Registry.Set(upperName, value, true)
 	// Convert to legacy error types for compatibility
 	if err != nil {
