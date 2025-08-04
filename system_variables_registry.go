@@ -44,6 +44,10 @@ func (sv *systemVariables) setFromGoogleSQL(name string, value string) error {
 		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
+		var unimplementedErr *errSetterUnimplemented
+		if errors.As(err, &unimplementedErr) {
+			return errSetterUnimplemented{name}
+		}
 	}
 
 	return err
@@ -73,7 +77,8 @@ func (sv *systemVariables) setFromSimple(name string, value string) error {
 		if errors.As(err, &unknownErr) {
 			return fmt.Errorf("unknown variable name: %v", name)
 		}
-		if errors.Is(err, errSetterUnimplemented{}) {
+		var unimplementedErr *errSetterUnimplemented
+		if errors.As(err, &unimplementedErr) {
 			return errSetterUnimplemented{name}
 		}
 	}
