@@ -32,6 +32,7 @@ import (
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
@@ -69,9 +70,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case session.systemVariables.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Query, false, explainFormatUnspecified, 0)
+		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyze(ctx, session, s.Query, explainFormatUnspecified, 0)
+		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0)
 	default:
 		if !session.InTransaction() && session.systemVariables.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
@@ -95,9 +96,9 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	case session.systemVariables.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session)
 	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Dml, true, explainFormatUnspecified, 0)
+		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0)
 	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyzeDML(ctx, session, s.Dml, explainFormatUnspecified, 0)
+		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0)
 	default:
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}

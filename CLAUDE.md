@@ -124,8 +124,8 @@ go tool gh-helper node-id issue/123 pull/456  # Get GraphQL node IDs
 
 ### System Variable Conventions
 - CLI-specific variables **MUST** use `CLI_` prefix
-- Presentation variables: Use `boolAccessor()` or `stringAccessor()`
-- Session behavior variables: Use read-only `accessor{Getter: ...}`
+- All variable registrations are in `system_variables_registry.go`
+- Use generic VarHandler types for type-safe variable handling
 
 For detailed implementation patterns, see [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md).
 

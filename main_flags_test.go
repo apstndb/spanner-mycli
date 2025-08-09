@@ -12,6 +12,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -280,7 +281,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			name:        "invalid priority value",
 			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
 			wantErr:     true,
-			errContains: "priority must be either HIGH, MEDIUM, or LOW",
+			errContains: "must be one of:",
 		},
 		{
 			name:    "valid priority HIGH",
@@ -798,7 +799,7 @@ func TestFlagSpecialModes(t *testing.T) {
 		wantInsecure  bool
 		wantVerbose   bool
 		wantMCP       bool
-		wantCLIFormat DisplayMode
+		wantCLIFormat enums.DisplayMode
 		checkAfterRun bool // Some values are set in run() function
 	}{
 		{
@@ -868,7 +869,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantProject:   "p",
 			wantInstance:  "i",
 			wantDatabase:  "d",
-			wantCLIFormat: DisplayModeTable,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name: "batch mode without --table defaults to tab format",
@@ -879,7 +880,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantProject:   "p",
 			wantInstance:  "i",
 			wantDatabase:  "d",
-			wantCLIFormat: DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTab,
 		},
 		// Note: Interactive mode test removed because it requires a real terminal
 		// which is difficult to simulate in unit tests
@@ -893,7 +894,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantProject:   "p",
 			wantInstance:  "i",
 			wantDatabase:  "d",
-			wantCLIFormat: DisplayModeVertical,
+			wantCLIFormat: enums.DisplayModeVertical,
 		},
 		{
 			name: "enable-partitioned-dml sets AUTOCOMMIT_DML_MODE",
@@ -956,7 +957,7 @@ func TestFlagSpecialModes(t *testing.T) {
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, DisplayModeTable, DisplayModeTab)
+					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
 					if expectedFormat != tt.wantCLIFormat {
 						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
@@ -979,8 +980,8 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			if tt.name == "enable-partitioned-dml sets AUTOCOMMIT_DML_MODE" {
-				if sysVars.AutocommitDMLMode != AutocommitDMLModePartitionedNonAtomic {
-					t.Errorf("AutocommitDMLMode = %v, want %v", sysVars.AutocommitDMLMode, AutocommitDMLModePartitionedNonAtomic)
+				if sysVars.AutocommitDMLMode != enums.AutocommitDMLModePartitionedNonAtomic {
+					t.Errorf("AutocommitDMLMode = %v, want %v", sysVars.AutocommitDMLMode, enums.AutocommitDMLModePartitionedNonAtomic)
 				}
 			}
 		})
@@ -1012,7 +1013,7 @@ func TestFlagErrorMessages(t *testing.T) {
 		{
 			name:           "invalid enum shows valid options",
 			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
-			wantErrKeyword: "priority must be either HIGH, MEDIUM, or LOW",
+			wantErrKeyword: "must be one of:",
 		},
 		{
 			name:           "invalid directed read shows format",
@@ -1742,49 +1743,49 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 		name          string
 		args          []string
 		stdinProvider stdinProvider
-		wantCLIFormat DisplayMode
+		wantCLIFormat enums.DisplayMode
 	}{
 		{
 			name:          "interactive mode (terminal) defaults to table",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
 			stdinProvider: ptyStdin(),
-			wantCLIFormat: DisplayModeTable,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "batch mode with --table flag uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table"},
 			stdinProvider: nonPTYStdin(""),
-			wantCLIFormat: DisplayModeTable,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "batch mode without --table uses tab format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1"},
 			stdinProvider: nonPTYStdin(""),
-			wantCLIFormat: DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTab,
 		},
 		{
 			name:          "piped input defaults to tab format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
 			stdinProvider: nonPTYStdin("SELECT 1;"),
-			wantCLIFormat: DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTab,
 		},
 		{
 			name:          "piped input with --table uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
 			stdinProvider: nonPTYStdin("SELECT 1;"),
-			wantCLIFormat: DisplayModeTable,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides all defaults",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_FORMAT=VERTICAL"},
 			stdinProvider: ptyStdin(), // Can be any, as --set overrides
-			wantCLIFormat: DisplayModeVertical,
+			wantCLIFormat: enums.DisplayModeVertical,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides --table flag",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table", "--set", "CLI_FORMAT=VERTICAL"},
 			stdinProvider: nonPTYStdin(""),
-			wantCLIFormat: DisplayModeVertical,
+			wantCLIFormat: enums.DisplayModeVertical,
 		},
 	}
 
@@ -1824,7 +1825,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, DisplayModeTable, DisplayModeTab)
+				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
 				if expectedFormat != tt.wantCLIFormat {
 					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)

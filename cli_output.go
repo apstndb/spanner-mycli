@@ -16,6 +16,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-runewidthex"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-sprout/sprout"
 	"github.com/go-sprout/sprout/group/hermetic"
 	"github.com/mattn/go-runewidth"
@@ -24,45 +25,6 @@ import (
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 )
-
-type DisplayMode int
-
-const (
-	DisplayModeTable DisplayMode = iota
-	DisplayModeTableComment
-	DisplayModeTableDetailComment
-	DisplayModeVertical
-	DisplayModeTab
-	DisplayModeHTML
-	DisplayModeXML
-	DisplayModeCSV
-)
-
-// parseDisplayMode converts a string format name to DisplayMode.
-// It accepts both uppercase and lowercase format names.
-// Returns an error if the format name is invalid.
-func parseDisplayMode(format string) (DisplayMode, error) {
-	switch strings.ToUpper(format) {
-	case "TABLE":
-		return DisplayModeTable, nil
-	case "TABLE_COMMENT":
-		return DisplayModeTableComment, nil
-	case "TABLE_DETAIL_COMMENT":
-		return DisplayModeTableDetailComment, nil
-	case "VERTICAL":
-		return DisplayModeVertical, nil
-	case "TAB":
-		return DisplayModeTab, nil
-	case "HTML":
-		return DisplayModeHTML, nil
-	case "XML":
-		return DisplayModeXML, nil
-	case "CSV":
-		return DisplayModeCSV, nil
-	default:
-		return DisplayModeTable, fmt.Errorf("invalid format: %v", format)
-	}
-}
 
 // renderTableHeader renders TableHeader. It is nil safe.
 func renderTableHeader(header TableHeader, verbose bool) []string {
@@ -144,7 +106,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
 	}
 
-	if sysVars.CLIFormat == DisplayModeTableDetailComment {
+	if sysVars.CLIFormat == enums.DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
 

@@ -6,6 +6,8 @@ import (
 	"math"
 	"strconv"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // TestCli_displayResult tests the displayResult method
@@ -55,7 +57,7 @@ func TestCli_displayResult(t *testing.T) {
 			sysVars := &systemVariables{
 				AutoWrap:      tt.autowrap,
 				FixedWidth:    tt.fixedWidth,
-				CLIFormat:     DisplayModeTab, // Use TAB format for predictable output
+				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
 				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
@@ -119,9 +121,9 @@ func TestCLI_FIXED_WIDTH(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := &systemVariables{}
+			sysVars := newSystemVariablesWithDefaultsForTest()
 
-			err := sysVars.Set("CLI_FIXED_WIDTH", tt.value)
+			err := sysVars.SetFromSimple("CLI_FIXED_WIDTH", tt.value)
 			if (err != nil) != tt.err {
 				t.Errorf("Set(CLI_FIXED_WIDTH, %q) error = %v, wantErr %v", tt.value, err, tt.err)
 				return

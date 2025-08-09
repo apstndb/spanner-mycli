@@ -31,6 +31,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"google.golang.org/api/option/internaloption"
@@ -98,14 +99,17 @@ func TestMain(m *testing.M) {
 
 func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
 	options := defaultClientOptions(emulator)
-	session, err = NewSession(ctx, &systemVariables{
+	sysVars := &systemVariables{
 		Project:          clients.ProjectID,
 		Instance:         clients.InstanceID,
 		Database:         clients.DatabaseID,
 		Params:           make(map[string]ast.Node),
 		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-	}, options...)
+	}
+	// Initialize the registry
+	sysVars.ensureRegistry()
+	session, err = NewSession(ctx, sysVars, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +185,8 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 			Database:         "",                      // No database for admin-only mode
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
+		// Initialize the registry
+		sysVars.ensureRegistry()
 
 		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
 		if err != nil {
@@ -1264,7 +1270,7 @@ func TestStatements(t *testing.T) {
 			var gots []*Result
 			for i, s := range tt.stmt {
 				// begin
-				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, parseModeNoMemefish)
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, enums.ParseModeNoMemefish)
 				if err != nil {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}

@@ -26,6 +26,7 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/gsqlutils"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -49,7 +50,7 @@ func TestBuildStatement(t *testing.T) {
 		input          string
 		want           Statement
 		skipLowerCase  bool
-		skipParseModes []parseMode
+		skipParseModes []enums.ParseMode
 	}{
 		{
 			desc:  "SELECT statement",
@@ -589,7 +590,7 @@ func TestBuildStatement(t *testing.T) {
 			desc:           "GRAPH statement",
 			input:          "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:           &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
-			skipParseModes: []parseMode{parseMemefishOnly},
+			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
 		},
 		{
 			desc:  "EXPLAIN GRAPH statement",
@@ -604,12 +605,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT WIDTH",
 			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
-			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT",
 			input: "EXPLAIN FORMAT=COMPACT SELECT * FROM t1",
-			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: explainFormatCompact},
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: enums.ExplainFormatCompact},
 		},
 		{
 			desc:  "EXPLAIN SELECT statement with WIDTH",
@@ -619,12 +620,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
 			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
-			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: explainFormatCompact, Width: 50},
+			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
 			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 DELETE t1 WHERE FALSE",
-			want:  &ExplainAnalyzeDmlStatement{Dml: "DELETE t1 WHERE FALSE", Format: explainFormatCompact, Width: 50},
+			want:  &ExplainAnalyzeDmlStatement{Dml: "DELETE t1 WHERE FALSE", Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "EXPLAIN ANALYZE LAST QUERY",
@@ -634,7 +635,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "EXPLAIN ANALYZE LAST QUERY with options",
 			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 LAST QUERY",
-			want:  &ExplainLastQueryStatement{Analyze: true, Format: explainFormatCompact, Width: 50},
+			want:  &ExplainLastQueryStatement{Analyze: true, Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "EXPLAIN LAST QUERY",
@@ -644,12 +645,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "EXPLAIN LAST QUERY with options",
 			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 LAST QUERY",
-			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
+			want:  &ExplainLastQueryStatement{Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "EXPLAIN LAST QUERY with options",
 			input: "EXPLAIN LAST QUERY FORMAT=COMPACT WIDTH=50",
-			want:  &ExplainLastQueryStatement{Format: explainFormatCompact, Width: 50},
+			want:  &ExplainLastQueryStatement{Format: enums.ExplainFormatCompact, Width: 50},
 		},
 		{
 			desc:  "SHOW PLAN NODE",
@@ -965,10 +966,10 @@ TABLE Singers (42)
 			want:  &HelpVariablesStatement{},
 		},
 	} {
-		modes := []parseMode{parseModeNoMemefish, parseModeFallback, parseMemefishOnly, parseModeUnspecified}
+		modes := []enums.ParseMode{enums.ParseModeNoMemefish, enums.ParseModeFallback, enums.ParseModeMemefishOnly, enums.ParseModeUnspecified}
 		t.Run(test.desc, func(t *testing.T) {
 			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
 					if slices.Contains(test.skipParseModes, mode) {
 						t.Skipf("skip by skipParseModes")
 					}
@@ -996,7 +997,7 @@ TABLE Singers (42)
 			}
 
 			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(string(mode), "UNSPECIFIED"), func(t *testing.T) {
+				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
 					if slices.Contains(test.skipParseModes, mode) {
 						t.Skip("skip by skipParseModes")
 					}

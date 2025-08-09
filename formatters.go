@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/apstndb/go-runewidthex"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -49,7 +50,7 @@ func writeBuffered(out io.Writer, buildFunc func(out io.Writer) error) error {
 type FormatFunc func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error
 
 // formatTable formats output as an ASCII table.
-func formatTable(mode DisplayMode) FormatFunc {
+func formatTable(mode enums.DisplayMode) FormatFunc {
 	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 		return writeBuffered(out, func(out io.Writer) error {
 			return writeTable(out, result, columnNames, sysVars, screenWidth, mode)
@@ -58,7 +59,7 @@ func formatTable(mode DisplayMode) FormatFunc {
 }
 
 // writeTable writes the table to the provided writer.
-func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int, mode DisplayMode) error {
+func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int, mode enums.DisplayMode) error {
 	rw := runewidthex.NewCondition()
 	rw.TabWidth = cmp.Or(int(sysVars.TabWidth), 4)
 
@@ -67,7 +68,7 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 	// For comment modes, we need to manipulate the output, so use a buffer
 	var tableBuf strings.Builder
 	tableWriter := w
-	if mode == DisplayModeTableComment || mode == DisplayModeTableDetailComment {
+	if mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
 		tableWriter = &tableBuf
 	}
 
@@ -114,12 +115,12 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 	}
 
 	// Handle comment mode transformations
-	if mode == DisplayModeTableComment || mode == DisplayModeTableDetailComment {
+	if mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
 		s := strings.TrimSpace(tableBuf.String())
 		s = strings.ReplaceAll(s, "\n", "\n ")
 		s = topLeftRe.ReplaceAllLiteralString(s, "/*")
 
-		if mode == DisplayModeTableComment {
+		if mode == enums.DisplayModeTableComment {
 			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
 		}
 
@@ -345,19 +346,22 @@ func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *sys
 }
 
 // NewFormatter creates a new formatter function based on the display mode.
-func NewFormatter(mode DisplayMode) (FormatFunc, error) {
+func NewFormatter(mode enums.DisplayMode) (FormatFunc, error) {
 	switch mode {
-	case DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment:
+	case enums.DisplayModeUnspecified:
+		// Should not happen as it's handled in main.go, but provide a sensible default
+		return formatTable(enums.DisplayModeTable), nil
+	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 		return formatTable(mode), nil
-	case DisplayModeVertical:
+	case enums.DisplayModeVertical:
 		return formatVertical, nil
-	case DisplayModeTab:
+	case enums.DisplayModeTab:
 		return formatTab, nil
-	case DisplayModeCSV:
+	case enums.DisplayModeCSV:
 		return formatCSV, nil
-	case DisplayModeHTML:
+	case enums.DisplayModeHTML:
 		return formatHTML, nil
-	case DisplayModeXML:
+	case enums.DisplayModeXML:
 		return formatXML, nil
 	default:
 		return nil, fmt.Errorf("unsupported display mode: %v", mode)

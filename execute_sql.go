@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/apstndb/gsqlutils"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
@@ -259,7 +260,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 		if !session.InTransaction() &&
 			!isInsert(sql) &&
-			session.systemVariables.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic {
+			session.systemVariables.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
 			return executePDML(ctx, session, sql)
 		}
 

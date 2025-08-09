@@ -1,6 +1,9 @@
 build:
 	go build
 
+generate:
+	go generate ./...
+
 build-tools:
 	# Install development tools using Go 1.24 tool management
 	# gh-helper: Generic GitHub operations (reviews, threads) - managed via go.mod tool directive
@@ -27,7 +30,10 @@ test-verbose:
 test-coverage:
 	@mkdir -p tmp
 	@echo "🧪 Running tests with coverage..."
-	@go test ./... -coverprofile=tmp/coverage.out
+	@go test -coverpkg=./... ./... -coverprofile=tmp/coverage.out.tmp
+	@echo "🔧 Excluding generated files from coverage..."
+	@grep -E -v '(_enumer\.go|enums/.*_enumer\.go)' tmp/coverage.out.tmp > tmp/coverage.out || true
+	@rm -f tmp/coverage.out.tmp
 	@echo "📊 Generating coverage report..."
 	@go tool cover -html=tmp/coverage.out -o tmp/coverage.html
 	@echo "📈 Coverage summary:"
@@ -67,7 +73,7 @@ fmt-check:
 
 # Enhanced development targets (issue #301 - script reorganization)
 # Development targets using Go 1.24 tool management and simple Makefile workflows
-.PHONY: test-quick test-coverage test-coverage-open check docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools fmt fmt-check
+.PHONY: test-quick test-coverage test-coverage-open check all all-quick docs-update help-dev worktree-setup worktree-list worktree-delete gh-review build-tools fmt fmt-check
 
 # Quick tests for development cycle
 test-quick:
@@ -75,6 +81,12 @@ test-quick:
 
 # Combined test, lint, and format check (required before push)
 check: test lint fmt-check
+
+# All development tasks with formatting (destructive)
+all: fmt check
+
+# Quick development cycle with formatting (destructive)
+all-quick: fmt test-quick lint
 
 
 # Update README.md help sections (replacing spanner-mycli-dev)
@@ -99,9 +111,11 @@ help-dev:
 	@echo "  make test-coverage-open - Run coverage and open HTML report in browser"
 	@echo "  make test-quick       - Run quick tests (go test -short)"
 	@echo "  make lint             - Run linter (required before push)"
-	@echo "  make fmt              - Format code with gofmt, goimports, and gofumpt"
+	@echo "  make fmt              - Format code with gofmt, goimports, and gofumpt (⚠️ modifies files)"
 	@echo "  make fmt-check        - Check if code is properly formatted"
 	@echo "  make check            - Run test && lint && fmt-check (required before push)"
+	@echo "  make all              - Run fmt && check (⚠️ modifies files)"
+	@echo "  make all-quick        - Run fmt && test-quick && lint (⚠️ modifies files)"
 	@echo "  make clean            - Clean build artifacts and test cache"
 	@echo "  make run              - Run with PROJECT/INSTANCE/DATABASE env vars"
 	@echo "  make docs-update      - Generate help output for README.md"

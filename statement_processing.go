@@ -27,6 +27,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json/jsontext"
@@ -207,15 +208,6 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
-type parseMode string
-
-const (
-	parseModeUnspecified parseMode = ""
-	parseModeFallback    parseMode = "FALLBACK"
-	parseModeNoMemefish  parseMode = "NO_MEMEFISH"
-	parseMemefishOnly    parseMode = "MEMEFISH_ONLY"
-)
-
 var (
 	operatorColumnName       = "Operator <execution_method> (metadata, ...)"
 	operatorColumnNameLength = int64(len(operatorColumnName))
@@ -263,7 +255,7 @@ func BuildCLIStatement(stripped, raw string) (Statement, error) {
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
-	return BuildStatementWithCommentsWithMode(stripped, raw, parseModeFallback)
+	return BuildStatementWithCommentsWithMode(stripped, raw, enums.ParseModeFallback)
 }
 
 func composeStatementParseFunc(funcs ...statementParseFunc) statementParseFunc {
@@ -300,19 +292,19 @@ func ignoreParseError(f statementParseFunc) statementParseFunc {
 }
 
 // getParserForMode returns the appropriate StatementParser for the given mode
-func getParserForMode(mode parseMode) (statementParseFunc, error) {
+func getParserForMode(mode enums.ParseMode) (statementParseFunc, error) {
 	switch mode {
-	case parseModeNoMemefish:
+	case enums.ParseModeNoMemefish:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementLexical,
 		), nil
-	case parseMemefishOnly:
+	case enums.ParseModeMemefishOnly:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementMemefish,
 		), nil
-	case parseModeFallback, parseModeUnspecified:
+	case enums.ParseModeFallback, enums.ParseModeUnspecified:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			ignoreParseError(BuildNativeStatementMemefish),
@@ -323,7 +315,7 @@ func getParserForMode(mode parseMode) (statementParseFunc, error) {
 	}
 }
 
-func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
+func BuildStatementWithCommentsWithMode(stripped, raw string, mode enums.ParseMode) (Statement, error) {
 	parser, err := getParserForMode(mode)
 	if err != nil {
 		return nil, err
@@ -388,7 +380,7 @@ func unquoteIdentifier(input string) string {
 
 // buildCommands parses the input and builds a list of commands for batch execution.
 // It can compose BulkDdlStatement from consecutive DDL statements.
-func buildCommands(input string, mode parseMode) ([]Statement, error) {
+func buildCommands(input string, mode enums.ParseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
 
