@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **CRITICAL RULE**: CLAUDE.md should only contain information that would cause problems if skipped. All other details belong in specialized documentation files.
 
-**Why this rule is critical**: CLAUDE.md is read by AI assistants for every development task. Including verbose content creates cognitive overload and buries essential requirements like `make test && make lint`.
+**Why this rule is critical**: CLAUDE.md is read by AI assistants for every development task. Including verbose content creates cognitive overload and buries essential requirements like `make all` (format + validate).
 
 ### What belongs in CLAUDE.md
 - Critical requirements (e.g., `make check` before push)
@@ -39,7 +39,7 @@ When testing compatibility or referencing behavior, be specific about which impl
 ## 🚨 CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
-1. **Always run `make check`** - runs test && lint (required for quality assurance)
+1. **Always run `make all`** - formats code and runs full validation (fmt && test && lint && fmt-check)
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly to avoid integration issues
 3. **Never push directly to main branch** - always use Pull Requests
 4. **Never commit directly to main branch** - always use feature branches
@@ -57,10 +57,10 @@ When testing compatibility or referencing behavior, be specific about which impl
 
 ```bash
 # Development cycle (CRITICAL)
-make check                    # REQUIRED before ANY push (runs test && lint && fmt-check)
+make all                      # RECOMMENDED: Format + full validation (fmt && check)
+make all-quick                # RECOMMENDED for dev: Format + quick tests + lint
+make check                    # REQUIRED before push: test && lint && fmt-check (no modifications)
 make build                    # Build the application
-make test-quick               # Quick tests during development
-make fmt                      # Format code with gofmt, goimports, and gofumpt
 make help-dev                 # Show all available development commands
 
 # Development tools (Go 1.24 tool management: make build-tools)
@@ -274,9 +274,24 @@ gh issue create --body-file tmp/issue_body.md
 ### Testing
 ```bash
 go test -short ./...    # Unit tests only
-make test              # Full test suite (required before push)
-make lint              # Code quality checks (required before push)
+make all               # Format and validate everything (recommended before push)
+make all-quick         # Format + quick tests + lint (for development)
+make test-coverage     # Run tests with coverage report
 ```
+
+### Test Coverage Strategy
+- **Reusable packages** (`internal/parser/*`): Aim for 100% coverage
+  - These packages are designed for reuse and should be thoroughly tested
+  - Remove unused code rather than leaving it untested
+- **Main package**: Maintain reasonable coverage (>65%)
+  - Focus on critical paths and error handling
+  - Integration tests are valuable here
+- **Coverage measurement**: Use `-coverpkg=./...` for accurate cross-package coverage
+- **Best practices**:
+  - Add tests when adding new functionality
+  - Remove dead code to improve coverage
+  - Test both success and error paths
+  - Use table-driven tests for comprehensive coverage
 
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
