@@ -354,6 +354,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 
 			formatStr := lo.FromPtr(options["FORMAT"])
 			var format enums.ExplainFormat
+			// TODO: This empty string handling could be simplified since ExplainFormatUnspecified
+			// is already the zero value. Options include:
+			// 1. Make ExplainFormatString return (ExplainFormatUnspecified, nil) for empty strings
+			// 2. Just use the zero value when parsing fails for empty strings
+			// Currently we explicitly handle empty strings to avoid error messages for a valid case.
 			if formatStr == "" {
 				format = enums.ExplainFormatUnspecified
 			} else {

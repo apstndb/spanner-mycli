@@ -21,6 +21,14 @@ func formatBool(b bool) string {
 }
 
 // VarHandler handles get/set operations for a variable
+//
+// TODO: Consider adding native support for session-init-only variables.
+// Currently, variables like CLI_ENABLE_ADC_PLUS use custom setters to check
+// if CurrentSession != nil, but this could be better supported as a first-class
+// feature. Potential implementation:
+//   - Add a sessionInitOnly bool field to VarHandler
+//   - Move the CurrentSession check logic into the Set method
+//   - This would centralize the behavior and make it declarative rather than imperative
 type VarHandler[T any] struct {
 	ptr         *T
 	format      func(T) string

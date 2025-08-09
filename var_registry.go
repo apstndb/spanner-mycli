@@ -396,6 +396,11 @@ func (r *VarRegistry) registerAll() {
 		description: "<name>:<template>, ...",
 	})
 
+	// CLI_ENABLE_ADC_PLUS is a session-init-only variable.
+	// Currently implemented using a custom setter, but could use native support
+	// for session-init-only behavior if added to VarHandler (see TODO in var_handler.go).
+	// This pattern of checking CurrentSession != nil is repeated for variables that
+	// must be set before session creation.
 	r.Register("CLI_ENABLE_ADC_PLUS", &CustomVar{
 		base: BoolVar(&sv.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
 		customSetter: func(value string) error {
