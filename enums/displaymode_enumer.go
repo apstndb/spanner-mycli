@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _DisplayModeName = "TABLETABLE_COMMENTTABLE_DETAIL_COMMENTVERTICALTABHTMLXMLCSV"
+const _DisplayModeName = "UNSPECIFIEDTABLETABLE_COMMENTTABLE_DETAIL_COMMENTVERTICALTABHTMLXMLCSV"
 
-var _DisplayModeIndex = [...]uint8{0, 5, 18, 38, 46, 49, 53, 56, 59}
+var _DisplayModeIndex = [...]uint8{0, 11, 16, 29, 49, 57, 60, 64, 67, 70}
 
-const _DisplayModeLowerName = "tabletable_commenttable_detail_commentverticaltabhtmlxmlcsv"
+const _DisplayModeLowerName = "unspecifiedtabletable_commenttable_detail_commentverticaltabhtmlxmlcsv"
 
 func (i DisplayMode) String() string {
 	if i < 0 || i >= DisplayMode(len(_DisplayModeIndex)-1) {
@@ -24,46 +24,50 @@ func (i DisplayMode) String() string {
 // Re-run the stringer command to generate them again.
 func _DisplayModeNoOp() {
 	var x [1]struct{}
-	_ = x[DisplayModeTable-(0)]
-	_ = x[DisplayModeTableComment-(1)]
-	_ = x[DisplayModeTableDetailComment-(2)]
-	_ = x[DisplayModeVertical-(3)]
-	_ = x[DisplayModeTab-(4)]
-	_ = x[DisplayModeHTML-(5)]
-	_ = x[DisplayModeXML-(6)]
-	_ = x[DisplayModeCSV-(7)]
+	_ = x[DisplayModeUnspecified-(0)]
+	_ = x[DisplayModeTable-(1)]
+	_ = x[DisplayModeTableComment-(2)]
+	_ = x[DisplayModeTableDetailComment-(3)]
+	_ = x[DisplayModeVertical-(4)]
+	_ = x[DisplayModeTab-(5)]
+	_ = x[DisplayModeHTML-(6)]
+	_ = x[DisplayModeXML-(7)]
+	_ = x[DisplayModeCSV-(8)]
 }
 
-var _DisplayModeValues = []DisplayMode{DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment, DisplayModeVertical, DisplayModeTab, DisplayModeHTML, DisplayModeXML, DisplayModeCSV}
+var _DisplayModeValues = []DisplayMode{DisplayModeUnspecified, DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment, DisplayModeVertical, DisplayModeTab, DisplayModeHTML, DisplayModeXML, DisplayModeCSV}
 
 var _DisplayModeNameToValueMap = map[string]DisplayMode{
-	_DisplayModeName[0:5]:        DisplayModeTable,
-	_DisplayModeLowerName[0:5]:   DisplayModeTable,
-	_DisplayModeName[5:18]:       DisplayModeTableComment,
-	_DisplayModeLowerName[5:18]:  DisplayModeTableComment,
-	_DisplayModeName[18:38]:      DisplayModeTableDetailComment,
-	_DisplayModeLowerName[18:38]: DisplayModeTableDetailComment,
-	_DisplayModeName[38:46]:      DisplayModeVertical,
-	_DisplayModeLowerName[38:46]: DisplayModeVertical,
-	_DisplayModeName[46:49]:      DisplayModeTab,
-	_DisplayModeLowerName[46:49]: DisplayModeTab,
-	_DisplayModeName[49:53]:      DisplayModeHTML,
-	_DisplayModeLowerName[49:53]: DisplayModeHTML,
-	_DisplayModeName[53:56]:      DisplayModeXML,
-	_DisplayModeLowerName[53:56]: DisplayModeXML,
-	_DisplayModeName[56:59]:      DisplayModeCSV,
-	_DisplayModeLowerName[56:59]: DisplayModeCSV,
+	_DisplayModeName[0:11]:       DisplayModeUnspecified,
+	_DisplayModeLowerName[0:11]:  DisplayModeUnspecified,
+	_DisplayModeName[11:16]:      DisplayModeTable,
+	_DisplayModeLowerName[11:16]: DisplayModeTable,
+	_DisplayModeName[16:29]:      DisplayModeTableComment,
+	_DisplayModeLowerName[16:29]: DisplayModeTableComment,
+	_DisplayModeName[29:49]:      DisplayModeTableDetailComment,
+	_DisplayModeLowerName[29:49]: DisplayModeTableDetailComment,
+	_DisplayModeName[49:57]:      DisplayModeVertical,
+	_DisplayModeLowerName[49:57]: DisplayModeVertical,
+	_DisplayModeName[57:60]:      DisplayModeTab,
+	_DisplayModeLowerName[57:60]: DisplayModeTab,
+	_DisplayModeName[60:64]:      DisplayModeHTML,
+	_DisplayModeLowerName[60:64]: DisplayModeHTML,
+	_DisplayModeName[64:67]:      DisplayModeXML,
+	_DisplayModeLowerName[64:67]: DisplayModeXML,
+	_DisplayModeName[67:70]:      DisplayModeCSV,
+	_DisplayModeLowerName[67:70]: DisplayModeCSV,
 }
 
 var _DisplayModeNames = []string{
-	_DisplayModeName[0:5],
-	_DisplayModeName[5:18],
-	_DisplayModeName[18:38],
-	_DisplayModeName[38:46],
-	_DisplayModeName[46:49],
-	_DisplayModeName[49:53],
-	_DisplayModeName[53:56],
-	_DisplayModeName[56:59],
+	_DisplayModeName[0:11],
+	_DisplayModeName[11:16],
+	_DisplayModeName[16:29],
+	_DisplayModeName[29:49],
+	_DisplayModeName[49:57],
+	_DisplayModeName[57:60],
+	_DisplayModeName[60:64],
+	_DisplayModeName[64:67],
+	_DisplayModeName[67:70],
 }
 
 // DisplayModeString retrieves an enum value from the enum constants string name.

@@ -6,7 +6,8 @@ package enums
 type DisplayMode int
 
 const (
-	DisplayModeTable DisplayMode = iota
+	DisplayModeUnspecified DisplayMode = iota
+	DisplayModeTable
 	DisplayModeTableComment
 	DisplayModeTableDetailComment
 	DisplayModeVertical

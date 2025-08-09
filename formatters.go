@@ -348,6 +348,9 @@ func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *sys
 // NewFormatter creates a new formatter function based on the display mode.
 func NewFormatter(mode enums.DisplayMode) (FormatFunc, error) {
 	switch mode {
+	case enums.DisplayModeUnspecified:
+		// Should not happen as it's handled in main.go, but provide a sensible default
+		return formatTable(enums.DisplayModeTable), nil
 	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 		return formatTable(mode), nil
 	case enums.DisplayModeVertical:
