@@ -25,8 +25,6 @@ import (
 	"github.com/samber/lo"
 )
 
-//go:generate stringer -type=DisplayMode
-
 type DisplayMode int
 
 const (

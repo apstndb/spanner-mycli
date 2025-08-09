@@ -14,7 +14,6 @@ import (
 	"cloud.google.com/go/spanner"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -76,7 +75,7 @@ func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
 			var sysVars systemVariables
 			var lastErr error
 			for _, value := range test.values {
-				if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
+				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
 					lastErr = err
 					if !test.wantError {
 						t.Errorf("unexpected error for value %q: %v", value, err)
@@ -251,7 +250,7 @@ func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
 
 			// Add descriptor files
 			for _, file := range test.descriptorFiles {
-				if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
+				if err := sysVars.Add("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
 					t.Fatalf("Failed to add descriptor file %s: %v", file, err)
 				}
 			}
@@ -284,30 +283,30 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 		{
 			desc: "empty string value",
 			setup: func() *systemVariables {
-				return newSystemVariablesWithDefaultsForTest()
+				return &systemVariables{}
 			},
 			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-			value:     `""`,
+			value:     "",
 			wantError: true,
 			errorMsg:  "no such file or directory",
 		},
 		{
 			desc: "spaces only value",
 			setup: func() *systemVariables {
-				return newSystemVariablesWithDefaultsForTest()
+				return &systemVariables{}
 			},
 			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-			value:     `"   "`,
+			value:     "   ",
 			wantError: true,
 			errorMsg:  "no such file or directory",
 		},
 		{
 			desc: "non-existent path with parent directory traversal",
 			setup: func() *systemVariables {
-				return newSystemVariablesWithDefaultsForTest()
+				return &systemVariables{}
 			},
 			varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-			value:     `"../does_not_exist/non_existent_file.pb"`,
+			value:     "../does_not_exist/non_existent_file.pb",
 			wantError: true,
 			errorMsg:  "no such file or directory",
 		},
@@ -334,22 +333,22 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 }
 
 func TestSystemVariables_DefaultIsolationLevel(t *testing.T) {
-	// Use SetFromSimple for this test as it's testing string values that would
-	// come from config files or command-line flags, not GoogleSQL expressions
+	// TODO: More test
 	tests := []struct {
 		value string
 		want  sppb.TransactionOptions_IsolationLevel
 	}{
+		{"REPEATABLE READ", sppb.TransactionOptions_REPEATABLE_READ},
+		{"repeatable read", sppb.TransactionOptions_REPEATABLE_READ},
 		{"REPEATABLE_READ", sppb.TransactionOptions_REPEATABLE_READ},
 		{"repeatable_read", sppb.TransactionOptions_REPEATABLE_READ},
 		{"serializable", sppb.TransactionOptions_SERIALIZABLE},
 		{"SERIALIZABLE", sppb.TransactionOptions_SERIALIZABLE},
-		{"ISOLATION_LEVEL_UNSPECIFIED", sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED},
 	}
 	for _, test := range tests {
 		t.Run(test.value, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaultsForTest()
-			if err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value); err != nil {
+			var sysVars systemVariables
+			if err := sysVars.Set("DEFAULT_ISOLATION_LEVEL", test.value); err != nil {
 				t.Errorf("should success, but failed, value: %v, err: %v", test.value, err)
 			}
 
@@ -360,56 +359,8 @@ func TestSystemVariables_DefaultIsolationLevel(t *testing.T) {
 	}
 }
 
-// testSystemVariableSetGet is a helper function to test system variable set/get operations
-func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, string, string) error, methodName string, testCase struct {
-	desc                               string
-	sysVars                            *systemVariables
-	name                               string
-	value                              string
-	want                               map[string]string
-	unimplementedSet, unimplementedGet bool
-},
-) {
-	sysVars := testCase.sysVars
-	if sysVars == nil {
-		sysVars = newSystemVariablesWithDefaultsForTest()
-	}
-
-	// Only call Set if value is provided or if testing unimplemented setter
-	if testCase.value != "" || testCase.unimplementedSet {
-		err := setFunc(sysVars, testCase.name, testCase.value)
-		if !testCase.unimplementedSet {
-			if err != nil {
-				t.Errorf("sysVars.%s should success, but failed: %v", methodName, err)
-			}
-		} else {
-			var e errSetterUnimplemented
-			var readOnlyErr *sysvar.ErrVariableReadOnly
-			if !errors.As(err, &e) && !errors.As(err, &readOnlyErr) {
-				t.Errorf("sysVars.%s is skipped, but implemented: %v", methodName, err)
-			}
-		}
-	}
-
-	got, err := sysVars.Get(testCase.name)
-	if !testCase.unimplementedGet {
-		if err != nil {
-			t.Errorf("sysVars.Get should success, but failed: %v", err)
-		}
-
-		if diff := cmp.Diff(testCase.want, got); diff != "" {
-			t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
-		}
-	} else {
-		var e errGetterUnimplemented
-		if !errors.As(err, &e) {
-			t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
-		}
-	}
-}
-
-func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
-	// Test system variables using Simple mode (CLI flags, config files)
+func TestSystemVariablesSetGet(t *testing.T) {
+	// Should cover normal cases of all system variables
 	tests := []struct {
 		desc                               string
 		sysVars                            *systemVariables
@@ -421,21 +372,13 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 		// Java-spanner compatible variables
 		{
 			desc: "READ_TIMESTAMP", name: "READ_TIMESTAMP", unimplementedSet: true,
-			sysVars: func() *systemVariables {
-				sv := newSystemVariablesWithDefaultsForTest()
-				sv.ReadTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
-				return sv
-			}(),
-			want: singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
+			sysVars: &systemVariables{ReadTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)},
+			want:    singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
 		},
 		{
 			desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", unimplementedSet: true,
-			sysVars: func() *systemVariables {
-				sv := newSystemVariablesWithDefaultsForTest()
-				sv.CommitTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
-				return sv
-			}(),
-			want: singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
+			sysVars: &systemVariables{CommitTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)},
+			want:    singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
 		},
 		{
 			desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", unimplementedSet: true,
@@ -619,13 +562,9 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 		},
 		{
 			desc: "TRANSACTION_TAG", name: "TRANSACTION_TAG", value: "test-tag",
-			sysVars: func() *systemVariables {
-				sv := newSystemVariablesWithDefaultsForTest()
-				sv.CurrentSession = &Session{tc: &transactionContext{
-					attrs: transactionAttributes{mode: transactionModePending},
-				}}
-				return sv
-			}(),
+			sysVars: &systemVariables{CurrentSession: &Session{tc: &transactionContext{
+				attrs: transactionAttributes{mode: transactionModePending},
+			}}},
 			want: singletonMap("TRANSACTION_TAG", "test-tag"),
 		},
 
@@ -750,70 +689,41 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			test := test
-			testSystemVariableSetGet(t, (*systemVariables).SetFromSimple, "SetFromSimple", test)
-		})
-	}
-}
+			sysVars := test.sysVars
+			if sysVars == nil {
+				sysVars = &systemVariables{}
+			}
 
-func TestSystemVariablesSetGetGoogleSQLMode(t *testing.T) {
-	// Test system variables using GoogleSQL mode (REPL, SQL scripts)
-	tests := []struct {
-		desc                               string
-		sysVars                            *systemVariables
-		name                               string
-		value                              string
-		want                               map[string]string
-		unimplementedSet, unimplementedGet bool
-	}{
-		// String variables with GoogleSQL syntax
-		{
-			desc: "CLI_PROMPT with quoted string", name: "CLI_PROMPT", value: `"test-prompt"`,
-			want: singletonMap("CLI_PROMPT", "test-prompt"),
-		},
-		{
-			desc: "CLI_PROMPT2 with quoted string", name: "CLI_PROMPT2", value: `"test-prompt2"`,
-			want: singletonMap("CLI_PROMPT2", "test-prompt2"),
-		},
-		{
-			desc: "STATEMENT_TAG with quoted string", name: "STATEMENT_TAG", value: `"test-statement"`,
-			want: singletonMap("STATEMENT_TAG", "test-statement"),
-		},
-		{
-			desc: "CLI_EXPLAIN_FORMAT with quoted string", name: "CLI_EXPLAIN_FORMAT", value: `"CURRENT"`,
-			want: singletonMap("CLI_EXPLAIN_FORMAT", "CURRENT"),
-		},
-		{
-			desc: "OPTIMIZER_VERSION with quoted string", name: "OPTIMIZER_VERSION", value: `"LATEST"`,
-			want: singletonMap("OPTIMIZER_VERSION", "LATEST"),
-		},
-		{
-			desc: "OPTIMIZER_STATISTICS_PACKAGE with quoted string", name: "OPTIMIZER_STATISTICS_PACKAGE", value: `"test-package"`,
-			want: singletonMap("OPTIMIZER_STATISTICS_PACKAGE", "test-package"),
-		},
-		// Boolean variables with GoogleSQL syntax
-		{
-			desc: "CLI_USE_PAGER with TRUE keyword", name: "CLI_USE_PAGER", value: "TRUE",
-			want: singletonMap("CLI_USE_PAGER", "TRUE"),
-		},
-		{
-			desc: "CLI_USE_PAGER with FALSE keyword", name: "CLI_USE_PAGER", value: "FALSE",
-			want: singletonMap("CLI_USE_PAGER", "FALSE"),
-		},
-		// Duration with quoted string
-		{
-			desc: "STATEMENT_TIMEOUT with quoted duration", name: "STATEMENT_TIMEOUT", value: `"30s"`,
-			want: singletonMap("STATEMENT_TIMEOUT", "30s"),
-		},
-		{
-			desc: "MAX_COMMIT_DELAY with quoted duration", name: "MAX_COMMIT_DELAY", value: `"100ms"`,
-			want: singletonMap("MAX_COMMIT_DELAY", "100ms"),
-		},
-	}
+			// Only call Set if value is provided or if testing unimplemented setter
+			if test.value != "" || test.unimplementedSet {
+				err := sysVars.Set(test.name, test.value)
+				if !test.unimplementedSet {
+					if err != nil {
+						t.Errorf("sysVars.Set should success, but failed: %v", err)
+					}
+				} else {
+					var e errSetterUnimplemented
+					if !errors.As(err, &e) {
+						t.Errorf("sysVars.Set is skipped, but implemented: %v", err)
+					}
+				}
+			}
 
-	for _, test := range tests {
-		t.Run(test.desc, func(t *testing.T) {
-			test := test
-			testSystemVariableSetGet(t, (*systemVariables).SetFromGoogleSQL, "SetFromGoogleSQL", test)
+			got, err := sysVars.Get(test.name)
+			if !test.unimplementedGet {
+				if err != nil {
+					t.Errorf("sysVars.Get should success, but failed: %v", err)
+				}
+
+				if diff := cmp.Diff(test.want, got); diff != "" {
+					t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+				}
+			} else {
+				var e errGetterUnimplemented
+				if !errors.As(err, &e) {
+					t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
+				}
+			}
 		})
 	}
 }
@@ -868,8 +778,8 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaultsForTest()
-			err := sysVars.SetFromSimple("CLI_ENDPOINT", tt.value)
+			sysVars := &systemVariables{}
+			err := sysVars.Set("CLI_ENDPOINT", tt.value)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -912,8 +822,8 @@ func TestSystemVariables_StatementTimeout(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaultsForTest()
-			err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", test.value)
+			var sysVars systemVariables
+			err := sysVars.Set("STATEMENT_TIMEOUT", test.value)
 
 			if test.expectError {
 				if err == nil {
@@ -1240,8 +1150,8 @@ func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaultsForTest()
-			err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
+			sysVars := newSystemVariablesWithDefaults()
+			err := sysVars.Set("CLI_SKIP_COLUMN_NAMES", tt.value)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1376,7 +1286,7 @@ func TestSessionInitOnlyVariables(t *testing.T) {
 			}
 
 			// Test Set operation
-			err := sv.SetFromSimple(tt.variableCase, tt.setValue)
+			err := sv.Set(tt.variableCase, tt.setValue)
 
 			// Check error expectation
 			if tt.expectError {

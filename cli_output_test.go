@@ -243,10 +243,11 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sysVars := newSystemVariablesWithDefaultsForTest()
-			sysVars.CLIFormat = DisplayModeTable
+			sysVars := &systemVariables{
+				CLIFormat: DisplayModeTable,
+			}
 
-			err := sysVars.SetFromSimple("CLI_FORMAT", tt.setValue)
+			err := sysVars.Set("CLI_FORMAT", tt.setValue)
 
 			if (err != nil) != tt.wantError {
 				t.Errorf("Set() error = %v, wantError %v", err, tt.wantError)
@@ -272,7 +273,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{DisplayModeHTML, "HTML"},
 		{DisplayModeXML, "XML"},
 		{DisplayModeCSV, "CSV"},
-		{DisplayMode(999), "DisplayMode(999)"}, // Invalid mode returns Go's default format
+		{DisplayMode(999), "TABLE"}, // Invalid mode should return default
 	}
 
 	for _, tt := range tests {
