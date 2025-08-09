@@ -150,7 +150,7 @@ type Session struct {
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
 	// - clearTransactionContext, TransactionAttrs (context management)
 	// - DetermineTransaction (needs isolationLevel from pending transaction)
-	// - getTransactionTag (needs tag access for pending transaction)
+	// - getTransactionTag, setTransactionTag (needs tag access for pending transaction)
 	// - BeginPendingTransaction, BeginReadWriteTransaction, BeginReadOnlyTransaction (atomic transaction creation)
 	// - validateNoActiveTransactionLocked (internal validation helper)
 	// All other functions MUST use these helpers instead of direct tc access.
@@ -220,8 +220,6 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 	newSystemVariables := *h.systemVariables
 	newSystemVariables.Database = s.Database
 	newSystemVariables.Role = s.Role
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
 
 	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
 	if err != nil {
@@ -253,8 +251,6 @@ func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (
 	// Clear database and role to switch to detached mode
 	newSystemVariables.Database = ""
 	newSystemVariables.Role = ""
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
 
 	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
 	if err != nil {
@@ -712,6 +708,19 @@ func (s *Session) getTransactionTag() string {
 		return s.tc.attrs.tag
 	}
 	return ""
+}
+
+// setTransactionTag sets the transaction tag on a pending transaction.
+// Returns an error if not in a pending transaction.
+// NOTE: This function has direct tc access to modify tag on pending transactions.
+func (s *Session) setTransactionTag(tag string) error {
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+	if s.tc == nil || s.tc.attrs.mode != transactionModePending {
+		return ErrNotInPendingTransaction
+	}
+	s.tc.attrs.tag = tag
+	return nil
 }
 
 // BeginReadWriteTransaction starts read-write transaction.

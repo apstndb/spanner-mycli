@@ -77,7 +77,7 @@ type SetStatement struct {
 func (s *SetStatement) isDetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
+	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil

@@ -37,8 +37,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-
-	"github.com/apstndb/spanner-mycli/internal/parser/sysvar"
 )
 
 type AutocommitDMLMode bool
@@ -60,88 +58,75 @@ type LastQueryCache struct {
 // modified copies of systemVariables (e.g., for USE/DETACH operations).
 type systemVariables struct {
 	// java-spanner compatible
-	AutoPartitionMode bool                         `sysvar:"name=AUTO_PARTITION_MODE,desc='A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.'"`
-	RPCPriority       sppb.RequestOptions_Priority `sysvar:"name=RPC_PRIORITY,desc=\"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.\",type=proto_enum,proto=sppb.RequestOptions_Priority,prefix=PRIORITY_"`
-	// Complex type - requires custom parser
-	ReadOnlyStaleness *spanner.TimestampBound `sysvar:"name=READ_ONLY_STALENESS,desc='A property of type STRING for read-only transactions with flexible staleness.',type=manual"`
-	// Read-only with custom formatter
-	ReadTimestamp              time.Time `sysvar:"name=READ_TIMESTAMP,desc='The read timestamp of the most recent read-only transaction.',readonly,getter=formatReadTimestamp"`
-	OptimizerVersion           string    `sysvar:"name=OPTIMIZER_VERSION,desc='A property of type STRING indicating the optimizer version. The version is either an integer string or LATEST.'"`
-	OptimizerStatisticsPackage string    `sysvar:"name=OPTIMIZER_STATISTICS_PACKAGE,desc='A property of type STRING indicating the current optimizer statistics package that is used by this connection.'"`
-	// Complex type - not exposed in registry
-	CommitResponse *sppb.CommitResponse `sysvar:"name=COMMIT_RESPONSE,desc='The most recent commit response from Spanner.',type=manual"`
-	// Read-only with custom formatter
-	CommitTimestamp             time.Time      `sysvar:"name=COMMIT_TIMESTAMP,desc='The commit timestamp of the last read-write transaction that Spanner committed.',readonly,getter=formatCommitTimestamp"`
-	TransactionTag              string         `sysvar:"name=TRANSACTION_TAG,desc='A property of type STRING that contains the transaction tag for the next transaction.'"`
-	RequestTag                  string         `sysvar:"name=STATEMENT_TAG,desc='A property of type STRING that contains the request tag for the next statement.'"`
-	ReadOnly                    bool           `sysvar:"name=READONLY,desc='A boolean indicating whether or not the connection is in read-only mode. The default is false.',setter=setReadOnly"`
-	DataBoostEnabled            bool           `sysvar:"name=DATA_BOOST_ENABLED,desc='A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.'"`
-	AutoBatchDML                bool           `sysvar:"name=AUTO_BATCH_DML,desc='A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.'"`
-	ExcludeTxnFromChangeStreams bool           `sysvar:"name=EXCLUDE_TXN_FROM_CHANGE_STREAMS,desc='Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).'"`
-	MaxCommitDelay              *time.Duration `sysvar:"name=MAX_COMMIT_DELAY,desc='The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.',type=nullable_duration,min=time.Duration(0),max=500 * time.Millisecond"`
-	MaxPartitionedParallelism   int64          `sysvar:"name=MAX_PARTITIONED_PARALLELISM,desc='A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY'"`
-	// Custom enum type
-	AutocommitDMLMode AutocommitDMLMode `sysvar:"name=AUTOCOMMIT_DML_MODE,desc='A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.',type=manual"`
-	StatementTimeout  *time.Duration    `sysvar:"name=STATEMENT_TIMEOUT,desc='A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). Default is 10m.',type=nullable_duration,min=time.Duration(0)"`
-	ReturnCommitStats bool              `sysvar:"name=RETURN_COMMIT_STATS,desc='A property of type BOOL indicating whether statistics should be returned for transactions on this connection.'"`
+	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
+	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
+	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
+	ReadTimestamp               time.Time                    // READ_TIMESTAMP
+	OptimizerVersion            string                       // OPTIMIZER_VERSION
+	OptimizerStatisticsPackage  string                       // OPTIMIZER_STATISTICS_PACKAGE
+	CommitResponse              *sppb.CommitResponse         // COMMIT_RESPONSE
+	CommitTimestamp             time.Time                    // COMMIT_TIMESTAMP
+	TransactionTag              string                       // TRANSACTION_TAG
+	RequestTag                  string                       // STATEMENT_TAG
+	ReadOnly                    bool                         // READONLY
+	DataBoostEnabled            bool                         // DATA_BOOST_ENABLED
+	AutoBatchDML                bool                         // AUTO_BATCH_DML
+	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
+	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
+	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
+	AutocommitDMLMode           AutocommitDMLMode            // AUTOCOMMIT_DML_MODE
+	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
+	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
 
-	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel `sysvar:"name=DEFAULT_ISOLATION_LEVEL,desc='The transaction isolation level that is used by default for read/write transactions.',type=proto_enum,proto=sppb.TransactionOptions_IsolationLevel,prefix=ISOLATION_LEVEL_,aliases=sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED:UNSPECIFIED"`
+	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
 
 	// CLI_* variables
 
-	// Custom enum type
-	CLIFormat   DisplayMode `sysvar:"name=CLI_FORMAT,desc='Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values).',type=manual"`
-	Project     string      `sysvar:"name=CLI_PROJECT,desc='GCP Project ID.',readonly"`
-	Instance    string      `sysvar:"name=CLI_INSTANCE,desc='Cloud Spanner instance ID.',readonly"`
-	Database    string      `sysvar:"name=CLI_DATABASE,desc='Cloud Spanner database ID.',readonly"`
-	Verbose     bool        `sysvar:"name=CLI_VERBOSE,desc='Display verbose output.'"`
-	Prompt      string      `sysvar:"name=CLI_PROMPT,desc='Custom prompt for spanner-mycli.'"`
-	Prompt2     string      `sysvar:"name=CLI_PROMPT2,desc='Custom continuation prompt for spanner-mycli.',setter=setPrompt2"`
-	HistoryFile string      `sysvar:"name=CLI_HISTORY_FILE,desc='Path to the history file.',readonly"`
+	CLIFormat   DisplayMode // CLI_FORMAT
+	Project     string      // CLI_PROJECT
+	Instance    string      // CLI_INSTANCE
+	Database    string      // CLI_DATABASE
+	Verbose     bool        // CLI_VERBOSE
+	Prompt      string      // CLI_PROMPT
+	Prompt2     string      // CLI_PROMPT2
+	HistoryFile string      // CLI_HISTORY_FILE
 
-	// Complex type - custom parser
-	DirectedRead *sppb.DirectedReadOptions `sysvar:"name=CLI_DIRECT_READ,desc='Configuration for directed reads.',type=manual"`
+	DirectedRead *sppb.DirectedReadOptions // CLI_DIRECT_READ
 
-	// Complex parser with ADD support
-	ProtoDescriptorFile []string `sysvar:"name=CLI_PROTO_DESCRIPTOR_FILE,desc='Comma-separated list of proto descriptor files. Supports ADD to append files.',type=manual"`
-	// Custom enum with aliases
-	BuildStatementMode parseMode `sysvar:"name=CLI_PARSE_MODE,desc='Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED',type=manual"`
-	Insecure           bool      `sysvar:"name=CLI_INSECURE,desc='Skip TLS certificate verification (insecure).',readonly"`
-	LogGrpc            bool      `sysvar:"name=CLI_LOG_GRPC,desc='Enable gRPC logging.',readonly"`
-	LintPlan           bool      `sysvar:"name=CLI_LINT_PLAN,desc='Enable query plan linting.'"`
-	UsePager           bool      `sysvar:"name=CLI_USE_PAGER,desc='Enable pager for output.'"`
-	AutoWrap           bool      `sysvar:"name=CLI_AUTOWRAP,desc='Enable automatic line wrapping.'"`
-	FixedWidth         *int64    `sysvar:"name=CLI_FIXED_WIDTH,desc='If set, limits output width to the specified number of characters. NULL means automatic width detection.',type=nullable_int"`
-	EnableHighlight    bool      `sysvar:"name=CLI_ENABLE_HIGHLIGHT,desc='Enable syntax highlighting.'"`
-	MultilineProtoText bool      `sysvar:"name=CLI_PROTOTEXT_MULTILINE,desc='Enable multiline prototext output.'"`
-	MarkdownCodeblock  bool      `sysvar:"name=CLI_MARKDOWN_CODEBLOCK,desc='Enable markdown codeblock output.'"`
+	ProtoDescriptorFile []string  // CLI_PROTO_DESCRIPTOR_FILE
+	BuildStatementMode  parseMode // CLI_PARSE_MODE
+	Insecure            bool      // CLI_INSECURE
+	LogGrpc             bool      // CLI_LOG_GRPC
+	LintPlan            bool      // CLI_LINT_PLAN
+	UsePager            bool      // CLI_USE_PAGER
+	AutoWrap            bool      // CLI_AUTOWRAP
+	FixedWidth          *int64    // CLI_FIXED_WIDTH
+	EnableHighlight     bool      // CLI_ENABLE_HIGHLIGHT
+	MultilineProtoText  bool      // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock   bool      // CLI_MARKDOWN_CODEBLOCK
 
-	QueryMode         *sppb.ExecuteSqlRequest_QueryMode `sysvar:"name=CLI_QUERY_MODE,desc='Query execution mode.',type=proto_enum,proto=sppb.ExecuteSqlRequest_QueryMode,getter=getQueryMode,setter=setQueryMode"`
-	TryPartitionQuery bool                              `sysvar:"name=CLI_TRY_PARTITION_QUERY,desc='A boolean indicating whether to test query for partition compatibility instead of executing it.'"`
+	QueryMode         *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
+	TryPartitionQuery bool                              // CLI_TRY_PARTITION_QUERY
 
-	VertexAIProject    string                     `sysvar:"name=CLI_VERTEXAI_PROJECT,desc='Vertex AI project for natural language features.'"`
-	VertexAIModel      string                     `sysvar:"name=CLI_VERTEXAI_MODEL,desc='Vertex AI model for natural language features.'"`
-	DatabaseDialect    databasepb.DatabaseDialect `sysvar:"name=CLI_DATABASE_DIALECT,desc='Database dialect for the session.',type=proto_enum,proto=databasepb.DatabaseDialect,aliases=databasepb.DatabaseDialect_DATABASE_DIALECT_UNSPECIFIED:"`
-	EchoExecutedDDL    bool                       `sysvar:"name=CLI_ECHO_EXECUTED_DDL,desc='Echo executed DDL statements.'"`
-	Role               string                     `sysvar:"name=CLI_ROLE,desc='Cloud Spanner database role.',readonly"`
-	EchoInput          bool                       `sysvar:"name=CLI_ECHO_INPUT,desc='Echo input statements.'"`
-	Host               string                     `sysvar:"name=CLI_HOST,desc='Host on which Spanner server is located',readonly"`
-	Port               int                        `sysvar:"name=CLI_PORT,desc='Port number for connections.',readonly,getter=getPortAsInt64"`
-	EmulatorPlatform   string                     `sysvar:"name=CLI_EMULATOR_PLATFORM,desc='Container platform used by embedded emulator.',readonly"`
-	OutputTemplateFile string                     // Not exposed as system variable
-	TabWidth           int64                      `sysvar:"name=CLI_TAB_WIDTH,desc='Tab width. It is used for expanding tabs.'"`
-	// Custom enum with setter
-	LogLevel slog.Level `sysvar:"name=CLI_LOG_LEVEL,desc='Log level for the CLI.',type=manual,setter=setLogLevel"`
+	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
+	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
+	DatabaseDialect    databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
+	EchoExecutedDDL    bool                       // CLI_ECHO_EXECUTED_DDL
+	Role               string                     // CLI_ROLE
+	EchoInput          bool                       // CLI_ECHO_INPUT
+	Host               string                     // CLI_HOST
+	Port               int                        // CLI_PORT
+	EmulatorPlatform   string                     // CLI_EMULATOR_PLATFORM
+	OutputTemplateFile string                     // CLI_OUTPUT_TEMPLATE_FILE
+	TabWidth           int64                      // CLI_TAB_WIDTH
+	LogLevel           slog.Level                 // CLI_LOG_LEVEL
 
-	// Custom template parser with side effects
-	AnalyzeColumns string `sysvar:"name=CLI_ANALYZE_COLUMNS,desc='Go template for analyzing column data.',type=manual"`
-	// Custom template parser
-	InlineStats string `sysvar:"name=CLI_INLINE_STATS,desc='<name>:<template>, ...',type=manual"`
+	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
+	InlineStats    string // CLI_INLINE_STATS
 
-	// Custom enum type
-	ExplainFormat          explainFormat `sysvar:"name=CLI_EXPLAIN_FORMAT,desc='Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.',type=manual"`
-	ExplainWrapWidth       int64         `sysvar:"name=CLI_EXPLAIN_WRAP_WIDTH,desc='Controls query plan wrap width. It effects only operators column contents'"`
-	AutoConnectAfterCreate bool          `sysvar:"name=CLI_AUTO_CONNECT_AFTER_CREATE,desc='A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.'"`
+	ExplainFormat          explainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth       int64         // CLI_EXPLAIN_WRAP_WIDTH
+	AutoConnectAfterCreate bool          // CLI_AUTO_CONNECT_AFTER_CREATE
 
 	// They are internal variables and hidden from system variable statements
 	ProtoDescriptor      *descriptorpb.FileDescriptorSet
@@ -163,31 +148,13 @@ type systemVariables struct {
 	StreamManager *StreamManager
 
 	// TODO: Expose as CLI_*
-	EnableProgressBar         bool   `sysvar:"name=CLI_ENABLE_PROGRESS_BAR,desc='A boolean indicating whether to display progress bars during operations. The default is false.'"`
-	ImpersonateServiceAccount string `sysvar:"name=CLI_IMPERSONATE_SERVICE_ACCOUNT,desc='Service account to impersonate.',readonly"`
-	EnableADCPlus             bool   `sysvar:"name=CLI_ENABLE_ADC_PLUS,desc='A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.',setter=setEnableADCPlus"`
-	MCP                       bool   `sysvar:"name=CLI_MCP,desc='A read-only boolean indicating whether the connection is running as an MCP server.',readonly"`                // CLI_MCP (read-only)
-	AsyncDDL                  bool   `sysvar:"name=CLI_ASYNC_DDL,desc='A boolean indicating whether DDL statements should be executed asynchronously. The default is false.'"` // CLI_ASYNC_DDL
-	SkipSystemCommand         bool   `sysvar:"name=CLI_SKIP_SYSTEM_COMMAND,desc='Controls whether system commands are disabled.'"`                                             // CLI_SKIP_SYSTEM_COMMAND
-	SkipColumnNames           bool   `sysvar:"name=CLI_SKIP_COLUMN_NAMES,desc='A boolean indicating whether to suppress column headers in output. The default is false.'"`     // CLI_SKIP_COLUMN_NAMES
-
-	// Registry holds the parser registry for system variables
-	Registry *sysvar.Registry
-
-	// Computed variables (using underscore fields with struct tags)
-	_ struct{} `sysvar:"name=CLI_VERSION,desc='The version of spanner-mycli.',readonly,getter=getCLIVersion"`
-	_ struct{} `sysvar:"name=CLI_CURRENT_WIDTH,desc='Current terminal width. Returns NULL if not connected to a terminal.',readonly,getter=getCLICurrentWidth"`
-	_ struct{} `sysvar:"name=CLI_ENDPOINT,desc='Host and port for connections (host:port format).',getter=getCLIEndpoint,setter=setCLIEndpoint"`
-
-	// Unimplemented variables (kept for compatibility)
-	Autocommit            bool `sysvar:"name=AUTOCOMMIT,desc='A boolean indicating whether or not the connection is in autocommit mode. The default is true.',type=unimplemented"`
-	RetryAbortsInternally bool `sysvar:"name=RETRY_ABORTS_INTERNALLY,desc='A boolean indicating whether the connection automatically retries aborted transactions. The default is true.',type=unimplemented"`
-
-	// Complex setter with side effects
-	_ struct{} `sysvar:"name=CLI_OUTPUT_TEMPLATE_FILE,desc='Go text/template for formatting the output of the CLI.',getter=getCLIOutputTemplateFile,setter=setCLIOutputTemplateFile"`
-
-	// Multi-value getters (special handling needed)
-	_ struct{} `sysvar:"name=COMMIT_RESPONSE,desc='Returns a result set with one row and two columns, COMMIT_TIMESTAMP and MUTATION_COUNT.',type=manual"`
+	EnableProgressBar         bool
+	ImpersonateServiceAccount string
+	EnableADCPlus             bool
+	MCP                       bool // CLI_MCP (read-only)
+	AsyncDDL                  bool // CLI_ASYNC_DDL
+	SkipSystemCommand         bool // CLI_SKIP_SYSTEM_COMMAND
+	SkipColumnNames           bool // CLI_SKIP_COLUMN_NAMES
 }
 
 // parseEndpoint parses an endpoint string into host and port components.
@@ -254,7 +221,7 @@ func (sv *systemVariables) ProjectPath() string {
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
-	sv := systemVariables{
+	return systemVariables{
 		// Java-spanner compatible defaults
 		ReturnCommitStats: true,
 		RPCPriority:       defaultPriority,
@@ -269,26 +236,6 @@ func newSystemVariablesWithDefaults() systemVariables {
 		VertexAIModel:        defaultVertexAIModel,
 		OutputTemplate:       defaultOutputFormat,
 	}
-
-	// Don't initialize registry here - it will be done after the struct is assigned
-	// to avoid closures capturing a pointer to the local copy
-	return sv
-}
-
-// ensureRegistry initializes the registry if it hasn't been initialized yet.
-// This allows lazy initialization on first use, eliminating the need for
-// explicit initialization calls.
-func (sv *systemVariables) ensureRegistry() {
-	if sv.Registry == nil {
-		sv.Registry = createSystemVariableRegistry(sv)
-	}
-}
-
-// newSystemVariablesWithDefaultsForTest creates a new systemVariables instance
-// with defaults for testing.
-func newSystemVariablesWithDefaultsForTest() *systemVariables {
-	sv := newSystemVariablesWithDefaults()
-	return &sv
 }
 
 type errSetterUnimplemented struct {
@@ -338,31 +285,8 @@ var sessionInitOnlyVariables = []string{
 	// "CLI_ENABLE_CLIENT_METRICS",
 }
 
-// SetFromGoogleSQL sets a system variable using GoogleSQL parsing mode.
-// This is used for SET statements in REPL and SQL scripts where values
-// are parsed as GoogleSQL expressions (e.g., TRUE, 'string value').
-//
-// This method acts as a facade during the migration from systemVariableDefMap
-// to the new sysvar.Registry. It first attempts to use the new registry,
-// then falls back to the legacy system for unmigrated variables.
-// TODO: Remove the fallback logic once all variables are migrated to sysvar.Registry
-func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
+func (sv *systemVariables) Set(name string, value string) error {
 	upperName := strings.ToUpper(name)
-
-	// Ensure registry is initialized
-	sv.ensureRegistry()
-
-	// First check if the variable is in the new registry
-	if sv.Registry.Has(upperName) {
-		err := sv.Registry.SetFromGoogleSQL(upperName, value)
-		// Convert unimplemented errors to legacy error types for compatibility
-		if err != nil && strings.Contains(err.Error(), "is not implemented") {
-			return errSetterUnimplemented{name}
-		}
-		return err
-	}
-
-	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)
@@ -392,79 +316,8 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 	return a.Accessor.Setter(sv, upperName, value)
 }
 
-// SetFromSimple sets a system variable using Simple parsing mode.
-// This is used for command-line flags and config files where values
-// don't follow GoogleSQL syntax rules.
-//
-// This method checks the new registry first before falling back to systemVariableDefMap
-// for legacy compatibility. Most variables are now handled by the unified registry system.
-func (sv *systemVariables) SetFromSimple(name string, value string) error {
-	upperName := strings.ToUpper(name)
-
-	// Ensure registry is initialized
-	sv.ensureRegistry()
-
-	// First check if the variable is in the new registry
-	if sv.Registry.Has(upperName) {
-		err := sv.Registry.SetFromSimple(upperName, value)
-		// Convert unimplemented errors to legacy error types for compatibility
-		if err != nil && strings.Contains(err.Error(), "is not implemented") {
-			return errSetterUnimplemented{name}
-		}
-		return err
-	}
-
-	// Fall back to SetFromGoogleSQL for old system (which doesn't distinguish modes)
-	return sv.SetFromGoogleSQL(name, value)
-}
-
 func (sv *systemVariables) Add(name string, value string) error {
-	// Add method is called from REPL/SQL scripts, so it uses GoogleSQL mode
-	return sv.AddFromGoogleSQL(name, value)
-}
-
-func (sv *systemVariables) AddFromGoogleSQL(name string, value string) error {
 	upperName := strings.ToUpper(name)
-
-	// Ensure registry is initialized
-	sv.ensureRegistry()
-
-	// First check if the variable is in the new registry
-	if sv.Registry.Has(upperName) {
-		if sv.Registry.HasAppendSupport(upperName) {
-			return sv.Registry.AppendFromGoogleSQL(upperName, value)
-		}
-		return fmt.Errorf("variable %s does not support ADD operation", upperName)
-	}
-
-	// Fall back to the old system
-	a, ok := systemVariableDefMap[upperName]
-	if !ok {
-		return fmt.Errorf("unknown variable name: %v", name)
-	}
-	if a.Accessor.Adder == nil {
-		return errAdderUnimplemented{name}
-	}
-
-	return a.Accessor.Adder(sv, upperName, value)
-}
-
-func (sv *systemVariables) AddFromSimple(name string, value string) error {
-	upperName := strings.ToUpper(name)
-
-	// Ensure registry is initialized
-	sv.ensureRegistry()
-
-	// First check if the variable is in the new registry
-	if sv.Registry.Has(upperName) {
-		if sv.Registry.HasAppendSupport(upperName) {
-			return sv.Registry.AppendFromSimple(upperName, value)
-		}
-		return fmt.Errorf("variable %s does not support ADD operation", upperName)
-	}
-
-	// Fall back to the old system - the old system doesn't distinguish modes
-	// so we just call the adder as before
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return fmt.Errorf("unknown variable name: %v", name)
@@ -478,24 +331,6 @@ func (sv *systemVariables) AddFromSimple(name string, value string) error {
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
-
-	// Ensure registry is initialized
-	sv.ensureRegistry()
-
-	// First check if the variable is in the new registry
-	if sv.Registry.Has(upperName) {
-		value, err := sv.Registry.Get(upperName)
-		if err != nil {
-			// Convert unimplemented errors to legacy error types for compatibility
-			if strings.Contains(err.Error(), "is not implemented") {
-				return nil, errGetterUnimplemented{name}
-			}
-			return nil, err
-		}
-		return singletonMap(name, value), nil
-	}
-
-	// Fall back to the old system
 	a, ok := systemVariableDefMap[upperName]
 	if !ok {
 		return nil, fmt.Errorf("unknown variable name: %v", name)
@@ -519,10 +354,6 @@ func singletonMap[K comparable, V any](k K, v V) map[K]V {
 	return map[K]V{k: v}
 }
 
-// parseTimeString parses timestamp strings from spanner.TimestampBound.String() output.
-// This is NOT for parsing user input - user input is handled by parseTimestampBound.
-// The format matches time.Time.String() default format, which is what TimestampBound.String()
-// uses internally for readTimestamp and minReadTimestamp modes.
 func parseTimeString(s string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s)
 }
@@ -550,9 +381,6 @@ func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
 	return nil
 }
 
-// systemVariableDefMap contains legacy variables that haven't been migrated to the new system yet.
-// TODO: Migrate COMMIT_RESPONSE and CLI_DIRECT_READ to the new registry system,
-// then remove this map and all fallback logic.
 var systemVariableDefMap = map[string]systemVariableDef{
 	"READONLY": {
 		Description: "A boolean indicating whether or not the connection is in read-only mode. The default is false.",
@@ -573,6 +401,30 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.ReadOnly }),
 		},
 	},
+	"DEFAULT_ISOLATION_LEVEL": {
+		Description: "The transaction isolation level that is used by default for read/write transactions.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				v := strings.Join(strings.Fields(strings.ToUpper(unquoteString(value))), "_")
+				isolation, ok := sppb.TransactionOptions_IsolationLevel_value[v]
+				if ok {
+					this.DefaultIsolationLevel = sppb.TransactionOptions_IsolationLevel(isolation)
+				} else {
+					return fmt.Errorf("invalid isolation level: %v", v)
+				}
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.DefaultIsolationLevel.String()), nil
+			},
+		},
+	},
+	"AUTO_PARTITION_MODE": {
+		Description: "A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoPartitionMode
+		}),
+	},
 	"AUTOCOMMIT": {Description: "A boolean indicating whether or not the connection is in autocommit mode. The default is true."},
 	"CLI_OUTPUT_TEMPLATE_FILE": {
 		Description: "Go text/template for formatting the output of the CLI.",
@@ -591,7 +443,88 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			}),
 		},
 	},
+	"MAX_COMMIT_DELAY": {
+		Description: "The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if strings.ToUpper(value) == "NULL" {
+					this.MaxCommitDelay = nil
+					return nil
+				}
+
+				duration, err := time.ParseDuration(unquoteString(value))
+				if err != nil {
+					return fmt.Errorf("failed to parse duration %s: %w", value, err)
+				}
+
+				this.MaxCommitDelay = &duration
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.MaxCommitDelay == nil {
+					return singletonMap(name, "NULL"), errIgnored
+				}
+
+				return singletonMap(name, this.MaxCommitDelay.String()), nil
+			},
+		},
+	},
 	"RETRY_ABORTS_INTERNALLY": {Description: "A boolean indicating whether the connection automatically retries aborted transactions. The default is true."},
+	"MAX_PARTITIONED_PARALLELISM": {
+		Description: "A property of type `INT64` indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for `AUTO_PARTITION_MODE=TRUE` and `RUN PARTITIONED QUERY`",
+		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
+			return &variables.MaxPartitionedParallelism
+		}),
+	},
+	"AUTOCOMMIT_DML_MODE": {
+		Description: "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				switch unquoteString(value) {
+				case "PARTITIONED_NON_ATOMIC":
+					this.AutocommitDMLMode = AutocommitDMLModePartitionedNonAtomic
+					return nil
+				case "TRANSACTIONAL":
+					this.AutocommitDMLMode = AutocommitDMLModeTransactional
+					return nil
+				default:
+					return fmt.Errorf("invalid AUTOCOMMIT_DML_MODE value: %v", value)
+				}
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name,
+					lo.Ternary(this.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic, "PARTITIONED_NON_ATOMIC", "TRANSACTIONAL")), nil
+			},
+		},
+	},
+	"STATEMENT_TIMEOUT": {
+		Description: "A property of type STRING indicating the current timeout value for statements (e.g., '10s', '5m', '1h'). Default is '10m'.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.StatementTimeout == nil {
+					return singletonMap(name, "10m"), nil
+				}
+				return singletonMap(name, this.StatementTimeout.String()), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				timeout, err := time.ParseDuration(unquoteString(value))
+				if err != nil {
+					return fmt.Errorf("invalid timeout format: %v", err)
+				}
+				if timeout < 0 {
+					return fmt.Errorf("timeout cannot be negative")
+				}
+				this.StatementTimeout = &timeout
+				return nil
+			},
+		},
+	},
+	"EXCLUDE_TXN_FROM_CHANGE_STREAMS": {
+		Description: "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.ExcludeTxnFromChangeStreams
+		}),
+	},
 	"READ_ONLY_STALENESS": {
 		Description: "A property of type `STRING` indicating the current read-only staleness setting that Spanner uses for read-only transactions and single read-only queries.",
 		Accessor: accessor{
@@ -639,6 +572,118 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				}
 			},
 			nil,
+		},
+	},
+	"OPTIMIZER_VERSION": {
+		Description: "A property of type `STRING` indicating the optimizer version. The version is either an integer string or 'LATEST'.",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.OptimizerVersion
+		}),
+	},
+	"OPTIMIZER_STATISTICS_PACKAGE": {
+		Description: "A property of type STRING indicating the current optimizer statistics package that is used by this connection.",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.OptimizerStatisticsPackage
+		}),
+	},
+	"RETURN_COMMIT_STATS": {
+		Description: "A property of type BOOL indicating whether statistics should be returned for transactions on this connection.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.ReturnCommitStats
+		}),
+	},
+	"AUTO_BATCH_DML": {
+		Description: "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoBatchDML
+		}),
+	},
+	"DATA_BOOST_ENABLED": {
+		Description: "A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.",
+		Accessor: boolAccessor(func(sysVars *systemVariables) *bool {
+			return &sysVars.DataBoostEnabled
+		}),
+	},
+	"RPC_PRIORITY": {
+		Description: "A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				s := unquoteString(value)
+
+				p, err := parsePriority(s)
+				if err != nil {
+					return err
+				}
+
+				this.RPCPriority = p
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, strings.TrimPrefix(this.RPCPriority.String(), "PRIORITY_")), nil
+			},
+		},
+	},
+	"TRANSACTION_TAG": {
+		Description: "A property of type STRING that contains the transaction tag for the next transaction.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if this.CurrentSession == nil {
+					return errors.New("invalid state: current session is not populated")
+				}
+
+				return this.CurrentSession.setTransactionTag(unquoteString(value))
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.CurrentSession == nil {
+					return singletonMap(name, ""), errIgnored
+				}
+
+				tag := this.CurrentSession.getTransactionTag()
+				if tag == "" {
+					return singletonMap(name, ""), errIgnored
+				}
+
+				return singletonMap(name, tag), nil
+			},
+		},
+	},
+	"STATEMENT_TAG": {
+		Description: "A property of type STRING that contains the request tag for the next statement.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				this.RequestTag = unquoteString(value)
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.RequestTag == "" {
+					return nil, errIgnored
+				}
+
+				return singletonMap(name, this.RequestTag), nil
+			},
+		},
+	},
+	"READ_TIMESTAMP": {
+		Description: "The read timestamp of the most recent read-only transaction.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.ReadTimestamp.IsZero() {
+					return nil, errIgnored
+				}
+				return singletonMap(name, this.ReadTimestamp.Format(time.RFC3339Nano)), nil
+			},
+		},
+	},
+	"COMMIT_TIMESTAMP": {
+		Description: "The commit timestamp of the last read-write transaction that Spanner committed.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.CommitTimestamp.IsZero() {
+					return nil, errIgnored
+				}
+				s := this.CommitTimestamp.Format(time.RFC3339Nano)
+				return singletonMap(name, s), nil
+			},
 		},
 	},
 	"COMMIT_RESPONSE": {
@@ -720,6 +765,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
+	"CLI_MCP": {
+		Description: "A read-only boolean indicating whether the connection is running as an MCP server.",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.MCP }),
+		},
+	},
 	"CLI_DATABASE_DIALECT": {
 		Description: "",
 		Accessor: accessor{
@@ -735,6 +786,30 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return nil
 			},
 		},
+	},
+	"CLI_ECHO_EXECUTED_DDL": {
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.EchoExecutedDDL }),
+			Setter: func(this *systemVariables, name, value string) error {
+				b, err := strconv.ParseBool(value)
+				if err != nil {
+					return err
+				}
+				this.EchoExecutedDDL = b
+				return nil
+			},
+		},
+	},
+	"CLI_ROLE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Role }),
+		},
+	},
+	"CLI_ECHO_INPUT": {
+		Description: "",
+		Accessor:    boolAccessor(func(sysVars *systemVariables) *bool { return &sysVars.EchoInput }),
 	},
 	"CLI_ENDPOINT": {
 		Description: "",
@@ -757,6 +832,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				this.Port = port
 				return nil
 			},
+		},
+	},
+	"CLI_HOST": {
+		Description: "Host on which Spanner server is located",
+		Accessor: accessor{
+			Getter: stringGetter(func(sysVars *systemVariables) *string { return &sysVars.Host }),
 		},
 	},
 	"CLI_PORT": {
@@ -786,9 +867,67 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
+	"CLI_HISTORY_FILE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: stringGetter(
+				func(sysVars *systemVariables) *string { return &sysVars.HistoryFile },
+			),
+		},
+	},
+	"CLI_VERTEXAI_MODEL": {
+		Description: "",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.VertexAIModel
+		}),
+	},
+	"CLI_VERTEXAI_PROJECT": {
+		Description: "",
+		Accessor: stringAccessor(func(sysVars *systemVariables) *string {
+			return &sysVars.VertexAIProject
+		}),
+	},
+	"CLI_PROMPT": {
+		Description: "",
+		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt }),
+	},
 	"CLI_PROMPT2": {
 		Description: "",
 		Accessor:    stringAccessor(func(sysVars *systemVariables) *string { return &sysVars.Prompt2 }),
+	},
+	"CLI_PROJECT": {
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.Project), nil
+			},
+		},
+	},
+	"CLI_INSTANCE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, this.Instance), nil
+			},
+		},
+	},
+	"CLI_DATABASE": {
+		Description: "Current database name. Empty string when in detached mode.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				// Return empty string for detached mode, actual database name when connected
+				if this.CurrentSession != nil && this.CurrentSession.IsDetached() {
+					return singletonMap(name, ""), nil
+				}
+				return singletonMap(name, this.Database), nil
+			},
+		},
+	},
+	"CLI_TAB_WIDTH": {
+		Description: "Tab width. It is used for expanding tabs.",
+		Accessor: int64Accessor(func(variables *systemVariables) *int64 {
+			return &variables.TabWidth
+		}),
 	},
 	"CLI_PROTO_DESCRIPTOR_FILE": {
 		Description: "",
@@ -839,6 +978,45 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			return &variables.ExplainWrapWidth
 		}),
 	},
+	"CLI_EXPLAIN_FORMAT": {
+		Description: "Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation.",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				return singletonMap(name, string(this.ExplainFormat)), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				format, err := parseExplainFormat(unquoteString(value))
+				if err != nil {
+					return err
+				}
+
+				this.ExplainFormat = format
+				return nil
+			},
+		},
+	},
+	"CLI_ANALYZE_COLUMNS": {
+		Description: "<name>:<template>[:<alignment>], ...",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				def, err := customListToTableRenderDefs(unquoteString(value))
+				if err != nil {
+					return err
+				}
+
+				if err != nil {
+					return err
+				}
+
+				this.AnalyzeColumns = value
+				this.ParsedAnalyzeColumns = def
+				return nil
+			},
+			Getter: stringGetter(func(sysVars *systemVariables) *string {
+				return &sysVars.AnalyzeColumns
+			}),
+		},
+	},
 	"CLI_INLINE_STATS": {
 		Description: "<name>:<template>, ...",
 		Accessor: accessor{
@@ -856,6 +1034,37 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			Getter: stringGetter(func(sysVars *systemVariables) *string {
 				return &sysVars.InlineStats
 			}),
+		},
+	},
+	"CLI_PARSE_MODE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.BuildStatementMode == parseModeUnspecified {
+					return nil, errIgnored
+				}
+				return singletonMap(name, string(this.BuildStatementMode)), nil
+			},
+			Setter: func(this *systemVariables, name, value string) error {
+				s := strings.ToUpper(unquoteString(value))
+				switch s {
+				case string(parseModeFallback),
+					string(parseMemefishOnly),
+					string(parseModeNoMemefish),
+					string(parseModeUnspecified):
+
+					this.BuildStatementMode = parseMode(s)
+					return nil
+				default:
+					return fmt.Errorf("invalid value: %v", s)
+				}
+			},
+		},
+	},
+	"CLI_INSECURE": {
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool { return &sysVars.Insecure }),
 		},
 	},
 	"CLI_LOG_LEVEL": {
@@ -883,6 +1092,52 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			}),
 		},
 	},
+	"CLI_LINT_PLAN": {
+		Description: "",
+		Accessor: accessor{
+			Getter: boolGetter(func(sysVars *systemVariables) *bool {
+				return lo.Ternary(sysVars.LintPlan, lo.ToPtr(sysVars.LintPlan), nil)
+			}),
+			Setter: boolSetter(func(sysVars *systemVariables) *bool { return &sysVars.LintPlan }),
+		},
+	},
+	"CLI_USE_PAGER": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.UsePager
+		}),
+	},
+	"CLI_AUTOWRAP": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoWrap
+		}),
+	},
+	"CLI_FIXED_WIDTH": {
+		Description: "Set fixed width to overwrite wrap width for CLI_AUTOWRAP.",
+		Accessor: accessor{
+			Setter: func(this *systemVariables, name, value string) error {
+				if strings.ToUpper(value) == "NULL" {
+					this.FixedWidth = nil
+					return nil
+				}
+
+				width, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return err
+				}
+
+				this.FixedWidth = &width
+				return nil
+			},
+			Getter: func(this *systemVariables, name string) (map[string]string, error) {
+				if this.FixedWidth == nil {
+					return singletonMap(name, "NULL"), nil
+				}
+				return singletonMap(name, strconv.FormatInt(*this.FixedWidth, 10)), nil
+			},
+		},
+	},
 	"CLI_CURRENT_WIDTH": {
 		Description: "Get the current screen width in spanner-mycli client-side statement.",
 		Accessor: accessor{
@@ -898,6 +1153,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return singletonMap(name, "NULL"), nil
 			},
 		},
+	},
+	"CLI_ENABLE_HIGHLIGHT": {
+		Description: "",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableHighlight
+		}),
 	},
 	"CLI_PROTOTEXT_MULTILINE": {
 		Description: "",
@@ -945,6 +1206,18 @@ var systemVariableDefMap = map[string]systemVariableDef{
 			},
 		},
 	},
+	"CLI_AUTO_CONNECT_AFTER_CREATE": {
+		Description: "A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.AutoConnectAfterCreate
+		}),
+	},
+	"CLI_ENABLE_PROGRESS_BAR": {
+		Description: "A boolean indicating whether to display progress bars during operations. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.EnableProgressBar
+		}),
+	},
 	// Session behavior variables - Getter only to avoid runtime session state changes
 	"CLI_IMPERSONATE_SERVICE_ACCOUNT": {
 		Description: "Service account email for impersonation.",
@@ -973,6 +1246,12 @@ var systemVariableDefMap = map[string]systemVariableDef{
 				return &variables.SkipSystemCommand
 			}),
 		},
+	},
+	"CLI_SKIP_COLUMN_NAMES": {
+		Description: "A boolean indicating whether to suppress column headers in output. The default is false.",
+		Accessor: boolAccessor(func(variables *systemVariables) *bool {
+			return &variables.SkipColumnNames
+		}),
 	},
 }
 
