@@ -103,13 +103,13 @@ type StreamingFormatter interface {
 // TablePreviewProcessor collects a configurable number of rows for table width calculation.
 // This allows table formats to determine optimal column widths before starting output.
 type TablePreviewProcessor struct {
-	previewSize  int      // Number of rows to preview (0 = all rows for non-streaming)
-	previewRows  []Row    // Collected preview rows
-	formatter    StreamingFormatter
-	metadata     *sppb.ResultSetMetadata
-	sysVars      *systemVariables
-	initialized  bool
-	rowCount     int64
+	previewSize int   // Number of rows to preview (0 = all rows for non-streaming)
+	previewRows []Row // Collected preview rows
+	formatter   StreamingFormatter
+	metadata    *sppb.ResultSetMetadata
+	sysVars     *systemVariables
+	initialized bool
+	rowCount    int64
 }
 
 // NewTablePreviewProcessor creates a processor that previews rows for width calculation.
@@ -132,11 +132,21 @@ func (p *TablePreviewProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *
 // ProcessRow collects rows for preview or passes them through after initialization.
 func (p *TablePreviewProcessor) ProcessRow(row Row) error {
 	p.rowCount++
-	
+
 	// If not initialized yet and still collecting preview
 	if !p.initialized {
+		// Special case: previewSize = 0 means headers only (no row preview)
+		if p.previewSize == 0 && p.metadata != nil {
+			// Initialize immediately with no preview rows
+			if err := p.initializeFormatter(); err != nil {
+				return err
+			}
+			// Write this first row
+			return p.formatter.WriteRow(row)
+		}
+
 		p.previewRows = append(p.previewRows, row)
-		
+
 		// Check if we've collected enough preview rows
 		if p.previewSize > 0 && len(p.previewRows) >= p.previewSize {
 			// Initialize formatter with preview rows
@@ -147,7 +157,7 @@ func (p *TablePreviewProcessor) ProcessRow(row Row) error {
 		}
 		return nil
 	}
-	
+
 	// After initialization, pass rows directly to formatter
 	return p.formatter.WriteRow(row)
 }
@@ -160,7 +170,7 @@ func (p *TablePreviewProcessor) Finish(stats QueryStats, rowCount int64) error {
 			return err
 		}
 	}
-	
+
 	return p.formatter.FinishFormat(stats, rowCount)
 }
 
@@ -169,24 +179,24 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 	if p.initialized {
 		return nil
 	}
-	
+
 	header := toTableHeader(p.metadata.GetRowType().GetFields())
 	columnNames := renderTableHeader(header, false)
-	
+
 	// Initialize formatter with preview rows for width calculation
 	if err := p.formatter.InitFormat(columnNames, p.metadata, p.sysVars, p.previewRows); err != nil {
 		return err
 	}
-	
+
 	p.initialized = true
-	
+
 	// Write all preview rows
 	for _, row := range p.previewRows {
 		if err := p.formatter.WriteRow(row); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

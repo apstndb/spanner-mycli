@@ -31,18 +31,18 @@ func (f *CSVFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMeta
 	if f.initialized {
 		return nil
 	}
-	
+
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns to output")
 	}
-	
+
 	// Write headers unless skipping
 	if !f.skipHeaders {
 		if err := f.writer.Write(columns); err != nil {
 			return fmt.Errorf("failed to write CSV header: %w", err)
 		}
 	}
-	
+
 	f.initialized = true
 	return nil
 }
@@ -52,11 +52,11 @@ func (f *CSVFormatter) WriteRow(row Row) error {
 	if !f.initialized {
 		return fmt.Errorf("CSV formatter not initialized")
 	}
-	
+
 	if err := f.writer.Write(row); err != nil {
 		return fmt.Errorf("failed to write CSV row: %w", err)
 	}
-	
+
 	// Flush after each row for streaming
 	f.writer.Flush()
 	return f.writer.Error()
@@ -92,20 +92,20 @@ func (f *TabFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMeta
 	if f.initialized {
 		return nil
 	}
-	
+
 	f.columns = columns
-	
+
 	if len(columns) == 0 {
 		return nil
 	}
-	
+
 	// Write headers unless skipping
 	if !f.skipHeaders {
 		if _, err := fmt.Fprintln(f.out, strings.Join(columns, "\t")); err != nil {
 			return fmt.Errorf("failed to write TAB header: %w", err)
 		}
 	}
-	
+
 	f.initialized = true
 	return nil
 }
@@ -115,11 +115,11 @@ func (f *TabFormatter) WriteRow(row Row) error {
 	if !f.initialized {
 		return fmt.Errorf("TAB formatter not initialized")
 	}
-	
+
 	if _, err := fmt.Fprintln(f.out, strings.Join(row, "\t")); err != nil {
 		return fmt.Errorf("failed to write TAB row: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -151,13 +151,13 @@ func (f *VerticalFormatter) InitFormat(columns []string, metadata *sppb.ResultSe
 	if f.initialized {
 		return nil
 	}
-	
+
 	f.columns = columns
-	
+
 	if len(columns) == 0 {
 		return nil
 	}
-	
+
 	// Calculate max column name length for alignment
 	f.maxLen = 0
 	for _, col := range columns {
@@ -165,7 +165,7 @@ func (f *VerticalFormatter) InitFormat(columns []string, metadata *sppb.ResultSe
 			f.maxLen = len(col)
 		}
 	}
-	
+
 	f.format = fmt.Sprintf("%%%ds: %%s\n", f.maxLen)
 	f.initialized = true
 	return nil
@@ -176,14 +176,14 @@ func (f *VerticalFormatter) WriteRow(row Row) error {
 	if !f.initialized {
 		return fmt.Errorf("VERTICAL formatter not initialized")
 	}
-	
+
 	f.rowNumber++
-	
+
 	// Print row separator
 	if _, err := fmt.Fprintf(f.out, "*************************** %d. row ***************************\n", f.rowNumber); err != nil {
 		return err
 	}
-	
+
 	// Print each column
 	for i, value := range row {
 		columnName := f.columns[i]
@@ -194,7 +194,7 @@ func (f *VerticalFormatter) WriteRow(row Row) error {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

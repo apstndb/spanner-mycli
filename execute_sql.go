@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -49,6 +51,22 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
+	// Debug: always show the decision
+	streamingEnabled := shouldUseStreaming(session.systemVariables)
+	hasOutStream := session.OutStream != nil
+	slog.Debug("executeSQL decision", 
+		"streamingEnabled", streamingEnabled, 
+		"hasOutStream", hasOutStream, 
+		"format", session.systemVariables.CLIFormat,
+		"sysVarsPtr", fmt.Sprintf("%p", session.systemVariables),
+		"streamingEnabledPtr", fmt.Sprintf("%p", &session.systemVariables.StreamingEnabled))
+
+	// Check if streaming should be used
+	if streamingEnabled && hasOutStream {
+		slog.Debug("Using streaming mode")
+		return executeStreamingSQL(ctx, session, iter, roTxn, fc)
+	}
+
 	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
@@ -90,6 +108,114 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	return result, nil
+}
+
+// executeStreamingSQL processes query results in streaming mode.
+// It outputs rows directly as they arrive without buffering the entire result set.
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig) (*Result, error) {
+	// Get the output stream and screen width
+	out := session.OutStream
+	if out == nil {
+		out = os.Stdout
+	}
+	screenWidth := session.ScreenWidth
+	if screenWidth <= 0 {
+		screenWidth = 80 // Default width
+	}
+
+	slog.Debug("executeStreamingSQL called", 
+		"format", session.systemVariables.CLIFormat, 
+		"screenWidth", screenWidth)
+
+	// Create the appropriate streaming processor based on format
+	processor, err := createStreamingProcessor(session.systemVariables, out, screenWidth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create streaming processor: %w", err)
+	}
+
+	// Process the stream
+	rowTransform := spannerRowToRow(fc)
+	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, session.systemVariables)
+	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
+	if err != nil {
+		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
+			// Need to call rollback to free the acquired session
+			rollback := &RollbackStatement{}
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
+		}
+		return nil, err
+	}
+
+	// Parse stats
+	queryStats, err := parseQueryStats(stats)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create result for metadata (rows already streamed)
+	result := &Result{
+		Rows:         nil, // Already streamed
+		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows: int(rowCount),
+		Stats:        queryStats,
+		Streamed:     true, // Mark as streamed
+	}
+
+	// Handle ReadOnlyTransaction timestamp
+	if roTxn != nil {
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+		} else {
+			result.Timestamp = ts
+		}
+	}
+
+	// Update last query cache
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:  plan,
+		QueryStats: stats,
+		Timestamp:  result.Timestamp,
+	}
+
+	return result, nil
+}
+
+// createStreamingProcessor creates the appropriate streaming processor based on format.
+func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
+	format := sysVars.CLIFormat
+
+	// Create the appropriate streaming formatter
+	var formatter StreamingFormatter
+	switch format {
+	case enums.DisplayModeCSV:
+		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeTab:
+		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeVertical:
+		formatter = NewVerticalFormatter(out)
+	case enums.DisplayModeHTML:
+		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeXML:
+		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+		// Table formats use preview for width calculation
+		previewSize := int(sysVars.TablePreviewRows)
+		formatter = NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
+	default:
+		return nil, fmt.Errorf("unsupported streaming format: %v", format)
+	}
+
+	// For table formats, use preview processor
+	if format == enums.DisplayModeTable || format == enums.DisplayModeTableComment || format == enums.DisplayModeTableDetailComment {
+		return NewTablePreviewProcessor(formatter, int(sysVars.TablePreviewRows)), nil
+	}
+
+	// For other formats, use direct streaming
+	return NewStreamingProcessor(formatter, out, screenWidth), nil
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {

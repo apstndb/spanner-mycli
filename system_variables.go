@@ -145,6 +145,10 @@ type systemVariables struct {
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
 
+	// Streaming output configuration
+	StreamingEnabled bool  // CLI_STREAMING_ENABLED
+	TablePreviewRows int64 // CLI_TABLE_PREVIEW_ROWS
+
 	// Registry holds the system variable registry
 	Registry *VarRegistry
 
@@ -220,6 +224,10 @@ func newSystemVariablesWithDefaults() systemVariables {
 		HistoryFile:          defaultHistoryFile,
 		VertexAIModel:        defaultVertexAIModel,
 		OutputTemplate:       defaultOutputFormat,
+
+		// Streaming defaults
+		StreamingEnabled: false, // Default to false until fully tested
+		TablePreviewRows: 0,     // Default to 0, users should configure when enabling streaming
 	}
 
 	// Don't initialize registry here - it will be done after the struct is assigned

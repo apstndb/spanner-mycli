@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -82,9 +83,15 @@ type SetStatement struct {
 func (s *SetStatement) isDetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	slog.Debug("SetStatement.Execute", "varName", s.VarName, "value", s.Value, 
+		"sessionPtr", fmt.Sprintf("%p", session),
+		"sysVarsPtr", fmt.Sprintf("%p", session.systemVariables),
+		"streamingEnabledPtr", fmt.Sprintf("%p", &session.systemVariables.StreamingEnabled))
 	if err := session.systemVariables.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
+	slog.Debug("After SET", "StreamingEnabled", session.systemVariables.StreamingEnabled,
+		"streamingEnabledPtr", fmt.Sprintf("%p", &session.systemVariables.StreamingEnabled))
 	return &Result{KeepVariables: true}, nil
 }
 

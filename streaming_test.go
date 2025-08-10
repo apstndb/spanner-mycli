@@ -43,11 +43,11 @@ func TestStreamingCSV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			
+
 			// Create streaming processor for CSV
 			processor := NewStreamingProcessorForMode(enums.DisplayModeCSV, &buf, tt.sysVars, 0)
 			assert.NotNil(t, processor)
-			
+
 			// Create mock metadata
 			metadata := &sppb.ResultSetMetadata{
 				RowType: &sppb.StructType{
@@ -58,21 +58,21 @@ func TestStreamingCSV(t *testing.T) {
 					},
 				},
 			}
-			
+
 			// Initialize processor
 			err := processor.Init(metadata, tt.sysVars)
 			assert.NoError(t, err)
-			
+
 			// Process rows
 			for _, row := range tt.rows {
 				err := processor.ProcessRow(row)
 				assert.NoError(t, err)
 			}
-			
+
 			// Finish processing
 			err = processor.Finish(QueryStats{}, int64(len(tt.rows)))
 			assert.NoError(t, err)
-			
+
 			// Check output
 			assert.Equal(t, tt.expected, buf.String())
 		})
@@ -81,14 +81,14 @@ func TestStreamingCSV(t *testing.T) {
 
 func TestStreamingTab(t *testing.T) {
 	var buf bytes.Buffer
-	
+
 	// Create streaming processor for TAB
 	sysVars := &systemVariables{
 		SkipColumnNames: false,
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeTab, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
-	
+
 	// Create mock metadata
 	metadata := &sppb.ResultSetMetadata{
 		RowType: &sppb.StructType{
@@ -98,26 +98,26 @@ func TestStreamingTab(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Initialize processor
 	err := processor.Init(metadata, sysVars)
 	assert.NoError(t, err)
-	
+
 	// Process rows
 	rows := []Row{
 		{"1", "Alice"},
 		{"2", "Bob"},
 	}
-	
+
 	for _, row := range rows {
 		err := processor.ProcessRow(row)
 		assert.NoError(t, err)
 	}
-	
+
 	// Finish processing
 	err = processor.Finish(QueryStats{}, int64(len(rows)))
 	assert.NoError(t, err)
-	
+
 	// Check output
 	expected := "ID\tName\n1\tAlice\n2\tBob\n"
 	assert.Equal(t, expected, buf.String())
@@ -125,12 +125,12 @@ func TestStreamingTab(t *testing.T) {
 
 func TestStreamingVertical(t *testing.T) {
 	var buf bytes.Buffer
-	
+
 	// Create streaming processor for VERTICAL
 	sysVars := &systemVariables{}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeVertical, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
-	
+
 	// Create mock metadata
 	metadata := &sppb.ResultSetMetadata{
 		RowType: &sppb.StructType{
@@ -140,19 +140,19 @@ func TestStreamingVertical(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Initialize processor
 	err := processor.Init(metadata, sysVars)
 	assert.NoError(t, err)
-	
+
 	// Process one row
 	err = processor.ProcessRow(Row{"1", "Alice"})
 	assert.NoError(t, err)
-	
+
 	// Finish processing
 	err = processor.Finish(QueryStats{}, 1)
 	assert.NoError(t, err)
-	
+
 	// Check output contains expected patterns
 	output := buf.String()
 	assert.Contains(t, output, "1. row")
@@ -167,12 +167,12 @@ func TestBufferedVsStreaming(t *testing.T) {
 		{"2", "Bob", "25"},
 		{"3", "Charlie", "35"},
 	}
-	
+
 	columnNames := []string{"ID", "Name", "Age"}
 	sysVars := &systemVariables{
 		SkipColumnNames: false,
 	}
-	
+
 	// Buffered output
 	var bufBuffered bytes.Buffer
 	result := &Result{
@@ -180,36 +180,36 @@ func TestBufferedVsStreaming(t *testing.T) {
 	}
 	err := formatCSV(&bufBuffered, result, columnNames, sysVars, 0)
 	assert.NoError(t, err)
-	
+
 	// Streaming output
 	var bufStreaming bytes.Buffer
 	formatter := NewCSVFormatter(&bufStreaming, sysVars.SkipColumnNames)
 	err = formatter.InitFormat(columnNames, nil, sysVars, nil)
 	assert.NoError(t, err)
-	
+
 	for _, row := range rows {
 		err = formatter.WriteRow(row)
 		assert.NoError(t, err)
 	}
-	
+
 	err = formatter.FinishFormat(QueryStats{}, int64(len(rows)))
 	assert.NoError(t, err)
-	
+
 	// Compare outputs
-	assert.Equal(t, bufBuffered.String(), bufStreaming.String(), 
+	assert.Equal(t, bufBuffered.String(), bufStreaming.String(),
 		"Buffered and streaming outputs should be identical")
 }
 
 func TestStreamingHTML(t *testing.T) {
 	var buf bytes.Buffer
-	
+
 	// Create streaming processor for HTML
 	sysVars := &systemVariables{
 		SkipColumnNames: false,
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeHTML, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
-	
+
 	// Create mock metadata
 	metadata := &sppb.ResultSetMetadata{
 		RowType: &sppb.StructType{
@@ -219,19 +219,19 @@ func TestStreamingHTML(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Initialize processor
 	err := processor.Init(metadata, sysVars)
 	assert.NoError(t, err)
-	
+
 	// Process row with special characters
 	err = processor.ProcessRow(Row{"1", "Alice & Bob <test>"})
 	assert.NoError(t, err)
-	
+
 	// Finish processing
 	err = processor.Finish(QueryStats{}, 1)
 	assert.NoError(t, err)
-	
+
 	// Check output
 	output := buf.String()
 	assert.Contains(t, output, "<TABLE BORDER='1'>")
@@ -244,14 +244,14 @@ func TestStreamingHTML(t *testing.T) {
 
 func TestStreamingXML(t *testing.T) {
 	var buf bytes.Buffer
-	
+
 	// Create streaming processor for XML
 	sysVars := &systemVariables{
 		SkipColumnNames: false,
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeXML, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
-	
+
 	// Create mock metadata
 	metadata := &sppb.ResultSetMetadata{
 		RowType: &sppb.StructType{
@@ -261,19 +261,19 @@ func TestStreamingXML(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Initialize processor
 	err := processor.Init(metadata, sysVars)
 	assert.NoError(t, err)
-	
+
 	// Process row
 	err = processor.ProcessRow(Row{"1", "Alice"})
 	assert.NoError(t, err)
-	
+
 	// Finish processing
 	err = processor.Finish(QueryStats{}, 1)
 	assert.NoError(t, err)
-	
+
 	// Check output
 	output := buf.String()
 	assert.Contains(t, output, "<?xml version")

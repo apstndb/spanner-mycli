@@ -531,6 +531,12 @@ func Test_initializeSystemVariables(t *testing.T) {
 				return
 			}
 
+			// Dereference the pointer since initializeSystemVariables now returns *systemVariables
+			if got == nil {
+				t.Fatal("initializeSystemVariables() returned nil")
+				return
+			}
+
 			// Convert Params map to string map for comparison and compare separately
 			gotParamsStr := nodeMapToStringMap(got.Params)
 			wantParamsStr := nodeMapToStringMap(tt.want.Params)
@@ -538,7 +544,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// Use cmp.Diff for comparison, ignoring unexported fields and specific fields
 			// that are hard to compare directly (e.g., *template.Template, *descriptorpb.FileDescriptorSet)
 			// and those that are set later in run() (e.g., EnableProgressBar, CurrentSession, WithoutAuthentication)
-			if diff := cmp.Diff(tt.want, got,
+			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
 				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns"),
@@ -807,8 +813,14 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 				return
 			}
 
+			// Dereference the pointer since createSystemVariablesFromOptions now returns *systemVariables
+			if got == nil {
+				t.Fatal("createSystemVariablesFromOptions() returned nil")
+				return
+			}
+
 			// Compare key fields
-			if diff := cmp.Diff(test.want, got,
+			if diff := cmp.Diff(test.want, *got,
 				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {

@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -156,6 +157,8 @@ type Session struct {
 	// All other functions MUST use these helpers instead of direct tc access.
 	tcMutex         sync.Mutex
 	systemVariables *systemVariables
+	OutStream       io.Writer // Output stream for results (can be nil)
+	ScreenWidth     int       // Terminal width for formatting
 
 	currentBatch Statement
 

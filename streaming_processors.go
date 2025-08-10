@@ -4,15 +4,15 @@ import (
 	"io"
 	"strings"
 
-	"github.com/apstndb/spanner-mycli/enums"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // NewStreamingProcessorForMode creates a streaming processor for the given display mode.
 // Returns nil if the mode doesn't support streaming yet.
 func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables, screenWidth int) RowProcessor {
 	var formatter StreamingFormatter
-	
+
 	switch mode {
 	case enums.DisplayModeCSV:
 		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
@@ -21,7 +21,7 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 			out:         out,
 			screenWidth: screenWidth,
 		}
-		
+
 	case enums.DisplayModeTab:
 		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
 		return &StreamingProcessor{
@@ -29,7 +29,7 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 			out:         out,
 			screenWidth: screenWidth,
 		}
-		
+
 	case enums.DisplayModeVertical:
 		formatter = NewVerticalFormatter(out)
 		return &StreamingProcessor{
@@ -37,7 +37,7 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 			out:         out,
 			screenWidth: screenWidth,
 		}
-		
+
 	case enums.DisplayModeHTML:
 		formatter = NewHTMLStreamingFormatter(out, sysVars.SkipColumnNames)
 		return &StreamingProcessor{
@@ -45,7 +45,7 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 			out:         out,
 			screenWidth: screenWidth,
 		}
-		
+
 	case enums.DisplayModeXML:
 		formatter = NewXMLStreamingFormatter(out, sysVars.SkipColumnNames)
 		return &StreamingProcessor{
@@ -53,12 +53,18 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 			out:         out,
 			screenWidth: screenWidth,
 		}
-		
+
 	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 		// Table formats use preview processor for width calculation
-		// TODO: Implement table streaming formatter
-		return nil
-		
+		// TablePreviewRows: positive = preview N rows, 0 = headers only, negative = all rows
+		previewSize := int(sysVars.TablePreviewRows)
+		if previewSize < 0 {
+			// Negative means collect all rows (non-streaming)
+			previewSize = 0 // 0 in TablePreviewProcessor means collect all
+		}
+		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
+		return NewTablePreviewProcessor(tableFormatter, previewSize)
+
 	default:
 		return nil
 	}
@@ -85,14 +91,14 @@ func (f *HTMLStreamingFormatter) InitFormat(columns []string, metadata *sppb.Res
 	if f.initialized {
 		return nil
 	}
-	
+
 	f.columns = columns
-	
+
 	// Start the table
 	if _, err := f.out.Write([]byte("<TABLE BORDER='1'>")); err != nil {
 		return err
 	}
-	
+
 	// Write header row unless skipping
 	if !f.skipHeaders && len(columns) > 0 {
 		if _, err := f.out.Write([]byte("<TR>")); err != nil {
@@ -107,7 +113,7 @@ func (f *HTMLStreamingFormatter) InitFormat(columns []string, metadata *sppb.Res
 			return err
 		}
 	}
-	
+
 	f.initialized = true
 	return nil
 }
@@ -117,21 +123,21 @@ func (f *HTMLStreamingFormatter) WriteRow(row Row) error {
 	if !f.initialized {
 		return nil
 	}
-	
+
 	if _, err := f.out.Write([]byte("<TR>")); err != nil {
 		return err
 	}
-	
+
 	for _, col := range row {
 		if _, err := f.out.Write([]byte("<TD>" + htmlEscape(col) + "</TD>")); err != nil {
 			return err
 		}
 	}
-	
+
 	if _, err := f.out.Write([]byte("</TR>")); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -173,18 +179,18 @@ func (f *XMLStreamingFormatter) InitFormat(columns []string, metadata *sppb.Resu
 	if f.initialized {
 		return nil
 	}
-	
+
 	f.columns = columns
-	
+
 	// Start XML document
 	if _, err := f.out.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")); err != nil {
 		return err
 	}
-	
+
 	if _, err := f.out.Write([]byte(`<resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` + "\n")); err != nil {
 		return err
 	}
-	
+
 	// Write header if not skipping
 	if !f.skipHeaders && len(columns) > 0 {
 		if _, err := f.out.Write([]byte("  <header>\n")); err != nil {
@@ -199,7 +205,7 @@ func (f *XMLStreamingFormatter) InitFormat(columns []string, metadata *sppb.Resu
 			return err
 		}
 	}
-	
+
 	f.initialized = true
 	return nil
 }
@@ -209,11 +215,11 @@ func (f *XMLStreamingFormatter) WriteRow(row Row) error {
 	if !f.initialized {
 		return nil
 	}
-	
+
 	if _, err := f.out.Write([]byte("  <row>\n")); err != nil {
 		return err
 	}
-	
+
 	for i, value := range row {
 		name := "field"
 		if i < len(f.columns) && f.columns[i] != "" {
@@ -223,11 +229,11 @@ func (f *XMLStreamingFormatter) WriteRow(row Row) error {
 			return err
 		}
 	}
-	
+
 	if _, err := f.out.Write([]byte("  </row>\n")); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -237,13 +243,3 @@ func (f *XMLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) e
 	return err
 }
 
-// xmlEscape escapes XML special characters.
-func xmlEscape(s string) string {
-	// Simple XML escaping - could use xml.EscapeText for more complete escaping
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, "\"", "&quot;")
-	s = strings.ReplaceAll(s, "'", "&apos;")
-	return s
-}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"iter"
+	"log/slog"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -28,71 +29,64 @@ func rowIterToSeq(
 	rowTransform func(*spanner.Row) (Row, error),
 ) *RowIterResult {
 	result := &RowIterResult{}
-	
+
 	// Create an iterator sequence that handles metadata extraction
 	result.Rows = func(yield func(Row) bool) {
 		defer rowIter.Stop()
+
+		var firstIteration = true
 		
-		// First row handling - needed to get metadata
-		var firstRowFetched bool
-		var firstRow Row
-		
-		// Try to fetch the first row to get metadata
+		// Process all rows using Do()
 		err := rowIter.Do(func(row *spanner.Row) error {
-			transformedRow, err := rowTransform(row)
-			if err != nil {
-				result.Error = fmt.Errorf("failed to transform first row: %w", err)
-				return err
+			// On first iteration, capture metadata
+			if firstIteration {
+				firstIteration = false
+				// Metadata should be available after the first call to Next() (which Do() calls internally)
+				result.Metadata = rowIter.Metadata
+				if result.Metadata == nil {
+					slog.Debug("rowIter.Metadata is nil after first row in Do()")
+				} else if result.Metadata.RowType == nil {
+					slog.Debug("Metadata.RowType is nil")
+				} else {
+					fields := result.Metadata.RowType.GetFields()
+					slog.Debug("Metadata retrieved", "fieldCount", len(fields))
+					for i, field := range fields {
+						slog.Debug("Field info", "index", i, "name", field.GetName())
+					}
+				}
 			}
-			firstRow = transformedRow
-			firstRowFetched = true
-			// Stop after first row to extract metadata
-			return errStopIteration
-		})
-		
-		// Handle errors from first row fetch
-		if err != nil && err != errStopIteration {
-			result.Error = fmt.Errorf("failed to fetch first row: %w", err)
-			return
-		}
-		
-		// Metadata is now available
-		result.Metadata = rowIter.Metadata
-		
-		// Yield the first row if it exists
-		if firstRowFetched {
-			if !yield(firstRow) {
-				// Consumer stopped iteration
-				return
-			}
-		}
-		
-		// Process remaining rows
-		err = rowIter.Do(func(row *spanner.Row) error {
+			
 			transformedRow, err := rowTransform(row)
 			if err != nil {
 				return fmt.Errorf("failed to transform row: %w", err)
 			}
-			
+
 			// Yield the row; stop if consumer returns false
 			if !yield(transformedRow) {
 				return errStopIteration
 			}
 			return nil
 		})
-		
-		// Handle errors from remaining rows
+
+		// Handle empty result set - metadata might still be available
+		if firstIteration && err == nil {
+			// No rows were processed, but Do() completed successfully
+			result.Metadata = rowIter.Metadata
+			slog.Debug("Empty result set in Do()", "metadataAvailable", result.Metadata != nil)
+		}
+
+		// Handle errors
 		if err != nil && err != errStopIteration {
 			result.Error = fmt.Errorf("failed to process rows: %w", err)
 			return
 		}
-		
+
 		// Capture final statistics
 		result.QueryStats = rowIter.QueryStats
 		result.RowCount = rowIter.RowCount
 		result.QueryPlan = rowIter.QueryPlan
 	}
-	
+
 	return result
 }
 
@@ -106,44 +100,49 @@ func consumeRowIterWithProcessor(
 ) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	// Convert RowIterator to iter.Seq with metadata extraction
 	result := rowIterToSeq(iter, rowTransform)
-	
+
 	// Process rows through the sequence
 	rowCount = 0
+	initialized := false
 	for row := range result.Rows {
 		// Initialize processor with metadata on first row
-		if rowCount == 0 && result.Metadata != nil {
+		if !initialized && result.Metadata != nil {
+			slog.Debug("Initializing processor with metadata", 
+				"fieldCount", len(result.Metadata.GetRowType().GetFields()))
 			if err := processor.Init(result.Metadata, sysVars); err != nil {
 				return nil, 0, result.Metadata, nil, fmt.Errorf("failed to initialize processor: %w", err)
 			}
+			initialized = true
 		}
-		
+
 		// Process the row
 		if err := processor.ProcessRow(row); err != nil {
 			return nil, rowCount, result.Metadata, nil, fmt.Errorf("failed to process row %d: %w", rowCount+1, err)
 		}
 		rowCount++
 	}
-	
+
 	// Check for errors during iteration
 	if result.Error != nil {
 		return nil, rowCount, result.Metadata, nil, result.Error
 	}
-	
+
 	// Initialize processor if no rows (metadata might still be available)
-	if rowCount == 0 && result.Metadata != nil {
+	if !initialized && result.Metadata != nil {
 		if err := processor.Init(result.Metadata, sysVars); err != nil {
 			return nil, 0, result.Metadata, nil, fmt.Errorf("failed to initialize processor: %w", err)
 		}
+		initialized = true
 	}
-	
+
 	// Parse stats for processor
 	parsedStats, _ := parseQueryStats(result.QueryStats)
-	
+
 	// Finish processing
 	if err := processor.Finish(parsedStats, result.RowCount); err != nil {
 		return result.QueryStats, result.RowCount, result.Metadata, result.QueryPlan, fmt.Errorf("failed to finish processing: %w", err)
 	}
-	
+
 	return result.QueryStats, result.RowCount, result.Metadata, result.QueryPlan, nil
 }
 
@@ -152,27 +151,30 @@ var errStopIteration = fmt.Errorf("stop iteration")
 
 // shouldUseStreaming determines whether to use streaming mode based on system variables and format.
 func shouldUseStreaming(sysVars *systemVariables) bool {
-	// For now, return false until streaming formatters are implemented
-	// This will be updated as we implement streaming support for each format
-	return false
+	// Check if streaming is enabled globally
+	if !sysVars.StreamingEnabled {
+		return false
+	}
+
+	// Check if the current format supports streaming
+	return isStreamingSupported(sysVars.CLIFormat)
 }
 
 // isStreamingSupported checks if a specific display mode supports streaming.
 func isStreamingSupported(mode enums.DisplayMode) bool {
-	// Will be updated as we implement streaming for each format
 	switch mode {
 	case enums.DisplayModeCSV,
 		enums.DisplayModeTab,
 		enums.DisplayModeVertical,
 		enums.DisplayModeHTML,
 		enums.DisplayModeXML:
-		// These formats can support streaming
-		return false // Will change to true as implemented
+		// These formats support streaming
+		return true
 	case enums.DisplayModeTable,
 		enums.DisplayModeTableComment,
 		enums.DisplayModeTableDetailComment:
-		// Table formats need special handling with tablewriter streaming
-		return false // Will be implemented with tablewriter v1.0.9 streaming
+		// Table formats support streaming with preview
+		return true
 	default:
 		return false
 	}

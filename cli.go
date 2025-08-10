@@ -571,6 +571,24 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		stop = func() {}
 	}
 
+	// Set output stream and screen width for potential streaming
+	screenWidth := math.MaxInt
+	if c.SystemVariables.AutoWrap {
+		if c.SystemVariables.FixedWidth != nil {
+			screenWidth = int(*c.SystemVariables.FixedWidth)
+		} else {
+			width, err := c.GetTerminalSizeWithTty(w)
+			if err != nil {
+				slog.Warn("failed to get terminal size for streaming", "err", err)
+				screenWidth = math.MaxInt
+			} else {
+				screenWidth = width
+			}
+		}
+	}
+	c.SessionHandler.Session.OutStream = w
+	c.SessionHandler.Session.ScreenWidth = screenWidth
+
 	// Execute the statement
 	result, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -56,17 +58,24 @@ func (r *VarRegistry) Get(name string) (string, error) {
 
 // Set sets a variable value
 func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
-	v, ok := r.vars[strings.ToUpper(name)]
+	upperName := strings.ToUpper(name)
+	v, ok := r.vars[upperName]
 	if !ok {
+		slog.Debug("Variable not found in registry", "name", upperName, "availableVars", maps.Keys(r.vars))
 		return &ErrUnknownVariable{Name: name}
 	}
 
 	// Parse GoogleSQL value if needed
+	originalValue := value
 	if isGoogleSQL {
 		value = parseGoogleSQLValue(value)
 	}
-
-	return v.Set(value)
+	
+	slog.Debug("Registry.Set", "name", upperName, "originalValue", originalValue, "parsedValue", value, "isGoogleSQL", isGoogleSQL)
+	
+	err := v.Set(value)
+	slog.Debug("Registry.Set result", "name", upperName, "err", err)
+	return err
 }
 
 // Add performs ADD operation on a variable
@@ -197,6 +206,8 @@ func (r *VarRegistry) registerAll() {
 		"Controls whether system commands are disabled."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
+	r.Register("CLI_STREAMING_ENABLED", BoolVar(&sv.StreamingEnabled,
+		"A boolean indicating whether to enable streaming output for supported formats. The default is false."))
 
 	// === String variables (15+) ===
 	r.Register("OPTIMIZER_VERSION", StringVar(&sv.OptimizerVersion,
@@ -235,6 +246,8 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_TAB_WIDTH", IntVar(&sv.TabWidth, "Tab width. It is used for expanding tabs."))
 	r.Register("CLI_EXPLAIN_WRAP_WIDTH", IntVar(&sv.ExplainWrapWidth,
 		"Controls query plan wrap width. It effects only operators column contents"))
+	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.TablePreviewRows,
+		"Number of rows to preview for table width calculation in streaming mode. 0 means use header widths only (default). Positive values use that many rows for preview. -1 means collect all rows (non-streaming)."))
 	r.Register("CLI_PORT", &IntGetterVar{
 		getter:      func() int64 { return int64(sv.Port) },
 		description: "Port number for connections.",
