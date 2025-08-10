@@ -63,11 +63,15 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	// Check if streaming should be used
 	if streamingEnabled && hasOutStream {
-		slog.Debug("Using streaming mode")
+		slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
 		return executeStreamingSQL(ctx, session, iter, roTxn, fc)
 	}
 
+	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	slog.Debug("Buffered mode complete", 
+		"endTime", time.Now().Format(time.RFC3339Nano),
+		"rowCount", len(rows))
 	if err != nil {
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.

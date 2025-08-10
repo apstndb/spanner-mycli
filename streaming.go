@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -49,7 +50,9 @@ func rowIterToSeq(
 					slog.Debug("Metadata.RowType is nil")
 				} else {
 					fields := result.Metadata.RowType.GetFields()
-					slog.Debug("Metadata retrieved", "fieldCount", len(fields))
+					slog.Debug("Metadata retrieved (TTFB)", 
+						"fieldCount", len(fields),
+						"firstRowTime", time.Now().Format(time.RFC3339Nano))
 					for i, field := range fields {
 						slog.Debug("Field info", "index", i, "name", field.GetName())
 					}
