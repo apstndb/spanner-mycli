@@ -219,13 +219,6 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, session.systemVariables, metrics)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
 	if err != nil {
-		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			// Need to call rollback to free the acquired session
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-		}
 		return nil, err
 	}
 
