@@ -18,9 +18,9 @@ package main
 
 import (
 	"context"
-	"io"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"strconv"

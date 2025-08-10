@@ -15,9 +15,11 @@ type MemoryStats struct {
 }
 
 // GetMemoryStats returns current memory statistics
+// Note: runtime.ReadMemStats() causes stop-the-world (STW) pause, 
+// so this should only be called when performance profiling is needed
 func GetMemoryStats() MemoryStats {
 	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
+	runtime.ReadMemStats(&m) // STW occurs here
 	return MemoryStats{
 		AllocMB:      m.Alloc / 1024 / 1024,
 		TotalAllocMB: m.TotalAlloc / 1024 / 1024,

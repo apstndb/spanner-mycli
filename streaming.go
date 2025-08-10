@@ -44,18 +44,11 @@ func rowIterToSeq(
 				firstIteration = false
 				// Metadata should be available after the first call to Next() (which Do() calls internally)
 				result.Metadata = rowIter.Metadata
-				if result.Metadata == nil {
-					slog.Debug("rowIter.Metadata is nil after first row in Do()")
-				} else if result.Metadata.RowType == nil {
-					slog.Debug("Metadata.RowType is nil")
-				} else {
+				if result.Metadata != nil && result.Metadata.RowType != nil {
 					fields := result.Metadata.RowType.GetFields()
 					slog.Debug("Metadata retrieved (TTFB)", 
 						"fieldCount", len(fields),
 						"firstRowTime", time.Now().Format(time.RFC3339Nano))
-					for i, field := range fields {
-						slog.Debug("Field info", "index", i, "name", field.GetName())
-					}
 				}
 			}
 			
@@ -75,7 +68,6 @@ func rowIterToSeq(
 		if firstIteration && err == nil {
 			// No rows were processed, but Do() completed successfully
 			result.Metadata = rowIter.Metadata
-			slog.Debug("Empty result set in Do()", "metadataAvailable", result.Metadata != nil)
 		}
 
 		// Handle errors
@@ -110,8 +102,6 @@ func consumeRowIterWithProcessor(
 	for row := range result.Rows {
 		// Initialize processor with metadata on first row
 		if !initialized && result.Metadata != nil {
-			slog.Debug("Initializing processor with metadata", 
-				"fieldCount", len(result.Metadata.GetRowType().GetFields()))
 			if err := processor.Init(result.Metadata, sysVars); err != nil {
 				return nil, 0, result.Metadata, nil, fmt.Errorf("failed to initialize processor: %w", err)
 			}
@@ -156,7 +146,7 @@ var errStopIteration = fmt.Errorf("stop iteration")
 // Behavior depends on StreamingMode setting:
 // - TRUE: Always stream (if format supports it)
 // - FALSE: Never stream
-// - AUTO: Smart defaults (stream for non-table formats, buffer for table formats)
+// - AUTO: Smart defaults based on format for optimal user experience
 func shouldUseStreaming(sysVars *systemVariables) bool {
 	switch sysVars.StreamingMode {
 	case enums.StreamingModeTrue:
@@ -166,26 +156,28 @@ func shouldUseStreaming(sysVars *systemVariables) bool {
 		// Never stream
 		return false
 	case enums.StreamingModeAuto:
-		// Smart defaults based on format
+		// AUTO mode provides smart defaults optimized for each format:
+		// - Stream for CSV/Tab/Vertical/HTML/XML: Immediate output, low memory overhead
+		// - Buffer for Table formats: Accurate column width calculation from all rows
 		switch sysVars.CLIFormat {
 		case enums.DisplayModeTable,
 			enums.DisplayModeTableComment,
 			enums.DisplayModeTableDetailComment:
-			// Default to buffered for table formats (preserve column width accuracy)
+			// Table formats need all rows to calculate optimal column widths
 			return false
 		case enums.DisplayModeCSV,
 			enums.DisplayModeTab,
 			enums.DisplayModeVertical,
 			enums.DisplayModeHTML,
 			enums.DisplayModeXML:
-			// Default to streaming for other formats (better performance)
+			// These formats can stream immediately with no quality loss
 			return true
 		default:
-			// Unknown format, default to buffered
+			// Unknown format, default to buffered for safety
 			return false
 		}
 	default:
-		// Unknown mode, default to buffered
+		// Unknown mode, default to buffered for safety
 		return false
 	}
 }

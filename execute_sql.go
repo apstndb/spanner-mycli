@@ -51,32 +51,39 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	// Debug: always show the decision
+	// Determine whether to use streaming mode
 	streamingEnabled := shouldUseStreaming(session.systemVariables)
 	hasOutStream := session.OutStream != nil
 	slog.Debug("executeSQL decision", 
 		"streamingEnabled", streamingEnabled, 
 		"hasOutStream", hasOutStream, 
-		"format", session.systemVariables.CLIFormat,
-		"sysVarsPtr", fmt.Sprintf("%p", session.systemVariables),
-		"streamingEnabledPtr", fmt.Sprintf("%p", &session.systemVariables.StreamingEnabled))
+		"format", session.systemVariables.CLIFormat)
 
 	// Check if streaming should be used
 	if streamingEnabled && hasOutStream {
-		LogMemoryStats("Before streaming")
+		// Only collect memory stats if debug logging is enabled (avoids runtime.ReadMemStats overhead)
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			LogMemoryStats("Before streaming")
+		}
 		slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
 		result, err := executeStreamingSQL(ctx, session, iter, roTxn, fc)
 		if err != nil {
 			return nil, err
 		}
-		LogMemoryStats("After streaming")
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			LogMemoryStats("After streaming")
+		}
 		return result, nil
 	}
 
-	LogMemoryStats("Before buffered")
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before buffered")
+	}
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
-	LogMemoryStats("After buffered")
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("After buffered")
+	}
 	slog.Debug("Buffered mode complete", 
 		"endTime", time.Now().Format(time.RFC3339Nano),
 		"rowCount", len(rows))
