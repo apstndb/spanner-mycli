@@ -82,12 +82,8 @@ func (f *TableStreamingFormatter) InitFormat(columns []string, metadata *sppb.Re
 
 	f.initialized = true
 
-	// Write all preview rows that were used for width calculation
-	for _, row := range previewRows {
-		if err := f.writeRowInternal(row); err != nil {
-			return err
-		}
-	}
+	// Don't write preview rows here - they will be written by the TablePreviewProcessor
+	// after this initialization completes
 
 	return nil
 }

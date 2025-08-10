@@ -133,11 +133,11 @@ func consumeRowIterWithProcessor(
 	parsedStats, _ := parseQueryStats(result.QueryStats)
 
 	// Finish processing
-	if err := processor.Finish(parsedStats, result.RowCount); err != nil {
-		return result.QueryStats, result.RowCount, result.Metadata, result.QueryPlan, fmt.Errorf("failed to finish processing: %w", err)
+	if err := processor.Finish(parsedStats, rowCount); err != nil {
+		return result.QueryStats, rowCount, result.Metadata, result.QueryPlan, fmt.Errorf("failed to finish processing: %w", err)
 	}
 
-	return result.QueryStats, result.RowCount, result.Metadata, result.QueryPlan, nil
+	return result.QueryStats, rowCount, result.Metadata, result.QueryPlan, nil
 }
 
 // errStopIteration is a sentinel error used to stop iteration.
