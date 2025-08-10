@@ -33,7 +33,7 @@ func (f *CSVFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMeta
 	}
 
 	if len(columns) == 0 {
-		return fmt.Errorf("no columns to output")
+		return nil
 	}
 
 	// Write headers unless skipping

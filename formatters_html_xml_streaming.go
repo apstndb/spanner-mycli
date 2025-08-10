@@ -36,7 +36,7 @@ func (f *HTMLFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMet
 	f.columns = columns
 
 	if len(columns) == 0 {
-		return fmt.Errorf("no columns to output")
+		return nil
 	}
 
 	// Start HTML table
@@ -121,7 +121,7 @@ func (f *XMLFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMeta
 	f.columns = columns
 
 	if len(columns) == 0 {
-		return fmt.Errorf("no columns to output")
+		return nil
 	}
 
 	// Write XML declaration
