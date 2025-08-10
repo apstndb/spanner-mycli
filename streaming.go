@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"time"
@@ -143,43 +144,11 @@ func consumeRowIterWithProcessor(
 var errStopIteration = fmt.Errorf("stop iteration")
 
 // shouldUseStreaming determines whether to use streaming mode based on system variables and format.
-// Behavior depends on StreamingMode setting:
-// - TRUE: Always stream (if format supports it)
-// - FALSE: Never stream
-// - AUTO: Smart defaults based on format for optimal user experience
+// This delegates to createStreamingProcessor to maintain a single source of truth for the streaming decision logic.
 func shouldUseStreaming(sysVars *systemVariables) bool {
-	switch sysVars.StreamingMode {
-	case enums.StreamingModeTrue:
-		// Always stream if format supports it
-		return isStreamingSupported(sysVars.CLIFormat)
-	case enums.StreamingModeFalse:
-		// Never stream
-		return false
-	case enums.StreamingModeAuto:
-		// AUTO mode provides smart defaults optimized for each format:
-		// - Stream for CSV/Tab/Vertical/HTML/XML: Immediate output, low memory overhead
-		// - Buffer for Table formats: Accurate column width calculation from all rows
-		switch sysVars.CLIFormat {
-		case enums.DisplayModeTable,
-			enums.DisplayModeTableComment,
-			enums.DisplayModeTableDetailComment:
-			// Table formats need all rows to calculate optimal column widths
-			return false
-		case enums.DisplayModeCSV,
-			enums.DisplayModeTab,
-			enums.DisplayModeVertical,
-			enums.DisplayModeHTML,
-			enums.DisplayModeXML:
-			// These formats can stream immediately with no quality loss
-			return true
-		default:
-			// Unknown format, default to buffered for safety
-			return false
-		}
-	default:
-		// Unknown mode, default to buffered for safety
-		return false
-	}
+	// Use a dummy writer to test if streaming would be enabled
+	processor, _ := createStreamingProcessor(sysVars, io.Discard, 80)
+	return processor != nil
 }
 
 // isStreamingSupported checks if a specific display mode supports streaming.
