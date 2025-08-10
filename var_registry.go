@@ -206,8 +206,8 @@ func (r *VarRegistry) registerAll() {
 		"Controls whether system commands are disabled."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
-	r.Register("CLI_STREAMING_ENABLED", BoolVar(&sv.StreamingEnabled,
-		"A boolean indicating whether to enable streaming output for supported formats. The default is false."))
+	r.Register("CLI_STREAMING_ENABLED", StreamingModeVar(&sv.StreamingMode,
+		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
 
 	// === String variables (15+) ===
 	r.Register("OPTIMIZER_VERSION", StringVar(&sv.OptimizerVersion,

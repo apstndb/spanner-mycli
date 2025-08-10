@@ -146,8 +146,8 @@ type systemVariables struct {
 	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
 
 	// Streaming output configuration
-	StreamingEnabled bool  // CLI_STREAMING_ENABLED
-	TablePreviewRows int64 // CLI_TABLE_PREVIEW_ROWS
+	StreamingMode    enums.StreamingMode // CLI_STREAMING_ENABLED
+	TablePreviewRows int64               // CLI_TABLE_PREVIEW_ROWS
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
@@ -226,8 +226,8 @@ func newSystemVariablesWithDefaults() systemVariables {
 		OutputTemplate:       defaultOutputFormat,
 
 		// Streaming defaults
-		StreamingEnabled: false, // Default to false until fully tested
-		TablePreviewRows: 50,    // Default to 50 rows for table width calculation
+		StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
+		TablePreviewRows: 50,                      // Default to 50 rows for table width calculation
 	}
 
 	// Don't initialize registry here - it will be done after the struct is assigned

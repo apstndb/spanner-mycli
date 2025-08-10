@@ -153,14 +153,41 @@ func consumeRowIterWithProcessor(
 var errStopIteration = fmt.Errorf("stop iteration")
 
 // shouldUseStreaming determines whether to use streaming mode based on system variables and format.
+// Behavior depends on StreamingMode setting:
+// - TRUE: Always stream (if format supports it)
+// - FALSE: Never stream
+// - AUTO: Smart defaults (stream for non-table formats, buffer for table formats)
 func shouldUseStreaming(sysVars *systemVariables) bool {
-	// Check if streaming is enabled globally
-	if !sysVars.StreamingEnabled {
+	switch sysVars.StreamingMode {
+	case enums.StreamingModeTrue:
+		// Always stream if format supports it
+		return isStreamingSupported(sysVars.CLIFormat)
+	case enums.StreamingModeFalse:
+		// Never stream
+		return false
+	case enums.StreamingModeAuto:
+		// Smart defaults based on format
+		switch sysVars.CLIFormat {
+		case enums.DisplayModeTable,
+			enums.DisplayModeTableComment,
+			enums.DisplayModeTableDetailComment:
+			// Default to buffered for table formats (preserve column width accuracy)
+			return false
+		case enums.DisplayModeCSV,
+			enums.DisplayModeTab,
+			enums.DisplayModeVertical,
+			enums.DisplayModeHTML,
+			enums.DisplayModeXML:
+			// Default to streaming for other formats (better performance)
+			return true
+		default:
+			// Unknown format, default to buffered
+			return false
+		}
+	default:
+		// Unknown mode, default to buffered
 		return false
 	}
-
-	// Check if the current format supports streaming
-	return isStreamingSupported(sysVars.CLIFormat)
 }
 
 // isStreamingSupported checks if a specific display mode supports streaming.

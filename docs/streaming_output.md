@@ -13,15 +13,40 @@ Streaming output is a feature that reduces Time To First Byte (TTFB) when execut
 
 ## Configuration
 
-### Enable Streaming
+### Controlling Streaming Mode
 
+Streaming uses smart defaults: enabled for CSV/Tab/Vertical/HTML/XML, disabled for Table formats.
+
+#### Command-line flag
+```bash
+# Use automatic selection based on format (default)
+spanner-mycli --streaming=AUTO
+
+# Force streaming for all formats
+spanner-mycli --streaming=TRUE
+
+# Disable streaming (always use buffered mode)
+spanner-mycli --streaming=FALSE
+```
+
+#### System variable
 ```sql
--- Enable streaming for the current session
+-- Automatic selection based on format (default)
+SET CLI_STREAMING_ENABLED = AUTO;
+
+-- Force streaming for all formats
 SET CLI_STREAMING_ENABLED = TRUE;
 
--- Disable streaming (default)
+-- Disable streaming (always use buffered mode) 
 SET CLI_STREAMING_ENABLED = FALSE;
 ```
+
+#### Default Behavior (AUTO mode)
+| Format | Default Mode | Reason |
+|--------|-------------|---------|
+| CSV, Tab, Vertical | Streaming | Low memory usage, immediate output |
+| HTML, XML | Streaming | Structure allows incremental output |
+| Table formats | Buffered | Accurate column width calculation |
 
 ### Table Format Configuration
 

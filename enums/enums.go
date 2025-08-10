@@ -50,3 +50,14 @@ const (
 	ExplainFormatTraditional
 	ExplainFormatCompact
 )
+
+// StreamingMode represents the streaming output mode.
+//
+//go:generate enumer -type=StreamingMode -trimprefix=StreamingMode -transform=snake_upper
+type StreamingMode int
+
+const (
+	StreamingModeAuto StreamingMode = iota // Smart default based on format
+	StreamingModeTrue                       // Always stream
+	StreamingModeFalse                      // Never stream
+)

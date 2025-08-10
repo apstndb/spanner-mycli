@@ -134,6 +134,7 @@ type spannerOptions struct {
 	SystemCommand   *string `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
 	Tee             string  `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
+	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -838,6 +839,14 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		}
 		sysVars.DirectedRead = directedRead
 	}
+
+	// Set streaming mode from flag (already validated by go-flags choices)
+	if opts.Streaming != "" && opts.Streaming != "AUTO" {
+		if err := sysVars.SetFromSimple("CLI_STREAMING_ENABLED", opts.Streaming); err != nil {
+			return nil, fmt.Errorf("failed to set CLI_STREAMING_ENABLED: %w", err)
+		}
+	}
+	// If not set or set to AUTO, defaults to AUTO (format-dependent behavior)
 
 	// Set CLI_FORMAT defaults based on flags before processing --set
 	// This allows --set CLI_FORMAT=X to override these defaults
