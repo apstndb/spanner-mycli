@@ -215,3 +215,12 @@ func ExplainFormatVar(ptr *enums.ExplainFormat, desc string) *EnumVar[enums.Expl
 		description: desc,
 	}
 }
+
+// StreamingModeVar creates an enum handler for StreamingMode
+func StreamingModeVar(ptr *enums.StreamingMode, desc string) *EnumVar[enums.StreamingMode] {
+	return &EnumVar[enums.StreamingMode]{
+		ptr:         ptr,
+		values:      enumerValues(enums.StreamingModeValues()),
+		description: desc,
+	}
+}

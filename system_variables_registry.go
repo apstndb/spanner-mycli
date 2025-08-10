@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,7 +17,10 @@ import (
 // ensureRegistry initializes the registry if needed.
 func (sv *systemVariables) ensureRegistry() {
 	if sv.Registry == nil {
+		slog.Debug("Creating new registry", "svPtr", fmt.Sprintf("%p", sv))
 		sv.Registry = NewVarRegistry(sv)
+	} else {
+		slog.Debug("Registry already exists", "svPtr", fmt.Sprintf("%p", sv))
 	}
 }
 
@@ -34,7 +38,9 @@ func (sv *systemVariables) setFromGoogleSQL(name string, value string) error {
 		return errSetterUnimplemented{name}
 	}
 
+	slog.Debug("setFromGoogleSQL calling Registry.Set", "upperName", upperName, "value", value)
 	err := sv.Registry.Set(upperName, value, true)
+	slog.Debug("setFromGoogleSQL after Registry.Set", "err", err)
 	// Convert to legacy error types for compatibility
 	if err != nil {
 		if errors.Is(err, errSetterReadOnly) {

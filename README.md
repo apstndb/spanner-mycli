@@ -114,7 +114,7 @@ spanner:
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
       --csv                                               Display output in CSV format.
-      --format=[table|tab|vertical|html|xml|csv]         Output format (alternative to individual format flags)
+      --format=                                           Output format (table, tab, vertical, html, xml, csv)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
@@ -153,6 +153,7 @@ spanner:
       --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
       --tee=                                              Append a copy of output to the specified file
       --skip-column-names                                 Suppress column headers in output
+      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream) (default: AUTO)
 
 Help Options:
   -h, --help                                              Show this help message
@@ -892,6 +893,8 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
 | CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
+| CLI_STREAMING             | READ_WRITE | `"AUTO"`                                       |
+| CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for interactive mode)
@@ -904,6 +907,13 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
 >
 > You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, or `--csv`.
+
+> **Note**: `CLI_STREAMING` controls streaming output mode:
+> - `AUTO` (default) - Automatically selects streaming for CSV/Tab/Vertical/HTML/XML formats, buffered for Table formats
+> - `TRUE` - Forces streaming for all formats (reduces memory usage, faster time-to-first-byte)
+> - `FALSE` - Forces buffered mode for all formats (allows accurate column width calculation)
+>
+> For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
 
 ### Batch statements
 
@@ -1830,7 +1840,7 @@ You can change it using `MAX_PARTITIONED_PARALLELISM`.
 spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
 ```
 
-Note: There is no streaming output, so result won't be printed unless all work is done.
+Note: Partitioned queries do not support streaming output in the current implementation.
 
 #### Show partition tokens.
 

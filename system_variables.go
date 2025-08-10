@@ -77,6 +77,7 @@ type systemVariables struct {
 	Instance    string            // CLI_INSTANCE
 	Database    string            // CLI_DATABASE
 	Verbose     bool              // CLI_VERBOSE
+	Profile     bool              // CLI_PROFILE - enables performance profiling (memory, timing)
 	Prompt      string            // CLI_PROMPT
 	Prompt2     string            // CLI_PROMPT2
 	HistoryFile string            // CLI_HISTORY_FILE
@@ -144,6 +145,10 @@ type systemVariables struct {
 	AsyncDDL                  bool   // CLI_ASYNC_DDL
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
+
+	// Streaming output configuration
+	StreamingMode    enums.StreamingMode // CLI_STREAMING
+	TablePreviewRows int64               // CLI_TABLE_PREVIEW_ROWS
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
@@ -220,6 +225,14 @@ func newSystemVariablesWithDefaults() systemVariables {
 		HistoryFile:          defaultHistoryFile,
 		VertexAIModel:        defaultVertexAIModel,
 		OutputTemplate:       defaultOutputFormat,
+		LogLevel:             slog.LevelWarn,
+
+		// Streaming defaults
+		StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
+		TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
+
+		// Initialize empty maps to avoid nil
+		Params: make(map[string]ast.Node),
 	}
 
 	// Don't initialize registry here - it will be done after the struct is assigned

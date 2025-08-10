@@ -6,7 +6,6 @@ package main
 
 import (
 	"cmp"
-	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"html"
@@ -80,7 +79,10 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 		tablewriter.WithTrimSpace(tw.Off),
 		tablewriter.WithHeaderAutoFormat(tw.Off),
 	).Configure(func(config *tablewriter.Config) {
-		config.Row.ColumnAligns = result.ColumnAlign
+		// Use the new Row.Alignment.PerColumn field instead of deprecated Row.ColumnAligns
+		if len(result.ColumnAlign) > 0 {
+			config.Row.Alignment.PerColumn = result.ColumnAlign
+		}
 		config.Row.Formatting.AutoWrap = tw.WrapNone
 	})
 
@@ -138,95 +140,78 @@ func writeTable(w io.Writer, result *Result, columnNames []string, sysVars *syst
 // with column names on the left and values on the right.
 // This is a streaming format that outputs row-by-row without buffering.
 func formatVertical(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-	if len(columnNames) == 0 {
-		return nil
+	// Use the shared Vertical formatter
+	formatter := NewVerticalFormatter(out)
+
+	// Initialize with column names
+	if err := formatter.InitFormat(columnNames, nil, sysVars, nil); err != nil {
+		return err
 	}
 
-	maxLen := 0
-	for _, columnName := range columnNames {
-		if len(columnName) > maxLen {
-			maxLen = len(columnName)
-		}
-	}
-
-	format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
-
-	for i, row := range result.Rows {
-		if _, err := fmt.Fprintf(out, "*************************** %d. row ***************************\n", i+1); err != nil {
+	// Write all rows
+	for _, row := range result.Rows {
+		if err := formatter.WriteRow(row); err != nil {
 			return err
 		}
-		for j, column := range row {
-			var columnName string
-			if j < len(columnNames) {
-				columnName = columnNames[j]
-			} else {
-				// Use a default column name if row has more columns than headers
-				columnName = fmt.Sprintf("Column_%d", j+1)
-			}
-			if _, err := fmt.Fprintf(out, format, columnName, column); err != nil {
-				return err
-			}
-		}
 	}
 
-	return nil
+	// Finish formatting
+	return formatter.FinishFormat(QueryStats{}, int64(len(result.Rows)))
 }
 
 // formatTab formats output as tab-separated values.
 func formatTab(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-	if len(columnNames) == 0 {
-		return nil
+	// Use the shared Tab formatter
+	formatter := NewTabFormatter(out, sysVars.SkipColumnNames)
+
+	// Initialize with column names
+	if err := formatter.InitFormat(columnNames, nil, sysVars, nil); err != nil {
+		return err
 	}
 
-	if !sysVars.SkipColumnNames {
-		if _, err := fmt.Fprintln(out, strings.Join(columnNames, "\t")); err != nil {
-			return fmt.Errorf("failed to write TAB header: %w", err)
-		}
-	}
-
+	// Write all rows
 	for i, row := range result.Rows {
-		if _, err := fmt.Fprintln(out, strings.Join(row, "\t")); err != nil {
+		if err := formatter.WriteRow(row); err != nil {
 			return fmt.Errorf("failed to write TAB row %d: %w", i+1, err)
 		}
 	}
 
-	return nil
+	// Finish formatting
+	return formatter.FinishFormat(QueryStats{}, int64(len(result.Rows)))
 }
 
 // formatCSV formats output as comma-separated values following RFC 4180.
 func formatCSV(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
+	// Skip formatting if there are no columns (consistent with formatTab and formatVertical)
 	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
+		return nil
 	}
 
-	csvWriter := csv.NewWriter(out)
-	defer csvWriter.Flush()
+	// Use the shared CSV formatter
+	formatter := NewCSVFormatter(out, sysVars.SkipColumnNames)
 
-	if !sysVars.SkipColumnNames {
-		if err := csvWriter.Write(columnNames); err != nil {
-			return fmt.Errorf("failed to write CSV header: %w", err)
-		}
+	// Initialize with column names
+	if err := formatter.InitFormat(columnNames, nil, sysVars, nil); err != nil {
+		return err
 	}
 
+	// Write all rows
 	for i, row := range result.Rows {
-		if err := csvWriter.Write(row); err != nil {
+		if err := formatter.WriteRow(row); err != nil {
 			return fmt.Errorf("failed to write CSV row %d: %w", i+1, err)
 		}
 	}
 
-	// Check for any error that occurred during writing
-	if err := csvWriter.Error(); err != nil {
-		return fmt.Errorf("CSV writer error: %w", err)
-	}
-
-	return nil
+	// Finish formatting
+	return formatter.FinishFormat(QueryStats{}, int64(len(result.Rows)))
 }
 
 // formatHTML formats output as an HTML table.
 // This is a streaming format that outputs row-by-row without buffering.
 func formatHTML(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
+	// Skip formatting if there are no columns (consistent with formatTab, formatVertical, and formatCSV)
 	if len(columnNames) == 0 {
-		return fmt.Errorf("no columns to output")
+		return nil
 	}
 
 	if _, err := fmt.Fprint(out, "<TABLE BORDER='1'>"); err != nil {
@@ -298,8 +283,9 @@ type xmlResultSet struct {
 // formatXML formats output as XML.
 func formatXML(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 	return writeBuffered(out, func(out io.Writer) error {
+		// Skip formatting if there are no columns (consistent with other formatters)
 		if len(columnNames) == 0 {
-			return fmt.Errorf("no columns to output")
+			return nil
 		}
 
 		// Build the result set structure

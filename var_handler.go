@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,11 @@ func (h *VarHandler[T]) Set(value string) error {
 	}
 
 	*h.ptr = parsed
+	// Debug logging for bool type
+	if boolPtr, ok := any(h.ptr).(*bool); ok {
+		slog.Debug("VarHandler.Set bool", "value", value, "parsed", parsed, "ptrValue", *boolPtr,
+			"ptr", fmt.Sprintf("%p", boolPtr))
+	}
 	return nil
 }
 

@@ -2012,8 +2012,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 				if err == nil {
-					var sysVars systemVariables
-					sysVars, err = initializeSystemVariables(&gopts.Spanner)
+					sysVars, err := initializeSystemVariables(&gopts.Spanner)
 					if err == nil {
 						// Check results
 						if sysVars.Project != tt.wantProject {

@@ -49,6 +49,18 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 			"rowCount", len(result.Rows))
 	}
 
+	// Debug logging
+	slog.Debug("printTableData",
+		"columnCount", len(columnNames),
+		"rowCount", len(result.Rows),
+		"format", sysVars.CLIFormat)
+
+	// Skip formatting only if there's no header at all (e.g., SET statements)
+	// Empty query results with columns should still output headers
+	if len(columnNames) == 0 {
+		return nil
+	}
+
 	// Create the appropriate formatter based on the display mode
 	formatter, err := NewFormatter(sysVars.CLIFormat)
 	if err != nil {
@@ -82,8 +94,11 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out, input+";")
 	}
 
-	if err := printTableData(sysVars, screenWidth, out, result); err != nil {
-		return err
+	// Skip table data if already streamed
+	if !result.Streamed {
+		if err := printTableData(sysVars, screenWidth, out, result); err != nil {
+			return err
+		}
 	}
 
 	if len(result.Predicates) > 0 {
@@ -123,6 +138,7 @@ type OutputContext struct {
 	Timestamp   string
 	Stats       *QueryStats
 	CommitStats *sppb.CommitResponse_CommitStats
+	Metrics     *ExecutionMetrics
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -163,6 +179,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		Timestamp:   timestamp,
 		Stats:       &result.Stats,
 		CommitStats: result.CommitStats,
+		Metrics:     result.Metrics,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)

@@ -67,7 +67,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: "",
-			wantError:  true,
+			wantError:  false, // Now we skip formatting for empty results
 		},
 	}
 
@@ -186,7 +186,7 @@ func TestPrintTableDataXML(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantContains: []string{},
-			wantError:    true,
+			wantError:    false, // Now we skip formatting for empty results
 		},
 	}
 
@@ -310,7 +310,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: false,
-			wantError:  true,
+			wantError:  false, // Now we skip formatting for empty results
 		},
 		{
 			name: "XML with nil header and empty rows",
@@ -320,7 +320,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: false,
-			wantError:  true,
+			wantError:  false, // Now we skip formatting for empty results
 		},
 		{
 			name: "HTML with empty column names but data rows",
@@ -330,7 +330,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 				Rows:        []Row{{"data"}},
 			},
 			wantOutput: false,
-			wantError:  true,
+			wantError:  false, // Now we skip formatting for empty results
 		},
 		{
 			name: "All display modes with unicode data",
@@ -377,11 +377,8 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		result := &Result{Rows: []Row{}}
 		sysVars := &systemVariables{SkipColumnNames: false}
 		err := formatHTML(&buf, result, []string{}, sysVars, 0)
-		if err == nil {
-			t.Error("expected error for empty columns, got nil")
-		}
-		if err != nil && err.Error() != "no columns to output" {
-			t.Errorf("unexpected error message: %v", err)
+		if err != nil {
+			t.Errorf("expected nil for empty columns, got error: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
@@ -393,11 +390,8 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		result := &Result{Rows: []Row{}}
 		sysVars := &systemVariables{SkipColumnNames: false}
 		err := formatXML(&buf, result, []string{}, sysVars, 0)
-		if err == nil {
-			t.Error("expected error for empty columns, got nil")
-		}
-		if err != nil && err.Error() != "no columns to output" {
-			t.Errorf("unexpected error message: %v", err)
+		if err != nil {
+			t.Errorf("expected nil for empty columns, got error: %v", err)
 		}
 		if buf.String() != "" {
 			t.Errorf("expected empty output, got: %q", buf.String())
@@ -409,8 +403,8 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		result := &Result{Rows: []Row{}}
 		sysVars := &systemVariables{SkipColumnNames: false}
 		err := formatCSV(&buf, result, []string{}, sysVars, 0)
-		if err == nil {
-			t.Error("expected error for empty columns, got nil")
+		if err != nil {
+			t.Errorf("expected nil for empty columns, got error: %v", err)
 		}
 		if err != nil && err.Error() != "no columns to output" {
 			t.Errorf("unexpected error message: %v", err)
@@ -513,7 +507,7 @@ func TestPrintTableDataCSV(t *testing.T) {
 				Rows:        []Row{},
 			},
 			wantOutput: "",
-			wantError:  true,
+			wantError:  false, // Now we skip formatting for empty results
 		},
 		{
 			name: "CSV with quotes and newlines",
