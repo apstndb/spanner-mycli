@@ -64,6 +64,10 @@ func (f *TableStreamingFormatter) InitFormat(columns []string, metadata *sppb.Re
 			Enable: true,
 		}),
 	).Configure(func(config *tablewriter.Config) {
+		// Note: Column alignment is not set here because:
+		// 1. Regular SQL queries don't specify column alignment (defaults to left)
+		// 2. EXPLAIN/DESCRIBE statements that use custom alignment don't use streaming mode
+		// They return a complete Result with ColumnAlign set and use buffered formatting
 		config.Row.Formatting.AutoWrap = tw.WrapNone
 	})
 
