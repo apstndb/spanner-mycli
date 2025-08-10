@@ -28,7 +28,11 @@ SET CLI_STREAMING_ENABLED = FALSE;
 For table format output, streaming uses a preview-based approach where it buffers the first N rows to calculate optimal column widths:
 
 ```sql
--- Set number of preview rows for table width calculation (default: 50)
+-- Set number of preview rows for table width calculation
+-- Default: 50 rows
+-- 0: Use header widths only
+-- Positive: Use that many rows for preview
+-- -1: Collect all rows (non-streaming behavior)
 SET CLI_TABLE_PREVIEW_ROWS = 100;
 ```
 

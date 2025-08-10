@@ -227,7 +227,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 
 		// Streaming defaults
 		StreamingEnabled: false, // Default to false until fully tested
-		TablePreviewRows: 0,     // Default to 0, users should configure when enabling streaming
+		TablePreviewRows: 50,    // Default to 50 rows for table width calculation
 	}
 
 	// Don't initialize registry here - it will be done after the struct is assigned

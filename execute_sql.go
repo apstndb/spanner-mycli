@@ -63,12 +63,20 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	// Check if streaming should be used
 	if streamingEnabled && hasOutStream {
+		LogMemoryStats("Before streaming")
 		slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
-		return executeStreamingSQL(ctx, session, iter, roTxn, fc)
+		result, err := executeStreamingSQL(ctx, session, iter, roTxn, fc)
+		if err != nil {
+			return nil, err
+		}
+		LogMemoryStats("After streaming")
+		return result, nil
 	}
 
+	LogMemoryStats("Before buffered")
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	LogMemoryStats("After buffered")
 	slog.Debug("Buffered mode complete", 
 		"endTime", time.Now().Format(time.RFC3339Nano),
 		"rowCount", len(rows))
