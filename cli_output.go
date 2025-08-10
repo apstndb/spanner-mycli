@@ -50,7 +50,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	// Debug logging
-	slog.Debug("printTableData", 
+	slog.Debug("printTableData",
 		"columnCount", len(columnNames),
 		"rowCount", len(result.Rows),
 		"format", sysVars.CLIFormat)
@@ -138,6 +138,7 @@ type OutputContext struct {
 	Timestamp   string
 	Stats       *QueryStats
 	CommitStats *sppb.CommitResponse_CommitStats
+	Metrics     *ExecutionMetrics
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -178,6 +179,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		Timestamp:   timestamp,
 		Stats:       &result.Stats,
 		CommitStats: result.CommitStats,
+		Metrics:     result.Metrics,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)

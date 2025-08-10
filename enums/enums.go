@@ -57,7 +57,7 @@ const (
 type StreamingMode int
 
 const (
-	StreamingModeAuto StreamingMode = iota // Smart default based on format
+	StreamingModeAuto  StreamingMode = iota // Smart default based on format
 	StreamingModeTrue                       // Always stream
 	StreamingModeFalse                      // Never stream
 )

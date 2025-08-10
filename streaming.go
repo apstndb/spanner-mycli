@@ -26,9 +26,11 @@ type RowIterResult struct {
 // rowIterToSeq converts a spanner.RowIterator to an iter.Seq[Row] with metadata extraction.
 // It fetches the first row to obtain metadata, then yields all rows including the first.
 // This unified approach allows both streaming and buffered processing through the same interface.
+// If metrics is non-nil, timing information will be collected.
 func rowIterToSeq(
 	rowIter *spanner.RowIterator,
 	rowTransform func(*spanner.Row) (Row, error),
+	metrics *ExecutionMetrics,
 ) *RowIterResult {
 	result := &RowIterResult{}
 
@@ -36,23 +38,33 @@ func rowIterToSeq(
 	result.Rows = func(yield func(Row) bool) {
 		defer rowIter.Stop()
 
-		var firstIteration = true
-		
+		firstIteration := true
+		var rowCount int64
+
 		// Process all rows using Do()
 		err := rowIter.Do(func(row *spanner.Row) error {
-			// On first iteration, capture metadata
+			now := time.Now()
+
+			// On first iteration, capture metadata and TTFB
 			if firstIteration {
 				firstIteration = false
 				// Metadata should be available after the first call to Next() (which Do() calls internally)
 				result.Metadata = rowIter.Metadata
-				if result.Metadata != nil && result.Metadata.RowType != nil {
+
+				// Record TTFB if metrics collection is enabled
+				if metrics != nil && metrics.FirstRowTime == nil {
+					metrics.FirstRowTime = &now
+					slog.Debug("Metadata retrieved (TTFB)",
+						"fieldCount", len(result.Metadata.GetRowType().GetFields()),
+						"ttfb", now.Sub(metrics.QueryStartTime))
+				} else if result.Metadata != nil && result.Metadata.RowType != nil {
 					fields := result.Metadata.RowType.GetFields()
-					slog.Debug("Metadata retrieved (TTFB)", 
+					slog.Debug("Metadata retrieved",
 						"fieldCount", len(fields),
-						"firstRowTime", time.Now().Format(time.RFC3339Nano))
+						"firstRowTime", now.Format(time.RFC3339Nano))
 				}
 			}
-			
+
 			transformedRow, err := rowTransform(row)
 			if err != nil {
 				return fmt.Errorf("failed to transform row: %w", err)
@@ -62,6 +74,13 @@ func rowIterToSeq(
 			if !yield(transformedRow) {
 				return errStopIteration
 			}
+
+			rowCount++
+			if metrics != nil {
+				metrics.LastRowTime = &now
+				metrics.RowCount = rowCount
+			}
+
 			return nil
 		})
 
@@ -88,14 +107,16 @@ func rowIterToSeq(
 
 // consumeRowIterWithProcessor processes rows using the provided RowProcessor.
 // This unified function handles both buffered and streaming modes through the same interface.
+// If metrics is non-nil, timing information will be collected during processing.
 func consumeRowIterWithProcessor(
 	iter *spanner.RowIterator,
 	processor RowProcessor,
 	rowTransform func(*spanner.Row) (Row, error),
 	sysVars *systemVariables,
+	metrics *ExecutionMetrics,
 ) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	// Convert RowIterator to iter.Seq with metadata extraction
-	result := rowIterToSeq(iter, rowTransform)
+	// Convert RowIterator to iter.Seq with metadata extraction and metrics
+	result := rowIterToSeq(iter, rowTransform, metrics)
 
 	// Process rows through the sequence
 	rowCount = 0
@@ -126,7 +147,6 @@ func consumeRowIterWithProcessor(
 		if err := processor.Init(result.Metadata, sysVars); err != nil {
 			return nil, 0, result.Metadata, nil, fmt.Errorf("failed to initialize processor: %w", err)
 		}
-		initialized = true
 	}
 
 	// Parse stats for processor

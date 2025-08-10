@@ -22,6 +22,10 @@ import (
 )
 
 func Test_initializeSystemVariables(t *testing.T) {
+	// NOTE: Most test cases below hardcode expected values instead of using newSystemVariablesWithDefaults()
+	// This means they need updating when defaults change (like TablePreviewRows).
+	// TODO: Refactor tests to use newSystemVariablesWithDefaults() as a base and only override tested fields.
+
 	// Helper to convert ast.Node map to string map for comparison
 	nodeMapToStringMap := func(m map[string]ast.Node) map[string]string {
 		if m == nil {
@@ -43,21 +47,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 		{
 			name: "default values",
 			opts: &spannerOptions{},
-			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				Params:               make(map[string]ast.Node),
-			},
+			want: func() systemVariables {
+				// Use the actual defaults function to avoid hardcoding values
+				// This test verifies that initializeSystemVariables preserves defaults
+				return newSystemVariablesWithDefaults()
+			}(),
 			wantErr: false,
 		},
 		{
@@ -145,6 +139,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					"p1": lo.Must(memefish.ParseExpr("", "'string_value'")),
 					"p2": lo.Must(memefish.ParseType("", "FLOAT64")),
 				},
+				TablePreviewRows: 50,
 			},
 			wantErr: false,
 		},
@@ -177,6 +172,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
 				Params:               make(map[string]ast.Node),
 				ReadOnlyStaleness:    lo.ToPtr(spanner.ReadTimestamp(lo.Must(time.Parse(time.RFC3339Nano, "2023-01-01T00:00:00Z")))),
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -216,6 +212,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
 				Params:               make(map[string]ast.Node),
 				StatementTimeout:     lo.ToPtr(30 * time.Second),
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -239,6 +236,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -262,6 +260,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -284,6 +283,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -327,6 +327,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 						},
 					},
 				},
+				TablePreviewRows: 50,
 			},
 			wantErr: false,
 		},
@@ -374,6 +375,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -399,6 +401,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -425,6 +428,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -448,6 +452,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				RPCPriority:          defaultPriority,
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -469,6 +474,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile: "output_full.tmpl",
 				// OutputTemplate:       should be parsed from file, hard to compare directly
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -492,6 +498,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -515,6 +522,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplateFile:   "",
 				OutputTemplate:       defaultOutputFormat,
 				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				TablePreviewRows:     50,
 			},
 			wantErr: false,
 		},
@@ -614,6 +622,9 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 		Prompt2:              defaultPrompt2,
 		HistoryFile:          defaultHistoryFile,
 		VertexAIModel:        defaultVertexAIModel,
+		LogLevel:             slog.LevelWarn,
+		TablePreviewRows:     50,
+		Params:               make(map[string]ast.Node),
 	}
 
 	if diff := cmp.Diff(want, got,

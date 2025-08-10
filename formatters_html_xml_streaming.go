@@ -194,6 +194,6 @@ func (f *XMLFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
 // xmlEscape escapes special XML characters.
 func xmlEscape(s string) string {
 	var buf bytes.Buffer
-	xml.EscapeText(&buf, []byte(s))
+	_ = xml.EscapeText(&buf, []byte(s)) // Error ignored: EscapeText only errors on Write failure
 	return buf.String()
 }

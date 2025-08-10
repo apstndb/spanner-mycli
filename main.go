@@ -842,8 +842,8 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 
 	// Set streaming mode from flag (already validated by go-flags choices)
 	if opts.Streaming != "" && opts.Streaming != "AUTO" {
-		if err := sysVars.SetFromSimple("CLI_STREAMING_ENABLED", opts.Streaming); err != nil {
-			return nil, fmt.Errorf("failed to set CLI_STREAMING_ENABLED: %w", err)
+		if err := sysVars.SetFromSimple("CLI_STREAMING", opts.Streaming); err != nil {
+			return nil, fmt.Errorf("failed to set CLI_STREAMING: %w", err)
 		}
 	}
 	// If not set or set to AUTO, defaults to AUTO (format-dependent behavior)

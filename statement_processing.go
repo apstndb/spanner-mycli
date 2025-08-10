@@ -173,7 +173,8 @@ type Result struct {
 
 	BatchInfo      *BatchInfo
 	PartitionCount int
-	Streamed       bool // Indicates rows were streamed and not buffered
+	Streamed       bool              // Indicates rows were streamed and not buffered
+	Metrics        *ExecutionMetrics // Performance metrics for query execution
 }
 
 type Row []string

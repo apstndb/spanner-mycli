@@ -70,9 +70,9 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 	if isGoogleSQL {
 		value = parseGoogleSQLValue(value)
 	}
-	
+
 	slog.Debug("Registry.Set", "name", upperName, "originalValue", originalValue, "parsedValue", value, "isGoogleSQL", isGoogleSQL)
-	
+
 	err := v.Set(value)
 	slog.Debug("Registry.Set result", "name", upperName, "err", err)
 	return err
@@ -186,6 +186,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("RETURN_COMMIT_STATS", BoolVar(&sv.ReturnCommitStats,
 		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection."))
 	r.Register("CLI_VERBOSE", BoolVar(&sv.Verbose, "Display verbose output."))
+	r.Register("CLI_PROFILE", BoolVar(&sv.Profile, "Enable performance profiling (memory and timing metrics)."))
 	r.Register("CLI_LINT_PLAN", BoolVar(&sv.LintPlan, "Enable query plan linting."))
 	r.Register("CLI_USE_PAGER", BoolVar(&sv.UsePager, "Enable pager for output."))
 	r.Register("CLI_AUTOWRAP", BoolVar(&sv.AutoWrap, "Enable automatic line wrapping."))
@@ -206,7 +207,7 @@ func (r *VarRegistry) registerAll() {
 		"Controls whether system commands are disabled."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
-	r.Register("CLI_STREAMING_ENABLED", StreamingModeVar(&sv.StreamingMode,
+	r.Register("CLI_STREAMING", StreamingModeVar(&sv.StreamingMode,
 		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
 
 	// === String variables (15+) ===
@@ -247,7 +248,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_EXPLAIN_WRAP_WIDTH", IntVar(&sv.ExplainWrapWidth,
 		"Controls query plan wrap width. It effects only operators column contents"))
 	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.TablePreviewRows,
-		"Number of rows to preview for table width calculation in streaming mode. 0 means use header widths only (default). Positive values use that many rows for preview. -1 means collect all rows (non-streaming)."))
+		"Number of rows to preview for table width calculation in streaming mode. 0 means use header widths only. Positive values use that many rows for preview (default: 50). -1 means collect all rows (non-streaming)."))
 	r.Register("CLI_PORT", &IntGetterVar{
 		getter:      func() int64 { return int64(sv.Port) },
 		description: "Port number for connections.",

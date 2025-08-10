@@ -15,7 +15,7 @@ type MemoryStats struct {
 }
 
 // GetMemoryStats returns current memory statistics
-// Note: runtime.ReadMemStats() causes stop-the-world (STW) pause, 
+// Note: runtime.ReadMemStats() causes stop-the-world (STW) pause,
 // so this should only be called when performance profiling is needed
 func GetMemoryStats() MemoryStats {
 	var m runtime.MemStats
@@ -44,7 +44,7 @@ func CompareMemoryStats(before, after MemoryStats, label string) {
 	allocDiff := int64(after.AllocMB) - int64(before.AllocMB)
 	totalDiff := int64(after.TotalAllocMB) - int64(before.TotalAllocMB)
 	gcDiff := after.NumGC - before.NumGC
-	
+
 	slog.Info(fmt.Sprintf("Memory usage for %s", label),
 		"allocDiffMB", allocDiff,
 		"totalAllocDiffMB", totalDiff,
