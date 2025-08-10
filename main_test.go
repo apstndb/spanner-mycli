@@ -24,7 +24,7 @@ import (
 func Test_initializeSystemVariables(t *testing.T) {
 	// NOTE: Most test cases below hardcode expected values instead of using newSystemVariablesWithDefaults()
 	// This means they need updating when defaults change (like TablePreviewRows).
-	// TODO: Refactor tests to use newSystemVariablesWithDefaults() as a base and only override tested fields.
+	// Consider using newSystemVariablesWithDefaults() as a base and only override tested fields.
 
 	// Helper to convert ast.Node map to string map for comparison
 	nodeMapToStringMap := func(m map[string]ast.Node) map[string]string {
