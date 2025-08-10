@@ -114,7 +114,7 @@ spanner:
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
       --csv                                               Display output in CSV format.
-      --format=[table|tab|vertical|html|xml|csv]         Output format (alternative to individual format flags)
+      --format=                                           Output format (table, tab, vertical, html, xml, csv)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
@@ -153,7 +153,7 @@ spanner:
       --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
       --tee=                                              Append a copy of output to the specified file
       --skip-column-names                                 Suppress column headers in output
-      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream) (default: AUTO)
+      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream) (default: AUTO)
 
 Help Options:
   -h, --help                                              Show this help message
