@@ -950,7 +950,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			// For CLI_FORMAT, we need to simulate what run() does
 			if tt.wantCLIFormat != 0 || tt.name == "batch mode without --table defaults to tab format" || tt.name == "interactive mode defaults to table format" {
 				// Determine if this would be interactive mode
-				input, interactive, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+				input, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
 				if err != nil {
 					t.Fatalf("Failed to determine input mode: %v", err)
 				}
@@ -959,8 +959,8 @@ func TestFlagSpecialModes(t *testing.T) {
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
 					expectedFormat := enums.DisplayModeTable
 					if expectedFormat != tt.wantCLIFormat {
-						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
-							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
+						t.Errorf("Expected default CLI_FORMAT = %v, but want %v (input=%q)",
+							expectedFormat, tt.wantCLIFormat, input)
 					}
 				} else {
 					// CLI_FORMAT was set via --set, check it was applied
@@ -1811,7 +1811,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 			defer cleanup()
 
-			input, interactive, err := determineInputAndMode(&gopts.Spanner, stdin)
+			input, _, err := determineInputAndMode(&gopts.Spanner, stdin)
 			if err != nil {
 				t.Fatalf("Failed to determine input mode: %v", err)
 			}
@@ -1827,8 +1827,8 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			if !hasSet {
 				expectedFormat := enums.DisplayModeTable
 				if expectedFormat != tt.wantCLIFormat {
-					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
-						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
+					t.Errorf("Expected default CLI_FORMAT = %v, but want %v (input=%q)",
+						expectedFormat, tt.wantCLIFormat, input)
 				}
 			} else {
 				// If CLI_FORMAT was explicitly set, verify it
