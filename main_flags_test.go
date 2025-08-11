@@ -791,6 +791,7 @@ priority = HIGH
 // determineExpectedFormat is a test helper that determines the expected CLI_FORMAT
 // based on the options, matching the application's actual behavior
 func determineExpectedFormat(t *testing.T, opts *spannerOptions) enums.DisplayMode {
+	t.Helper()
 	formatMode := getFormatFromOptions(opts)
 	if formatMode != enums.DisplayModeUnspecified {
 		return formatMode
