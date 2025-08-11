@@ -251,7 +251,11 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	c.SystemVariables.CommitTimestamp = result.CommitTimestamp
 
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.CommitTimestamp)}
+		var ts *timestamppb.Timestamp
+		if !result.CommitTimestamp.IsZero() {
+			ts = timestamppb.New(result.CommitTimestamp)
+		}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
