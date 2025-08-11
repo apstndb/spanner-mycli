@@ -170,7 +170,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	detail := sb.String()
 
 	// Check if statement has a result set (indicated by TableHeader)
-	if result.TableHeader != nil {
+	// RUN BATCH DML has a TableHeader but should be treated as a DML execution result
+	if result.TableHeader != nil && result.BatchInfo == nil {
 		// Statement has a result set (SELECT, SHOW, DML with THEN RETURN)
 		partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
 
