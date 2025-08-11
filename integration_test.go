@@ -21,6 +21,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
@@ -107,6 +108,8 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}
+	// Initialize StreamManager for tests
+	sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
 	// Initialize the registry
 	sysVars.ensureRegistry()
 	session, err = NewSession(ctx, sysVars, options...)
@@ -185,6 +188,8 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 			Database:         "",                      // No database for admin-only mode
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		}
+		// Initialize StreamManager for tests
+		sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
 		// Initialize the registry
 		sysVars.ensureRegistry()
 
@@ -241,6 +246,8 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 		cmpopts.IgnoreFields(Result{}, "Timestamp"),
 		// Commit Stats is only provided by real instances
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
+		// Metrics are collected but not part of test expectations
+		cmpopts.IgnoreFields(Result{}, "Metrics"),
 		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	)

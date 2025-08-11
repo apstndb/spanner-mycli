@@ -134,6 +134,7 @@ type spannerOptions struct {
 	SystemCommand   *string `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
 	Tee             string  `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
+	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -508,7 +509,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 	}
 
-	cli, err := NewCli(ctx, cred, &sysVars)
+	cli, err := NewCli(ctx, cred, sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
@@ -634,15 +635,15 @@ func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 }
 
 // createSystemVariablesFromOptions creates a systemVariables instance from spannerOptions.
-func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, error) {
+func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, error) {
 	params, err := parseParams(opts.Param)
 	if err != nil {
-		return systemVariables{}, err
+		return nil, err
 	}
 
 	l, err := SetLogLevel(cmp.Or(opts.LogLevel, "WARN"))
 	if err != nil {
-		return systemVariables{}, fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
+		return nil, fmt.Errorf("error on parsing --log-level=%v", opts.LogLevel)
 	}
 
 	// Start with defaults and override with options
@@ -703,7 +704,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 		// Parse endpoint into host and port
 		host, port, err := parseEndpoint(endpoint)
 		if err != nil {
-			return systemVariables{}, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
+			return nil, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
 		}
 		sysVars.Host, sysVars.Port = host, port
 	} else if opts.Host != "" || opts.Port != 0 {
@@ -741,28 +742,28 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (systemVariables, er
 
 	sysVars.SkipColumnNames = opts.SkipColumnNames
 
-	return sysVars, nil
+	return &sysVars, nil
 }
 
 // initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
 // It extracts the logic for setting default values and applying flag values.
-func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
+func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	// Create basic system variables from options
 	sysVars, err := createSystemVariablesFromOptions(opts)
 	if err != nil {
-		return systemVariables{}, err
+		return nil, err
 	}
 
 	// initialize default value
 	if err := sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
-		return systemVariables{}, fmt.Errorf("parse error: %w", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	if opts.OutputTemplate == "" {
-		setDefaultOutputTemplate(&sysVars)
+		setDefaultOutputTemplate(sysVars)
 	} else {
-		if err := setOutputTemplateFile(&sysVars, opts.OutputTemplate); err != nil {
-			return systemVariables{}, fmt.Errorf("parse error of output template: %w", err)
+		if err := setOutputTemplateFile(sysVars, opts.OutputTemplate); err != nil {
+			return nil, fmt.Errorf("parse error of output template: %w", err)
 		}
 	}
 
@@ -773,20 +774,20 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	if opts.ReadTimestamp != "" {
 		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
 		if err != nil {
-			return systemVariables{}, fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
+			return nil, fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
 		}
 		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
 
 	if opts.DatabaseDialect != "" {
 		if err := sysVars.SetFromSimple("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
-			return systemVariables{}, fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
+			return nil, fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
 		}
 	}
 
 	if opts.EnablePartitionedDML {
 		if err := sysVars.SetFromSimple("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
-			return systemVariables{}, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
+			return nil, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
 		}
 	}
 
@@ -794,50 +795,58 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		// Validate timeout format before setting system variable for better error reporting
 		_, err := time.ParseDuration(opts.Timeout)
 		if err != nil {
-			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+			return nil, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
 		if err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
-			return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
+			return nil, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
 		}
 	}
 
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
 		if err := sysVars.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			return systemVariables{}, fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
+			return nil, fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
 		}
 	}
 
 	if opts.Priority != "" {
 		if err := sysVars.SetFromSimple("RPC_PRIORITY", opts.Priority); err != nil {
-			return systemVariables{}, fmt.Errorf("invalid value of --priority: %v: %w", opts.Priority, err)
+			return nil, fmt.Errorf("invalid value of --priority: %v: %w", opts.Priority, err)
 		}
 	} else {
 		// Only set default if not already set via registry
 		if err := sysVars.SetFromSimple("RPC_PRIORITY", "MEDIUM"); err != nil {
-			return systemVariables{}, fmt.Errorf("failed to set default RPC_PRIORITY: %w", err)
+			return nil, fmt.Errorf("failed to set default RPC_PRIORITY: %w", err)
 		}
 	}
 
 	if opts.QueryMode != "" {
 		if err := sysVars.SetFromSimple("CLI_QUERY_MODE", opts.QueryMode); err != nil {
-			return systemVariables{}, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
+			return nil, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
 		}
 	}
 
 	if opts.TryPartitionQuery {
 		if err := sysVars.SetFromSimple("CLI_TRY_PARTITION_QUERY", "TRUE"); err != nil {
-			return systemVariables{}, fmt.Errorf("failed to set CLI_TRY_PARTITION_QUERY: %w", err)
+			return nil, fmt.Errorf("failed to set CLI_TRY_PARTITION_QUERY: %w", err)
 		}
 	}
 
 	if opts.DirectedRead != "" {
 		directedRead, err := parseDirectedReadOption(opts.DirectedRead)
 		if err != nil {
-			return systemVariables{}, fmt.Errorf("invalid directed read option: %w", err)
+			return nil, fmt.Errorf("invalid directed read option: %w", err)
 		}
 		sysVars.DirectedRead = directedRead
 	}
+
+	// Set streaming mode from flag (already validated by go-flags choices)
+	if opts.Streaming != "" && opts.Streaming != "AUTO" {
+		if err := sysVars.SetFromSimple("CLI_STREAMING", opts.Streaming); err != nil {
+			return nil, fmt.Errorf("failed to set CLI_STREAMING: %w", err)
+		}
+	}
+	// If not set or set to AUTO, defaults to AUTO (format-dependent behavior)
 
 	// Set CLI_FORMAT defaults based on flags before processing --set
 	// This allows --set CLI_FORMAT=X to override these defaults
@@ -861,9 +870,9 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 		if formatValue != "" {
 			if err := sysVars.SetFromSimple("CLI_FORMAT", formatValue); err != nil {
 				if opts.Format != "" {
-					return systemVariables{}, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
+					return nil, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
 				}
-				return systemVariables{}, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
+				return nil, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
 			}
 		}
 		// Note: Interactive mode defaults are handled in run() since we don't know
@@ -871,7 +880,7 @@ func initializeSystemVariables(opts *spannerOptions) (systemVariables, error) {
 	}
 	for k, v := range sets {
 		if err := sysVars.SetFromSimple(k, v); err != nil {
-			return systemVariables{}, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
+			return nil, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}
 	}
 

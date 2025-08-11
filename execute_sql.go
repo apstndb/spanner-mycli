@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -36,6 +38,18 @@ import (
 )
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
+	// Always collect metrics - display is controlled by template based on Profile flag
+	metrics := &ExecutionMetrics{
+		QueryStartTime: time.Now(),
+		Profile:        session.systemVariables.Profile,
+	}
+
+	// Capture memory snapshot before execution if profiling is enabled
+	if session.systemVariables.Profile {
+		before := GetMemoryStats()
+		metrics.MemoryBefore = &before
+	}
+
 	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
@@ -49,10 +63,35 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	rows, stats, _, metadata, plan, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	// Decide whether to use streaming or buffered mode
+	useStreaming, processor := decideExecutionMode(ctx, session, fc)
+	metrics.IsStreaming = useStreaming
+
+	slog.Debug("executeSQL decision",
+		"useStreaming", useStreaming,
+		"format", session.systemVariables.CLIFormat)
+
+	// Execute with the appropriate mode
+	var result *Result
+
+	if useStreaming {
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics)
+	} else {
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics)
+	}
+
+	// Complete metrics collection
+	metrics.CompletionTime = time.Now()
+
+	// Capture memory snapshot after execution if profiling is enabled
+	if session.systemVariables.Profile {
+		after := GetMemoryStats()
+		metrics.MemoryAfter = &after
+	}
+
 	if err != nil {
+		// Handle aborted transaction
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
 			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
@@ -61,11 +100,86 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
+	// Attach metrics to result
+	result.Metrics = metrics
+
+	return result, nil
+}
+
+// decideExecutionMode determines whether to use streaming or buffered mode.
+// Returns true and a processor if streaming should be used, false and nil otherwise.
+func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.FormatConfig) (bool, RowProcessor) {
+	// Get output stream from StreamManager
+	outStream := session.systemVariables.StreamManager.GetOutStream()
+	if outStream == nil {
+		return false, nil
+	}
+
+	// Determine screen width based on system variables
+	screenWidth := math.MaxInt
+	if session.systemVariables.AutoWrap {
+		if session.systemVariables.FixedWidth != nil {
+			screenWidth = int(*session.systemVariables.FixedWidth)
+		} else {
+			// Get terminal width from StreamManager
+			width, err := session.systemVariables.StreamManager.GetTerminalWidth()
+			if err != nil {
+				// If terminal width cannot be determined, don't wrap
+				screenWidth = math.MaxInt
+			} else {
+				screenWidth = width
+			}
+		}
+	}
+
+	// Try to create streaming processor based on settings
+	processor, _ := createStreamingProcessor(session.systemVariables, outStream, screenWidth)
+	return processor != nil, processor
+}
+
+// executeWithStreaming executes the query using streaming mode.
+func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics) (*Result, error) {
+	// Collect memory stats if debug logging is enabled
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before streaming")
+		defer LogMemoryStats("After streaming")
+	}
+
+	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
+	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics)
+}
+
+// executeWithBuffering executes the query using buffered mode.
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics) (*Result, error) {
+	// Collect memory stats if debug logging is enabled
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before buffered")
+		defer LogMemoryStats("After buffered")
+	}
+
+	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
+
+	// Collect all rows with metrics
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("Buffered mode complete",
+		"endTime", time.Now().Format(time.RFC3339Nano),
+		"rowCount", len(rows))
+
+	// Parse query stats
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, err
 	}
 
+	// Extract server-side metrics from stats
+	metrics.ServerElapsedTime = queryStats.ElapsedTime
+	metrics.ServerCPUTime = queryStats.CPUTime
+
+	// Build result
 	result := &Result{
 		Rows:         rows,
 		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
@@ -73,7 +187,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		Stats:        queryStats,
 	}
 
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
+	// Get transaction timestamp if available
 	if roTxn != nil {
 		ts, err := roTxn.Timestamp()
 		if err != nil {
@@ -83,6 +197,7 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		}
 	}
 
+	// Update query cache
 	session.systemVariables.LastQueryCache = &LastQueryCache{
 		QueryPlan:  plan,
 		QueryStats: stats,
@@ -90,6 +205,122 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	return result, nil
+}
+
+// executeStreamingSQL processes query results in streaming mode.
+// It outputs rows directly as they arrive without buffering the entire result set.
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics) (*Result, error) {
+	slog.Debug("executeStreamingSQL called",
+		"format", session.systemVariables.CLIFormat)
+
+	// Process the stream with metrics
+	rowTransform := spannerRowToRow(fc)
+	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, session.systemVariables, metrics)
+	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse stats
+	queryStats, err := parseQueryStats(stats)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract server-side metrics from stats
+	metrics.ServerElapsedTime = queryStats.ElapsedTime
+	metrics.ServerCPUTime = queryStats.CPUTime
+
+	// Create result for metadata (rows already streamed)
+	result := &Result{
+		Rows:         nil, // Already streamed
+		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows: int(rowCount),
+		Stats:        queryStats,
+		Streamed:     true, // Mark as streamed
+	}
+
+	// Handle ReadOnlyTransaction timestamp
+	if roTxn != nil {
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+		} else {
+			result.Timestamp = ts
+		}
+	}
+
+	// Update last query cache
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:  plan,
+		QueryStats: stats,
+		Timestamp:  result.Timestamp,
+	}
+
+	return result, nil
+}
+
+// createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
+// Returns nil if streaming should not be used (based on StreamingMode setting and format).
+func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
+	// Check if streaming should be used based on mode
+	shouldStream := false
+	switch sysVars.StreamingMode {
+	case enums.StreamingModeTrue:
+		// Always stream if format supports it
+		shouldStream = true
+	case enums.StreamingModeFalse:
+		// Never stream
+		return nil, nil
+	case enums.StreamingModeAuto:
+		// AUTO mode: decide based on format
+		switch sysVars.CLIFormat {
+		case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+			// Table formats: buffer by default for accurate column widths
+			shouldStream = false
+		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML:
+			// Other formats: stream by default for better performance
+			shouldStream = true
+		default:
+			// Unknown format: buffer for safety
+			shouldStream = false
+		}
+	default:
+		// Unknown mode: buffer for safety
+		return nil, nil
+	}
+
+	if !shouldStream {
+		return nil, nil
+	}
+
+	// Create the appropriate streaming formatter
+	format := sysVars.CLIFormat
+	var formatter StreamingFormatter
+	switch format {
+	case enums.DisplayModeCSV:
+		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeTab:
+		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeVertical:
+		formatter = NewVerticalFormatter(out)
+	case enums.DisplayModeHTML:
+		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeXML:
+		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+		// Table formats use preview for width calculation
+		previewSize := int(sysVars.TablePreviewRows)
+		formatter = NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
+		// Use preview processor for table formats
+		return NewTablePreviewProcessor(formatter, previewSize), nil
+	default:
+		return nil, fmt.Errorf("unsupported streaming format: %v", format)
+	}
+
+	// For non-table formats, use direct streaming
+	return NewStreamingProcessor(formatter, out, screenWidth), nil
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
@@ -381,6 +612,36 @@ func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row
 			return err
 		}
 		results = append(results, v)
+		return nil
+	})
+
+	return results, stats, count, metadata, plan, err
+}
+
+// consumeRowIterCollectWithMetrics is like consumeRowIterCollect but collects metrics during execution.
+func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), metrics *ExecutionMetrics) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	var results []T
+	firstRow := true
+
+	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+		now := time.Now()
+
+		// Record TTFB on first row
+		if firstRow {
+			firstRow = false
+			metrics.FirstRowTime = &now
+		}
+
+		v, err := f(row)
+		if err != nil {
+			return err
+		}
+		results = append(results, v)
+
+		// Update last row time
+		metrics.LastRowTime = &now
+		metrics.RowCount = int64(len(results))
+
 		return nil
 	})
 

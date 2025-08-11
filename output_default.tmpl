@@ -9,4 +9,13 @@
 {{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
 {{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
 {{end -}}
+{{with .Metrics -}}{{if .Profile -}}
+{{if .IsStreaming -}}                       streaming mode:       enabled{{"\n"}}{{end -}}
+{{with .TTFB -}}                            time to first byte:   {{.}}{{"\n"}}{{end -}}
+{{with .RowIterationTime -}}                row iteration time:   {{.}}{{"\n"}}{{end -}}
+{{with .ClientOverhead -}}                  client overhead:      {{.}}{{"\n"}}{{end -}}
+{{if gt .MemoryUsedMB 0.0 -}}               memory used:          {{.MemoryUsedMB | printf "%.1f MB"}}{{"\n"}}{{end -}}
+{{if gt .TotalAllocatedMB 0.0 -}}           total allocated:      {{.TotalAllocatedMB | printf "%.1f MB"}}{{"\n"}}{{end -}}
+{{if ge .GCCount 0 -}}                      gc runs:              {{.GCCount}}{{"\n"}}{{end -}}
+{{end -}}{{end -}}
 {{end -}}
