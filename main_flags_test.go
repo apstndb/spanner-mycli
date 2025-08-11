@@ -880,7 +880,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantProject:   "p",
 			wantInstance:  "i",
 			wantDatabase:  "d",
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		// Note: Interactive mode test removed because it requires a real terminal
 		// which is difficult to simulate in unit tests
@@ -957,7 +957,7 @@ func TestFlagSpecialModes(t *testing.T) {
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
+					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTable)
 					if expectedFormat != tt.wantCLIFormat {
 						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
@@ -1758,16 +1758,16 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name:          "batch mode without --table uses tab format",
+			name:          "batch mode without --table uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1"},
 			stdinProvider: nonPTYStdin(""),
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name:          "piped input defaults to tab format",
+			name:          "piped input defaults to table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
 			stdinProvider: nonPTYStdin("SELECT 1;"),
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "piped input with --table uses table format",
@@ -1825,7 +1825,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
+				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTable)
 				if expectedFormat != tt.wantCLIFormat {
 					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)

@@ -526,7 +526,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	// Set default CLI_FORMAT for interactive/batch mode if not already set
 	if sysVars.CLIFormat == enums.DisplayModeUnspecified {
 		// CLI_FORMAT was not set by flags or --set, apply defaults based on mode
-		defaultFormat := "TAB"
+		defaultFormat := "TABLE"
 		if interactive {
 			defaultFormat = "TABLE"
 		}

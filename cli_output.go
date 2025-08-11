@@ -41,6 +41,8 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		screenWidth = math.MaxInt
 	}
 
+	// Extract column names only (without type information) for table structure
+	// The verbose parameter must be false here to get pure column names
 	columnNames := renderTableHeader(result.TableHeader, false)
 
 	// Log logic error where we have rows but no columns
