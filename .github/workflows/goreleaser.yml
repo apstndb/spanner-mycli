@@ -18,6 +18,9 @@ jobs:
           fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@v5
+      - name: Install tools
+        run: |
+          go install -modfile=go.mod github.com/dmarkham/enumer
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
