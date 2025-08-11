@@ -39,16 +39,16 @@ func formatTimestampBound(tb *spanner.TimestampBound) string {
 		return fmt.Sprintf("MAX_STALENESS %v", matches[2])
 	case "readTimestamp":
 		ts, err := parseTimeString(matches[2])
-		if err != nil || ts.IsZero() {
+		if err != nil {
 			return s
 		}
-		return fmt.Sprintf("READ_TIMESTAMP %v", formatTimestamp(ts, ""))
+		return fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))
 	case "minReadTimestamp":
 		ts, err := parseTimeString(matches[2])
-		if err != nil || ts.IsZero() {
+		if err != nil {
 			return s
 		}
-		return fmt.Sprintf("MIN_READ_TIMESTAMP %v", formatTimestamp(ts, ""))
+		return fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))
 	default:
 		return s
 	}
