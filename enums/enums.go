@@ -2,7 +2,7 @@ package enums
 
 // DisplayMode represents different output display formats
 //
-//go:generate enumer -type=DisplayMode -trimprefix=DisplayMode -transform=snake_upper
+//go:generate go tool enumer -type=DisplayMode -trimprefix=DisplayMode -transform=snake_upper
 type DisplayMode int
 
 const (
@@ -19,7 +19,7 @@ const (
 
 // AutocommitDMLMode represents the DML autocommit behavior
 //
-//go:generate enumer -type=AutocommitDMLMode -trimprefix=AutocommitDMLMode -transform=snake_upper
+//go:generate go tool enumer -type=AutocommitDMLMode -trimprefix=AutocommitDMLMode -transform=snake_upper
 type AutocommitDMLMode int
 
 const (
@@ -29,7 +29,7 @@ const (
 
 // ParseMode represents statement parsing behavior
 //
-//go:generate enumer -type=ParseMode -trimprefix=ParseMode -transform=snake_upper
+//go:generate go tool enumer -type=ParseMode -trimprefix=ParseMode -transform=snake_upper
 type ParseMode int
 
 const (
@@ -41,7 +41,7 @@ const (
 
 // ExplainFormat represents EXPLAIN output format
 //
-//go:generate enumer -type=ExplainFormat -trimprefix=ExplainFormat -transform=snake_upper
+//go:generate go tool enumer -type=ExplainFormat -trimprefix=ExplainFormat -transform=snake_upper
 type ExplainFormat int
 
 const (
@@ -53,7 +53,7 @@ const (
 
 // StreamingMode represents the streaming output mode.
 //
-//go:generate enumer -type=StreamingMode -trimprefix=StreamingMode -transform=snake_upper
+//go:generate go tool enumer -type=StreamingMode -trimprefix=StreamingMode -transform=snake_upper
 type StreamingMode int
 
 const (
