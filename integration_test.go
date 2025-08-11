@@ -380,7 +380,7 @@ func TestSystemVariables(t *testing.T) {
 			t.Run(tt.varname, func(t *testing.T) {
 				_ = buildAndExecute(t, ctx, session, fmt.Sprintf(`SET %v = "%v"`, tt.varname, tt.value))
 				result := buildAndExecute(t, ctx, session, fmt.Sprintf(`SHOW VARIABLE %v`, tt.varname))
-				if diff := cmp.Diff(sliceOf(tt.varname), renderTableHeader(result.TableHeader, false)); diff != "" {
+				if diff := cmp.Diff(sliceOf(tt.varname), extractTableColumnNames(result.TableHeader)); diff != "" {
 					t.Errorf("SHOW column names differ: %v", diff)
 				}
 				if diff := cmp.Diff(sliceOf(toRow(tt.value)), result.Rows); diff != "" {
@@ -1826,7 +1826,7 @@ func TestShowOperation(t *testing.T) {
 
 	// Verify the result has the expected structure
 	expectedHeaders := []string{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"}
-	actualHeaders := renderTableHeader(opResult.TableHeader, false)
+	actualHeaders := extractTableColumnNames(opResult.TableHeader)
 	if len(actualHeaders) != len(expectedHeaders) {
 		t.Fatalf("Expected %d table headers, got %d", len(expectedHeaders), len(actualHeaders))
 	}

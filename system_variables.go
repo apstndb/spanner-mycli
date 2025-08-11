@@ -217,6 +217,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 		RPCPriority:       defaultPriority,
 
 		// CLI defaults
+		CLIFormat:            enums.DisplayModeTable, // Default to TABLE format
 		EnableADCPlus:        true,
 		AnalyzeColumns:       DefaultAnalyzeColumns,
 		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,

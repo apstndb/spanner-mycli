@@ -791,14 +791,9 @@ priority = HIGH
 // determineExpectedFormat is a test helper that determines the expected CLI_FORMAT
 // based on the options, matching the application's actual behavior
 func determineExpectedFormat(t *testing.T, opts *spannerOptions) enums.DisplayMode {
-	formatValue := getFormatFromOptions(opts)
-	if formatValue != "" {
-		// Parse the format string to enum
-		parsed, err := enums.DisplayModeString(formatValue)
-		if err != nil {
-			t.Fatalf("Invalid format value: %v", formatValue)
-		}
-		return parsed
+	formatMode := getFormatFromOptions(opts)
+	if formatMode != enums.DisplayModeUnspecified {
+		return formatMode
 	}
 	// No format flags provided, use the new default
 	return enums.DisplayModeTable
