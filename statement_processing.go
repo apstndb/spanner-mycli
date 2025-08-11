@@ -157,8 +157,8 @@ type Result struct {
 	AffectedRowsType rowCountType
 	Stats            QueryStats
 
-	// Used for switch output("rows in set" / "rows affected")
-	IsMutation bool
+	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
+	IsExecutedDML bool
 
 	Timestamp     time.Time
 	ForceVerbose  bool

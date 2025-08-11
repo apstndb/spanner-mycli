@@ -329,7 +329,7 @@ func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []
 		return nil, errors.New("there is active batch DML")
 	case *BulkDdlStatement:
 		b.Ddls = append(b.Ddls, ddls...)
-		return &Result{IsMutation: true}, nil
+		return &Result{}, nil
 	default:
 		return executeDdlStatements(ctx, session, ddls)
 	}
@@ -344,7 +344,6 @@ var replacerForProgress = strings.NewReplacer(
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
 		return &Result{
-			IsMutation:  true,
 			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
 		}, nil
 	}
@@ -444,7 +443,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-	result := &Result{IsMutation: true, Timestamp: lastCommitTS}
+	result := &Result{Timestamp: lastCommitTS}
 	if session.systemVariables.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
@@ -476,7 +475,8 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return nil, err
 		}
 		b.DMLs = append(b.DMLs, stmt)
-		return &Result{IsMutation: true}, nil
+		// Buffered DML is not executed yet, so no IsExecutedDML flag
+		return &Result{}, nil
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
@@ -486,7 +486,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 				return nil, err
 			}
 			session.currentBatch = &BatchDMLStatement{DMLs: []spanner.Statement{stmt}}
-			return &Result{IsMutation: true}, nil
+			return &Result{}, nil
 		}
 
 		if !session.InTransaction() &&
@@ -510,9 +510,9 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 	}
 
 	return &Result{
-		IsMutation:  true,
-		Timestamp:   result.CommitResponse.CommitTs,
-		CommitStats: result.CommitResponse.CommitStats,
+		IsExecutedDML: true, // This is a batch DML statement
+		Timestamp:     result.CommitResponse.CommitTs,
+		CommitStats:   result.CommitResponse.CommitStats,
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
@@ -557,13 +557,13 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	return &Result{
-		IsMutation:   true,
-		Timestamp:    result.CommitResponse.CommitTs,
-		CommitStats:  result.CommitResponse.CommitStats,
-		Stats:        stats,
-		TableHeader:  toTableHeader(result.Metadata.GetRowType().GetFields()),
-		Rows:         rows,
-		AffectedRows: int(result.Affected),
+		IsExecutedDML: true, // This is a regular DML statement
+		Timestamp:     result.CommitResponse.CommitTs,
+		CommitStats:   result.CommitResponse.CommitStats,
+		Stats:         stats,
+		TableHeader:   toTableHeader(result.Metadata.GetRowType().GetFields()),
+		Rows:          rows,
+		AffectedRows:  int(result.Affected),
 	}, nil
 }
 
@@ -734,7 +734,7 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 	}
 
 	return &Result{
-		IsMutation:       true,
+		IsExecutedDML:    true, // This is a partitioned DML statement
 		AffectedRows:     int(count),
 		AffectedRowsType: rowCountTypeLowerBound,
 	}, nil
@@ -758,6 +758,5 @@ func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, err
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 		Rows:         rows,
 		AffectedRows: 1,
-		IsMutation:   true,
 	}, nil
 }

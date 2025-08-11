@@ -133,12 +133,12 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 }
 
 type OutputContext struct {
-	Verbose     bool
-	IsMutation  bool
-	Timestamp   string
-	Stats       *QueryStats
-	CommitStats *sppb.CommitResponse_CommitStats
-	Metrics     *ExecutionMetrics
+	Verbose       bool
+	IsExecutedDML bool
+	Timestamp     string
+	Stats         *QueryStats
+	CommitStats   *sppb.CommitResponse_CommitStats
+	Metrics       *ExecutionMetrics
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -174,48 +174,54 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	var sb strings.Builder
 	err := outputTemplate.Execute(&sb, OutputContext{
-		Verbose:     verbose,
-		IsMutation:  result.IsMutation,
-		Timestamp:   timestamp,
-		Stats:       &result.Stats,
-		CommitStats: result.CommitStats,
-		Metrics:     result.Metrics,
+		Verbose:       verbose,
+		IsExecutedDML: result.IsExecutedDML,
+		Timestamp:     timestamp,
+		Stats:         &result.Stats,
+		CommitStats:   result.CommitStats,
+		Metrics:       result.Metrics,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)
 	}
 	detail := sb.String()
 
-	if result.IsMutation {
-		var affectedRowsPart string
-		// If it is a valid mutation, 0 affected row is not printed to avoid confusion.
-		if result.AffectedRows > 0 || result.CommitStats.GetMutationCount() == 0 {
-			var affectedRowsPrefix string
-			switch result.AffectedRowsType {
-			case rowCountTypeLowerBound:
-				// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
-				// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
-				affectedRowsPrefix = "at least "
-			case rowCountTypeUpperBound:
-				// For batch DML, same rows can be processed by statements.
-				affectedRowsPrefix = "at most "
-			}
-			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
+	// Check if statement has a result set (indicated by TableHeader)
+	// Special case: RUN BATCH DML has a TableHeader but should be treated as a DML execution result
+	if result.TableHeader != nil && result.BatchInfo == nil {
+		// Statement has a result set (SELECT, SHOW, DML with THEN RETURN, EXPLAIN ANALYZE)
+		partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
+
+		var set string
+		if result.AffectedRows == 0 {
+			set = "Empty set"
+		} else {
+			set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
 		}
 
-		return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
+		return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 	}
 
-	partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
+	// Statement has no result set (SET, DDL, DML without THEN RETURN, MUTATE)
+	var affectedRowsPart string
+	if result.IsExecutedDML {
+		// For DML statements (not DDL or MUTATE), show affected rows count
+		var affectedRowsPrefix string
+		switch result.AffectedRowsType {
+		case rowCountTypeLowerBound:
+			// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
+			// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
+			affectedRowsPrefix = "at least "
+		case rowCountTypeUpperBound:
+			// For batch DML, same rows can be processed by statements.
+			affectedRowsPrefix = "at most "
+		}
 
-	var set string
-	if result.AffectedRows == 0 {
-		set = "Empty set"
-	} else {
-		set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
+		// Always show affected rows for DML (including "0 rows affected" for MySQL compatibility)
+		affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
 	}
 
-	return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
+	return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
 }
 
 func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {

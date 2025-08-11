@@ -1,10 +1,8 @@
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
-{{if and .Verbose .IsMutation -}}
-{{with .Timestamp -}}                       timestamp:      {{.}}{{"\n"}}{{end -}}
-{{with .CommitStats.GetMutationCount -}}    mutation_count: {{.}}{{"\n"}}{{end -}}
-{{end -}}
-{{if and .Verbose (not .IsMutation) -}}
+{{if .Verbose -}}
 {{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
+{{if not .IsExecutedDML -}}
 {{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
 {{with .Stats.RowsScanned -}}               rows scanned:         {{.}} rows{{"\n"}}{{end -}}
 {{with .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.}} rows{{"\n"}}{{end -}}
@@ -20,3 +18,4 @@
 {{if gt .TotalAllocatedMB 0.0 -}}           total allocated:      {{.TotalAllocatedMB | printf "%.1f MB"}}{{"\n"}}{{end -}}
 {{if ge .GCCount 0 -}}                      gc runs:              {{.GCCount}}{{"\n"}}{{end -}}
 {{end -}}{{end -}}
+{{end -}}

@@ -47,7 +47,6 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	return &Result{
-		IsMutation:  true,
 		CommitStats: result.CommitResponse.CommitStats,
 		Timestamp:   result.CommitResponse.CommitTs,
 	}, nil

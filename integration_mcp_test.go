@@ -344,7 +344,7 @@ func TestRunMCP(t *testing.T) {
 		{
 			desc:       "MCP execute_statement with SET VARIABLE",
 			statement:  "SET CLI_AUTOWRAP = TRUE",
-			wantOutput: "Empty set", // Output for SET VARIABLE statements
+			wantOutput: "Query OK", // Output for SET VARIABLE statements (fixed in issue #414)
 		},
 
 		// Error cases

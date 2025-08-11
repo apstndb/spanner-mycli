@@ -149,11 +149,7 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 	}
 
 	// Return empty result like previous versions (non-breaking change)
-	result := &Result{
-		IsMutation: true,
-	}
-
-	return result, nil
+	return &Result{}, nil
 }
 
 // Database
@@ -189,9 +185,7 @@ func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
-	return &Result{
-		IsMutation: true,
-	}, nil
+	return &Result{}, nil
 }
 
 type ShowDatabasesStatement struct{}

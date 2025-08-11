@@ -1586,7 +1586,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 		}
 	}()
 	if _, ok := stmt.(MutationStatement); ok {
-		result := &Result{IsMutation: true}
+		result := &Result{}
 		_, err := s.DetermineTransaction(ctx)
 		if err != nil {
 			return result, err
