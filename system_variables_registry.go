@@ -144,7 +144,7 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 			return nil, errIgnored
 		}
 		return map[string]string{
-			"COMMIT_TIMESTAMP": formatTimestamp(sv.CommitTimestamp),
+			"COMMIT_TIMESTAMP": formatTimestamp(sv.CommitTimestamp, "NULL"),
 			"MUTATION_COUNT":   strconv.FormatInt(sv.CommitResponse.GetCommitStats().GetMutationCount(), 10),
 		}, nil
 	}

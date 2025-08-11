@@ -155,8 +155,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		outputTemplate = defaultOutputFormat
 	}
 
-	readTimestamp := formatTimestamp(result.ReadTimestamp)
-	commitTimestamp := formatTimestamp(result.CommitTimestamp)
+	readTimestamp := formatTimestamp(result.ReadTimestamp, "")
+	commitTimestamp := formatTimestamp(result.CommitTimestamp, "")
 
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 
