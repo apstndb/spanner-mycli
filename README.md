@@ -35,6 +35,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * gRPC logging(`--log-grpc`)
   * Support mutations
 * Respects batch use cases as well as interactive use cases
+  * **Breaking change from spanner-cli**: Default output format for batch mode is `TABLE` (same as interactive mode), not `TAB`. Use `--format=TAB` for tab-separated output.
 * More `gcloud spanner databases execute-sql` compatibilities
   * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`, `--timeout`)
 * More `gcloud spanner databases ddl update` compatibilities
@@ -244,30 +245,33 @@ By passing SQL from standard input, `spanner-mycli` runs in batch mode.
 
 ```
 $ echo 'SELECT * FROM users;' | spanner-mycli -p myproject -i myinstance -d mydb
-id      name    active
-1       foo     true
-2       bar     false
-```
-
-You can also pass SQL with command line option `-e`.
-
-```
-$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
-id      name    active
-1       foo     true
-2       bar     false
-```
-
-With `-t` option, results are displayed in table format.
-
-```
-$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
 | 1  | foo  | true   |
 | 2  | bar  | false  |
 +----+------+--------+
+```
+
+You can also pass SQL with command line option `-e`.
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
++----+------+--------+
+| id | name | active |
++----+------+--------+
+| 1  | foo  | true   |
+| 2  | bar  | false  |
++----+------+--------+
+```
+
+For tab-separated output (useful for scripting), use `--format=TAB`:
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --format=TAB
+id      name    active
+1       foo     true
+2       bar     false
 ```
 
 With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
@@ -897,11 +901,11 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
-> - `TABLE` - ASCII table with borders (default for interactive mode)
+> - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
 > - `TABLE_COMMENT` - Table wrapped in /* */ comments  
 > - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
 > - `VERTICAL` - Vertical format (column: value pairs)
-> - `TAB` - Tab-separated values (default for batch mode)
+> - `TAB` - Tab-separated values
 > - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
 > - `XML` - XML format (compatible with Google Cloud Spanner CLI)
 > - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
