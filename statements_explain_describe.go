@@ -397,6 +397,13 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	result.AffectedRowsType = rowCountTypeExact
 	result.CommitTimestamp = dmlResult.CommitResponse.CommitTs
 
+	// Update LastQueryCache to maintain consistency with other DML execution functions
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:       dmlResult.Plan,
+		QueryStats:      queryStats,
+		CommitTimestamp: dmlResult.CommitResponse.CommitTs,
+	}
+
 	return result, nil
 }
 
