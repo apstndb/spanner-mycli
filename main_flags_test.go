@@ -788,6 +788,22 @@ priority = HIGH
 	}
 }
 
+// determineExpectedFormat is a test helper that determines the expected CLI_FORMAT
+// based on the options, matching the application's actual behavior
+func determineExpectedFormat(t *testing.T, opts *spannerOptions) enums.DisplayMode {
+	formatValue := getFormatFromOptions(opts)
+	if formatValue != "" {
+		// Parse the format string to enum
+		parsed, err := enums.DisplayModeString(formatValue)
+		if err != nil {
+			t.Fatalf("Invalid format value: %v", formatValue)
+		}
+		return parsed
+	}
+	// No format flags provided, use the new default
+	return enums.DisplayModeTable
+}
+
 // TestFlagSpecialModes tests special modes like embedded emulator and MCP
 func TestFlagSpecialModes(t *testing.T) {
 	tests := []struct {
@@ -958,20 +974,7 @@ func TestFlagSpecialModes(t *testing.T) {
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					// Use the shared function to get format from options
-					formatValue := getFormatFromOptions(&gopts.Spanner)
-					var expectedFormat enums.DisplayMode
-					if formatValue != "" {
-						// Parse the format string to enum
-						parsed, err := enums.DisplayModeString(formatValue)
-						if err != nil {
-							t.Fatalf("Invalid format value: %v", formatValue)
-						}
-						expectedFormat = parsed
-					} else {
-						// No format flags provided, use the new default
-						expectedFormat = enums.DisplayModeTable
-					}
+					expectedFormat := determineExpectedFormat(t, &gopts.Spanner)
 					if expectedFormat != tt.wantCLIFormat {
 						t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v)",
 							expectedFormat, tt.wantCLIFormat, tt.args)
@@ -1839,20 +1842,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				// Use the shared function to get format from options
-				formatValue := getFormatFromOptions(&gopts.Spanner)
-				var expectedFormat enums.DisplayMode
-				if formatValue != "" {
-					// Parse the format string to enum
-					parsed, err := enums.DisplayModeString(formatValue)
-					if err != nil {
-						t.Fatalf("Invalid format value: %v", formatValue)
-					}
-					expectedFormat = parsed
-				} else {
-					// No format flags provided, use the new default
-					expectedFormat = enums.DisplayModeTable
-				}
+				expectedFormat := determineExpectedFormat(t, &gopts.Spanner)
 				if expectedFormat != tt.wantCLIFormat {
 					t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v, input: %q)",
 						expectedFormat, tt.wantCLIFormat, tt.args, input)
