@@ -193,7 +193,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 		if err != nil {
 			slog.Warn("failed to get read-only transaction timestamp", "err", err, "sql", sql)
 		} else {
-			result.Timestamp = ts
+			result.ReadTimestamp = ts
 		}
 	}
 
@@ -201,7 +201,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 	session.systemVariables.LastQueryCache = &LastQueryCache{
 		QueryPlan:  plan,
 		QueryStats: stats,
-		Timestamp:  result.Timestamp,
+		Timestamp:  result.ReadTimestamp,
 	}
 
 	return result, nil
@@ -247,7 +247,7 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 		if err != nil {
 			slog.Warn("failed to get read-only transaction timestamp", "err", err)
 		} else {
-			result.Timestamp = ts
+			result.ReadTimestamp = ts
 		}
 	}
 
@@ -255,7 +255,7 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 	session.systemVariables.LastQueryCache = &LastQueryCache{
 		QueryPlan:  plan,
 		QueryStats: stats,
-		Timestamp:  result.Timestamp,
+		Timestamp:  result.ReadTimestamp,
 	}
 
 	return result, nil
@@ -443,7 +443,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-	result := &Result{Timestamp: lastCommitTS}
+	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
@@ -510,9 +510,9 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 	}
 
 	return &Result{
-		IsExecutedDML: true, // This is a batch DML statement
-		Timestamp:     result.CommitResponse.CommitTs,
-		CommitStats:   result.CommitResponse.CommitStats,
+		IsExecutedDML:   true, // This is a batch DML statement
+		CommitTimestamp: result.CommitResponse.CommitTs,
+		CommitStats:     result.CommitResponse.CommitStats,
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
@@ -557,13 +557,13 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	return &Result{
-		IsExecutedDML: true, // This is a regular DML statement
-		Timestamp:     result.CommitResponse.CommitTs,
-		CommitStats:   result.CommitResponse.CommitStats,
-		Stats:         stats,
-		TableHeader:   toTableHeader(result.Metadata.GetRowType().GetFields()),
-		Rows:          rows,
-		AffectedRows:  int(result.Affected),
+		IsExecutedDML:   true, // This is a regular DML statement
+		CommitTimestamp: result.CommitResponse.CommitTs,
+		CommitStats:     result.CommitResponse.CommitStats,
+		Stats:           stats,
+		TableHeader:     toTableHeader(result.Metadata.GetRowType().GetFields()),
+		Rows:            rows,
+		AffectedRows:    int(result.Affected),
 	}, nil
 }
 

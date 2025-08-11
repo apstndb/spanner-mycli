@@ -65,7 +65,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		}
 
 		return &Result{
-			Timestamp: ts,
+			ReadTimestamp: ts,
 		}, nil
 	}
 
@@ -96,7 +96,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 		if err != nil {
 			return nil, err
 		}
-		result.Timestamp = ts
+		result.ReadTimestamp = ts
 		return result, nil
 	} else {
 		err := session.BeginReadWriteTransaction(ctx, attrs.isolationLevel, attrs.priority)
@@ -140,7 +140,7 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 			return nil, err
 		}
 
-		result.Timestamp = resp.CommitTs
+		result.CommitTimestamp = resp.CommitTs
 		result.CommitStats = resp.CommitStats
 		return result, nil
 	default:
@@ -196,6 +196,6 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	}
 
 	return &Result{
-		Timestamp: ts,
+		ReadTimestamp: ts,
 	}, nil
 }

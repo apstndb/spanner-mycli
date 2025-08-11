@@ -35,11 +35,11 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 	}
 
 	return &Result{
-		TableHeader:  toTableHeader("Partition_Token"),
-		Rows:         rows,
-		AffectedRows: len(rows),
-		Timestamp:    ts,
-		ForceWrap:    true,
+		TableHeader:   toTableHeader("Partition_Token"),
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		ReadTimestamp: ts,
+		ForceWrap:     true,
 	}, nil
 }
 
@@ -67,11 +67,11 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 	}
 
 	return &Result{
-		TableHeader:  toTableHeader("Root_Partitionable"),
-		Rows:         sliceOf(toRow("TRUE")),
-		AffectedRows: 1,
-		Timestamp:    ts,
-		ForceWrap:    true,
+		TableHeader:   toTableHeader("Root_Partitionable"),
+		Rows:          sliceOf(toRow("TRUE")),
+		AffectedRows:  1,
+		ReadTimestamp: ts,
+		ForceWrap:     true,
 	}, nil
 }
 

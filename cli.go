@@ -246,18 +246,12 @@ func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, i
 }
 
 func (c *Cli) updateSystemVariables(result *Result) {
-	// Update timestamps based on whether the statement had a result set
-	// Statements with result sets update ReadTimestamp, others update CommitTimestamp
-	if result.TableHeader != nil {
-		c.SystemVariables.ReadTimestamp = result.Timestamp
-		c.SystemVariables.CommitTimestamp = time.Time{}
-	} else {
-		c.SystemVariables.ReadTimestamp = time.Time{}
-		c.SystemVariables.CommitTimestamp = result.Timestamp
-	}
+	// Update timestamps - both ReadTimestamp and CommitTimestamp are now separate fields
+	c.SystemVariables.ReadTimestamp = result.ReadTimestamp
+	c.SystemVariables.CommitTimestamp = result.CommitTimestamp
 
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.CommitTimestamp)}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
