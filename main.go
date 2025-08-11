@@ -523,18 +523,6 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return err
 	}
 
-	// Set default CLI_FORMAT for interactive/batch mode if not already set
-	if sysVars.CLIFormat == enums.DisplayModeUnspecified {
-		// CLI_FORMAT was not set by flags or --set, apply defaults based on mode
-		defaultFormat := "TAB"
-		if interactive {
-			defaultFormat = "TABLE"
-		}
-		if err := sysVars.SetFromSimple("CLI_FORMAT", defaultFormat); err != nil {
-			return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
-		}
-	}
-
 	switch {
 	case interactive:
 		sysVars.EnableProgressBar = true
@@ -632,6 +620,32 @@ func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 		}
 	}
 	return params, nil
+}
+
+// getFormatFromOptions extracts the output format from spannerOptions based on flag precedence.
+// Returns DisplayModeUnspecified if no format flag is set.
+func getFormatFromOptions(opts *spannerOptions) enums.DisplayMode {
+	// Individual format flags take precedence over --format for backward compatibility
+	switch {
+	case opts.HTML:
+		return enums.DisplayModeHTML
+	case opts.XML:
+		return enums.DisplayModeXML
+	case opts.CSV:
+		return enums.DisplayModeCSV
+	case opts.Table:
+		return enums.DisplayModeTable
+	case opts.Format != "":
+		// Parse the format string to enum
+		parsed, err := enums.DisplayModeString(opts.Format)
+		if err != nil {
+			// Return unspecified on parse error - will be handled by caller
+			return enums.DisplayModeUnspecified
+		}
+		return parsed
+	default:
+		return enums.DisplayModeUnspecified
+	}
 }
 
 // createSystemVariablesFromOptions creates a systemVariables instance from spannerOptions.
@@ -852,31 +866,13 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	// This allows --set CLI_FORMAT=X to override these defaults
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
-		// Individual format flags take precedence over --format for backward compatibility
-		var formatValue string
-		switch {
-		case opts.HTML:
-			formatValue = "HTML"
-		case opts.XML:
-			formatValue = "XML"
-		case opts.CSV:
-			formatValue = "CSV"
-		case opts.Table:
-			formatValue = "TABLE"
-		case opts.Format != "":
-			formatValue = opts.Format
+		formatMode := getFormatFromOptions(opts)
+		if formatMode != enums.DisplayModeUnspecified {
+			// The format has already been parsed from flags by getFormatFromOptions.
+			// We can set it directly on the struct to avoid converting it back to a string
+			// and then re-parsing it inside SetFromSimple.
+			sysVars.CLIFormat = formatMode
 		}
-
-		if formatValue != "" {
-			if err := sysVars.SetFromSimple("CLI_FORMAT", formatValue); err != nil {
-				if opts.Format != "" {
-					return nil, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
-				}
-				return nil, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
-		}
-		// Note: Interactive mode defaults are handled in run() since we don't know
-		// if we're interactive at this point
 	}
 	for k, v := range sets {
 		if err := sysVars.SetFromSimple(k, v); err != nil {

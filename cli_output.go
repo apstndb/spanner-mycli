@@ -34,13 +34,19 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 	return header.internalRender(verbose)
 }
 
+// extractTableColumnNames extracts pure column names from the table header without type information.
+// This is used for table structure and layout calculations.
+func extractTableColumnNames(header TableHeader) []string {
+	return renderTableHeader(header, false)
+}
+
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) error {
 	// screenWidth <= 0 means no limit.
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt
 	}
 
-	columnNames := renderTableHeader(result.TableHeader, false)
+	columnNames := extractTableColumnNames(result.TableHeader)
 
 	// Log logic error where we have rows but no columns
 	if len(columnNames) == 0 && len(result.Rows) > 0 {
@@ -76,7 +82,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 }
 
 func calculateWidth(result *Result, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	names := renderTableHeader(result.TableHeader, false)
+	names := extractTableColumnNames(result.TableHeader)
 	header := renderTableHeader(result.TableHeader, true)
 	return calculateOptimalWidth(wc, screenWidth, names, slices.Concat(sliceOf(toRow(header...)), rows))
 }

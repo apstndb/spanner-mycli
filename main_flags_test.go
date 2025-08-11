@@ -788,6 +788,18 @@ priority = HIGH
 	}
 }
 
+// determineExpectedFormat is a test helper that determines the expected CLI_FORMAT
+// based on the options, matching the application's actual behavior
+func determineExpectedFormat(t *testing.T, opts *spannerOptions) enums.DisplayMode {
+	t.Helper()
+	formatMode := getFormatFromOptions(opts)
+	if formatMode != enums.DisplayModeUnspecified {
+		return formatMode
+	}
+	// No format flags provided, use the new default
+	return enums.DisplayModeTable
+}
+
 // TestFlagSpecialModes tests special modes like embedded emulator and MCP
 func TestFlagSpecialModes(t *testing.T) {
 	tests := []struct {
@@ -872,7 +884,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name: "batch mode without --table defaults to tab format",
+			name: "batch mode without --table defaults to table format",
 			args: []string{
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--execute", "SELECT 1",
@@ -880,7 +892,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantProject:   "p",
 			wantInstance:  "i",
 			wantDatabase:  "d",
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		// Note: Interactive mode test removed because it requires a real terminal
 		// which is difficult to simulate in unit tests
@@ -948,19 +960,20 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			// For CLI_FORMAT, we need to simulate what run() does
-			if tt.wantCLIFormat != 0 || tt.name == "batch mode without --table defaults to tab format" || tt.name == "interactive mode defaults to table format" {
+			// Check if this test case has specified a desired CLI_FORMAT value
+			if tt.wantCLIFormat != 0 {
 				// Determine if this would be interactive mode
-				input, interactive, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+				_, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
 				if err != nil {
 					t.Fatalf("Failed to determine input mode: %v", err)
 				}
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
+					expectedFormat := determineExpectedFormat(t, &gopts.Spanner)
 					if expectedFormat != tt.wantCLIFormat {
-						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
-							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
+						t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v)",
+							expectedFormat, tt.wantCLIFormat, tt.args)
 					}
 				} else {
 					// CLI_FORMAT was set via --set, check it was applied
@@ -1758,16 +1771,16 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name:          "batch mode without --table uses tab format",
+			name:          "batch mode without --table uses table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1"},
 			stdinProvider: nonPTYStdin(""),
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name:          "piped input defaults to tab format",
+			name:          "piped input defaults to table format",
 			args:          []string{"--project", "p", "--instance", "i", "--database", "d"},
 			stdinProvider: nonPTYStdin("SELECT 1;"),
-			wantCLIFormat: enums.DisplayModeTab,
+			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "piped input with --table uses table format",
@@ -1811,7 +1824,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 			defer cleanup()
 
-			input, interactive, err := determineInputAndMode(&gopts.Spanner, stdin)
+			input, _, err := determineInputAndMode(&gopts.Spanner, stdin)
 			if err != nil {
 				t.Fatalf("Failed to determine input mode: %v", err)
 			}
@@ -1825,10 +1838,10 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTab)
+				expectedFormat := determineExpectedFormat(t, &gopts.Spanner)
 				if expectedFormat != tt.wantCLIFormat {
-					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
-						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
+					t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v, input: %q)",
+						expectedFormat, tt.wantCLIFormat, tt.args, input)
 				}
 			} else {
 				// If CLI_FORMAT was explicitly set, verify it

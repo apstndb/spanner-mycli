@@ -178,7 +178,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 	tableHeader := toTableHeader(metadata.GetRowType().GetFields())
 	return &Result{
 		// Pre-render only column names when forceVerbose is false
-		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(renderTableHeader(tableHeader, false))),
+		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(extractTableColumnNames(tableHeader))),
 		ForceVerbose: forceVerbose,
 		Rows:         rows,
 		AffectedRows: len(rows),

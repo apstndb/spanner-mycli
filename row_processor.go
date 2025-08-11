@@ -67,7 +67,7 @@ func (p *BufferedProcessor) Finish(stats QueryStats, rowCount int64) error {
 	p.result.AffectedRows = len(p.rows)
 
 	// Extract column names for formatting
-	columnNames := renderTableHeader(p.result.TableHeader, false)
+	columnNames := extractTableColumnNames(p.result.TableHeader)
 
 	// Use the existing formatter
 	return p.formatter(p.out, p.result, columnNames, p.sysVars, p.screenWidth)
@@ -181,7 +181,7 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 	}
 
 	header := toTableHeader(p.metadata.GetRowType().GetFields())
-	columnNames := renderTableHeader(header, false)
+	columnNames := extractTableColumnNames(header)
 
 	// Initialize formatter with preview rows for width calculation
 	if err := p.formatter.InitFormat(columnNames, p.metadata, p.sysVars, p.previewRows); err != nil {
@@ -216,7 +216,7 @@ func (p *StreamingProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *sys
 
 	// Get column names from metadata
 	header := toTableHeader(metadata.GetRowType().GetFields())
-	columnNames := renderTableHeader(header, false)
+	columnNames := extractTableColumnNames(header)
 
 	// Initialize the format (e.g., write CSV headers)
 	// For streaming formats, we don't need preview rows
