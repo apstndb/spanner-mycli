@@ -872,7 +872,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
-			name: "batch mode without --table defaults to tab format",
+			name: "batch mode without --table defaults to table format",
 			args: []string{
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--execute", "SELECT 1",
@@ -948,7 +948,8 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			// For CLI_FORMAT, we need to simulate what run() does
-			if tt.wantCLIFormat != 0 || tt.name == "batch mode without --table defaults to tab format" || tt.name == "interactive mode defaults to table format" {
+			// Check if this test case has specified a desired CLI_FORMAT value
+			if tt.wantCLIFormat != 0 {
 				// Determine if this would be interactive mode
 				_, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
 				if err != nil {
