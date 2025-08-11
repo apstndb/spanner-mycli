@@ -957,7 +957,7 @@ func TestFlagSpecialModes(t *testing.T) {
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTable)
+					expectedFormat := enums.DisplayModeTable
 					if expectedFormat != tt.wantCLIFormat {
 						t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 							expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
@@ -1825,7 +1825,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				expectedFormat := lo.Ternary(interactive || gopts.Spanner.Table, enums.DisplayModeTable, enums.DisplayModeTable)
+				expectedFormat := enums.DisplayModeTable
 				if expectedFormat != tt.wantCLIFormat {
 					t.Errorf("Expected CLI_FORMAT = %v for interactive=%v, table=%v, input=%q, but want %v",
 						expectedFormat, interactive, gopts.Spanner.Table, input, tt.wantCLIFormat)
