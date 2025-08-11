@@ -41,7 +41,7 @@ import (
 
 type ExplainStatement struct {
 	Explain string
-	IsDML   bool
+	IsDML   bool // Whether the statement being explained is a DML
 	Format  enums.ExplainFormat
 	Width   int64
 }
@@ -190,7 +190,7 @@ func getGlobalOpts() []yaml.EncodeOption {
 
 type DescribeStatement struct {
 	Statement string
-	IsDML     bool
+	IsDML     bool // Whether the statement being described is a DML
 }
 
 func (s *DescribeStatement) String() string {
@@ -246,6 +246,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	}
 
 	result.Timestamp = timestamp
+	// EXPLAIN doesn't execute the statement, so it's not actually DML even if explaining DML
 
 	return result, nil
 }
@@ -389,7 +390,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 		return nil, err
 	}
 
-	result.IsMutation = true
+	result.IsExecutedDML = true
 	result.AffectedRows = int(dmlResult.Affected)
 	result.AffectedRowsType = rowCountTypeExact
 	result.Timestamp = dmlResult.CommitResponse.CommitTs

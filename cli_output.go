@@ -118,11 +118,11 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 }
 
 type OutputContext struct {
-	Verbose     bool
-	IsMutation  bool
-	Timestamp   string
-	Stats       *QueryStats
-	CommitStats *sppb.CommitResponse_CommitStats
+	Verbose       bool
+	IsExecutedDML bool
+	Timestamp     string
+	Stats         *QueryStats
+	CommitStats   *sppb.CommitResponse_CommitStats
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -158,11 +158,11 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	var sb strings.Builder
 	err := outputTemplate.Execute(&sb, OutputContext{
-		Verbose:     verbose,
-		IsMutation:  result.IsMutation,
-		Timestamp:   timestamp,
-		Stats:       &result.Stats,
-		CommitStats: result.CommitStats,
+		Verbose:       verbose,
+		IsExecutedDML: result.IsExecutedDML,
+		Timestamp:     timestamp,
+		Stats:         &result.Stats,
+		CommitStats:   result.CommitStats,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)
@@ -186,8 +186,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	// Statement has no result set (SET, DDL, DML without THEN RETURN, MUTATE)
 	var affectedRowsPart string
-	if result.IsMutation {
-		// For DML statements, show affected rows count
+	if result.IsExecutedDML {
+		// For DML statements (not DDL or MUTATE), show affected rows count
 		var affectedRowsPrefix string
 		switch result.AffectedRowsType {
 		case rowCountTypeLowerBound:
@@ -199,14 +199,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 			affectedRowsPrefix = "at most "
 		}
 
-		if result.AffectedRows > 0 {
-			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
-		} else if result.CommitStats != nil {
-			// Show "0 rows affected" for regular DML statements (MySQL compatibility)
-			// Don't show for MUTATE statements which have no CommitStats
-			affectedRowsPart = ", 0 rows affected"
-		}
-		// For MUTATE statements (CommitStats == nil), don't show affected rows
+		// Always show affected rows for DML (including "0 rows affected" for MySQL compatibility)
+		affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
 	}
 
 	return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)

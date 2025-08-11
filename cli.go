@@ -246,12 +246,14 @@ func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, i
 }
 
 func (c *Cli) updateSystemVariables(result *Result) {
-	if result.IsMutation {
-		c.SystemVariables.ReadTimestamp = time.Time{}
-		c.SystemVariables.CommitTimestamp = result.Timestamp
-	} else {
+	// Update timestamps based on whether the statement had a result set
+	// Statements with result sets update ReadTimestamp, others update CommitTimestamp
+	if result.TableHeader != nil {
 		c.SystemVariables.ReadTimestamp = result.Timestamp
 		c.SystemVariables.CommitTimestamp = time.Time{}
+	} else {
+		c.SystemVariables.ReadTimestamp = time.Time{}
+		c.SystemVariables.CommitTimestamp = result.Timestamp
 	}
 
 	if result.CommitStats != nil {

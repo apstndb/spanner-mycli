@@ -45,7 +45,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type BeginStatement struct {
@@ -65,8 +65,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		}
 
 		return &Result{
-			IsMutation: true,
-			Timestamp:  ts,
+			Timestamp: ts,
 		}, nil
 	}
 
@@ -75,7 +74,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type SetTransactionStatement struct {
@@ -83,7 +82,7 @@ type SetTransactionStatement struct {
 }
 
 func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
+	result := &Result{}
 
 	// Get transaction attributes atomically to avoid check-then-act race
 	attrs := session.TransactionAttrsWithLock()
@@ -111,7 +110,7 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
+	result := &Result{}
 	switch {
 	case session.InPendingTransaction():
 		if err := session.ClosePendingTransaction(); err != nil {
@@ -152,7 +151,7 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
+	result := &Result{}
 	switch {
 	case session.InPendingTransaction():
 		if err := session.ClosePendingTransaction(); err != nil {
@@ -197,7 +196,6 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	}
 
 	return &Result{
-		IsMutation: true,
-		Timestamp:  ts,
+		Timestamp: ts,
 	}, nil
 }

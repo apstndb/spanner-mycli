@@ -1,13 +1,12 @@
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
-{{if and .Verbose .IsMutation -}}
-{{with .Timestamp -}}                       timestamp:      {{.}}{{"\n"}}{{end -}}
-{{with .CommitStats.GetMutationCount -}}    mutation_count: {{.}}{{"\n"}}{{end -}}
-{{end -}}
-{{if and .Verbose (not .IsMutation) -}}
+{{if .Verbose -}}
 {{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
+{{if not .IsExecutedDML -}}
 {{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
 {{with .Stats.RowsScanned -}}               rows scanned:         {{.}} rows{{"\n"}}{{end -}}
 {{with .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.}} rows{{"\n"}}{{end -}}
 {{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
 {{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
+{{end -}}
 {{end -}}

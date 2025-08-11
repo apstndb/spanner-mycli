@@ -186,7 +186,6 @@ func TestPrintResult(t *testing.T) {
 						{"1", "2"},
 						{"3", "4"},
 					},
-					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
 +-----+-----+
@@ -208,7 +207,6 @@ func TestPrintResult(t *testing.T) {
 						{"1", "2"},
 						{"3", "4"},
 					},
-					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
 /*-----+-----+
@@ -234,7 +232,6 @@ func TestPrintResult(t *testing.T) {
 						{"1", "2"},
 						{"3", "4"},
 					},
-					IsMutation: false,
 				},
 				want: "```sql" + `
 SELECT foo, bar
@@ -265,7 +262,6 @@ Empty set
 						toRow("1", "2"),
 						toRow("3", "4"),
 					),
-					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
 +------+-----------+
@@ -295,7 +291,6 @@ Empty set
 						toRow("1", "2"),
 						toRow("3", "4"),
 					),
-					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
 +--------+--------+
@@ -325,7 +320,6 @@ Empty set
 						toRow("Hello World", "こんにちは"),
 						toRow("Bye", "さようなら"),
 					),
-					IsMutation: false,
 				},
 				want: strings.TrimPrefix(`
 +----------+------------+
@@ -364,7 +358,6 @@ Empty set
 				toRow("1", "2"),
 				toRow("3", "4"),
 			),
-			IsMutation: false,
 		}
 		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeVertical}, math.MaxInt, out, result, false, "")
 		if err != nil {
@@ -394,7 +387,6 @@ bar: 4
 				toRow("1", "2"),
 				toRow("3", "4"),
 			),
-			IsMutation: false,
 		}
 		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab}, math.MaxInt, out, result, false, "")
 		if err != nil {
@@ -419,7 +411,6 @@ bar: 4
 				toRow("1", "2"),
 				toRow("3", "4"),
 			),
-			IsMutation: false,
 		}
 		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
 		if err != nil {
@@ -447,7 +438,6 @@ bar: 4
 				toRow("1", "2"),
 				toRow("3", "4"),
 			),
-			IsMutation: false,
 		}
 		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
 		if err != nil {
@@ -480,8 +470,8 @@ func TestResultLine(t *testing.T) {
 		{
 			desc: "mutation in normal mode",
 			result: &Result{
-				AffectedRows: 3,
-				IsMutation:   true,
+				AffectedRows:  3,
+				IsExecutedDML: true,
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
@@ -492,21 +482,21 @@ func TestResultLine(t *testing.T) {
 		{
 			desc: "mutation in verbose mode (timestamp exist)",
 			result: &Result{
-				AffectedRows: 3,
-				IsMutation:   true,
+				AffectedRows:  3,
+				IsExecutedDML: true,
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
 				Timestamp: ts,
 			},
 			verbose: true,
-			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:      %s\n", timestamp),
+			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:            %s\n", timestamp),
 		},
 		{
 			desc: "mutation in verbose mode (both of timestamp and mutation count exist)",
 			result: &Result{
-				AffectedRows: 3,
-				IsMutation:   true,
+				AffectedRows:  3,
+				IsExecutedDML: true,
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
@@ -514,13 +504,13 @@ func TestResultLine(t *testing.T) {
 				Timestamp:   ts,
 			},
 			verbose: true,
-			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:      %s\nmutation_count: 6\n", timestamp),
+			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:            %s\nmutation_count:       6\n", timestamp),
 		},
 		{
 			desc: "mutation in verbose mode (timestamp not exist)",
 			result: &Result{
-				AffectedRows: 0,
-				IsMutation:   true,
+				AffectedRows:  0,
+				IsExecutedDML: true,
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
@@ -534,7 +524,7 @@ func TestResultLine(t *testing.T) {
 			result: &Result{
 				TableHeader:  toTableHeader("col1"), // Add TableHeader for query results
 				AffectedRows: 3,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
@@ -547,7 +537,7 @@ func TestResultLine(t *testing.T) {
 			result: &Result{
 				TableHeader:  toTableHeader("col1"), // Add TableHeader for query results
 				AffectedRows: 0,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
@@ -560,7 +550,7 @@ func TestResultLine(t *testing.T) {
 			result: &Result{
 				TableHeader:  toTableHeader("col1"), // Add TableHeader for query results
 				AffectedRows: 3,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime:                "10 msec",
 					CPUTime:                    "5 msec",
@@ -587,7 +577,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			result: &Result{
 				TableHeader:  toTableHeader("col1"), // Add TableHeader for query results
 				AffectedRows: 3,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime:  "10 msec",
 					RowsReturned: "3",
@@ -601,8 +591,8 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "SET statement (no result set, not mutation)",
 			result: &Result{
-				TableHeader:   nil, // No result set
-				IsMutation:    false,
+				TableHeader: nil, // No result set
+
 				KeepVariables: true,
 				Stats: QueryStats{
 					ElapsedTime: "1 msec",
@@ -612,10 +602,9 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			want:    "Query OK (1 msec)\n",
 		},
 		{
-			desc: "DDL statement (no result set, is mutation)",
+			desc: "DDL statement (no result set, not DML)",
 			result: &Result{
 				TableHeader: nil, // No result set
-				IsMutation:  true,
 				Stats: QueryStats{
 					ElapsedTime: "100 msec",
 				},
@@ -626,10 +615,10 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "DML without THEN RETURN (no result set, is mutation, has affected rows)",
 			result: &Result{
-				TableHeader:  nil, // No result set
-				IsMutation:   true,
-				AffectedRows: 5,
-				CommitStats:  &sppb.CommitResponse_CommitStats{MutationCount: 5},
+				TableHeader:   nil, // No result set
+				IsExecutedDML: true,
+				AffectedRows:  5,
+				CommitStats:   &sppb.CommitResponse_CommitStats{MutationCount: 5},
 				Stats: QueryStats{
 					ElapsedTime: "20 msec",
 				},
@@ -640,10 +629,10 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "DML without THEN RETURN (no result set, is mutation, 0 affected rows)",
 			result: &Result{
-				TableHeader:  nil, // No result set
-				IsMutation:   true,
-				AffectedRows: 0,
-				CommitStats:  &sppb.CommitResponse_CommitStats{MutationCount: 0},
+				TableHeader:   nil, // No result set
+				IsExecutedDML: true,
+				AffectedRows:  0,
+				CommitStats:   &sppb.CommitResponse_CommitStats{MutationCount: 0},
 				Stats: QueryStats{
 					ElapsedTime: "15 msec",
 				},
@@ -652,12 +641,11 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			want:    "Query OK, 0 rows affected (15 msec)\n",
 		},
 		{
-			desc: "MUTATE statement (no result set, is mutation, no CommitStats)",
+			desc: "MUTATE statement (no result set, not DML, has CommitStats)",
 			result: &Result{
-				TableHeader:  nil, // No result set
-				IsMutation:   true,
-				AffectedRows: 0, // MUTATE doesn't provide affected rows
-				CommitStats:  nil, // MUTATE doesn't provide CommitStats
+				TableHeader:  nil,                                                // No result set
+				AffectedRows: 0,                                                  // MUTATE doesn't provide affected rows
+				CommitStats:  &sppb.CommitResponse_CommitStats{MutationCount: 3}, // MUTATE has CommitStats
 				Stats: QueryStats{
 					ElapsedTime: "5 msec",
 				},
@@ -670,7 +658,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			result: &Result{
 				TableHeader:  toTableHeader("id", "name"), // Has result set
 				AffectedRows: 10,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime: "25 msec",
 				},
@@ -683,7 +671,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			result: &Result{
 				TableHeader:  toTableHeader("id", "name"), // Has result set
 				AffectedRows: 0,
-				IsMutation:   false,
+
 				Stats: QueryStats{
 					ElapsedTime: "8 msec",
 				},
@@ -694,10 +682,10 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "DML with THEN RETURN (has result set, is mutation)",
 			result: &Result{
-				TableHeader:  toTableHeader("id", "name"), // Has result set from THEN RETURN
-				AffectedRows: 3,
-				IsMutation:   true,
-				CommitStats:  &sppb.CommitResponse_CommitStats{MutationCount: 3},
+				TableHeader:   toTableHeader("id", "name"), // Has result set from THEN RETURN
+				AffectedRows:  3,
+				IsExecutedDML: true,
+				CommitStats:   &sppb.CommitResponse_CommitStats{MutationCount: 3},
 				Stats: QueryStats{
 					ElapsedTime: "30 msec",
 				},
@@ -708,10 +696,10 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "DML with THEN RETURN no rows (has result set, is mutation, empty)",
 			result: &Result{
-				TableHeader:  toTableHeader("id", "name"), // Has result set from THEN RETURN
-				AffectedRows: 0,
-				IsMutation:   true,
-				CommitStats:  &sppb.CommitResponse_CommitStats{MutationCount: 0},
+				TableHeader:   toTableHeader("id", "name"), // Has result set from THEN RETURN
+				AffectedRows:  0,
+				IsExecutedDML: true,
+				CommitStats:   &sppb.CommitResponse_CommitStats{MutationCount: 0},
 				Stats: QueryStats{
 					ElapsedTime: "12 msec",
 				},
@@ -722,9 +710,9 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		{
 			desc: "SHOW VARIABLES (has result set)",
 			result: &Result{
-				TableHeader:   toTableHeader("name", "value"), // Has result set
-				AffectedRows:  15,
-				IsMutation:    false,
+				TableHeader:  toTableHeader("name", "value"), // Has result set
+				AffectedRows: 15,
+
 				KeepVariables: true,
 				Stats: QueryStats{
 					ElapsedTime: "2 msec",
@@ -737,7 +725,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			desc: "Partitioned DML (no result set, lower bound affected rows)",
 			result: &Result{
 				TableHeader:      nil,
-				IsMutation:       true,
+				IsExecutedDML:    true,
 				AffectedRows:     1000,
 				AffectedRowsType: rowCountTypeLowerBound,
 				CommitStats:      &sppb.CommitResponse_CommitStats{MutationCount: 1000},
@@ -752,7 +740,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			desc: "Batch DML (no result set, upper bound affected rows)",
 			result: &Result{
 				TableHeader:      nil,
-				IsMutation:       true,
+				IsExecutedDML:    true,
 				AffectedRows:     50,
 				AffectedRowsType: rowCountTypeUpperBound,
 				CommitStats:      &sppb.CommitResponse_CommitStats{MutationCount: 50},

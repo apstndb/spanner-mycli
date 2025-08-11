@@ -32,7 +32,7 @@ func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session)
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type ShowSplitPointsStatement struct{}

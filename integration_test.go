@@ -278,7 +278,6 @@ func TestSelect(t *testing.T) {
 		),
 		AffectedRows: 2,
 		TableHeader:  toTableHeader(testTableRowType),
-		IsMutation:   false,
 	})
 }
 
@@ -303,8 +302,8 @@ func TestDml(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		AffectedRows: 2,
-		IsMutation:   true,
+		AffectedRows:  2,
+		IsExecutedDML: true,
 	})
 
 	// check by query
@@ -535,14 +534,14 @@ func TestStatements(t *testing.T) {
 				"SELECT id, active FROM TestTable ORDER BY id ASC",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},
-				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
-				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}},
+				{}, // CREATE TABLE
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // START BATCH DML
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // SET PARAM n = 1
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // SET PARAM b = true
+				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},                      // INSERT (batched)
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // SET PARAM n = 2
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // SET PARAM b = false
+				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}},                      // INSERT (batched)
 				{
 					TableHeader: toTableHeader("DML", "Rows"),
 					Rows: sliceOf(
@@ -551,7 +550,7 @@ func TestStatements(t *testing.T) {
 					),
 					AffectedRows:     2,
 					AffectedRowsType: rowCountTypeUpperBound,
-					IsMutation:       true,
+					IsExecutedDML:    true,
 					KeepVariables:    false,
 				},
 				{
@@ -574,17 +573,17 @@ func TestStatements(t *testing.T) {
 				"SELECT id, active FROM TestTable1 ORDER BY id ASC",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: true},
+				{}, // CREATE TABLE
+				{}, // BEGIN
 				{
-					IsMutation: true, AffectedRows: 2,
+					IsExecutedDML: true, AffectedRows: 2, // INSERT with THEN RETURN
 					Rows: sliceOf(
 						toRow("1", "true"),
 						toRow("2", "false"),
 					),
 					TableHeader: toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
+				{}, // ROLLBACK
 				{
 					Rows:        nil,
 					TableHeader: toTableHeader(testTableRowType),
@@ -601,10 +600,10 @@ func TestStatements(t *testing.T) {
 				"SELECT id, active FROM TestTable2 ORDER BY id ASC",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: true},
-				{IsMutation: true, AffectedRows: 2},
-				{IsMutation: true},
+				{},                                     // CREATE TABLE
+				{},                                     // BEGIN
+				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
+				{},                                     // COMMIT
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
@@ -630,31 +629,31 @@ func TestStatements(t *testing.T) {
 				"COMMIT",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: true, AffectedRows: 2},
-				{IsMutation: true},
+				{},                                     // CREATE TABLE
+				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
+				{},                                     // BEGIN RO
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 					TableHeader:  toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
-				{IsMutation: true},
-				{IsMutation: true},
+				{}, // ROLLBACK
+				{}, // BEGIN
+				{}, // SET TRANSACTION READ ONLY
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 					TableHeader:  toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
-				{KeepVariables: true},
-				{IsMutation: true},
+				{},                    // COMMIT
+				{KeepVariables: true}, // SET READONLY = TRUE
+				{},                    // BEGIN
 				{
 					AffectedRows: 2,
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 					TableHeader:  toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
+				{}, // COMMIT
 			},
 		},
 		{
@@ -725,9 +724,9 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
 				{KeepVariables: true},
-				{IsMutation: true},
-				{IsMutation: true},
-				{IsMutation: true},
+				{}, // CREATE PROTO BUNDLE
+				{}, // ALTER PROTO BUNDLE
+				{}, // SYNC PROTO BUNDLE
 			},
 		},
 		{
@@ -746,11 +745,11 @@ func TestStatements(t *testing.T) {
 			),
 			wantResults: []*Result{
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{IsMutation: true}, // CREATE DATABASE returns empty result
+				{}, // CREATE DATABASE returns empty result
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				{},
 				{},
-				{IsMutation: true},
+				{}, // DROP DATABASE
 				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 			},
 			cmpOpts: sliceOf(
@@ -833,8 +832,8 @@ func TestStatements(t *testing.T) {
 				"RUN PARTITIONED QUERY SELECT id, active FROM TestTable",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound},
+				{}, // MUTATE
+				{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}, // PARTITIONED UPDATE
 				{
 					AffectedRows:   1,
 					PartitionCount: 2,
@@ -860,33 +859,33 @@ func TestStatements(t *testing.T) {
 				"COMMIT",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: true, AffectedRows: 2},
-				{IsMutation: true},
+				{},                                     // CREATE TABLE
+				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
+				{},                                     // BEGIN
 				{
-					IsMutation:   true,
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
+					IsExecutedDML: true, // DELETE with THEN RETURN
+					AffectedRows:  2,
+					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+					TableHeader:   toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
-				{IsMutation: true},
-				{IsMutation: true},
+				{}, // ROLLBACK
+				{}, // BEGIN
+				{}, // SET TRANSACTION READ WRITE
 				{
-					IsMutation:   true,
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
+					IsExecutedDML: true, // DELETE with THEN RETURN
+					AffectedRows:  2,
+					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+					TableHeader:   toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
-				{IsMutation: true},
+				{}, // ROLLBACK
+				{}, // BEGIN RW
 				{
-					IsMutation:   true,
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
+					IsExecutedDML: true, // DELETE with THEN RETURN
+					AffectedRows:  2,
+					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+					TableHeader:   toTableHeader(testTableRowType),
 				},
-				{IsMutation: true},
+				{}, // COMMIT
 			},
 		},
 		{
@@ -905,11 +904,11 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{KeepVariables: true},
 				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}},
-				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
-				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
+				{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
+				{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
 				// tab is pass-through as is in this layer
 				{
-					IsMutation: true, AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
+					AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
 						toRow(
 							heredoc.Doc(`
 										CREATE TABLE TestTable (
@@ -939,13 +938,13 @@ func TestStatements(t *testing.T) {
 				"SELECT * FROM TestTable6 ORDER BY id",
 			),
 			wantResults: []*Result{
-				{IsMutation: true},
-				{IsMutation: false, KeepVariables: true},
-				{IsMutation: true, AffectedRows: 1},
-				{IsMutation: true},
-				{IsMutation: true, AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},
+				{},                                     // CREATE TABLE
+				{KeepVariables: true},                  // SET AUTO_BATCH_DML
+				{IsExecutedDML: true, AffectedRows: 1}, // INSERT
+				{},                                     // BEGIN
+				{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
 				// tab is pass-through as is in this layer
-				{IsMutation: true, AffectedRows: 1, TableHeader: toTableHeader("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
+				{IsExecutedDML: true, AffectedRows: 1, TableHeader: toTableHeader("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
 				{
 					AffectedRows: 2,
 					TableHeader:  toTableHeader(testTableRowType),
@@ -989,8 +988,8 @@ func TestStatements(t *testing.T) {
 				"SELECT COUNT(*) FROM TestAbortBatchDML",
 			),
 			wantResults: []*Result{
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},       // START BATCH
-				{IsMutation: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
+				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}, // START BATCH
+				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},             // INSERT (batched - not executed)
 				{KeepVariables: true}, // ABORT BATCH
 				{ // SELECT COUNT(*)
 					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
@@ -1095,8 +1094,8 @@ func TestStatements(t *testing.T) {
 				"SELECT COUNT(*) FROM TestMutateDeleteTbl",
 			),
 			wantResults: []*Result{
-				{IsMutation: true, AffectedRows: 1}, // Result of INSERT
-				{IsMutation: true},                  // Result of MUTATE (AffectedRows not set by MutateStatement)
+				{IsExecutedDML: true, AffectedRows: 1}, // Result of INSERT
+				{},                                     // Result of MUTATE (AffectedRows not set by MutateStatement)
 				{ // SELECT COUNT(*)
 					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
@@ -1115,7 +1114,7 @@ func TestStatements(t *testing.T) {
 				"CREATE DATABASE test_db_create",
 			),
 			wantResults: []*Result{
-				{IsMutation: true}, // CREATE DATABASE returns empty result
+				{}, // CREATE DATABASE returns empty result
 			},
 			database:  "", // Empty database with admin=true means admin-only session
 			dedicated: true,
@@ -1151,12 +1150,12 @@ func TestStatements(t *testing.T) {
 				"SHOW DATABASES",
 			),
 			wantResults: []*Result{
-				{IsMutation: true}, // CREATE DATABASE returns empty result
+				{}, // CREATE DATABASE returns empty result
 				{
 					TableHeader: toTableHeader("Database"),
 					// Don't check specific content
 				},
-				{IsMutation: true}, // DROP DATABASE should also be mutation
+				{}, // DROP DATABASE should also be mutation
 				{
 					TableHeader: toTableHeader("Database"),
 					// Don't check specific content
@@ -1206,7 +1205,7 @@ func TestStatements(t *testing.T) {
 					Rows:          sliceOf(toRow("")), // Empty string in detached mode
 					AffectedRows:  0,
 				},
-				{IsMutation: true}, // CREATE DATABASE returns empty result
+				{}, // CREATE DATABASE returns empty result
 				{
 					TableHeader:  toTableHeader("Database"),
 					Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
@@ -1224,8 +1223,8 @@ func TestStatements(t *testing.T) {
 					Rows:         sliceOf(toRow("1")),
 					AffectedRows: 1,
 				},
-				{},                 // DETACH statement returns empty result
-				{IsMutation: true}, // DROP DATABASE should succeed from admin mode
+				{}, // DETACH statement returns empty result
+				{}, // DROP DATABASE should succeed from admin mode
 			},
 			cmpOpts: sliceOf(
 				// Ignore TableHeader details for SELECT statements since they contain complex type information
@@ -1312,7 +1311,6 @@ func TestReadWriteTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 
 		// insert
@@ -1327,8 +1325,8 @@ func TestReadWriteTransaction(t *testing.T) {
 		}
 
 		compareResult(t, result, &Result{
-			AffectedRows: 2,
-			IsMutation:   true,
+			AffectedRows:  2,
+			IsExecutedDML: true,
 		})
 
 		// commit
@@ -1344,7 +1342,6 @@ func TestReadWriteTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 
 		// check by query
@@ -1395,7 +1392,6 @@ func TestReadWriteTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 
 		// insert
@@ -1410,8 +1406,8 @@ func TestReadWriteTransaction(t *testing.T) {
 		}
 
 		compareResult(t, result, &Result{
-			AffectedRows: 2,
-			IsMutation:   true,
+			AffectedRows:  2,
+			IsExecutedDML: true,
 		})
 
 		// rollback
@@ -1427,7 +1423,6 @@ func TestReadWriteTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 
 		// check by query
@@ -1503,7 +1498,6 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 
 		// query
@@ -1525,7 +1519,6 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 			TableHeader:  toTableHeader(testTableRowType),
 			AffectedRows: 2,
-			IsMutation:   false,
 		})
 
 		// close
@@ -1541,7 +1534,6 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 		compareResult(t, result, &Result{
 			AffectedRows: 0,
-			IsMutation:   true,
 		})
 	})
 
@@ -1594,7 +1586,6 @@ func TestReadOnlyTransaction(t *testing.T) {
 			),
 			TableHeader:  toTableHeader(testTableRowType),
 			AffectedRows: 2,
-			IsMutation:   false,
 		})
 
 		// close
@@ -1636,7 +1627,6 @@ func TestShowCreateTable(t *testing.T) {
 			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
 		),
 		AffectedRows: 1,
-		IsMutation:   false,
 	})
 }
 
@@ -1667,7 +1657,6 @@ func TestShowColumns(t *testing.T) {
 			toRow("active", "BOOL", "NO", "NULL", "NULL", "NULL"),
 		),
 		AffectedRows: 2,
-		IsMutation:   false,
 	})
 }
 
@@ -1697,7 +1686,6 @@ func TestShowIndexes(t *testing.T) {
 			toRow("tbl", "", "PRIMARY_KEY", "PRIMARY_KEY", "true", "false", "NULL"),
 		),
 		AffectedRows: 1,
-		IsMutation:   false,
 	})
 }
 
