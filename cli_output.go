@@ -169,36 +169,47 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	}
 	detail := sb.String()
 
-	if result.IsMutation {
-		var affectedRowsPart string
-		// If it is a valid mutation, 0 affected row is not printed to avoid confusion.
-		if result.AffectedRows > 0 || result.CommitStats.GetMutationCount() == 0 {
-			var affectedRowsPrefix string
-			switch result.AffectedRowsType {
-			case rowCountTypeLowerBound:
-				// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
-				// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
-				affectedRowsPrefix = "at least "
-			case rowCountTypeUpperBound:
-				// For batch DML, same rows can be processed by statements.
-				affectedRowsPrefix = "at most "
-			}
-			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
+	// Check if statement has a result set (indicated by TableHeader)
+	if result.TableHeader != nil {
+		// Statement has a result set (SELECT, SHOW, DML with THEN RETURN)
+		partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
+
+		var set string
+		if result.AffectedRows == 0 {
+			set = "Empty set"
+		} else {
+			set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
 		}
 
-		return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
+		return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
 	}
 
-	partitionedQueryInfo := lo.Ternary(result.PartitionCount > 0, fmt.Sprintf(" from %v partitions", result.PartitionCount), "")
+	// Statement has no result set (SET, DDL, DML without THEN RETURN, MUTATE)
+	var affectedRowsPart string
+	if result.IsMutation {
+		// For DML statements, show affected rows count
+		var affectedRowsPrefix string
+		switch result.AffectedRowsType {
+		case rowCountTypeLowerBound:
+			// For Partitioned DML the result's row count is lower bounded number, so we add "at least" to express ambiguity.
+			// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1?hl=en#resultsetstats
+			affectedRowsPrefix = "at least "
+		case rowCountTypeUpperBound:
+			// For batch DML, same rows can be processed by statements.
+			affectedRowsPrefix = "at most "
+		}
 
-	var set string
-	if result.AffectedRows == 0 {
-		set = "Empty set"
-	} else {
-		set = fmt.Sprintf("%d rows in set%s%s", result.AffectedRows, partitionedQueryInfo, batchInfo)
+		if result.AffectedRows > 0 {
+			affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
+		} else if result.CommitStats != nil {
+			// Show "0 rows affected" for regular DML statements (MySQL compatibility)
+			// Don't show for MUTATE statements which have no CommitStats
+			affectedRowsPart = ", 0 rows affected"
+		}
+		// For MUTATE statements (CommitStats == nil), don't show affected rows
 	}
 
-	return fmt.Sprintf("%s%s\n%s", set, elapsedTimePart, detail)
+	return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)
 }
 
 func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {
