@@ -527,9 +527,6 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	if sysVars.CLIFormat == enums.DisplayModeUnspecified {
 		// CLI_FORMAT was not set by flags or --set, apply defaults based on mode
 		defaultFormat := "TABLE"
-		if interactive {
-			defaultFormat = "TABLE"
-		}
 		if err := sysVars.SetFromSimple("CLI_FORMAT", defaultFormat); err != nil {
 			return fmt.Errorf("failed to set default CLI_FORMAT: %w", err)
 		}
