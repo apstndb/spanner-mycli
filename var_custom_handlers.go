@@ -317,10 +317,10 @@ type TimestampVar struct {
 }
 
 func (t *TimestampVar) Get() (string, error) {
-	if t.ptr.IsZero() {
-		return "", nil
+	if t.ptr == nil {
+		return "", fmt.Errorf("invalid state: TimestampVar ptr is nil")
 	}
-	return t.ptr.Format(time.RFC3339Nano), nil
+	return formatTimestamp(*t.ptr, ""), nil
 }
 
 func (t *TimestampVar) Set(value string) error {
