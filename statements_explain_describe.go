@@ -111,7 +111,9 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		return nil, err
 	}
 
-	result.Timestamp = session.systemVariables.LastQueryCache.Timestamp
+	// Restore the appropriate timestamp from cache
+	result.ReadTimestamp = session.systemVariables.LastQueryCache.ReadTimestamp
+	result.CommitTimestamp = session.systemVariables.LastQueryCache.CommitTimestamp
 	return result, nil
 }
 
@@ -216,10 +218,10 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	}
 
 	result := &Result{
-		AffectedRows: len(rows),
-		TableHeader:  toTableHeader(describeColumnNames),
-		Timestamp:    timestamp,
-		Rows:         rows,
+		AffectedRows:  len(rows),
+		TableHeader:   toTableHeader(describeColumnNames),
+		ReadTimestamp: timestamp,
+		Rows:          rows,
 	}
 
 	return result, nil
@@ -245,7 +247,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		return nil, err
 	}
 
-	result.Timestamp = timestamp
+	result.ReadTimestamp = timestamp
 	// EXPLAIN doesn't execute the statement, so it's not actually DML even if explaining DML
 
 	return result, nil
@@ -299,14 +301,14 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		if err != nil {
 			slog.Warn("failed to get read-only transaction timestamp", "err", err, "sql", sql)
 		} else {
-			result.Timestamp = ts
+			result.ReadTimestamp = ts
 		}
 	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  plan,
-		QueryStats: stats,
-		Timestamp:  result.Timestamp,
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
 	}
 
 	return result, nil
@@ -393,7 +395,14 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	result.IsExecutedDML = true
 	result.AffectedRows = int(dmlResult.Affected)
 	result.AffectedRowsType = rowCountTypeExact
-	result.Timestamp = dmlResult.CommitResponse.CommitTs
+	result.CommitTimestamp = dmlResult.CommitResponse.CommitTs
+
+	// Update LastQueryCache to maintain consistency with other DML execution functions
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:       dmlResult.Plan,
+		QueryStats:      queryStats,
+		CommitTimestamp: dmlResult.CommitResponse.CommitTs,
+	}
 
 	return result, nil
 }

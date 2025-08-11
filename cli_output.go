@@ -133,12 +133,13 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 }
 
 type OutputContext struct {
-	Verbose       bool
-	IsExecutedDML bool
-	Timestamp     string
-	Stats         *QueryStats
-	CommitStats   *sppb.CommitResponse_CommitStats
-	Metrics       *ExecutionMetrics
+	Verbose         bool
+	IsExecutedDML   bool
+	ReadTimestamp   string
+	CommitTimestamp string
+	Stats           *QueryStats
+	CommitStats     *sppb.CommitResponse_CommitStats
+	Metrics         *ExecutionMetrics
 }
 
 func sproutFuncMap() template.FuncMap {
@@ -155,9 +156,14 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		outputTemplate = defaultOutputFormat
 	}
 
-	var timestamp string
-	if !result.Timestamp.IsZero() {
-		timestamp = result.Timestamp.Format(time.RFC3339Nano)
+	var readTimestamp string
+	if !result.ReadTimestamp.IsZero() {
+		readTimestamp = result.ReadTimestamp.Format(time.RFC3339Nano)
+	}
+
+	var commitTimestamp string
+	if !result.CommitTimestamp.IsZero() {
+		commitTimestamp = result.CommitTimestamp.Format(time.RFC3339Nano)
 	}
 
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
@@ -174,12 +180,13 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	var sb strings.Builder
 	err := outputTemplate.Execute(&sb, OutputContext{
-		Verbose:       verbose,
-		IsExecutedDML: result.IsExecutedDML,
-		Timestamp:     timestamp,
-		Stats:         &result.Stats,
-		CommitStats:   result.CommitStats,
-		Metrics:       result.Metrics,
+		Verbose:         verbose,
+		IsExecutedDML:   result.IsExecutedDML,
+		ReadTimestamp:   readTimestamp,
+		CommitTimestamp: commitTimestamp,
+		Stats:           &result.Stats,
+		CommitStats:     result.CommitStats,
+		Metrics:         result.Metrics,
 	})
 	if err != nil {
 		slog.Error("error on outputTemplate.Execute()", "err", err)

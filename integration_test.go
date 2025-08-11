@@ -243,7 +243,8 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 	t.Helper()
 	opts := sliceOf[cmp.Option](
 		cmpopts.IgnoreFields(Result{}, "Stats"),
-		cmpopts.IgnoreFields(Result{}, "Timestamp"),
+		cmpopts.IgnoreFields(Result{}, "ReadTimestamp"),
+		cmpopts.IgnoreFields(Result{}, "CommitTimestamp"),
 		// Commit Stats is only provided by real instances
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
 		// Metrics are collected but not part of test expectations

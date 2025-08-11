@@ -160,10 +160,11 @@ type Result struct {
 	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
 	IsExecutedDML bool
 
-	Timestamp     time.Time
-	ForceVerbose  bool
-	CommitStats   *sppb.CommitResponse_CommitStats
-	KeepVariables bool
+	ReadTimestamp   time.Time // For SELECT/read-only transactions
+	CommitTimestamp time.Time // For COMMIT/DML operations
+	ForceVerbose    bool
+	CommitStats     *sppb.CommitResponse_CommitStats
+	KeepVariables   bool
 
 	TableHeader TableHeader
 

@@ -1,6 +1,7 @@
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
 {{if .Verbose -}}
-{{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .ReadTimestamp -}}                   read_timestamp:       {{.}}{{"\n"}}{{end -}}
+{{with .CommitTimestamp -}}                 commit_timestamp:     {{.}}{{"\n"}}{{end -}}
 {{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
 {{if not .IsExecutedDML -}}
 {{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}

@@ -487,10 +487,10 @@ func TestResultLine(t *testing.T) {
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
-				Timestamp: ts,
+				CommitTimestamp: ts,
 			},
 			verbose: true,
-			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:            %s\n", timestamp),
+			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ncommit_timestamp:     %s\n", timestamp),
 		},
 		{
 			desc: "mutation in verbose mode (both of timestamp and mutation count exist)",
@@ -500,11 +500,11 @@ func TestResultLine(t *testing.T) {
 				Stats: QueryStats{
 					ElapsedTime: "10 msec",
 				},
-				CommitStats: &sppb.CommitResponse_CommitStats{MutationCount: 6},
-				Timestamp:   ts,
+				CommitStats:     &sppb.CommitResponse_CommitStats{MutationCount: 6},
+				CommitTimestamp: ts,
 			},
 			verbose: true,
-			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ntimestamp:            %s\nmutation_count:       6\n", timestamp),
+			want:    fmt.Sprintf("Query OK, 3 rows affected (10 msec)\ncommit_timestamp:     %s\nmutation_count:       6\n", timestamp),
 		},
 		{
 			desc: "mutation in verbose mode (timestamp not exist)",
@@ -560,11 +560,11 @@ func TestResultLine(t *testing.T) {
 					OptimizerVersion:           "2",
 					OptimizerStatisticsPackage: "auto_20210829_05_22_28UTC",
 				},
-				Timestamp: ts,
+				ReadTimestamp: ts,
 			},
 			verbose: true,
 			want: fmt.Sprintf(`3 rows in set (10 msec)
-timestamp:            %s
+read_timestamp:       %s
 cpu time:             5 msec
 rows scanned:         10 rows
 deleted rows scanned: 1 rows
@@ -582,10 +582,10 @@ optimizer statistics: auto_20210829_05_22_28UTC
 					ElapsedTime:  "10 msec",
 					RowsReturned: "3",
 				},
-				Timestamp: ts,
+				ReadTimestamp: ts,
 			},
 			verbose: true,
-			want:    fmt.Sprintf("3 rows in set (10 msec)\ntimestamp:            %s\n", timestamp),
+			want:    fmt.Sprintf("3 rows in set (10 msec)\nread_timestamp:       %s\n", timestamp),
 		},
 		// New test cases for issue #414
 		{
