@@ -42,13 +42,13 @@ func formatTimestampBound(tb *spanner.TimestampBound) string {
 		if err != nil {
 			return s
 		}
-		return fmt.Sprintf("READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))
+		return fmt.Sprintf("READ_TIMESTAMP %v", formatTimestamp(ts))
 	case "minReadTimestamp":
 		ts, err := parseTimeString(matches[2])
 		if err != nil {
 			return s
 		}
-		return fmt.Sprintf("MIN_READ_TIMESTAMP %v", ts.Format(time.RFC3339Nano))
+		return fmt.Sprintf("MIN_READ_TIMESTAMP %v", formatTimestamp(ts))
 	default:
 		return s
 	}
@@ -317,10 +317,7 @@ type TimestampVar struct {
 }
 
 func (t *TimestampVar) Get() (string, error) {
-	if t.ptr.IsZero() {
-		return "", nil
-	}
-	return t.ptr.Format(time.RFC3339Nano), nil
+	return formatTimestamp(*t.ptr), nil
 }
 
 func (t *TimestampVar) Set(value string) error {

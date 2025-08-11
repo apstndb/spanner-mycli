@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"text/template"
-	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-runewidthex"
@@ -156,15 +155,8 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		outputTemplate = defaultOutputFormat
 	}
 
-	var readTimestamp string
-	if !result.ReadTimestamp.IsZero() {
-		readTimestamp = result.ReadTimestamp.Format(time.RFC3339Nano)
-	}
-
-	var commitTimestamp string
-	if !result.CommitTimestamp.IsZero() {
-		commitTimestamp = result.CommitTimestamp.Format(time.RFC3339Nano)
-	}
+	readTimestamp := formatTimestamp(result.ReadTimestamp)
+	commitTimestamp := formatTimestamp(result.CommitTimestamp)
 
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 

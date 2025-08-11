@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"spheric.cloud/xiter"
@@ -145,7 +144,7 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 			return nil, errIgnored
 		}
 		return map[string]string{
-			"COMMIT_TIMESTAMP": sv.CommitTimestamp.Format(time.RFC3339Nano),
+			"COMMIT_TIMESTAMP": formatTimestamp(sv.CommitTimestamp),
 			"MUTATION_COUNT":   strconv.FormatInt(sv.CommitResponse.GetCommitStats().GetMutationCount(), 10),
 		}, nil
 	}

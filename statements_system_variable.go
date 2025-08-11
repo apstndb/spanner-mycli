@@ -48,7 +48,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	// Special handling for COMMIT_RESPONSE
 	if session.systemVariables.CommitResponse != nil {
-		merged["COMMIT_TIMESTAMP"] = formatTimestamp(&session.systemVariables.CommitTimestamp)
+		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.CommitTimestamp)
 		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.CommitResponse.GetCommitStats().GetMutationCount(), 10)
 	}
 
@@ -176,10 +176,11 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 	}, nil
 }
 
-// formatTimestamp formats a timestamp for display
-func formatTimestamp(t *time.Time) string {
+// formatTimestamp formats a timestamp for display.
+// Returns empty string for zero time, RFC3339Nano format otherwise.
+func formatTimestamp(t time.Time) string {
 	if t.IsZero() {
-		return "NULL"
+		return ""
 	}
 	return t.Format(time.RFC3339Nano)
 }
