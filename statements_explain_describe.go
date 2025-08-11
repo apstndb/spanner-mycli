@@ -111,7 +111,9 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		return nil, err
 	}
 
-	result.ReadTimestamp = session.systemVariables.LastQueryCache.Timestamp
+	// Restore the appropriate timestamp from cache
+	result.ReadTimestamp = session.systemVariables.LastQueryCache.ReadTimestamp
+	result.CommitTimestamp = session.systemVariables.LastQueryCache.CommitTimestamp
 	return result, nil
 }
 
@@ -304,9 +306,9 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  plan,
-		QueryStats: stats,
-		Timestamp:  result.ReadTimestamp,
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
 	}
 
 	return result, nil

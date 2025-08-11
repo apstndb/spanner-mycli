@@ -37,9 +37,10 @@ import (
 )
 
 type LastQueryCache struct {
-	QueryPlan  *sppb.QueryPlan
-	QueryStats map[string]any
-	Timestamp  time.Time
+	QueryPlan       *sppb.QueryPlan
+	QueryStats      map[string]any
+	ReadTimestamp   time.Time
+	CommitTimestamp time.Time
 }
 
 // systemVariables holds configuration state for spanner-mycli sessions.

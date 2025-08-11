@@ -199,9 +199,9 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 	// Update query cache
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  plan,
-		QueryStats: stats,
-		Timestamp:  result.ReadTimestamp,
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
 	}
 
 	return result, nil
@@ -253,9 +253,9 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 
 	// Update last query cache
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  plan,
-		QueryStats: stats,
-		Timestamp:  result.ReadTimestamp,
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
 	}
 
 	return result, nil
@@ -551,9 +551,9 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	session.systemVariables.LastQueryCache = &LastQueryCache{
-		QueryPlan:  result.Plan,
-		QueryStats: queryStats,
-		Timestamp:  result.CommitResponse.CommitTs,
+		QueryPlan:       result.Plan,
+		QueryStats:      queryStats,
+		CommitTimestamp: result.CommitResponse.CommitTs,
 	}
 
 	return &Result{
