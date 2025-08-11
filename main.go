@@ -631,6 +631,26 @@ func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 	return params, nil
 }
 
+// getFormatFromOptions extracts the output format from spannerOptions based on flag precedence.
+// Returns empty string if no format flag is set.
+func getFormatFromOptions(opts *spannerOptions) string {
+	// Individual format flags take precedence over --format for backward compatibility
+	switch {
+	case opts.HTML:
+		return "HTML"
+	case opts.XML:
+		return "XML"
+	case opts.CSV:
+		return "CSV"
+	case opts.Table:
+		return "TABLE"
+	case opts.Format != "":
+		return opts.Format
+	default:
+		return ""
+	}
+}
+
 // createSystemVariablesFromOptions creates a systemVariables instance from spannerOptions.
 func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, error) {
 	params, err := parseParams(opts.Param)
@@ -849,21 +869,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	// This allows --set CLI_FORMAT=X to override these defaults
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
-		// Individual format flags take precedence over --format for backward compatibility
-		var formatValue string
-		switch {
-		case opts.HTML:
-			formatValue = "HTML"
-		case opts.XML:
-			formatValue = "XML"
-		case opts.CSV:
-			formatValue = "CSV"
-		case opts.Table:
-			formatValue = "TABLE"
-		case opts.Format != "":
-			formatValue = opts.Format
-		}
-
+		formatValue := getFormatFromOptions(opts)
 		if formatValue != "" {
 			if err := sysVars.SetFromSimple("CLI_FORMAT", formatValue); err != nil {
 				if opts.Format != "" {

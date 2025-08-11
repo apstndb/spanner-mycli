@@ -957,21 +957,17 @@ func TestFlagSpecialModes(t *testing.T) {
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					// Check for format flags in the same order as the application
+					// Use the shared function to get format from options
+					formatValue := getFormatFromOptions(&gopts.Spanner)
 					var expectedFormat enums.DisplayMode
-					switch {
-					case gopts.Spanner.HTML:
-						expectedFormat = enums.DisplayModeHTML
-					case gopts.Spanner.XML:
-						expectedFormat = enums.DisplayModeXML
-					case gopts.Spanner.CSV:
-						expectedFormat = enums.DisplayModeCSV
-					case gopts.Spanner.Table:
-						expectedFormat = enums.DisplayModeTable
-					case gopts.Spanner.Format != "":
-						// This would be handled differently in the real app, but for test simplicity
-						expectedFormat = enums.DisplayModeTable
-					default:
+					if formatValue != "" {
+						// Parse the format string to enum
+						parsed, err := enums.DisplayModeString(formatValue)
+						if err != nil {
+							t.Fatalf("Invalid format value: %v", formatValue)
+						}
+						expectedFormat = parsed
+					} else {
 						// No format flags provided, use the new default
 						expectedFormat = enums.DisplayModeTable
 					}
@@ -1842,21 +1838,17 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				// Check for format flags in the same order as the application
+				// Use the shared function to get format from options
+				formatValue := getFormatFromOptions(&gopts.Spanner)
 				var expectedFormat enums.DisplayMode
-				switch {
-				case gopts.Spanner.HTML:
-					expectedFormat = enums.DisplayModeHTML
-				case gopts.Spanner.XML:
-					expectedFormat = enums.DisplayModeXML
-				case gopts.Spanner.CSV:
-					expectedFormat = enums.DisplayModeCSV
-				case gopts.Spanner.Table:
-					expectedFormat = enums.DisplayModeTable
-				case gopts.Spanner.Format != "":
-					// This would be handled differently in the real app, but for test simplicity
-					expectedFormat = enums.DisplayModeTable
-				default:
+				if formatValue != "" {
+					// Parse the format string to enum
+					parsed, err := enums.DisplayModeString(formatValue)
+					if err != nil {
+						t.Fatalf("Invalid format value: %v", formatValue)
+					}
+					expectedFormat = parsed
+				} else {
 					// No format flags provided, use the new default
 					expectedFormat = enums.DisplayModeTable
 				}
