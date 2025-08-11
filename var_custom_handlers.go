@@ -317,6 +317,9 @@ type TimestampVar struct {
 }
 
 func (t *TimestampVar) Get() (string, error) {
+	if t.ptr == nil {
+		return "", fmt.Errorf("invalid state: TimestampVar ptr is nil")
+	}
 	return formatTimestamp(*t.ptr, ""), nil
 }
 
