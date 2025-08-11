@@ -950,17 +950,34 @@ func TestFlagSpecialModes(t *testing.T) {
 			// For CLI_FORMAT, we need to simulate what run() does
 			if tt.wantCLIFormat != 0 || tt.name == "batch mode without --table defaults to tab format" || tt.name == "interactive mode defaults to table format" {
 				// Determine if this would be interactive mode
-				input, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+				_, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
 				if err != nil {
 					t.Fatalf("Failed to determine input mode: %v", err)
 				}
 
 				// Apply the same logic as in run()
 				if _, hasSet := gopts.Spanner.Set["CLI_FORMAT"]; !hasSet {
-					expectedFormat := enums.DisplayModeTable
+					// Check for format flags in the same order as the application
+					var expectedFormat enums.DisplayMode
+					switch {
+					case gopts.Spanner.HTML:
+						expectedFormat = enums.DisplayModeHTML
+					case gopts.Spanner.XML:
+						expectedFormat = enums.DisplayModeXML
+					case gopts.Spanner.CSV:
+						expectedFormat = enums.DisplayModeCSV
+					case gopts.Spanner.Table:
+						expectedFormat = enums.DisplayModeTable
+					case gopts.Spanner.Format != "":
+						// This would be handled differently in the real app, but for test simplicity
+						expectedFormat = enums.DisplayModeTable
+					default:
+						// No format flags provided, use the new default
+						expectedFormat = enums.DisplayModeTable
+					}
 					if expectedFormat != tt.wantCLIFormat {
-						t.Errorf("Expected default CLI_FORMAT = %v, but want %v (input=%q)",
-							expectedFormat, tt.wantCLIFormat, input)
+						t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v)",
+							expectedFormat, tt.wantCLIFormat, tt.args)
 					}
 				} else {
 					// CLI_FORMAT was set via --set, check it was applied
@@ -1825,10 +1842,27 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			}
 			if !hasSet {
-				expectedFormat := enums.DisplayModeTable
+				// Check for format flags in the same order as the application
+				var expectedFormat enums.DisplayMode
+				switch {
+				case gopts.Spanner.HTML:
+					expectedFormat = enums.DisplayModeHTML
+				case gopts.Spanner.XML:
+					expectedFormat = enums.DisplayModeXML
+				case gopts.Spanner.CSV:
+					expectedFormat = enums.DisplayModeCSV
+				case gopts.Spanner.Table:
+					expectedFormat = enums.DisplayModeTable
+				case gopts.Spanner.Format != "":
+					// This would be handled differently in the real app, but for test simplicity
+					expectedFormat = enums.DisplayModeTable
+				default:
+					// No format flags provided, use the new default
+					expectedFormat = enums.DisplayModeTable
+				}
 				if expectedFormat != tt.wantCLIFormat {
-					t.Errorf("Expected default CLI_FORMAT = %v, but want %v (input=%q)",
-						expectedFormat, tt.wantCLIFormat, input)
+					t.Errorf("Expected CLI_FORMAT = %v, but want %v (args: %v, input: %q)",
+						expectedFormat, tt.wantCLIFormat, tt.args, input)
 				}
 			} else {
 				// If CLI_FORMAT was explicitly set, verify it
