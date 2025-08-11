@@ -868,14 +868,10 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		formatMode := getFormatFromOptions(opts)
 		if formatMode != enums.DisplayModeUnspecified {
-			// Convert enum to string for SetFromSimple
-			formatValue := formatMode.String()
-			if err := sysVars.SetFromSimple("CLI_FORMAT", formatValue); err != nil {
-				if opts.Format != "" {
-					return nil, fmt.Errorf("invalid value of --format: %v: %w", opts.Format, err)
-				}
-				return nil, fmt.Errorf("failed to set CLI_FORMAT: %w", err)
-			}
+			// The format has already been parsed from flags by getFormatFromOptions.
+			// We can set it directly on the struct to avoid converting it back to a string
+			// and then re-parsing it inside SetFromSimple.
+			sysVars.CLIFormat = formatMode
 		}
 	}
 	for k, v := range sets {
