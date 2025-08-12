@@ -22,7 +22,7 @@ import (
 type SQLFormatter struct {
 	out         io.Writer
 	mode        enums.DisplayMode
-	tablePath   *ast.Path  // Parsed table name (may include schema)
+	tablePath   *ast.Path // Parsed table name (may include schema)
 	columnNames []string
 	batchSize   int        // 0 or 1: single-row INSERTs, 2+: multi-row INSERTs
 	rowBuffer   [][]string // Buffer for batching rows
@@ -130,6 +130,7 @@ func (f *SQLFormatter) flushBatch() error {
 	if f.batchSize <= 1 || len(f.rowBuffer) == 1 {
 		// Single-row INSERT statements
 		for _, row := range f.rowBuffer {
+			// Values are already formatted as SQL literals by spanvalue.LiteralFormatConfig
 			_, err := fmt.Fprintf(f.out, "%s INTO %s (%s) VALUES (%s);\n",
 				insertClause,
 				f.tablePath.SQL(),
@@ -150,6 +151,7 @@ func (f *SQLFormatter) flushBatch() error {
 		}
 
 		for i, row := range f.rowBuffer {
+			// Values are already formatted as SQL literals by spanvalue.LiteralFormatConfig
 			if i == 0 {
 				_, err = fmt.Fprintf(f.out, "\n  (%s)", strings.Join(row, ", "))
 			} else {

@@ -50,7 +50,17 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 		metrics.MemoryBefore = &before
 	}
 
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	// Choose the appropriate format config based on the output format
+	var fc *spanvalue.FormatConfig
+	var err error
+	switch session.systemVariables.CLIFormat {
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		// Use SQL literal formatting for SQL export modes
+		fc, err = formatConfigForSQL(session.systemVariables.ProtoDescriptor)
+	default:
+		// Use regular display formatting for other modes
+		fc, err = formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +79,8 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
-		"format", session.systemVariables.CLIFormat)
+		"format", session.systemVariables.CLIFormat,
+		"sqlTableName", session.systemVariables.SQLTableName)
 
 	// Execute with the appropriate mode
 	var result *Result
