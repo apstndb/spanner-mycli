@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSQLExportIntegration(t *testing.T) {
@@ -31,8 +34,7 @@ func TestSQLExportIntegration(t *testing.T) {
 			tableName:  "DestTable",
 			batchSize:  0, // Single-row inserts
 			query:      "SELECT * FROM SourceTable ORDER BY id",
-			// Use CAST to get consistent format - but timestamps still vary by timezone
-			verifySQL: "SELECT id, name, CAST(value AS STRING) AS value, active, IFNULL(CAST(created_at AS STRING), 'NULL') AS created_at FROM DestTable ORDER BY id",
+			verifySQL:  "SELECT id, name, value, active, created_at FROM DestTable ORDER BY id",
 			wantRows: []Row{
 				{"1", "Alice", "100.5", "true", "2024-01-01T00:00:00Z"},
 				{"2", "Bob", "200.75", "false", "2024-01-02T00:00:00Z"},
@@ -171,41 +173,71 @@ CREATE TABLE DestTable (
 				}
 			}
 
-			// Verify the data was imported correctly
-			// Reset format to default for verification to get normal display format
-			session.systemVariables.CLIFormat = enums.DisplayModeTable
+			// Verify the data was imported correctly using Spanner client API directly
+			// This avoids circular dependency on spanner-mycli's formatting
+			iter := session.client.Single().Query(ctx, spanner.Statement{SQL: tt.verifySQL})
+			defer iter.Stop()
 
-			verifyStmt, err := BuildStatement(tt.verifySQL)
-			if err != nil {
-				t.Fatalf("Failed to build verify statement: %v", err)
-			}
+			var gotRows []Row
+			err = iter.Do(func(row *spanner.Row) error {
+				// Convert row to string slice for comparison
+				var rowValues []string
+				for i := 0; i < row.Size(); i++ {
+					var val spanner.NullString
+					if err := row.Column(i, &val); err != nil {
+						// Try other types if string doesn't work
+						var nullInt64 spanner.NullInt64
+						var nullFloat64 spanner.NullFloat64
+						var nullBool spanner.NullBool
+						var nullTime spanner.NullTime
 
-			verifyResult, err := verifyStmt.Execute(ctx, session)
-			if err != nil {
-				t.Fatalf("Failed to execute verify query: %v", err)
-			}
-
-			// Compare results - for timestamp columns, just verify non-NULL values exist
-			if len(verifyResult.Rows) != len(tt.wantRows) {
-				t.Errorf("Row count mismatch: got %d, want %d", len(verifyResult.Rows), len(tt.wantRows))
-			} else {
-				for i, gotRow := range verifyResult.Rows {
-					wantRow := tt.wantRows[i]
-					if len(gotRow) != len(wantRow) {
-						t.Errorf("Row %d column count mismatch: got %d, want %d", i, len(gotRow), len(wantRow))
-						continue
-					}
-					for j := range gotRow {
-						// Skip timestamp columns - just verify NULL vs non-NULL
-						if strings.Contains(tt.verifySQL, "created_at") && j == len(gotRow)-1 {
-							if (gotRow[j] == "NULL") != (wantRow[j] == "NULL") {
-								t.Errorf("Row %d col %d NULL mismatch: got %q, want %q", i, j, gotRow[j], wantRow[j])
+						if err := row.Column(i, &nullInt64); err == nil {
+							if nullInt64.Valid {
+								rowValues = append(rowValues, fmt.Sprintf("%d", nullInt64.Int64))
+							} else {
+								rowValues = append(rowValues, "NULL")
 							}
-						} else if gotRow[j] != wantRow[j] {
-							t.Errorf("Row %d col %d mismatch: got %q, want %q", i, j, gotRow[j], wantRow[j])
+						} else if err := row.Column(i, &nullFloat64); err == nil {
+							if nullFloat64.Valid {
+								rowValues = append(rowValues, fmt.Sprintf("%g", nullFloat64.Float64))
+							} else {
+								rowValues = append(rowValues, "NULL")
+							}
+						} else if err := row.Column(i, &nullBool); err == nil {
+							if nullBool.Valid {
+								rowValues = append(rowValues, fmt.Sprintf("%t", nullBool.Bool))
+							} else {
+								rowValues = append(rowValues, "NULL")
+							}
+						} else if err := row.Column(i, &nullTime); err == nil {
+							if nullTime.Valid {
+								// Format as UTC to match expected values
+								rowValues = append(rowValues, nullTime.Time.UTC().Format(time.RFC3339))
+							} else {
+								rowValues = append(rowValues, "NULL")
+							}
+						} else {
+							// Fallback to string representation
+							rowValues = append(rowValues, fmt.Sprintf("%v", row))
+						}
+					} else {
+						if val.Valid {
+							rowValues = append(rowValues, val.StringVal)
+						} else {
+							rowValues = append(rowValues, "NULL")
 						}
 					}
 				}
+				gotRows = append(gotRows, Row(rowValues))
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("Failed to query verification data: %v", err)
+			}
+
+			// Compare results using go-cmp for better diff output
+			if diff := cmp.Diff(tt.wantRows, gotRows); diff != "" {
+				t.Errorf("Verification data mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
