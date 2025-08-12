@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
@@ -147,9 +148,14 @@ CREATE TABLE DestTable (
 			}
 
 			// Execute each generated SQL statement
-			statements := strings.Split(sqlOutput, ";")
-			for _, sqlStmt := range statements {
-				sqlStmt = strings.TrimSpace(sqlStmt)
+			// Use proper SQL statement splitter that handles semicolons in string literals
+			rawStatements, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", sqlOutput)
+			if err != nil {
+				t.Fatalf("Failed to split generated SQL statements: %v", err)
+			}
+
+			for _, rawStmt := range rawStatements {
+				sqlStmt := strings.TrimSpace(rawStmt.Statement)
 				if sqlStmt == "" {
 					continue
 				}
