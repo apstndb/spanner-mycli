@@ -151,6 +151,10 @@ type systemVariables struct {
 	StreamingMode    enums.StreamingMode // CLI_STREAMING
 	TablePreviewRows int64               // CLI_TABLE_PREVIEW_ROWS
 
+	// SQL export configuration
+	SQLTableName string // CLI_SQL_TABLE_NAME
+	SQLBatchSize int64  // CLI_SQL_BATCH_SIZE
+
 	// Registry holds the system variable registry
 	Registry *VarRegistry
 

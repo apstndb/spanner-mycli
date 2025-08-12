@@ -249,6 +249,10 @@ func (r *VarRegistry) registerAll() {
 		"Controls query plan wrap width. It effects only operators column contents"))
 	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.TablePreviewRows,
 		"Number of rows to preview for table width calculation in streaming mode. 0 means use header widths only. Positive values use that many rows for preview (default: 50). -1 means collect all rows (non-streaming)."))
+	r.Register("CLI_SQL_TABLE_NAME", StringVar(&sv.SQLTableName,
+		"Table name for generated SQL statements. Required for SQL export formats. Supports both simple names (e.g., 'Users') and schema-qualified names (e.g., 'myschema.Users')."))
+	r.Register("CLI_SQL_BATCH_SIZE", IntVar(&sv.SQLBatchSize,
+		"Number of VALUES per INSERT statement for SQL export. 0 (default): single-row INSERT statements. 2+: multi-row INSERT with up to N rows per statement."))
 	r.Register("CLI_PORT", &IntGetterVar{
 		getter:      func() int64 { return int64(sv.Port) },
 		description: "Port number for connections.",

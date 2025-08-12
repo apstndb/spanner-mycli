@@ -349,6 +349,8 @@ func NewFormatter(mode enums.DisplayMode) (FormatFunc, error) {
 		return formatHTML, nil
 	case enums.DisplayModeXML:
 		return formatXML, nil
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		return formatSQL(mode), nil
 	default:
 		return nil, fmt.Errorf("unsupported display mode: %v", mode)
 	}

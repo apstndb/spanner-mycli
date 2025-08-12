@@ -15,6 +15,9 @@ const (
 	DisplayModeHTML
 	DisplayModeXML
 	DisplayModeCSV
+	DisplayModeSQLInsert
+	DisplayModeSQLInsertOrIgnore
+	DisplayModeSQLInsertOrUpdate
 )
 
 // AutocommitDMLMode represents the DML autocommit behavior

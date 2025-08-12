@@ -178,7 +178,10 @@ func isStreamingSupported(mode enums.DisplayMode) bool {
 		enums.DisplayModeTab,
 		enums.DisplayModeVertical,
 		enums.DisplayModeHTML,
-		enums.DisplayModeXML:
+		enums.DisplayModeXML,
+		enums.DisplayModeSQLInsert,
+		enums.DisplayModeSQLInsertOrIgnore,
+		enums.DisplayModeSQLInsertOrUpdate:
 		// These formats support streaming
 		return true
 	case enums.DisplayModeTable,
@@ -232,6 +235,18 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 
 	case enums.DisplayModeXML:
 		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
+		return &StreamingProcessor{
+			formatter:   formatter,
+			out:         out,
+			screenWidth: screenWidth,
+		}
+
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		formatter, err := NewSQLStreamingFormatter(out, sysVars, mode)
+		if err != nil {
+			// For testing, return nil if SQL formatter can't be created
+			return nil
+		}
 		return &StreamingProcessor{
 			formatter:   formatter,
 			out:         out,

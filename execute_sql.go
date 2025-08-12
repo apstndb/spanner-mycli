@@ -279,7 +279,8 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 			// Table formats: buffer by default for accurate column widths
 			shouldStream = false
-		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML:
+		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML,
+			enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 			// Other formats: stream by default for better performance
 			shouldStream = true
 		default:
@@ -309,6 +310,12 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
 	case enums.DisplayModeXML:
 		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		var err error
+		formatter, err = NewSQLStreamingFormatter(out, sysVars, format)
+		if err != nil {
+			return nil, err
+		}
 	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 		// Table formats use preview for width calculation
 		previewSize := int(sysVars.TablePreviewRows)

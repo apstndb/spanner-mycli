@@ -1,0 +1,264 @@
+// formatters_sql.go implements SQL export formatting for query results.
+// It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
+// that can be used for database migration, backup/restore, and test data generation.
+// The implementation leverages the spanvalue library for proper SQL literal formatting
+// and memefish's ast.Path for correct identifier handling.
+package main
+
+import (
+	"fmt"
+	"io"
+	"strings"
+
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanvalue"
+	"github.com/cloudspannerecosystem/memefish/ast"
+)
+
+// SQLFormatter handles SQL export formatting for different INSERT variants.
+// It supports both single-row and multi-row INSERT statements based on batchSize.
+// The formatter buffers rows when batchSize > 1 to generate multi-row INSERTs.
+type SQLFormatter struct {
+	out         io.Writer
+	mode        enums.DisplayMode
+	tablePath   *ast.Path  // Parsed table name (may include schema)
+	columnNames []string
+	batchSize   int        // 0 or 1: single-row INSERTs, 2+: multi-row INSERTs
+	rowBuffer   [][]string // Buffer for batching rows
+	firstBatch  bool
+}
+
+// NewSQLFormatter creates a new SQL formatter for streaming output.
+func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, batchSize int) (*SQLFormatter, error) {
+	tablePath, err := parseTableName(tableName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SQLFormatter{
+		out:        out,
+		mode:       mode,
+		tablePath:  tablePath,
+		batchSize:  batchSize,
+		rowBuffer:  make([][]string, 0, maxInt(batchSize, 1)),
+		firstBatch: true,
+	}, nil
+}
+
+// parseTableName converts a table name string to an ast.Path.
+// Supports both simple names (e.g., "Users") and schema-qualified names (e.g., "myschema.Users").
+func parseTableName(input string) (*ast.Path, error) {
+	if input == "" {
+		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
+	}
+
+	parts := strings.Split(input, ".")
+	idents := make([]*ast.Ident, 0, len(parts))
+
+	for _, part := range parts {
+		if part == "" {
+			return nil, fmt.Errorf("empty identifier in table name: %q", input)
+		}
+		idents = append(idents, &ast.Ident{Name: part})
+	}
+
+	return &ast.Path{Idents: idents}, nil
+}
+
+// WriteHeader sets up column names for the formatter.
+func (f *SQLFormatter) WriteHeader(columnNames []string) error {
+	f.columnNames = columnNames
+	return nil
+}
+
+// WriteRow processes a single row and outputs SQL when batch is full.
+func (f *SQLFormatter) WriteRow(values []string) error {
+	f.rowBuffer = append(f.rowBuffer, values)
+
+	// Check if we should flush the batch
+	shouldFlush := false
+	if f.batchSize <= 1 {
+		// No batching: flush immediately
+		shouldFlush = true
+	} else if len(f.rowBuffer) >= f.batchSize {
+		// Batch is full
+		shouldFlush = true
+	}
+
+	if shouldFlush {
+		return f.flushBatch()
+	}
+
+	return nil
+}
+
+// Finish flushes any remaining rows.
+func (f *SQLFormatter) Finish() error {
+	if len(f.rowBuffer) > 0 {
+		return f.flushBatch()
+	}
+	return nil
+}
+
+// flushBatch writes the buffered rows as SQL statements.
+func (f *SQLFormatter) flushBatch() error {
+	if len(f.rowBuffer) == 0 {
+		return nil
+	}
+
+	// Determine the INSERT clause based on mode
+	var insertClause string
+	switch f.mode {
+	case enums.DisplayModeSQLInsert:
+		insertClause = "INSERT"
+	case enums.DisplayModeSQLInsertOrIgnore:
+		insertClause = "INSERT OR IGNORE"
+	case enums.DisplayModeSQLInsertOrUpdate:
+		insertClause = "INSERT OR UPDATE"
+	default:
+		return fmt.Errorf("unsupported SQL mode: %v", f.mode)
+	}
+
+	// Build column list
+	columnList := make([]string, len(f.columnNames))
+	for i, col := range f.columnNames {
+		columnList[i] = (&ast.Ident{Name: col}).SQL()
+	}
+
+	// Generate SQL statement(s)
+	if f.batchSize <= 1 || len(f.rowBuffer) == 1 {
+		// Single-row INSERT statements
+		for _, row := range f.rowBuffer {
+			_, err := fmt.Fprintf(f.out, "%s INTO %s (%s) VALUES (%s);\n",
+				insertClause,
+				f.tablePath.SQL(),
+				strings.Join(columnList, ", "),
+				strings.Join(row, ", "))
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		// Multi-row INSERT statement
+		_, err := fmt.Fprintf(f.out, "%s INTO %s (%s) VALUES",
+			insertClause,
+			f.tablePath.SQL(),
+			strings.Join(columnList, ", "))
+		if err != nil {
+			return err
+		}
+
+		for i, row := range f.rowBuffer {
+			if i == 0 {
+				_, err = fmt.Fprintf(f.out, "\n  (%s)", strings.Join(row, ", "))
+			} else {
+				_, err = fmt.Fprintf(f.out, ",\n  (%s)", strings.Join(row, ", "))
+			}
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(f.out, ";")
+		if err != nil {
+			return err
+		}
+	}
+
+	// Clear the buffer
+	f.rowBuffer = f.rowBuffer[:0]
+	f.firstBatch = false
+	return nil
+}
+
+// SQLStreamingFormatter implements StreamingFormatter for SQL export.
+// Note: While this supports streaming, partitioned queries currently buffer all results
+// before formatting, so streaming benefits are not realized for partitioned queries.
+type SQLStreamingFormatter struct {
+	formatter   *SQLFormatter
+	fc          *spanvalue.FormatConfig
+	columnNames []string
+	initialized bool
+	out         io.Writer
+	sysVars     *systemVariables
+}
+
+// NewSQLStreamingFormatter creates a new streaming SQL formatter.
+func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enums.DisplayMode) (*SQLStreamingFormatter, error) {
+	if sysVars.SQLTableName == "" {
+		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
+	}
+
+	fc, err := formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+	if err != nil {
+		return nil, err
+	}
+
+	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, int(sysVars.SQLBatchSize))
+	if err != nil {
+		return nil, err
+	}
+
+	return &SQLStreamingFormatter{
+		formatter: formatter,
+		fc:        fc,
+		out:       out,
+		sysVars:   sysVars,
+	}, nil
+}
+
+// InitFormat initializes the formatter with column information.
+func (s *SQLStreamingFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+	s.columnNames = columns
+	s.initialized = true
+	return s.formatter.WriteHeader(columns)
+}
+
+// WriteRow outputs a single row.
+func (s *SQLStreamingFormatter) WriteRow(row Row) error {
+	if !s.initialized {
+		return fmt.Errorf("header not processed before row")
+	}
+	return s.formatter.WriteRow(row)
+}
+
+// FinishFormat completes the SQL export.
+func (s *SQLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+	return s.formatter.Finish()
+}
+
+// formatSQL is the non-streaming formatter for SQL export.
+func formatSQL(mode enums.DisplayMode) FormatFunc {
+	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
+		if sysVars.SQLTableName == "" {
+			return fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
+		}
+
+		formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, int(sysVars.SQLBatchSize))
+		if err != nil {
+			return err
+		}
+
+		// Write header
+		if err := formatter.WriteHeader(columnNames); err != nil {
+			return err
+		}
+
+		// Write all rows
+		for _, row := range result.Rows {
+			if err := formatter.WriteRow(row); err != nil {
+				return err
+			}
+		}
+
+		// Finish and flush
+		return formatter.Finish()
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
