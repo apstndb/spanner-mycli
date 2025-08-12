@@ -108,6 +108,14 @@ func rowIterToSeq(
 // consumeRowIterWithProcessor processes rows using the provided RowProcessor.
 // This unified function handles both buffered and streaming modes through the same interface.
 // If metrics is non-nil, timing information will be collected during processing.
+//
+// Design Note: Currently rowTransform converts *spanner.Row to []string (Row) immediately.
+// This early conversion limits flexibility as formatters cannot make format-specific decisions.
+// A future improvement would be to pass raw *spanner.Row through the processor interface,
+// allowing each formatter to apply its own FormatConfig. This would require:
+// - Changing RowProcessor.ProcessRow to accept *spanner.Row
+// - Moving FormatConfig decision into individual formatters
+// - Updating all existing formatters to handle raw data
 func consumeRowIterWithProcessor(
 	iter *spanner.RowIterator,
 	processor RowProcessor,

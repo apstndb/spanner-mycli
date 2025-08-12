@@ -51,6 +51,13 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	// Choose the appropriate format config based on the output format
+	// TODO(future): Current design formats values early (at Result creation time) which limits flexibility.
+	// Ideally, Result should store raw *spanner.Row data and formatters should handle conversion.
+	// This would allow:
+	// - Different formats for the same data without re-querying
+	// - Format-specific optimizations
+	// - Better separation of concerns
+	// However, this requires significant changes to Result struct and RowProcessor interface.
 	var fc *spanvalue.FormatConfig
 	var err error
 	switch session.systemVariables.CLIFormat {

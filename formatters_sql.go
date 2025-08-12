@@ -1,7 +1,17 @@
 // formatters_sql.go implements SQL export formatting for query results.
 // It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
 // that can be used for database migration, backup/restore, and test data generation.
-// Values are expected to be pre-formatted as SQL literals.
+//
+// Current Design Constraints:
+// - Values are expected to be pre-formatted as SQL literals using spanvalue.LiteralFormatConfig
+// - The formatter receives []string (Row) rather than raw *spanner.Row data
+// - Format decision is made early in execute_sql.go, not at formatting time
+//
+// Future Improvements:
+// - Consider passing raw *spanner.Row to formatters for late-binding format decisions
+// - This would allow formatters to choose appropriate FormatConfig based on their needs
+// - Would enable format-specific optimizations and better separation of concerns
+//
 // The implementation uses memefish's ast.Path for correct identifier handling.
 package main
 
