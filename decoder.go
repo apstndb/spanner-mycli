@@ -64,17 +64,6 @@ func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) 
 	}, nil
 }
 
-// formatConfigForSQL creates a FormatConfig that formats values as SQL literals
-// instead of display format. This is used for SQL export formats.
-// For now, we just use LiteralFormatConfig directly and see if it handles
-// INTERVAL, UUID, PROTO, and ENUM correctly.
-func formatConfigForSQL(fds *descriptorpb.FileDescriptorSet) (*spanvalue.FormatConfig, error) {
-	// First, let's try using LiteralFormatConfig as-is
-	// TODO: Verify if INTERVAL, UUID, PROTO, ENUM need special handling
-	// If they do, it might be better to fix this in spanvalue itself
-	return spanvalue.LiteralFormatConfig, nil
-}
-
 func dynamicTypesByFDS(fds *descriptorpb.FileDescriptorSet) (*dynamicpb.Types, error) {
 	if fds == nil {
 		return dynamicpb.NewTypes(nil), nil

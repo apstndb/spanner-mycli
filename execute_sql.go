@@ -56,7 +56,9 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	switch session.systemVariables.CLIFormat {
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		// Use SQL literal formatting for SQL export modes
-		fc, err = formatConfigForSQL(session.systemVariables.ProtoDescriptor)
+		// LiteralFormatConfig formats values as valid Spanner SQL literals
+		fc = spanvalue.LiteralFormatConfig
+		err = nil
 	default:
 		// Use regular display formatting for other modes
 		fc, err = formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
