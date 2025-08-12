@@ -1,8 +1,8 @@
 // formatters_sql.go implements SQL export formatting for query results.
 // It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
 // that can be used for database migration, backup/restore, and test data generation.
-// The implementation leverages the spanvalue library for proper SQL literal formatting
-// and memefish's ast.Path for correct identifier handling.
+// Values are expected to be pre-formatted as SQL literals.
+// The implementation uses memefish's ast.Path for correct identifier handling.
 package main
 
 import (
@@ -12,7 +12,6 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -26,7 +25,6 @@ type SQLFormatter struct {
 	columnNames []string
 	batchSize   int        // 0 or 1: single-row INSERTs, 2+: multi-row INSERTs
 	rowBuffer   [][]string // Buffer for batching rows
-	firstBatch  bool
 }
 
 // NewSQLFormatter creates a new SQL formatter for streaming output.
@@ -37,12 +35,11 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 	}
 
 	return &SQLFormatter{
-		out:        out,
-		mode:       mode,
-		tablePath:  tablePath,
-		batchSize:  batchSize,
-		rowBuffer:  make([][]string, 0, maxInt(batchSize, 1)),
-		firstBatch: true,
+		out:       out,
+		mode:      mode,
+		tablePath: tablePath,
+		batchSize: batchSize,
+		rowBuffer: make([][]string, 0, maxInt(batchSize, 1)),
 	}, nil
 }
 
@@ -130,7 +127,7 @@ func (f *SQLFormatter) flushBatch() error {
 	if f.batchSize <= 1 || len(f.rowBuffer) == 1 {
 		// Single-row INSERT statements
 		for _, row := range f.rowBuffer {
-			// Values are already formatted as SQL literals by spanvalue.LiteralFormatConfig
+			// Values are already formatted as SQL literals
 			_, err := fmt.Fprintf(f.out, "%s INTO %s (%s) VALUES (%s);\n",
 				insertClause,
 				f.tablePath.SQL(),
@@ -151,7 +148,7 @@ func (f *SQLFormatter) flushBatch() error {
 		}
 
 		for i, row := range f.rowBuffer {
-			// Values are already formatted as SQL literals by spanvalue.LiteralFormatConfig
+			// Values are already formatted as SQL literals
 			if i == 0 {
 				_, err = fmt.Fprintf(f.out, "\n  (%s)", strings.Join(row, ", "))
 			} else {
@@ -169,7 +166,6 @@ func (f *SQLFormatter) flushBatch() error {
 
 	// Clear the buffer
 	f.rowBuffer = f.rowBuffer[:0]
-	f.firstBatch = false
 	return nil
 }
 
@@ -178,11 +174,7 @@ func (f *SQLFormatter) flushBatch() error {
 // before formatting, so streaming benefits are not realized for partitioned queries.
 type SQLStreamingFormatter struct {
 	formatter   *SQLFormatter
-	fc          *spanvalue.FormatConfig
-	columnNames []string
 	initialized bool
-	out         io.Writer
-	sysVars     *systemVariables
 }
 
 // NewSQLStreamingFormatter creates a new streaming SQL formatter.
@@ -191,27 +183,19 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
 	}
 
-	fc, err := formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
 	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, int(sysVars.SQLBatchSize))
 	if err != nil {
 		return nil, err
 	}
 
 	return &SQLStreamingFormatter{
-		formatter: formatter,
-		fc:        fc,
-		out:       out,
-		sysVars:   sysVars,
+		formatter:   formatter,
+		initialized: false,
 	}, nil
 }
 
 // InitFormat initializes the formatter with column information.
 func (s *SQLStreamingFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
-	s.columnNames = columns
 	s.initialized = true
 	return s.formatter.WriteHeader(columns)
 }
