@@ -249,7 +249,8 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 	visit = func(name string) error {
 		if visited[name] { return nil }
 		if visiting[name] { return fmt.Errorf("circular dependency detected involving table %s", name) }
-		visiting[name], info := true, tables[name]
+		visiting[name] = true
+		info := tables[name]
 
 		// Visit parent first (for INTERLEAVE relationships)
 		if info != nil && info.ParentTable != "" && slices.Contains(tablesToExport, info.ParentTable) {

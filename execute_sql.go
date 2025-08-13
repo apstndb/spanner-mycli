@@ -37,55 +37,45 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// executeSQLWithFormat executes SQL with specific format settings without modifying system variables
-// TODO: Refactor to pass format settings as parameters instead of modifying session variables
+// executeSQLWithFormat executes SQL with specific format settings without modifying shared session variables.
+// It creates a temporary copy of system variables to avoid race conditions.
 func executeSQLWithFormat(ctx context.Context, session *Session, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
-	// Save original values
-	originalFormat := session.systemVariables.CLIFormat
-	originalStreaming := session.systemVariables.StreamingMode
-	originalTableName := session.systemVariables.SQLTableName
-	originalSkipColumns := session.systemVariables.SkipColumnNames
-	originalSuppressResult := session.systemVariables.SuppressResultLines
-	originalProgressBar := session.systemVariables.EnableProgressBar
+	// Create a copy of the system variables for this specific execution
+	tempVars := *session.systemVariables
 
-	// Restore original values on exit
-	defer func() {
-		session.systemVariables.CLIFormat = originalFormat
-		session.systemVariables.StreamingMode = originalStreaming
-		session.systemVariables.SQLTableName = originalTableName
-		session.systemVariables.SkipColumnNames = originalSkipColumns
-		session.systemVariables.SuppressResultLines = originalSuppressResult
-		session.systemVariables.EnableProgressBar = originalProgressBar
-	}()
-
-	// Set temporary values
-	session.systemVariables.CLIFormat = format
-	session.systemVariables.StreamingMode = streamingMode
+	// Set temporary values on the copy
+	tempVars.CLIFormat = format
+	tempVars.StreamingMode = streamingMode
 	if sqlTableName != "" {
-		session.systemVariables.SQLTableName = sqlTableName
+		tempVars.SQLTableName = sqlTableName
 	}
-	session.systemVariables.SkipColumnNames = true
-	session.systemVariables.SuppressResultLines = true
-	session.systemVariables.EnableProgressBar = false
+	tempVars.SkipColumnNames = true
+	tempVars.SuppressResultLines = true
+	tempVars.EnableProgressBar = false
 
-	// Execute with modified settings
-	return executeSQLImpl(ctx, session, sql)
+	// Execute with the temporary, isolated settings
+	return executeSQLImplWithVars(ctx, session, sql, &tempVars)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
 	return executeSQLImpl(ctx, session, sql)
 }
 
-// executeSQLImpl is the actual implementation that both executeSQL and executeSQLWithFormat use
+// executeSQLImpl delegates to executeSQLImplWithVars with the session's system variables
 func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result, error) {
+	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
+}
+
+// executeSQLImplWithVars is the actual implementation that accepts custom system variables
+func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
 	// Always collect metrics - display is controlled by template based on Profile flag
 	metrics := &ExecutionMetrics{
 		QueryStartTime: time.Now(),
-		Profile:        session.systemVariables.Profile,
+		Profile:        sysVars.Profile,
 	}
 
 	// Capture memory snapshot before execution if profiling is enabled
-	if session.systemVariables.Profile {
+	if sysVars.Profile {
 		before := GetMemoryStats()
 		metrics.MemoryBefore = &before
 	}
@@ -101,7 +91,7 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 	var fc *spanvalue.FormatConfig
 	var usingSQLLiterals bool
 	var err error
-	switch session.systemVariables.CLIFormat {
+	switch sysVars.CLIFormat {
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		// Use SQL literal formatting for SQL export modes
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
@@ -110,14 +100,14 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 		err = nil
 	default:
 		// Use regular display formatting for other modes
-		fc, err = formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
 		usingSQLLiterals = false
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	params := session.systemVariables.Params
+	params := sysVars.Params
 	stmt, err := newStatement(sql, params, false)
 	if err != nil {
 		return nil, err
@@ -126,28 +116,28 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
 	// Decide whether to use streaming or buffered mode
-	useStreaming, processor := decideExecutionMode(ctx, session, fc)
+	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
 	metrics.IsStreaming = useStreaming
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
-		"format", session.systemVariables.CLIFormat,
-		"sqlTableName", session.systemVariables.SQLTableName)
+		"format", sysVars.CLIFormat,
+		"sqlTableName", sysVars.SQLTableName)
 
 	// Execute with the appropriate mode
 	var result *Result
 
 	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals)
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
 	} else {
-		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals)
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals, sysVars)
 	}
 
 	// Complete metrics collection
 	metrics.CompletionTime = time.Now()
 
 	// Capture memory snapshot after execution if profiling is enabled
-	if session.systemVariables.Profile {
+	if sysVars.Profile {
 		after := GetMemoryStats()
 		metrics.MemoryAfter = &after
 	}
@@ -171,21 +161,21 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
-func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.FormatConfig) (bool, RowProcessor) {
+func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.FormatConfig, sysVars *systemVariables) (bool, RowProcessor) {
 	// Get output stream from StreamManager
-	outStream := session.systemVariables.StreamManager.GetOutStream()
+	outStream := sysVars.StreamManager.GetOutStream()
 	if outStream == nil {
 		return false, nil
 	}
 
 	// Determine screen width based on system variables
 	screenWidth := math.MaxInt
-	if session.systemVariables.AutoWrap {
-		if session.systemVariables.FixedWidth != nil {
-			screenWidth = int(*session.systemVariables.FixedWidth)
+	if sysVars.AutoWrap {
+		if sysVars.FixedWidth != nil {
+			screenWidth = int(*sysVars.FixedWidth)
 		} else {
 			// Get terminal width from StreamManager
-			width, err := session.systemVariables.StreamManager.GetTerminalWidth()
+			width, err := sysVars.StreamManager.GetTerminalWidth()
 			if err != nil {
 				// If terminal width cannot be determined, don't wrap
 				screenWidth = math.MaxInt
@@ -196,12 +186,12 @@ func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.Fo
 	}
 
 	// Try to create streaming processor based on settings
-	processor, _ := createStreamingProcessor(session.systemVariables, outStream, screenWidth)
+	processor, _ := createStreamingProcessor(sysVars, outStream, screenWidth)
 	return processor != nil, processor
 }
 
 // executeWithStreaming executes the query using streaming mode.
-func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
+func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		LogMemoryStats("Before streaming")
@@ -209,11 +199,11 @@ func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.R
 	}
 
 	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
-	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals)
+	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
 }
 
 // executeWithBuffering executes the query using buffered mode.
-func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		LogMemoryStats("Before buffered")
@@ -262,7 +252,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 	}
 
 	// Update query cache
-	session.systemVariables.LastQueryCache = &LastQueryCache{
+	sysVars.LastQueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
@@ -273,14 +263,14 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 // executeStreamingSQL processes query results in streaming mode.
 // It outputs rows directly as they arrive without buffering the entire result set.
-func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	slog.Debug("executeStreamingSQL called",
-		"format", session.systemVariables.CLIFormat)
+		"format", sysVars.CLIFormat)
 
 	// Process the stream with metrics
 	rowTransform := spannerRowToRow(fc)
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
-	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, session.systemVariables, metrics)
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, metrics)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
 	if err != nil {
 		return nil, err
@@ -317,7 +307,7 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 	}
 
 	// Update last query cache
-	session.systemVariables.LastQueryCache = &LastQueryCache{
+	sysVars.LastQueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
