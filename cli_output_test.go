@@ -819,38 +819,79 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 }
 
 func TestCLISuppressResultLinesSystemVariable(t *testing.T) {
-	// Test that the system variable can be set and retrieved
-	sysVars := newSystemVariablesWithDefaults()
-	sysVars.ensureRegistry()
-
-	// Test setting to TRUE
-	err := sysVars.SetFromGoogleSQL("CLI_SUPPRESS_RESULT_LINES", "TRUE")
-	if err != nil {
-		t.Fatalf("Failed to set CLI_SUPPRESS_RESULT_LINES: %v", err)
+	tests := []struct {
+		name       string
+		valueToSet string
+		wantBool   bool
+		wantString string
+		wantSetErr bool
+	}{
+		{
+			name:       "set to TRUE",
+			valueToSet: "TRUE",
+			wantBool:   true,
+			wantString: "TRUE",
+		},
+		{
+			name:       "set to FALSE",
+			valueToSet: "FALSE",
+			wantBool:   false,
+			wantString: "FALSE",
+		},
+		{
+			name:       "set to true (lowercase)",
+			valueToSet: "true",
+			wantBool:   true,
+			wantString: "TRUE",
+		},
+		{
+			name:       "set to false (lowercase)",
+			valueToSet: "false",
+			wantBool:   false,
+			wantString: "FALSE",
+		},
+		{
+			name:       "set to 1",
+			valueToSet: "1",
+			wantBool:   true,
+			wantString: "TRUE",
+		},
+		{
+			name:       "set to 0",
+			valueToSet: "0",
+			wantBool:   false,
+			wantString: "FALSE",
+		},
 	}
 
-	if !sysVars.SuppressResultLines {
-		t.Error("CLI_SUPPRESS_RESULT_LINES should be true after setting to TRUE")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sysVars := newSystemVariablesWithDefaults()
+			sysVars.ensureRegistry()
 
-	// Test setting to FALSE
-	err = sysVars.SetFromGoogleSQL("CLI_SUPPRESS_RESULT_LINES", "FALSE")
-	if err != nil {
-		t.Fatalf("Failed to set CLI_SUPPRESS_RESULT_LINES: %v", err)
-	}
+			err := sysVars.SetFromGoogleSQL("CLI_SUPPRESS_RESULT_LINES", tt.valueToSet)
 
-	if sysVars.SuppressResultLines {
-		t.Error("CLI_SUPPRESS_RESULT_LINES should be false after setting to FALSE")
-	}
+			if tt.wantSetErr {
+				if err == nil {
+					t.Fatal("expected an error when setting invalid value, but got nil")
+				}
+				return // Test case ends here for error cases
+			}
+			if err != nil {
+				t.Fatalf("SetFromGoogleSQL failed: %v", err)
+			}
 
-	// Test GET
-	values, err := sysVars.Get("CLI_SUPPRESS_RESULT_LINES")
-	if err != nil {
-		t.Fatalf("Failed to get CLI_SUPPRESS_RESULT_LINES: %v", err)
-	}
+			if sysVars.SuppressResultLines != tt.wantBool {
+				t.Errorf("SuppressResultLines mismatch: got %v, want %v", sysVars.SuppressResultLines, tt.wantBool)
+			}
 
-	if values["CLI_SUPPRESS_RESULT_LINES"] != "FALSE" {
-		t.Errorf("Expected CLI_SUPPRESS_RESULT_LINES to be FALSE, got %s", values["CLI_SUPPRESS_RESULT_LINES"])
+			values, err := sysVars.Get("CLI_SUPPRESS_RESULT_LINES")
+			if err != nil {
+				t.Fatalf("Get() failed: %v", err)
+			}
+			if values["CLI_SUPPRESS_RESULT_LINES"] != tt.wantString {
+				t.Errorf(`Get() mismatch: got %q, want %q`, values["CLI_SUPPRESS_RESULT_LINES"], tt.wantString)
+			}
+		})
 	}
 }
-
