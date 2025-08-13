@@ -50,13 +50,13 @@ const (
 	dumpModeTables                   // Export specific tables only
 )
 
-func (m dumpMode) shouldExportDDL() bool { return m == dumpModeDatabase || m == dumpModeSchema }
+func (m dumpMode) shouldExportDDL() bool  { return m == dumpModeDatabase || m == dumpModeSchema }
 func (m dumpMode) shouldExportData() bool { return m == dumpModeDatabase || m == dumpModeTables }
 
 // tableInfo represents a table with its dependencies
 type tableInfo struct {
 	Name           string
-	ParentTable    string   // INTERLEAVE IN PARENT table
+	ParentTable    string // INTERLEAVE IN PARENT table
 	OnDeleteAction string
 	ChildrenTables []string // Tables that interleave in this table
 	// ForeignKeys will be added for Issue #426
@@ -91,14 +91,20 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	result := &Result{AffectedRows: 0, IsDirectOutput: true}
 	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
-		if err != nil { return nil, fmt.Errorf("export DDL: %w", err) }
+		if err != nil {
+			return nil, fmt.Errorf("export DDL: %w", err)
+		}
 		result.Rows = append(result.Rows, ddlResult.Rows...)
 	}
 	tables, err := getTablesForExport(ctx, session, mode, specificTables)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	for _, table := range tables {
 		dataResult, err := exportTableDataBuffered(ctx, session, table)
-		if err != nil { return nil, fmt.Errorf("export table %s: %w", table, err) }
+		if err != nil {
+			return nil, fmt.Errorf("export table %s: %w", table, err)
+		}
 		result.Rows = append(result.Rows, dataResult.Rows...)
 		result.AffectedRows += dataResult.AffectedRows
 	}
@@ -109,7 +115,9 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 func writeResultRows(out io.Writer, rows []Row) error {
 	for _, row := range rows {
 		if len(row) > 0 {
-			if _, err := fmt.Fprintln(out, row[0]); err != nil { return err }
+			if _, err := fmt.Fprintln(out, row[0]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -124,12 +132,18 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 	// Export DDL if requested
 	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
-		if err != nil { return nil, fmt.Errorf("failed to export DDL: %w", err) }
-		if err := writeResultRows(out, ddlResult.Rows); err != nil { return nil, fmt.Errorf("failed to write DDL: %w", err) }
+		if err != nil {
+			return nil, fmt.Errorf("failed to export DDL: %w", err)
+		}
+		if err := writeResultRows(out, ddlResult.Rows); err != nil {
+			return nil, fmt.Errorf("failed to write DDL: %w", err)
+		}
 	}
 
 	tables, err := getTablesForExport(ctx, session, mode, specificTables)
-	if err != nil { return nil, fmt.Errorf("failed to get table dependency order: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table dependency order: %w", err)
+	}
 
 	for _, table := range tables {
 		// Write table comment
@@ -138,10 +152,14 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 		// Execute SELECT * with streaming enabled - SQL formatter streams INSERT statements directly to output
 		dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", table),
 			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
-		if err != nil { return nil, fmt.Errorf("failed to export table %s: %w", table, err) }
+		if err != nil {
+			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
+		}
 
 		totalAffectedRows += dataResult.AffectedRows
-		if dataResult.AffectedRows > 0 { fmt.Fprintln(out, "") }
+		if dataResult.AffectedRows > 0 {
+			fmt.Fprintln(out, "")
+		}
 	}
 
 	return &Result{AffectedRows: totalAffectedRows, Streamed: true, IsDirectOutput: false}, nil
@@ -152,13 +170,17 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	ddl, err := session.adminClient.GetDatabaseDdl(ctx, &dbadminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	result := &Result{Rows: make([]Row, 0, len(ddl.Statements)+2)}
 	result.Rows = append(result.Rows, Row{"-- Database DDL exported by spanner-mycli"}, Row{""})
 
 	for _, stmt := range ddl.Statements {
-		if !strings.HasSuffix(stmt, ";") { stmt += ";" }
+		if !strings.HasSuffix(stmt, ";") {
+			stmt += ";"
+		}
 		result.Rows = append(result.Rows, Row{stmt}, Row{""})
 	}
 
@@ -247,14 +269,20 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 
 	var visit func(string) error
 	visit = func(name string) error {
-		if visited[name] { return nil }
-		if visiting[name] { return fmt.Errorf("circular dependency detected involving table %s", name) }
+		if visited[name] {
+			return nil
+		}
+		if visiting[name] {
+			return fmt.Errorf("circular dependency detected involving table %s", name)
+		}
 		visiting[name] = true
 		info := tables[name]
 
 		// Visit parent first (for INTERLEAVE relationships)
 		if info != nil && info.ParentTable != "" && slices.Contains(tablesToExport, info.ParentTable) {
-			if err := visit(info.ParentTable); err != nil { return err }
+			if err := visit(info.ParentTable); err != nil {
+				return err
+			}
 		}
 
 		// TODO: Add foreign key dependency handling here when FK info is available
@@ -282,7 +310,9 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 func exportTableDataBuffered(ctx context.Context, session *Session, tableName string) (*Result, error) {
 	dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", tableName),
 		enums.DisplayModeSQLInsert, enums.StreamingModeFalse, tableName)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	result := &Result{
 		Rows:         []Row{{fmt.Sprintf("-- Data for table %s", tableName)}},
@@ -303,7 +333,9 @@ func exportTableDataBuffered(ctx context.Context, session *Session, tableName st
 		}
 	}
 
-	if result.AffectedRows > 0 { result.Rows = append(result.Rows, Row{""}) }
+	if result.AffectedRows > 0 {
+		result.Rows = append(result.Rows, Row{""})
+	}
 
 	return result, nil
 }
