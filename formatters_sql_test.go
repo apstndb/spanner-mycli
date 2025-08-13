@@ -102,9 +102,9 @@ func TestParseSimpleTablePath(t *testing.T) {
 func TestParseSimpleTablePathSQL(t *testing.T) {
 	// Test that reserved words are properly quoted in SQL output
 	tests := []struct {
-		name     string
-		input    string
-		wantSQL  string
+		name    string
+		input   string
+		wantSQL string
 	}{
 		{
 			name:    "simple table",
@@ -112,7 +112,7 @@ func TestParseSimpleTablePathSQL(t *testing.T) {
 			wantSQL: "Users",
 		},
 		{
-			name:    "reserved word ORDER", 
+			name:    "reserved word ORDER",
 			input:   "Order",
 			wantSQL: "`Order`", // Reserved words are auto-quoted by memefish
 		},
