@@ -49,7 +49,7 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE %d exceeds maximum supported value on this platform", batchSize)
 	}
 
-	tablePath, err := parseTableName(tableName)
+	tablePath, err := parseSimpleTablePath(tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +64,12 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 	}, nil
 }
 
-// parseTableName converts a table name string to an ast.Path.
-// Handles both simple names (e.g., "Users", "Order") and schema-qualified names (e.g., "myschema.Users").
-// For simple dot-separated paths, splits on dots and creates identifiers.
-// Users don't need to worry about reserved words - "Order" works without backticks.
-func parseTableName(input string) (*ast.Path, error) {
+// parseSimpleTablePath converts a simple table path string from CLI input to an ast.Path.
+// This function handles user-friendly input where reserved words don't need quoting.
+// Examples: "Users", "Order" (reserved word OK), "myschema.Users"
+// The function does NOT parse SQL expressions - it simply splits on dots.
+// Quoting for reserved words is handled automatically by ast.Ident.SQL() during output.
+func parseSimpleTablePath(input string) (*ast.Path, error) {
 	if input == "" {
 		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
 	}
@@ -80,7 +81,7 @@ func parseTableName(input string) (*ast.Path, error) {
 
 	for _, part := range parts {
 		if part == "" {
-			return nil, fmt.Errorf("empty identifier in table name: %q", input)
+			return nil, fmt.Errorf("empty identifier in table path: %q", input)
 		}
 		// ast.Ident.SQL() will handle quoting if needed (e.g., for reserved words)
 		idents = append(idents, &ast.Ident{Name: part})
