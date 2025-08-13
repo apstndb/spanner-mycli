@@ -631,6 +631,31 @@ func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
 	}
 }
 
+// resultLineRegex matches result lines in CLI output
+var resultLineRegex = regexp.MustCompile(`(?m)^(Query OK|\d+ rows (in set|affected)|Empty set)`)
+
+// testResultLineSuppression is a helper function to test result line suppression
+func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *Result, interactive bool, expectedHasResult bool) {
+	t.Helper()
+
+	// Capture output
+	var buf bytes.Buffer
+	err := printResult(sysVars, 80, &buf, result, interactive, "")
+	if err != nil {
+		t.Fatalf("printResult failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Check for any known result line pattern
+	hasResultLine := resultLineRegex.MatchString(output)
+
+	if hasResultLine != expectedHasResult {
+		t.Errorf("Result line presence mismatch: got %v, want %v\nOutput:\n%s",
+			hasResultLine, expectedHasResult, output)
+	}
+}
+
 func TestSuppressResultLines(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -695,23 +720,8 @@ func TestSuppressResultLines(t *testing.T) {
 			sysVars.Verbose = tt.verbose
 			sysVars.CLIFormat = enums.DisplayModeTable
 
-			// Capture output
-			var buf bytes.Buffer
-			err := printResult(&sysVars, 80, &buf, result, tt.interactive, "")
-			if err != nil {
-				t.Fatalf("printResult failed: %v", err)
-			}
-
-			output := buf.String()
-
-			// Check for any known result line pattern
-			resultLineRegex := regexp.MustCompile(`(?m)^(\d+ rows (in set|affected)|Query OK|Empty set)`)
-			hasResultLine := resultLineRegex.MatchString(output)
-
-			if hasResultLine != tt.expectedHasResult {
-				t.Errorf("Result line presence mismatch: got %v, want %v\nOutput:\n%s",
-					hasResultLine, tt.expectedHasResult, output)
-			}
+			// Test using helper function
+			testResultLineSuppression(t, &sysVars, result, tt.interactive, tt.expectedHasResult)
 		})
 	}
 }
@@ -797,23 +807,8 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 			sysVars.Verbose = tt.verbose
 			sysVars.CLIFormat = enums.DisplayModeTable
 
-			// Capture output
-			var buf bytes.Buffer
-			err := printResult(&sysVars, 80, &buf, tt.result, tt.interactive, "")
-			if err != nil {
-				t.Fatalf("printResult failed: %v", err)
-			}
-
-			output := buf.String()
-
-			// Check for any known result line pattern
-			resultLineRegex := regexp.MustCompile(`(?m)^(Query OK|\d+ rows (in set|affected)|Empty set)`)
-			hasResultLine := resultLineRegex.MatchString(output)
-
-			if hasResultLine != tt.expectedHasResult {
-				t.Errorf("Result line presence mismatch: got %v, want %v\nOutput:\n%s",
-					hasResultLine, tt.expectedHasResult, output)
-			}
+			// Test using helper function
+			testResultLineSuppression(t, &sysVars, tt.result, tt.interactive, tt.expectedHasResult)
 		})
 	}
 }
