@@ -54,6 +54,9 @@ TODO
   - `HTML` - HTML table format
   - `XML` - XML format
   - `CSV` - Comma-separated values (RFC 4180 compliant)
+  - `SQL_INSERT` - INSERT statements
+  - `SQL_INSERT_OR_IGNORE` - INSERT OR IGNORE statements
+  - `SQL_INSERT_OR_UPDATE` - INSERT OR UPDATE statements
 - **Usage**: 
   ```sql
   SET CLI_FORMAT = 'VERTICAL';
@@ -81,5 +84,61 @@ TODO
   - CSV format follows RFC 4180 standard with automatic escaping of commas, quotes, and newlines
   - The format affects how query results are displayed, not how they are executed
   - `TABLE_DETAIL_COMMENT` is particularly useful with `CLI_ECHO_INPUT=TRUE` and `CLI_MARKDOWN_CODEBLOCK=TRUE` for documentation
+
+##### CLI_SQL_TABLE_NAME
+- **Type**: STRING
+- **Default**: (empty)
+- **Description**: Table name for generated SQL statements
+- **Access**: Read/Write
+- **Usage**: 
+  ```sql
+  SET CLI_SQL_TABLE_NAME = 'DestTable';
+  SET CLI_FORMAT = 'SQL_INSERT';
+  SELECT * FROM SourceTable;  -- Generates INSERT INTO DestTable statements
+  
+  -- Schema-qualified names are supported
+  SET CLI_SQL_TABLE_NAME = 'myschema.Users';
+  ```
+- **Notes**:
+  - Required when using SQL export formats (SQL_INSERT, SQL_INSERT_OR_IGNORE, SQL_INSERT_OR_UPDATE)
+  - Supports both simple names (e.g., 'Users') and schema-qualified names (e.g., 'myschema.Users')
+  - Identifiers are automatically quoted when necessary using memefish's ast.Path
+
+##### CLI_SQL_BATCH_SIZE
+- **Type**: INT64
+- **Default**: 0
+- **Description**: Number of VALUES per INSERT statement for SQL export
+- **Access**: Read/Write
+- **Valid Values**:
+  - `0` or `1` - Single-row INSERT statements (one per row)
+  - `2` or higher - Multi-row INSERT with up to N rows per statement
+- **Usage**: 
+  ```sql
+  -- Single-row INSERTs (default)
+  SET CLI_SQL_BATCH_SIZE = 0;
+  SET CLI_SQL_TABLE_NAME = 'users';
+  SET CLI_FORMAT = 'SQL_INSERT';
+  SELECT * FROM users LIMIT 3;
+  -- Output:
+  -- INSERT INTO users (id, name) VALUES (1, 'Alice');
+  -- INSERT INTO users (id, name) VALUES (2, 'Bob');
+  -- INSERT INTO users (id, name) VALUES (3, 'Charlie');
+  
+  -- Multi-row INSERTs (batch size of 100)
+  SET CLI_SQL_BATCH_SIZE = 100;
+  SELECT * FROM users LIMIT 200;
+  -- Output:
+  -- INSERT INTO users (id, name) VALUES
+  --   (1, 'Alice'),
+  --   (2, 'Bob'),
+  --   ... (up to 100 rows);
+  -- INSERT INTO users (id, name) VALUES
+  --   (101, 'Dave'),
+  --   ... (remaining rows);
+  ```
+- **Notes**:
+  - Affects SQL export formats only
+  - Batching can improve performance when importing large datasets
+  - The last batch may contain fewer rows than the batch size
 
 TODO: Document other CLI_* variables

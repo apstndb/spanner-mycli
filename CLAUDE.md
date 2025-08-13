@@ -276,7 +276,24 @@ gh issue create --body-file tmp/issue_body.md
 go test -short ./...    # Unit tests only
 make test              # Full test suite (required before push)
 make lint              # Code quality checks (required before push)
+
+# Coverage analysis
+go test -cover ./...                         # Show coverage percentages
+go test -coverprofile=tmp/coverage.out ./... # Generate coverage profile
+go tool cover -func=tmp/coverage.out          # Function-level coverage summary (AI-friendly)
+go tool cover -html=tmp/coverage.out         # Generate HTML coverage report (detailed line-by-line)
 ```
+
+**Coverage Analysis for AI Assistants**: 
+- Use `go tool cover -func` for a quick, readable summary of function-level coverage percentages
+- For detailed line-by-line coverage analysis, generate HTML with `go tool cover -html` and read it as text
+- The HTML report shows exactly which lines and branches are covered/uncovered, making it ideal for identifying specific gaps in test coverage
+
+**Test File Organization**: 
+- Each production code file (`*.go`) should have a corresponding test file (`*_test.go`)
+- Integration tests should be consolidated into existing `integration_*_test.go` files when possible
+- Avoid creating new `integration_*_test.go` files unless testing a completely new feature area
+- This keeps the test structure manageable and reduces file proliferation
 
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)

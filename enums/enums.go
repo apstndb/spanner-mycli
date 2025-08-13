@@ -15,6 +15,9 @@ const (
 	DisplayModeHTML
 	DisplayModeXML
 	DisplayModeCSV
+	DisplayModeSQLInsert
+	DisplayModeSQLInsertOrIgnore
+	DisplayModeSQLInsertOrUpdate
 )
 
 // AutocommitDMLMode represents the DML autocommit behavior
@@ -61,3 +64,8 @@ const (
 	StreamingModeTrue                       // Always stream
 	StreamingModeFalse                      // Never stream
 )
+
+// IsSQLExport returns true if the display mode is one of the SQL export formats
+func (d DisplayMode) IsSQLExport() bool {
+	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore
+}

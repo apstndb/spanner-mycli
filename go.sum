@@ -2479,8 +2479,8 @@ github.com/apstndb/spannerplan v0.1.3 h1:nFzTEvRL4yMzQeFdtWp3V0VaUidNA/o3T7HyIYI
 github.com/apstndb/spannerplan v0.1.3/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
 github.com/apstndb/spantype v0.3.8 h1:xy43Cclc2Hz6SL+3tZYuozOqJv6AML4Mv8cASgYo1O0=
 github.com/apstndb/spantype v0.3.8/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.1.6 h1:ySkhuzi+8B3oq7DaVy69pTc2hXqoLZoK8fEjSZ+pL5w=
-github.com/apstndb/spanvalue v0.1.6/go.mod h1:cRs2VzsaeFw0pgVFGeHp3VP1qHxT4sDz1D2icZKOlwY=
+github.com/apstndb/spanvalue v0.1.7 h1:eGFzqcxfKqAQrPlbEKxw/wvLqTUl1OnQ0Qa61oGMXs4=
+github.com/apstndb/spanvalue v0.1.7/go.mod h1:cRs2VzsaeFw0pgVFGeHp3VP1qHxT4sDz1D2icZKOlwY=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 h1:aTufxpgGiMiSQ/yoJzWsX7G7DCpvGOaDFtEYiE7QNmA=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6/go.mod h1:kIPoI1ZQRmOP9hVdFSFjPGwOPVEOSpAEIFgG09dK+7Y=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=

@@ -172,6 +172,18 @@ type Result struct {
 	LintResults []string
 	PreInput    string
 
+	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals
+	// using spanvalue.LiteralFormatConfig instead of regular display formatting.
+	// This flag is set to true only when:
+	// - executeSQL is called with SQL export format (SQL_INSERT, SQL_INSERT_OR_IGNORE, SQL_INSERT_OR_UPDATE)
+	// - The values in Rows are valid SQL literals that can be used in INSERT statements
+	// When false, SQL export formats will fall back to table format to prevent invalid SQL generation.
+	// Examples of statements that have this as false:
+	// - SHOW CREATE TABLE, SHOW TABLES (metadata queries)
+	// - EXPLAIN, EXPLAIN ANALYZE (query plan information)
+	// - DML with THEN RETURN (uses regular formatting)
+	HasSQLFormattedValues bool
+
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Streamed       bool              // Indicates rows were streamed and not buffered
