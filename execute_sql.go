@@ -59,16 +59,19 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	// - Better separation of concerns
 	// However, this requires significant changes to Result struct and RowProcessor interface.
 	var fc *spanvalue.FormatConfig
+	var usingSQLLiterals bool
 	var err error
 	switch session.systemVariables.CLIFormat {
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		// Use SQL literal formatting for SQL export modes
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
 		fc = spanvalue.LiteralFormatConfig
+		usingSQLLiterals = true
 		err = nil
 	default:
 		// Use regular display formatting for other modes
 		fc, err = formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+		usingSQLLiterals = false
 	}
 	if err != nil {
 		return nil, err
@@ -95,9 +98,9 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 	var result *Result
 
 	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics)
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals)
 	} else {
-		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics)
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals)
 	}
 
 	// Complete metrics collection
@@ -158,7 +161,7 @@ func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.Fo
 }
 
 // executeWithStreaming executes the query using streaming mode.
-func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics) (*Result, error) {
+func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		LogMemoryStats("Before streaming")
@@ -166,11 +169,11 @@ func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.R
 	}
 
 	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
-	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics)
+	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals)
 }
 
 // executeWithBuffering executes the query using buffered mode.
-func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics) (*Result, error) {
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		LogMemoryStats("Before buffered")
@@ -201,10 +204,11 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 	// Build result
 	result := &Result{
-		Rows:         rows,
-		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows: len(rows),
-		Stats:        queryStats,
+		Rows:                  rows,
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          len(rows),
+		Stats:                 queryStats,
+		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
 	}
 
 	// Get transaction timestamp if available
@@ -229,7 +233,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 // executeStreamingSQL processes query results in streaming mode.
 // It outputs rows directly as they arrive without buffering the entire result set.
-func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics) (*Result, error) {
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
 	slog.Debug("executeStreamingSQL called",
 		"format", session.systemVariables.CLIFormat)
 
@@ -254,11 +258,12 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 
 	// Create result for metadata (rows already streamed)
 	result := &Result{
-		Rows:         nil, // Already streamed
-		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows: int(rowCount),
-		Stats:        queryStats,
-		Streamed:     true, // Mark as streamed
+		Rows:                  nil, // Already streamed
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          int(rowCount),
+		Stats:                 queryStats,
+		Streamed:              true,             // Mark as streamed
+		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
 	}
 
 	// Handle ReadOnlyTransaction timestamp
@@ -584,13 +589,14 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	return &Result{
-		IsExecutedDML:   true, // This is a regular DML statement
-		CommitTimestamp: result.CommitResponse.CommitTs,
-		CommitStats:     result.CommitResponse.CommitStats,
-		Stats:           stats,
-		TableHeader:     toTableHeader(result.Metadata.GetRowType().GetFields()),
-		Rows:            rows,
-		AffectedRows:    int(result.Affected),
+		IsExecutedDML:         true, // This is a regular DML statement
+		CommitTimestamp:       result.CommitResponse.CommitTs,
+		CommitStats:           result.CommitResponse.CommitStats,
+		Stats:                 stats,
+		TableHeader:           toTableHeader(result.Metadata.GetRowType().GetFields()),
+		Rows:                  rows,
+		AffectedRows:          int(result.Affected),
+		HasSQLFormattedValues: false, // DML with THEN RETURN uses regular formatting, not SQL literals
 	}, nil
 }
 

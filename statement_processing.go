@@ -172,6 +172,10 @@ type Result struct {
 	LintResults []string
 	PreInput    string
 
+	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals.
+	// Only results from executeSQL have this property, and only these should use SQL export formatting.
+	HasSQLFormattedValues bool
+
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Streamed       bool              // Indicates rows were streamed and not buffered

@@ -552,3 +552,80 @@ func TestPrintTableDataCSV(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
+	tests := []struct {
+		name            string
+		hasSQLFormatted bool
+		cliFormat       enums.DisplayMode
+		expectSQLOutput bool
+	}{
+		{
+			name:            "SQL export with SQL-formatted values (SELECT result)",
+			hasSQLFormatted: true,
+			cliFormat:       enums.DisplayModeSQLInsert,
+			expectSQLOutput: true,
+		},
+		{
+			name:            "SQL export without SQL-formatted values (SHOW CREATE TABLE)",
+			hasSQLFormatted: false,
+			cliFormat:       enums.DisplayModeSQLInsert,
+			expectSQLOutput: false, // Falls back to table
+		},
+		{
+			name:            "SQL INSERT OR UPDATE without SQL-formatted values (EXPLAIN)",
+			hasSQLFormatted: false,
+			cliFormat:       enums.DisplayModeSQLInsertOrUpdate,
+			expectSQLOutput: false,
+		},
+		{
+			name:            "SQL INSERT OR IGNORE without SQL-formatted values (SHOW TABLES)",
+			hasSQLFormatted: false,
+			cliFormat:       enums.DisplayModeSQLInsertOrIgnore,
+			expectSQLOutput: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &Result{
+				TableHeader:           toTableHeader("Name", "DDL"),
+				Rows:                  []Row{{"TestTable", "CREATE TABLE TestTable (id INT64)"}},
+				HasSQLFormattedValues: tt.hasSQLFormatted,
+			}
+
+			sysVars := &systemVariables{
+				CLIFormat:    tt.cliFormat,
+				SQLTableName: "TargetTable",
+				SQLBatchSize: 0,
+			}
+
+			var buf bytes.Buffer
+			err := printTableData(sysVars, 0, &buf, result)
+
+			output := buf.String()
+			containsInsert := strings.Contains(output, "INSERT")
+
+			if tt.expectSQLOutput {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if !containsInsert {
+					t.Errorf("Expected SQL INSERT output, got: %s", output)
+				}
+			} else {
+				// For metadata results, should fall back to table format
+				if containsInsert {
+					t.Errorf("Should not contain INSERT for metadata results, got: %s", output)
+				}
+				// Should see table format markers or be table output
+				if tt.hasSQLFormatted == false && output != "" {
+					// Verify it's table format (has column headers at minimum)
+					if !strings.Contains(output, "Name") || !strings.Contains(output, "DDL") {
+						t.Errorf("Expected table format with headers, got: %s", output)
+					}
+				}
+			}
+		})
+	}
+}

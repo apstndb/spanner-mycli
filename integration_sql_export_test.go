@@ -525,6 +525,7 @@ CREATE TABLE TestTable (
 		})
 	}
 }
+
 func TestSQLExportWithUnnamedColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -599,12 +600,12 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 
 			// Extract column names using the same method as printTableData
 			columnNames := extractTableColumnNames(result.TableHeader)
-			
+
 			t.Logf("Test: %s", tc.desc)
 			t.Logf("Query: %s", tc.query)
 			t.Logf("Column names: %v", columnNames)
 			t.Logf("Row count: %d", len(result.Rows))
-			
+
 			// Check for unnamed columns (empty strings)
 			unnamedCount := 0
 			for i, name := range columnNames {
@@ -613,11 +614,11 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 					unnamedCount++
 				}
 			}
-			
+
 			// Try to format as SQL
 			var buf bytes.Buffer
 			err = printTableData(session.systemVariables, 0, &buf, result)
-			
+
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("Expected error for unnamed columns but got none")
@@ -650,7 +651,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 					}
 				}
 			}
-			
+
 			t.Logf("---")
 		})
 	}
@@ -673,10 +674,10 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 		}
 
 		result, err := stmt.Execute(ctx, session)
-		
+
 		t.Logf("Streaming mode test:")
 		t.Logf("Query: %s", query)
-		
+
 		// Should get an error about unnamed columns in streaming mode too
 		if err != nil {
 			t.Logf("Got expected error: %v", err)
@@ -689,7 +690,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 				t.Logf("Result returned (rows: %d)", len(result.Rows))
 			}
 		}
-		
+
 		streamOutput := buf.String()
 		if streamOutput != "" {
 			t.Errorf("Unexpected stream output with unnamed columns: %s", streamOutput)
@@ -716,10 +717,10 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 		}
 
 		result, err := stmt.Execute(ctx, session)
-		
+
 		t.Logf("Streaming mode test with named columns:")
 		t.Logf("Query: %s", query)
-		
+
 		if err != nil {
 			t.Errorf("Unexpected error with named columns: %v", err)
 		} else {
@@ -728,7 +729,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 				t.Logf("Result returned (rows: %d)", len(result.Rows))
 			}
 		}
-		
+
 		streamOutput := buf.String()
 		if streamOutput != "" {
 			lines := strings.Split(streamOutput, "\n")

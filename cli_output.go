@@ -66,8 +66,21 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		return nil
 	}
 
+	// Determine the display format to use
+	displayFormat := sysVars.CLIFormat
+
+	// SQL export formats can only be used when row values are formatted as SQL literals
+	// Only results from executeSQL have this property (SELECT, DML results)
+	// All other statements (SHOW, EXPLAIN, etc.) fall back to table format
+	if sysVars.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
+		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
+			"requestedFormat", sysVars.CLIFormat,
+			"statementType", "non-SELECT/DML")
+		displayFormat = enums.DisplayModeTable // Fall back to table format
+	}
+
 	// Create the appropriate formatter based on the display mode
-	formatter, err := NewFormatter(sysVars.CLIFormat)
+	formatter, err := NewFormatter(displayFormat)
 	if err != nil {
 		return fmt.Errorf("failed to create formatter: %w", err)
 	}
