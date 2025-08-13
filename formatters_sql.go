@@ -38,18 +38,29 @@ type SQLFormatter struct {
 }
 
 // NewSQLFormatter creates a new SQL formatter for streaming output.
-func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, batchSize int) (*SQLFormatter, error) {
+func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, batchSize int64) (*SQLFormatter, error) {
+	if batchSize < 0 {
+		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE cannot be negative: %d", batchSize)
+	}
+
+	// Check if batchSize fits in an int on this platform
+	const maxInt = int(^uint(0) >> 1)
+	if batchSize > int64(maxInt) {
+		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE %d exceeds maximum supported value on this platform", batchSize)
+	}
+
 	tablePath, err := parseTableName(tableName)
 	if err != nil {
 		return nil, err
 	}
 
+	batchSizeInt := int(batchSize)
 	return &SQLFormatter{
 		out:       out,
 		mode:      mode,
 		tablePath: tablePath,
-		batchSize: batchSize,
-		rowBuffer: make([][]string, 0, max(batchSize, 1)),
+		batchSize: batchSizeInt,
+		rowBuffer: make([][]string, 0, max(batchSizeInt, 1)),
 	}, nil
 }
 
@@ -193,7 +204,7 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
 	}
 
-	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, int(sysVars.SQLBatchSize))
+	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +241,7 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 			return fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
 		}
 
-		formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, int(sysVars.SQLBatchSize))
+		formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)
 		if err != nil {
 			return err
 		}
