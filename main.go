@@ -756,7 +756,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
 
 	sysVars.SkipColumnNames = opts.SkipColumnNames
-	
+
 	// Handle quiet flag for suppressing result lines
 	sysVars.SuppressResultLines = opts.Quiet
 
