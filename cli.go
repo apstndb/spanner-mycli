@@ -617,6 +617,16 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 // Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
 // are excluded to avoid conflicting progress indicators.
 func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
+	// Check if this is a SELECT statement that might use streaming
+	if _, ok := stmt.(*SelectStatement); ok {
+		// Check if streaming will be used
+		if shouldUseStreaming(c.SystemVariables) {
+			// Disable progress mark for streaming output to prevent
+			// control character interference (Issue #431)
+			return func() {}
+		}
+	}
+
 	switch stmt.(type) {
 	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement:
 		return func() {}
