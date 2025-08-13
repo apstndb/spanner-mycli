@@ -525,3 +525,225 @@ CREATE TABLE TestTable (
 		})
 	}
 }
+func TestSQLExportWithUnnamedColumns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	// Create a test table
+	ddl := `CREATE TABLE TestTable (id INT64 NOT NULL, name STRING(100)) PRIMARY KEY (id)`
+	insertDML := `INSERT INTO TestTable (id, name) VALUES (1, 'Alice'), (2, 'Bob')`
+
+	_, session, teardown := initialize(t, []string{ddl}, []string{insertDML})
+	defer teardown()
+
+	// Test cases with unnamed columns
+	testCases := []struct {
+		name      string
+		query     string
+		expectErr bool
+		desc      string
+	}{
+		{
+			name:      "Expressions without aliases",
+			query:     "SELECT id + 10, UPPER(name), id * 2 FROM TestTable WHERE id = 1",
+			expectErr: true, // SQL export should fail with unnamed columns
+			desc:      "Mathematical and string expressions",
+		},
+		{
+			name:      "Literal values",
+			query:     "SELECT 1, 'literal', true, NULL FROM TestTable WHERE id = 1",
+			expectErr: true,
+			desc:      "Literal values without aliases",
+		},
+		{
+			name:      "Aggregate function",
+			query:     "SELECT COUNT(*), MAX(id), MIN(name) FROM TestTable",
+			expectErr: true,
+			desc:      "Aggregate functions without aliases",
+		},
+		{
+			name:      "Mixed named and unnamed",
+			query:     "SELECT id, id + 10, name AS customer_name, UPPER(name) FROM TestTable WHERE id = 1",
+			expectErr: true, // Even one unnamed column should cause failure
+			desc:      "Mix of named and unnamed columns",
+		},
+		{
+			name:      "All columns named with aliases",
+			query:     "SELECT id AS record_id, id + 10 AS computed_id, name AS customer_name FROM TestTable WHERE id = 1",
+			expectErr: false, // Should work fine with all columns named
+			desc:      "All columns have explicit aliases",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up for SQL export
+			session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
+			session.systemVariables.SQLTableName = "TargetTable"
+			session.systemVariables.SQLBatchSize = 0
+			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+
+			stmt, err := BuildStatement(tc.query)
+			if err != nil {
+				t.Fatalf("Failed to build statement: %v", err)
+			}
+
+			result, err := stmt.Execute(ctx, session)
+			if err != nil {
+				t.Fatalf("Failed to execute query: %v", err)
+			}
+
+			// Extract column names using the same method as printTableData
+			columnNames := extractTableColumnNames(result.TableHeader)
+			
+			t.Logf("Test: %s", tc.desc)
+			t.Logf("Query: %s", tc.query)
+			t.Logf("Column names: %v", columnNames)
+			t.Logf("Row count: %d", len(result.Rows))
+			
+			// Check for unnamed columns (empty strings)
+			unnamedCount := 0
+			for i, name := range columnNames {
+				if name == "" {
+					t.Logf("  Column %d is unnamed", i)
+					unnamedCount++
+				}
+			}
+			
+			// Try to format as SQL
+			var buf bytes.Buffer
+			err = printTableData(session.systemVariables, 0, &buf, result)
+			
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("Expected error for unnamed columns but got none")
+				} else {
+					t.Logf("Got expected error: %v", err)
+					// Check if error message is helpful
+					if !strings.Contains(err.Error(), "no name") && !strings.Contains(err.Error(), "aliases") {
+						t.Logf("Warning: Error message could be more helpful: %v", err)
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error formatting SQL: %v", err)
+				} else {
+					sqlOutput := buf.String()
+					if sqlOutput == "" {
+						t.Errorf("Expected SQL output but got empty string")
+					} else {
+						t.Logf("SQL output generated successfully:")
+						// Show first few lines to avoid too much output
+						lines := strings.Split(sqlOutput, "\n")
+						for i, line := range lines {
+							if i < 3 || len(lines) <= 5 {
+								t.Logf("  %s", line)
+							} else if i == 3 {
+								t.Logf("  ... (%d more lines)", len(lines)-3)
+								break
+							}
+						}
+					}
+				}
+			}
+			
+			t.Logf("---")
+		})
+	}
+
+	// Also test streaming mode
+	t.Run("Streaming mode with unnamed columns", func(t *testing.T) {
+		session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
+		session.systemVariables.SQLTableName = "StreamTarget"
+		session.systemVariables.SQLBatchSize = 0
+		session.systemVariables.StreamingMode = enums.StreamingModeTrue
+
+		// Set up StreamManager for streaming
+		var buf bytes.Buffer
+		session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+
+		query := "SELECT id + 100, CONCAT('Name: ', name) FROM TestTable"
+		stmt, err := BuildStatement(query)
+		if err != nil {
+			t.Fatalf("Failed to build statement: %v", err)
+		}
+
+		result, err := stmt.Execute(ctx, session)
+		
+		t.Logf("Streaming mode test:")
+		t.Logf("Query: %s", query)
+		
+		// Should get an error about unnamed columns in streaming mode too
+		if err != nil {
+			t.Logf("Got expected error: %v", err)
+			if !strings.Contains(err.Error(), "no name") && !strings.Contains(err.Error(), "aliases") {
+				t.Logf("Note: Error might be from streaming setup, not column validation")
+			}
+		} else {
+			t.Errorf("Expected error for unnamed columns in streaming mode but got none")
+			if result != nil {
+				t.Logf("Result returned (rows: %d)", len(result.Rows))
+			}
+		}
+		
+		streamOutput := buf.String()
+		if streamOutput != "" {
+			t.Errorf("Unexpected stream output with unnamed columns: %s", streamOutput)
+		} else {
+			t.Logf("No stream output (as expected with unnamed columns)")
+		}
+	})
+
+	// Test streaming mode with properly named columns
+	t.Run("Streaming mode with named columns", func(t *testing.T) {
+		session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
+		session.systemVariables.SQLTableName = "StreamTarget"
+		session.systemVariables.SQLBatchSize = 0
+		session.systemVariables.StreamingMode = enums.StreamingModeTrue
+
+		// Set up StreamManager for streaming
+		var buf bytes.Buffer
+		session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+
+		query := "SELECT id AS record_id, name AS customer_name FROM TestTable"
+		stmt, err := BuildStatement(query)
+		if err != nil {
+			t.Fatalf("Failed to build statement: %v", err)
+		}
+
+		result, err := stmt.Execute(ctx, session)
+		
+		t.Logf("Streaming mode test with named columns:")
+		t.Logf("Query: %s", query)
+		
+		if err != nil {
+			t.Errorf("Unexpected error with named columns: %v", err)
+		} else {
+			t.Logf("Execution successful")
+			if result != nil {
+				t.Logf("Result returned (rows: %d)", len(result.Rows))
+			}
+		}
+		
+		streamOutput := buf.String()
+		if streamOutput != "" {
+			lines := strings.Split(streamOutput, "\n")
+			t.Logf("Stream output (%d lines):", len(lines))
+			for i, line := range lines {
+				if i < 3 {
+					t.Logf("  %s", line)
+				}
+			}
+			// Verify the output contains expected SQL
+			if !strings.Contains(streamOutput, "INSERT INTO StreamTarget") {
+				t.Errorf("Expected INSERT statement in output")
+			}
+		} else {
+			t.Errorf("Expected stream output with named columns but got empty string")
+		}
+	})
+}

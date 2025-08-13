@@ -86,6 +86,12 @@ func parseTableName(input string) (*ast.Path, error) {
 
 // WriteHeader sets up column names for the formatter.
 func (f *SQLFormatter) WriteHeader(columnNames []string) error {
+	// Validate that all columns have names (SQL export requires column names)
+	for i, name := range columnNames {
+		if name == "" {
+			return fmt.Errorf("column %d has no name; SQL export requires all columns to have names (consider using aliases in your query)", i)
+		}
+	}
 	f.columnNames = columnNames
 	return nil
 }
@@ -218,6 +224,7 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 // InitFormat initializes the formatter with column information.
 func (s *SQLStreamingFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
 	s.initialized = true
+	// WriteHeader will validate column names
 	return s.formatter.WriteHeader(columns)
 }
 
@@ -246,7 +253,7 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 			return err
 		}
 
-		// Write header
+		// Write header (will validate column names)
 		if err := formatter.WriteHeader(columnNames); err != nil {
 			return err
 		}

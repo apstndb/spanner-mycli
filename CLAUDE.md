@@ -278,6 +278,12 @@ make test              # Full test suite (required before push)
 make lint              # Code quality checks (required before push)
 ```
 
+**Test File Organization**: 
+- Each production code file (`*.go`) should have a corresponding test file (`*_test.go`)
+- Integration tests should be consolidated into existing `integration_*_test.go` files when possible
+- Avoid creating new `integration_*_test.go` files unless testing a completely new feature area
+- This keeps the test structure manageable and reduces file proliferation
+
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
 - **Reason**: Prevents accidental commits of untracked files (.claude, .idea/, tmp/, etc.)
