@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func TestSQLExportIntegration(t *testing.T) {
@@ -26,7 +29,7 @@ func TestSQLExportIntegration(t *testing.T) {
 		batchSize  int64
 		query      string
 		verifySQL  string
-		wantRows   []Row
+		wantRows   [][]spanner.GenericColumnValue
 	}{
 		{
 			name:       "SQL_INSERT export and import",
@@ -35,10 +38,28 @@ func TestSQLExportIntegration(t *testing.T) {
 			batchSize:  0, // Single-row inserts
 			query:      "SELECT * FROM SourceTable ORDER BY id",
 			verifySQL:  "SELECT id, name, value, active, created_at FROM DestTable ORDER BY id",
-			wantRows: []Row{
-				{"1", "Alice", "100.5", "true", "2024-01-01T00:00:00Z"},
-				{"2", "Bob", "200.75", "false", "2024-01-02T00:00:00Z"},
-				{"3", "NULL", "300", "true", "NULL"},
+			wantRows: [][]spanner.GenericColumnValue{
+				{
+					gcvctor.Int64Value(1),
+					gcvctor.StringValue("Alice"),
+					gcvctor.Float64Value(100.5),
+					gcvctor.BoolValue(true),
+					gcvctor.TimestampValue(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				},
+				{
+					gcvctor.Int64Value(2),
+					gcvctor.StringValue("Bob"),
+					gcvctor.Float64Value(200.75),
+					gcvctor.BoolValue(false),
+					gcvctor.TimestampValue(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)),
+				},
+				{
+					gcvctor.Int64Value(3),
+					gcvctor.SimpleTypedNull(sppb.TypeCode_STRING),
+					gcvctor.Float64Value(300),
+					gcvctor.BoolValue(true),
+					gcvctor.SimpleTypedNull(sppb.TypeCode_TIMESTAMP),
+				},
 			},
 		},
 		{
@@ -48,9 +69,9 @@ func TestSQLExportIntegration(t *testing.T) {
 			batchSize:  2, // Batch size of 2
 			query:      "SELECT * FROM SourceTable WHERE id <= 2 ORDER BY id",
 			verifySQL:  "SELECT id, name FROM DestTable WHERE id <= 2 ORDER BY id",
-			wantRows: []Row{
-				{"1", "Alice"},
-				{"2", "Bob"},
+			wantRows: [][]spanner.GenericColumnValue{
+				{gcvctor.Int64Value(1), gcvctor.StringValue("Alice")},
+				{gcvctor.Int64Value(2), gcvctor.StringValue("Bob")},
 			},
 		},
 		{
@@ -59,8 +80,8 @@ func TestSQLExportIntegration(t *testing.T) {
 			tableName:  "DestTable", // Different from source
 			query:      "SELECT id, name, value, active, created_at FROM SourceTable WHERE id = 1",
 			verifySQL:  "SELECT id, name FROM DestTable WHERE id = 1",
-			wantRows: []Row{
-				{"1", "Alice"},
+			wantRows: [][]spanner.GenericColumnValue{
+				{gcvctor.Int64Value(1), gcvctor.StringValue("Alice")},
 			},
 		},
 	}
@@ -178,65 +199,26 @@ CREATE TABLE DestTable (
 			iter := session.client.Single().Query(ctx, spanner.Statement{SQL: tt.verifySQL})
 			defer iter.Stop()
 
-			var gotRows []Row
+			var gotRows [][]spanner.GenericColumnValue
 			err = iter.Do(func(row *spanner.Row) error {
-				// Convert row to string slice for comparison
-				var rowValues []string
+				// Convert row to GenericColumnValue slice
+				var gcvs []spanner.GenericColumnValue
 				for i := 0; i < row.Size(); i++ {
-					var val spanner.NullString
-					if err := row.Column(i, &val); err != nil {
-						// Try other types if string doesn't work
-						var nullInt64 spanner.NullInt64
-						var nullFloat64 spanner.NullFloat64
-						var nullBool spanner.NullBool
-						var nullTime spanner.NullTime
-
-						if err := row.Column(i, &nullInt64); err == nil {
-							if nullInt64.Valid {
-								rowValues = append(rowValues, fmt.Sprintf("%d", nullInt64.Int64))
-							} else {
-								rowValues = append(rowValues, "NULL")
-							}
-						} else if err := row.Column(i, &nullFloat64); err == nil {
-							if nullFloat64.Valid {
-								rowValues = append(rowValues, fmt.Sprintf("%g", nullFloat64.Float64))
-							} else {
-								rowValues = append(rowValues, "NULL")
-							}
-						} else if err := row.Column(i, &nullBool); err == nil {
-							if nullBool.Valid {
-								rowValues = append(rowValues, fmt.Sprintf("%t", nullBool.Bool))
-							} else {
-								rowValues = append(rowValues, "NULL")
-							}
-						} else if err := row.Column(i, &nullTime); err == nil {
-							if nullTime.Valid {
-								// Format as UTC to match expected values
-								rowValues = append(rowValues, nullTime.Time.UTC().Format(time.RFC3339))
-							} else {
-								rowValues = append(rowValues, "NULL")
-							}
-						} else {
-							// Fallback to string representation
-							rowValues = append(rowValues, fmt.Sprintf("%v", row))
-						}
-					} else {
-						if val.Valid {
-							rowValues = append(rowValues, val.StringVal)
-						} else {
-							rowValues = append(rowValues, "NULL")
-						}
+					var gcv spanner.GenericColumnValue
+					if err := row.Column(i, &gcv); err != nil {
+						return fmt.Errorf("failed to read column %d: %w", i, err)
 					}
+					gcvs = append(gcvs, gcv)
 				}
-				gotRows = append(gotRows, Row(rowValues))
+				gotRows = append(gotRows, gcvs)
 				return nil
 			})
 			if err != nil {
 				t.Fatalf("Failed to query verification data: %v", err)
 			}
 
-			// Compare results using go-cmp for better diff output
-			if diff := cmp.Diff(tt.wantRows, gotRows); diff != "" {
+			// Compare results using go-cmp with protocmp for protobuf types
+			if diff := cmp.Diff(tt.wantRows, gotRows, protocmp.Transform()); diff != "" {
 				t.Errorf("Verification data mismatch (-want +got):\n%s", diff)
 			}
 		})
