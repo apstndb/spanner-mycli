@@ -259,6 +259,10 @@ func (s *SQLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) e
 }
 
 // formatSQL is the non-streaming formatter for SQL export.
+// PRECONDITION: result.TableHeader must contain valid column information.
+// The TableHeader is essential for generating the column names in INSERT statements
+// (e.g., INSERT INTO table(col1, col2, ...) VALUES ...).
+// Without valid column headers, SQL export cannot generate syntactically correct INSERT statements.
 func formatSQL(mode enums.DisplayMode) FormatFunc {
 	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 		if sysVars.SQLTableName == "" {

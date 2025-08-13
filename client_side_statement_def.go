@@ -184,6 +184,44 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowDdlsStatement{}, nil
 		},
 	},
+	// DUMP statements for database export
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export database DDL and data as SQL statements`,
+				Syntax: `DUMP DATABASE`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DumpDatabaseStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export database DDL only as SQL statements`,
+				Syntax: `DUMP SCHEMA`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+SCHEMA$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DumpSchemaStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export specific tables as SQL INSERT statements`,
+				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			tables := splitTableNames(matched[1])
+			return &DumpTablesStatement{Tables: tables}, nil
+		},
+	},
 	// Operations
 	{
 		Descriptions: []clientSideStatementDescription{

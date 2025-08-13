@@ -184,6 +184,12 @@ type Result struct {
 	// - DML with THEN RETURN (uses regular formatting)
 	HasSQLFormattedValues bool
 
+	// IsDirectOutput indicates that Rows contain pre-formatted text lines that should
+	// be printed directly without any table formatting. Used by DUMP statements and
+	// potentially other commands that produce pre-formatted output.
+	// When true, Rows bypass normal table formatting and are output as-is.
+	IsDirectOutput bool
+
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Streamed       bool              // Indicates rows were streamed and not buffered
@@ -391,6 +397,19 @@ func BuildNativeStatementLexical(stripped string, raw string) (Statement, error)
 
 func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
+}
+
+// splitTableNames parses a comma-separated list of table names
+func splitTableNames(input string) []string {
+	parts := strings.Split(input, ",")
+	tables := make([]string, 0, len(parts))
+	for _, part := range parts {
+		table := unquoteIdentifier(part)
+		if table != "" {
+			tables = append(tables, table)
+		}
+	}
+	return tables
 }
 
 // buildCommands parses the input and builds a list of commands for batch execution.

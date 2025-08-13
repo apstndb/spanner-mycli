@@ -41,6 +41,16 @@ func extractTableColumnNames(header TableHeader) []string {
 }
 
 func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result) error {
+	// Handle direct output - pre-formatted text that should be printed as-is
+	if result.IsDirectOutput {
+		for _, row := range result.Rows {
+			if len(row) > 0 {
+				fmt.Fprintln(out, row[0])
+			}
+		}
+		return nil
+	}
+
 	// screenWidth <= 0 means no limit.
 	if screenWidth <= 0 {
 		screenWidth = math.MaxInt

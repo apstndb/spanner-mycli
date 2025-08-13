@@ -37,7 +37,47 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// executeSQLWithFormat executes SQL with specific format settings without modifying system variables
+// TODO: Refactor to pass format settings as parameters instead of modifying session variables
+func executeSQLWithFormat(ctx context.Context, session *Session, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+	// Save original values
+	originalFormat := session.systemVariables.CLIFormat
+	originalStreaming := session.systemVariables.StreamingMode
+	originalTableName := session.systemVariables.SQLTableName
+	originalSkipColumns := session.systemVariables.SkipColumnNames
+	originalSuppressResult := session.systemVariables.SuppressResultLines
+	originalProgressBar := session.systemVariables.EnableProgressBar
+
+	// Restore original values on exit
+	defer func() {
+		session.systemVariables.CLIFormat = originalFormat
+		session.systemVariables.StreamingMode = originalStreaming
+		session.systemVariables.SQLTableName = originalTableName
+		session.systemVariables.SkipColumnNames = originalSkipColumns
+		session.systemVariables.SuppressResultLines = originalSuppressResult
+		session.systemVariables.EnableProgressBar = originalProgressBar
+	}()
+
+	// Set temporary values
+	session.systemVariables.CLIFormat = format
+	session.systemVariables.StreamingMode = streamingMode
+	if sqlTableName != "" {
+		session.systemVariables.SQLTableName = sqlTableName
+	}
+	session.systemVariables.SkipColumnNames = true
+	session.systemVariables.SuppressResultLines = true
+	session.systemVariables.EnableProgressBar = false
+
+	// Execute with modified settings
+	return executeSQLImpl(ctx, session, sql)
+}
+
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
+	return executeSQLImpl(ctx, session, sql)
+}
+
+// executeSQLImpl is the actual implementation that both executeSQL and executeSQLWithFormat use
+func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result, error) {
 	// Always collect metrics - display is controlled by template based on Profile flag
 	metrics := &ExecutionMetrics{
 		QueryStartTime: time.Now(),
