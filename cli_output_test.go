@@ -817,4 +817,3 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 		})
 	}
 }
-
