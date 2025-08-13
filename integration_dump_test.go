@@ -45,12 +45,8 @@ func TestDumpStatements(t *testing.T) {
 
 	for _, ddl := range setupDDL {
 		stmt, err := BuildStatement(ddl)
-		if err != nil {
-			t.Fatalf("Failed to build DDL statement: %v", err)
-		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
-			t.Fatalf("Failed to create test table: %v", err)
-		}
+		if err != nil { t.Fatalf("Failed to build DDL statement: %v", err) }
+		if _, err := stmt.Execute(ctx, session); err != nil { t.Fatalf("Failed to create test table: %v", err) }
 	}
 
 	// Insert test data
@@ -66,12 +62,8 @@ func TestDumpStatements(t *testing.T) {
 
 	for _, sql := range insertStmts {
 		stmt, err := BuildStatement(sql)
-		if err != nil {
-			t.Fatalf("Failed to build DML statement: %v", err)
-		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
-			t.Fatalf("Failed to insert test data: %v", err)
-		}
+		if err != nil { t.Fatalf("Failed to build DML statement: %v", err) }
+		if _, err := stmt.Execute(ctx, session); err != nil { t.Fatalf("Failed to insert test data: %v", err) }
 	}
 
 	tests := []struct {
@@ -110,16 +102,9 @@ func TestDumpStatements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Execute DUMP statement
 			result, err := tt.stmt.Execute(ctx, session)
-			if err != nil {
-				t.Fatalf("Execute failed: %v", err)
-			}
-
-			// Check that IsDirectOutput is true
-			if !result.IsDirectOutput {
-				t.Errorf("Expected IsDirectOutput to be true")
-			}
+			if err != nil { t.Fatalf("Execute failed: %v", err) }
+			if !result.IsDirectOutput { t.Errorf("Expected IsDirectOutput to be true") }
 
 			// Convert rows to string for analysis
 			var output strings.Builder
@@ -187,17 +172,10 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 	_, session, teardown := initialize(t, nil, nil)
 	defer teardown()
 
-	// Try to dump non-existent table
 	stmt := &DumpTablesStatement{Tables: []string{"NonExistentTable"}}
 	_, err := stmt.Execute(ctx, session)
-
-	if err == nil {
-		t.Fatalf("Expected error for non-existent table")
-	}
-
-	if !strings.Contains(err.Error(), "NonExistentTable") {
-		t.Errorf("Error should mention the non-existent table: %v", err)
-	}
+	if err == nil { t.Fatalf("Expected error for non-existent table") }
+	if !strings.Contains(err.Error(), "NonExistentTable") { t.Errorf("Error should mention the non-existent table: %v", err) }
 }
 
 func TestDumpEmptyDatabase(t *testing.T) {
@@ -210,19 +188,11 @@ func TestDumpEmptyDatabase(t *testing.T) {
 	_, session, teardown := initialize(t, nil, nil)
 	defer teardown()
 
-	// DUMP DATABASE on empty database should work (DDL only)
 	stmt := &DumpDatabaseStatement{}
 	result, err := stmt.Execute(ctx, session)
-	if err != nil {
-		t.Fatalf("Execute failed: %v", err)
-	}
+	if err != nil { t.Fatalf("Execute failed: %v", err) }
+	if len(result.Rows) == 0 { t.Errorf("Expected at least header comment in output") }
 
-	// Should have at least the header comment
-	if len(result.Rows) == 0 {
-		t.Errorf("Expected at least header comment in output")
-	}
-
-	// Check for header
 	hasHeader := false
 	for _, row := range result.Rows {
 		if len(row) > 0 && strings.Contains(row[0], "-- Database DDL exported by spanner-mycli") {
@@ -230,9 +200,7 @@ func TestDumpEmptyDatabase(t *testing.T) {
 			break
 		}
 	}
-	if !hasHeader {
-		t.Errorf("Expected DDL header comment")
-	}
+	if !hasHeader { t.Errorf("Expected DDL header comment") }
 }
 
 func TestDumpWithStreaming(t *testing.T) {
@@ -252,23 +220,14 @@ func TestDumpWithStreaming(t *testing.T) {
 	) PRIMARY KEY (id)`
 
 	stmt, err := BuildStatement(ddl)
-	if err != nil {
-		t.Fatalf("Failed to build DDL statement: %v", err)
-	}
-	if _, err := stmt.Execute(ctx, session); err != nil {
-		t.Fatalf("Failed to create test table: %v", err)
-	}
+	if err != nil { t.Fatalf("Failed to build DDL statement: %v", err) }
+	if _, err := stmt.Execute(ctx, session); err != nil { t.Fatalf("Failed to create test table: %v", err) }
 
 	// Insert test data
 	for i := 1; i <= 5; i++ {
-		dml := fmt.Sprintf("INSERT INTO StreamTest (id, value) VALUES (%d, 'value%d')", i, i)
-		stmt, err := BuildStatement(dml)
-		if err != nil {
-			t.Fatalf("Failed to build DML statement: %v", err)
-		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
-			t.Fatalf("Failed to insert test data: %v", err)
-		}
+		stmt, err := BuildStatement(fmt.Sprintf("INSERT INTO StreamTest (id, value) VALUES (%d, 'value%d')", i, i))
+		if err != nil { t.Fatalf("Failed to build DML statement: %v", err) }
+		if _, err := stmt.Execute(ctx, session); err != nil { t.Fatalf("Failed to insert test data: %v", err) }
 	}
 
 	// Create a buffer to capture streaming output
@@ -283,17 +242,10 @@ func TestDumpWithStreaming(t *testing.T) {
 		originalStream.GetErrStream(),
 	)
 
-	// Execute DUMP with streaming
 	dumpStmt := &DumpTablesStatement{Tables: []string{"StreamTest"}}
 	result, err := dumpStmt.Execute(ctx, session)
-	if err != nil {
-		t.Fatalf("Execute failed: %v", err)
-	}
-
-	// Check that result indicates streaming was used
-	if !result.Streamed {
-		t.Errorf("Expected Streamed to be true")
-	}
+	if err != nil { t.Fatalf("Execute failed: %v", err) }
+	if !result.Streamed { t.Errorf("Expected Streamed to be true") }
 
 	// Check the captured output
 	output := buf.String()

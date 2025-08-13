@@ -16,6 +16,7 @@ import (
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
+// It exports both DDL and data for all tables in the database
 type DumpDatabaseStatement struct{}
 
 func (s *DumpDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -23,6 +24,7 @@ func (s *DumpDatabaseStatement) Execute(ctx context.Context, session *Session) (
 }
 
 // DumpSchemaStatement represents DUMP SCHEMA statement
+// It exports only DDL statements without any data
 type DumpSchemaStatement struct{}
 
 func (s *DumpSchemaStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -30,6 +32,7 @@ func (s *DumpSchemaStatement) Execute(ctx context.Context, session *Session) (*R
 }
 
 // DumpTablesStatement represents DUMP TABLES statement
+// It exports data only for specified tables (no DDL)
 type DumpTablesStatement struct {
 	Tables []string
 }
@@ -47,60 +50,34 @@ const (
 	dumpModeTables                   // Export specific tables only
 )
 
-// shouldExportDDL returns true if the dump mode requires DDL export
-func (m dumpMode) shouldExportDDL() bool {
-	return m == dumpModeDatabase || m == dumpModeSchema
-}
-
-// shouldExportData returns true if the dump mode requires data export
-func (m dumpMode) shouldExportData() bool {
-	return m == dumpModeDatabase || m == dumpModeTables
-}
+func (m dumpMode) shouldExportDDL() bool { return m == dumpModeDatabase || m == dumpModeSchema }
+func (m dumpMode) shouldExportData() bool { return m == dumpModeDatabase || m == dumpModeTables }
 
 // tableInfo represents a table with its dependencies
 type tableInfo struct {
 	Name           string
-	ParentTable    string // INTERLEAVE IN PARENT table
+	ParentTable    string   // INTERLEAVE IN PARENT table
 	OnDeleteAction string
-	ForeignKeys    []foreignKeyInfo
 	ChildrenTables []string // Tables that interleave in this table
+	// ForeignKeys will be added for Issue #426
 }
 
-// foreignKeyInfo represents a foreign key relationship
-type foreignKeyInfo struct {
-	ConstraintName     string
-	ReferencedTable    string
-	ReferencingColumns []string
-	ReferencedColumns  []string
-}
-
-// executeDump performs the actual dump operation
+// executeDump is the main entry point for all dump operations.
+// It decides between streaming and buffered mode based on the output stream and settings.
 func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
 	if session.adminClient == nil {
 		return nil, fmt.Errorf("admin client is not initialized")
 	}
-
-	// Get output stream for potential streaming
 	outStream := session.systemVariables.StreamManager.GetOutStream()
-
-	// Check if we should use streaming:
-	// - Output stream must be available
-	// - Output stream must not be io.Discard (used in tests)
-	// - Streaming mode should not be explicitly disabled
-	shouldStream := outStream != nil &&
-		outStream != io.Discard &&
-		session.systemVariables.StreamingMode != enums.StreamingModeFalse
-
-	if shouldStream {
-		// Use streaming mode for better memory efficiency with large tables
+	// Use streaming unless: output is nil/io.Discard (tests) or streaming explicitly disabled
+	if outStream != nil && outStream != io.Discard && session.systemVariables.StreamingMode != enums.StreamingModeFalse {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
 	}
-
-	// Fall back to buffered mode for tests or when streaming is disabled
 	return executeDumpBuffered(ctx, session, mode, specificTables)
 }
 
-// getTablesForExport returns the list of tables to export based on mode and specific tables
+// getTablesForExport returns the list of tables to export based on the dump mode.
+// For data export modes, it returns tables in dependency order (parents before children).
 func getTablesForExport(ctx context.Context, session *Session, mode dumpMode, specificTables []string) ([]string, error) {
 	if !mode.shouldExportData() {
 		return nil, nil
@@ -108,37 +85,23 @@ func getTablesForExport(ctx context.Context, session *Session, mode dumpMode, sp
 	return getTableDependencyOrder(ctx, session, specificTables)
 }
 
-// executeDumpBuffered performs dump operation with all results buffered in memory
+// executeDumpBuffered performs dump operation with buffering.
+// All output is collected in memory before being returned.
 func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
-	result := &Result{
-		AffectedRows:   0,
-		IsDirectOutput: true,
-	}
-
-	// Export DDL if requested
+	result := &Result{AffectedRows: 0, IsDirectOutput: true}
 	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export DDL: %w", err)
-		}
+		if err != nil { return nil, fmt.Errorf("export DDL: %w", err) }
 		result.Rows = append(result.Rows, ddlResult.Rows...)
 	}
-
-	// Export data if requested
 	tables, err := getTablesForExport(ctx, session, mode, specificTables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get table dependency order: %w", err)
-	}
-
+	if err != nil { return nil, err }
 	for _, table := range tables {
 		dataResult, err := exportTableDataBuffered(ctx, session, table)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
-		}
+		if err != nil { return nil, fmt.Errorf("export table %s: %w", table, err) }
 		result.Rows = append(result.Rows, dataResult.Rows...)
 		result.AffectedRows += dataResult.AffectedRows
 	}
-
 	return result, nil
 }
 
@@ -146,101 +109,64 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 func writeResultRows(out io.Writer, rows []Row) error {
 	for _, row := range rows {
 		if len(row) > 0 {
-			if _, err := fmt.Fprintln(out, row[0]); err != nil {
-				return err
-			}
+			if _, err := fmt.Fprintln(out, row[0]); err != nil { return err }
 		}
 	}
 	return nil
 }
 
-// executeDumpStreaming performs dump operation with streaming output
-// This avoids buffering all data in memory, making it suitable for large tables
+// executeDumpStreaming performs dump operation with streaming output.
+// Data is written directly to the output stream as it's processed,
+// avoiding memory buildup for large tables.
 func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, specificTables []string, out io.Writer) (*Result, error) {
 	var totalAffectedRows int
 
 	// Export DDL if requested
 	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export DDL: %w", err)
-		}
-		// Write DDL directly to output
-		if err := writeResultRows(out, ddlResult.Rows); err != nil {
-			return nil, fmt.Errorf("failed to write DDL: %w", err)
-		}
+		if err != nil { return nil, fmt.Errorf("failed to export DDL: %w", err) }
+		if err := writeResultRows(out, ddlResult.Rows); err != nil { return nil, fmt.Errorf("failed to write DDL: %w", err) }
 	}
 
-	// Export data if requested
 	tables, err := getTablesForExport(ctx, session, mode, specificTables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get table dependency order: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("failed to get table dependency order: %w", err) }
 
 	for _, table := range tables {
 		// Write table comment
 		fmt.Fprintf(out, "-- Data for table %s\n", table)
 
-		// Execute SELECT * with streaming enabled
-		// The SQL formatter will stream INSERT statements directly to output
-		query := fmt.Sprintf("SELECT * FROM `%s`", table)
-		dataResult, err := executeSQLWithFormat(ctx, session, query,
-			enums.DisplayModeSQLInsert,
-			enums.StreamingModeTrue,
-			table)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
-		}
+		// Execute SELECT * with streaming enabled - SQL formatter streams INSERT statements directly to output
+		dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", table),
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
+		if err != nil { return nil, fmt.Errorf("failed to export table %s: %w", table, err) }
 
 		totalAffectedRows += dataResult.AffectedRows
-
-		// Add separator after table if there was data
-		if dataResult.AffectedRows > 0 {
-			fmt.Fprintln(out, "")
-		}
+		if dataResult.AffectedRows > 0 { fmt.Fprintln(out, "") }
 	}
 
-	// Return a result indicating streaming was done
-	return &Result{
-		AffectedRows:   totalAffectedRows,
-		Streamed:       true,
-		IsDirectOutput: false, // No rows to output, already streamed
-	}, nil
+	return &Result{AffectedRows: totalAffectedRows, Streamed: true, IsDirectOutput: false}, nil
 }
 
 // exportDDL exports database DDL statements
 func exportDDL(ctx context.Context, session *Session) (*Result, error) {
-	req := &dbadminpb.GetDatabaseDdlRequest{
+	ddl, err := session.adminClient.GetDatabaseDdl(ctx, &dbadminpb.GetDatabaseDdlRequest{
 		Database: session.DatabasePath(),
-	}
+	})
+	if err != nil { return nil, err }
 
-	ddl, err := session.adminClient.GetDatabaseDdl(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	result := &Result{Rows: make([]Row, 0, len(ddl.Statements)+2)}
+	result.Rows = append(result.Rows, Row{"-- Database DDL exported by spanner-mycli"}, Row{""})
 
-	result := &Result{
-		Rows: make([]Row, 0, len(ddl.Statements)+2),
-	}
-
-	// Add header comment
-	result.Rows = append(result.Rows, Row{"-- Database DDL exported by spanner-mycli"})
-	result.Rows = append(result.Rows, Row{""})
-
-	// Add each DDL statement
 	for _, stmt := range ddl.Statements {
-		// Ensure statement ends with semicolon
-		if !strings.HasSuffix(stmt, ";") {
-			stmt += ";"
-		}
-		result.Rows = append(result.Rows, Row{stmt})
-		result.Rows = append(result.Rows, Row{""})
+		if !strings.HasSuffix(stmt, ";") { stmt += ";" }
+		result.Rows = append(result.Rows, Row{stmt}, Row{""})
 	}
 
 	return result, nil
 }
 
-// getTableDependencyOrder returns tables in dependency order (parents before children)
+// getTableDependencyOrder returns tables in dependency order (parents before children).
+// It handles INTERLEAVE IN PARENT relationships and will support foreign keys in Issue #426.
 func getTableDependencyOrder(ctx context.Context, session *Session, specificTables []string) ([]string, error) {
 	// Query information_schema to get table relationships
 	query := `
@@ -283,20 +209,13 @@ func getTableDependencyOrder(ctx context.Context, session *Session, specificTabl
 			ParentTable:    parentTable.StringVal,
 			OnDeleteAction: onDeleteAction.StringVal,
 		}
+		tables[info.Name], allTableNames = info, append(allTableNames, info.Name)
 
-		tables[info.Name] = info
-		allTableNames = append(allTableNames, info.Name)
-
-		// Track children relationships
 		if parentTable.Valid {
 			if parent, ok := tables[parentTable.StringVal]; ok {
 				parent.ChildrenTables = append(parent.ChildrenTables, info.Name)
 			} else {
-				// Parent not yet processed, create placeholder
-				tables[parentTable.StringVal] = &tableInfo{
-					Name:           parentTable.StringVal,
-					ChildrenTables: []string{info.Name},
-				}
+				tables[parentTable.StringVal] = &tableInfo{Name: parentTable.StringVal, ChildrenTables: []string{info.Name}}
 			}
 		}
 	}
@@ -319,7 +238,8 @@ func getTableDependencyOrder(ctx context.Context, session *Session, specificTabl
 	return topologicalSort(tables, tablesToExport)
 }
 
-// topologicalSort performs dependency-aware sorting of tables
+// topologicalSort performs dependency-aware sorting of tables.
+// It ensures parent tables are processed before their children and detects circular dependencies.
 func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]string, error) {
 	var sorted []string
 	visited := make(map[string]bool)
@@ -327,23 +247,13 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 
 	var visit func(string) error
 	visit = func(name string) error {
-		if visited[name] {
-			return nil
-		}
-		if visiting[name] {
-			return fmt.Errorf("circular dependency detected involving table %s", name)
-		}
-
-		visiting[name] = true
-		info := tables[name]
+		if visited[name] { return nil }
+		if visiting[name] { return fmt.Errorf("circular dependency detected involving table %s", name) }
+		visiting[name], info := true, tables[name]
 
 		// Visit parent first (for INTERLEAVE relationships)
-		if info != nil && info.ParentTable != "" {
-			if slices.Contains(tablesToExport, info.ParentTable) {
-				if err := visit(info.ParentTable); err != nil {
-					return err
-				}
-			}
+		if info != nil && info.ParentTable != "" && slices.Contains(tablesToExport, info.ParentTable) {
+			if err := visit(info.ParentTable); err != nil { return err }
 		}
 
 		// TODO: Add foreign key dependency handling here when FK info is available
@@ -369,59 +279,30 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 
 // exportTableDataBuffered exports data from a single table with buffering
 func exportTableDataBuffered(ctx context.Context, session *Session, tableName string) (*Result, error) {
-	// Query all data from the table
-	query := fmt.Sprintf("SELECT * FROM `%s`", tableName)
+	dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", tableName),
+		enums.DisplayModeSQLInsert, enums.StreamingModeFalse, tableName)
+	if err != nil { return nil, err }
 
-	// Execute query with SQL format and buffered mode
-	dataResult, err := executeSQLWithFormat(ctx, session, query,
-		enums.DisplayModeSQLInsert,
-		enums.StreamingModeFalse,
-		tableName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create result with table comment header
 	result := &Result{
-		Rows: []Row{
-			{fmt.Sprintf("-- Data for table %s", tableName)},
-		},
+		Rows:         []Row{{fmt.Sprintf("-- Data for table %s", tableName)}},
 		AffectedRows: dataResult.AffectedRows,
 	}
 
-	// Format the result as SQL INSERT statements if there's data
 	if len(dataResult.Rows) > 0 {
-		// Get column names from TableHeader
-		columnNames := extractTableColumnNames(dataResult.TableHeader)
-
-		// Create a buffer to capture formatted output
 		var buf bytes.Buffer
-
-		// Use the SQL formatter to generate INSERT statements
-		// Create a temporary systemVariables with our settings
 		tempVars := *session.systemVariables
-		tempVars.SQLTableName = tableName
-		tempVars.CLIFormat = enums.DisplayModeSQLInsert
-
-		// Format using the SQL formatter
-		formatter := formatSQL(enums.DisplayModeSQLInsert)
-		if err := formatter(&buf, dataResult, columnNames, &tempVars, 0); err != nil {
+		tempVars.SQLTableName, tempVars.CLIFormat = tableName, enums.DisplayModeSQLInsert
+		if err := formatSQL(enums.DisplayModeSQLInsert)(&buf, dataResult, extractTableColumnNames(dataResult.TableHeader), &tempVars, 0); err != nil {
 			return nil, fmt.Errorf("failed to format SQL for table %s: %w", tableName, err)
 		}
-
-		// Split the formatted output into rows and append
 		if buf.Len() > 0 {
-			lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-			for _, line := range lines {
+			for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
 				result.Rows = append(result.Rows, Row{line})
 			}
 		}
 	}
 
-	// Add separator after table data
-	if result.AffectedRows > 0 {
-		result.Rows = append(result.Rows, Row{""})
-	}
+	if result.AffectedRows > 0 { result.Rows = append(result.Rows, Row{""}) }
 
 	return result, nil
 }
