@@ -47,6 +47,16 @@ const (
 	dumpModeTables                   // Export specific tables only
 )
 
+// shouldExportDDL returns true if the dump mode requires DDL export
+func (m dumpMode) shouldExportDDL() bool {
+	return m == dumpModeDatabase || m == dumpModeSchema
+}
+
+// shouldExportData returns true if the dump mode requires data export
+func (m dumpMode) shouldExportData() bool {
+	return m == dumpModeDatabase || m == dumpModeTables
+}
+
 // tableInfo represents a table with its dependencies
 type tableInfo struct {
 	Name           string
@@ -90,6 +100,14 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	return executeDumpBuffered(ctx, session, mode, specificTables)
 }
 
+// getTablesForExport returns the list of tables to export based on mode and specific tables
+func getTablesForExport(ctx context.Context, session *Session, mode dumpMode, specificTables []string) ([]string, error) {
+	if !mode.shouldExportData() {
+		return nil, nil
+	}
+	return getTableDependencyOrder(ctx, session, specificTables)
+}
+
 // executeDumpBuffered performs dump operation with all results buffered in memory
 func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
 	result := &Result{
@@ -98,7 +116,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	}
 
 	// Export DDL if requested
-	if mode == dumpModeDatabase || mode == dumpModeSchema {
+	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export DDL: %w", err)
@@ -107,23 +125,33 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	}
 
 	// Export data if requested
-	if mode == dumpModeDatabase || mode == dumpModeTables {
-		tables, err := getTableDependencyOrder(ctx, session, specificTables)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get table dependency order: %w", err)
-		}
+	tables, err := getTablesForExport(ctx, session, mode, specificTables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table dependency order: %w", err)
+	}
 
-		for _, table := range tables {
-			dataResult, err := exportTableDataBuffered(ctx, session, table)
-			if err != nil {
-				return nil, fmt.Errorf("failed to export table %s: %w", table, err)
-			}
-			result.Rows = append(result.Rows, dataResult.Rows...)
-			result.AffectedRows += dataResult.AffectedRows
+	for _, table := range tables {
+		dataResult, err := exportTableDataBuffered(ctx, session, table)
+		if err != nil {
+			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
 		}
+		result.Rows = append(result.Rows, dataResult.Rows...)
+		result.AffectedRows += dataResult.AffectedRows
 	}
 
 	return result, nil
+}
+
+// writeResultRows writes Result rows to an io.Writer
+func writeResultRows(out io.Writer, rows []Row) error {
+	for _, row := range rows {
+		if len(row) > 0 {
+			if _, err := fmt.Fprintln(out, row[0]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // executeDumpStreaming performs dump operation with streaming output
@@ -132,47 +160,43 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 	var totalAffectedRows int
 
 	// Export DDL if requested
-	if mode == dumpModeDatabase || mode == dumpModeSchema {
+	if mode.shouldExportDDL() {
 		ddlResult, err := exportDDL(ctx, session)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export DDL: %w", err)
 		}
 		// Write DDL directly to output
-		for _, row := range ddlResult.Rows {
-			if len(row) > 0 {
-				fmt.Fprintln(out, row[0])
-			}
+		if err := writeResultRows(out, ddlResult.Rows); err != nil {
+			return nil, fmt.Errorf("failed to write DDL: %w", err)
 		}
 	}
 
 	// Export data if requested
-	if mode == dumpModeDatabase || mode == dumpModeTables {
-		tables, err := getTableDependencyOrder(ctx, session, specificTables)
+	tables, err := getTablesForExport(ctx, session, mode, specificTables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table dependency order: %w", err)
+	}
+
+	for _, table := range tables {
+		// Write table comment
+		fmt.Fprintf(out, "-- Data for table %s\n", table)
+
+		// Execute SELECT * with streaming enabled
+		// The SQL formatter will stream INSERT statements directly to output
+		query := fmt.Sprintf("SELECT * FROM `%s`", table)
+		dataResult, err := executeSQLWithFormat(ctx, session, query,
+			enums.DisplayModeSQLInsert,
+			enums.StreamingModeTrue,
+			table)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get table dependency order: %w", err)
+			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
 		}
 
-		for _, table := range tables {
-			// Write table comment
-			fmt.Fprintf(out, "-- Data for table %s\n", table)
+		totalAffectedRows += dataResult.AffectedRows
 
-			// Execute SELECT * with streaming enabled
-			// The SQL formatter will stream INSERT statements directly to output
-			query := fmt.Sprintf("SELECT * FROM `%s`", table)
-			dataResult, err := executeSQLWithFormat(ctx, session, query,
-				enums.DisplayModeSQLInsert,
-				enums.StreamingModeTrue,
-				table)
-			if err != nil {
-				return nil, fmt.Errorf("failed to export table %s: %w", table, err)
-			}
-
-			totalAffectedRows += dataResult.AffectedRows
-
-			// Add separator after table if there was data
-			if dataResult.AffectedRows > 0 {
-				fmt.Fprintln(out, "")
-			}
+		// Add separator after table if there was data
+		if dataResult.AffectedRows > 0 {
+			fmt.Fprintln(out, "")
 		}
 	}
 
