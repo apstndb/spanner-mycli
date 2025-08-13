@@ -138,7 +138,8 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out)
 	}
 
-	if sysVars.Verbose || result.ForceVerbose || interactive {
+	// Only print result line if not suppressed
+	if !sysVars.SuppressResultLines && (sysVars.Verbose || result.ForceVerbose || interactive) {
 		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
 	}
 

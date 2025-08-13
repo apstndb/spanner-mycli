@@ -155,6 +155,9 @@ type systemVariables struct {
 	SQLTableName string // CLI_SQL_TABLE_NAME
 	SQLBatchSize int64  // CLI_SQL_BATCH_SIZE
 
+	// Result output configuration
+	SuppressResultLines bool // CLI_SUPPRESS_RESULT_LINES
+
 	// Registry holds the system variable registry
 	Registry *VarRegistry
 
