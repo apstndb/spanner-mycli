@@ -253,6 +253,8 @@ func (r *VarRegistry) registerAll() {
 		"Table name for generated SQL statements. Required for SQL export formats. Supports both simple names (e.g., 'Users') and schema-qualified names (e.g., 'myschema.Users')."))
 	r.Register("CLI_SQL_BATCH_SIZE", IntVar(&sv.SQLBatchSize,
 		"Number of VALUES per INSERT statement for SQL export. 0 (default): single-row INSERT statements. 2+: multi-row INSERT with up to N rows per statement."))
+	r.Register("CLI_SUPPRESS_RESULT_LINES", BoolVar(&sv.SuppressResultLines,
+		"Suppress result lines like 'rows in set' for clean output. Useful for scripting and dump operations."))
 	r.Register("CLI_PORT", &IntGetterVar{
 		getter:      func() int64 { return int64(sv.Port) },
 		description: "Port number for connections.",

@@ -135,6 +135,7 @@ type spannerOptions struct {
 	Tee             string  `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
 	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
+	Quiet           bool    `long:"quiet" short:"q" description:"Suppress result lines like 'rows in set' for clean output" default-mask:"-"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -755,6 +756,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
 
 	sysVars.SkipColumnNames = opts.SkipColumnNames
+
+	// Handle quiet flag for suppressing result lines
+	sysVars.SuppressResultLines = opts.Quiet
 
 	return &sysVars, nil
 }

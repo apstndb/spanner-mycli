@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -626,6 +627,188 @@ func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+// resultLineRegex matches result lines in CLI output
+var resultLineRegex = regexp.MustCompile(`(?m)^(Query OK|\d+ rows (in set|affected)|Empty set)`)
+
+// testResultLineSuppression is a helper function to test result line suppression
+func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *Result, interactive bool, expectedHasResult bool) {
+	t.Helper()
+
+	// Capture output
+	var buf bytes.Buffer
+	err := printResult(sysVars, 80, &buf, result, interactive, "")
+	if err != nil {
+		t.Fatalf("printResult failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Check for any known result line pattern
+	hasResultLine := resultLineRegex.MatchString(output)
+
+	if hasResultLine != expectedHasResult {
+		t.Errorf("Result line presence mismatch: got %v, want %v\nOutput:\n%s",
+			hasResultLine, expectedHasResult, output)
+	}
+}
+
+func TestSuppressResultLines(t *testing.T) {
+	tests := []struct {
+		name                string
+		suppressResultLines bool
+		verbose             bool
+		interactive         bool
+		expectedHasResult   bool
+	}{
+		{
+			name:                "Normal mode - show result line",
+			suppressResultLines: false,
+			interactive:         true,
+			expectedHasResult:   true,
+		},
+		{
+			name:                "Suppress enabled - no result line",
+			suppressResultLines: true,
+			interactive:         true,
+			expectedHasResult:   false,
+		},
+		{
+			name:                "Batch mode without verbose - no result line",
+			suppressResultLines: false,
+			interactive:         false,
+			verbose:             false,
+			expectedHasResult:   false,
+		},
+		{
+			name:                "Batch mode with verbose - show result line",
+			suppressResultLines: false,
+			interactive:         false,
+			verbose:             true,
+			expectedHasResult:   true,
+		},
+		{
+			name:                "Batch mode with verbose but suppressed - no result line",
+			suppressResultLines: true,
+			interactive:         false,
+			verbose:             true,
+			expectedHasResult:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a simple result
+			result := &Result{
+				Rows: []Row{
+					{"value1", "value2"},
+					{"value3", "value4"},
+				},
+				TableHeader:  toTableHeader("Column1", "Column2"),
+				AffectedRows: 2,
+				Stats: QueryStats{
+					ElapsedTime: "0.5 sec",
+				},
+			}
+
+			// Create system variables with test settings
+			sysVars := newSystemVariablesWithDefaults()
+			sysVars.SuppressResultLines = tt.suppressResultLines
+			sysVars.Verbose = tt.verbose
+			sysVars.CLIFormat = enums.DisplayModeTable
+
+			// Test using helper function
+			testResultLineSuppression(t, &sysVars, result, tt.interactive, tt.expectedHasResult)
+		})
+	}
+}
+
+func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
+	tests := []struct {
+		name                string
+		suppressResultLines bool
+		verbose             bool
+		interactive         bool
+		result              *Result
+		expectedHasResult   bool
+	}{
+		{
+			name:                "DML with suppression - no result line",
+			suppressResultLines: true,
+			interactive:         true,
+			result: &Result{
+				IsExecutedDML: true,
+				AffectedRows:  5,
+				Stats: QueryStats{
+					ElapsedTime: "0.2 sec",
+				},
+			},
+			expectedHasResult: false,
+		},
+		{
+			name:                "DML without suppression - show result line",
+			suppressResultLines: false,
+			interactive:         true,
+			result: &Result{
+				IsExecutedDML: true,
+				AffectedRows:  5,
+				Stats: QueryStats{
+					ElapsedTime: "0.2 sec",
+				},
+			},
+			expectedHasResult: true,
+		},
+		{
+			name:                "DDL with suppression - no result line",
+			suppressResultLines: true,
+			interactive:         true,
+			result: &Result{
+				Stats: QueryStats{
+					ElapsedTime: "1.5 sec",
+				},
+			},
+			expectedHasResult: false,
+		},
+		{
+			name:                "DDL without suppression - show result line",
+			suppressResultLines: false,
+			interactive:         true,
+			result: &Result{
+				Stats: QueryStats{
+					ElapsedTime: "1.5 sec",
+				},
+			},
+			expectedHasResult: true,
+		},
+		{
+			name:                "Empty result set with suppression",
+			suppressResultLines: true,
+			interactive:         true,
+			result: &Result{
+				Rows:         []Row{},
+				TableHeader:  toTableHeader("Column1"),
+				AffectedRows: 0,
+				Stats: QueryStats{
+					ElapsedTime: "0.1 sec",
+				},
+			},
+			expectedHasResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create system variables with test settings
+			sysVars := newSystemVariablesWithDefaults()
+			sysVars.SuppressResultLines = tt.suppressResultLines
+			sysVars.Verbose = tt.verbose
+			sysVars.CLIFormat = enums.DisplayModeTable
+
+			// Test using helper function
+			testResultLineSuppression(t, &sysVars, tt.result, tt.interactive, tt.expectedHasResult)
 		})
 	}
 }
