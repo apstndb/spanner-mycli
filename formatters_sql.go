@@ -43,7 +43,16 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE cannot be negative: %d", batchSize)
 	}
 
-	// Check if batchSize fits in an int on this platform
+	// Spanner limit: 80,000 mutations per commit
+	// Since each row is at least one mutation, limit batch size to be safe
+	// Using 10,000 as a reasonable upper limit that's well below Spanner's limits
+	// and prevents excessive memory usage
+	const maxBatchSize = 10000
+	if batchSize > maxBatchSize {
+		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE %d exceeds maximum supported value of %d (limited for Spanner mutation constraints)", batchSize, maxBatchSize)
+	}
+
+	// Check if batchSize fits in an int on this platform (should always pass given maxBatchSize)
 	const maxInt = int(^uint(0) >> 1)
 	if batchSize > int64(maxInt) {
 		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE %d exceeds maximum supported value on this platform", batchSize)
@@ -70,6 +79,8 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 // The function does NOT parse SQL expressions - it simply splits on dots.
 // Quoting for reserved words is handled automatically by ast.Ident.SQL() during output.
 func parseSimpleTablePath(input string) (*ast.Path, error) {
+	// Trim spaces and check for empty input
+	input = strings.TrimSpace(input)
 	if input == "" {
 		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
 	}

@@ -69,9 +69,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Determine the display format to use
 	displayFormat := sysVars.CLIFormat
 
-	// SQL export formats can only be used when row values are formatted as SQL literals
-	// Only results from executeSQL have this property (SELECT, DML results)
-	// All other statements (SHOW, EXPLAIN, etc.) fall back to table format
+	// SQL export formats require values to be formatted as SQL literals for valid SQL generation.
+	// When HasSQLFormattedValues is false, the values are formatted for display (e.g., TIMESTAMP
+	// as "2024-01-01T00:00:00Z" instead of TIMESTAMP "2024-01-01T00:00:00Z").
+	// Attempting to use display-formatted values in INSERT statements would generate invalid SQL.
+	// Therefore, we fall back to table format for safety.
+	// This affects metadata queries (SHOW CREATE TABLE, EXPLAIN) and DML with THEN RETURN.
 	if sysVars.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
 			"requestedFormat", sysVars.CLIFormat,
