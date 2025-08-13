@@ -49,7 +49,7 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 		mode:      mode,
 		tablePath: tablePath,
 		batchSize: batchSize,
-		rowBuffer: make([][]string, 0, maxInt(batchSize, 1)),
+		rowBuffer: make([][]string, 0, max(batchSize, 1)),
 	}, nil
 }
 
@@ -250,11 +250,4 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 		// Finish and flush
 		return formatter.Finish()
 	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
