@@ -12,9 +12,11 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spantype/typector"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestSQLExportIntegration(t *testing.T) {
@@ -233,9 +235,18 @@ func TestSQLExportWithComplexTypes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	// Create table with complex types
-	ddl := `
-CREATE TABLE ComplexTable (
+	// Create source and destination tables with complex types
+	sourceDDL := `
+CREATE TABLE ComplexSource (
+	id INT64 NOT NULL,
+	arr ARRAY<INT64>,
+	json_col JSON,
+	bytes_col BYTES(100),
+	numeric_col NUMERIC,
+) PRIMARY KEY (id)`
+
+	destDDL := `
+CREATE TABLE ComplexDest (
 	id INT64 NOT NULL,
 	arr ARRAY<INT64>,
 	json_col JSON,
@@ -244,20 +255,20 @@ CREATE TABLE ComplexTable (
 ) PRIMARY KEY (id)`
 
 	// Insert test data with complex types
-	insertDML := `INSERT INTO ComplexTable (id, arr, json_col, bytes_col, numeric_col) VALUES 
+	insertDML := `INSERT INTO ComplexSource (id, arr, json_col, bytes_col, numeric_col) VALUES 
 		(1, [1, 2, 3], JSON '{"key": "value"}', b'hello', NUMERIC '123.456'),
 		(2, [], JSON 'null', NULL, NULL)`
 
-	_, session, teardown := initialize(t, []string{ddl}, []string{insertDML})
+	_, session, teardown := initialize(t, []string{sourceDDL, destDDL}, []string{insertDML})
 	defer teardown()
 
 	// Export with SQL_INSERT
 	session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-	session.systemVariables.SQLTableName = "ComplexTable"
+	session.systemVariables.SQLTableName = "ComplexDest"
 	session.systemVariables.SQLBatchSize = 0
 	session.systemVariables.StreamingMode = enums.StreamingModeFalse // Force buffered mode
 
-	stmt, err := BuildStatement("SELECT * FROM ComplexTable ORDER BY id")
+	stmt, err := BuildStatement("SELECT * FROM ComplexSource ORDER BY id")
 	if err != nil {
 		t.Fatalf("Failed to build statement: %v", err)
 	}
@@ -277,19 +288,100 @@ CREATE TABLE ComplexTable (
 	sqlOutput := buf.String()
 	t.Logf("SQL export with complex types:\n%s", sqlOutput)
 
-	// Verify the SQL contains proper type literals
-	expectedPatterns := []string{
-		"[1, 2, 3]",                // Array literal (Spanner format)
-		"JSON",                     // JSON literal
-		`b"\x68\x65\x6c\x6c\x6f"`,  // Bytes literal as hex
-		"NUMERIC",                  // Numeric literal
-		"NULL",                     // NULL values
-		"INSERT INTO ComplexTable", // Table name
+	// Execute the generated SQL to import data
+	rawStatements, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", sqlOutput)
+	if err != nil {
+		t.Fatalf("Failed to split generated SQL statements: %v", err)
 	}
 
-	for _, pattern := range expectedPatterns {
-		if !strings.Contains(sqlOutput, pattern) {
-			t.Errorf("Expected SQL output to contain %q, but it didn't.\nOutput: %s", pattern, sqlOutput)
+	for _, rawStmt := range rawStatements {
+		sqlStmt := strings.TrimSpace(rawStmt.Statement)
+		if sqlStmt == "" {
+			continue
 		}
+
+		insertStmt, err := BuildStatement(sqlStmt)
+		if err != nil {
+			t.Fatalf("Failed to build INSERT statement: %v\nSQL: %s", err, sqlStmt)
+		}
+		_, err = insertStmt.Execute(ctx, session)
+		if err != nil {
+			t.Fatalf("Failed to execute generated SQL: %v\nSQL: %s", err, sqlStmt)
+		}
+	}
+
+	// Verify the data was imported correctly using Spanner client API
+	verifySQL := "SELECT id, arr, json_col, bytes_col, numeric_col FROM ComplexDest ORDER BY id"
+	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: verifySQL})
+	defer iter.Stop()
+
+	// Define expected values using GenericColumnValue
+	expectedRows := [][]spanner.GenericColumnValue{
+		{
+			gcvctor.Int64Value(1),
+			// Array of INT64
+			func() spanner.GenericColumnValue {
+				v, _ := gcvctor.ArrayValue(
+					gcvctor.Int64Value(1),
+					gcvctor.Int64Value(2),
+					gcvctor.Int64Value(3),
+				)
+				return v
+			}(),
+			// JSON
+			func() spanner.GenericColumnValue {
+				v, _ := gcvctor.JSONValue(map[string]interface{}{"key": "value"})
+				return v
+			}(),
+			// BYTES
+			gcvctor.BytesValue([]byte("hello")),
+			// NUMERIC - Spanner normalizes and returns "123.456" even though we insert with trailing zeros
+			gcvctor.StringBasedValue(sppb.TypeCode_NUMERIC, "123.456"),
+		},
+		{
+			gcvctor.Int64Value(2),
+			// Empty array of INT64 - gcvctor doesn't have a function for empty arrays, so create manually
+			spanner.GenericColumnValue{
+				Type: typector.ElemCodeToArrayType(sppb.TypeCode_INT64),
+				Value: &structpb.Value{
+					Kind: &structpb.Value_ListValue{
+						ListValue: &structpb.ListValue{
+							Values: []*structpb.Value{},
+						},
+					},
+				},
+			},
+			// JSON null
+			func() spanner.GenericColumnValue {
+				v, _ := gcvctor.JSONValue(nil)
+				return v
+			}(),
+			// NULL BYTES
+			gcvctor.SimpleTypedNull(sppb.TypeCode_BYTES),
+			// NULL NUMERIC
+			gcvctor.SimpleTypedNull(sppb.TypeCode_NUMERIC),
+		},
+	}
+
+	var gotRows [][]spanner.GenericColumnValue
+	err = iter.Do(func(row *spanner.Row) error {
+		var gcvs []spanner.GenericColumnValue
+		for i := 0; i < row.Size(); i++ {
+			var gcv spanner.GenericColumnValue
+			if err := row.Column(i, &gcv); err != nil {
+				return fmt.Errorf("failed to read column %d: %w", i, err)
+			}
+			gcvs = append(gcvs, gcv)
+		}
+		gotRows = append(gotRows, gcvs)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to query verification data: %v", err)
+	}
+
+	// Compare results using go-cmp with protocmp for protobuf types
+	if diff := cmp.Diff(expectedRows, gotRows, protocmp.Transform()); diff != "" {
+		t.Errorf("Complex type data mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -252,8 +252,9 @@ func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		formatter, err := NewSQLStreamingFormatter(out, sysVars, mode)
 		if err != nil {
-			// Fail fast in tests if the formatter cannot be created.
-			panic(fmt.Sprintf("failed to create SQL streaming formatter for test: %v", err))
+			// Return nil if SQL formatter can't be created (e.g., missing table name)
+			// This is used in production code, not just tests, so we can't panic
+			return nil
 		}
 		return &StreamingProcessor{
 			formatter:   formatter,
