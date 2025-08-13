@@ -385,3 +385,143 @@ CREATE TABLE ComplexDest (
 		t.Errorf("Complex type data mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestSQLExportStreamingMode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	tests := []struct {
+		name       string
+		exportMode enums.DisplayMode
+		tableName  string
+		batchSize  int64
+		query      string
+	}{
+		{
+			name:       "SQL_INSERT streaming",
+			exportMode: enums.DisplayModeSQLInsert,
+			tableName:  "TestTable",
+			batchSize:  0,
+			query:      "SELECT * FROM TestTable ORDER BY id",
+		},
+		{
+			name:       "SQL_INSERT_OR_UPDATE streaming with batching",
+			exportMode: enums.DisplayModeSQLInsertOrUpdate,
+			tableName:  "TestTable",
+			batchSize:  2,
+			query:      "SELECT * FROM TestTable ORDER BY id",
+		},
+		{
+			name:       "SQL_INSERT_OR_IGNORE streaming",
+			exportMode: enums.DisplayModeSQLInsertOrIgnore,
+			tableName:  "TestTable",
+			batchSize:  0,
+			query:      "SELECT * FROM TestTable WHERE id = 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+			defer cancel()
+
+			// Create test table
+			ddl := `
+CREATE TABLE TestTable (
+	id INT64 NOT NULL,
+	name STRING(100),
+	value FLOAT64,
+) PRIMARY KEY (id)`
+
+			// Insert test data
+			insertDMLs := []string{
+				`INSERT INTO TestTable (id, name, value) VALUES (1, 'Alice', 100.5)`,
+				`INSERT INTO TestTable (id, name, value) VALUES (2, 'Bob', 200.75)`,
+				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
+			}
+
+			_, session, teardown := initialize(t, []string{ddl}, insertDMLs)
+			defer teardown()
+
+			// Set up system variables for SQL export with STREAMING mode
+			session.systemVariables.CLIFormat = tt.exportMode
+			session.systemVariables.SQLTableName = tt.tableName
+			session.systemVariables.SQLBatchSize = tt.batchSize
+			session.systemVariables.StreamingMode = enums.StreamingModeTrue // Force streaming mode
+
+			// Set up a buffer to capture streaming output
+			var buf bytes.Buffer
+
+			// Create StreamManager and assign it to system variables
+			// The streaming execution will use GetOutputStream() to get the writer
+			session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+
+			// Execute the query - with streaming mode, output goes directly to buffer
+			stmt, err := BuildStatement(tt.query)
+			if err != nil {
+				t.Fatalf("Failed to build statement: %v", err)
+			}
+
+			// Execute will stream directly to the buffer via StreamManager
+			result, err := stmt.Execute(ctx, session)
+			if err != nil {
+				t.Fatalf("Failed to execute query: %v", err)
+			}
+
+			// Get the streamed SQL output
+			sqlOutput := buf.String()
+			t.Logf("Streamed SQL output:\n%s", sqlOutput)
+
+			// In streaming mode, result should be minimal (no buffered rows)
+			if result != nil && len(result.Rows) > 0 {
+				t.Logf("Warning: Got %d buffered rows in streaming mode", len(result.Rows))
+			}
+
+			// Verify the output contains expected SQL statements
+			if sqlOutput == "" {
+				t.Errorf("Expected SQL output but got empty string")
+			}
+
+			// Check for expected patterns based on export mode
+			switch tt.exportMode {
+			case enums.DisplayModeSQLInsert:
+				if !strings.Contains(sqlOutput, "INSERT INTO TestTable") {
+					t.Errorf("Expected INSERT INTO statement, got: %s", sqlOutput)
+				}
+			case enums.DisplayModeSQLInsertOrUpdate:
+				if !strings.Contains(sqlOutput, "INSERT OR UPDATE INTO TestTable") {
+					t.Errorf("Expected INSERT OR UPDATE statement, got: %s", sqlOutput)
+				}
+			case enums.DisplayModeSQLInsertOrIgnore:
+				if !strings.Contains(sqlOutput, "INSERT OR IGNORE INTO TestTable") {
+					t.Errorf("Expected INSERT OR IGNORE statement, got: %s", sqlOutput)
+				}
+			}
+
+			// Verify the data is correctly formatted
+			expectedValues := []string{
+				`"Alice"`,
+				`"Bob"`,
+				`100.5`,
+				`200.75`,
+			}
+
+			for _, value := range expectedValues {
+				if tt.name != "SQL_INSERT_OR_IGNORE streaming" || (value != `"Bob"` && value != `200.75`) {
+					// INSERT OR IGNORE only exports id=1
+					if !strings.Contains(sqlOutput, value) {
+						t.Errorf("Expected value %s in output, got: %s", value, sqlOutput)
+					}
+				}
+			}
+
+			// For batched mode, verify batch formatting
+			if tt.batchSize > 0 && tt.exportMode == enums.DisplayModeSQLInsertOrUpdate {
+				if !strings.Contains(sqlOutput, "VALUES\n") {
+					t.Errorf("Expected multi-line VALUES clause for batched mode")
+				}
+			}
+		})
+	}
+}
