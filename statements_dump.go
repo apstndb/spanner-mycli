@@ -226,19 +226,29 @@ func getTableDependencyOrder(ctx context.Context, session *Session, specificTabl
 			continue
 		}
 
-		info := &tableInfo{
-			Name:           tableName.StringVal,
-			ParentTable:    parentTable.StringVal,
-			OnDeleteAction: onDeleteAction.StringVal,
+		name := tableName.StringVal
+
+		// Get or create table info for the current table
+		info, ok := tables[name]
+		if !ok {
+			info = &tableInfo{Name: name}
+			tables[name] = info
 		}
-		tables[info.Name], allTableNames = info, append(allTableNames, info.Name)
+		// Update its details from the query result
+		info.ParentTable = parentTable.StringVal
+		info.OnDeleteAction = onDeleteAction.StringVal
+		allTableNames = append(allTableNames, name)
 
 		if parentTable.Valid {
-			if parent, ok := tables[parentTable.StringVal]; ok {
-				parent.ChildrenTables = append(parent.ChildrenTables, info.Name)
-			} else {
-				tables[parentTable.StringVal] = &tableInfo{Name: parentTable.StringVal, ChildrenTables: []string{info.Name}}
+			parentName := parentTable.StringVal
+			// Get or create parent table info
+			parentInfo, ok := tables[parentName]
+			if !ok {
+				parentInfo = &tableInfo{Name: parentName}
+				tables[parentName] = parentInfo
 			}
+			// Add current table as a child of the parent
+			parentInfo.ChildrenTables = append(parentInfo.ChildrenTables, name)
 		}
 	}
 
