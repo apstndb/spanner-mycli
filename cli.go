@@ -615,7 +615,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 // setupProgressMark sets up the progress mark display for the statement execution.
 // Returns a function to stop the progress mark.
 // Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
-// are excluded to avoid conflicting progress indicators.
+// or that use streaming output (like DUMP statements) are excluded to avoid conflicting progress indicators.
 func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
 	// Check if this is a SELECT statement that might use streaming
 	if _, ok := stmt.(*SelectStatement); ok {
@@ -628,7 +628,10 @@ func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
 	}
 
 	switch stmt.(type) {
-	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement:
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement,
+		// TODO: This is a temporary fix. DUMP statements will eventually output directly to files in interactive mode,
+		// making progress mark suppression unnecessary. Progress marks don't appear in batch mode anyway.
+		*DumpDatabaseStatement, *DumpSchemaStatement, *DumpTablesStatement:
 		return func() {}
 	default:
 		return c.PrintProgressingMark(w)
