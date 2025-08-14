@@ -62,15 +62,6 @@ type tableInfo struct {
 	// ForeignKeys will be added for Issue #426
 }
 
-// quoteIdentifier quotes an identifier based on the database dialect.
-// For PostgreSQL, uses double quotes. For Google Standard SQL, uses backticks.
-func quoteIdentifier(name string, dialect dbadminpb.DatabaseDialect) string {
-	if dialect == dbadminpb.DatabaseDialect_POSTGRESQL {
-		return `"` + name + `"`
-	}
-	return "`" + name + "`"
-}
-
 // executeDump is the main entry point for all dump operations.
 // It decides between streaming and buffered mode based on the output stream and settings.
 func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
@@ -159,8 +150,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 		fmt.Fprintf(out, "-- Data for table %s\n", table)
 
 		// Execute SELECT * with streaming enabled - SQL formatter streams INSERT statements directly to output
-		query := fmt.Sprintf("SELECT * FROM %s", quoteIdentifier(table, session.systemVariables.DatabaseDialect))
-		dataResult, err := executeSQLWithFormat(ctx, session, query,
+		dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", table),
 			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export table %s: %w", table, err)
@@ -200,12 +190,6 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 // getTableDependencyOrder returns tables in dependency order (parents before children).
 // It handles INTERLEAVE IN PARENT relationships and will support foreign keys in Issue #426.
 func getTableDependencyOrder(ctx context.Context, session *Session, specificTables []string) ([]string, error) {
-	// Determine the correct schema based on dialect
-	schema := ""
-	if session.systemVariables.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
-		schema = "public"
-	}
-
 	// Query information_schema to get table relationships
 	query := `
 		SELECT 
@@ -213,14 +197,11 @@ func getTableDependencyOrder(ctx context.Context, session *Session, specificTabl
 			PARENT_TABLE_NAME,
 			ON_DELETE_ACTION
 		FROM information_schema.tables
-		WHERE TABLE_SCHEMA = @schema
+		WHERE TABLE_SCHEMA = ''
 		ORDER BY TABLE_NAME
 	`
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{
-		SQL:    query,
-		Params: map[string]interface{}{"schema": schema},
-	})
+	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
 	defer iter.Stop()
 
 	// Build table dependency map
@@ -337,8 +318,7 @@ func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]s
 
 // exportTableDataBuffered exports data from a single table with buffering
 func exportTableDataBuffered(ctx context.Context, session *Session, tableName string) (*Result, error) {
-	query := fmt.Sprintf("SELECT * FROM %s", quoteIdentifier(tableName, session.systemVariables.DatabaseDialect))
-	dataResult, err := executeSQLWithFormat(ctx, session, query,
+	dataResult, err := executeSQLWithFormat(ctx, session, fmt.Sprintf("SELECT * FROM `%s`", tableName),
 		enums.DisplayModeSQLInsert, enums.StreamingModeFalse, tableName)
 	if err != nil {
 		return nil, err
