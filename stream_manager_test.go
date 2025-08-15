@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestStreamManager(t *testing.T) {
@@ -387,11 +390,15 @@ func TestStreamManager(t *testing.T) {
 		}
 
 		// Verify stdout also has content
-		// Note: With concurrent writes, the exact order might differ between stdout and file
-		// due to scheduling, so we just verify both have the same amount of data
-		if len(originalOut.String()) != len(content) {
-			t.Errorf("stdout and file content length mismatch: stdout=%d, file=%d",
-				len(originalOut.String()), len(content))
+		// Note: With concurrent writes, lines might appear in different order between stdout and file
+		// due to scheduling, so we compare sets of lines using go-cmp with sorting
+		stdoutLines := strings.Split(strings.TrimSpace(originalOut.String()), "\n")
+		fileLines := strings.Split(strings.TrimSpace(string(content)), "\n")
+
+		// Use go-cmp with SortSlices to compare lines regardless of order
+		less := func(a, b string) bool { return a < b }
+		if diff := cmp.Diff(stdoutLines, fileLines, cmpopts.SortSlices(less)); diff != "" {
+			t.Errorf("stdout and file content mismatch (-stdout +file):\n%s", diff)
 		}
 	})
 
