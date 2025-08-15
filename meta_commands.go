@@ -152,6 +152,12 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\o requires exactly one filename")
 		}
 		return &OutputRedirectMetaCommand{FilePath: words[0]}, nil
+	case "O":
+		// \O command disables output redirect (symmetric with \t for tee)
+		if args != "" {
+			return nil, errors.New("\\O takes no arguments")
+		}
+		return &DisableOutputRedirectMetaCommand{}, nil
 	case "t":
 		// \t command takes no arguments
 		if args != "" {

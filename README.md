@@ -371,6 +371,11 @@ spanner> \o backup.sql        -- Redirect output to file only
 spanner> DUMP DATABASE;       -- SQL goes to file, progress shows on screen
 spanner> \o                   -- Disable redirect (return to screen output)
 spanner> SELECT * FROM users; -- This shows on screen only
+
+-- Alternative using \O (symmetric with \T/\t pattern)
+spanner> \o export.sql        -- Redirect output to file only
+spanner> SELECT * FROM keys;  -- Output goes to file only
+spanner> \O                   -- Disable redirect using \O
 ```
 
 #### What gets logged
@@ -601,6 +606,7 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 | `\t` | Stop tee logging | `\t` |
 | `\o <filename>` | Redirect output to file only (no screen) | `\o backup.sql` |
 | `\o` | Disable output redirect (return to screen) | `\o` |
+| `\O` | Disable output redirect (alternative to `\o`) | `\O` |
 
 For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 

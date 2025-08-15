@@ -234,6 +234,16 @@ func TestParseMetaCommand(t *testing.T) {
 			want:  &DisableOutputRedirectMetaCommand{},
 		},
 		{
+			name:  "disable output redirect with \\O",
+			input: "\\O",
+			want:  &DisableOutputRedirectMetaCommand{},
+		},
+		{
+			name:    "\\O with arguments should error",
+			input:   "\\O filename.log",
+			wantErr: true,
+		},
+		{
 			name:    "tee output with multiple files",
 			input:   `\T file1.log file2.log`,
 			wantErr: true,

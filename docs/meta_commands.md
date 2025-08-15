@@ -177,7 +177,7 @@ spanner> SELECT DATABASE() as current_db;
 +------------+
 ```
 
-## Output Control (`\T`, `\t`, `\o`)
+## Output Control (`\T`, `\t`, `\o`, `\O`)
 
 spanner-mycli provides meta commands for controlling output during interactive sessions:
 
@@ -195,18 +195,24 @@ spanner> \t
 spanner> SELECT * FROM sensitive_data;  -- This will only show on screen
 ```
 
-### Output Redirect (`\o`) - PostgreSQL-style
+### Output Redirect (`\o` and `\O`) - PostgreSQL-style
 
 The `\o` meta command provides output redirection (file only, no screen output), complementing the `--output` command-line option.
 
 - `\o <filename>` - Redirect output to the specified file only (no screen output)
 - `\o` - Disable output redirect (return to screen output)
+- `\O` - Disable output redirect (alternative syntax, symmetric with `\T`/`\t`)
 
 ```
 spanner> \o backup.sql
 spanner> DUMP DATABASE;  -- SQL statements go to file; progress messages show on screen
-spanner> \o
+spanner> \o              -- Disable using \o (PostgreSQL-style)
 spanner> SELECT * FROM users;  -- This will show on screen only
+
+-- Alternative using \O
+spanner> \o export.sql
+spanner> SELECT * FROM keys;  -- Output to file only
+spanner> \O                   -- Disable using \O (symmetric with \t)
 ```
 
 ### Key Differences
