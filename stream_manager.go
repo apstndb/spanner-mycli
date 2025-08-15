@@ -204,19 +204,6 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.outStream
 	}
 
-	// In silent mode, write only to file
-	if sm.silentMode {
-		// Wrap the tee file with error handling to prevent write failures from causing panics
-		if sm.cachedWriter == nil {
-			sm.cachedWriter = &safeTeeWriter{
-				file:      sm.teeFile,
-				errStream: sm.errStream,
-				hasWarned: false,
-			}
-		}
-		return sm.cachedWriter
-	}
-
 	// Return cached writer if available.
 	// Caching is critical for two reasons:
 	// 1. It ensures all code paths use the same writer instance, preventing
@@ -226,8 +213,19 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.cachedWriter
 	}
 
-	// Create and cache new writer for normal (non-silent) mode
-	sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
+	// Create and cache new writer based on mode
+	if sm.silentMode {
+		// In silent mode, write only to file
+		sm.cachedWriter = &safeTeeWriter{
+			file:      sm.teeFile,
+			errStream: sm.errStream,
+			hasWarned: false,
+		}
+	} else {
+		// In normal mode, write to both stdout and file
+		sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
+	}
+
 	return sm.cachedWriter
 }
 

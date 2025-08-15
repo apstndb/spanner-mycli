@@ -229,9 +229,9 @@ func TestParseMetaCommand(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "output redirect without filename (disable)",
-			input:   "\\o",
-			want:    &DisableOutputRedirectMetaCommand{},
+			name:  "output redirect without filename (disable)",
+			input: "\\o",
+			want:  &DisableOutputRedirectMetaCommand{},
 		},
 		{
 			name:    "tee output with multiple files",

@@ -508,14 +508,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	if opts.Tee != "" && opts.Output != "" {
 		return errors.New("cannot use both --tee and --output flags simultaneously")
 	}
-	
+
 	// If --tee is specified, enable tee output (normal mode: both screen and file)
 	if opts.Tee != "" {
 		if err := streamManager.EnableTee(opts.Tee, false); err != nil {
 			return err
 		}
 	}
-	
+
 	// If --output is specified, enable output redirect (silent mode: file only)
 	if opts.Output != "" {
 		if err := streamManager.EnableTee(opts.Output, true); err != nil {
