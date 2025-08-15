@@ -367,7 +367,7 @@ func (c *Cli) ExitOnError(err error) int {
 }
 
 func (c *Cli) PrintInteractiveError(err error) {
-	printError(c.GetWriter(), err)
+	printError(c.GetErrStream(), err)
 }
 
 func printError(w io.Writer, err error) {

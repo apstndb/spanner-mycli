@@ -152,9 +152,11 @@ spanner:
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
       --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
-      --tee=                                              Append a copy of output to the specified file
+      --tee=                                              Append a copy of output to the specified file (both screen and file)
+  -o, --output=                                           Redirect output to file (file only, no screen output)
       --skip-column-names                                 Suppress column headers in output
       --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream) (default: AUTO)
+  -q, --quiet                                             Suppress result lines like 'rows in set' for clean output
 
 Help Options:
   -h, --help                                              Show this help message
@@ -319,30 +321,61 @@ spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
 1 rows in set (0.00 sec)
 ```
 
-### Output logging (tee functionality)
+### Output logging and redirection
 
-spanner-mycli provides tee functionality to append a copy of all output to a file while still displaying it on the console, similar to the Unix `tee` command. This feature is available through both:
-- `--tee` command-line option: starts logging from the beginning of the session
-- `\T` and `\t` meta-commands: dynamically control logging during interactive sessions
+spanner-mycli provides two ways to capture output to files:
 
-#### Using --tee option
+1. **Tee functionality**: Append output to a file while still displaying it on the console (like the Unix `tee` command)
+2. **Output redirect**: Send output only to a file, with no screen output (like shell redirection `>`)
+
+Both features are available through command-line options and interactive meta-commands.
+
+#### Tee output (both screen and file)
+
+##### Using --tee option
 
 ```bash
-# Log all query results to a file
+# Log all query results to a file while displaying on screen
 $ spanner-mycli --tee output.log -p myproject -i myinstance -d mydb
 
 # In batch mode with --tee
 $ spanner-mycli --tee queries.log -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 ```
 
-#### Using \T and \t meta-commands
+##### Using \T and \t meta-commands (MySQL-style)
 
 ```sql
-spanner> \T session.log       -- Start logging to session.log
-spanner> SELECT * FROM users; -- This query and result will be logged
-spanner> \t                   -- Stop logging
-spanner> SELECT * FROM keys;  -- This won't be logged
-spanner> \T another.log       -- Start logging to a different file
+spanner> \T session.log       -- Start tee to session.log (both screen and file)
+spanner> SELECT * FROM users; -- This query and result will be logged and displayed
+spanner> \t                   -- Stop tee
+spanner> SELECT * FROM keys;  -- This won't be logged (screen only)
+spanner> \T another.log       -- Start tee to a different file
+```
+
+#### Output redirect (file only)
+
+##### Using --output option
+
+```bash
+# Redirect all output to file (no screen output)
+$ spanner-mycli --output backup.sql -p myproject -i myinstance -d mydb -e 'DUMP DATABASE;'
+
+# Useful for clean SQL exports without progress messages on screen
+$ spanner-mycli --output export.sql -p myproject -i myinstance -d mydb
+```
+
+##### Using \o meta-command (PostgreSQL-style)
+
+```sql
+spanner> \o backup.sql        -- Redirect output to file only
+spanner> DUMP DATABASE;       -- SQL goes to file, progress shows on screen
+spanner> \o                   -- Disable redirect (return to screen output)
+spanner> SELECT * FROM users; -- This shows on screen only
+
+-- Alternative using \O (symmetric with \T/\t pattern)
+spanner> \o export.sql        -- Redirect output to file only
+spanner> SELECT * FROM keys;  -- Output goes to file only
+spanner> \O                   -- Disable redirect using \O
 ```
 
 #### What gets logged
@@ -569,8 +602,11 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 | `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
 | `\R <prompt_string>` | Change the prompt string | `\R mycli> ` |
 | `\u <database>` | Switch to a different database | `\u mydb` |
-| `\T <filename>` | Start tee logging to file | `\T output.txt` |
+| `\T <filename>` | Start tee logging to file (both screen and file) | `\T output.txt` |
 | `\t` | Stop tee logging | `\t` |
+| `\o <filename>` | Redirect output to file only (no screen) | `\o backup.sql` |
+| `\o` | Disable output redirect (return to screen) | `\o` |
+| `\O` | Disable output redirect (alternative to `\o`) | `\O` |
 
 For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 

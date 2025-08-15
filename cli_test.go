@@ -1186,8 +1186,8 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			confirmInput:  "no\n",
 			wantExitCode:  -1,
 			wantProcessed: true,
-			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
-			wantErrorOut:  "",
+			wantOut:       "",
+			wantErrorOut:  "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
 		},
 		{
 			desc:          "DROP DATABASE on current database, user says yes (should still error)",
@@ -1196,8 +1196,8 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			confirmInput:  "yes\n", // Even if user says yes, it should still error due to current DB check
 			wantExitCode:  -1,
 			wantProcessed: true,
-			wantOut:       "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
-			wantErrorOut:  "",
+			wantOut:       "",
+			wantErrorOut:  "ERROR: database \"my-db\" is currently used, it can not be dropped\n",
 		},
 		{
 			desc:          "DROP DATABASE on different database, user says no",
@@ -1206,7 +1206,8 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			confirmInput:  "no\n",
 			wantExitCode:  -1,
 			wantProcessed: true,
-			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+			wantOut:       "",
+			wantErrorOut:  "ERROR: cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal\n",
 		},
 		{
 			desc:          "DROP DATABASE on different database, user says yes (not processed by this func)",
@@ -1214,8 +1215,9 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			currentDB:     "my-db",
 			confirmInput:  "yes\n",
 			wantExitCode:  -1,
-			wantProcessed: false, // This statement is not fully processed here, it proceeds to executeStatement
-			wantOut:       "Database \"other-db\" will be dropped.\nDo you want to continue? [yes/no] ",
+			wantProcessed: true, // Changed to true since it's processed with an error
+			wantOut:       "",
+			wantErrorOut:  "ERROR: cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal\n",
 		},
 		{
 			desc:          "Non-special statement",
@@ -1235,7 +1237,9 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			if dropStmt, ok := tt.stmt.(*DropDatabaseStatement); ok && tt.currentDB != dropStmt.DatabaseId {
 				// These test cases now expect the error about no TTY
 				// since TtyOutStream is nil by default in tests
-				tt.wantOut = "ERROR: cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal\n"
+				// Errors now go to stderr, not stdout
+				tt.wantErrorOut = "ERROR: cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal\n"
+				tt.wantOut = ""
 				tt.wantProcessed = true
 			}
 

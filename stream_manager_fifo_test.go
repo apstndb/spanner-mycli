@@ -95,7 +95,7 @@ func TestStreamManager_FIFO(t *testing.T) {
 	var enableErr error
 
 	go func() {
-		enableErr = sm.EnableTee(fifoPath)
+		enableErr = sm.EnableTee(fifoPath, false)
 		close(done)
 	}()
 

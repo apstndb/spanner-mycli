@@ -162,8 +162,8 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
 func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.FormatConfig, sysVars *systemVariables) (bool, RowProcessor) {
-	// Get output stream from StreamManager
-	outStream := sysVars.StreamManager.GetOutStream()
+	// Get output writer from StreamManager (respects tee/redirect settings)
+	outStream := sysVars.StreamManager.GetWriter()
 	if outStream == nil {
 		return false, nil
 	}

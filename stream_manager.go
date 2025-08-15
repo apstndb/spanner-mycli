@@ -122,6 +122,7 @@ type StreamManager struct {
 	ttyStream    *os.File      // Original TTY stream for terminal operations
 	teeFile      *os.File      // Tee file when enabled
 	cachedWriter io.Writer     // Cache the writer to ensure consistent behavior
+	silentMode   bool          // When true, output goes only to file (not stdout)
 }
 
 // NewStreamManager creates a new StreamManager instance
@@ -149,7 +150,8 @@ func (sm *StreamManager) SetTtyStream(tty *os.File) {
 }
 
 // EnableTee starts tee output to the specified file
-func (sm *StreamManager) EnableTee(filePath string) error {
+// If silent is true, output goes only to the file (not stdout)
+func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -170,6 +172,7 @@ func (sm *StreamManager) EnableTee(filePath string) error {
 	}
 
 	sm.teeFile = teeFile
+	sm.silentMode = silent
 	// IMPORTANT: Invalidate cached writer to ensure the new tee file is included
 	// in the io.MultiWriter. This is critical for maintaining correct output behavior.
 	sm.cachedWriter = nil
@@ -187,11 +190,17 @@ func (sm *StreamManager) DisableTee() {
 			slog.Warn("failed to close tee file", "path", sm.teeFile.Name(), "error", err)
 		}
 		sm.teeFile = nil
+		sm.silentMode = false
 		sm.cachedWriter = nil // Invalidate cached writer
 	}
 }
 
-// GetWriter returns the current output writer (with or without tee)
+// GetWriter returns the current output writer (respects tee/redirect settings)
+// This should be used for ALL data output including:
+//   - Query results
+//   - SQL statements (DUMP, SELECT, etc.)
+//   - Data exports
+//   - Any content that should be captured when tee or output redirect is active
 func (sm *StreamManager) GetWriter() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -209,8 +218,19 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.cachedWriter
 	}
 
-	// Create and cache new writer
-	sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
+	// Create and cache new writer based on mode
+	if sm.silentMode {
+		// In silent mode, write only to file
+		sm.cachedWriter = &safeTeeWriter{
+			file:      sm.teeFile,
+			errStream: sm.errStream,
+			hasWarned: false,
+		}
+	} else {
+		// In normal mode, write to both stdout and file
+		sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
+	}
+
 	return sm.cachedWriter
 }
 
@@ -219,6 +239,13 @@ func (sm *StreamManager) IsEnabled() bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	return sm.teeFile != nil
+}
+
+// IsInSilentTeeMode returns whether tee output is in silent mode (file only)
+func (sm *StreamManager) IsInSilentTeeMode() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.teeFile != nil && sm.silentMode
 }
 
 // Close closes any open tee file and cleans up resources
@@ -298,8 +325,13 @@ func (sm *StreamManager) GetInStream() io.ReadCloser {
 	return sm.inStream
 }
 
-// GetOutStream returns the output stream (without tee)
-// For tee-enabled output, use GetWriter() instead
+// GetOutStream returns the original output stream (without tee/redirect)
+// This should ONLY be used for:
+//   - Terminal control operations (prompts, progress bars)
+//   - Interactive UI elements that should always display on screen
+//
+// For all query results and data output, use GetWriter() instead to respect
+// tee and output redirect settings.
 func (sm *StreamManager) GetOutStream() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()

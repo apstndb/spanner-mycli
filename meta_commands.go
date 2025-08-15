@@ -138,6 +138,26 @@ func ParseMetaCommand(input string) (Statement, error) {
 			return nil, errors.New("\\T requires exactly one filename")
 		}
 		return &TeeOutputMetaCommand{FilePath: words[0]}, nil
+	case "o":
+		// \o with no args disables output redirect (returns to stdout)
+		if args == "" {
+			return &DisableOutputRedirectMetaCommand{}, nil
+		}
+		// Use shellquote for proper parsing of quoted filenames
+		words, err := shellquote.Split(args)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filename quoting: %w", err)
+		}
+		if len(words) != 1 {
+			return nil, errors.New("\\o requires exactly one filename")
+		}
+		return &OutputRedirectMetaCommand{FilePath: words[0]}, nil
+	case "O":
+		// \O command disables output redirect (symmetric with \t for tee)
+		if args != "" {
+			return nil, errors.New("\\O takes no arguments")
+		}
+		return &DisableOutputRedirectMetaCommand{}, nil
 	case "t":
 		// \t command takes no arguments
 		if args != "" {
@@ -222,8 +242,13 @@ func IsMetaCommand(line string) bool {
 	return strings.HasPrefix(trimmed, "\\")
 }
 
-// TeeOutputMetaCommand enables output tee to a file using \T syntax
+// TeeOutputMetaCommand enables output tee to a file using \T syntax (MySQL-style: both screen and file)
 type TeeOutputMetaCommand struct {
+	FilePath string
+}
+
+// OutputRedirectMetaCommand redirects output to a file using \o syntax (PostgreSQL-style: file only)
+type OutputRedirectMetaCommand struct {
 	FilePath string
 }
 
@@ -233,18 +258,42 @@ var _ MetaCommandStatement = (*TeeOutputMetaCommand)(nil)
 // isMetaCommand marks this as a meta command
 func (t *TeeOutputMetaCommand) isMetaCommand() {}
 
-// Execute enables tee output to the specified file
+// Execute enables tee output to the specified file (both screen and file)
 func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Validate that we have system variables and tee manager available
+	// Validate that we have system variables and stream manager available
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
 	}
 	if session.systemVariables.StreamManager == nil {
-		return nil, errors.New("internal error: tee manager not initialized")
+		return nil, errors.New("internal error: stream manager not initialized")
 	}
 
-	// Enable tee for the specified file
-	if err := session.systemVariables.StreamManager.EnableTee(t.FilePath); err != nil {
+	// Enable tee for the specified file (normal mode: both screen and file)
+	if err := session.systemVariables.StreamManager.EnableTee(t.FilePath, false); err != nil {
+		return nil, err
+	}
+
+	return &Result{}, nil
+}
+
+// Ensure OutputRedirectMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*OutputRedirectMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (o *OutputRedirectMetaCommand) isMetaCommand() {}
+
+// Execute enables output redirect to the specified file (file only)
+func (o *OutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Validate that we have system variables and stream manager available
+	if session.systemVariables == nil {
+		return nil, errors.New("internal error: system variables not initialized")
+	}
+	if session.systemVariables.StreamManager == nil {
+		return nil, errors.New("internal error: stream manager not initialized")
+	}
+
+	// Enable output redirect (silent mode: file only)
+	if err := session.systemVariables.StreamManager.EnableTee(o.FilePath, true); err != nil {
 		return nil, err
 	}
 
@@ -254,24 +303,43 @@ func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*
 // DisableTeeMetaCommand disables output tee using \t syntax
 type DisableTeeMetaCommand struct{}
 
+// DisableOutputRedirectMetaCommand disables output redirect using \o (with no args) syntax
+type DisableOutputRedirectMetaCommand struct{}
+
 // Ensure DisableTeeMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*DisableTeeMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
 func (d *DisableTeeMetaCommand) isMetaCommand() {}
 
-// Execute disables tee output
-func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Validate that we have system variables and tee manager available
+// Ensure DisableOutputRedirectMetaCommand implements MetaCommandStatement
+var _ MetaCommandStatement = (*DisableOutputRedirectMetaCommand)(nil)
+
+// isMetaCommand marks this as a meta command
+func (d *DisableOutputRedirectMetaCommand) isMetaCommand() {}
+
+// disableOutput is a helper function to disable output (shared by \t and \o commands)
+func disableOutput(session *Session) (*Result, error) {
+	// Validate that we have system variables and stream manager available
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
 	}
 	if session.systemVariables.StreamManager == nil {
-		return nil, errors.New("internal error: tee manager not initialized")
+		return nil, errors.New("internal error: stream manager not initialized")
 	}
 
-	// Disable tee
+	// Disable output
 	session.systemVariables.StreamManager.DisableTee()
 
 	return &Result{}, nil
+}
+
+// Execute disables tee output
+func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return disableOutput(session)
+}
+
+// Execute disables output redirect (returns to stdout)
+func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return disableOutput(session)
 }

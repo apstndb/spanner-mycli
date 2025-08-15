@@ -177,20 +177,50 @@ spanner> SELECT DATABASE() as current_db;
 +------------+
 ```
 
-## Output Tee Control (`\T` and `\t`)
+## Output Control (`\T`, `\t`, `\o`, `\O`)
 
-The `\T` and `\t` meta commands provide dynamic control over output logging during an interactive session, complementing the `--tee` command-line option.
+spanner-mycli provides meta commands for controlling output during interactive sessions:
 
-### Usage
+### Tee Output (`\T` and `\t`) - MySQL-style
 
-- `\T <filename>` - Start appending output to the specified file
-- `\t` - Stop output logging
+The `\T` and `\t` meta commands provide dynamic control over tee output (copying output to both screen and file), complementing the `--tee` command-line option.
+
+- `\T <filename>` - Start tee output to the specified file (both screen and file)
+- `\t` - Stop tee output
 
 ```
 spanner> \T session.log
-spanner> SELECT * FROM users;  -- This query and result will be logged
+spanner> SELECT * FROM users;  -- This query and result will be shown on screen AND logged to file
 spanner> \t
-spanner> SELECT * FROM sensitive_data;  -- This won't be logged
+spanner> SELECT * FROM sensitive_data;  -- This will only show on screen
 ```
 
-For detailed information about tee functionality (what gets logged, file handling, error handling), see [Output logging (tee functionality)](../README.md#output-logging-tee-functionality) in the README.
+### Output Redirect (`\o` and `\O`) - PostgreSQL-style
+
+The `\o` meta command provides output redirection (file only, no screen output), complementing the `--output` command-line option.
+
+- `\o <filename>` - Redirect output to the specified file only (no screen output)
+- `\o` - Disable output redirect (return to screen output)
+- `\O` - Disable output redirect (alternative syntax, symmetric with `\T`/`\t`)
+
+```
+spanner> \o backup.sql
+spanner> DUMP DATABASE;  -- SQL statements go to file; progress messages show on screen
+spanner> \o              -- Disable using \o (PostgreSQL-style)
+spanner> SELECT * FROM users;  -- This will show on screen only
+
+-- Alternative using \O
+spanner> \o export.sql
+spanner> SELECT * FROM keys;  -- Output to file only
+spanner> \O                   -- Disable using \O (symmetric with \t)
+```
+
+### Key Differences
+
+| Command | Screen Output | File Output | Use Case |
+|---------|--------------|-------------|----------|
+| `\T file` | Yes | Yes | Log queries while working interactively |
+| `\o file` | No | Yes | Export clean SQL without cluttering screen |
+| Neither | Yes | No | Normal interactive work |
+
+For detailed information about output functionality (what gets logged, file handling, error handling), see [Output logging and redirection](../README.md#output-logging-and-redirection) in the README.
