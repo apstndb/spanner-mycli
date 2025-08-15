@@ -5,14 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
-	"sort"
 	"strings"
 
-	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"google.golang.org/api/iterator"
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
@@ -52,15 +48,6 @@ const (
 
 func (m dumpMode) shouldExportDDL() bool  { return m == dumpModeDatabase || m == dumpModeSchema }
 func (m dumpMode) shouldExportData() bool { return m == dumpModeDatabase || m == dumpModeTables }
-
-// tableInfo represents a table with its dependencies
-type tableInfo struct {
-	Name           string
-	ParentTable    string // INTERLEAVE IN PARENT table
-	OnDeleteAction string
-	ChildrenTables []string // Tables that interleave in this table
-	// ForeignKeys will be added for Issue #426
-}
 
 // executeDump is the main entry point for all dump operations.
 // It decides between streaming and buffered mode based on the output stream and settings.
@@ -193,132 +180,21 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 }
 
 // getTableDependencyOrder returns tables in dependency order (parents before children).
-// It handles INTERLEAVE IN PARENT relationships and will support foreign keys in Issue #426.
+// It handles both INTERLEAVE IN PARENT relationships and foreign key constraints.
 func getTableDependencyOrder(ctx context.Context, session *Session, specificTables []string) ([]string, error) {
-	// Query information_schema to get table relationships
-	query := `
-		SELECT 
-			TABLE_NAME,
-			PARENT_TABLE_NAME,
-			ON_DELETE_ACTION
-		FROM information_schema.tables
-		WHERE TABLE_SCHEMA = ''
-		ORDER BY TABLE_NAME
-	`
+	resolver := NewDependencyResolver()
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
-	defer iter.Stop()
-
-	// Build table dependency map
-	tables := make(map[string]*tableInfo)
-	var allTableNames []string
-
-	for {
-		row, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		var tableName, parentTable, onDeleteAction spanner.NullString
-		if err := row.Columns(&tableName, &parentTable, &onDeleteAction); err != nil {
-			return nil, err
-		}
-
-		if !tableName.Valid {
-			continue
-		}
-
-		name := tableName.StringVal
-
-		// Get or create table info for the current table
-		info, ok := tables[name]
-		if !ok {
-			info = &tableInfo{Name: name}
-			tables[name] = info
-		}
-		// Update its details from the query result
-		info.ParentTable = parentTable.StringVal
-		info.OnDeleteAction = onDeleteAction.StringVal
-		allTableNames = append(allTableNames, name)
-
-		if parentTable.Valid {
-			parentName := parentTable.StringVal
-			// Get or create parent table info
-			parentInfo, ok := tables[parentName]
-			if !ok {
-				parentInfo = &tableInfo{Name: parentName}
-				tables[parentName] = parentInfo
-			}
-			// Add current table as a child of the parent
-			parentInfo.ChildrenTables = append(parentInfo.ChildrenTables, name)
-		}
+	// Build the complete dependency graph
+	if err := resolver.BuildDependencyGraph(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to build dependency graph: %w", err)
 	}
 
-	// Filter tables if specific ones requested
-	var tablesToExport []string
+	// Get tables in dependency order
 	if len(specificTables) > 0 {
-		// Validate requested tables exist
-		for _, table := range specificTables {
-			if _, ok := tables[table]; !ok {
-				return nil, fmt.Errorf("table %s not found", table)
-			}
-		}
-		tablesToExport = specificTables
-	} else {
-		tablesToExport = allTableNames
+		return resolver.GetOrderForTables(specificTables)
 	}
 
-	// Perform topological sort
-	return topologicalSort(tables, tablesToExport)
-}
-
-// topologicalSort performs dependency-aware sorting of tables.
-// It ensures parent tables are processed before their children and detects circular dependencies.
-func topologicalSort(tables map[string]*tableInfo, tablesToExport []string) ([]string, error) {
-	var sorted []string
-	visited := make(map[string]bool)
-	visiting := make(map[string]bool)
-
-	var visit func(string) error
-	visit = func(name string) error {
-		if visited[name] {
-			return nil
-		}
-		if visiting[name] {
-			return fmt.Errorf("circular dependency detected involving table %s", name)
-		}
-		visiting[name] = true
-		info := tables[name]
-
-		// Visit parent first (for INTERLEAVE relationships)
-		if info != nil && info.ParentTable != "" && slices.Contains(tablesToExport, info.ParentTable) {
-			if err := visit(info.ParentTable); err != nil {
-				return err
-			}
-		}
-
-		// TODO: Add foreign key dependency handling here when FK info is available
-
-		visiting[name] = false
-		visited[name] = true
-		sorted = append(sorted, name)
-		return nil
-	}
-
-	// Sort tables alphabetically first for consistent ordering
-	sort.Strings(tablesToExport)
-
-	// Visit all tables
-	for _, table := range tablesToExport {
-		if err := visit(table); err != nil {
-			return nil, err
-		}
-	}
-
-	return sorted, nil
+	return resolver.GetTableOrder(ctx, session)
 }
 
 // exportTableDataBuffered exports data from a single table with buffering
