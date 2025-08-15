@@ -195,7 +195,12 @@ func (sm *StreamManager) DisableTee() {
 	}
 }
 
-// GetWriter returns the current output writer (with or without tee)
+// GetWriter returns the current output writer (respects tee/redirect settings)
+// This should be used for ALL data output including:
+//   - Query results
+//   - SQL statements (DUMP, SELECT, etc.)
+//   - Data exports
+//   - Any content that should be captured when tee or output redirect is active
 func (sm *StreamManager) GetWriter() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -320,8 +325,13 @@ func (sm *StreamManager) GetInStream() io.ReadCloser {
 	return sm.inStream
 }
 
-// GetOutStream returns the output stream (without tee)
-// For tee-enabled output, use GetWriter() instead
+// GetOutStream returns the original output stream (without tee/redirect)
+// This should ONLY be used for:
+//   - Terminal control operations (prompts, progress bars)
+//   - Interactive UI elements that should always display on screen
+//
+// For all query results and data output, use GetWriter() instead to respect
+// tee and output redirect settings.
 func (sm *StreamManager) GetOutStream() io.Writer {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()

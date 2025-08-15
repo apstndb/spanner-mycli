@@ -73,7 +73,7 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	if session.systemVariables.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
-	outStream := session.systemVariables.StreamManager.GetOutStream()
+	outStream := session.systemVariables.StreamManager.GetWriter()
 	// Use streaming unless: output is nil/io.Discard (tests) or streaming explicitly disabled
 	if outStream != nil && outStream != io.Discard && session.systemVariables.StreamingMode != enums.StreamingModeFalse {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)

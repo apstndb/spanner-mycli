@@ -654,4 +654,47 @@ func TestStreamManagerSilentMode(t *testing.T) {
 			t.Errorf("Expected tee file content %q, got %q", testData2, string(content2))
 		}
 	})
+
+	t.Run("GetWriter vs GetOutStream usage", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
+
+		tmpDir := t.TempDir()
+		outputFile := filepath.Join(tmpDir, "output.sql")
+
+		// Enable output redirect (silent mode)
+		if err := sm.EnableTee(outputFile, true); err != nil {
+			t.Fatalf("Failed to enable output redirect: %v", err)
+		}
+
+		// GetWriter should write to file only (respects redirect)
+		writer := sm.GetWriter()
+		dataOutput := "INSERT INTO table VALUES (1, 'data');\n"
+		if _, err := writer.Write([]byte(dataOutput)); err != nil {
+			t.Fatalf("Failed to write data: %v", err)
+		}
+
+		// GetOutStream should still write to stdout (for progress/UI)
+		outStream := sm.GetOutStream()
+		progressMsg := "Processing... 50%\n"
+		if _, err := outStream.Write([]byte(progressMsg)); err != nil {
+			t.Fatalf("Failed to write progress: %v", err)
+		}
+
+		// Verify stdout has only progress message (not data)
+		if originalOut.String() != progressMsg {
+			t.Errorf("Expected stdout to have only progress %q, got %q", progressMsg, originalOut.String())
+		}
+
+		// Verify file has only data output (not progress)
+		content, err := os.ReadFile(outputFile)
+		if err != nil {
+			t.Fatalf("Failed to read output file: %v", err)
+		}
+		if string(content) != dataOutput {
+			t.Errorf("Expected file to have only data %q, got %q", dataOutput, string(content))
+		}
+	})
 }
