@@ -194,7 +194,7 @@ func getTableDependencyOrder(ctx context.Context, session *Session, specificTabl
 		return resolver.GetOrderForTables(specificTables)
 	}
 
-	return resolver.GetTableOrder(ctx, session)
+	return resolver.GetTableOrder()
 }
 
 // exportTableDataBuffered exports data from a single table with buffering

@@ -243,12 +243,9 @@ func (dr *DependencyResolver) getOrCreateTable(name string) *TableDependency {
 	return table
 }
 
-// GetTableOrder returns all tables in safe execution order
-func (dr *DependencyResolver) GetTableOrder(ctx context.Context, session *Session) ([]string, error) {
-	if err := dr.BuildDependencyGraph(ctx, session); err != nil {
-		return nil, err
-	}
-
+// GetTableOrder returns all tables in safe execution order.
+// It assumes that BuildDependencyGraph has already been called.
+func (dr *DependencyResolver) GetTableOrder() ([]string, error) {
 	allTables := make([]string, 0, len(dr.tables))
 	for tableName := range dr.tables {
 		allTables = append(allTables, tableName)
