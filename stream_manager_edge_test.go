@@ -22,7 +22,7 @@ func TestStreamManager_LargeFileWarning(t *testing.T) {
 	teeFile := filepath.Join(tmpDir, "large.log")
 
 	// Enable tee
-	if err := sm.EnableTee(teeFile); err != nil {
+	if err := sm.EnableTee(teeFile, false); err != nil {
 		t.Fatalf("Failed to enable tee: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestStreamManager_DirectoryError(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Try to enable tee with a directory path
-	err := sm.EnableTee(tmpDir)
+	err := sm.EnableTee(tmpDir, false)
 	if err == nil {
 		t.Error("Expected error when enabling tee with directory path")
 	}
@@ -89,7 +89,7 @@ func TestStreamManager_NoWritePermission(t *testing.T) {
 
 	// Try to create a file in the read-only directory
 	teeFile := filepath.Join(readOnlyDir, "test.log")
-	err := sm.EnableTee(teeFile)
+	err := sm.EnableTee(teeFile, false)
 	if err == nil {
 		t.Error("Expected error when creating file in read-only directory")
 	}
@@ -112,7 +112,7 @@ func TestStreamManager_ManyFileSwitches(t *testing.T) {
 	// Switch between many files
 	for i := 0; i < 100; i++ {
 		teeFile := filepath.Join(tmpDir, fmt.Sprintf("file-%d.log", i))
-		if err := sm.EnableTee(teeFile); err != nil {
+		if err := sm.EnableTee(teeFile, false); err != nil {
 			t.Fatalf("Failed to enable tee for file %d: %v", i, err)
 		}
 
@@ -154,7 +154,7 @@ func TestStreamManager_CloseIdempotency(t *testing.T) {
 	teeFile := filepath.Join(tmpDir, "test.log")
 
 	// Enable tee
-	if err := sm.EnableTee(teeFile); err != nil {
+	if err := sm.EnableTee(teeFile, false); err != nil {
 		t.Fatalf("Failed to enable tee: %v", err)
 	}
 
@@ -185,7 +185,7 @@ func TestStreamManager_WriteAfterError(t *testing.T) {
 	tmpFile.Close()
 
 	// Enable tee with the file
-	if err := sm.EnableTee(tmpPath); err != nil {
+	if err := sm.EnableTee(tmpPath, false); err != nil {
 		t.Fatalf("Failed to enable tee: %v", err)
 	}
 

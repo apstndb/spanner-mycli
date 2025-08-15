@@ -122,6 +122,7 @@ type StreamManager struct {
 	ttyStream    *os.File      // Original TTY stream for terminal operations
 	teeFile      *os.File      // Tee file when enabled
 	cachedWriter io.Writer     // Cache the writer to ensure consistent behavior
+	silentMode   bool          // When true, output goes only to file (not stdout)
 }
 
 // NewStreamManager creates a new StreamManager instance
@@ -149,7 +150,8 @@ func (sm *StreamManager) SetTtyStream(tty *os.File) {
 }
 
 // EnableTee starts tee output to the specified file
-func (sm *StreamManager) EnableTee(filePath string) error {
+// If silent is true, output goes only to the file (not stdout)
+func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -170,6 +172,7 @@ func (sm *StreamManager) EnableTee(filePath string) error {
 	}
 
 	sm.teeFile = teeFile
+	sm.silentMode = silent
 	// IMPORTANT: Invalidate cached writer to ensure the new tee file is included
 	// in the io.MultiWriter. This is critical for maintaining correct output behavior.
 	sm.cachedWriter = nil
@@ -187,6 +190,7 @@ func (sm *StreamManager) DisableTee() {
 			slog.Warn("failed to close tee file", "path", sm.teeFile.Name(), "error", err)
 		}
 		sm.teeFile = nil
+		sm.silentMode = false
 		sm.cachedWriter = nil // Invalidate cached writer
 	}
 }
@@ -200,6 +204,19 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.outStream
 	}
 
+	// In silent mode, write only to file
+	if sm.silentMode {
+		// Wrap the tee file with error handling to prevent write failures from causing panics
+		if sm.cachedWriter == nil {
+			sm.cachedWriter = &safeTeeWriter{
+				file:      sm.teeFile,
+				errStream: sm.errStream,
+				hasWarned: false,
+			}
+		}
+		return sm.cachedWriter
+	}
+
 	// Return cached writer if available.
 	// Caching is critical for two reasons:
 	// 1. It ensures all code paths use the same writer instance, preventing
@@ -209,7 +226,7 @@ func (sm *StreamManager) GetWriter() io.Writer {
 		return sm.cachedWriter
 	}
 
-	// Create and cache new writer
+	// Create and cache new writer for normal (non-silent) mode
 	sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
 	return sm.cachedWriter
 }
@@ -219,6 +236,13 @@ func (sm *StreamManager) IsEnabled() bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	return sm.teeFile != nil
+}
+
+// IsInSilentTeeMode returns whether tee output is in silent mode (file only)
+func (sm *StreamManager) IsInSilentTeeMode() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.teeFile != nil && sm.silentMode
 }
 
 // Close closes any open tee file and cleans up resources

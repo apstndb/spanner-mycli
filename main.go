@@ -132,7 +132,8 @@ type spannerOptions struct {
 	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
 	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
 	SystemCommand   *string `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
-	Tee             string  `long:"tee" description:"Append a copy of output to the specified file" default-mask:"-"`
+	Tee             string  `long:"tee" description:"Append a copy of output to the specified file (both screen and file)" default-mask:"-"`
+	Output          string  `long:"output" short:"o" description:"Redirect output to file (file only, no screen output)" default-mask:"-"`
 	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
 	Quiet           bool    `long:"quiet" short:"q" description:"Suppress result lines like 'rows in set' for clean output" default-mask:"-"`
@@ -503,9 +504,21 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	sysVars.StreamManager = streamManager
 	defer streamManager.Close()
 
-	// If --tee is specified, enable tee output
+	// Handle output redirection options
+	if opts.Tee != "" && opts.Output != "" {
+		return errors.New("cannot use both --tee and --output flags simultaneously")
+	}
+	
+	// If --tee is specified, enable tee output (normal mode: both screen and file)
 	if opts.Tee != "" {
-		if err := streamManager.EnableTee(opts.Tee); err != nil {
+		if err := streamManager.EnableTee(opts.Tee, false); err != nil {
+			return err
+		}
+	}
+	
+	// If --output is specified, enable output redirect (silent mode: file only)
+	if opts.Output != "" {
+		if err := streamManager.EnableTee(opts.Output, true); err != nil {
 			return err
 		}
 	}

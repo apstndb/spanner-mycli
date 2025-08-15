@@ -209,9 +209,29 @@ func TestParseMetaCommand(t *testing.T) {
 			want:  &TeeOutputMetaCommand{FilePath: "another file.log"},
 		},
 		{
+			name:  "output redirect simple",
+			input: "\\o output.log",
+			want:  &OutputRedirectMetaCommand{FilePath: "output.log"},
+		},
+		{
+			name:  "output redirect with path",
+			input: "\\o /path/to/output.log",
+			want:  &OutputRedirectMetaCommand{FilePath: "/path/to/output.log"},
+		},
+		{
+			name:  "output redirect with quotes",
+			input: `\o "file with spaces.log"`,
+			want:  &OutputRedirectMetaCommand{FilePath: "file with spaces.log"},
+		},
+		{
 			name:    "tee output without filename",
 			input:   "\\T",
 			wantErr: true,
+		},
+		{
+			name:    "output redirect without filename (disable)",
+			input:   "\\o",
+			want:    &DisableOutputRedirectMetaCommand{},
 		},
 		{
 			name:    "tee output with multiple files",
@@ -279,14 +299,26 @@ func TestParseMetaCommand(t *testing.T) {
 				case *TeeOutputMetaCommand:
 					if tee, ok := got.(*TeeOutputMetaCommand); ok {
 						if tee.FilePath != want.FilePath {
-							t.Errorf("ParseMetaCommand(%q) = %q, want %q", tt.input, tee.FilePath, want.FilePath)
+							t.Errorf("ParseMetaCommand(%q) FilePath = %q, want %q", tt.input, tee.FilePath, want.FilePath)
 						}
 					} else {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *TeeOutputMetaCommand", tt.input, got)
 					}
+				case *OutputRedirectMetaCommand:
+					if output, ok := got.(*OutputRedirectMetaCommand); ok {
+						if output.FilePath != want.FilePath {
+							t.Errorf("ParseMetaCommand(%q) FilePath = %q, want %q", tt.input, output.FilePath, want.FilePath)
+						}
+					} else {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *OutputRedirectMetaCommand", tt.input, got)
+					}
 				case *DisableTeeMetaCommand:
 					if _, ok := got.(*DisableTeeMetaCommand); !ok {
 						t.Errorf("ParseMetaCommand(%q) returned %T, want *DisableTeeMetaCommand", tt.input, got)
+					}
+				case *DisableOutputRedirectMetaCommand:
+					if _, ok := got.(*DisableOutputRedirectMetaCommand); !ok {
+						t.Errorf("ParseMetaCommand(%q) returned %T, want *DisableOutputRedirectMetaCommand", tt.input, got)
 					}
 				}
 			}
@@ -660,7 +692,7 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 				// Enable tee first
 				tmpDir := t.TempDir()
 				teeFile := tmpDir + "/test.log"
-				if err := sysVars.StreamManager.EnableTee(teeFile); err != nil {
+				if err := sysVars.StreamManager.EnableTee(teeFile, false); err != nil {
 					t.Fatal(err)
 				}
 				// Verify tee is enabled (writer should be different from original)
