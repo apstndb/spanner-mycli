@@ -306,30 +306,14 @@ var _ MetaCommandStatement = (*DisableTeeMetaCommand)(nil)
 // isMetaCommand marks this as a meta command
 func (d *DisableTeeMetaCommand) isMetaCommand() {}
 
-// Execute disables tee output
-func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Validate that we have system variables and stream manager available
-	if session.systemVariables == nil {
-		return nil, errors.New("internal error: system variables not initialized")
-	}
-	if session.systemVariables.StreamManager == nil {
-		return nil, errors.New("internal error: stream manager not initialized")
-	}
-
-	// Disable tee
-	session.systemVariables.StreamManager.DisableTee()
-
-	return &Result{}, nil
-}
-
 // Ensure DisableOutputRedirectMetaCommand implements MetaCommandStatement
 var _ MetaCommandStatement = (*DisableOutputRedirectMetaCommand)(nil)
 
 // isMetaCommand marks this as a meta command
 func (d *DisableOutputRedirectMetaCommand) isMetaCommand() {}
 
-// Execute disables output redirect (returns to stdout)
-func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+// disableOutput is a helper function to disable output (shared by \t and \o commands)
+func disableOutput(session *Session) (*Result, error) {
 	// Validate that we have system variables and stream manager available
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
@@ -338,8 +322,18 @@ func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session 
 		return nil, errors.New("internal error: stream manager not initialized")
 	}
 
-	// Disable output redirect
+	// Disable output
 	session.systemVariables.StreamManager.DisableTee()
 
 	return &Result{}, nil
+}
+
+// Execute disables tee output
+func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return disableOutput(session)
+}
+
+// Execute disables output redirect (returns to stdout)
+func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+	return disableOutput(session)
 }
