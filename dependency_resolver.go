@@ -32,6 +32,8 @@ type TableDependency struct {
 }
 
 // DependencyResolver manages table dependency resolution
+// Note: This implementation works at the table level. For row-level dependency
+// resolution that can handle circular FK relationships, see issue #438.
 type DependencyResolver struct {
 	tables map[string]*TableDependency
 }
