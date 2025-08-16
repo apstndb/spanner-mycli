@@ -22,8 +22,110 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
+
+// extractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
+// It only supports whitelisted patterns for safety and predictability:
+//   - SELECT * FROM table_name
+//   - SELECT * FROM table_name WHERE ...
+//   - SELECT * FROM table_name ORDER BY ...
+//   - SELECT * FROM table_name LIMIT ...
+//   - Combinations of the above
+//
+// Returns:
+//   - (tableName, nil) when extraction succeeds
+//   - ("", error) when extraction fails with a reason
+//
+// The error messages are intended for debug logging to help understand why
+// auto-detection failed, allowing users to adjust their queries or use explicit
+// CLI_SQL_TABLE_NAME setting.
+func extractTableNameFromQuery(sql string) (string, error) {
+	// Parse the SQL statement
+	stmt, err := memefish.ParseStatement("", sql)
+	if err != nil {
+		// Parse error - can't auto-detect
+		return "", fmt.Errorf("cannot parse SQL: %w", err)
+	}
+
+	// Check if it's a QueryStatement with a Select query
+	queryStmt, ok := stmt.(*ast.QueryStatement)
+	if !ok {
+		return "", fmt.Errorf("not a SELECT statement")
+	}
+
+	// Handle different query structures
+	// When ORDER BY or LIMIT is present at the top level, memefish wraps the Select in a Query
+	var selectStmt *ast.Select
+
+	switch q := queryStmt.Query.(type) {
+	case *ast.Select:
+		// Simple SELECT without top-level ORDER BY/LIMIT
+		selectStmt = q
+	case *ast.Query:
+		// SELECT with ORDER BY/LIMIT at the top level
+		// Check for CTE (WITH clause) - not supported
+		if q.With != nil {
+			return "", fmt.Errorf("CTE (WITH clause) not supported for auto-detection")
+		}
+		// Check if the inner query is a Select
+		if innerSelect, ok := q.Query.(*ast.Select); ok {
+			selectStmt = innerSelect
+		} else {
+			// Complex query structure - not supported
+			return "", fmt.Errorf("complex query structure not supported (subqueries, UNION, etc.)")
+		}
+	default:
+		// Could be a subquery, UNION, etc. - not supported
+		return "", fmt.Errorf("query type not supported for auto-detection")
+	}
+
+	// Check if there's a FROM clause first
+	if selectStmt.From == nil {
+		// No FROM clause - not a table query
+		return "", fmt.Errorf("no FROM clause found")
+	}
+
+	// Check if it's SELECT * (all columns)
+	if len(selectStmt.Results) != 1 {
+		// Multiple result items or no results - not supported
+		return "", fmt.Errorf("only SELECT * is supported (found %d result items)", len(selectStmt.Results))
+	}
+
+	_, isStar := selectStmt.Results[0].(*ast.Star)
+	if !isStar {
+		// Not SELECT * - specific columns selected, not supported
+		// (risk of NOT NULL constraint violations)
+		return "", fmt.Errorf("only SELECT * is supported (specific columns may cause NOT NULL violations)")
+	}
+
+	// Check if it's a simple table reference (no JOINs, subqueries, etc.)
+	// memefish returns different types for simple vs qualified table names
+	var tableName string
+
+	switch source := selectStmt.From.Source.(type) {
+	case *ast.TableName:
+		// Simple table name (e.g., Users, `Order`)
+		if source.Table == nil {
+			return "", fmt.Errorf("table name is nil")
+		}
+		tableName = source.Table.SQL()
+
+	case *ast.PathTableExpr:
+		// Schema-qualified table name (e.g., myschema.Users)
+		if source.Path == nil || len(source.Path.Idents) == 0 {
+			return "", fmt.Errorf("table path is empty")
+		}
+		tableName = source.Path.SQL()
+
+	default:
+		// Could be JOIN, subquery, UNNEST, etc. - not supported
+		return "", fmt.Errorf("only simple table references are supported (no JOINs, subqueries, UNNEST, etc.)")
+	}
+
+	return tableName, nil
+}
 
 // SQLFormatter handles SQL export formatting for different INSERT variants.
 // It supports both single-row and multi-row INSERT statements based on batchSize.
@@ -224,7 +326,11 @@ type SQLStreamingFormatter struct {
 // NewSQLStreamingFormatter creates a new streaming SQL formatter.
 func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enums.DisplayMode) (*SQLStreamingFormatter, error) {
 	if sysVars.SQLTableName == "" {
-		return nil, fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
+		return nil, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
+			"Options:\n" +
+			"  1. Use DUMP TABLE for full table exports\n" +
+			"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
+			"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 	}
 
 	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)
@@ -266,7 +372,11 @@ func (s *SQLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) e
 func formatSQL(mode enums.DisplayMode) FormatFunc {
 	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
 		if sysVars.SQLTableName == "" {
-			return fmt.Errorf("CLI_SQL_TABLE_NAME must be set for SQL export formats")
+			return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
+				"Options:\n" +
+				"  1. Use DUMP TABLE for full table exports\n" +
+				"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
+				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
 
 		formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)

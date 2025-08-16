@@ -98,6 +98,22 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		fc = spanvalue.LiteralFormatConfig
 		usingSQLLiterals = true
 		err = nil
+
+		// Auto-detect table name if not explicitly set
+		if sysVars.SQLTableName == "" {
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			if detectedTableName != "" {
+				// Create a copy of sysVars to use the detected table name for this execution only
+				// This ensures the auto-detection doesn't affect other queries
+				tempVars := *sysVars
+				tempVars.SQLTableName = detectedTableName
+				sysVars = &tempVars
+				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
+			} else if detectionErr != nil {
+				// Log why auto-detection failed for debugging
+				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
+			}
+		}
 	default:
 		// Use regular display formatting for other modes
 		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
