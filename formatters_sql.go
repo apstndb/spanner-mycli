@@ -403,7 +403,14 @@ func (s *SQLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) e
 // Without valid column headers, SQL export cannot generate syntactically correct INSERT statements.
 func formatSQL(mode enums.DisplayMode) FormatFunc {
 	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-		if sysVars.SQLTableName == "" {
+		// Use the table name from Result if available (for buffered mode with auto-detection)
+		// Otherwise fall back to sysVars.SQLTableName
+		tableName := result.SQLTableNameForExport
+		if tableName == "" {
+			tableName = sysVars.SQLTableName
+		}
+
+		if tableName == "" {
 			return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
 				"Options:\n" +
 				"  1. Use DUMP TABLE for full table exports\n" +
@@ -411,7 +418,7 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
 
-		formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)
+		formatter, err := NewSQLFormatter(out, mode, tableName, sysVars.SQLBatchSize)
 		if err != nil {
 			return err
 		}

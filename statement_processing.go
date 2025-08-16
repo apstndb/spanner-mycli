@@ -190,6 +190,11 @@ type Result struct {
 	// When true, Rows bypass normal table formatting and are output as-is.
 	IsDirectOutput bool
 
+	// SQLTableNameForExport stores the auto-detected or explicitly set table name for SQL export.
+	// This field is populated during query execution when SQL export formats are used.
+	// It ensures the table name is available during the formatting phase, even in buffered mode.
+	SQLTableNameForExport string
+
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Streamed       bool              // Indicates rows were streamed and not buffered

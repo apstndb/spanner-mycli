@@ -175,6 +175,12 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	// Attach metrics to result
 	result.Metrics = metrics
 
+	// Store the SQL table name if we're using SQL export format
+	// This ensures the table name is available during formatting phase in buffered mode
+	if sysVars.CLIFormat.IsSQLExport() && sysVars.SQLTableName != "" {
+		result.SQLTableNameForExport = sysVars.SQLTableName
+	}
+
 	return result, nil
 }
 

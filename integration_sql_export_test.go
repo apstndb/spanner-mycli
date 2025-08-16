@@ -878,32 +878,24 @@ CREATE TABLE TestTable (
 			result, err := stmt.Execute(ctx, session)
 
 			if tt.shouldAutoDetect {
-				// Auto-detection happens during execution, so the result should already
-				// have been formatted with the auto-detected table name.
-				// We can verify this by checking if the result contains properly formatted data.
 				if err != nil {
 					t.Fatalf("Expected successful execution with auto-detection, got error: %v", err)
 				}
 
-				// The result should have been streamed or buffered with SQL format
 				// Check if we got valid result with rows
 				if result == nil || (len(result.Rows) == 0 && !result.Streamed) {
 					t.Fatalf("Expected result with data but got empty result")
 				}
 
-				// For buffered mode (which the test uses), we can verify by formatting
-				// However, since auto-detection only works during execution,
-				// we need to re-execute with streaming to see the actual SQL output
-
-				// Re-execute the same query with streaming to capture SQL output
+				// Test buffered mode: format the result using printTableData
+				// This verifies that auto-detected table name is preserved in Result struct
 				var buf bytes.Buffer
 				session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
-				session.systemVariables.StreamingMode = enums.StreamingModeTrue
 
-				// Execute again with streaming to capture the SQL output
-				_, err = stmt.Execute(ctx, session)
+				// Format the buffered result
+				err = printTableData(session.systemVariables, 0, &buf, result)
 				if err != nil {
-					t.Fatalf("Failed to execute with streaming: %v", err)
+					t.Fatalf("Failed to format buffered result: %v", err)
 				}
 
 				sqlOutput := buf.String()
