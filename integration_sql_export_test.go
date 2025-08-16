@@ -748,3 +748,330 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 		}
 	})
 }
+
+func TestSQLExportAutoTableNameDetection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	tests := []struct {
+		name             string
+		query            string
+		shouldAutoDetect bool
+		expectedTable    string
+		exportMode       enums.DisplayMode
+		description      string
+	}{
+		{
+			name:             "Simple SELECT * auto-detection",
+			query:            "SELECT * FROM TestTable",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Basic SELECT * should auto-detect table name",
+		},
+		{
+			name:             "SELECT * with WHERE clause",
+			query:            "SELECT * FROM TestTable WHERE id > 1",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Auto-detect with WHERE clause",
+		},
+		{
+			name:             "SELECT * with ORDER BY",
+			query:            "SELECT * FROM TestTable ORDER BY name DESC",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
+			exportMode:       enums.DisplayModeSQLInsertOrUpdate,
+			description:      "Auto-detect with ORDER BY",
+		},
+		{
+			name:             "SELECT * with LIMIT",
+			query:            "SELECT * FROM TestTable LIMIT 1",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
+			exportMode:       enums.DisplayModeSQLInsertOrIgnore,
+			description:      "Auto-detect with LIMIT",
+		},
+		{
+			name:             "SELECT * with WHERE, ORDER BY, and LIMIT",
+			query:            "SELECT * FROM TestTable WHERE id > 0 ORDER BY id LIMIT 2",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Auto-detect with multiple clauses",
+		},
+		{
+			name:             "Table name with backticks",
+			query:            "SELECT * FROM `TestTable`",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable", // Backticks not needed in output since TestTable is not a reserved word
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Auto-detect with quoted table name",
+		},
+		{
+			name:             "SELECT with column list - no auto-detection",
+			query:            "SELECT id, name FROM TestTable",
+			shouldAutoDetect: false,
+			expectedTable:    "",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Column list should not auto-detect",
+		},
+		{
+			name:             "SELECT with JOIN - no auto-detection",
+			query:            "SELECT * FROM TestTable t1 JOIN TestTable t2 ON t1.id = t2.id",
+			shouldAutoDetect: false,
+			expectedTable:    "",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "JOIN should not auto-detect",
+		},
+		{
+			name:             "SELECT with subquery - no auto-detection",
+			query:            "SELECT * FROM (SELECT * FROM TestTable)",
+			shouldAutoDetect: false,
+			expectedTable:    "",
+			exportMode:       enums.DisplayModeSQLInsert,
+			description:      "Subquery should not auto-detect",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+			defer cancel()
+
+			// Create test table
+			ddl := `
+CREATE TABLE TestTable (
+	id INT64 NOT NULL,
+	name STRING(100),
+	value FLOAT64,
+) PRIMARY KEY (id)`
+
+			// Insert test data
+			insertDMLs := []string{
+				`INSERT INTO TestTable (id, name, value) VALUES (1, 'Alice', 100.5)`,
+				`INSERT INTO TestTable (id, name, value) VALUES (2, 'Bob', 200.75)`,
+				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
+			}
+
+			_, session, teardown := initialize(t, []string{ddl}, insertDMLs)
+			defer teardown()
+
+			// Set up system variables for SQL export
+			// DO NOT set SQLTableName - we want to test auto-detection
+			session.systemVariables.CLIFormat = tt.exportMode
+			session.systemVariables.SQLTableName = "" // Explicitly empty for auto-detection
+			session.systemVariables.SQLBatchSize = 0
+			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+
+			t.Logf("Testing: %s", tt.description)
+			t.Logf("Query: %s", tt.query)
+
+			// Execute the query
+			stmt, err := BuildStatement(tt.query)
+			if err != nil {
+				t.Fatalf("Failed to build statement: %v", err)
+			}
+
+			result, err := stmt.Execute(ctx, session)
+
+			if tt.shouldAutoDetect {
+				if err != nil {
+					t.Fatalf("Expected successful execution with auto-detection, got error: %v", err)
+				}
+
+				// Check if we got valid result with rows
+				if result == nil || (len(result.Rows) == 0 && !result.Streamed) {
+					t.Fatalf("Expected result with data but got empty result")
+				}
+
+				// Test buffered mode: format the result using printTableData
+				// This verifies that auto-detected table name is preserved in Result struct
+				var buf bytes.Buffer
+				session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+
+				// Format the buffered result
+				err = printTableData(session.systemVariables, 0, &buf, result)
+				if err != nil {
+					t.Fatalf("Failed to format buffered result: %v", err)
+				}
+
+				sqlOutput := buf.String()
+				t.Logf("Generated SQL with auto-detected table:\n%s", sqlOutput)
+
+				// Verify the output contains the expected table name
+				expectedPattern := fmt.Sprintf("INTO %s", tt.expectedTable)
+				if !strings.Contains(sqlOutput, expectedPattern) {
+					t.Errorf("Expected table name %s in output, but got:\n%s", tt.expectedTable, sqlOutput)
+				}
+
+				// Verify it's valid SQL by parsing the generated statements
+				rawStatements, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", sqlOutput)
+				if err != nil {
+					t.Errorf("Generated SQL is not valid: %v", err)
+				}
+
+				// Count statements
+				validStmts := 0
+				for _, rawStmt := range rawStatements {
+					if strings.TrimSpace(rawStmt.Statement) != "" {
+						validStmts++
+					}
+				}
+				t.Logf("Generated %d valid SQL statements", validStmts)
+
+			} else {
+				// Should fail without explicit table name
+				if err != nil {
+					// Error during execution is expected
+					t.Logf("Got expected error during execution: %v", err)
+				} else {
+					// If execution succeeded, formatting should fail
+					var buf bytes.Buffer
+					err = printTableData(session.systemVariables, 0, &buf, result)
+					if err == nil {
+						t.Errorf("Expected error without table name, but formatting succeeded")
+						t.Logf("Unexpected output: %s", buf.String())
+					} else {
+						t.Logf("Got expected error during formatting: %v", err)
+						// Check if error message is helpful
+						errStr := err.Error()
+						if !strings.Contains(errStr, "SQL export requires a table name") &&
+							!strings.Contains(errStr, "Auto-detection failed") &&
+							!strings.Contains(errStr, "CLI_SQL_TABLE_NAME") {
+							t.Logf("Warning: Error message could be more helpful: %v", err)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+
+	// Create test tables
+	ddls := []string{
+		`CREATE TABLE Users (
+			id INT64 NOT NULL,
+			name STRING(100),
+			age INT64,
+		) PRIMARY KEY (id)`,
+		`CREATE TABLE Orders (
+			id INT64 NOT NULL,
+			user_id INT64,
+			amount FLOAT64,
+		) PRIMARY KEY (id)`,
+	}
+
+	// Insert test data
+	insertDMLs := []string{
+		`INSERT INTO Users (id, name, age) VALUES (1, 'Alice', 30), (2, 'Bob', 25)`,
+		`INSERT INTO Orders (id, user_id, amount) VALUES (1, 1, 100.0), (2, 1, 200.0), (3, 2, 150.0)`,
+	}
+
+	_, session, teardown := initialize(t, ddls, insertDMLs)
+	defer teardown()
+
+	// Test cases that should NOT auto-detect
+	complexQueries := []struct {
+		name  string
+		query string
+		desc  string
+	}{
+		{
+			name:  "UNION query",
+			query: "SELECT * FROM Users WHERE age > 25 UNION ALL SELECT * FROM Users WHERE age <= 25",
+			desc:  "UNION queries are too complex for auto-detection",
+		},
+		{
+			name:  "CTE with SELECT *",
+			query: "WITH young_users AS (SELECT * FROM Users WHERE age < 30) SELECT * FROM young_users",
+			desc:  "CTE queries are not supported",
+		},
+		{
+			name:  "JOIN with SELECT *",
+			query: "SELECT * FROM Users u JOIN Orders o ON u.id = o.user_id",
+			desc:  "JOIN queries are too complex",
+		},
+		{
+			name:  "Subquery in FROM",
+			query: "SELECT * FROM (SELECT * FROM Users WHERE age > 25) AS filtered_users",
+			desc:  "Subqueries are not supported",
+		},
+		{
+			name:  "SELECT with expressions",
+			query: "SELECT id, name, age * 2 AS double_age FROM Users",
+			desc:  "Queries with expressions need explicit table names",
+		},
+	}
+
+	for _, tc := range complexQueries {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up for SQL export without table name
+			session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
+			session.systemVariables.SQLTableName = "" // Empty for auto-detection attempt
+			session.systemVariables.SQLBatchSize = 0
+			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+
+			t.Logf("Testing: %s", tc.desc)
+			t.Logf("Query: %s", tc.query)
+
+			stmt, err := BuildStatement(tc.query)
+			if err != nil {
+				t.Fatalf("Failed to build statement: %v", err)
+			}
+
+			result, err := stmt.Execute(ctx, session)
+			if err != nil {
+				// Error during execution is acceptable
+				t.Logf("Error during execution (expected): %v", err)
+			} else {
+				// If execution succeeded, formatting should fail
+				var buf bytes.Buffer
+				err = printTableData(session.systemVariables, 0, &buf, result)
+				if err == nil {
+					t.Errorf("Expected error for complex query without table name, but succeeded")
+					t.Logf("Unexpected output: %s", buf.String())
+				} else {
+					t.Logf("Got expected error: %v", err)
+					// Verify error message mentions the need for explicit table name
+					if !strings.Contains(err.Error(), "CLI_SQL_TABLE_NAME") {
+						t.Logf("Error message should mention CLI_SQL_TABLE_NAME")
+					}
+				}
+			}
+
+			// Now test with explicit table name - should work
+			session.systemVariables.SQLTableName = "ExportTable"
+
+			// Re-execute with explicit table name
+			result, err = stmt.Execute(ctx, session)
+			if err != nil {
+				t.Logf("Note: Query failed even with explicit table name: %v", err)
+				// Some queries like JOINs may still fail for other reasons
+			} else {
+				var buf bytes.Buffer
+				err = printTableData(session.systemVariables, 0, &buf, result)
+				if err != nil {
+					t.Logf("Note: Formatting failed even with explicit table name: %v", err)
+				} else {
+					sqlOutput := buf.String()
+					if strings.Contains(sqlOutput, "INSERT INTO ExportTable") {
+						t.Logf("Success with explicit table name: Generated %d bytes of SQL", len(sqlOutput))
+					} else {
+						t.Errorf("Expected INSERT INTO ExportTable in output")
+					}
+				}
+			}
+		})
+	}
+}

@@ -98,6 +98,25 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		fc = spanvalue.LiteralFormatConfig
 		usingSQLLiterals = true
 		err = nil
+
+		// Auto-detect table name if not explicitly set
+		if sysVars.SQLTableName == "" {
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			if detectedTableName != "" {
+				// Create a copy of sysVars to use the detected table name for this execution only.
+				// This is important for:
+				// 1. Scope isolation: auto-detection only affects this specific query execution
+				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
+				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
+				tempVars := *sysVars
+				tempVars.SQLTableName = detectedTableName
+				sysVars = &tempVars
+				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
+			} else if detectionErr != nil {
+				// Log why auto-detection failed for debugging
+				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
+			}
+		}
 	default:
 		// Use regular display formatting for other modes
 		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
@@ -155,6 +174,12 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 	// Attach metrics to result
 	result.Metrics = metrics
+
+	// Store the SQL table name if we're using SQL export format
+	// This ensures the table name is available during formatting phase in buffered mode
+	if sysVars.CLIFormat.IsSQLExport() && sysVars.SQLTableName != "" {
+		result.SQLTableNameForExport = sysVars.SQLTableName
+	}
 
 	return result, nil
 }
