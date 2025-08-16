@@ -332,15 +332,46 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 // This is equivalent to setTransactionContext(nil) but more expressive.
 // NOTE: This is a core context management function with direct tc access.
 func (s *Session) clearTransactionContext() {
+	_ = s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		// Close the transaction context to stop any running heartbeat
+		if *tcPtr != nil {
+			(*tcPtr).Close()
+		}
+		*tcPtr = nil
+		return nil
+	})
+}
+
+// withTransactionContextLocked is the most generic base method for transaction context manipulation.
+// It provides direct access to the transaction context pointer, allowing atomic read-modify-write operations.
+// The function fn receives a pointer to the transaction context pointer, enabling it to replace the entire context.
+// NOTE: This is the foundation for all transaction state management operations.
+func (s *Session) withTransactionContextLocked(fn func(tc **transactionContext) error) error {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
+	return fn(&s.tc)
+}
 
-	// Close the transaction context to stop any running heartbeat
-	if s.tc != nil {
-		s.tc.Close()
-	}
+// TransitTransaction implements a functional state transition pattern for transaction management.
+// It atomically transitions from one transaction state to another, handling cleanup of the old state.
+// The transition function receives the current context and returns the new context.
+// If an error occurs during transition, the original state is preserved.
+func (s *Session) TransitTransaction(ctx context.Context, fn func(tc *transactionContext) (*transactionContext, error)) error {
+	return s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		oldTc := *tcPtr
+		newTc, err := fn(oldTc)
+		if err != nil {
+			return err
+		}
 
-	s.tc = nil
+		// Cleanup old transaction context if it's being replaced
+		if oldTc != nil && oldTc != newTc {
+			oldTc.Close()
+		}
+
+		*tcPtr = newTc
+		return nil
+	})
 }
 
 // QueryResult holds the result of a query operation with optional transaction.
@@ -655,25 +686,21 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 	resolvedPriority := s.resolveTransactionPriority(priority)
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+	return s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
+		// Check for any type of existing transaction (including pending)
+		if tc != nil {
+			return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+		}
 
-	// Check for any type of existing transaction (including pending)
-	if s.tc != nil {
-		// Capture mode for safe error message formatting
-		mode := s.tc.attrs.mode
-		return fmt.Errorf("%s transaction is already running", mode)
-	}
-
-	s.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModePending,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-	}
-	return nil
+		// Return new pending transaction context
+		return &transactionContext{
+			attrs: transactionAttributes{
+				mode:           transactionModePending,
+				priority:       resolvedPriority,
+				isolationLevel: resolvedIsolationLevel,
+			},
+		}, nil
+	})
 }
 
 // DetermineTransaction determines the type of transaction to start based on the pending transaction
@@ -724,45 +751,41 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	resolvedPriority := s.resolveTransactionPriority(priority)
 	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
 
-	opts := spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: s.systemVariables.ReturnCommitStats, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
-		CommitPriority:              resolvedPriority,
-		TransactionTag:              tag,
-		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
-		IsolationLevel:              resolvedIsolationLevel,
-	}
+	return s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
+		// Check for existing transaction
+		if tc != nil && tc.attrs.mode != transactionModePending {
+			return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+		}
 
-	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
-	if err != nil {
-		return err
-	}
+		// Create the new transaction
+		opts := spanner.TransactionOptions{
+			CommitOptions:               spanner.CommitOptions{ReturnCommitStats: s.systemVariables.ReturnCommitStats, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
+			CommitPriority:              resolvedPriority,
+			TransactionTag:              tag,
+			ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
+			IsolationLevel:              resolvedIsolationLevel,
+		}
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+		txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
+		if err != nil {
+			return tc, err // Return original context on error
+		}
 
-	// Check for existing transaction under lock
-	if err := s.validateNoActiveTransactionLocked(); err != nil {
-		// Need to rollback the transaction we just created since we can't use it
-		txn.Rollback(ctx)
-		return err
-	}
-
-	s.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModeReadWrite,
-			tag:            tag,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-		txn:           txn,
-		heartbeatFunc: s.startHeartbeat,
-	}
+		// Return new transaction context
+		return &transactionContext{
+			attrs: transactionAttributes{
+				mode:           transactionModeReadWrite,
+				tag:            tag,
+				priority:       resolvedPriority,
+				isolationLevel: resolvedIsolationLevel,
+			},
+			txn:           txn,
+			heartbeatFunc: s.startHeartbeat,
+		}, nil
+	})
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation
 	// For implicit transactions, they commit immediately so heartbeat isn't needed
-
-	return nil
 }
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
@@ -837,42 +860,43 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	tb := s.resolveTimestampBound(typ, staleness, timestamp)
 	resolvedPriority := s.resolveTransactionPriority(priority)
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+	var resultTimestamp time.Time
+	err := s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
+		// Check for existing transaction
+		if tc != nil && tc.attrs.mode != transactionModePending {
+			return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+		}
 
-	// Check for existing transaction under lock
-	if err := s.validateNoActiveTransactionLocked(); err != nil {
-		return time.Time{}, err
-	}
+		txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
-	txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
+		// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
+		// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
+		opts := spanner.QueryOptions{Priority: resolvedPriority}
+		if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
+			txn.Close()
+			return tc, err
+		}
 
-	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
-	// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
-	opts := spanner.QueryOptions{Priority: resolvedPriority}
-	if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
-		txn.Close()
-		return time.Time{}, err
-	}
+		// Get timestamp first to ensure the transaction is valid
+		ts, err := txn.Timestamp()
+		if err != nil {
+			txn.Close()
+			return tc, err
+		}
 
-	// Get timestamp first to ensure the transaction is valid
-	ts, err := txn.Timestamp()
-	if err != nil {
-		txn.Close()
-		return time.Time{}, err
-	}
+		resultTimestamp = ts
 
-	// Only update session state after successful timestamp retrieval
-	s.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:     transactionModeReadOnly,
-			priority: resolvedPriority,
-		},
-		txn: txn,
-	}
+		// Return new transaction context
+		return &transactionContext{
+			attrs: transactionAttributes{
+				mode:     transactionModeReadOnly,
+				priority: resolvedPriority,
+			},
+			txn: txn,
+		}, nil
+	})
 
-	return ts, nil
+	return resultTimestamp, err
 }
 
 // CloseReadOnlyTransaction closes a running read-only transaction.
@@ -891,12 +915,18 @@ func (s *Session) CloseReadOnlyTransaction() error {
 }
 
 func (s *Session) ClosePendingTransaction() error {
-	if !s.InPendingTransaction() {
-		return ErrNotInPendingTransaction
-	}
+	return s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || (*tcPtr).attrs.mode != transactionModePending {
+			return ErrNotInPendingTransaction
+		}
 
-	s.clearTransactionContext()
-	return nil
+		// Close the transaction context
+		if *tcPtr != nil {
+			(*tcPtr).Close()
+		}
+		*tcPtr = nil
+		return nil
+	})
 }
 
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
