@@ -32,6 +32,7 @@ import (
 //   - SELECT * FROM table_name WHERE ...
 //   - SELECT * FROM table_name ORDER BY ...
 //   - SELECT * FROM table_name LIMIT ...
+//   - SELECT DISTINCT * FROM table_name (DISTINCT is allowed since Spanner tables always have PKs)
 //   - Combinations of the above
 //
 // NOT supported:
@@ -39,6 +40,9 @@ import (
 //   - JOINs (combine multiple tables)
 //   - Specific column selection (may cause NOT NULL violations)
 //   - Subqueries, CTEs, UNIONs (complex structures)
+//
+// Note: DISTINCT is allowed because Spanner tables always have primary keys,
+// making SELECT * results inherently unique. DISTINCT on unique results is a no-op.
 //
 // Returns:
 //   - (tableName, nil) when extraction succeeds
@@ -103,10 +107,8 @@ func extractTableNameFromQuery(sql string) (string, error) {
 		return "", fmt.Errorf("HAVING not supported (aggregation changes result set structure)")
 	}
 
-	// Check for DISTINCT - not supported because it changes result set by removing duplicates
-	if selectStmt.AllOrDistinct == ast.AllOrDistinctDistinct {
-		return "", fmt.Errorf("DISTINCT not supported (removes duplicate rows from result set)")
-	}
+	// Note: DISTINCT is allowed because Spanner tables always have primary keys,
+	// so SELECT * results are inherently unique. DISTINCT doesn't change the result set.
 
 	// Check if it's SELECT * (all columns)
 	if len(selectStmt.Results) != 1 {
