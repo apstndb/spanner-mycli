@@ -27,12 +27,18 @@ import (
 )
 
 // extractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
-// It only supports whitelisted patterns for safety and predictability:
+// It only supports whitelisted patterns that preserve the original table's structure:
 //   - SELECT * FROM table_name
 //   - SELECT * FROM table_name WHERE ...
 //   - SELECT * FROM table_name ORDER BY ...
 //   - SELECT * FROM table_name LIMIT ...
 //   - Combinations of the above
+//
+// NOT supported:
+//   - GROUP BY / HAVING (aggregations change the result set structure)
+//   - JOINs (combine multiple tables)
+//   - Specific column selection (may cause NOT NULL violations)
+//   - Subqueries, CTEs, UNIONs (complex structures)
 //
 // Returns:
 //   - (tableName, nil) when extraction succeeds
@@ -85,6 +91,21 @@ func extractTableNameFromQuery(sql string) (string, error) {
 	if selectStmt.From == nil {
 		// No FROM clause - not a table query
 		return "", fmt.Errorf("no FROM clause found")
+	}
+
+	// Check for GROUP BY - not supported because aggregation changes result structure
+	if selectStmt.GroupBy != nil {
+		return "", fmt.Errorf("GROUP BY not supported (aggregation changes result set structure)")
+	}
+
+	// Check for HAVING - not supported (only appears with GROUP BY)
+	if selectStmt.Having != nil {
+		return "", fmt.Errorf("HAVING not supported (aggregation changes result set structure)")
+	}
+
+	// Check for DISTINCT - not supported because it changes result set by removing duplicates
+	if selectStmt.AllOrDistinct == ast.AllOrDistinctDistinct {
+		return "", fmt.Errorf("DISTINCT not supported (removes duplicate rows from result set)")
 	}
 
 	// Check if it's SELECT * (all columns)

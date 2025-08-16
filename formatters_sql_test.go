@@ -281,16 +281,30 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 		{
 			name:          "SELECT * with GROUP BY",
 			query:         "SELECT * FROM Users GROUP BY status",
-			wantTableName: "Users",
-			wantError:     "",
-			description:   "GROUP BY is allowed with SELECT *",
+			wantTableName: "",
+			wantError:     "GROUP BY not supported",
+			description:   "GROUP BY changes result set structure through aggregation",
 		},
 		{
 			name:          "SELECT * with HAVING",
 			query:         "SELECT * FROM Users GROUP BY status HAVING COUNT(*) > 5",
-			wantTableName: "Users",
-			wantError:     "",
-			description:   "HAVING is allowed with SELECT *",
+			wantTableName: "",
+			wantError:     "GROUP BY not supported", // GROUP BY is checked before HAVING
+			description:   "HAVING requires GROUP BY which changes result set structure",
+		},
+		{
+			name:          "SELECT DISTINCT *",
+			query:         "SELECT DISTINCT * FROM Users",
+			wantTableName: "",
+			wantError:     "DISTINCT not supported",
+			description:   "DISTINCT removes duplicates, changing result set",
+		},
+		{
+			name:          "SELECT DISTINCT * with WHERE",
+			query:         "SELECT DISTINCT * FROM Users WHERE status = 'ACTIVE'",
+			wantTableName: "",
+			wantError:     "DISTINCT not supported",
+			description:   "DISTINCT with WHERE still not supported",
 		},
 		{
 			name:          "SELECT with table.* notation",
