@@ -103,8 +103,11 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		if sysVars.SQLTableName == "" {
 			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
 			if detectedTableName != "" {
-				// Create a copy of sysVars to use the detected table name for this execution only
-				// This ensures the auto-detection doesn't affect other queries
+				// Create a copy of sysVars to use the detected table name for this execution only.
+				// This is important for:
+				// 1. Scope isolation: auto-detection only affects this specific query execution
+				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
+				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
 				tempVars := *sysVars
 				tempVars.SQLTableName = detectedTableName
 				sysVars = &tempVars

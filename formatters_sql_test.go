@@ -185,6 +185,13 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			wantError:     "",
 			description:   "SELECT * with query hint",
 		},
+		{
+			name:          "SELECT * with hint and table alias",
+			query:         "@{FORCE_INDEX=UsersByAge} SELECT * FROM Users u",
+			wantTableName: "Users",
+			wantError:     "",
+			description:   "Query hint with table alias should extract actual table name",
+		},
 
 		// Unsupported patterns (should return empty string with error)
 		{

@@ -52,6 +52,13 @@ import (
 // auto-detection failed, allowing users to adjust their queries or use explicit
 // CLI_SQL_TABLE_NAME setting.
 func extractTableNameFromQuery(sql string) (string, error) {
+	// Validation flow:
+	// 1. Parse SQL and verify it's a SELECT statement
+	// 2. Navigate through AST structure (handling Query wrapper for ORDER BY/LIMIT)
+	// 3. Check for unsupported features (GROUP BY, HAVING, CTEs)
+	// 4. Verify it's SELECT * (not specific columns)
+	// 5. Extract table name from FROM clause
+
 	// Parse the SQL statement
 	stmt, err := memefish.ParseStatement("", sql)
 	if err != nil {
@@ -131,14 +138,16 @@ func extractTableNameFromQuery(sql string) (string, error) {
 	case *ast.TableName:
 		// Simple table name (e.g., Users, `Order`)
 		if source.Table == nil {
-			return "", fmt.Errorf("table name is nil")
+			// This shouldn't happen with valid memefish AST, but handle it gracefully
+			return "", fmt.Errorf("unable to extract table name from query structure")
 		}
 		tableName = source.Table.SQL()
 
 	case *ast.PathTableExpr:
 		// Schema-qualified table name (e.g., myschema.Users)
 		if source.Path == nil || len(source.Path.Idents) == 0 {
-			return "", fmt.Errorf("table path is empty")
+			// This shouldn't happen with valid memefish AST, but handle it gracefully
+			return "", fmt.Errorf("unable to extract table path from query structure")
 		}
 		tableName = source.Path.SQL()
 
