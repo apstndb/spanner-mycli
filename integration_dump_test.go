@@ -293,3 +293,224 @@ func TestDumpWithStreaming(t *testing.T) {
 		t.Errorf("Expected at least 5 INSERT statements, got %d\nOutput:\n%s", insertCount, output)
 	}
 }
+
+func TestDumpWithForeignKeys(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	t.Parallel()
+	ctx := context.Background()
+
+	_, session, teardown := initialize(t, nil, nil)
+	defer teardown()
+
+	// Create tables with foreign key relationships
+	setupDDL := []string{
+		`CREATE TABLE Venues (
+			VenueId INT64 NOT NULL,
+			VenueName STRING(100),
+		) PRIMARY KEY (VenueId)`,
+		`CREATE TABLE Artists (
+			ArtistId INT64 NOT NULL,
+			ArtistName STRING(100),
+		) PRIMARY KEY (ArtistId)`,
+		`CREATE TABLE Concerts (
+			ConcertId INT64 NOT NULL,
+			VenueId INT64 NOT NULL,
+			ArtistId INT64 NOT NULL,
+			ConcertDate DATE,
+			CONSTRAINT FK_Venue FOREIGN KEY (VenueId) REFERENCES Venues (VenueId),
+			CONSTRAINT FK_Artist FOREIGN KEY (ArtistId) REFERENCES Artists (ArtistId),
+		) PRIMARY KEY (ConcertId)`,
+	}
+
+	for _, ddl := range setupDDL {
+		stmt, err := BuildStatement(ddl)
+		if err != nil {
+			t.Fatalf("Failed to build DDL statement: %v", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
+			t.Fatalf("Failed to create test table: %v", err)
+		}
+	}
+
+	// Insert test data
+	insertStmts := []string{
+		`INSERT INTO Venues (VenueId, VenueName) VALUES (1, 'Madison Square Garden')`,
+		`INSERT INTO Venues (VenueId, VenueName) VALUES (2, 'Hollywood Bowl')`,
+		`INSERT INTO Artists (ArtistId, ArtistName) VALUES (1, 'The Beatles')`,
+		`INSERT INTO Artists (ArtistId, ArtistName) VALUES (2, 'Rolling Stones')`,
+		`INSERT INTO Concerts (ConcertId, VenueId, ArtistId, ConcertDate) VALUES (1, 1, 1, '2024-01-15')`,
+		`INSERT INTO Concerts (ConcertId, VenueId, ArtistId, ConcertDate) VALUES (2, 2, 2, '2024-02-20')`,
+	}
+
+	for _, sql := range insertStmts {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("Failed to build DML statement: %v", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
+			t.Fatalf("Failed to insert test data: %v", err)
+		}
+	}
+
+	// Test DUMP TABLES with FK dependencies
+	dumpStmt := &DumpTablesStatement{Tables: []string{"Concerts", "Venues", "Artists"}}
+	result, err := dumpStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Convert rows to string for analysis
+	var output strings.Builder
+	for _, row := range result.Rows {
+		if len(row) > 0 {
+			output.WriteString(row[0])
+			output.WriteString("\n")
+		}
+	}
+	outputStr := output.String()
+
+	// Check table order - FK referenced tables should come before referencing tables
+	venueIndex := strings.Index(outputStr, "-- Data for table Venues")
+	artistIndex := strings.Index(outputStr, "-- Data for table Artists")
+	concertIndex := strings.Index(outputStr, "-- Data for table Concerts")
+
+	if venueIndex == -1 || artistIndex == -1 || concertIndex == -1 {
+		t.Errorf("Expected all three tables in output")
+	}
+
+	// Concerts should come after both Venues and Artists due to FK constraints
+	if concertIndex < venueIndex {
+		t.Errorf("Concerts should appear after Venues (FK dependency)")
+	}
+	if concertIndex < artistIndex {
+		t.Errorf("Concerts should appear after Artists (FK dependency)")
+	}
+
+	// Check INSERT statements
+	if strings.Count(outputStr, "INSERT INTO Venues") < 2 {
+		t.Errorf("Expected at least 2 INSERT statements for Venues")
+	}
+	if strings.Count(outputStr, "INSERT INTO Artists") < 2 {
+		t.Errorf("Expected at least 2 INSERT statements for Artists")
+	}
+	if strings.Count(outputStr, "INSERT INTO Concerts") < 2 {
+		t.Errorf("Expected at least 2 INSERT statements for Concerts")
+	}
+}
+
+func TestDumpWithMixedDependencies(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	t.Parallel()
+	ctx := context.Background()
+
+	_, session, teardown := initialize(t, nil, nil)
+	defer teardown()
+
+	// Create tables with both INTERLEAVE and FK relationships
+	setupDDL := []string{
+		`CREATE TABLE Categories (
+			CategoryId INT64 NOT NULL,
+			CategoryName STRING(100),
+		) PRIMARY KEY (CategoryId)`,
+		`CREATE TABLE Products (
+			ProductId INT64 NOT NULL,
+			ProductName STRING(100),
+			CategoryId INT64,
+			CONSTRAINT FK_Category FOREIGN KEY (CategoryId) REFERENCES Categories (CategoryId),
+		) PRIMARY KEY (ProductId)`,
+		`CREATE TABLE Customers (
+			CustomerId INT64 NOT NULL,
+			CustomerName STRING(100),
+		) PRIMARY KEY (CustomerId)`,
+		`CREATE TABLE Orders (
+			CustomerId INT64 NOT NULL,
+			OrderId INT64 NOT NULL,
+			OrderDate DATE,
+		) PRIMARY KEY (CustomerId, OrderId),
+		  INTERLEAVE IN PARENT Customers ON DELETE CASCADE`,
+		`CREATE TABLE OrderItems (
+			CustomerId INT64 NOT NULL,
+			OrderId INT64 NOT NULL,
+			ItemId INT64 NOT NULL,
+			ProductId INT64 NOT NULL,
+			Quantity INT64,
+			CONSTRAINT FK_Product FOREIGN KEY (ProductId) REFERENCES Products (ProductId),
+		) PRIMARY KEY (CustomerId, OrderId, ItemId),
+		  INTERLEAVE IN PARENT Orders ON DELETE CASCADE`,
+	}
+
+	for _, ddl := range setupDDL {
+		stmt, err := BuildStatement(ddl)
+		if err != nil {
+			t.Fatalf("Failed to build DDL statement: %v", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
+			t.Fatalf("Failed to create test table: %v", err)
+		}
+	}
+
+	// Insert test data
+	insertStmts := []string{
+		`INSERT INTO Categories (CategoryId, CategoryName) VALUES (1, 'Electronics')`,
+		`INSERT INTO Products (ProductId, ProductName, CategoryId) VALUES (1, 'Laptop', 1)`,
+		`INSERT INTO Customers (CustomerId, CustomerName) VALUES (1, 'Alice')`,
+		`INSERT INTO Orders (CustomerId, OrderId, OrderDate) VALUES (1, 1, '2024-01-01')`,
+		`INSERT INTO OrderItems (CustomerId, OrderId, ItemId, ProductId, Quantity) VALUES (1, 1, 1, 1, 2)`,
+	}
+
+	for _, sql := range insertStmts {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("Failed to build DML statement: %v", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
+			t.Fatalf("Failed to insert test data: %v", err)
+		}
+	}
+
+	// Test DUMP DATABASE with mixed dependencies
+	dumpStmt := &DumpDatabaseStatement{}
+	result, err := dumpStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Convert rows to string for analysis
+	var output strings.Builder
+	for _, row := range result.Rows {
+		if len(row) > 0 {
+			output.WriteString(row[0])
+			output.WriteString("\n")
+		}
+	}
+	outputStr := output.String()
+
+	// Check table order
+	categoryIndex := strings.Index(outputStr, "-- Data for table Categories")
+	productIndex := strings.Index(outputStr, "-- Data for table Products")
+	customerIndex := strings.Index(outputStr, "-- Data for table Customers")
+	orderIndex := strings.Index(outputStr, "-- Data for table Orders")
+	orderItemIndex := strings.Index(outputStr, "-- Data for table OrderItems")
+
+	// FK dependencies: Categories before Products
+	if categoryIndex > productIndex && productIndex != -1 {
+		t.Errorf("Categories should appear before Products (FK dependency)")
+	}
+
+	// INTERLEAVE dependencies: Customers before Orders before OrderItems
+	if customerIndex > orderIndex && orderIndex != -1 {
+		t.Errorf("Customers should appear before Orders (INTERLEAVE dependency)")
+	}
+	if orderIndex > orderItemIndex && orderItemIndex != -1 {
+		t.Errorf("Orders should appear before OrderItems (INTERLEAVE dependency)")
+	}
+
+	// Mixed dependency: Products before OrderItems (FK from OrderItems to Products)
+	if productIndex > orderItemIndex && orderItemIndex != -1 {
+		t.Errorf("Products should appear before OrderItems (FK dependency)")
+	}
+}
