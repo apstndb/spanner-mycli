@@ -146,14 +146,13 @@ type Session struct {
 	clientOpts   []option.ClientOption
 	tc           *transactionContext
 	// tcMutex protects the transaction context (tc) from concurrent access.
-	// Direct access to tc is ONLY allowed in the following functions:
-	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
-	// - clearTransactionContext, TransactionAttrs (context management)
-	// - DetermineTransaction (needs isolationLevel from pending transaction)
-	// - getTransactionTag (needs tag access for pending transaction)
-	// - BeginPendingTransaction, BeginReadWriteTransaction, BeginReadOnlyTransaction (atomic transaction creation)
-	// - validateNoActiveTransactionLocked (internal validation helper)
-	// All other functions MUST use these helpers instead of direct tc access.
+	// Direct access to tc is managed through withTransactionContextLocked base method.
+	// Helper functions that work with transaction context:
+	// - withTransactionContextLocked: Base method for all tc manipulation
+	// - TransitTransaction: Atomic state transitions with cleanup
+	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction: Type-safe transaction access
+	// - clearTransactionContext, TransactionAttrsWithLock: Safe context management
+	// All transaction context access MUST go through these helpers.
 	tcMutex         sync.Mutex
 	systemVariables *systemVariables
 
@@ -280,9 +279,6 @@ var (
 	_ transaction = (*spanner.ReadWriteTransaction)(nil)
 )
 
-// withReadWriteTransaction executes fn with the current read-write transaction under mutex protection.
-// Returns ErrNotInReadWriteTransaction if not in a read-write transaction.
-// NOTE: This is a core transaction helper with direct tc access.
 // withTransactionLocked is a generic helper that executes fn while holding the transaction mutex.
 // It validates the transaction mode and returns an appropriate error if the mode doesn't match.
 // NOTE: The mutex must NOT be held by the caller - this function acquires it.
@@ -312,7 +308,6 @@ func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTr
 
 // withReadWriteTransactionContext executes fn with both the transaction and context under mutex protection.
 // This allows safe access to both the transaction and its context fields.
-// NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
 	return s.withTransactionLocked(transactionModeReadWrite, func() error {
 		return fn(s.tc.RWTxn(), s.tc)
@@ -321,7 +316,6 @@ func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmt
 
 // withReadOnlyTransaction executes fn with the current read-only transaction under mutex protection.
 // Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
-// NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
 	return s.withTransactionLocked(transactionModeReadOnly, func() error {
 		return fn(s.tc.ROTxn())
@@ -330,7 +324,6 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 
 // clearTransactionContext atomically clears the transaction context.
 // This is equivalent to setTransactionContext(nil) but more expressive.
-// NOTE: This is a core context management function with direct tc access.
 func (s *Session) clearTransactionContext() {
 	_ = s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
 		// Close the transaction context to stop any running heartbeat
@@ -581,7 +574,6 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 // Design decision: This method directly implements the mutex-protected access
 // rather than delegating to an internal method. This reduces unnecessary layers
 // while maintaining a clean public API name.
-// NOTE: This is a core context management function with direct tc access.
 //
 // Naming convention:
 // - TransactionAttrsWithLock() - Acquires lock internally (this method)
@@ -650,17 +642,6 @@ func (s *Session) InTransaction() bool {
 	return isActive
 }
 
-// validateNoActiveTransactionLocked checks if there's no active transaction while holding the mutex.
-// This is used internally by transaction creation methods to ensure atomic check-and-set.
-// Caller must hold s.tcMutex.
-func (s *Session) validateNoActiveTransactionLocked() error {
-	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
-		// Capture mode for safe error message formatting
-		mode := s.tc.attrs.mode
-		return fmt.Errorf("%s transaction is already running", mode)
-	}
-	return nil
-}
 
 // resolveTransactionPriority returns the effective priority for a transaction.
 // If the provided priority is unspecified, it uses the session's default priority.
@@ -705,20 +686,26 @@ func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sp
 
 // DetermineTransaction determines the type of transaction to start based on the pending transaction
 // and system variables. It returns the timestamp for read-only transactions or a zero time for read-write transactions.
-// NOTE: This function has direct tc access to retrieve isolationLevel from pending transactions.
 func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
 	var zeroTime time.Time
 
-	// Check if there's a pending transaction and get its properties
-	s.tcMutex.Lock()
-	if s.tc == nil || s.tc.attrs.mode != transactionModePending {
-		s.tcMutex.Unlock()
+	// Check if there's a pending transaction and get its properties atomically
+	var priority sppb.RequestOptions_Priority
+	var isolationLevel sppb.TransactionOptions_IsolationLevel
+	var isPending bool
+
+	_ = s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		if *tcPtr != nil && (*tcPtr).attrs.mode == transactionModePending {
+			isPending = true
+			priority = (*tcPtr).attrs.priority
+			isolationLevel = (*tcPtr).attrs.isolationLevel
+		}
+		return nil
+	})
+
+	if !isPending {
 		return zeroTime, nil
 	}
-	// Copy the values we need before unlocking
-	priority := s.tc.attrs.priority
-	isolationLevel := s.tc.attrs.isolationLevel
-	s.tcMutex.Unlock()
 
 	// Determine transaction type based on system variables
 	if s.systemVariables.ReadOnly {
@@ -731,14 +718,15 @@ func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
 }
 
 // getTransactionTag returns the transaction tag from a pending transaction if it exists.
-// NOTE: This function has direct tc access to retrieve tag from pending transactions.
 func (s *Session) getTransactionTag() string {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-	if s.tc != nil && s.tc.attrs.mode == transactionModePending {
-		return s.tc.attrs.tag
-	}
-	return ""
+	var tag string
+	_ = s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		if *tcPtr != nil && (*tcPtr).attrs.mode == transactionModePending {
+			tag = (*tcPtr).attrs.tag
+		}
+		return nil
+	})
+	return tag
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
