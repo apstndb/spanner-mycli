@@ -53,3 +53,12 @@ func GetExitCode(err error) int {
 	// Default to generic error
 	return exitCodeError
 }
+
+// Transaction context errors
+var (
+	// ErrTransactionNotAvailable is returned when attempting to access a transaction that doesn't exist
+	ErrTransactionNotAvailable = errors.New("transaction is not available")
+
+	// ErrInvalidTransactionMode is returned when the transaction mode is invalid for the requested operation
+	ErrInvalidTransactionMode = errors.New("invalid transaction mode for this operation")
+)

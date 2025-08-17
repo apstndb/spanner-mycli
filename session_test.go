@@ -126,18 +126,20 @@ func TestSession_FailStatementIfReadOnly(t *testing.T) {
 
 func TestTransactionContext_NilChecks(t *testing.T) {
 	tests := []struct {
-		name         string
-		tc           *transactionContext
-		method       string
-		shouldPanic  bool
-		panicMessage string
+		name     string
+		tc       *transactionContext
+		method   string
+		wantErr  bool
+		errCheck func(error) bool
 	}{
 		{
-			name:         "RWTxn with nil context",
-			tc:           nil,
-			method:       "RWTxn",
-			shouldPanic:  true,
-			panicMessage: "read-write transaction is not available",
+			name:    "RWTxn with nil context",
+			tc:      nil,
+			method:  "RWTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "RWTxn with nil txn",
@@ -145,9 +147,11 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeReadWrite},
 				txn:   nil,
 			},
-			method:       "RWTxn",
-			shouldPanic:  true,
-			panicMessage: "read-write transaction is not available",
+			method:  "RWTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "RWTxn with wrong mode",
@@ -155,16 +159,20 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeReadOnly},
 				txn:   &mockTransaction{},
 			},
-			method:       "RWTxn",
-			shouldPanic:  true,
-			panicMessage: "must be in read-write transaction, but: read-only",
+			method:  "RWTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrNotInReadWriteTransaction)
+			},
 		},
 		{
-			name:         "ROTxn with nil context",
-			tc:           nil,
-			method:       "ROTxn",
-			shouldPanic:  true,
-			panicMessage: "read-only transaction is not available",
+			name:    "ROTxn with nil context",
+			tc:      nil,
+			method:  "ROTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "ROTxn with nil txn",
@@ -172,9 +180,11 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeReadOnly},
 				txn:   nil,
 			},
-			method:       "ROTxn",
-			shouldPanic:  true,
-			panicMessage: "read-only transaction is not available",
+			method:  "ROTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "ROTxn with wrong mode",
@@ -182,16 +192,20 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeReadWrite},
 				txn:   &mockTransaction{},
 			},
-			method:       "ROTxn",
-			shouldPanic:  true,
-			panicMessage: "must be in read-only transaction, but: read-write",
+			method:  "ROTxn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrNotInReadOnlyTransaction)
+			},
 		},
 		{
-			name:         "Txn with nil context",
-			tc:           nil,
-			method:       "Txn",
-			shouldPanic:  true,
-			panicMessage: "transaction is not available",
+			name:    "Txn with nil context",
+			tc:      nil,
+			method:  "Txn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "Txn with nil txn",
@@ -199,9 +213,11 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeReadWrite},
 				txn:   nil,
 			},
-			method:       "Txn",
-			shouldPanic:  true,
-			panicMessage: "transaction is not available",
+			method:  "Txn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrTransactionNotAvailable)
+			},
 		},
 		{
 			name: "Txn with wrong mode",
@@ -209,33 +225,33 @@ func TestTransactionContext_NilChecks(t *testing.T) {
 				attrs: transactionAttributes{mode: transactionModeUndetermined},
 				txn:   &mockTransaction{},
 			},
-			method:       "Txn",
-			shouldPanic:  true,
-			panicMessage: "must be in transaction, but: ",
+			method:  "Txn",
+			wantErr: true,
+			errCheck: func(err error) bool {
+				return errors.Is(err, ErrInvalidTransactionMode)
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r != nil {
-					if !tt.shouldPanic {
-						t.Errorf("Method %s panicked unexpectedly: %v", tt.method, r)
-					} else if tt.panicMessage != "" && r != tt.panicMessage {
-						t.Errorf("Method %s panicked with wrong message. Expected: %q, got: %v", tt.method, tt.panicMessage, r)
-					}
-				} else if tt.shouldPanic {
-					t.Errorf("Method %s should have panicked but didn't", tt.method)
-				}
-			}()
-
+			var err error
 			switch tt.method {
 			case "RWTxn":
-				tt.tc.RWTxn()
+				_, err = tt.tc.RWTxn()
 			case "ROTxn":
-				tt.tc.ROTxn()
+				_, err = tt.tc.ROTxn()
 			case "Txn":
-				tt.tc.Txn()
+				_, err = tt.tc.Txn()
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Method %s error = %v, wantErr %v", tt.method, err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errCheck != nil && !tt.errCheck(err) {
+				t.Errorf("Method %s returned wrong error: %v", tt.method, err)
 			}
 		})
 	}

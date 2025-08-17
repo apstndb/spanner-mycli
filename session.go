@@ -301,7 +301,11 @@ func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) e
 
 func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
 	return s.withTransactionLocked(transactionModeReadWrite, func() error {
-		return fn(s.tc.RWTxn())
+		txn, err := s.tc.RWTxn()
+		if err != nil {
+			return err
+		}
+		return fn(txn)
 	})
 }
 
@@ -309,7 +313,11 @@ func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTr
 // This allows safe access to both the transaction and its context fields.
 func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
 	return s.withTransactionLocked(transactionModeReadWrite, func() error {
-		return fn(s.tc.RWTxn(), s.tc)
+		txn, err := s.tc.RWTxn()
+		if err != nil {
+			return err
+		}
+		return fn(txn, s.tc)
 	})
 }
 
@@ -317,7 +325,11 @@ func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmt
 // Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
 func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
 	return s.withTransactionLocked(transactionModeReadOnly, func() error {
-		return fn(s.tc.ROTxn())
+		txn, err := s.tc.ROTxn()
+		if err != nil {
+			return err
+		}
+		return fn(txn)
 	})
 }
 
