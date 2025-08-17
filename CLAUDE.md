@@ -36,7 +36,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 
 When testing compatibility or referencing behavior, be specific about which implementation you're comparing against.
 
-## 🚨 CRITICAL REQUIREMENTS
+## CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
 1. **Always run `make check`** - runs test && lint (required for quality assurance)
@@ -147,14 +147,14 @@ gh pr comment <PR-number> --body "Development insights..."
 - AI assistant decision matrix for autonomous vs. user-permission operations
 - Comprehensive deletion safety rules
 
-⚠️ **CRITICAL RULE - WORKTREE DELETION**: 
+**CRITICAL RULE - WORKTREE DELETION**: 
 **NEVER delete a worktree without explicit user permission** - This is non-negotiable. Unauthorized deletion can result in permanent loss of uncommitted work. Always use `git status` to check for changes and ask: "Issue #X worktree exists. Should I delete it? (Note: uncommitted changes will be lost)"
 - Worktree lifecycle management
 
 ### Knowledge Management
 **Best Practice**: Record development insights directly in PR descriptions and comments for searchability and persistence.
 
-## 🎯 Refactoring Guidelines (Avoiding Over-engineering)
+## Refactoring Guidelines (Avoiding Over-engineering)
 
 When refactoring code, follow these principles to avoid over-engineering:
 
@@ -204,7 +204,7 @@ func createStreamingFormatter(mode, out, sysVars) { ... }
 func executeWithFormatter(formatter, result, columns, sysVars) { ... }
 ```
 
-## 📚 Documentation Structure
+## Documentation Structure
 
 This is a simplified guide. For detailed information, refer to:
 
@@ -223,7 +223,7 @@ This is a simplified guide. For detailed information, refer to:
 - **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
 - **github-schema** - GitHub GraphQL schema introspection (managed via go.mod tool directive)
 
-## 🎯 Task-Specific Documentation Guide
+## Task-Specific Documentation Guide
 
 ### When implementing new features:
 1. **ALWAYS check**: [dev-docs/architecture-guide.md](dev-docs/architecture-guide.md) - Understand system architecture
@@ -258,7 +258,7 @@ This is a simplified guide. For detailed information, refer to:
    - `go tool github-schema mutation <MutationName>` - Show mutation requirements
    - `go tool github-schema search <pattern>` - Search for types/fields
 
-**⚠️ CRITICAL: Safe handling of special characters in shell commands**
+**CRITICAL: Safe handling of special characters in shell commands**
 ```bash
 # Method 1: Variable + stdin (RECOMMENDED - no temp files)
 content='Line 1 with `backticks`
@@ -284,8 +284,8 @@ gh issue create --body-file tmp/issue_body.md
 # command --message "Content with `backticks`"  # UNSAFE - backticks execute
 ```
 
-**⚠️ CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
-**⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
+**CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
+**WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
