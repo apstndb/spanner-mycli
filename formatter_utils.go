@@ -51,12 +51,34 @@ func executeWithFormatter(formatter StreamingFormatter, result *Result, columnNa
 	}
 
 	// Write all rows
-	for _, row := range result.Rows {
+	for i, row := range result.Rows {
 		if err := formatter.WriteRow(row); err != nil {
-			return err
+			return fmt.Errorf("failed to write row %d: %w", i+1, err)
 		}
 	}
 
 	// Finish formatting
 	return formatter.FinishFormat(QueryStats{}, int64(len(result.Rows)))
+}
+
+// createStreamingProcessorForMode creates a streaming processor for the given display mode.
+// This is the single source of truth for streaming processor creation logic,
+// used by both execute_sql.go and streaming.go to avoid duplication.
+func createStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables, screenWidth int) (RowProcessor, error) {
+	// Special handling for table formats with preview (need screenWidth)
+	if mode == enums.DisplayModeTable || mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
+		previewSize := int(sysVars.TablePreviewRows)
+		if previewSize < 0 {
+			previewSize = 0 // 0 means collect all rows
+		}
+		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
+		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
+	}
+
+	// For non-table formats, use unified creation
+	formatter, err := createStreamingFormatter(mode, out, sysVars)
+	if err != nil {
+		return nil, err
+	}
+	return NewStreamingProcessor(formatter, out, screenWidth), nil
 }

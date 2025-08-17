@@ -376,25 +376,8 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		return nil, nil
 	}
 
-	// Create streaming processor using unified formatter creation
-	format := sysVars.CLIFormat
-
-	// Special handling for table formats with preview (need screenWidth)
-	if format == enums.DisplayModeTable || format == enums.DisplayModeTableComment || format == enums.DisplayModeTableDetailComment {
-		previewSize := int(sysVars.TablePreviewRows)
-		if previewSize < 0 {
-			previewSize = 0 // 0 means collect all rows
-		}
-		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
-		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
-	}
-
-	// For non-table formats, use unified creation
-	formatter, err := createStreamingFormatter(format, out, sysVars)
-	if err != nil {
-		return nil, err
-	}
-	return NewStreamingProcessor(formatter, out, screenWidth), nil
+	// Use the shared processor creation logic to avoid duplication
+	return createStreamingProcessorForMode(sysVars.CLIFormat, out, sysVars, screenWidth)
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {

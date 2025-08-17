@@ -189,25 +189,10 @@ func isStreamingSupported(mode enums.DisplayMode) bool {
 // Returns nil if the mode doesn't support streaming yet.
 // This is primarily used for testing - production code uses createStreamingProcessor.
 func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables, screenWidth int) RowProcessor {
-	// Special handling for table formats with preview (need screenWidth)
-	if mode == enums.DisplayModeTable || mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
-		previewSize := int(sysVars.TablePreviewRows)
-		if previewSize < 0 {
-			previewSize = 0 // 0 means collect all rows
-		}
-		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
-		return NewTablePreviewProcessor(tableFormatter, previewSize)
-	}
-
-	// For other formats, use unified creation
-	formatter, err := createStreamingFormatter(mode, out, sysVars)
+	// Use the shared implementation that avoids duplication
+	processor, err := createStreamingProcessorForMode(mode, out, sysVars, screenWidth)
 	if err != nil {
 		return nil
 	}
-
-	return &StreamingProcessor{
-		formatter:   formatter,
-		out:         out,
-		screenWidth: screenWidth,
-	}
+	return processor
 }
