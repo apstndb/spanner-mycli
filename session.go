@@ -895,13 +895,16 @@ func (s *Session) CommitReadWriteTransactionLocked(ctx context.Context) (spanner
 	}
 
 	resp, err := rwTxn.CommitWithReturnResp(ctx)
+
+	// Always clear transaction context after commit attempt.
+	// A failed commit invalidates the transaction on the server,
+	// so we must clear the context regardless of the outcome.
+	s.tc.Close()
+	s.tc = nil
+
 	if err != nil {
 		return spanner.CommitResponse{}, err
 	}
-
-	// Clear transaction context after successful commit
-	s.tc.Close()
-	s.tc = nil
 
 	return resp, nil
 }
@@ -1026,7 +1029,8 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 
 // closeTransactionWithMode closes a transaction of the specified mode.
 // It validates the transaction mode and performs appropriate cleanup.
-func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func() error) error {
+// The closeFn receives the transaction object to avoid direct tc access.
+func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func(txn transaction) error) error {
 	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
 			switch mode {
@@ -1042,8 +1046,8 @@ func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func() 
 		}
 
 		// Execute the close function if provided
-		if closeFn != nil {
-			if err := closeFn(); err != nil {
+		if closeFn != nil && (*tcPtr).txn != nil {
+			if err := closeFn((*tcPtr).txn); err != nil {
 				return err
 			}
 		}
@@ -1057,12 +1061,10 @@ func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func() 
 
 // CloseReadOnlyTransaction closes a running read-only transaction.
 func (s *Session) CloseReadOnlyTransaction() error {
-	return s.closeTransactionWithMode(transactionModeReadOnly, func() error {
-		// Access the transaction safely within the lock
-		if s.tc != nil && s.tc.txn != nil {
-			if roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction); ok {
-				roTxn.Close()
-			}
+	return s.closeTransactionWithMode(transactionModeReadOnly, func(txn transaction) error {
+		// The transaction is passed as a parameter, maintaining encapsulation
+		if roTxn, ok := txn.(*spanner.ReadOnlyTransaction); ok {
+			roTxn.Close()
 		}
 		return nil
 	})
