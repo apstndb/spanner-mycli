@@ -154,6 +154,56 @@ gh pr comment <PR-number> --body "Development insights..."
 ### Knowledge Management
 **Best Practice**: Record development insights directly in PR descriptions and comments for searchability and persistence.
 
+## 🎯 Refactoring Guidelines (Avoiding Over-engineering)
+
+When refactoring code, follow these principles to avoid over-engineering:
+
+### 1. **Observe Actual Usage Patterns**
+- Analyze how code is actually used before creating abstractions
+- Example: Don't create complex metadata handling if functions always pass `nil`
+
+### 2. **Prefer Simple Helper Functions**
+- Use straightforward helper functions over complex design patterns
+- A 15-line helper function is better than a 200-line factory pattern
+- Example: `executeWithFormatter()` instead of `BufferedFormatterAdapter`
+
+### 3. **Minimize Abstraction Layers**
+- Only add abstraction when it provides clear, measurable benefits
+- Avoid adapter patterns unless converting between incompatible interfaces
+- Don't create interfaces for single implementations
+
+### 4. **Prioritize Code Reduction**
+- Refactoring should reduce total lines of code, not increase them
+- Target: Net reduction of at least 20% in affected areas
+- If adding abstraction increases code, reconsider the approach
+
+### 5. **Single Source of Truth**
+- Consolidate duplicate logic into one location
+- Example: One `createStreamingFormatter()` function instead of multiple switch statements
+
+### 6. **Measure Success by Simplicity**
+- Success metrics:
+  - Lines of code reduced
+  - Duplicate logic eliminated
+  - Easier to test
+  - Easier to understand
+- Failure indicators:
+  - More files added than removed
+  - Increased complexity
+  - Loss of type information
+
+### Example Application
+```go
+// ❌ Over-engineered: 370 lines for a factory pattern
+type FormatterFactory struct { ... }
+type BaseFormatter struct { ... }
+type BufferedFormatterAdapter struct { ... }
+
+// ✅ Simple: 45 lines for helper functions
+func createStreamingFormatter(mode, out, sysVars) { ... }
+func executeWithFormatter(formatter, result, columns, sysVars) { ... }
+```
+
 ## 📚 Documentation Structure
 
 This is a simplified guide. For detailed information, refer to:

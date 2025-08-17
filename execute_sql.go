@@ -376,34 +376,22 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		return nil, nil
 	}
 
-	// Create the appropriate streaming formatter
+	// Create streaming processor using unified formatter creation
 	format := sysVars.CLIFormat
-	var formatter StreamingFormatter
-	switch format {
-	case enums.DisplayModeCSV:
-		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeTab:
-		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeVertical:
-		formatter = NewVerticalFormatter(out)
-	case enums.DisplayModeHTML:
-		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeXML:
-		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		var err error
-		formatter, err = NewSQLStreamingFormatter(out, sysVars, format)
-		if err != nil {
-			return nil, err
-		}
-	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
-		// Table formats use preview for width calculation
+	formatter, err := createStreamingFormatter(format, out, sysVars)
+	if err != nil {
+		return nil, err
+	}
+
+	// Special handling for table formats with preview
+	if format == enums.DisplayModeTable || format == enums.DisplayModeTableComment || format == enums.DisplayModeTableDetailComment {
 		previewSize := int(sysVars.TablePreviewRows)
-		formatter = NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
-		// Use preview processor for table formats
-		return NewTablePreviewProcessor(formatter, previewSize), nil
-	default:
-		return nil, fmt.Errorf("unsupported streaming format: %v", format)
+		if previewSize < 0 {
+			previewSize = 0 // 0 means collect all rows
+		}
+		// Need to recreate with proper screenWidth
+		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
+		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
 	}
 
 	// For non-table formats, use direct streaming
