@@ -129,6 +129,12 @@ go tool gh-helper node-id issue/123 pull/456  # Get GraphQL node IDs
 
 For detailed implementation patterns, see [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md).
 
+### Regex Pattern Guidelines
+- **Static patterns**: Precompile at package level by default (`var patternRe = regexp.MustCompile(...)`)
+- **Dynamic patterns**: Compile at runtime, avoid caching unless profiling shows it's needed
+- **Test patterns**: Keep inline if it improves readability
+- **General rule**: If pattern is static and doesn't hurt readability, precompile it
+
 ## Development Workflow
 
 ### Phantom Worktree Usage
