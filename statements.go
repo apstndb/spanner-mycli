@@ -60,7 +60,8 @@ func (s *SelectStatement) String() string {
 }
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	_, err := session.DetermineTransaction(ctx)
+	// Single lock acquisition for both DetermineTransaction and InTransaction check
+	_, inTransaction, err := session.DetermineTransactionAndState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +75,7 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0)
 	default:
-		if !session.InTransaction() && session.systemVariables.AutoPartitionMode {
+		if !inTransaction && session.systemVariables.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
 		return executeSQL(ctx, session, s.Query)
