@@ -847,44 +847,66 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	})
 }
 
-// executeInReadWriteTransaction executes a function in a read-write transaction and handles cleanup.
-// It determines the transaction, executes the function, and clears the context afterwards.
-func (s *Session) executeInReadWriteTransaction(ctx context.Context, fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
-	_, err := s.DetermineTransaction(ctx)
+// CommitReadWriteTransactionLocked commits read-write transaction and returns commit timestamp if successful.
+// Caller must hold s.tcMutex.
+func (s *Session) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
+	if s.tc == nil || s.tc.txn == nil {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+
+	rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+
+	resp, err := rwTxn.CommitWithReturnResp(ctx)
 	if err != nil {
-		return err
+		return spanner.CommitResponse{}, err
 	}
 
-	err = s.withReadWriteTransaction(fn)
+	// Clear transaction context after successful commit
+	s.tc.Close()
+	s.tc = nil
 
-	// Always clear transaction context after commit/rollback
-	// This is safe even if the transaction wasn't in read-write mode
-	if err != ErrNotInReadWriteTransaction {
-		s.clearTransactionContext()
-	}
-
-	return err
+	return resp, nil
 }
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
 func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.CommitResponse, error) {
 	var resp spanner.CommitResponse
-	err := s.executeInReadWriteTransaction(ctx, func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+	err := s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
 		var commitErr error
-		resp, commitErr = txn.CommitWithReturnResp(ctx)
+		resp, commitErr = s.CommitReadWriteTransactionLocked(ctx)
 		return commitErr
 	})
-	if err != nil {
-		return spanner.CommitResponse{}, err
+	return resp, err
+}
+
+// RollbackReadWriteTransactionLocked rollbacks read-write transaction.
+// Caller must hold s.tcMutex.
+func (s *Session) RollbackReadWriteTransactionLocked(ctx context.Context) error {
+	if s.tc == nil || s.tc.txn == nil {
+		return ErrNotInReadWriteTransaction
 	}
-	return resp, nil
+
+	rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return ErrNotInReadWriteTransaction
+	}
+
+	rwTxn.Rollback(ctx)
+
+	// Clear transaction context after rollback
+	s.tc.Close()
+	s.tc = nil
+
+	return nil
 }
 
 // RollbackReadWriteTransaction rollbacks read-write transaction.
 func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
-	return s.executeInReadWriteTransaction(ctx, func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		txn.Rollback(ctx)
-		return nil
+	return s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		return s.RollbackReadWriteTransactionLocked(ctx)
 	})
 }
 
@@ -1647,17 +1669,8 @@ func (s *Session) RunInNewOrExistRwTxLocked(ctx context.Context,
 
 	if err != nil {
 		// Rollback the transaction while holding the lock
-		// We need a RollbackReadWriteTransactionLocked method to avoid re-acquiring lock
-		// For now, we'll do it inline
-		if s.tc != nil && s.tc.txn != nil {
-			if rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction); ok {
-				rwTxn.Rollback(ctx)
-			}
-		}
-		// Clear transaction context
-		if s.tc != nil {
-			s.tc.Close()
-			s.tc = nil
+		if rollbackErr := s.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 		}
 		return nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
@@ -1673,25 +1686,10 @@ func (s *Session) RunInNewOrExistRwTxLocked(ctx context.Context,
 	}
 
 	// For implicit transactions, commit immediately while holding the lock
-	// We need a CommitReadWriteTransactionLocked method to avoid re-acquiring lock
-	// For now, we'll do it inline
-	if s.tc == nil || s.tc.txn == nil {
-		return nil, ErrNotInReadWriteTransaction
-	}
-
-	rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
-	if !ok {
-		return nil, ErrNotInReadWriteTransaction
-	}
-
-	resp, err := rwTxn.CommitWithReturnResp(ctx)
+	resp, err := s.CommitReadWriteTransactionLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Clear transaction context after successful commit
-	s.tc.Close()
-	s.tc = nil
 
 	result.CommitResponse = resp
 	return result, nil
