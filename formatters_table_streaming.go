@@ -5,7 +5,6 @@ import (
 	"io"
 	"slices"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-runewidthex"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter"
@@ -41,11 +40,12 @@ func NewTableStreamingFormatter(out io.Writer, sysVars *systemVariables, screenW
 }
 
 // InitFormat initializes the table with preview rows for width calculation.
-func (f *TableStreamingFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *TableStreamingFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	f.columns = columns
 	f.sysVars = sysVars
 	f.previewRows = previewRows
@@ -102,7 +102,8 @@ func (f *TableStreamingFormatter) WriteRow(row Row) error {
 		// Check if we have enough preview rows
 		if f.previewSize > 0 && f.rowsBuffered >= f.previewSize {
 			// Initialize with buffered rows
-			return f.InitFormat(f.columns, nil, f.sysVars, f.previewRows)
+			header := simpleTableHeader(f.columns)
+			return f.InitFormat(header, f.sysVars, f.previewRows)
 		}
 		return nil
 	}
@@ -124,7 +125,8 @@ func (f *TableStreamingFormatter) writeRowInternal(row Row) error {
 func (f *TableStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
 	// Initialize if not done yet (e.g., fewer rows than preview size)
 	if !f.initialized && len(f.columns) > 0 {
-		if err := f.InitFormat(f.columns, nil, f.sysVars, f.previewRows); err != nil {
+		header := simpleTableHeader(f.columns)
+		if err := f.InitFormat(header, f.sysVars, f.previewRows); err != nil {
 			return err
 		}
 	}

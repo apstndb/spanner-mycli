@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
@@ -46,22 +45,8 @@ func executeWithFormatter(formatter StreamingFormatter, result *Result, columnNa
 		return nil
 	}
 
-	// Try to get complete field information with types from TableHeader
-	var metadata *sppb.ResultSetMetadata
-	if result.TableHeader != nil {
-		if fields, ok := result.TableHeader.structFields(); ok {
-			// Type information is available - use complete metadata
-			metadata = &sppb.ResultSetMetadata{
-				RowType: &sppb.StructType{
-					Fields: fields,
-				},
-			}
-		}
-		// If ok is false, metadata remains nil (for simpleTableHeader)
-		// This matches the actual usage pattern where formatters pass nil for metadata
-	}
-
-	if err := formatter.InitFormat(columnNames, metadata, sysVars, nil); err != nil {
+	// Pass TableHeader directly - formatters can extract what they need
+	if err := formatter.InitFormat(result.TableHeader, sysVars, nil); err != nil {
 		return err
 	}
 

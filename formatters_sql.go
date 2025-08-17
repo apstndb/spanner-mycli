@@ -20,7 +20,6 @@ import (
 	"io"
 	"strings"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -377,9 +376,10 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 }
 
 // InitFormat initializes the formatter with column information.
-func (s *SQLStreamingFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (s *SQLStreamingFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	s.initialized = true
 	// WriteHeader will validate column names
+	columns := extractTableColumnNames(header)
 	return s.formatter.WriteHeader(columns)
 }
 
