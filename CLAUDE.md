@@ -23,6 +23,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Development workflow details → `dev-docs/development-insights.md`
 - Issue management procedures → `dev-docs/issue-management.md`
 
+### Documentation Style
+- **No emojis**: Maintain professional documentation style without emoji characters
+- **Clear headings**: Use descriptive section titles
+- **Concise language**: Be direct and to the point
+
 ## Project Overview
 
 spanner-mycli is a personal fork of spanner-cli, designed as an interactive command-line tool for Google Cloud Spanner. The project philosophy is "by me, for me" - a continuously evolving tool that prioritizes the author's specific needs over stability. It embraces experimental features and follows a "ZeroVer" approach (will never reach v1.0.0).
