@@ -567,7 +567,10 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
-		if session.InReadWriteTransaction() && session.systemVariables.AutoBatchDML {
+		// Get both transaction flags in a single lock acquisition
+		inTransaction, inReadWriteTransaction := session.GetTransactionFlagsWithLock()
+
+		if inReadWriteTransaction && session.systemVariables.AutoBatchDML {
 			stmt, err := newStatement(sql, session.systemVariables.Params, false)
 			if err != nil {
 				return nil, err
@@ -576,7 +579,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return &Result{}, nil
 		}
 
-		if !session.InTransaction() &&
+		if !inTransaction &&
 			!isInsert(sql) &&
 			session.systemVariables.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
 			return executePDML(ctx, session, sql)

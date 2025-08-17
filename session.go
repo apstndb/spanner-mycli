@@ -146,15 +146,15 @@ type Session struct {
 	clientOpts   []option.ClientOption
 	tc           *transactionContext
 	// tcMutex protects the transaction context (tc) from concurrent access.
-	// Direct access to tc is ONLY allowed in the following functions:
-	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction (transaction helpers)
-	// - clearTransactionContext, TransactionAttrs (context management)
-	// - DetermineTransaction (needs isolationLevel from pending transaction)
-	// - getTransactionTag (needs tag access for pending transaction)
-	// - BeginPendingTransaction, BeginReadWriteTransaction, BeginReadOnlyTransaction (atomic transaction creation)
-	// - validateNoActiveTransactionLocked (internal validation helper)
-	// All other functions MUST use these helpers instead of direct tc access.
-	tcMutex         sync.Mutex
+	// Using RWMutex allows multiple concurrent reads while maintaining exclusive writes.
+	// Direct access to tc is managed through withTransactionContextWithLock base method.
+	// Helper functions that work with transaction context:
+	// - withTransactionContextWithLock: Base method for all tc manipulation (acquires write lock)
+	// - TransitTransaction: Atomic state transitions with cleanup
+	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction: Type-safe transaction access
+	// - clearTransactionContext, TransactionAttrsWithLock: Safe context management
+	// All transaction context access MUST go through these helpers.
+	tcMutex         sync.RWMutex
 	systemVariables *systemVariables
 
 	currentBatch Statement
@@ -280,28 +280,23 @@ var (
 	_ transaction = (*spanner.ReadWriteTransaction)(nil)
 )
 
-// withReadWriteTransaction executes fn with the current read-write transaction under mutex protection.
-// Returns ErrNotInReadWriteTransaction if not in a read-write transaction.
-// NOTE: This is a core transaction helper with direct tc access.
 // withTransactionLocked is a generic helper that executes fn while holding the transaction mutex.
 // It validates the transaction mode and returns an appropriate error if the mode doesn't match.
 // NOTE: The mutex must NOT be held by the caller - this function acquires it.
 func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	if s.tc == nil || s.tc.attrs.mode != mode {
-		switch mode {
-		case transactionModeReadWrite:
-			return ErrNotInReadWriteTransaction
-		case transactionModeReadOnly:
-			return ErrNotInReadOnlyTransaction
-		default:
-			return fmt.Errorf("not in %s transaction", mode)
+	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
+			switch mode {
+			case transactionModeReadWrite:
+				return ErrNotInReadWriteTransaction
+			case transactionModeReadOnly:
+				return ErrNotInReadOnlyTransaction
+			default:
+				return fmt.Errorf("not in %s transaction", mode)
+			}
 		}
-	}
-
-	return fn()
+		return fn()
+	})
 }
 
 func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
@@ -312,7 +307,6 @@ func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTr
 
 // withReadWriteTransactionContext executes fn with both the transaction and context under mutex protection.
 // This allows safe access to both the transaction and its context fields.
-// NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
 	return s.withTransactionLocked(transactionModeReadWrite, func() error {
 		return fn(s.tc.RWTxn(), s.tc)
@@ -321,7 +315,6 @@ func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmt
 
 // withReadOnlyTransaction executes fn with the current read-only transaction under mutex protection.
 // Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
-// NOTE: This is a core transaction helper with direct tc access.
 func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
 	return s.withTransactionLocked(transactionModeReadOnly, func() error {
 		return fn(s.tc.ROTxn())
@@ -330,17 +323,48 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 
 // clearTransactionContext atomically clears the transaction context.
 // This is equivalent to setTransactionContext(nil) but more expressive.
-// NOTE: This is a core context management function with direct tc access.
 func (s *Session) clearTransactionContext() {
+	_ = s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		// Close the transaction context to stop any running heartbeat
+		if *tcPtr != nil {
+			(*tcPtr).Close()
+		}
+		*tcPtr = nil
+		return nil
+	})
+}
+
+// withTransactionContextWithLock is the most generic base method for transaction context manipulation.
+// It acquires a write lock and provides direct access to the transaction context pointer,
+// allowing atomic read-modify-write operations.
+// The function fn receives a pointer to the transaction context pointer, enabling it to replace the entire context.
+// NOTE: This is the foundation for all transaction state management operations that modify state.
+func (s *Session) withTransactionContextWithLock(fn func(tc **transactionContext) error) error {
 	s.tcMutex.Lock()
 	defer s.tcMutex.Unlock()
+	return fn(&s.tc)
+}
 
-	// Close the transaction context to stop any running heartbeat
-	if s.tc != nil {
-		s.tc.Close()
-	}
+// TransitTransaction implements a functional state transition pattern for transaction management.
+// It atomically transitions from one transaction state to another, handling cleanup of the old state.
+// The transition function receives the current context and returns the new context.
+// If an error occurs during transition, the original state is preserved.
+func (s *Session) TransitTransaction(ctx context.Context, fn func(tc *transactionContext) (*transactionContext, error)) error {
+	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		oldTc := *tcPtr
+		newTc, err := fn(oldTc)
+		if err != nil {
+			return err
+		}
 
-	s.tc = nil
+		// Cleanup old transaction context if it's being replaced
+		if oldTc != nil && oldTc != newTc {
+			oldTc.Close()
+		}
+
+		*tcPtr = newTc
+		return nil
+	})
 }
 
 // QueryResult holds the result of a query operation with optional transaction.
@@ -547,17 +571,15 @@ func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
 // This allows safe inspection of transaction state without holding the mutex.
 // If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.
 //
-// Design decision: This method directly implements the mutex-protected access
-// rather than delegating to an internal method. This reduces unnecessary layers
-// while maintaining a clean public API name.
-// NOTE: This is a core context management function with direct tc access.
+// Design decision: This method uses RLock for read-only access, allowing
+// concurrent reads of transaction state.
 //
 // Naming convention:
-// - TransactionAttrsWithLock() - Acquires lock internally (this method)
-// - transactionAttrsLocked() - Assumes caller holds lock
+// - TransactionAttrsWithLock() - Acquires read lock internally (this method)
+// - transactionAttrsLocked() - Assumes caller holds lock (read or write)
 func (s *Session) TransactionAttrsWithLock() transactionAttributes {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+	s.tcMutex.RLock()
+	defer s.tcMutex.RUnlock()
 
 	return s.transactionAttrsLocked()
 }
@@ -619,135 +641,224 @@ func (s *Session) InTransaction() bool {
 	return isActive
 }
 
-// validateNoActiveTransactionLocked checks if there's no active transaction while holding the mutex.
-// This is used internally by transaction creation methods to ensure atomic check-and-set.
-// Caller must hold s.tcMutex.
-func (s *Session) validateNoActiveTransactionLocked() error {
-	if s.tc != nil && (s.tc.attrs.mode == transactionModeReadWrite || s.tc.attrs.mode == transactionModeReadOnly) {
-		// Capture mode for safe error message formatting
-		mode := s.tc.attrs.mode
-		return fmt.Errorf("%s transaction is already running", mode)
+// GetTransactionFlagsWithLock returns multiple transaction state flags in a single lock acquisition.
+// This is useful for avoiding multiple lock acquisitions when checking different transaction states.
+// Acquires RLock for concurrent read access.
+func (s *Session) GetTransactionFlagsWithLock() (inTransaction bool, inReadWriteTransaction bool) {
+	s.tcMutex.RLock()
+	defer s.tcMutex.RUnlock()
+
+	if s.tc == nil {
+		return false, false
 	}
-	return nil
+
+	inTransaction = true
+	inReadWriteTransaction = s.tc.attrs.mode == transactionModeReadWrite
+	return
 }
 
-// resolveTransactionPriority returns the effective priority for a transaction.
-// If the provided priority is unspecified, it uses the session's default priority.
-func (s *Session) resolveTransactionPriority(priority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
+// TransactionOptionsBuilder helps build transaction options with proper defaults.
+type TransactionOptionsBuilder struct {
+	session        *Session
+	priority       sppb.RequestOptions_Priority
+	isolationLevel sppb.TransactionOptions_IsolationLevel
+	tag            string
+}
+
+// NewTransactionOptionsBuilder creates a new builder with session defaults.
+func (s *Session) NewTransactionOptionsBuilder() *TransactionOptionsBuilder {
+	return &TransactionOptionsBuilder{
+		session:        s,
+		priority:       sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+		isolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+	}
+}
+
+// WithPriority sets the transaction priority.
+func (b *TransactionOptionsBuilder) WithPriority(priority sppb.RequestOptions_Priority) *TransactionOptionsBuilder {
+	b.priority = priority
+	return b
+}
+
+// WithIsolationLevel sets the transaction isolation level.
+func (b *TransactionOptionsBuilder) WithIsolationLevel(level sppb.TransactionOptions_IsolationLevel) *TransactionOptionsBuilder {
+	b.isolationLevel = level
+	return b
+}
+
+// WithTag sets the transaction tag.
+func (b *TransactionOptionsBuilder) WithTag(tag string) *TransactionOptionsBuilder {
+	b.tag = tag
+	return b
+}
+
+// Build creates the final TransactionOptions with resolved defaults.
+func (b *TransactionOptionsBuilder) Build() spanner.TransactionOptions {
+	// Resolve priority
+	priority := b.priority
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		return s.systemVariables.RPCPriority
+		priority = b.session.systemVariables.RPCPriority
 	}
-	return priority
+
+	// Resolve isolation level
+	isolationLevel := b.isolationLevel
+	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		isolationLevel = b.session.systemVariables.DefaultIsolationLevel
+	}
+
+	return spanner.TransactionOptions{
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: b.session.systemVariables.ReturnCommitStats, MaxCommitDelay: b.session.systemVariables.MaxCommitDelay},
+		CommitPriority:              priority,
+		TransactionTag:              b.tag,
+		ExcludeTxnFromChangeStreams: b.session.systemVariables.ExcludeTxnFromChangeStreams,
+		IsolationLevel:              isolationLevel,
+	}
 }
 
-// resolveIsolationLevel returns the effective isolation level for a transaction.
-// If the provided isolation level is unspecified, it uses the session's default isolation level.
-func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_IsolationLevel) sppb.TransactionOptions_IsolationLevel {
-	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		return s.systemVariables.DefaultIsolationLevel
+// BuildPriority returns just the resolved priority.
+func (b *TransactionOptionsBuilder) BuildPriority() sppb.RequestOptions_Priority {
+	if b.priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		return b.session.systemVariables.RPCPriority
 	}
-	return isolationLevel
+	return b.priority
+}
+
+// BuildIsolationLevel returns just the resolved isolation level.
+func (b *TransactionOptionsBuilder) BuildIsolationLevel() sppb.TransactionOptions_IsolationLevel {
+	if b.isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		return b.session.systemVariables.DefaultIsolationLevel
+	}
+	return b.isolationLevel
 }
 
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
-	resolvedPriority := s.resolveTransactionPriority(priority)
+	opts := s.NewTransactionOptionsBuilder().
+		WithIsolationLevel(isolationLevel).
+		WithPriority(priority)
+	resolvedIsolationLevel := opts.BuildIsolationLevel()
+	resolvedPriority := opts.BuildPriority()
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+	return s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
+		// Check for any type of existing transaction (including pending)
+		if tc != nil {
+			return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+		}
 
-	// Check for any type of existing transaction (including pending)
-	if s.tc != nil {
-		// Capture mode for safe error message formatting
-		mode := s.tc.attrs.mode
-		return fmt.Errorf("%s transaction is already running", mode)
-	}
-
-	s.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModePending,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-	}
-	return nil
+		// Return new pending transaction context
+		return &transactionContext{
+			attrs: transactionAttributes{
+				mode:           transactionModePending,
+				priority:       resolvedPriority,
+				isolationLevel: resolvedIsolationLevel,
+			},
+		}, nil
+	})
 }
 
-// DetermineTransaction determines the type of transaction to start based on the pending transaction
+// DetermineTransactionLocked determines the type of transaction to start based on the pending transaction
 // and system variables. It returns the timestamp for read-only transactions or a zero time for read-write transactions.
-// NOTE: This function has direct tc access to retrieve isolationLevel from pending transactions.
-func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
+// Caller must hold s.tcMutex.
+func (s *Session) DetermineTransactionLocked(ctx context.Context) (time.Time, error) {
 	var zeroTime time.Time
 
-	// Check if there's a pending transaction and get its properties
-	s.tcMutex.Lock()
+	// Check if there's a pending transaction
 	if s.tc == nil || s.tc.attrs.mode != transactionModePending {
-		s.tcMutex.Unlock()
 		return zeroTime, nil
 	}
-	// Copy the values we need before unlocking
+
 	priority := s.tc.attrs.priority
 	isolationLevel := s.tc.attrs.isolationLevel
-	s.tcMutex.Unlock()
 
 	// Determine transaction type based on system variables
 	if s.systemVariables.ReadOnly {
 		// Start a read-only transaction with the pending transaction's priority
-		return s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
+		return s.BeginReadOnlyTransactionLocked(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
 	}
 
 	// Start a read-write transaction with the pending transaction's isolation level and priority
-	return zeroTime, s.BeginReadWriteTransaction(ctx, isolationLevel, priority)
+	return zeroTime, s.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
 }
 
-// getTransactionTag returns the transaction tag from a pending transaction if it exists.
-// NOTE: This function has direct tc access to retrieve tag from pending transactions.
-func (s *Session) getTransactionTag() string {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
+// DetermineTransaction determines the type of transaction to start based on the pending transaction
+// and system variables. It returns the timestamp for read-only transactions or a zero time for read-write transactions.
+func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
+	var result time.Time
+	err := s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		ts, err := s.DetermineTransactionLocked(ctx)
+		result = ts
+		return err
+	})
+	return result, err
+}
+
+// DetermineTransactionAndState determines transaction and returns both the timestamp and current transaction state.
+// This combines DetermineTransaction and InTransaction checks in a single lock acquisition.
+func (s *Session) DetermineTransactionAndState(ctx context.Context) (time.Time, bool, error) {
+	var result time.Time
+	var inTransaction bool
+	err := s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		ts, err := s.DetermineTransactionLocked(ctx)
+		result = ts
+		if err != nil {
+			return err
+		}
+		// Check if we're in a transaction after determining
+		inTransaction = *tcPtr != nil
+		return nil
+	})
+	return result, inTransaction, err
+}
+
+// getTransactionTagLocked returns the transaction tag from a pending transaction if it exists.
+// Caller must hold s.tcMutex.
+func (s *Session) getTransactionTagLocked() string {
 	if s.tc != nil && s.tc.attrs.mode == transactionModePending {
 		return s.tc.attrs.tag
 	}
 	return ""
 }
 
-// BeginReadWriteTransaction starts read-write transaction.
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
+// BeginReadWriteTransactionLocked starts read-write transaction.
+// Caller must hold s.tcMutex.
+func (s *Session) BeginReadWriteTransactionLocked(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return err
 	}
 
-	tag := s.getTransactionTag()
-	resolvedPriority := s.resolveTransactionPriority(priority)
-	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
+	// Get transaction tag if there's a pending transaction
+	tag := s.getTransactionTagLocked()
 
-	opts := spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: s.systemVariables.ReturnCommitStats, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
-		CommitPriority:              resolvedPriority,
-		TransactionTag:              tag,
-		ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
-		IsolationLevel:              resolvedIsolationLevel,
+	// Build transaction options using the builder
+	builder := s.NewTransactionOptionsBuilder().
+		WithPriority(priority).
+		WithIsolationLevel(isolationLevel).
+		WithTag(tag)
+
+	opts := builder.Build()
+	resolvedPriority := builder.BuildPriority()
+	resolvedIsolationLevel := builder.BuildIsolationLevel()
+
+	// Check for existing transaction
+	if s.tc != nil && s.tc.attrs.mode != transactionModePending {
+		return fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
 	}
 
+	oldTc := s.tc
+
+	// Create the new transaction
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
 	if err != nil {
 		return err
 	}
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	// Check for existing transaction under lock
-	if err := s.validateNoActiveTransactionLocked(); err != nil {
-		// Need to rollback the transaction we just created since we can't use it
-		txn.Rollback(ctx)
-		return err
+	// Cleanup old transaction context if it's being replaced
+	if oldTc != nil {
+		oldTc.Close()
 	}
 
+	// Set new transaction context
 	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:           transactionModeReadWrite,
@@ -759,55 +870,79 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		heartbeatFunc: s.startHeartbeat,
 	}
 
+	return nil
 	// Heartbeat will be started by EnableHeartbeat() after the first operation
 	// For implicit transactions, they commit immediately so heartbeat isn't needed
+}
 
-	return nil
+// BeginReadWriteTransaction starts read-write transaction.
+func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
+	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		return s.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
+	})
+}
+
+// CommitReadWriteTransactionLocked commits read-write transaction and returns commit timestamp if successful.
+// Caller must hold s.tcMutex.
+func (s *Session) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
+	if s.tc == nil || s.tc.txn == nil {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+
+	rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+
+	resp, err := rwTxn.CommitWithReturnResp(ctx)
+
+	// Always clear transaction context after commit attempt.
+	// A failed commit invalidates the transaction on the server,
+	// so we must clear the context regardless of the outcome.
+	s.tc.Close()
+	s.tc = nil
+
+	// Return the response and error as-is, preserving any partial commit info
+	return resp, err
 }
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
 func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.CommitResponse, error) {
-	_, err := s.DetermineTransaction(ctx)
-	if err != nil {
-		return spanner.CommitResponse{}, err
-	}
-
 	var resp spanner.CommitResponse
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		resp, err = txn.CommitWithReturnResp(ctx)
-		return err
+	err := s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		var commitErr error
+		resp, commitErr = s.CommitReadWriteTransactionLocked(ctx)
+		return commitErr
 	})
+	return resp, err
+}
 
-	if err == ErrNotInReadWriteTransaction {
-		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+// RollbackReadWriteTransactionLocked rollbacks read-write transaction.
+// Caller must hold s.tcMutex.
+func (s *Session) RollbackReadWriteTransactionLocked(ctx context.Context) error {
+	if s.tc == nil || s.tc.txn == nil {
+		return ErrNotInReadWriteTransaction
 	}
 
-	// Clear transaction context after commit (regardless of error)
-	s.clearTransactionContext()
+	rwTxn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return ErrNotInReadWriteTransaction
+	}
 
-	return resp, err
+	rwTxn.Rollback(ctx)
+
+	// Clear transaction context after rollback
+	s.tc.Close()
+	s.tc = nil
+
+	return nil
 }
 
 // RollbackReadWriteTransaction rollbacks read-write transaction.
 func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
-	_, err := s.DetermineTransaction(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		txn.Rollback(ctx)
-		return nil
+	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		return s.RollbackReadWriteTransactionLocked(ctx)
 	})
-
-	if err == ErrNotInReadWriteTransaction {
-		return ErrNotInReadWriteTransaction
-	}
-
-	// Clear transaction context after rollback
-	s.clearTransactionContext()
-
-	return nil
 }
 
 // resolveTimestampBound returns the effective timestamp bound for a read-only transaction.
@@ -828,24 +963,22 @@ func (s *Session) resolveTimestampBound(typ timestampBoundType, staleness time.D
 	return tb
 }
 
-// BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
-func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
+// BeginReadOnlyTransactionLocked starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
+// Caller must hold s.tcMutex.
+func (s *Session) BeginReadOnlyTransactionLocked(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return time.Time{}, err
 	}
 
 	tb := s.resolveTimestampBound(typ, staleness, timestamp)
-	resolvedPriority := s.resolveTransactionPriority(priority)
+	resolvedPriority := s.NewTransactionOptionsBuilder().WithPriority(priority).BuildPriority()
 
-	// Perform check and set atomically to prevent race conditions
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	// Check for existing transaction under lock
-	if err := s.validateNoActiveTransactionLocked(); err != nil {
-		return time.Time{}, err
+	// Check for existing transaction
+	if s.tc != nil && s.tc.attrs.mode != transactionModePending {
+		return time.Time{}, fmt.Errorf("%s transaction is already running", s.tc.attrs.mode)
 	}
 
+	oldTc := s.tc
 	txn := s.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
@@ -857,13 +990,18 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	}
 
 	// Get timestamp first to ensure the transaction is valid
-	ts, err := txn.Timestamp()
+	resultTimestamp, err := txn.Timestamp()
 	if err != nil {
 		txn.Close()
 		return time.Time{}, err
 	}
 
-	// Only update session state after successful timestamp retrieval
+	// Cleanup old transaction context if it's being replaced
+	if oldTc != nil {
+		oldTc.Close()
+	}
+
+	// Set new transaction context
 	s.tc = &transactionContext{
 		attrs: transactionAttributes{
 			mode:     transactionModeReadOnly,
@@ -872,31 +1010,72 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 		txn: txn,
 	}
 
-	return ts, nil
+	return resultTimestamp, nil
+}
+
+// BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
+func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
+	var resultTimestamp time.Time
+	err := s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		ts, err := s.BeginReadOnlyTransactionLocked(ctx, typ, staleness, timestamp, priority)
+		resultTimestamp = ts
+		return err
+	})
+	return resultTimestamp, err
+}
+
+// closeTransactionWithMode closes a transaction of the specified mode.
+// It validates the transaction mode and performs appropriate cleanup.
+// The closeFn receives the transaction object to avoid direct tc access.
+// closeFn can be nil for transaction types that don't require specific cleanup (e.g., pending transactions).
+func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func(txn transaction) error) error {
+	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
+			switch mode {
+			case transactionModeReadWrite:
+				return ErrNotInReadWriteTransaction
+			case transactionModeReadOnly:
+				return ErrNotInReadOnlyTransaction
+			case transactionModePending:
+				return ErrNotInPendingTransaction
+			default:
+				return fmt.Errorf("not in %s transaction", mode)
+			}
+		}
+
+		// Execute the close function if provided
+		if closeFn != nil && (*tcPtr).txn != nil {
+			if err := closeFn((*tcPtr).txn); err != nil {
+				return err
+			}
+		}
+
+		// Close and clear the transaction context
+		(*tcPtr).Close()
+		*tcPtr = nil
+		return nil
+	})
 }
 
 // CloseReadOnlyTransaction closes a running read-only transaction.
 func (s *Session) CloseReadOnlyTransaction() error {
-	err := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
-		txn.Close()
+	return s.closeTransactionWithMode(transactionModeReadOnly, func(txn transaction) error {
+		// The transaction is passed as a parameter, maintaining encapsulation
+		roTxn, ok := txn.(*spanner.ReadOnlyTransaction)
+		if !ok {
+			// This should never happen given the mode check in closeTransactionWithMode,
+			// but we handle it explicitly to prevent resource leaks
+			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode")
+		}
+		roTxn.Close()
 		return nil
 	})
-
-	if err == ErrNotInReadOnlyTransaction {
-		return ErrNotInReadOnlyTransaction
-	}
-
-	s.clearTransactionContext()
-	return nil
 }
 
+// ClosePendingTransaction closes a pending transaction.
 func (s *Session) ClosePendingTransaction() error {
-	if !s.InPendingTransaction() {
-		return ErrNotInPendingTransaction
-	}
-
-	s.clearTransactionContext()
-	return nil
+	// Pending transactions don't have an underlying transaction to close
+	return s.closeTransactionWithMode(transactionModePending, nil)
 }
 
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
@@ -1474,48 +1653,62 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 	}, nil
 }
 
-// RunInNewOrExistRwTx is a helper function for DML execution.
+// RunInNewOrExistRwTxLocked is a helper function for DML execution.
 // It executes a function in the current RW transaction or an implicit RW transaction.
 // If there is an error, the transaction will be rolled back.
-func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
+// Caller must hold s.tcMutex.
+func (s *Session) RunInNewOrExistRwTxLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
-	_, err := s.DetermineTransaction(ctx)
+	// Determine transaction type (this may start a transaction)
+	_, err := s.DetermineTransactionLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check transaction state atomically
-	mode, isActive := s.TransactionState()
+	// Check transaction state (no lock needed, we already hold it)
+	attrs := s.transactionAttrsLocked()
+	mode := attrs.mode
+	isActive := mode != transactionModeUndetermined && mode != ""
 	var implicitRWTx bool
 
 	if !isActive || mode != transactionModeReadWrite {
 		// Start implicit transaction
 		// Note: isolation level is not session level property so it is left as unspecified
-		if err := s.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, s.currentPriorityWithLock()); err != nil {
+		priority := s.currentPriorityLocked()
+		if err := s.BeginReadWriteTransactionLocked(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, priority); err != nil {
 			return nil, err
 		}
 		implicitRWTx = true
+	}
+
+	// Now we have a read-write transaction
+	if s.tc == nil || s.tc.txn == nil {
+		return nil, ErrNotInReadWriteTransaction
+	}
+
+	txn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return nil, ErrNotInReadWriteTransaction
 	}
 
 	var affected int64
 	var plan *sppb.QueryPlan
 	var metadata *sppb.ResultSetMetadata
 
-	// Use the safe closure pattern to access the transaction and update heartbeat flag
-	err = s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-		affected, plan, metadata, err = f(txn, implicitRWTx)
-		// Enable heartbeat after any operation (success or failure)
-		// Even failed operations start the abort countdown
-		// BUT: Don't enable heartbeat for implicit transactions since they commit immediately
-		if !implicitRWTx {
-			tc.EnableHeartbeat()
-		}
-		return err
-	})
+	// Execute the function
+	affected, plan, metadata, err = f(txn, implicitRWTx)
+
+	// Enable heartbeat after any operation (success or failure)
+	// Even failed operations start the abort countdown
+	// BUT: Don't enable heartbeat for implicit transactions since they commit immediately
+	if !implicitRWTx && s.tc != nil {
+		s.tc.EnableHeartbeat()
+	}
+
 	if err != nil {
-		// once error has happened, escape from the current transaction
-		if rollbackErr := s.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
+		// Rollback the transaction while holding the lock
+		if rollbackErr := s.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 		}
 		return nil, fmt.Errorf("transaction was aborted: %w", err)
@@ -1531,13 +1724,27 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 		return result, nil
 	}
 
-	// query mode PLAN doesn't have any side effects, but use commit to get commit timestamp.
-	resp, err := s.CommitReadWriteTransaction(ctx)
+	// For implicit transactions, commit immediately while holding the lock
+	resp, err := s.CommitReadWriteTransactionLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	result.CommitResponse = resp
 	return result, nil
+}
+
+// RunInNewOrExistRwTx is a helper function for DML execution.
+// It executes a function in the current RW transaction or an implicit RW transaction.
+// If there is an error, the transaction will be rolled back.
+func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+) (*DMLResult, error) {
+	// Use a single lock acquisition for the entire operation
+	s.tcMutex.Lock()
+	defer s.tcMutex.Unlock()
+
+	return s.RunInNewOrExistRwTxLocked(ctx, f)
 }
 
 var errReadOnly = errors.New("can't execute this statement in READONLY mode")

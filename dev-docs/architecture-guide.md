@@ -294,45 +294,64 @@ All other code MUST use these helpers instead of direct access.
 
 ### Concurrency Patterns
 
-#### Mutex Usage Pattern
+#### RWMutex Usage Pattern
 
-The session uses a single mutex (`tcMutex`) to protect transaction context access:
+The session uses a RWMutex (`tcMutex`) to protect transaction context access, allowing concurrent reads:
 
 ```go
-// Generic transaction helper with mutex protection
-func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
+// Base method for write operations (acquires write lock)
+func (s *Session) withTransactionContextWithLock(fn func(tc **transactionContext) error) error {
     s.tcMutex.Lock()
     defer s.tcMutex.Unlock()
-    
-    if s.tc == nil || s.tc.attrs.mode != mode {
-        // Return appropriate error based on mode
-    }
-    return fn()
+    return fn(&s.tc)
+}
+
+// Read-only methods use RLock for concurrent access
+func (s *Session) TransactionAttrsWithLock() transactionAttributes {
+    s.tcMutex.RLock()
+    defer s.tcMutex.RUnlock()
+    return s.transactionAttrsLocked()
 }
 ```
 
+#### Lock Method Naming Convention
+
+The codebase follows a consistent naming convention for lock-related methods:
+
+- **`WithLock` suffix**: Methods that acquire locks internally
+  - `withTransactionContextWithLock()` - Acquires write lock
+  - `TransactionAttrsWithLock()` - Acquires read lock
+  - `GetTransactionFlagsWithLock()` - Acquires read lock
+
+- **`Locked` suffix**: Methods that assume the caller already holds the lock
+  - `DetermineTransactionLocked()` - Caller must hold lock
+  - `BeginReadWriteTransactionLocked()` - Caller must hold lock
+  - `transactionAttrsLocked()` - Internal helper, caller must hold lock
+
+This convention makes lock handling immediately clear and prevents confusion.
+
 #### Heartbeat Optimization
 
-Background heartbeats use a check-before-lock pattern to minimize contention:
+Background heartbeats use RLock for checking state, minimizing contention:
 
 ```go
-// Check state without lock first
-attrs := s.TransactionAttrs()  // Returns copy, lock-free
+// Check state with read lock (concurrent-safe)
+attrs := s.TransactionAttrsWithLock()  // Uses RLock
 if !attrs.sendHeartbeat {
     return
 }
 
-// Only acquire lock if heartbeat needed
+// Only acquire write lock if heartbeat needed
 s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
     // Send heartbeat with LOW priority
 })
 ```
 
 **Key optimizations**:
-- Lock-free state check via `TransactionAttrs()` 
-- Mutex acquired only when sending heartbeat
-- Low priority to avoid interfering with queries
-- Tagged as "heartbeat" for log filtering
+- RLock for state checks allows concurrent reads
+- Write lock only when modifying transaction state
+- Multiple goroutines can check state simultaneously
+- Heartbeat doesn't block user operations
 
 #### Testing Unmockable Types
 
