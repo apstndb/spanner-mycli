@@ -1030,6 +1030,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 // closeTransactionWithMode closes a transaction of the specified mode.
 // It validates the transaction mode and performs appropriate cleanup.
 // The closeFn receives the transaction object to avoid direct tc access.
+// closeFn can be nil for transaction types that don't require specific cleanup (e.g., pending transactions).
 func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func(txn transaction) error) error {
 	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
