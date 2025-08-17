@@ -36,6 +36,7 @@ func renderTableHeader(header TableHeader, verbose bool) []string {
 
 // extractTableColumnNames extracts pure column names from the table header without type information.
 // This is used for table structure and layout calculations.
+// It is nil-safe and returns nil for a nil header.
 func extractTableColumnNames(header TableHeader) []string {
 	return renderTableHeader(header, false)
 }
