@@ -902,11 +902,8 @@ func (s *Session) CommitReadWriteTransactionLocked(ctx context.Context) (spanner
 	s.tc.Close()
 	s.tc = nil
 
-	if err != nil {
-		return spanner.CommitResponse{}, err
-	}
-
-	return resp, nil
+	// Return the response and error as-is, preserving any partial commit info
+	return resp, err
 }
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
@@ -1064,9 +1061,13 @@ func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func(tx
 func (s *Session) CloseReadOnlyTransaction() error {
 	return s.closeTransactionWithMode(transactionModeReadOnly, func(txn transaction) error {
 		// The transaction is passed as a parameter, maintaining encapsulation
-		if roTxn, ok := txn.(*spanner.ReadOnlyTransaction); ok {
-			roTxn.Close()
+		roTxn, ok := txn.(*spanner.ReadOnlyTransaction)
+		if !ok {
+			// This should never happen given the mode check in closeTransactionWithMode,
+			// but we handle it explicitly to prevent resource leaks
+			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode")
 		}
+		roTxn.Close()
 		return nil
 	})
 }
