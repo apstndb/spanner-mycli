@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -40,42 +39,6 @@ type transactionContext struct {
 	txn             transaction
 	heartbeatCancel context.CancelFunc
 	heartbeatFunc   func(ctx context.Context) // Function to run heartbeat
-}
-
-// RWTxn returns the transaction as a ReadWriteStmtBasedTransaction.
-// Panics if the transaction is not in read-write mode.
-func (tc *transactionContext) RWTxn() *spanner.ReadWriteStmtBasedTransaction {
-	if tc == nil || tc.txn == nil {
-		panic("read-write transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadWrite {
-		panic(fmt.Sprintf("must be in read-write transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
-}
-
-// ROTxn returns the transaction as a ReadOnlyTransaction.
-// Panics if the transaction is not in read-only mode.
-func (tc *transactionContext) ROTxn() *spanner.ReadOnlyTransaction {
-	if tc == nil || tc.txn == nil {
-		panic("read-only transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadOnly {
-		panic(fmt.Sprintf("must be in read-only transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn.(*spanner.ReadOnlyTransaction)
-}
-
-// Txn returns the transaction interface.
-// Panics if not in a valid transaction state.
-func (tc *transactionContext) Txn() transaction {
-	if tc == nil || tc.txn == nil {
-		panic("transaction is not available")
-	}
-	if tc.attrs.mode != transactionModeReadOnly && tc.attrs.mode != transactionModeReadWrite {
-		panic(fmt.Sprintf("must be in transaction, but: %v", tc.attrs.mode))
-	}
-	return tc.txn
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.
