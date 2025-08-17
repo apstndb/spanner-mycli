@@ -46,14 +46,19 @@ func executeWithFormatter(formatter StreamingFormatter, result *Result, columnNa
 		return nil
 	}
 
-	// Initialize formatter with minimal metadata (actual usage pattern)
+	// Try to get complete field information with types from TableHeader
 	var metadata *sppb.ResultSetMetadata
 	if result.TableHeader != nil {
-		metadata = &sppb.ResultSetMetadata{
-			RowType: &sppb.StructType{
-				Fields: toStructFields(result.TableHeader),
-			},
+		if fields, ok := result.TableHeader.structFields(); ok {
+			// Type information is available - use complete metadata
+			metadata = &sppb.ResultSetMetadata{
+				RowType: &sppb.StructType{
+					Fields: fields,
+				},
+			}
 		}
+		// If ok is false, metadata remains nil (for simpleTableHeader)
+		// This matches the actual usage pattern where formatters pass nil for metadata
 	}
 
 	if err := formatter.InitFormat(columnNames, metadata, sysVars, nil); err != nil {
@@ -69,25 +74,4 @@ func executeWithFormatter(formatter StreamingFormatter, result *Result, columnNa
 
 	// Finish formatting
 	return formatter.FinishFormat(QueryStats{}, int64(len(result.Rows)))
-}
-
-// toStructFields converts TableHeader to []*sppb.StructType_Field.
-// This preserves type information when available.
-func toStructFields(header TableHeader) []*sppb.StructType_Field {
-	if header == nil {
-		return nil
-	}
-
-	// Use the actual header renderer to get column names
-	columnNames := renderTableHeader(header, false)
-	fields := make([]*sppb.StructType_Field, 0, len(columnNames))
-
-	for _, name := range columnNames {
-		fields = append(fields, &sppb.StructType_Field{
-			Name: name,
-			// Type information is preserved if the header contains it
-		})
-	}
-
-	return fields
 }

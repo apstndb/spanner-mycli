@@ -70,12 +70,21 @@ type BatchInfo struct {
 type TableHeader interface {
 	// internalRender shouldn't be called directly. Use renderTableHeader().
 	internalRender(verbose bool) []string
+	// structFields returns the complete field information with types if available.
+	// Returns (fields, true) if type information is available.
+	// Returns (nil, false) if only column names are available (e.g., simpleTableHeader).
+	structFields() ([]*sppb.StructType_Field, bool)
 }
 
 type simpleTableHeader []string
 
 func (th simpleTableHeader) internalRender(verbose bool) []string {
 	return th
+}
+
+func (th simpleTableHeader) structFields() ([]*sppb.StructType_Field, bool) {
+	// simpleTableHeader only contains column names, no type information
+	return nil, false
 }
 
 // toTableHeader convert slice or variable arguments to TableHeader.
@@ -147,6 +156,11 @@ func (th typesTableHeader) internalRender(verbose bool) []string {
 		}
 	}
 	return result
+}
+
+func (th typesTableHeader) structFields() ([]*sppb.StructType_Field, bool) {
+	// typesTableHeader contains complete field information with types
+	return []*sppb.StructType_Field(th), true
 }
 
 type Result struct {

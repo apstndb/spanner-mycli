@@ -160,7 +160,7 @@ func (f *TableStreamingFormatter) calculateWidths(columns []string, previewRows 
 
 	// Create a mock result for width calculation
 	mockResult := &Result{
-		TableHeader: &streamingTableHeader{columns: columns},
+		TableHeader: simpleTableHeader(columns),
 		Rows:        rowsForCalculation,
 	}
 
@@ -200,13 +200,4 @@ func (f *TableStreamingFormatter) wrapRow(row Row) []string {
 	return slices.Collect(hiter.Unify(
 		rw.Wrap,
 		hiter.Pairs(slices.Values(row), slices.Values(f.widths))))
-}
-
-// streamingTableHeader implements TableHeader for width calculation in streaming mode.
-type streamingTableHeader struct {
-	columns []string
-}
-
-func (h *streamingTableHeader) internalRender(verbose bool) []string {
-	return h.columns
 }
