@@ -714,25 +714,15 @@ func (b *TransactionOptionsBuilder) BuildIsolationLevel() sppb.TransactionOption
 	return b.isolationLevel
 }
 
-// resolveTransactionPriority returns the effective priority for a transaction.
-// If the provided priority is unspecified, it uses the session's default priority.
-// Deprecated: Use NewTransactionOptionsBuilder().WithPriority().BuildPriority() for new code.
-func (s *Session) resolveTransactionPriority(priority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
-	return s.NewTransactionOptionsBuilder().WithPriority(priority).BuildPriority()
-}
-
-// resolveIsolationLevel returns the effective isolation level for a transaction.
-// If the provided isolation level is unspecified, it uses the session's default isolation level.
-// Deprecated: Use NewTransactionOptionsBuilder().WithIsolationLevel().BuildIsolationLevel() for new code.
-func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_IsolationLevel) sppb.TransactionOptions_IsolationLevel {
-	return s.NewTransactionOptionsBuilder().WithIsolationLevel(isolationLevel).BuildIsolationLevel()
-}
 
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
-	resolvedPriority := s.resolveTransactionPriority(priority)
+	opts := s.NewTransactionOptionsBuilder().
+		WithIsolationLevel(isolationLevel).
+		WithPriority(priority)
+	resolvedIsolationLevel := opts.BuildIsolationLevel()
+	resolvedPriority := opts.BuildPriority()
 
 	return s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
 		// Check for any type of existing transaction (including pending)
@@ -908,7 +898,7 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	}
 
 	tb := s.resolveTimestampBound(typ, staleness, timestamp)
-	resolvedPriority := s.resolveTransactionPriority(priority)
+	resolvedPriority := s.NewTransactionOptionsBuilder().WithPriority(priority).BuildPriority()
 
 	var resultTimestamp time.Time
 	err := s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
