@@ -306,7 +306,7 @@ func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTr
 		txn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
 		if !ok {
 			// This should never happen if the mode check is correct, but handle it defensively
-			return fmt.Errorf("internal error: transaction has incorrect type for read-write mode")
+			return fmt.Errorf("internal error: transaction has incorrect type for read-write mode (got %T)", s.tc.txn)
 		}
 		return fn(txn)
 	})
@@ -321,7 +321,7 @@ func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmt
 		txn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
 		if !ok {
 			// This should never happen if the mode check is correct, but handle it defensively
-			return fmt.Errorf("internal error: transaction has incorrect type for read-write mode")
+			return fmt.Errorf("internal error: transaction has incorrect type for read-write mode (got %T)", s.tc.txn)
 		}
 		return fn(txn, s.tc)
 	})
@@ -336,7 +336,7 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 		txn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
 		if !ok {
 			// This should never happen if the mode check is correct, but handle it defensively
-			return fmt.Errorf("internal error: transaction has incorrect type for read-only mode")
+			return fmt.Errorf("internal error: transaction has incorrect type for read-only mode (got %T)", s.tc.txn)
 		}
 		return fn(txn)
 	})
