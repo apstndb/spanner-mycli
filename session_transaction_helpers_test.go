@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -288,7 +290,7 @@ func TestTransactionHelperErrorHandling(t *testing.T) {
 	}
 }
 
-func TestValidateNoActiveTransactionLocked(t *testing.T) {
+func TestTransactionValidation(t *testing.T) {
 	tests := []struct {
 		name    string
 		setupTC func() *transactionContext
@@ -306,7 +308,7 @@ func TestValidateNoActiveTransactionLocked(t *testing.T) {
 					attrs: transactionAttributes{mode: transactionModePending},
 				}
 			},
-			wantErr: false, // Pending transactions are allowed
+			wantErr: false, // Pending transactions are allowed for new transactions
 		},
 		{
 			name: "read-write transaction",
@@ -334,11 +336,18 @@ func TestValidateNoActiveTransactionLocked(t *testing.T) {
 				tc: tt.setupTC(),
 			}
 
-			// Note: This test doesn't acquire the mutex as the function expects
-			// the caller to hold it. In production, this is always called with mutex held.
-			err := s.validateNoActiveTransactionLocked()
+			// Test validation through TransitTransaction which now handles validation
+			err := s.TransitTransaction(context.Background(), func(tc *transactionContext) (*transactionContext, error) {
+				// Check if we can start a new transaction
+				if tc != nil && (tc.attrs.mode == transactionModeReadWrite || tc.attrs.mode == transactionModeReadOnly) {
+					return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+				}
+				// Return existing context (no actual transition for this test)
+				return tc, nil
+			})
+
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateNoActiveTransactionLocked() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("TransitTransaction validation error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

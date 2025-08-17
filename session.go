@@ -283,21 +283,19 @@ var (
 // It validates the transaction mode and returns an appropriate error if the mode doesn't match.
 // NOTE: The mutex must NOT be held by the caller - this function acquires it.
 func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
-	s.tcMutex.Lock()
-	defer s.tcMutex.Unlock()
-
-	if s.tc == nil || s.tc.attrs.mode != mode {
-		switch mode {
-		case transactionModeReadWrite:
-			return ErrNotInReadWriteTransaction
-		case transactionModeReadOnly:
-			return ErrNotInReadOnlyTransaction
-		default:
-			return fmt.Errorf("not in %s transaction", mode)
+	return s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
+			switch mode {
+			case transactionModeReadWrite:
+				return ErrNotInReadWriteTransaction
+			case transactionModeReadOnly:
+				return ErrNotInReadOnlyTransaction
+			default:
+				return fmt.Errorf("not in %s transaction", mode)
+			}
 		}
-	}
-
-	return fn()
+		return fn()
+	})
 }
 
 func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
@@ -642,23 +640,92 @@ func (s *Session) InTransaction() bool {
 	return isActive
 }
 
+// TransactionOptionsBuilder helps build transaction options with proper defaults.
+type TransactionOptionsBuilder struct {
+	session        *Session
+	priority       sppb.RequestOptions_Priority
+	isolationLevel sppb.TransactionOptions_IsolationLevel
+	tag            string
+}
+
+// NewTransactionOptionsBuilder creates a new builder with session defaults.
+func (s *Session) NewTransactionOptionsBuilder() *TransactionOptionsBuilder {
+	return &TransactionOptionsBuilder{
+		session:        s,
+		priority:       sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+		isolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+	}
+}
+
+// WithPriority sets the transaction priority.
+func (b *TransactionOptionsBuilder) WithPriority(priority sppb.RequestOptions_Priority) *TransactionOptionsBuilder {
+	b.priority = priority
+	return b
+}
+
+// WithIsolationLevel sets the transaction isolation level.
+func (b *TransactionOptionsBuilder) WithIsolationLevel(level sppb.TransactionOptions_IsolationLevel) *TransactionOptionsBuilder {
+	b.isolationLevel = level
+	return b
+}
+
+// WithTag sets the transaction tag.
+func (b *TransactionOptionsBuilder) WithTag(tag string) *TransactionOptionsBuilder {
+	b.tag = tag
+	return b
+}
+
+// Build creates the final TransactionOptions with resolved defaults.
+func (b *TransactionOptionsBuilder) Build() spanner.TransactionOptions {
+	// Resolve priority
+	priority := b.priority
+	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		priority = b.session.systemVariables.RPCPriority
+	}
+
+	// Resolve isolation level
+	isolationLevel := b.isolationLevel
+	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		isolationLevel = b.session.systemVariables.DefaultIsolationLevel
+	}
+
+	return spanner.TransactionOptions{
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: b.session.systemVariables.ReturnCommitStats, MaxCommitDelay: b.session.systemVariables.MaxCommitDelay},
+		CommitPriority:              priority,
+		TransactionTag:              b.tag,
+		ExcludeTxnFromChangeStreams: b.session.systemVariables.ExcludeTxnFromChangeStreams,
+		IsolationLevel:              isolationLevel,
+	}
+}
+
+// BuildPriority returns just the resolved priority.
+func (b *TransactionOptionsBuilder) BuildPriority() sppb.RequestOptions_Priority {
+	if b.priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		return b.session.systemVariables.RPCPriority
+	}
+	return b.priority
+}
+
+// BuildIsolationLevel returns just the resolved isolation level.
+func (b *TransactionOptionsBuilder) BuildIsolationLevel() sppb.TransactionOptions_IsolationLevel {
+	if b.isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		return b.session.systemVariables.DefaultIsolationLevel
+	}
+	return b.isolationLevel
+}
 
 // resolveTransactionPriority returns the effective priority for a transaction.
 // If the provided priority is unspecified, it uses the session's default priority.
+// Deprecated: Use NewTransactionOptionsBuilder().WithPriority().BuildPriority() for new code.
 func (s *Session) resolveTransactionPriority(priority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
-	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		return s.systemVariables.RPCPriority
-	}
-	return priority
+	return s.NewTransactionOptionsBuilder().WithPriority(priority).BuildPriority()
 }
 
 // resolveIsolationLevel returns the effective isolation level for a transaction.
 // If the provided isolation level is unspecified, it uses the session's default isolation level.
+// Deprecated: Use NewTransactionOptionsBuilder().WithIsolationLevel().BuildIsolationLevel() for new code.
 func (s *Session) resolveIsolationLevel(isolationLevel sppb.TransactionOptions_IsolationLevel) sppb.TransactionOptions_IsolationLevel {
-	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		return s.systemVariables.DefaultIsolationLevel
-	}
-	return isolationLevel
+	return s.NewTransactionOptionsBuilder().WithIsolationLevel(isolationLevel).BuildIsolationLevel()
 }
 
 // BeginPendingTransaction starts pending transaction.
@@ -735,9 +802,16 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		return err
 	}
 
+	// Build transaction options using the builder
 	tag := s.getTransactionTag()
-	resolvedPriority := s.resolveTransactionPriority(priority)
-	resolvedIsolationLevel := s.resolveIsolationLevel(isolationLevel)
+	builder := s.NewTransactionOptionsBuilder().
+		WithPriority(priority).
+		WithIsolationLevel(isolationLevel).
+		WithTag(tag)
+
+	opts := builder.Build()
+	resolvedPriority := builder.BuildPriority()
+	resolvedIsolationLevel := builder.BuildIsolationLevel()
 
 	return s.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
 		// Check for existing transaction
@@ -746,14 +820,6 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 		}
 
 		// Create the new transaction
-		opts := spanner.TransactionOptions{
-			CommitOptions:               spanner.CommitOptions{ReturnCommitStats: s.systemVariables.ReturnCommitStats, MaxCommitDelay: s.systemVariables.MaxCommitDelay},
-			CommitPriority:              resolvedPriority,
-			TransactionTag:              tag,
-			ExcludeTxnFromChangeStreams: s.systemVariables.ExcludeTxnFromChangeStreams,
-			IsolationLevel:              resolvedIsolationLevel,
-		}
-
 		txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, s.client, opts)
 		if err != nil {
 			return tc, err // Return original context on error
@@ -776,49 +842,45 @@ func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel 
 	// For implicit transactions, they commit immediately so heartbeat isn't needed
 }
 
+// executeInReadWriteTransaction executes a function in a read-write transaction and handles cleanup.
+// It determines the transaction, executes the function, and clears the context afterwards.
+func (s *Session) executeInReadWriteTransaction(ctx context.Context, fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
+	_, err := s.DetermineTransaction(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = s.withReadWriteTransaction(fn)
+
+	// Always clear transaction context after commit/rollback
+	// This is safe even if the transaction wasn't in read-write mode
+	if err != ErrNotInReadWriteTransaction {
+		s.clearTransactionContext()
+	}
+
+	return err
+}
+
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
 func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.CommitResponse, error) {
-	_, err := s.DetermineTransaction(ctx)
+	var resp spanner.CommitResponse
+	err := s.executeInReadWriteTransaction(ctx, func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		var commitErr error
+		resp, commitErr = txn.CommitWithReturnResp(ctx)
+		return commitErr
+	})
 	if err != nil {
 		return spanner.CommitResponse{}, err
 	}
-
-	var resp spanner.CommitResponse
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
-		resp, err = txn.CommitWithReturnResp(ctx)
-		return err
-	})
-
-	if err == ErrNotInReadWriteTransaction {
-		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
-	}
-
-	// Clear transaction context after commit (regardless of error)
-	s.clearTransactionContext()
-
-	return resp, err
+	return resp, nil
 }
 
 // RollbackReadWriteTransaction rollbacks read-write transaction.
 func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
-	_, err := s.DetermineTransaction(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = s.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+	return s.executeInReadWriteTransaction(ctx, func(txn *spanner.ReadWriteStmtBasedTransaction) error {
 		txn.Rollback(ctx)
 		return nil
 	})
-
-	if err == ErrNotInReadWriteTransaction {
-		return ErrNotInReadWriteTransaction
-	}
-
-	// Clear transaction context after rollback
-	s.clearTransactionContext()
-
-	return nil
 }
 
 // resolveTimestampBound returns the effective timestamp bound for a read-only transaction.
@@ -887,34 +949,54 @@ func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBou
 	return resultTimestamp, err
 }
 
-// CloseReadOnlyTransaction closes a running read-only transaction.
-func (s *Session) CloseReadOnlyTransaction() error {
-	err := s.withReadOnlyTransaction(func(txn *spanner.ReadOnlyTransaction) error {
-		txn.Close()
-		return nil
-	})
-
-	if err == ErrNotInReadOnlyTransaction {
-		return ErrNotInReadOnlyTransaction
-	}
-
-	s.clearTransactionContext()
-	return nil
-}
-
-func (s *Session) ClosePendingTransaction() error {
+// closeTransactionWithMode closes a transaction of the specified mode.
+// It validates the transaction mode and performs appropriate cleanup.
+func (s *Session) closeTransactionWithMode(mode transactionMode, closeFn func() error) error {
 	return s.withTransactionContextLocked(func(tcPtr **transactionContext) error {
-		if *tcPtr == nil || (*tcPtr).attrs.mode != transactionModePending {
-			return ErrNotInPendingTransaction
+		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
+			switch mode {
+			case transactionModeReadWrite:
+				return ErrNotInReadWriteTransaction
+			case transactionModeReadOnly:
+				return ErrNotInReadOnlyTransaction
+			case transactionModePending:
+				return ErrNotInPendingTransaction
+			default:
+				return fmt.Errorf("not in %s transaction", mode)
+			}
 		}
 
-		// Close the transaction context
-		if *tcPtr != nil {
-			(*tcPtr).Close()
+		// Execute the close function if provided
+		if closeFn != nil {
+			if err := closeFn(); err != nil {
+				return err
+			}
 		}
+
+		// Close and clear the transaction context
+		(*tcPtr).Close()
 		*tcPtr = nil
 		return nil
 	})
+}
+
+// CloseReadOnlyTransaction closes a running read-only transaction.
+func (s *Session) CloseReadOnlyTransaction() error {
+	return s.closeTransactionWithMode(transactionModeReadOnly, func() error {
+		// Access the transaction safely within the lock
+		if s.tc != nil && s.tc.txn != nil {
+			if roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction); ok {
+				roTxn.Close()
+			}
+		}
+		return nil
+	})
+}
+
+// ClosePendingTransaction closes a pending transaction.
+func (s *Session) ClosePendingTransaction() error {
+	// Pending transactions don't have an underlying transaction to close
+	return s.closeTransactionWithMode(transactionModePending, nil)
 }
 
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics

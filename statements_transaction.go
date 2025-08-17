@@ -111,22 +111,25 @@ type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{}
-	switch {
-	case session.InPendingTransaction():
+
+	// Get transaction state once to avoid multiple mutex acquisitions
+	mode, isActive := session.TransactionState()
+
+	// Handle based on transaction mode
+	switch mode {
+	case transactionModePending:
 		if err := session.ClosePendingTransaction(); err != nil {
 			return nil, err
 		}
+		return result, nil
 
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
+	case transactionModeReadOnly:
 		if err := session.CloseReadOnlyTransaction(); err != nil {
 			return nil, err
 		}
-
 		return result, nil
-	case session.InReadWriteTransaction():
+
+	case transactionModeReadWrite:
 		if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
 			var err error
 			result, err = runBatch(ctx, session)
@@ -143,8 +146,13 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 		result.CommitTimestamp = resp.CommitTs
 		result.CommitStats = resp.CommitStats
 		return result, nil
+
 	default:
-		return nil, errors.New("invalid state")
+		// No active transaction - this is a no-op
+		if !isActive {
+			return result, nil
+		}
+		return nil, fmt.Errorf("invalid transaction state: %v", mode)
 	}
 }
 
@@ -152,29 +160,36 @@ type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	result := &Result{}
-	switch {
-	case session.InPendingTransaction():
+
+	// Get transaction state once to avoid multiple mutex acquisitions
+	mode, isActive := session.TransactionState()
+
+	// Handle based on transaction mode
+	switch mode {
+	case transactionModePending:
 		if err := session.ClosePendingTransaction(); err != nil {
 			return nil, err
 		}
+		return result, nil
 
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
+	case transactionModeReadOnly:
 		if err := session.CloseReadOnlyTransaction(); err != nil {
 			return nil, err
 		}
-
 		return result, nil
-	case session.InReadWriteTransaction():
+
+	case transactionModeReadWrite:
 		if err := session.RollbackReadWriteTransaction(ctx); err != nil {
 			return nil, err
 		}
-
 		return result, nil
+
 	default:
-		return nil, errors.New("invalid state")
+		// No active transaction - this is a no-op
+		if !isActive {
+			return result, nil
+		}
+		return nil, fmt.Errorf("invalid transaction state: %v", mode)
 	}
 }
 
