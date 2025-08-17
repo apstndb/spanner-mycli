@@ -10,6 +10,8 @@ import (
 
 // createStreamingFormatter creates a streaming formatter for the given display mode.
 // This is the single source of truth for formatter creation logic.
+// Note: Table formats (Table, TableComment, TableDetailComment) require screenWidth
+// and should be created with NewTableStreamingFormatter directly by the caller.
 func createStreamingFormatter(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables) (StreamingFormatter, error) {
 	switch mode {
 	case enums.DisplayModeCSV:
@@ -25,11 +27,13 @@ func createStreamingFormatter(mode enums.DisplayMode, out io.Writer, sysVars *sy
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		return NewSQLStreamingFormatter(out, sysVars, mode)
 	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
-		previewSize := int(sysVars.TablePreviewRows)
-		if previewSize < 0 {
-			previewSize = 0 // 0 means collect all rows
+		// Table formats need screenWidth, so they must be created by the caller
+		// Return a dummy formatter for isStreamingSupported check
+		if out == io.Discard {
+			// This is just for checking support
+			return NewTableStreamingFormatter(out, sysVars, 0, 0), nil
 		}
-		return NewTableStreamingFormatter(out, sysVars, 0, previewSize), nil
+		return nil, fmt.Errorf("table formats require screenWidth - use NewTableStreamingFormatter directly")
 	default:
 		return nil, fmt.Errorf("unsupported streaming format: %v", mode)
 	}
