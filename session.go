@@ -1080,7 +1080,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 		if !ok {
 			// This should never happen given the mode check in closeTransactionWithMode,
 			// but we handle it explicitly to prevent resource leaks
-			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode")
+			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode (got %T)", txn)
 		}
 		roTxn.Close()
 		return nil
@@ -1279,7 +1279,7 @@ func (s *Session) tryQueryInTransaction(ctx context.Context, stmt spanner.Statem
 		roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
 		if !ok {
 			// This shouldn't happen - log the error and return a stopped iterator
-			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction")
+			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction (got %T)", s.tc.txn)
 			slog.Error("INTERNAL ERROR", "error", err)
 			return newStoppedIterator(), nil
 		}
