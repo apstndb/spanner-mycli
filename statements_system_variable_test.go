@@ -6,6 +6,7 @@ import (
 )
 
 func TestFormatTimestamp(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		timestamp    time.Time

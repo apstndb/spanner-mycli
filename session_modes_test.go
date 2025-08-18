@@ -6,6 +6,7 @@ import (
 )
 
 func TestSessionModes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("NewAdminSession creates detached session", func(t *testing.T) {
@@ -129,6 +130,7 @@ func TestSessionModes(t *testing.T) {
 }
 
 func TestDatabaseOperationValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
@@ -165,6 +167,7 @@ func TestDatabaseOperationValidation(t *testing.T) {
 }
 
 func TestInstanceValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("InstanceExists method works", func(t *testing.T) {
@@ -211,6 +214,7 @@ func TestInstanceValidation(t *testing.T) {
 }
 
 func TestDetachedCompatibleStatements(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
@@ -272,6 +276,7 @@ func TestDetachedCompatibleStatements(t *testing.T) {
 }
 
 func TestDatabaseConnectedSessionStatements(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
@@ -310,6 +315,7 @@ func TestDatabaseConnectedSessionStatements(t *testing.T) {
 }
 
 func TestAdminSessionStatementExecution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	sysVars := &systemVariables{

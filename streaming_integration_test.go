@@ -10,6 +10,7 @@ import (
 // This test exists to prevent "unused function" lint errors while the streaming
 // feature is being developed but not yet fully integrated.
 func TestStreamingFunctionsCompile(t *testing.T) {
+	t.Parallel()
 	// Test that functions compile - they will be used in executeSQL once fully integrated
 	_ = rowIterToSeq
 	_ = consumeRowIterWithProcessor
@@ -67,6 +68,7 @@ func TestStreamingFunctionsCompile(t *testing.T) {
 
 // TestRowIterToSeq tests the rowIterToSeq function compiles with correct types
 func TestRowIterToSeq(t *testing.T) {
+	t.Parallel()
 	// This would require a mock RowIterator which is complex to set up
 	// For now, just ensure the function signature is correct
 	fn := rowIterToSeq
@@ -75,6 +77,7 @@ func TestRowIterToSeq(t *testing.T) {
 
 // TestConsumeRowIterWithProcessor tests the consumeRowIterWithProcessor function compiles
 func TestConsumeRowIterWithProcessor(t *testing.T) {
+	t.Parallel()
 	// This would require a mock RowIterator and processor
 	// For now, just ensure the function compiles and is not removed by linter
 	_ = consumeRowIterWithProcessor

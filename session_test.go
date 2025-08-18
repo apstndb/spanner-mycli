@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseDirectedReadOption(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc   string
 		option string
@@ -83,6 +84,7 @@ func TestParseDirectedReadOption(t *testing.T) {
 }
 
 func TestSession_TransactionMode(t *testing.T) {
+	t.Parallel()
 	s := &Session{}
 
 	if got := s.TransactionMode(); got != transactionModeUndetermined {
@@ -106,6 +108,7 @@ func TestSession_TransactionMode(t *testing.T) {
 }
 
 func TestSession_FailStatementIfReadOnly(t *testing.T) {
+	t.Parallel()
 	s := &Session{systemVariables: &systemVariables{ReadOnly: true}}
 	err := s.failStatementIfReadOnly()
 	if err == nil {

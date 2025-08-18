@@ -13,6 +13,7 @@ import (
 )
 
 func TestTransactionHelpersIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -140,6 +141,7 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 }
 
 func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -181,6 +183,7 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 }
 
 func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -266,6 +269,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 }
 
 func TestCommitReadWriteTransactionIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -321,6 +325,7 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 }
 
 func TestTransactionStateTransitionsIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

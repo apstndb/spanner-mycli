@@ -9,6 +9,7 @@ import (
 )
 
 func TestCliCurrentWidthWithTee(t *testing.T) {
+	t.Parallel()
 	// Test that CLI_CURRENT_WIDTH works correctly when --tee is enabled
 	// and StreamManager is used
 

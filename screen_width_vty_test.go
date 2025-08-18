@@ -13,6 +13,7 @@ import (
 // TestGetTerminalSizeWithPty tests the GetTerminalSize function using a pseudoterminal
 // with a controlled size.
 func TestGetTerminalSizeWithPty(t *testing.T) {
+	t.Parallel()
 	// Skip the test if we're not on a Unix-like system
 	if !isUnixLike() {
 		t.Skip("Skipping test on non-Unix-like system")
@@ -80,6 +81,7 @@ func TestGetTerminalSizeWithPty(t *testing.T) {
 // TestDisplayResultWithPty tests the displayResult method with a pseudoterminal
 // of controlled size.
 func TestDisplayResultWithPty(t *testing.T) {
+	t.Parallel()
 	// Skip the test if we're not on a Unix-like system
 	if !isUnixLike() {
 		t.Skip("Skipping test on non-Unix-like system")

@@ -29,6 +29,7 @@ func mustNewStruct(m map[string]interface{}) *structpb.Struct {
 }
 
 func TestRenderTreeUsingTestdataPlans(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		title string
 		file  string
@@ -408,6 +409,7 @@ func TotalWithUnit(s, unit string) stats.ExecutionStatsValue {
 }
 
 func TestRenderTreeWithStats(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		title           string
 		plan            *sppb.QueryPlan
@@ -540,6 +542,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 }
 
 func TestNodeString(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		title string
 		node  *sppb.PlanNode
@@ -625,6 +628,7 @@ var selectProfileJSON []byte
 var selectProfileResultSet = lo.Must(protojsonUnmarshal[sppb.ResultSet](selectProfileJSON))
 
 func TestExplainLastQueryStatement_Execute(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		statement      *ExplainLastQueryStatement
@@ -696,6 +700,7 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 }
 
 func TestShowPlanNodeStatement_Execute(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		statement      *ShowPlanNodeStatement

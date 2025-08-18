@@ -12,10 +12,10 @@ import (
 )
 
 func TestDumpStatements(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)
@@ -175,10 +175,10 @@ func TestDumpStatements(t *testing.T) {
 }
 
 func TestDumpTablesWithInvalidTable(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)
@@ -195,10 +195,10 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 }
 
 func TestDumpEmptyDatabase(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)
@@ -226,10 +226,10 @@ func TestDumpEmptyDatabase(t *testing.T) {
 }
 
 func TestDumpWithStreaming(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)
@@ -295,10 +295,10 @@ func TestDumpWithStreaming(t *testing.T) {
 }
 
 func TestDumpWithForeignKeys(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)
@@ -401,10 +401,10 @@ func TestDumpWithForeignKeys(t *testing.T) {
 }
 
 func TestDumpWithMixedDependencies(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	t.Parallel()
 	ctx := context.Background()
 
 	_, session, teardown := initializeWithRandomDB(t, nil, nil)

@@ -27,6 +27,7 @@ const (
 // Remove the separate TestMain and use the shared emulator from integration_test.go
 
 func TestRequestPriority(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping emulator test in short mode")
 	}
@@ -155,6 +156,7 @@ func TestRequestPriority(t *testing.T) {
 }
 
 func TestIsolationLevel(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping emulator test in short mode")
 	}

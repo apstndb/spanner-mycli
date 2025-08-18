@@ -12,6 +12,7 @@ import (
 
 // TestInspectImagePlatform tests the inspectImagePlatform function
 func TestInspectImagePlatform(t *testing.T) {
+	t.Parallel()
 	// Skip this test in short mode as it requires Docker access
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -9,6 +9,7 @@ import (
 )
 
 func TestDependencyResolver_TopologicalSort(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		setupTables    func() *DependencyResolver
@@ -278,6 +279,7 @@ func TestDependencyResolver_TopologicalSort(t *testing.T) {
 }
 
 func TestDependencyResolver_HasInterleavePathBetween(t *testing.T) {
+	t.Parallel()
 	dr := NewDependencyResolver()
 	dr.tables = map[string]*TableDependency{
 		"GrandParent": {
@@ -324,6 +326,7 @@ func TestDependencyResolver_HasInterleavePathBetween(t *testing.T) {
 }
 
 func TestDependencyResolver_CalculateInterleaveLevels(t *testing.T) {
+	t.Parallel()
 	dr := NewDependencyResolver()
 	dr.tables = map[string]*TableDependency{
 		"Root": {
@@ -368,6 +371,7 @@ func TestDependencyResolver_CalculateInterleaveLevels(t *testing.T) {
 }
 
 func TestDependencyResolver_GetDependencyInfo(t *testing.T) {
+	t.Parallel()
 	dr := NewDependencyResolver()
 	dr.tables = map[string]*TableDependency{
 		"TestTable": {
@@ -406,6 +410,7 @@ func TestDependencyResolver_GetDependencyInfo(t *testing.T) {
 }
 
 func TestDependencyResolver_ComplexScenarios(t *testing.T) {
+	t.Parallel()
 	t.Run("Multiple FK to same table", func(t *testing.T) {
 		dr := NewDependencyResolver()
 		dr.tables = map[string]*TableDependency{
@@ -480,6 +485,7 @@ func TestDependencyResolver_ComplexScenarios(t *testing.T) {
 }
 
 func TestDependencyResolver_PartialExport(t *testing.T) {
+	t.Parallel()
 	dr := NewDependencyResolver()
 	dr.tables = map[string]*TableDependency{
 		"Parent": {
@@ -535,6 +541,7 @@ func indexOf(slice []string, item string) int {
 }
 
 func TestDependencyResolver_MultiColumnFK(t *testing.T) {
+	t.Parallel()
 	t.Run("Multi-column foreign key treated as single dependency", func(t *testing.T) {
 		dr := NewDependencyResolver()
 		dr.tables = map[string]*TableDependency{

@@ -11,6 +11,7 @@ import (
 
 // TestProjectPath tests the ProjectPath function
 func TestProjectPath(t *testing.T) {
+	t.Parallel()
 	sv := &systemVariables{
 		Project: "test-project",
 	}
@@ -24,6 +25,7 @@ func TestProjectPath(t *testing.T) {
 
 // TestParseTimeString tests parseTimeString function
 func TestParseTimeString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -50,6 +52,7 @@ func TestParseTimeString(t *testing.T) {
 
 // TestAddFromSimple tests the AddFromSimple method
 func TestAddFromSimple(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown variable", func(t *testing.T) {
 		sv := newSystemVariablesWithDefaults()
 		err := sv.AddFromSimple("UNKNOWN_VAR", "value")
@@ -86,6 +89,7 @@ func TestAddFromSimple(t *testing.T) {
 
 // TestAddFromGoogleSQL tests the AddFromGoogleSQL method
 func TestAddFromGoogleSQL(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown variable", func(t *testing.T) {
 		sv := newSystemVariablesWithDefaults()
 		err := sv.AddFromGoogleSQL("UNKNOWN_VAR", "'value'")
@@ -123,6 +127,7 @@ func TestAddFromGoogleSQL(t *testing.T) {
 
 // TestAdd tests the AddFromGoogleSQL method
 func TestAdd(t *testing.T) {
+	t.Parallel()
 	sv := newSystemVariablesWithDefaults()
 	err := sv.AddFromGoogleSQL("UNKNOWN_VAR", "'value'")
 	if err == nil {
@@ -132,6 +137,7 @@ func TestAdd(t *testing.T) {
 
 // TestHttpResolveFunc tests the httpResolveFunc function
 func TestHttpResolveFunc(t *testing.T) {
+	t.Parallel()
 	// Create a test HTTP server
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

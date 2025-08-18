@@ -14,6 +14,7 @@ import (
 )
 
 func TestStreamManager(t *testing.T) {
+	t.Parallel()
 	t.Run("basic enable and disable", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
@@ -461,6 +462,7 @@ func (sb *syncBuffer) String() string {
 }
 
 func TestSafeTeeWriter(t *testing.T) {
+	t.Parallel()
 	t.Run("single warning with cached writer", func(t *testing.T) {
 		// This test verifies that when using StreamManager with caching,
 		// we only get one warning even if multiple goroutines write
@@ -571,6 +573,7 @@ func TestSafeTeeWriter(t *testing.T) {
 }
 
 func TestStreamManagerSilentMode(t *testing.T) {
+	t.Parallel()
 	t.Run("silent mode functionality", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}

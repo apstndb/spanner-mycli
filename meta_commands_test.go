@@ -10,6 +10,7 @@ import (
 )
 
 func TestIsMetaCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -57,6 +58,7 @@ func TestIsMetaCommand(t *testing.T) {
 }
 
 func TestParseMetaCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -337,6 +339,7 @@ func TestParseMetaCommand(t *testing.T) {
 }
 
 func TestShellMetaCommand_Execute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("system commands disabled", func(t *testing.T) {
@@ -408,6 +411,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 }
 
 func TestMetaCommandStatement_Interface(t *testing.T) {
+	t.Parallel()
 	// Verify that ShellMetaCommand implements both interfaces
 	var _ Statement = (*ShellMetaCommand)(nil)
 	var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
@@ -446,6 +450,7 @@ func TestMetaCommandStatement_Interface(t *testing.T) {
 }
 
 func TestPromptMetaCommand_Execute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -517,6 +522,7 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 }
 
 func TestParseMetaCommand_SingleCharacterOnly(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		input       string
@@ -591,6 +597,7 @@ func createTestSession(t *testing.T) (*Session, *systemVariables) {
 }
 
 func TestTeeOutputMetaCommand_Execute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -673,6 +680,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 }
 
 func TestDisableTeeMetaCommand_Execute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {

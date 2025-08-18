@@ -11,6 +11,7 @@ import (
 
 // TestStreamManager_LargeFileWarning tests that we handle large files gracefully
 func TestStreamManager_LargeFileWarning(t *testing.T) {
+	t.Parallel()
 	// Note: We don't actually enforce file size limits in StreamManager
 	// This test documents the current behavior
 	originalOut := &bytes.Buffer{}
@@ -45,6 +46,7 @@ func TestStreamManager_LargeFileWarning(t *testing.T) {
 
 // TestStreamManager_DirectoryError tests that specifying a directory returns appropriate error
 func TestStreamManager_DirectoryError(t *testing.T) {
+	t.Parallel()
 	originalOut := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	sm := NewStreamManager(os.Stdin, originalOut, errOut)
@@ -69,6 +71,7 @@ func TestStreamManager_DirectoryError(t *testing.T) {
 
 // TestStreamManager_NoWritePermission tests graceful handling of permission errors
 func TestStreamManager_NoWritePermission(t *testing.T) {
+	t.Parallel()
 	// Skip if running as root
 	if os.Geteuid() == 0 {
 		t.Skip("Test requires non-root user")
@@ -102,6 +105,7 @@ func TestStreamManager_NoWritePermission(t *testing.T) {
 
 // TestStreamManager_ManyFileSwitches tests that file handles don't leak
 func TestStreamManager_ManyFileSwitches(t *testing.T) {
+	t.Parallel()
 	originalOut := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	sm := NewStreamManager(os.Stdin, originalOut, errOut)
@@ -146,6 +150,7 @@ func TestStreamManager_ManyFileSwitches(t *testing.T) {
 
 // TestStreamManager_CloseIdempotency tests that Close() can be called multiple times
 func TestStreamManager_CloseIdempotency(t *testing.T) {
+	t.Parallel()
 	originalOut := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	sm := NewStreamManager(os.Stdin, originalOut, errOut)
@@ -171,6 +176,7 @@ func TestStreamManager_CloseIdempotency(t *testing.T) {
 
 // TestStreamManager_WriteAfterError tests behavior after write errors
 func TestStreamManager_WriteAfterError(t *testing.T) {
+	t.Parallel()
 	originalOut := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	sm := NewStreamManager(os.Stdin, originalOut, errOut)

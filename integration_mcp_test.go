@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanemuboost"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/samber/lo"
@@ -198,7 +199,7 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 // testDatabaseExistence tests the database existence check functionality
 func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
 	t.Helper()
-	exists, err := session.DatabaseExists()
+	exists, err := session.DatabaseExists(t.Context())
 	if err != nil {
 		t.Fatalf("DatabaseExists check failed: %v", err)
 	}
@@ -211,14 +212,21 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	t.Helper()
 	ctx := t.Context()
 
-	// Create system variables with non-existent database
+	// First, create a real instance to test non-existent database
+	clients, teardown, err := spanemuboost.NewClients(ctx, emulator, spanemuboost.WithRandomInstanceID())
+	if err != nil {
+		t.Fatalf("Failed to create test clients: %v", err)
+	}
+	defer teardown()
+
+	// Create system variables with non-existent database in an existing instance
 	host, port, err := parseEndpoint(emulator.URI())
 	if err != nil {
 		t.Fatalf("Failed to parse emulator URI: %v", err)
 	}
 	sysVarsNonExistent := systemVariables{
-		Project:               "test-project",
-		Instance:              "test-instance",
+		Project:               clients.ProjectID,  // Use real project
+		Instance:              clients.InstanceID, // Use real instance
 		Database:              "non-existent-database",
 		Params:                make(map[string]ast.Node),
 		RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
@@ -282,6 +290,7 @@ func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Sessio
 }
 
 func TestRunMCP(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -389,6 +398,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test database validation (the first step of RunMCP)
 	t.Run("database exists validation", func(t *testing.T) {
+		t.Parallel()
 		// Test with existing database
 		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
@@ -398,6 +408,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test MCP client-server setup
 	t.Run("mcp client-server setup", func(t *testing.T) {
+		t.Parallel()
 		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
@@ -412,6 +423,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test server creation with different CLI configurations
 	t.Run("server creation with different CLI configurations", func(t *testing.T) {
+		t.Parallel()
 		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
@@ -448,6 +460,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test non-existent database error case
 	t.Run("database does not exist", func(t *testing.T) {
+		t.Parallel()
 		testRunMCPWithNonExistentDatabase(t)
 	})
 }

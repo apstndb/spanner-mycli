@@ -13,6 +13,7 @@ import (
 )
 
 func TestShowOperationStatement_getOperationDescription(t *testing.T) {
+	t.Parallel()
 	stmt := &ShowOperationStatement{}
 
 	tests := []struct {
@@ -66,6 +67,7 @@ func TestShowOperationStatement_getOperationDescription(t *testing.T) {
 }
 
 func TestShowOperationStatement_getOperationProgress(t *testing.T) {
+	t.Parallel()
 	stmt := &ShowOperationStatement{}
 
 	tests := []struct {
@@ -122,6 +124,7 @@ func TestShowOperationStatement_getOperationProgress(t *testing.T) {
 }
 
 func TestShowOperationStatement_SyncModeWithCompletedOperation(t *testing.T) {
+	t.Parallel()
 	// Test that SYNC mode immediately returns for completed operations
 	// This is a unit test that doesn't require the full integration setup
 
@@ -146,6 +149,7 @@ func TestShowOperationStatement_SyncModeWithCompletedOperation(t *testing.T) {
 }
 
 func TestShowOperationStatement_ProgressCalculation(t *testing.T) {
+	t.Parallel()
 	stmt := &ShowOperationStatement{}
 
 	// Test multiple progress values averaging
@@ -168,6 +172,7 @@ func TestShowOperationStatement_ProgressCalculation(t *testing.T) {
 }
 
 func TestShowOperationStatement_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	// Test context cancellation behavior
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -183,6 +188,7 @@ func TestShowOperationStatement_ContextCancellation(t *testing.T) {
 }
 
 func TestShowOperationStatement_MetadataTypes(t *testing.T) {
+	t.Parallel()
 	stmt := &ShowOperationStatement{}
 
 	tests := []struct {

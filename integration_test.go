@@ -244,6 +244,7 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 }
 
 func TestSelect(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -274,6 +275,7 @@ func TestSelect(t *testing.T) {
 }
 
 func TestDml(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -341,6 +343,7 @@ func buildAndExecute(t *testing.T, ctx context.Context, session *Session, s stri
 }
 
 func TestSystemVariables(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -377,6 +380,7 @@ func TestSystemVariables(t *testing.T) {
 }
 
 func TestStatements(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1271,6 +1275,7 @@ func TestStatements(t *testing.T) {
 }
 
 func TestReadWriteTransaction(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1459,6 +1464,7 @@ func TestReadWriteTransaction(t *testing.T) {
 }
 
 func TestReadOnlyTransaction(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1587,6 +1593,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 }
 
 func TestShowCreateTable(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1616,6 +1623,7 @@ func TestShowCreateTable(t *testing.T) {
 }
 
 func TestShowColumns(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1646,6 +1654,7 @@ func TestShowColumns(t *testing.T) {
 }
 
 func TestShowIndexes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1675,6 +1684,7 @@ func TestShowIndexes(t *testing.T) {
 }
 
 func TestTruncateTable(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1708,6 +1718,7 @@ func TestTruncateTable(t *testing.T) {
 }
 
 func TestPartitionedDML(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1739,6 +1750,7 @@ func TestPartitionedDML(t *testing.T) {
 }
 
 func TestShowOperation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

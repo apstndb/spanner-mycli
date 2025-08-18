@@ -21,10 +21,12 @@ on:
 
 name: CI
 jobs:
-  test:
+  # Run linting in a separate job for parallel execution
+  lint:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -36,6 +38,18 @@ jobs:
         with:
           version: v2.1
           args: --timeout=5m
+
+  # Run tests in a separate job for parallel execution
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go version
       - name: run tests with coverage
         run: make test-coverage
       - name: Upload coverage HTML report

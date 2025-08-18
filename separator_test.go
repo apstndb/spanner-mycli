@@ -23,6 +23,7 @@ import (
 )
 
 func TestSeparateInput(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc       string
 		input      string

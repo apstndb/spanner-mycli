@@ -9,6 +9,7 @@ import (
 )
 
 func TestParseSimpleTablePath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -100,6 +101,7 @@ func TestParseSimpleTablePath(t *testing.T) {
 }
 
 func TestExtractTableNameFromQuery(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		query         string
@@ -374,6 +376,7 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 }
 
 func TestParseSimpleTablePathSQL(t *testing.T) {
+	t.Parallel()
 	// Test that reserved words are properly quoted in SQL output
 	tests := []struct {
 		name    string

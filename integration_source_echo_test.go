@@ -13,6 +13,7 @@ import (
 )
 
 func TestSourceCommandWithEcho(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("source file with ECHO enabled", func(t *testing.T) {

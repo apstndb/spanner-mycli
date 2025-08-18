@@ -7,6 +7,7 @@ import (
 
 // TestSystemVariables_ErrorTypes tests all error type Error() methods for coverage
 func TestSystemVariables_ErrorTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -41,6 +42,7 @@ func TestSystemVariables_ErrorTypes(t *testing.T) {
 
 // TestSystemVariables_Set_Errors tests error cases in the Set method
 func TestSystemVariables_Set_Errors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		varName   string
@@ -132,6 +134,7 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 
 // TestSystemVariables_Get_Errors tests error cases in the Get method
 func TestSystemVariables_Get_Errors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		varName   string
@@ -160,6 +163,7 @@ func TestSystemVariables_Get_Errors(t *testing.T) {
 
 // TestSystemVariables_Add_Errors tests error cases in the Add method
 func TestSystemVariables_Add_Errors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		varName   string
@@ -196,6 +200,7 @@ func TestSystemVariables_Add_Errors(t *testing.T) {
 
 // TestSystemVariables_CaseInsensitive tests that variable names are case-insensitive
 func TestSystemVariables_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	// Test Set with various cases
 	testCases := []string{"cli_verbose", "CLI_VERBOSE", "Cli_Verbose", "cLi_VeRbOsE"}
 	for _, varName := range testCases {
