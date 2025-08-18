@@ -1502,7 +1502,7 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	// For users who don't have `spanner.databases.get` IAM permission,
 	// check database existence by running an actual query.
 	// cf. https://github.com/cloudspannerecosystem/spanner-cli/issues/10
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().
