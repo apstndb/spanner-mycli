@@ -744,6 +744,8 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		Rows     []Row
 	}
 
+	// Go 1.25+ automatically detects container CPU limits on Linux through container-aware GOMAXPROCS.
+	// This ensures optimal parallelism in containerized environments (Docker, Kubernetes) without manual configuration.
 	p := pool.NewWithResults[*partitionQueryResult]().
 		WithContext(ctx).
 		WithMaxGoroutines(cmp.Or(int(session.systemVariables.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))

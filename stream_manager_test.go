@@ -304,12 +304,10 @@ func TestStreamManager(t *testing.T) {
 		errors := make([]error, 10)
 
 		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func(index int) {
-				defer wg.Done()
-				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", index))
-				errors[index] = sm.EnableTee(filePath, false)
-			}(i)
+			wg.Go(func() {
+				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", i))
+				errors[i] = sm.EnableTee(filePath, false)
+			})
 		}
 
 		wg.Wait()
@@ -354,26 +352,22 @@ func TestStreamManager(t *testing.T) {
 
 		// Writers
 		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
+			wg.Go(func() {
 				writer := sm.GetWriter()
 				for j := 0; j < iterations; j++ {
-					data := fmt.Sprintf("Writer %d iteration %d\n", id, j)
+					data := fmt.Sprintf("Writer %d iteration %d\n", i, j)
 					_, _ = writer.Write([]byte(data))
 				}
-			}(i)
+			})
 		}
 
 		// Status checkers
 		for i := 0; i < 3; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for j := 0; j < iterations; j++ {
 					_ = sm.IsEnabled()
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -493,12 +487,10 @@ func TestSafeTeeWriter(t *testing.T) {
 		// Concurrent writes
 		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
-				data := fmt.Sprintf("Test data from goroutine %d\n", id)
+			wg.Go(func() {
+				data := fmt.Sprintf("Test data from goroutine %d\n", i)
 				_, _ = writer.Write([]byte(data))
-			}(i)
+			})
 		}
 
 		wg.Wait()
