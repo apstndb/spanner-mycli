@@ -206,9 +206,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	errors := make(chan error, 3)
 
 	// Goroutine 1: Read and modify sendHeartbeat
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		err := session.withReadWriteTransactionContext(func(tx *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 			// Simulate some work
 			time.Sleep(10 * time.Millisecond)
@@ -218,12 +216,10 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 		if err != nil {
 			errors <- err
 		}
-	}()
+	})
 
 	// Goroutine 2: Query using the transaction
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		err := session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 			// Simulate some work
 			time.Sleep(5 * time.Millisecond)
@@ -235,12 +231,10 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 		if err != nil {
 			errors <- err
 		}
-	}()
+	})
 
 	// Goroutine 3: Get transaction attributes
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// This should not block or race
 		for i := 0; i < 10; i++ {
 			attrs := session.TransactionAttrsWithLock()
@@ -250,7 +244,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 			}
 			time.Sleep(2 * time.Millisecond)
 		}
-	}()
+	})
 
 	// Wait for all goroutines
 	wg.Wait()
