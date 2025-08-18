@@ -229,7 +229,7 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 	}
 
 	// Check if the target database exists
-	exists, err := newSession.DatabaseExists()
+	exists, err := newSession.DatabaseExists(ctx)
 	if err != nil {
 		newSession.Close()
 		return nil, err
@@ -1494,7 +1494,7 @@ func (s *Session) InstanceExists() (bool, error) {
 	}
 }
 
-func (s *Session) DatabaseExists() (bool, error) {
+func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return false, err
 	}
@@ -1502,7 +1502,7 @@ func (s *Session) DatabaseExists() (bool, error) {
 	// For users who don't have `spanner.databases.get` IAM permission,
 	// check database existence by running an actual query.
 	// cf. https://github.com/cloudspannerecosystem/spanner-cli/issues/10
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().

@@ -199,7 +199,7 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 // testDatabaseExistence tests the database existence check functionality
 func testDatabaseExistence(t *testing.T, session *Session, shouldExist bool) {
 	t.Helper()
-	exists, err := session.DatabaseExists()
+	exists, err := session.DatabaseExists(t.Context())
 	if err != nil {
 		t.Fatalf("DatabaseExists check failed: %v", err)
 	}

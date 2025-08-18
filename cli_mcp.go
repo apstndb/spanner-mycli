@@ -142,7 +142,7 @@ Use "HELP" command to see all available statements and their syntax.`)
 
 // RunMCP runs the MCP server
 func (c *Cli) RunMCP(ctx context.Context) error {
-	exists, err := c.SessionHandler.DatabaseExists()
+	exists, err := c.SessionHandler.DatabaseExists(ctx)
 	if err != nil {
 		return err
 	}

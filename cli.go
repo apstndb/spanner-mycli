@@ -97,7 +97,7 @@ func (c *Cli) GetInStream() io.ReadCloser {
 func (c *Cli) RunInteractive(ctx context.Context) error {
 	// Only check database existence if we're not in detached mode
 	if !c.SessionHandler.IsDetached() {
-		exists, err := c.SessionHandler.DatabaseExists()
+		exists, err := c.SessionHandler.DatabaseExists(ctx)
 		if err != nil {
 			return NewExitCodeError(c.ExitOnError(err))
 		}
