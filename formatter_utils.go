@@ -69,7 +69,7 @@ func createStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysV
 	if mode == enums.DisplayModeTable || mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
 		previewSize := int(sysVars.TablePreviewRows)
 		if previewSize < 0 {
-			previewSize = 0 // 0 means collect all rows
+			previewSize = 0 // 0 means headers-only preview (stream all rows)
 		}
 		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
 		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
