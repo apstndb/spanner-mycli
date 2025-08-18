@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"html"
 	"io"
-
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 // HTMLFormatter provides streaming HTML table output.
@@ -28,11 +26,12 @@ func NewHTMLFormatter(out io.Writer, skipHeaders bool) *HTMLFormatter {
 }
 
 // InitFormat writes the HTML table opening and headers.
-func (f *HTMLFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *HTMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	f.columns = columns
 
 	if len(columns) == 0 {
@@ -113,11 +112,12 @@ func NewXMLFormatter(out io.Writer, skipHeaders bool) *XMLFormatter {
 }
 
 // InitFormat writes the XML declaration and starts the result set.
-func (f *XMLFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *XMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	f.columns = columns
 
 	if len(columns) == 0 {

@@ -376,38 +376,8 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		return nil, nil
 	}
 
-	// Create the appropriate streaming formatter
-	format := sysVars.CLIFormat
-	var formatter StreamingFormatter
-	switch format {
-	case enums.DisplayModeCSV:
-		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeTab:
-		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeVertical:
-		formatter = NewVerticalFormatter(out)
-	case enums.DisplayModeHTML:
-		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeXML:
-		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		var err error
-		formatter, err = NewSQLStreamingFormatter(out, sysVars, format)
-		if err != nil {
-			return nil, err
-		}
-	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
-		// Table formats use preview for width calculation
-		previewSize := int(sysVars.TablePreviewRows)
-		formatter = NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
-		// Use preview processor for table formats
-		return NewTablePreviewProcessor(formatter, previewSize), nil
-	default:
-		return nil, fmt.Errorf("unsupported streaming format: %v", format)
-	}
-
-	// For non-table formats, use direct streaming
-	return NewStreamingProcessor(formatter, out, screenWidth), nil
+	// Use the shared processor creation logic to avoid duplication
+	return createStreamingProcessorForMode(sysVars.CLIFormat, out, sysVars, screenWidth)
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {

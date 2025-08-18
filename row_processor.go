@@ -88,10 +88,11 @@ type StreamingProcessor struct {
 // StreamingFormatter defines the interface for format-specific streaming output.
 // Each format (CSV, TAB, etc.) implements this interface to handle streaming output.
 type StreamingFormatter interface {
-	// InitFormat is called once with column information to output headers.
+	// InitFormat is called once with table header information to output headers.
+	// TableHeader provides both column names and type information (if available).
 	// For table formats, previewRows contains the first N rows for width calculation.
 	// For other formats, previewRows may be empty as they don't need preview.
-	InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error
+	InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error
 
 	// WriteRow outputs a single row.
 	WriteRow(row Row) error
@@ -181,10 +182,9 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 	}
 
 	header := toTableHeader(p.metadata.GetRowType().GetFields())
-	columnNames := extractTableColumnNames(header)
 
 	// Initialize formatter with preview rows for width calculation
-	if err := p.formatter.InitFormat(columnNames, p.metadata, p.sysVars, p.previewRows); err != nil {
+	if err := p.formatter.InitFormat(header, p.sysVars, p.previewRows); err != nil {
 		return err
 	}
 
@@ -214,13 +214,12 @@ func (p *StreamingProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *sys
 	p.metadata = metadata
 	p.sysVars = sysVars
 
-	// Get column names from metadata
+	// Get header from metadata
 	header := toTableHeader(metadata.GetRowType().GetFields())
-	columnNames := extractTableColumnNames(header)
 
 	// Initialize the format (e.g., write CSV headers)
 	// For streaming formats, we don't need preview rows
-	if err := p.formatter.InitFormat(columnNames, metadata, sysVars, nil); err != nil {
+	if err := p.formatter.InitFormat(header, sysVars, nil); err != nil {
 		return err
 	}
 

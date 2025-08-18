@@ -23,6 +23,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Development workflow details → `dev-docs/development-insights.md`
 - Issue management procedures → `dev-docs/issue-management.md`
 
+### Documentation Style
+- **No emojis**: Maintain professional documentation style without emoji characters
+- **Clear headings**: Use descriptive section titles
+- **Concise language**: Be direct and to the point
+
 ## Project Overview
 
 spanner-mycli is a personal fork of spanner-cli, designed as an interactive command-line tool for Google Cloud Spanner. The project philosophy is "by me, for me" - a continuously evolving tool that prioritizes the author's specific needs over stability. It embraces experimental features and follows a "ZeroVer" approach (will never reach v1.0.0).
@@ -36,7 +41,7 @@ spanner-mycli is a personal fork of spanner-cli, designed as an interactive comm
 
 When testing compatibility or referencing behavior, be specific about which implementation you're comparing against.
 
-## 🚨 CRITICAL REQUIREMENTS
+## CRITICAL REQUIREMENTS
 
 **Before ANY push to the repository**:
 1. **Always run `make check`** - runs test && lint (required for quality assurance)
@@ -153,14 +158,64 @@ gh pr comment <PR-number> --body "Development insights..."
 - AI assistant decision matrix for autonomous vs. user-permission operations
 - Comprehensive deletion safety rules
 
-⚠️ **CRITICAL RULE - WORKTREE DELETION**: 
+**CRITICAL RULE - WORKTREE DELETION**: 
 **NEVER delete a worktree without explicit user permission** - This is non-negotiable. Unauthorized deletion can result in permanent loss of uncommitted work. Always use `git status` to check for changes and ask: "Issue #X worktree exists. Should I delete it? (Note: uncommitted changes will be lost)"
 - Worktree lifecycle management
 
 ### Knowledge Management
 **Best Practice**: Record development insights directly in PR descriptions and comments for searchability and persistence.
 
-## 📚 Documentation Structure
+## Refactoring Guidelines (Avoiding Over-engineering)
+
+When refactoring code, follow these principles to avoid over-engineering:
+
+### 1. **Observe Actual Usage Patterns**
+- Analyze how code is actually used before creating abstractions
+- Example: Don't create complex metadata handling if functions always pass `nil`
+
+### 2. **Prefer Simple Helper Functions**
+- Use straightforward helper functions over complex design patterns
+- A 15-line helper function is better than a 200-line factory pattern
+- Example: `executeWithFormatter()` instead of `BufferedFormatterAdapter`
+
+### 3. **Minimize Abstraction Layers**
+- Only add abstraction when it provides clear, measurable benefits
+- Avoid adapter patterns unless converting between incompatible interfaces
+- Don't create interfaces for single implementations
+
+### 4. **Prioritize Code Reduction**
+- Refactoring should reduce total lines of code, not increase them
+- Target: Net reduction of at least 20% in affected areas
+- If adding abstraction increases code, reconsider the approach
+
+### 5. **Single Source of Truth**
+- Consolidate duplicate logic into one location
+- Example: One `createStreamingFormatter()` function instead of multiple switch statements
+
+### 6. **Measure Success by Simplicity**
+- Success metrics:
+  - Lines of code reduced
+  - Duplicate logic eliminated
+  - Easier to test
+  - Easier to understand
+- Failure indicators:
+  - More files added than removed
+  - Increased complexity
+  - Loss of type information
+
+### Example Application
+```go
+// ❌ Over-engineered: 370 lines for a factory pattern
+type FormatterFactory struct { ... }
+type BaseFormatter struct { ... }
+type BufferedFormatterAdapter struct { ... }
+
+// ✅ Simple: 45 lines for helper functions
+func createStreamingFormatter(mode, out, sysVars) { ... }
+func executeWithFormatter(formatter, result, columns, sysVars) { ... }
+```
+
+## Documentation Structure
 
 This is a simplified guide. For detailed information, refer to:
 
@@ -179,7 +234,7 @@ This is a simplified guide. For detailed information, refer to:
 - **gh-helper** - Generic GitHub operations (managed via go.mod tool directive)
 - **github-schema** - GitHub GraphQL schema introspection (managed via go.mod tool directive)
 
-## 🎯 Task-Specific Documentation Guide
+## Task-Specific Documentation Guide
 
 ### When implementing new features:
 1. **ALWAYS check**: [dev-docs/architecture-guide.md](dev-docs/architecture-guide.md) - Understand system architecture
@@ -214,7 +269,7 @@ This is a simplified guide. For detailed information, refer to:
    - `go tool github-schema mutation <MutationName>` - Show mutation requirements
    - `go tool github-schema search <pattern>` - Search for types/fields
 
-**⚠️ CRITICAL: Safe handling of special characters in shell commands**
+**CRITICAL: Safe handling of special characters in shell commands**
 ```bash
 # Method 1: Variable + stdin (RECOMMENDED - no temp files)
 content='Line 1 with `backticks`
@@ -240,8 +295,8 @@ gh issue create --body-file tmp/issue_body.md
 # command --message "Content with `backticks`"  # UNSAFE - backticks execute
 ```
 
-**⚠️ CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
-**⚠️ WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
+**CRITICAL: ALWAYS use `go tool gh-helper reviews fetch` for comprehensive feedback analysis. Failing to do so may result in missing critical issues!**
+**WORKFLOW: Plan fixes → commit & push → reply with commit hash and resolve threads immediately**
 
 ### When encountering development problems:
 1. **ALWAYS check**: [dev-docs/development-insights.md](dev-docs/development-insights.md) - Known patterns and solutions
@@ -312,6 +367,7 @@ go tool cover -html=tmp/coverage.out         # Generate HTML coverage report (de
 ## Important Notes
 
 - **Backward Compatibility**: Not required since spanner-mycli is not used as an external library
+- **No Future-Proofing**: Since spanner-mycli is not used as a library, don't add parameters or abstractions for potential future use. Only implement what's needed now.
 - **Issue Management**: All fixes must go through Pull Requests - never close issues manually
 
 For any detailed information not covered here, refer to the appropriate documentation in `dev-docs/` or `docs/`.

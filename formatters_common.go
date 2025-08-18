@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 // CSVFormatter provides shared CSV formatting logic for both buffered and streaming modes.
@@ -27,11 +25,12 @@ func NewCSVFormatter(out io.Writer, skipHeaders bool) *CSVFormatter {
 }
 
 // InitFormat writes CSV headers if needed.
-func (f *CSVFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *CSVFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	if len(columns) == 0 {
 		return nil
 	}
@@ -88,11 +87,12 @@ func NewTabFormatter(out io.Writer, skipHeaders bool) *TabFormatter {
 }
 
 // InitFormat writes tab-separated headers if needed.
-func (f *TabFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *TabFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	f.columns = columns
 
 	if len(columns) == 0 {
@@ -147,11 +147,12 @@ func NewVerticalFormatter(out io.Writer) *VerticalFormatter {
 }
 
 // InitFormat prepares vertical format output.
-func (f *VerticalFormatter) InitFormat(columns []string, metadata *sppb.ResultSetMetadata, sysVars *systemVariables, previewRows []Row) error {
+func (f *VerticalFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
+	columns := extractTableColumnNames(header)
 	f.columns = columns
 
 	if len(columns) == 0 {

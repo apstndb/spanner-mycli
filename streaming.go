@@ -181,99 +181,18 @@ func shouldUseStreaming(sysVars *systemVariables) bool {
 
 // isStreamingSupported checks if a specific display mode supports streaming.
 func isStreamingSupported(mode enums.DisplayMode) bool {
-	switch mode {
-	case enums.DisplayModeCSV,
-		enums.DisplayModeTab,
-		enums.DisplayModeVertical,
-		enums.DisplayModeHTML,
-		enums.DisplayModeXML,
-		enums.DisplayModeSQLInsert,
-		enums.DisplayModeSQLInsertOrIgnore,
-		enums.DisplayModeSQLInsertOrUpdate:
-		// These formats support streaming
-		return true
-	case enums.DisplayModeTable,
-		enums.DisplayModeTableComment,
-		enums.DisplayModeTableDetailComment:
-		// Table formats support streaming with preview
-		return true
-	default:
-		return false
-	}
+	_, err := createStreamingFormatter(mode, io.Discard, &systemVariables{})
+	return err == nil
 }
 
 // NewStreamingProcessorForMode creates a streaming processor for the given display mode.
 // Returns nil if the mode doesn't support streaming yet.
 // This is primarily used for testing - production code uses createStreamingProcessor.
 func NewStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables, screenWidth int) RowProcessor {
-	var formatter StreamingFormatter
-
-	switch mode {
-	case enums.DisplayModeCSV:
-		formatter = NewCSVFormatter(out, sysVars.SkipColumnNames)
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeTab:
-		formatter = NewTabFormatter(out, sysVars.SkipColumnNames)
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeVertical:
-		formatter = NewVerticalFormatter(out)
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeHTML:
-		formatter = NewHTMLFormatter(out, sysVars.SkipColumnNames)
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeXML:
-		formatter = NewXMLFormatter(out, sysVars.SkipColumnNames)
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		formatter, err := NewSQLStreamingFormatter(out, sysVars, mode)
-		if err != nil {
-			// Return nil if SQL formatter can't be created (e.g., missing table name)
-			// This is used in production code, not just tests, so we can't panic
-			return nil
-		}
-		return &StreamingProcessor{
-			formatter:   formatter,
-			out:         out,
-			screenWidth: screenWidth,
-		}
-
-	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
-		// Table formats use preview processor for width calculation
-		// TablePreviewRows: positive = preview N rows, 0 = headers only, negative = all rows
-		previewSize := int(sysVars.TablePreviewRows)
-		if previewSize < 0 {
-			// Negative means collect all rows (non-streaming)
-			previewSize = 0 // 0 in TablePreviewProcessor means collect all
-		}
-		tableFormatter := NewTableStreamingFormatter(out, sysVars, screenWidth, previewSize)
-		return NewTablePreviewProcessor(tableFormatter, previewSize)
-
-	default:
+	// Use the shared implementation that avoids duplication
+	processor, err := createStreamingProcessorForMode(mode, out, sysVars, screenWidth)
+	if err != nil {
 		return nil
 	}
+	return processor
 }
