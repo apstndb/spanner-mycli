@@ -120,22 +120,42 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 	return session, nil
 }
 
-func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+// initializeWithRandomDB creates a test session with a randomly generated database name.
+// Each test gets its own instance within the shared emulator for isolation.
+// The database is automatically configured with the provided DDLs and DMLs.
+func initializeWithRandomDB(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+	return initializeWithDB(t, "", ddls, dmls)
+}
+
+// initializeWithDB creates a test session with either a specific database name or a random one.
+// If database is empty, a random database name is generated.
+// Each test gets its own instance within the shared emulator for isolation.
+// The database is automatically configured with the provided DDLs and DMLs.
+func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	if database == "" {
-		// Empty database means admin-only mode with dedicated instance
-		return initializeWithOptions(t, ddls, dmls, true, true)
+	// Use shared emulator with a random instance ID for isolation
+	options := []spanemuboost.Option{
+		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
 	}
 
-	emulator, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
-		spanemuboost.WithDatabaseID(database),
+	if database != "" {
+		// Use specific database name
+		options = append(options, spanemuboost.WithDatabaseID(database))
+	} else {
+		// Use random database name
+		options = append(options, spanemuboost.WithRandomDatabaseID())
+	}
+
+	options = append(options,
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
 		spanemuboost.WithSetupDDLs(ddls),
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
+
+	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,80 +172,44 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 	}
 }
 
-func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
-	return initializeWithOptions(t, ddls, dmls, false, false)
-}
-
-func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicated bool) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+// initializeAdminSession creates an admin-only session without a database connection.
+// This is used for database-level operations like CREATE DATABASE and DROP DATABASE.
+// Each test gets its own instance within the shared emulator for isolation.
+func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	if adminOnly {
-		// Admin-only mode: create instance without database
-		var emulatorInstance *tcspanner.Container
-		var clientsTeardown func()
-		var err error
+	// Admin-only mode: create instance without database
+	// Always use instance-level isolation for all tests
+	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
+		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
+		spanemuboost.EnableInstanceAutoConfigOnly(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		if dedicated {
-			emulatorInstance, clients, clientsTeardown, err = spanemuboost.NewEmulatorWithClients(ctx,
-				spanemuboost.EnableInstanceAutoConfigOnly(),
-			)
-		} else {
-			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
-				spanemuboost.EnableInstanceAutoConfigOnly(),
-			)
-			emulatorInstance = emulator
-		}
+	// Create admin-only session
+	sysVars := &systemVariables{
+		Project:          clients.ProjectID,
+		Instance:         clients.InstanceID,
+		Database:         "",                      // No database for admin-only mode
+		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+	}
+	// Initialize StreamManager for tests
+	sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	// Initialize the registry
+	sysVars.ensureRegistry()
 
-		if err != nil {
-			t.Fatal(err)
-		}
+	session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulator)...)
+	if err != nil {
+		clientsTeardown()
+		t.Fatalf("failed to create admin session: err=%s", err)
+	}
 
-		// Create admin-only session
-		sysVars := &systemVariables{
-			Project:          clients.ProjectID,
-			Instance:         clients.InstanceID,
-			Database:         "",                      // No database for admin-only mode
-			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-		}
-		// Initialize StreamManager for tests
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
-		// Initialize the registry
-		sysVars.ensureRegistry()
-
-		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
-		if err != nil {
-			clientsTeardown()
-			t.Fatalf("failed to create admin session: err=%s", err)
-		}
-
-		return clients, session, func() {
-			session.Close()
-			clientsTeardown()
-		}
-	} else {
-		// Regular database mode
-		clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
-			spanemuboost.WithRandomDatabaseID(),
-			spanemuboost.EnableDatabaseAutoConfigOnly(),
-			spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
-			spanemuboost.WithSetupDDLs(ddls),
-			spanemuboost.WithSetupRawDMLs(dmls),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		session, err := initializeSession(ctx, emulator, clients)
-		if err != nil {
-			clientsTeardown()
-			t.Fatalf("failed to create test session: err=%s", err)
-		}
-
-		return clients, session, func() {
-			session.Close()
-			clientsTeardown()
-		}
+	return clients, session, func() {
+		session.Close()
+		clientsTeardown()
 	}
 }
 
@@ -266,7 +250,7 @@ func TestSelect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
@@ -296,7 +280,7 @@ func TestDml(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, nil)
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 	defer teardown()
 
 	stmt, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)")
@@ -360,7 +344,7 @@ func TestSystemVariables(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	t.Run("set and show string system variables", func(t *testing.T) {
@@ -407,8 +391,7 @@ func TestStatements(t *testing.T) {
 		// - Empty + admin=true: Admin-only session (no database)
 		// - Non-empty + admin=false: Specific database name
 		// - Non-empty + admin=true: Invalid combination (will be rejected)
-		dedicated bool // Use dedicated instance (vs shared emulator)
-		admin     bool // Create admin-only session (no database connection)
+		admin bool // Create admin-only session (no database connection)
 	}{
 		{
 			desc: "query parameters",
@@ -766,7 +749,6 @@ func TestStatements(t *testing.T) {
 					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			dedicated: true, // Use dedicated instance to avoid interference from other tests
 		},
 		{
 			desc: "SHOW TABLES",
@@ -1124,9 +1106,8 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{}, // CREATE DATABASE returns empty result
 			},
-			database:  "", // Empty database with admin=true means admin-only session
-			dedicated: true,
-			admin:     true,
+			database: "", // Empty database with admin=true means admin-only session
+			admin:    true,
 		},
 		{
 			desc: "SHOW DATABASES in admin mode",
@@ -1145,9 +1126,8 @@ func TestStatements(t *testing.T) {
 						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			database:  "", // Empty database with admin=true means admin-only session
-			dedicated: true,
-			admin:     true,
+			database: "", // Empty database with admin=true means admin-only session
+			admin:    true,
 		},
 		{
 			desc: "CREATE and DROP DATABASE workflow in admin mode",
@@ -1175,9 +1155,8 @@ func TestStatements(t *testing.T) {
 						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			database:  "",
-			dedicated: true,
-			admin:     true,
+			database: "",
+			admin:    true,
 		},
 		{
 			desc: "DETACH and USE workflow with database creation",
@@ -1241,8 +1220,7 @@ func TestStatements(t *testing.T) {
 						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
 				}, cmp.Ignore()),
 			),
-			database:  "test-database", // Start with a database connection
-			dedicated: true,
+			database: "test-database", // Start with a database connection
 		},
 	}
 
@@ -1262,11 +1240,10 @@ func TestStatements(t *testing.T) {
 			var teardown func()
 			if tt.admin {
 				// Admin-only session (database must be empty)
-				_, session, teardown = initializeWithOptions(t, tt.ddls, tt.dmls, true, tt.dedicated)
-			} else if tt.dedicated {
-				_, session, teardown = initializeDedicatedInstance(t, tt.database, tt.ddls, tt.dmls)
+				_, session, teardown = initializeAdminSession(t)
 			} else {
-				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
+				// Regular database mode (specific or random database name)
+				_, session, teardown = initializeWithDB(t, tt.database, tt.ddls, tt.dmls)
 			}
 			defer teardown()
 
@@ -1303,7 +1280,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
-		_, session, teardown := initialize(t, testTableDDLs, nil)
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
 		// begin
@@ -1384,7 +1361,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
-		_, session, teardown := initialize(t, testTableDDLs, nil)
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
 		// begin
@@ -1447,7 +1424,7 @@ func TestReadWriteTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
-		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 		defer teardown()
 
 		// begin
@@ -1490,7 +1467,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
-		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 		defer teardown()
 
 		// begin
@@ -1549,7 +1526,7 @@ func TestReadOnlyTransaction(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
 
-		_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 		defer teardown()
 
 		// stale read also can't recognize the recent created table itself,
@@ -1616,7 +1593,7 @@ func TestShowCreateTable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("SHOW CREATE TABLE tbl")
@@ -1645,7 +1622,7 @@ func TestShowColumns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("SHOW COLUMNS FROM tbl")
@@ -1675,7 +1652,7 @@ func TestShowIndexes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("SHOW INDEXES FROM tbl")
@@ -1704,7 +1681,7 @@ func TestTruncateTable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("TRUNCATE TABLE tbl")
@@ -1737,7 +1714,7 @@ func TestPartitionedDML(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, false)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, false)"))
 	defer teardown()
 
 	stmt, err := BuildStatement("PARTITIONED UPDATE tbl SET active = true WHERE true")
@@ -1766,7 +1743,7 @@ func TestShowOperation(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 	ctx := context.Background()
-	emulator, session, teardown := initialize(t, nil, nil)
+	emulator, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	// Execute a DDL operation to create an LRO

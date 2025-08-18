@@ -121,7 +121,7 @@ CREATE TABLE DestTable (
 			}
 
 			// Each test gets its own database
-			_, session, teardown := initialize(t, []string{sourceDDL, destDDL}, insertDMLs)
+			_, session, teardown := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, insertDMLs)
 			defer teardown()
 
 			// Verify source data exists
@@ -259,7 +259,7 @@ CREATE TABLE ComplexDest (
 		(1, [1, 2, 3], JSON '{"key": "value"}', b'hello', NUMERIC '123.456'),
 		(2, [], JSON 'null', NULL, NULL)`
 
-	_, session, teardown := initialize(t, []string{sourceDDL, destDDL}, []string{insertDML})
+	_, session, teardown := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, []string{insertDML})
 	defer teardown()
 
 	// Export with SQL_INSERT
@@ -441,7 +441,7 @@ CREATE TABLE TestTable (
 				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
 			}
 
-			_, session, teardown := initialize(t, []string{ddl}, insertDMLs)
+			_, session, teardown := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
 			defer teardown()
 
 			// Set up system variables for SQL export with STREAMING mode
@@ -538,7 +538,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 	ddl := `CREATE TABLE TestTable (id INT64 NOT NULL, name STRING(100)) PRIMARY KEY (id)`
 	insertDML := `INSERT INTO TestTable (id, name) VALUES (1, 'Alice'), (2, 'Bob')`
 
-	_, session, teardown := initialize(t, []string{ddl}, []string{insertDML})
+	_, session, teardown := initializeWithRandomDB(t, []string{ddl}, []string{insertDML})
 	defer teardown()
 
 	// Test cases with unnamed columns
@@ -856,7 +856,7 @@ CREATE TABLE TestTable (
 				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
 			}
 
-			_, session, teardown := initialize(t, []string{ddl}, insertDMLs)
+			_, session, teardown := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
 			defer teardown()
 
 			// Set up system variables for SQL export
@@ -978,7 +978,7 @@ func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
 		`INSERT INTO Orders (id, user_id, amount) VALUES (1, 1, 100.0), (2, 1, 200.0), (3, 2, 150.0)`,
 	}
 
-	_, session, teardown := initialize(t, ddls, insertDMLs)
+	_, session, teardown := initializeWithRandomDB(t, ddls, insertDMLs)
 	defer teardown()
 
 	// Test cases that should NOT auto-detect

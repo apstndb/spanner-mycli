@@ -18,7 +18,7 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initialize(t, testTableDDLs, nil)
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 	defer teardown()
 
 	tests := []struct {
@@ -145,7 +145,7 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initialize(t, testTableDDLs, nil)
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 	defer teardown()
 
 	// Start a read-write transaction
@@ -186,7 +186,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initialize(t, testTableDDLs, nil)
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 	defer teardown()
 
 	// Start a read-write transaction
@@ -271,7 +271,7 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initialize(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true)"))
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true)"))
 	defer teardown()
 
 	// Start a read-write transaction
@@ -326,7 +326,7 @@ func TestTransactionStateTransitionsIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initialize(t, testTableDDLs, nil)
+	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 	defer teardown()
 
 	// Test state transitions with real transactions

@@ -24,6 +24,8 @@ const (
 	database = "database"
 )
 
+// Remove the separate TestMain and use the shared emulator from integration_test.go
+
 func TestRequestPriority(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping emulator test in short mode")
@@ -31,16 +33,19 @@ func TestRequestPriority(t *testing.T) {
 
 	ctx := t.Context()
 
-	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
+	// Use shared emulator with a random instance ID for isolation
+	clients, teardown, err := spanemuboost.NewClients(ctx, emulator,
+		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
-		spanemuboost.WithInstanceID(instance),
 		spanemuboost.WithDatabaseID(database),
+		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
 	if err != nil {
-		t.Fatalf("failed to start emulator: %v", err)
+		t.Fatalf("failed to create clients: %v", err)
 	}
 	defer teardown()
+	_ = clients // clients not directly used, but ensures proper setup
 
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
@@ -90,9 +95,9 @@ func TestRequestPriority(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:          project,
-				Instance:         instance,
-				Database:         database,
+				Project:          clients.ProjectID,
+				Instance:         clients.InstanceID,
+				Database:         clients.DatabaseID,
 				RPCPriority:      test.sessionPriority,
 				Role:             "role",
 				StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
@@ -156,16 +161,19 @@ func TestIsolationLevel(t *testing.T) {
 
 	ctx := t.Context()
 
-	emulator, teardown, err := spanemuboost.NewEmulator(ctx,
+	// Use shared emulator with a random instance ID for isolation
+	clients, teardown, err := spanemuboost.NewClients(ctx, emulator,
+		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
-		spanemuboost.WithInstanceID(instance),
 		spanemuboost.WithDatabaseID(database),
+		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
 	if err != nil {
-		t.Fatalf("failed to start emulator: %v", err)
+		t.Fatalf("failed to create clients: %v", err)
 	}
 	defer teardown()
+	_ = clients // clients not directly used, but ensures proper setup
 
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
@@ -221,9 +229,9 @@ func TestIsolationLevel(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:               project,
-				Instance:              instance,
-				Database:              database,
+				Project:               clients.ProjectID,
+				Instance:              clients.InstanceID,
+				Database:              clients.DatabaseID,
 				DefaultIsolationLevel: test.defaultIsolationLevel,
 				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 			}, option.WithGRPCConn(conn))

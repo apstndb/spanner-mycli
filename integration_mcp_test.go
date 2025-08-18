@@ -379,7 +379,7 @@ func TestRunMCP(t *testing.T) {
 			defer cancel()
 
 			// Initialize database for each test case
-			_, session, teardown := initialize(t, tt.ddls, tt.dmls)
+			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
 			defer teardown()
 
 			// Test the execute_statement tool functionality
@@ -390,7 +390,7 @@ func TestRunMCP(t *testing.T) {
 	// Test database validation (the first step of RunMCP)
 	t.Run("database exists validation", func(t *testing.T) {
 		// Test with existing database
-		_, session, teardown := initialize(t, testTableDDLs, nil)
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
 		testDatabaseExistence(t, session, true)
@@ -398,7 +398,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test MCP client-server setup
 	t.Run("mcp client-server setup", func(t *testing.T) {
-		_, session, teardown := initialize(t, testTableDDLs, nil)
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
@@ -412,7 +412,7 @@ func TestRunMCP(t *testing.T) {
 
 	// Test server creation with different CLI configurations
 	t.Run("server creation with different CLI configurations", func(t *testing.T) {
-		_, session, teardown := initialize(t, testTableDDLs, nil)
+		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
 		defer teardown()
 
 		// Create CLI with different system variables (but make sure session has timeout too)
