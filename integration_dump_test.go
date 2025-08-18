@@ -18,7 +18,7 @@ func TestDumpStatements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	// Create test tables with INTERLEAVE relationship
@@ -181,7 +181,7 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	stmt := &DumpTablesStatement{Tables: []string{"NonExistentTable"}}
@@ -201,7 +201,7 @@ func TestDumpEmptyDatabase(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	stmt := &DumpDatabaseStatement{}
@@ -232,7 +232,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	// Create test table with data
@@ -301,7 +301,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	// Create tables with foreign key relationships
@@ -407,7 +407,7 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	_, session, teardown := initialize(t, nil, nil)
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
 	defer teardown()
 
 	// Create tables with both INTERLEAVE and FK relationships
