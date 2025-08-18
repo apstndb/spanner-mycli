@@ -10,6 +10,7 @@ import (
 )
 
 func TestStreamingCSV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		rows     []Row
@@ -80,6 +81,7 @@ func TestStreamingCSV(t *testing.T) {
 }
 
 func TestStreamingTab(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	// Create streaming processor for TAB
@@ -124,6 +126,7 @@ func TestStreamingTab(t *testing.T) {
 }
 
 func TestStreamingVertical(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	// Create streaming processor for VERTICAL
@@ -161,6 +164,7 @@ func TestStreamingVertical(t *testing.T) {
 }
 
 func TestBufferedVsStreaming(t *testing.T) {
+	t.Parallel()
 	// Test that buffered and streaming produce identical output for CSV
 	rows := []Row{
 		{"1", "Alice", "30"},
@@ -203,6 +207,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 }
 
 func TestStreamingHTML(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	// Create streaming processor for HTML
@@ -245,6 +250,7 @@ func TestStreamingHTML(t *testing.T) {
 }
 
 func TestStreamingXML(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	// Create streaming processor for XML

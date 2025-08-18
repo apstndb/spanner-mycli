@@ -17,6 +17,7 @@ import (
 )
 
 func TestLexerHighlighterWithError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -78,6 +79,7 @@ func TestLexerHighlighterWithError(t *testing.T) {
 }
 
 func TestTokenHighlighter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -131,6 +133,7 @@ func TestTokenHighlighter(t *testing.T) {
 }
 
 func TestKindHighlighter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -170,6 +173,7 @@ func TestKindHighlighter(t *testing.T) {
 }
 
 func TestCommentHighlighter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		input        string
@@ -226,6 +230,7 @@ func TestCommentHighlighter(t *testing.T) {
 }
 
 func TestColorToSequence(t *testing.T) {
+	t.Parallel()
 	// Save original NoColor state
 	originalNoColor := color.NoColor
 	defer func() { color.NoColor = originalNoColor }()
@@ -272,6 +277,7 @@ func TestColorToSequence(t *testing.T) {
 }
 
 func TestDefaultHighlights(t *testing.T) {
+	t.Parallel()
 	// Save and restore color setting
 	originalNoColor := color.NoColor
 	color.NoColor = false
@@ -298,6 +304,7 @@ func TestDefaultHighlights(t *testing.T) {
 
 // Test error message constants
 func TestErrorMessages(t *testing.T) {
+	t.Parallel()
 	// Verify error constants are defined and not empty
 	if errMessageUnclosedStringLiteral == "" {
 		t.Error("errMessageUnclosedStringLiteral is empty")
@@ -312,6 +319,7 @@ func TestErrorMessages(t *testing.T) {
 
 // Test with actual SQL patterns
 func TestHighlightingPatterns(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -352,6 +360,7 @@ func TestHighlightingPatterns(t *testing.T) {
 // Tests for extracted validation functions
 
 func TestShouldSubmitStatement(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		statements        []inputStatement
@@ -434,6 +443,7 @@ func TestShouldSubmitStatement(t *testing.T) {
 }
 
 func TestProcessInputLines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		lines     []string
@@ -511,6 +521,7 @@ func TestProcessInputLines(t *testing.T) {
 }
 
 func TestValidateInteractiveInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		statements []inputStatement
@@ -573,6 +584,7 @@ func TestValidateInteractiveInput(t *testing.T) {
 }
 
 func TestGeneratePS2Prompt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		ps1             string
@@ -634,6 +646,7 @@ func TestGeneratePS2Prompt(t *testing.T) {
 // - The functions are called the correct number of times
 // - The correct prompt strings are written to the output
 func TestPS1PS2FuncToPromptFunc(t *testing.T) {
+	t.Parallel()
 	ps1Called := 0
 	ps2Called := 0
 	testPS1 := "test> "
@@ -716,6 +729,7 @@ func TestPS1PS2FuncToPromptFunc(t *testing.T) {
 
 // Test persistentHistory.Add method
 func TestPersistentHistoryAdd(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		setupFS         func() afero.Fs
@@ -853,6 +867,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 
 // Test newPersistentHistoryWithFS function
 func TestNewPersistentHistoryWithFS(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		setupFS       func() (afero.Fs, string)
@@ -1014,6 +1029,7 @@ func TestNewPersistentHistoryWithFS(t *testing.T) {
 
 // Test persistentHistory.Len and persistentHistory.At methods
 func TestPersistentHistoryLenAndAt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		setup    func() *persistentHistory
@@ -1104,6 +1120,7 @@ func TestPersistentHistoryLenAndAt(t *testing.T) {
 
 // Test newPersistentHistory (the public function)
 func TestNewPersistentHistory(t *testing.T) {
+	t.Parallel()
 	// Create a temporary file for testing
 	tmpFile, err := os.CreateTemp("", "test_history_*.txt")
 	require.NoError(t, err)

@@ -39,6 +39,7 @@ import (
 )
 
 func TestBuildStatement(t *testing.T) {
+	t.Parallel()
 	timestamp, err := time.Parse(time.RFC3339Nano, "2020-03-30T22:54:44.834017+09:00")
 	if err != nil {
 		t.Fatalf("unexpected time parse error: %v", err)
@@ -1025,6 +1026,7 @@ TABLE Singers (42)
 }
 
 func TestBuildStatement_InvalidCase(t *testing.T) {
+	t.Parallel()
 	// invalid tests
 	for _, test := range []struct {
 		input string
@@ -1043,6 +1045,7 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 }
 
 func TestIsCreateDDL(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc       string
 		ddl        string
@@ -1103,6 +1106,7 @@ func TestIsCreateDDL(t *testing.T) {
 }
 
 func TestExtractSchemaAndTable(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc   string
 		input  string
@@ -1201,6 +1205,7 @@ func decodeMessage[T any, PT interface {
 }
 
 func TestComposeProtoBundleDDLs(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc        string
 		fds         *descriptorpb.FileDescriptorSet

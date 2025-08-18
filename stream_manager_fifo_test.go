@@ -26,6 +26,7 @@ func supportsFIFO() bool {
 }
 
 func TestOpenTeeFile_FIFO(t *testing.T) {
+	t.Parallel()
 	// Skip test on platforms that don't support FIFOs reliably
 	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)
@@ -69,6 +70,7 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 }
 
 func TestStreamManager_FIFO(t *testing.T) {
+	t.Parallel()
 	// Skip test on platforms that don't support FIFOs reliably
 	if !supportsFIFO() {
 		t.Skipf("FIFO test not supported on %s", runtime.GOOS)

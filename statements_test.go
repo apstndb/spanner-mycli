@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewStatement(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		sql         string
 		params      map[string]ast.Node

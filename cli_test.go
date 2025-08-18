@@ -44,6 +44,7 @@ import (
 )
 
 func TestBuildCommands(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		Desc        string
 		Input       string
@@ -166,6 +167,7 @@ func TestBuildCommands(t *testing.T) {
 // TODO: Consider test of readline
 
 func TestPrintResult(t *testing.T) {
+	t.Parallel()
 	t.Run("DisplayModeTable", func(t *testing.T) {
 		tests := []struct {
 			sysVars     *systemVariables
@@ -455,6 +457,7 @@ bar: 4
 }
 
 func TestResultLine(t *testing.T) {
+	t.Parallel()
 	timestamp := "2020-04-01T15:00:00.999999999+09:00"
 	ts, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
@@ -762,6 +765,7 @@ optimizer statistics: auto_20210829_05_22_28UTC
 }
 
 func TestCli_getInterpolatedPrompt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc   string
 		prompt string
@@ -935,6 +939,7 @@ func protojsonUnmarshal[M any, MP interface {
 }
 
 func TestRenderPlanTree(t *testing.T) {
+	t.Parallel()
 	tcases := []struct {
 		desc           string
 		sysVars        *systemVariables
@@ -1100,6 +1105,7 @@ func Test_confirm(t *testing.T) {
 }
 
 func TestCli_handleExit(t *testing.T) {
+	t.Parallel()
 	outBuf := &bytes.Buffer{}
 	sysVars := &systemVariables{
 		StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
@@ -1120,6 +1126,7 @@ func TestCli_handleExit(t *testing.T) {
 }
 
 func TestCli_ExitOnError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc         string
 		err          error
@@ -1162,6 +1169,7 @@ func TestCli_ExitOnError(t *testing.T) {
 }
 
 func TestCli_handleSpecialStatements(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc          string
 		stmt          Statement
@@ -1273,6 +1281,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 }
 
 func TestCli_PrintResult(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc        string
 		usePager    bool
@@ -1321,6 +1330,7 @@ func TestCli_PrintResult(t *testing.T) {
 }
 
 func TestCli_PrintBatchError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc         string
 		err          error
@@ -1359,6 +1369,7 @@ func TestCli_PrintBatchError(t *testing.T) {
 }
 
 func TestCli_parseStatement(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc          string
 		input         *inputStatement
@@ -1423,6 +1434,7 @@ func TestCli_parseStatement(t *testing.T) {
 
 // TestUpdateResultStatsElapsedTime tests that updateResultStats correctly populates ElapsedTime
 func TestUpdateResultStatsElapsedTime(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		existingElapsed string
@@ -1472,6 +1484,7 @@ func TestUpdateResultStatsElapsedTime(t *testing.T) {
 
 // TestCli_executeSourceFile tests the executeSourceFile method
 func TestCli_executeSourceFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		fileContent   string
@@ -1556,6 +1569,7 @@ func TestCli_executeSourceFile(t *testing.T) {
 
 // TestCli_executeSourceFile_NonExistentFile tests executeSourceFile with a non-existent file
 func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
+	t.Parallel()
 	cli := &Cli{
 		SessionHandler:  NewSessionHandler(&Session{}),
 		SystemVariables: &systemVariables{},
@@ -1571,6 +1585,7 @@ func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
 
 // TestCli_executeSourceFile_NonRegularFile tests executeSourceFile with a non-regular file
 func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping test that requires /dev/null")
 	}
@@ -1591,6 +1606,7 @@ func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
 
 // TestCli_executeSourceFile_FileTooLarge tests executeSourceFile with a file that exceeds the size limit
 func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
+	t.Parallel()
 	// Create a temporary file that simulates a large file
 	tmpFile, err := os.CreateTemp(t.TempDir(), "large_file_*.sql")
 	if err != nil {

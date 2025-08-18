@@ -13,6 +13,7 @@ import (
 // Note: This is a basic test to ensure system variables work in Detached mode.
 // We don't need exhaustive examples here - just verify the mechanism works.
 func TestDetachedSessionSystemVariables(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Create a mock admin session without actual authentication

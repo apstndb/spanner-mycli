@@ -5,6 +5,7 @@ import (
 )
 
 func TestStatementStringer(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		stmt     Statement
@@ -70,6 +71,7 @@ func TestStatementStringer(t *testing.T) {
 
 // TestSourceFileEchoIntegration tests that ECHO works correctly with sourced files
 func TestSourceFileEchoIntegration(t *testing.T) {
+	t.Parallel()
 	// This is a conceptual test showing what we want to verify
 	// In a real integration test, this would:
 	// 1. Create a SQL file with various statement types
@@ -102,6 +104,7 @@ func TestSourceFileEchoIntegration(t *testing.T) {
 
 // TestStatementStringerConsistency verifies that String() output can be parsed back
 func TestStatementStringerConsistency(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		stmt Statement

@@ -7,6 +7,7 @@ import (
 )
 
 func TestStreamManager_TerminalFunctions(t *testing.T) {
+	t.Parallel()
 	t.Run("GetTerminalWidth with TTY", func(t *testing.T) {
 		// This test will be skipped in CI environments without TTY
 		if !isatty(os.Stdout) {

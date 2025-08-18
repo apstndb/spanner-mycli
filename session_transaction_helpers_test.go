@@ -17,6 +17,7 @@ import (
 // instances because they have unexported fields, so we test only the paths where txn is nil.
 
 func TestTransactionAttrs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		setupTC  func() *transactionContext
@@ -87,6 +88,7 @@ func TestTransactionAttrs(t *testing.T) {
 }
 
 func TestClearTransactionContext(t *testing.T) {
+	t.Parallel()
 	s := &Session{
 		tc: &transactionContext{
 			attrs: transactionAttributes{
@@ -122,6 +124,7 @@ func TestClearTransactionContext(t *testing.T) {
 }
 
 func TestTransactionStateHelpers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		setupTC           func() *transactionContext
@@ -199,6 +202,7 @@ func TestTransactionStateHelpers(t *testing.T) {
 }
 
 func TestTransactionHelperErrorHandling(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		testType string // "readwrite" or "readonly"
@@ -291,6 +295,7 @@ func TestTransactionHelperErrorHandling(t *testing.T) {
 }
 
 func TestTransactionValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setupTC func() *transactionContext

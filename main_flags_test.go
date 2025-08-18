@@ -45,6 +45,7 @@ func ptyStdin() stdinProvider {
 
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
 func TestParseFlagsCombinations(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		args        []string
@@ -267,6 +268,7 @@ func TestParseFlagsCombinations(t *testing.T) {
 
 // TestParseFlagsValidation tests flag value validation
 func TestParseFlagsValidation(t *testing.T) {
+	t.Parallel()
 	// Use an existing test proto descriptor file
 	validProtoFile := "testdata/protos/order_descriptors.pb"
 
@@ -548,6 +550,7 @@ func TestParseFlagsValidation(t *testing.T) {
 
 // TestFlagSystemVariablePrecedence tests the precedence of flags vs system variables
 func TestFlagSystemVariablePrecedence(t *testing.T) {
+	// Cannot use t.Parallel() because subtests use t.Setenv()
 	tests := []struct {
 		name          string
 		args          []string
@@ -802,6 +805,7 @@ func determineExpectedFormat(t *testing.T, opts *spannerOptions) enums.DisplayMo
 
 // TestFlagSpecialModes tests special modes like embedded emulator and MCP
 func TestFlagSpecialModes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		args          []string
@@ -1003,6 +1007,7 @@ func TestFlagSpecialModes(t *testing.T) {
 
 // TestFlagErrorMessages tests that error messages are user-friendly and actionable
 func TestFlagErrorMessages(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		args           []string
@@ -1091,6 +1096,7 @@ func TestFlagErrorMessages(t *testing.T) {
 
 // TestFileFlagBehavior tests file-related flag behavior
 func TestFileFlagBehavior(t *testing.T) {
+	t.Parallel()
 	// Create a temporary test file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.sql")
@@ -1179,6 +1185,7 @@ func TestFileFlagBehavior(t *testing.T) {
 
 // TestSpecialFlags tests special flags like --async, --statement-help, etc.
 func TestSpecialFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		args              []string
@@ -1278,6 +1285,7 @@ func TestSpecialFlags(t *testing.T) {
 
 // TestTimeoutAsyncInteraction tests the interaction between --timeout and --async flags
 func TestTimeoutAsyncInteraction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		args        []string
@@ -1366,6 +1374,7 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 
 // TestOutputTemplateValidation tests output template flag validation
 func TestOutputTemplateValidation(t *testing.T) {
+	t.Parallel()
 	// Create test template files
 	tmpDir := t.TempDir()
 	validTemplate := filepath.Join(tmpDir, "valid.tmpl")
@@ -1459,6 +1468,7 @@ func TestOutputTemplateValidation(t *testing.T) {
 
 // TestDetermineInitialDatabase tests the determineInitialDatabase function
 func TestDetermineInitialDatabase(t *testing.T) {
+	// Cannot use t.Parallel() because subtests use t.Setenv()
 	tests := []struct {
 		name         string
 		opts         *spannerOptions
@@ -1510,6 +1520,7 @@ func TestDetermineInitialDatabase(t *testing.T) {
 
 // TestParsePriority tests the parsePriority function
 func TestParsePriority(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		priority string
@@ -1576,6 +1587,7 @@ func TestParsePriority(t *testing.T) {
 
 // TestParseDirectedReadOptionMain tests the parseDirectedReadOption function
 func TestParseDirectedReadOptionMain(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -1688,6 +1700,7 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 // TestBatchModeTableFormatLogic tests the complex logic for determining CLI_FORMAT
 // TestReadCredentialFile tests the readCredentialFile function
 func TestReadCredentialFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setupFile   func(t *testing.T) string
@@ -1752,6 +1765,7 @@ func TestReadCredentialFile(t *testing.T) {
 }
 
 func TestBatchModeTableFormatLogic(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		args          []string
@@ -1855,6 +1869,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 
 // TestHelpAndVersionFlags tests help and version flag behavior
 func TestHelpAndVersionFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		args        []string
@@ -1907,6 +1922,7 @@ func TestHelpAndVersionFlags(t *testing.T) {
 
 // TestComplexFlagInteractions tests complex interactions between multiple flags
 func TestComplexFlagInteractions(t *testing.T) {
+	// Cannot use t.Parallel() because subtests use t.Setenv()
 	tests := []struct {
 		name          string
 		args          []string
@@ -2080,6 +2096,7 @@ func contains(s, substr string) bool {
 
 // TestAliasFlagPrecedence tests that non-hidden flags take precedence over hidden aliases
 func TestAliasFlagPrecedence(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		args         []string
@@ -2153,6 +2170,7 @@ func TestAliasFlagPrecedence(t *testing.T) {
 
 // TestHostPortFlags tests the --host and --port flag behaviors
 func TestHostPortFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		args     []string
@@ -2228,6 +2246,7 @@ func TestHostPortFlags(t *testing.T) {
 
 // TestExecuteSQLAliasPrecedence tests execute/sql alias precedence
 func TestExecuteSQLAliasPrecedence(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		args      []string
@@ -2269,6 +2288,7 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 
 // TestEmulatorPlatformFlag tests the --emulator-platform flag parsing
 func TestEmulatorPlatformFlag(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		args         []string

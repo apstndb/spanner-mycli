@@ -15,6 +15,7 @@ import (
 )
 
 func TestParseMutation(t *testing.T) {
+	t.Parallel()
 	int64GCV := spanner.GenericColumnValue{
 		Type:  typector.CodeToSimpleType(sppb.TypeCode_INT64),
 		Value: structpb.NewStringValue("1"),

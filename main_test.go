@@ -593,6 +593,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 }
 
 func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
+	t.Parallel()
 	// Test the specific case of using --set flag to set CLI_FORMAT
 	var gopts globalOptions
 	parser := flags.NewParser(&gopts, flags.Default)
@@ -856,6 +857,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 }
 
 func TestDetermineInputAndMode(t *testing.T) {
+	t.Parallel()
 	// Helper to create stdin based on usePTY flag
 	type stdinProvider func() (io.Reader, func(), error)
 

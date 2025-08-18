@@ -18,6 +18,7 @@ import (
 )
 
 func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc      string
 		values    []string
@@ -98,6 +99,7 @@ func TestSystemVariables_AddCLIProtoDescriptorFile(t *testing.T) {
 }
 
 func TestReadFileDescriptorProtoFromFile(t *testing.T) {
+	t.Parallel()
 	// Use t.TempDir() for dynamic test files - automatically cleaned up
 	tempDir := t.TempDir()
 
@@ -227,6 +229,7 @@ func TestReadFileDescriptorProtoFromFile(t *testing.T) {
 }
 
 func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc             string
 		descriptorFiles  []string
@@ -272,6 +275,7 @@ func TestSystemVariables_CLIProtoDescriptorFile_Integration(t *testing.T) {
 }
 
 func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc      string
 		setup     func() *systemVariables
@@ -333,6 +337,7 @@ func TestSystemVariables_AddCLIProtoDescriptorFile_EdgeCases(t *testing.T) {
 }
 
 func TestSystemVariables_DefaultIsolationLevel(t *testing.T) {
+	t.Parallel()
 	// Use SetFromSimple for this test as it's testing string values that would
 	// come from config files or command-line flags, not GoogleSQL expressions
 	tests := []struct {
@@ -408,6 +413,7 @@ func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, strin
 }
 
 func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
+	t.Parallel()
 	// Test system variables using Simple mode (CLI flags, config files)
 	tests := []struct {
 		desc                               string
@@ -755,6 +761,7 @@ func TestSystemVariablesSetGetSimpleMode(t *testing.T) {
 }
 
 func TestSystemVariablesSetGetGoogleSQLMode(t *testing.T) {
+	t.Parallel()
 	// Test system variables using GoogleSQL mode (REPL, SQL scripts)
 	tests := []struct {
 		desc                               string
@@ -818,6 +825,7 @@ func TestSystemVariablesSetGetGoogleSQLMode(t *testing.T) {
 }
 
 func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc        string
 		value       string
@@ -893,6 +901,7 @@ func TestSystemVariables_CLI_ENDPOINT_Setter(t *testing.T) {
 }
 
 func TestSystemVariables_StatementTimeout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc        string
 		value       string
@@ -950,6 +959,7 @@ func TestSystemVariables_StatementTimeout(t *testing.T) {
 }
 
 func TestParseTimestampBound(t *testing.T) {
+	t.Parallel()
 	// Test valid timestamp bounds
 	validTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	validTimeStr := "2024-01-01T00:00:00Z"
@@ -1204,6 +1214,7 @@ func timestampBoundsEqual(a, b spanner.TimestampBound) bool {
 }
 
 func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc    string
 		value   string
@@ -1277,6 +1288,7 @@ func TestSystemVariables_CLI_SKIP_COLUMN_NAMES(t *testing.T) {
 }
 
 func TestSessionInitOnlyVariables(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		variableName   string

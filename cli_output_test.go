@@ -11,6 +11,7 @@ import (
 )
 
 func TestPrintTableDataHTML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		result       *Result
@@ -104,6 +105,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 }
 
 func TestPrintTableDataXML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		result          *Result
@@ -225,6 +227,7 @@ func TestPrintTableDataXML(t *testing.T) {
 }
 
 func TestCLIFormatSystemVariable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		setValue  string
@@ -262,6 +265,7 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 }
 
 func TestCLIFormatSystemVariableGetter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		mode    enums.DisplayMode
 		wantStr string
@@ -296,6 +300,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 }
 
 func TestPrintTableDataEdgeCases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		mode       enums.DisplayMode
@@ -373,6 +378,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 }
 
 func TestHTMLAndXMLHelpers(t *testing.T) {
+	t.Parallel()
 	t.Run("formatHTML with empty input", func(t *testing.T) {
 		var buf bytes.Buffer
 		result := &Result{Rows: []Row{}}
@@ -446,6 +452,7 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 }
 
 func TestPrintTableDataCSV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		result       *Result
@@ -555,6 +562,7 @@ func TestPrintTableDataCSV(t *testing.T) {
 }
 
 func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		hasSQLFormatted bool
@@ -657,6 +665,7 @@ func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *R
 }
 
 func TestSuppressResultLines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                string
 		suppressResultLines bool
@@ -727,6 +736,7 @@ func TestSuppressResultLines(t *testing.T) {
 }
 
 func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                string
 		suppressResultLines bool

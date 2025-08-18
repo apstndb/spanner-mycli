@@ -12,6 +12,7 @@ import (
 
 // TestCli_displayResult tests the displayResult method
 func TestCli_displayResult(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc        string
 		autowrap    bool
@@ -87,6 +88,7 @@ func TestCli_displayResult(t *testing.T) {
 
 // TestCLI_FIXED_WIDTH tests the CLI_FIXED_WIDTH system variable
 func TestCLI_FIXED_WIDTH(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc  string
 		value string
