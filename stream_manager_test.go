@@ -304,10 +304,9 @@ func TestStreamManager(t *testing.T) {
 		errors := make([]error, 10)
 
 		for i := 0; i < 10; i++ {
-			index := i // Capture loop variable before goroutine
 			wg.Go(func() {
-				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", index))
-				errors[index] = sm.EnableTee(filePath, false)
+				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", i))
+				errors[i] = sm.EnableTee(filePath, false)
 			})
 		}
 
@@ -353,11 +352,10 @@ func TestStreamManager(t *testing.T) {
 
 		// Writers
 		for i := 0; i < 5; i++ {
-			id := i // Capture loop variable before goroutine
 			wg.Go(func() {
 				writer := sm.GetWriter()
 				for j := 0; j < iterations; j++ {
-					data := fmt.Sprintf("Writer %d iteration %d\n", id, j)
+					data := fmt.Sprintf("Writer %d iteration %d\n", i, j)
 					_, _ = writer.Write([]byte(data))
 				}
 			})
@@ -489,9 +487,8 @@ func TestSafeTeeWriter(t *testing.T) {
 		// Concurrent writes
 		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
-			id := i // Capture loop variable before goroutine
 			wg.Go(func() {
-				data := fmt.Sprintf("Test data from goroutine %d\n", id)
+				data := fmt.Sprintf("Test data from goroutine %d\n", i)
 				_, _ = writer.Write([]byte(data))
 			})
 		}
