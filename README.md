@@ -86,14 +86,22 @@ v0.X.Y will be operated as follows:
 
 ## Install
 
+### Pre-built binaries
+
+Download pre-built binaries from [GitHub Releases](https://github.com/apstndb/spanner-mycli/releases).
+
+### Build from source
+
 [Install Go](https://go.dev/doc/install) and run the following command.
 
 ```
-# For Go 1.23+
+# Requires Go 1.25+
 go install github.com/apstndb/spanner-mycli@latest
 ```
 
-Or you can use a container image.
+### Container image
+
+Use the container image from GitHub Container Registry.
 
 https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 

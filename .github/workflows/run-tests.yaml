@@ -36,7 +36,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1
+          version: v2.4
           args: --timeout=5m
 
   # Run tests in a separate job for parallel execution
