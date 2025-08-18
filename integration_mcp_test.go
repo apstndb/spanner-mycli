@@ -282,6 +282,7 @@ func testMCPClientServerSetup(t *testing.T, ctx context.Context, session *Sessio
 }
 
 func TestRunMCP(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

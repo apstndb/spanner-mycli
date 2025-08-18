@@ -25,6 +25,7 @@ func createTestCli(t *testing.T, ctx context.Context, input io.ReadCloser, outpu
 }
 
 func TestMetaCommandIntegration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("interactive shell command execution", func(t *testing.T) {

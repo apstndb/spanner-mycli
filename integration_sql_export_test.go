@@ -20,6 +20,7 @@ import (
 )
 
 func TestSQLExportIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -228,6 +229,7 @@ CREATE TABLE DestTable (
 }
 
 func TestSQLExportWithComplexTypes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -387,6 +389,7 @@ CREATE TABLE ComplexDest (
 }
 
 func TestSQLExportStreamingMode(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -527,6 +530,7 @@ CREATE TABLE TestTable (
 }
 
 func TestSQLExportWithUnnamedColumns(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -750,6 +754,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 }
 
 func TestSQLExportAutoTableNameDetection(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -951,6 +956,7 @@ CREATE TABLE TestTable (
 }
 
 func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
