@@ -120,24 +120,35 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 	return session, nil
 }
 
-func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+	return initializeWithDatabase(t, "", ddls, dmls)
+}
+
+func initializeWithDatabase(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	if database == "" {
-		// Empty database means admin-only mode with dedicated instance
-		return initializeWithOptions(t, ddls, dmls, true, true)
+	// Use shared emulator with a random instance ID for isolation
+	options := []spanemuboost.Option{
+		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
 	}
 
-	// Use shared emulator with a random instance ID for isolation
-	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
-		spanemuboost.WithRandomInstanceID(), // Instance-level isolation
-		spanemuboost.WithDatabaseID(database),
+	if database != "" {
+		// Use specific database name
+		options = append(options, spanemuboost.WithDatabaseID(database))
+	} else {
+		// Use random database name
+		options = append(options, spanemuboost.WithRandomDatabaseID())
+	}
+
+	options = append(options,
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
 		spanemuboost.WithSetupDDLs(ddls),
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
+
+	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,83 +165,42 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 	}
 }
 
-func initialize(t *testing.T, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session, teardown func()) {
-	return initializeWithOptions(t, ddls, dmls, false, false)
-}
-
-func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicated bool) (clients *spanemuboost.Clients, session *Session, teardown func()) {
+func initializeAdminOnly(t *testing.T) (clients *spanemuboost.Clients, session *Session, teardown func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	if adminOnly {
-		// Admin-only mode: create instance without database
-		var emulatorInstance *tcspanner.Container
-		var clientsTeardown func()
-		var err error
+	// Admin-only mode: create instance without database
+	// Always use instance-level isolation for all tests
+	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
+		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
+		spanemuboost.EnableInstanceAutoConfigOnly(),
+	)
 
-		if dedicated {
-			// Use shared emulator with a random instance ID for isolation
-			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
-				spanemuboost.WithRandomInstanceID(), // Instance-level isolation instead of container-level
-				spanemuboost.EnableInstanceAutoConfigOnly(),
-			)
-			emulatorInstance = emulator
-		} else {
-			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
-				spanemuboost.EnableInstanceAutoConfigOnly(),
-			)
-			emulatorInstance = emulator
-		}
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		if err != nil {
-			t.Fatal(err)
-		}
+	// Create admin-only session
+	sysVars := &systemVariables{
+		Project:          clients.ProjectID,
+		Instance:         clients.InstanceID,
+		Database:         "",                      // No database for admin-only mode
+		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+	}
+	// Initialize StreamManager for tests
+	sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	// Initialize the registry
+	sysVars.ensureRegistry()
 
-		// Create admin-only session
-		sysVars := &systemVariables{
-			Project:          clients.ProjectID,
-			Instance:         clients.InstanceID,
-			Database:         "",                      // No database for admin-only mode
-			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-		}
-		// Initialize StreamManager for tests
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
-		// Initialize the registry
-		sysVars.ensureRegistry()
+	session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulator)...)
+	if err != nil {
+		clientsTeardown()
+		t.Fatalf("failed to create admin session: err=%s", err)
+	}
 
-		session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulatorInstance)...)
-		if err != nil {
-			clientsTeardown()
-			t.Fatalf("failed to create admin session: err=%s", err)
-		}
-
-		return clients, session, func() {
-			session.Close()
-			clientsTeardown()
-		}
-	} else {
-		// Regular database mode
-		clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
-			spanemuboost.WithRandomDatabaseID(),
-			spanemuboost.EnableDatabaseAutoConfigOnly(),
-			spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
-			spanemuboost.WithSetupDDLs(ddls),
-			spanemuboost.WithSetupRawDMLs(dmls),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		session, err := initializeSession(ctx, emulator, clients)
-		if err != nil {
-			clientsTeardown()
-			t.Fatalf("failed to create test session: err=%s", err)
-		}
-
-		return clients, session, func() {
-			session.Close()
-			clientsTeardown()
-		}
+	return clients, session, func() {
+		session.Close()
+		clientsTeardown()
 	}
 }
 
@@ -407,13 +377,12 @@ func TestStatements(t *testing.T) {
 		stmt        []string
 		wantResults []*Result
 		cmpOpts     []cmp.Option
-		database    string // Database name behavior:
+		database string // Database name behavior:
 		// - Empty + admin=false: Random database name (auto-assigned)
 		// - Empty + admin=true: Admin-only session (no database)
 		// - Non-empty + admin=false: Specific database name
 		// - Non-empty + admin=true: Invalid combination (will be rejected)
-		dedicated bool // Use dedicated instance (vs shared emulator)
-		admin     bool // Create admin-only session (no database connection)
+		admin bool // Create admin-only session (no database connection)
 	}{
 		{
 			desc: "query parameters",
@@ -771,7 +740,6 @@ func TestStatements(t *testing.T) {
 					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			dedicated: true, // Use dedicated instance to avoid interference from other tests
 		},
 		{
 			desc: "SHOW TABLES",
@@ -1129,9 +1097,8 @@ func TestStatements(t *testing.T) {
 			wantResults: []*Result{
 				{}, // CREATE DATABASE returns empty result
 			},
-			database:  "", // Empty database with admin=true means admin-only session
-			dedicated: true,
-			admin:     true,
+			database: "", // Empty database with admin=true means admin-only session
+			admin:    true,
 		},
 		{
 			desc: "SHOW DATABASES in admin mode",
@@ -1150,9 +1117,8 @@ func TestStatements(t *testing.T) {
 						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			database:  "", // Empty database with admin=true means admin-only session
-			dedicated: true,
-			admin:     true,
+			database: "", // Empty database with admin=true means admin-only session
+			admin:    true,
 		},
 		{
 			desc: "CREATE and DROP DATABASE workflow in admin mode",
@@ -1180,9 +1146,8 @@ func TestStatements(t *testing.T) {
 						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-			database:  "",
-			dedicated: true,
-			admin:     true,
+			database: "",
+			admin:    true,
 		},
 		{
 			desc: "DETACH and USE workflow with database creation",
@@ -1246,8 +1211,7 @@ func TestStatements(t *testing.T) {
 						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
 				}, cmp.Ignore()),
 			),
-			database:  "test-database", // Start with a database connection
-			dedicated: true,
+			database: "test-database", // Start with a database connection
 		},
 	}
 
@@ -1267,11 +1231,10 @@ func TestStatements(t *testing.T) {
 			var teardown func()
 			if tt.admin {
 				// Admin-only session (database must be empty)
-				_, session, teardown = initializeWithOptions(t, tt.ddls, tt.dmls, true, tt.dedicated)
-			} else if tt.dedicated {
-				_, session, teardown = initializeDedicatedInstance(t, tt.database, tt.ddls, tt.dmls)
+				_, session, teardown = initializeAdminOnly(t)
 			} else {
-				_, session, teardown = initialize(t, tt.ddls, tt.dmls)
+				// Regular database mode (specific or random database name)
+				_, session, teardown = initializeWithDatabase(t, tt.database, tt.ddls, tt.dmls)
 			}
 			defer teardown()
 
