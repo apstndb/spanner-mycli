@@ -129,7 +129,9 @@ func initializeDedicatedInstance(t *testing.T, database string, ddls, dmls []str
 		return initializeWithOptions(t, ddls, dmls, true, true)
 	}
 
-	emulator, clients, clientsTeardown, err := spanemuboost.NewEmulatorWithClients(ctx,
+	// Use shared emulator with a random instance ID for isolation
+	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
+		spanemuboost.WithRandomInstanceID(), // Instance-level isolation
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
@@ -167,9 +169,12 @@ func initializeWithOptions(t *testing.T, ddls, dmls []string, adminOnly, dedicat
 		var err error
 
 		if dedicated {
-			emulatorInstance, clients, clientsTeardown, err = spanemuboost.NewEmulatorWithClients(ctx,
+			// Use shared emulator with a random instance ID for isolation
+			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
+				spanemuboost.WithRandomInstanceID(), // Instance-level isolation instead of container-level
 				spanemuboost.EnableInstanceAutoConfigOnly(),
 			)
+			emulatorInstance = emulator
 		} else {
 			clients, clientsTeardown, err = spanemuboost.NewClients(ctx, emulator,
 				spanemuboost.EnableInstanceAutoConfigOnly(),
