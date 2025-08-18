@@ -285,7 +285,7 @@ var (
 // NOTE: The mutex must NOT be held by the caller - this function acquires it.
 func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) error {
 	return s.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		if *tcPtr == nil || (*tcPtr).attrs.mode != mode {
+		if *tcPtr == nil || (*tcPtr).txn == nil || (*tcPtr).attrs.mode != mode {
 			switch mode {
 			case transactionModeReadWrite:
 				return ErrNotInReadWriteTransaction
@@ -300,8 +300,9 @@ func (s *Session) withTransactionLocked(mode transactionMode, fn func() error) e
 }
 
 func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
-	return s.withTransactionLocked(transactionModeReadWrite, func() error {
-		return fn(s.tc.RWTxn())
+	// Reuse withReadWriteTransactionContext, ignoring the context parameter
+	return s.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, _ *transactionContext) error {
+		return fn(txn)
 	})
 }
 
@@ -309,7 +310,14 @@ func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTr
 // This allows safe access to both the transaction and its context fields.
 func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
 	return s.withTransactionLocked(transactionModeReadWrite, func() error {
-		return fn(s.tc.RWTxn(), s.tc)
+		// At this point, we know tc is not nil and mode is correct (validated by withTransactionLocked)
+		// Type assert the transaction safely
+		txn, ok := s.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+		if !ok {
+			// This should never happen if the mode check is correct, but handle it defensively
+			return fmt.Errorf("internal error: transaction has incorrect type for read-write mode (got %T)", s.tc.txn)
+		}
+		return fn(txn, s.tc)
 	})
 }
 
@@ -317,7 +325,14 @@ func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmt
 // Returns ErrNotInReadOnlyTransaction if not in a read-only transaction.
 func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
 	return s.withTransactionLocked(transactionModeReadOnly, func() error {
-		return fn(s.tc.ROTxn())
+		// At this point, we know tc is not nil and mode is correct (validated by withTransactionLocked)
+		// Type assert the transaction safely
+		txn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
+		if !ok {
+			// This should never happen if the mode check is correct, but handle it defensively
+			return fmt.Errorf("internal error: transaction has incorrect type for read-only mode (got %T)", s.tc.txn)
+		}
+		return fn(txn)
 	})
 }
 
@@ -1065,7 +1080,7 @@ func (s *Session) CloseReadOnlyTransaction() error {
 		if !ok {
 			// This should never happen given the mode check in closeTransactionWithMode,
 			// but we handle it explicitly to prevent resource leaks
-			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode")
+			return fmt.Errorf("internal error: transaction object has incorrect type for read-only mode (got %T)", txn)
 		}
 		roTxn.Close()
 		return nil
@@ -1264,7 +1279,7 @@ func (s *Session) tryQueryInTransaction(ctx context.Context, stmt spanner.Statem
 		roTxn, ok := s.tc.txn.(*spanner.ReadOnlyTransaction)
 		if !ok {
 			// This shouldn't happen - log the error and return a stopped iterator
-			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction")
+			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction (got %T)", s.tc.txn)
 			slog.Error("INTERNAL ERROR", "error", err)
 			return newStoppedIterator(), nil
 		}

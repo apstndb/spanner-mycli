@@ -176,7 +176,8 @@ func TestBufferedVsStreaming(t *testing.T) {
 	// Buffered output
 	var bufBuffered bytes.Buffer
 	result := &Result{
-		Rows: rows,
+		TableHeader: simpleTableHeader(columnNames),
+		Rows:        rows,
 	}
 	err := formatCSV(&bufBuffered, result, columnNames, sysVars, 0)
 	assert.NoError(t, err)
@@ -184,7 +185,8 @@ func TestBufferedVsStreaming(t *testing.T) {
 	// Streaming output
 	var bufStreaming bytes.Buffer
 	formatter := NewCSVFormatter(&bufStreaming, sysVars.SkipColumnNames)
-	err = formatter.InitFormat(columnNames, nil, sysVars, nil)
+	header := simpleTableHeader(columnNames)
+	err = formatter.InitFormat(header, sysVars, nil)
 	assert.NoError(t, err)
 
 	for _, row := range rows {

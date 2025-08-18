@@ -65,6 +65,8 @@ var schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
 	"PROPERTY GRAPH",
 })))
 
+var whitespaceRe = regexp.MustCompile(`\s+`)
+
 var clientSideStatementDefs = []*clientSideStatementDef{
 	// Database
 	{
@@ -128,7 +130,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
+			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(matched[1], " "))
 			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
 			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
 		},

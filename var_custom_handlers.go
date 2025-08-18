@@ -17,6 +17,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+var stalenessRe = regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
+
 // formatTimestampBound formats a TimestampBound for display
 func formatTimestampBound(tb *spanner.TimestampBound) string {
 	if tb == nil {
@@ -24,7 +26,6 @@ func formatTimestampBound(tb *spanner.TimestampBound) string {
 	}
 
 	s := tb.String()
-	stalenessRe := regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
 	matches := stalenessRe.FindStringSubmatch(s)
 	if matches == nil {
 		return s
