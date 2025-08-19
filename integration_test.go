@@ -72,6 +72,51 @@ CREATE TABLE tbl (
 
 var testTableDDLs = sliceOf(testTableDDL)
 
+// Common test DDL patterns used across multiple tests
+const (
+	testTableSimpleDDL = "CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"
+)
+
+// pathMatchesField checks if a path matches the specified field pattern
+func pathMatchesField(path cmp.Path, fieldPattern string) bool {
+	return regexp.MustCompile(regexp.QuoteMeta(fieldPattern)).MatchString(path.GoString())
+}
+
+// Common cmp options for test comparisons
+// ignoreFieldsOpt creates a cmp.Option that ignores specified field patterns
+// Example: ignoreFieldsOpt(".TableHeader", ".Rows") ignores both TableHeader and Rows fields
+func ignoreFieldsOpt(fieldPatterns ...string) cmp.Option {
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		for _, pattern := range fieldPatterns {
+			if pathMatchesField(path, pattern) {
+				return true
+			}
+		}
+		return false
+	}, cmp.Ignore())
+}
+
+// ignoreRegexOpt creates a cmp.Option that ignores paths matching the regex pattern
+// Example: ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`) ignores second column of all rows
+func ignoreRegexOpt(regexPattern string) cmp.Option {
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		return regexp.MustCompile(regexPattern).MatchString(path.GoString())
+	}, cmp.Ignore())
+}
+
+// Helper functions for creating common results
+func keepVariablesResult() *Result {
+	return &Result{KeepVariables: true}
+}
+
+func emptyResult() *Result {
+	return &Result{}
+}
+
+func dmlResult(n int) *Result {
+	return &Result{AffectedRows: n, IsExecutedDML: true}
+}
+
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
@@ -466,20 +511,20 @@ func TestParameterStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{`SET PARAM b = true`, &Result{KeepVariables: true}},
-				{`SET PARAM bs = b"foo"`, &Result{KeepVariables: true}},
-				{`SET PARAM i64 = 1`, &Result{KeepVariables: true}},
-				{`SET PARAM f64 = 1.0`, &Result{KeepVariables: true}},
-				{`SET PARAM f32 = CAST(1.0 AS FLOAT32)`, &Result{KeepVariables: true}},
-				{`SET PARAM n = NUMERIC "1"`, &Result{KeepVariables: true}},
-				{`SET PARAM s = "foo"`, &Result{KeepVariables: true}},
-				{`SET PARAM js = JSON "{}"`, &Result{KeepVariables: true}},
-				{`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`, &Result{KeepVariables: true}},
-				{`SET PARAM ival_single = INTERVAL 3 DAY`, &Result{KeepVariables: true}},
-				{`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, &Result{KeepVariables: true}},
-				{`SET PARAM a_b = [true]`, &Result{KeepVariables: true}},
-				{`SET PARAM n_b = CAST(NULL AS BOOL)`, &Result{KeepVariables: true}},
-				{`SET PARAM n_ival = CAST(NULL AS INTERVAL)`, &Result{KeepVariables: true}},
+				{`SET PARAM b = true`, keepVariablesResult()},
+				{`SET PARAM bs = b"foo"`, keepVariablesResult()},
+				{`SET PARAM i64 = 1`, keepVariablesResult()},
+				{`SET PARAM f64 = 1.0`, keepVariablesResult()},
+				{`SET PARAM f32 = CAST(1.0 AS FLOAT32)`, keepVariablesResult()},
+				{`SET PARAM n = NUMERIC "1"`, keepVariablesResult()},
+				{`SET PARAM s = "foo"`, keepVariablesResult()},
+				{`SET PARAM js = JSON "{}"`, keepVariablesResult()},
+				{`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`, keepVariablesResult()},
+				{`SET PARAM ival_single = INTERVAL 3 DAY`, keepVariablesResult()},
+				{`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, keepVariablesResult()},
+				{`SET PARAM a_b = [true]`, keepVariablesResult()},
+				{`SET PARAM n_b = CAST(NULL AS BOOL)`, keepVariablesResult()},
+				{`SET PARAM n_ival = CAST(NULL AS INTERVAL)`, keepVariablesResult()},
 				{
 					`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
 					        @ival_single AS ival_single, @ival_range AS ival_range,
@@ -517,7 +562,7 @@ func TestParameterStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"SET PARAM i INT64", &Result{KeepVariables: true}},
+				{"SET PARAM i INT64", keepVariablesResult()},
 				{
 					"SHOW PARAMS",
 					&Result{
@@ -543,7 +588,7 @@ func TestParameterStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{testTableSimpleDDL, emptyResult()},
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"SET PARAM n = 1", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"SET PARAM b = true", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
@@ -583,8 +628,8 @@ func TestParameterStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
-				{"SET PARAM n = 1", &Result{KeepVariables: true}},
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
+				{"SET PARAM n = 1", keepVariablesResult()},
 				{
 					"SELECT @n",
 					&Result{
@@ -610,8 +655,8 @@ func TestTransactionStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
-				{"BEGIN", &Result{}},
+				{"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
+				{"BEGIN", emptyResult()},
 				{
 					"INSERT INTO TestTable1 (id, active) VALUES (1, true), (2, false) THEN RETURN *",
 					&Result{
@@ -624,7 +669,7 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader: toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", &Result{}},
+				{"ROLLBACK", emptyResult()},
 				{
 					"SELECT id, active FROM TestTable1 ORDER BY id ASC",
 					&Result{
@@ -640,10 +685,10 @@ func TestTransactionStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
-				{"BEGIN", &Result{}},
-				{"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
-				{"COMMIT", &Result{}},
+				{"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
+				{"BEGIN", emptyResult()},
+				{"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
+				{"COMMIT", emptyResult()},
 				{
 					"SELECT id, active FROM TestTable2 ORDER BY id ASC",
 					&Result{
@@ -660,9 +705,9 @@ func TestTransactionStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
 				{"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
-				{"BEGIN RO", &Result{}},
+				{"BEGIN RO", emptyResult()},
 				{
 					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
 					&Result{
@@ -671,9 +716,9 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:  toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", &Result{}},
-				{"SET TRANSACTION READ ONLY", &Result{}},
-				{"BEGIN", &Result{}},
+				{"COMMIT", emptyResult()},
+				{"SET TRANSACTION READ ONLY", emptyResult()},
+				{"BEGIN", emptyResult()},
 				{
 					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
 					&Result{
@@ -682,7 +727,7 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:  toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", &Result{}},
+				{"COMMIT", emptyResult()},
 			},
 		},
 		{
@@ -691,9 +736,9 @@ func TestTransactionStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
 				{"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
-				{"BEGIN", &Result{}},
+				{"BEGIN", emptyResult()},
 				{
 					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
 					&Result{
@@ -703,9 +748,9 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", &Result{}},
-				{"BEGIN", &Result{}},
-				{"SET TRANSACTION READ WRITE", &Result{}},
+				{"ROLLBACK", emptyResult()},
+				{"BEGIN", emptyResult()},
+				{"SET TRANSACTION READ WRITE", emptyResult()},
 				{
 					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
 					&Result{
@@ -715,8 +760,8 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", &Result{}},
-				{"BEGIN RW", &Result{}},
+				{"ROLLBACK", emptyResult()},
+				{"BEGIN RW", emptyResult()},
 				{
 					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
 					&Result{
@@ -726,7 +771,7 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", &Result{}},
+				{"COMMIT", emptyResult()},
 			},
 		},
 	}
@@ -772,11 +817,7 @@ func TestShowStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			cmpOpts: sliceOf(ignoreFieldsOpt(".TableHeader")),
 		},
 		{
 			desc: "SHOW VARIABLES",
@@ -793,12 +834,7 @@ func TestShowStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
 		},
 		{
 			desc: "HELP",
@@ -930,9 +966,7 @@ func TestShowStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows"),
-			},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 	}
 
@@ -944,12 +978,12 @@ func TestBatchStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "BATCH DML with parameters",
-			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			stmtResults: []struct {
 				stmt string
 				want *Result
 			}{
-				{`SET PARAM n = 1`, &Result{KeepVariables: true}},
+				{`SET PARAM n = 1`, keepVariablesResult()},
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"INSERT INTO TestTable (id, active) VALUES (@n, false)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
 				{"UPDATE TestTable SET active = true WHERE id = @n", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
@@ -971,7 +1005,7 @@ func TestBatchStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{`SET CLI_ECHO_EXECUTED_DDL = TRUE`, &Result{KeepVariables: true}},
+				{`SET CLI_ECHO_EXECUTED_DDL = TRUE`, keepVariablesResult()},
 				{"START BATCH DDL", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}}},
 				{heredoc.Doc(`CREATE TABLE TestTable (
 					id		INT64,
@@ -991,12 +1025,8 @@ func TestBatchStatements(t *testing.T) {
 					),
 				}},
 			},
-			cmpOpts: []cmp.Option{
-				// Ignore Commit Timestamp column value
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			// Ignore Commit Timestamp column value
+			cmpOpts: sliceOf(ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`)),
 		},
 		{
 			desc: "AUTO_BATCH_DML",
@@ -1005,9 +1035,9 @@ func TestBatchStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"SET AUTO_BATCH_DML = TRUE", &Result{KeepVariables: true}},
+				{"SET AUTO_BATCH_DML = TRUE", keepVariablesResult()},
 				{"INSERT INTO TestTable6 (id, active) VALUES (1,true)", &Result{IsExecutedDML: true, AffectedRows: 1}},
-				{"BEGIN", &Result{}},
+				{"BEGIN", emptyResult()},
 				{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
 				{"COMMIT", &Result{
 					IsExecutedDML: true,
@@ -1031,19 +1061,20 @@ func TestBatchStatements(t *testing.T) {
 			}{
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"INSERT INTO TestAbortBatchDML (id) VALUES (1)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"ABORT BATCH", &Result{KeepVariables: true}},
+				{"ABORT BATCH", keepVariablesResult()},
 				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
 					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
 					AffectedRows: 1,
 				}},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-						!strings.Contains(path.String(), "wantResults[3]")
-				}, cmp.Ignore()),
-			},
+			// Ignore TableHeader except for wantResults[3]
+			cmpOpts: sliceOf[cmp.Option](cmp.FilterPath(func(path cmp.Path) bool {
+				// Note: Using path.String() here, not path.GoString()
+				pathStr := path.String()
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(pathStr) &&
+					!strings.Contains(pathStr, "wantResults[3]")
+			}, cmp.Ignore())),
 		},
 	}
 
@@ -1073,7 +1104,7 @@ func TestPartitionedStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
 				{"SELECT 1", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
@@ -1088,8 +1119,8 @@ func TestPartitionedStatements(t *testing.T) {
 				stmt string
 				want *Result
 			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
-				{"SET PARAM n = 1", &Result{KeepVariables: true}},
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
+				{"SET PARAM n = 1", keepVariablesResult()},
 				{"SELECT @n", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
@@ -1100,12 +1131,12 @@ func TestPartitionedStatements(t *testing.T) {
 		},
 		{
 			desc: "mutation, pdml, partitioned query",
-			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			stmtResults: []struct {
 				stmt string
 				want *Result
 			}{
-				{"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)", &Result{}},
+				{"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)", emptyResult()},
 				{"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1", &Result{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}},
 				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable", &Result{
 					AffectedRows:   1,
@@ -1130,7 +1161,7 @@ func TestProtoStatements(t *testing.T) {
 			}{
 				{
 					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: `SHOW LOCAL PROTO`,
@@ -1156,7 +1187,7 @@ func TestProtoStatements(t *testing.T) {
 			}{
 				{
 					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`,
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: `SHOW LOCAL PROTO`,
@@ -1187,7 +1218,7 @@ func TestProtoStatements(t *testing.T) {
 				},
 				{
 					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: "CREATE PROTO BUNDLE (`examples.shipping.Order`)",
@@ -1238,12 +1269,7 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
 		},
 		{
 			desc:  "CREATE and DROP DATABASE workflow in admin mode",
@@ -1275,12 +1301,7 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
 		},
 		{
 			desc:     "DETACH and USE workflow with database creation",
@@ -1361,13 +1382,11 @@ func TestAdminStatements(t *testing.T) {
 					want: &Result{},                        // DROP DATABASE should succeed from admin mode
 				},
 			},
-			cmpOpts: []cmp.Option{
-				// Ignore TableHeader details for SELECT statements since they contain complex type information
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
-				}, cmp.Ignore()),
-			},
+			// Ignore TableHeader details for SELECT statements since they contain complex type information
+			cmpOpts: sliceOf[cmp.Option](cmp.FilterPath(func(path cmp.Path) bool {
+				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
+					(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
+			}, cmp.Ignore())),
 		},
 	}
 
@@ -1486,12 +1505,8 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					// Allow regex matching for duration field in CREATE DATABASE result
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			// Ignore duration field in CREATE DATABASE result
+			cmpOpts: sliceOf(ignoreFieldsOpt(`.Rows[0][2]`)),
 		},
 		{
 			desc: "SHOW TABLES",
@@ -1505,9 +1520,7 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 				},
 			},
-			cmpOpts: []cmp.Option{cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
-			}, cmp.Ignore())},
+			cmpOpts: sliceOf(ignoreFieldsOpt(`.TableHeader`)),
 		},
 		{
 			desc: "TRY PARTITIONED QUERY",
@@ -1536,7 +1549,7 @@ func TestMiscStatements(t *testing.T) {
 			}{
 				{
 					stmt: "SET CLI_TRY_PARTITION_QUERY = FALSE",
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: "SELECT id FROM TestTable WHERE id > 0",
@@ -1575,12 +1588,7 @@ func TestMiscStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			},
+			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
 		},
 		{
 			desc: "HELP VARIABLES",
@@ -1597,7 +1605,7 @@ func TestMiscStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc: "CQL SELECT",
@@ -1618,7 +1626,7 @@ func TestMiscStatements(t *testing.T) {
 			}{
 				{
 					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`,
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
@@ -1631,7 +1639,7 @@ func TestMiscStatements(t *testing.T) {
 				},
 				{
 					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`,
-					want: &Result{KeepVariables: true},
+					want: keepVariablesResult(),
 				},
 				{
 					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
@@ -1695,11 +1703,8 @@ func TestMiscStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: []cmp.Option{
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) // Ignore actual token values
-				}, cmp.Ignore()),
-			},
+			// Ignore actual token values
+			cmpOpts: sliceOf(ignoreFieldsOpt(`.Rows`)),
 		},
 		{
 			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
