@@ -397,7 +397,8 @@ func TestStatements(t *testing.T) {
 		// - Non-empty + admin=true: Invalid combination (will be rejected)
 		admin bool // Create admin-only session (no database connection)
 	}{
-		{
+		// Moved to TestParameterStatements
+		/*{
 			desc: "query parameters",
 			stmt: sliceOf(
 				`SET PARAM b = true`,
@@ -458,7 +459,7 @@ func TestStatements(t *testing.T) {
 					AffectedRows: 1,
 				},
 			},
-		},
+		},*/
 		{
 			desc: "SHOW VARIABLE CLI_VERSION",
 			stmt: sliceOf(
@@ -514,7 +515,8 @@ func TestStatements(t *testing.T) {
 				},
 			},
 		},
-		{
+		// Moved to TestParameterStatements
+		/*{
 			desc: "BATCH DML with parameters",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -557,7 +559,7 @@ func TestStatements(t *testing.T) {
 					TableHeader: toTableHeader(testTableRowType),
 				},
 			},
-		},
+		},*/
 		{
 			desc: "begin, insert THEN RETURN, rollback, select",
 			stmt: sliceOf(
@@ -651,7 +653,8 @@ func TestStatements(t *testing.T) {
 				{}, // COMMIT
 			},
 		},
-		{
+		// Moved to TestParameterStatements
+		/*{
 			desc: "SET PARAM TYPE and SHOW PARAMS",
 			stmt: sliceOf(
 				"SET PARAM i INT64",
@@ -671,7 +674,7 @@ func TestStatements(t *testing.T) {
 					Rows:         sliceOf(toRow("i", "INT64")),
 				},
 			},
-		},
+		},*/
 		{
 			desc: "HELP",
 			stmt: sliceOf("HELP"),
@@ -795,7 +798,8 @@ func TestStatements(t *testing.T) {
 				},
 			},
 		},
-		{
+		// Moved to TestParameterStatements
+		/*{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
 			stmt: sliceOf(
 				"SET CLI_TRY_PARTITION_QUERY = TRUE",
@@ -816,7 +820,7 @@ func TestStatements(t *testing.T) {
 					Rows:         sliceOf(toRow("TRUE")),
 				},
 			},
-		},
+		},*/
 		{
 			desc: "mutation, pdml, partitioned query",
 			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
@@ -1270,6 +1274,191 @@ func TestStatements(t *testing.T) {
 				gots = append(gots, result)
 			}
 			compareResult(t, gots, tt.wantResults, tt.cmpOpts...)
+		})
+	}
+}
+
+// TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
+func TestParameterStatements(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	
+	ctx := context.Background()
+	
+	tests := []struct {
+		desc        string
+		ddls, dmls  []string
+		stmtResults []struct {
+			stmt string
+			want *Result
+		}
+		cmpOpts []cmp.Option
+	}{
+		{
+			desc: "query parameters",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{`SET PARAM b = true`, &Result{KeepVariables: true}},
+				{`SET PARAM bs = b"foo"`, &Result{KeepVariables: true}},
+				{`SET PARAM i64 = 1`, &Result{KeepVariables: true}},
+				{`SET PARAM f64 = 1.0`, &Result{KeepVariables: true}},
+				{`SET PARAM f32 = CAST(1.0 AS FLOAT32)`, &Result{KeepVariables: true}},
+				{`SET PARAM n = NUMERIC "1"`, &Result{KeepVariables: true}},
+				{`SET PARAM s = "foo"`, &Result{KeepVariables: true}},
+				{`SET PARAM js = JSON "{}"`, &Result{KeepVariables: true}},
+				{`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`, &Result{KeepVariables: true}},
+				{`SET PARAM ival_single = INTERVAL 3 DAY`, &Result{KeepVariables: true}},
+				{`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, &Result{KeepVariables: true}},
+				{`SET PARAM a_b = [true]`, &Result{KeepVariables: true}},
+				{`SET PARAM n_b = CAST(NULL AS BOOL)`, &Result{KeepVariables: true}},
+				{`SET PARAM n_ival = CAST(NULL AS INTERVAL)`, &Result{KeepVariables: true}},
+				{
+					`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
+					        @ival_single AS ival_single, @ival_range AS ival_range,
+					        @a_b AS a_b, @n_b AS n_b, @n_ival AS n_ival`,
+					&Result{
+						TableHeader: toTableHeader(sliceOf(
+							typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
+							typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+							typector.NameTypeToStructTypeField("f64", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)),
+							typector.NameTypeToStructTypeField("f32", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)),
+							typector.NameTypeToStructTypeField("n", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)),
+							typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
+							typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
+							typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
+							typector.NameTypeToStructTypeField("ival_single", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+							typector.NameTypeToStructTypeField("ival_range", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+							typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("n_ival", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+						)),
+						Rows: sliceOf(
+							toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
+								"P3D", "P3Y4M5DT6H7M8.999999999S",
+								"[true]", "NULL", "NULL"),
+						),
+						AffectedRows: 1,
+					},
+				},
+			},
+		},
+		{
+			desc: "SET PARAM TYPE and SHOW PARAMS",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"SET PARAM i INT64", &Result{KeepVariables: true}},
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
+						Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
+					},
+				},
+				{
+					"DESCRIBE SELECT @i AS i",
+					&Result{
+						AffectedRows: 1,
+						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						Rows:         sliceOf(toRow("i", "INT64")),
+					},
+				},
+			},
+		},
+		{
+			desc: "BATCH DML with parameters",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
+				{"SET PARAM n = 1", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
+				{"SET PARAM b = true", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
+				{"INSERT INTO TestTable (id, active) VALUES (@n, @b)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"SET PARAM n = 2", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"SET PARAM b = false", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"INSERT INTO TestTable (id, active) VALUES (@n, @b)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
+				{
+					"RUN BATCH",
+					&Result{
+						TableHeader: toTableHeader("DML", "Rows"),
+						Rows: sliceOf(
+							toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
+							toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
+						),
+						AffectedRows:     2,
+						AffectedRowsType: rowCountTypeUpperBound,
+						IsExecutedDML:    true,
+					},
+				},
+				{
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
+					&Result{
+						TableHeader: toTableHeader(testTableRowType),
+						Rows: sliceOf(
+							toRow("1", "true"),
+							toRow("2", "false"),
+						),
+						AffectedRows: 2,
+					},
+				},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY with parameters",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
+				{"SET PARAM n = 1", &Result{KeepVariables: true}},
+				{
+					"SELECT @n",
+					&Result{
+						ForceWrap:    true,
+						AffectedRows: 1,
+						TableHeader:  toTableHeader("Root_Partitionable"),
+						Rows:         sliceOf(toRow("TRUE")),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+			
+			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
+			defer teardown()
+			
+			sessionHandler := NewSessionHandler(session)
+			
+			var gots []*Result
+			var wants []*Result
+			
+			for i, sr := range tt.stmtResults {
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
+				if err != nil {
+					t.Fatalf("invalid statement[%d]: error=%s", i, err)
+				}
+				
+				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
+				if err != nil {
+					t.Fatalf("unexpected error happened[%d]: %s", i, err)
+				}
+				gots = append(gots, result)
+				wants = append(wants, sr.want)
+			}
+			compareResult(t, gots, wants, tt.cmpOpts...)
 		})
 	}
 }
