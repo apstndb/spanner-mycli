@@ -560,7 +560,8 @@ func TestStatements(t *testing.T) {
 				},
 			},
 		},*/
-		{
+		// Moved to TestTransactionStatements
+		/*{
 			desc: "begin, insert THEN RETURN, rollback, select",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -586,8 +587,8 @@ func TestStatements(t *testing.T) {
 					TableHeader: toTableHeader(testTableRowType),
 				},
 			},
-		},
-		{
+		},*/
+		/*{
 			desc: "begin, insert, commit, select",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -607,8 +608,8 @@ func TestStatements(t *testing.T) {
 					TableHeader:  toTableHeader(testTableRowType),
 				},
 			},
-		},
-		{
+		},*/
+		/*{
 			desc: "read-only transactions",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -652,7 +653,7 @@ func TestStatements(t *testing.T) {
 				},
 				{}, // COMMIT
 			},
-		},
+		},*/
 		// Moved to TestParameterStatements
 		/*{
 			desc: "SET PARAM TYPE and SHOW PARAMS",
@@ -840,7 +841,8 @@ func TestStatements(t *testing.T) {
 				},
 			},
 		},
-		{
+		// Moved to TestTransactionStatements
+		/*{
 			desc: "read-write transactions",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -885,7 +887,7 @@ func TestStatements(t *testing.T) {
 				},
 				{}, // COMMIT
 			},
-		},
+		},*/
 		{
 			desc: "BATCH DDL",
 			stmt: sliceOf(
@@ -1429,6 +1431,181 @@ func TestParameterStatements(t *testing.T) {
 						Rows:         sliceOf(toRow("TRUE")),
 					},
 				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+			
+			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
+			defer teardown()
+			
+			sessionHandler := NewSessionHandler(session)
+			
+			var gots []*Result
+			var wants []*Result
+			
+			for i, sr := range tt.stmtResults {
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
+				if err != nil {
+					t.Fatalf("invalid statement[%d]: error=%s", i, err)
+				}
+				
+				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
+				if err != nil {
+					t.Fatalf("unexpected error happened[%d]: %s", i, err)
+				}
+				gots = append(gots, result)
+				wants = append(wants, sr.want)
+			}
+			compareResult(t, gots, wants, tt.cmpOpts...)
+		})
+	}
+}
+
+// TestTransactionStatements tests transaction-related functionality including BEGIN, COMMIT, ROLLBACK, and transaction modes
+func TestTransactionStatements(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	
+	ctx := context.Background()
+	
+	tests := []struct {
+		desc        string
+		ddls, dmls  []string
+		stmtResults []struct {
+			stmt string
+			want *Result
+		}
+		cmpOpts []cmp.Option
+	}{
+		{
+			desc: "begin, insert THEN RETURN, rollback, select",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"BEGIN", &Result{}},
+				{
+					"INSERT INTO TestTable1 (id, active) VALUES (1, true), (2, false) THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows: sliceOf(
+							toRow("1", "true"),
+							toRow("2", "false"),
+						),
+						TableHeader: toTableHeader(testTableRowType),
+					},
+				},
+				{"ROLLBACK", &Result{}},
+				{
+					"SELECT id, active FROM TestTable1 ORDER BY id ASC",
+					&Result{
+						AffectedRows: 0,
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+			},
+		},
+		{
+			desc: "begin, insert, commit, select",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"BEGIN", &Result{}},
+				{"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
+				{"COMMIT", &Result{}},
+				{
+					"SELECT id, active FROM TestTable2 ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+			},
+		},
+		{
+			desc: "read-only transactions",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
+				{"BEGIN RO", &Result{}},
+				{
+					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+				{"COMMIT", &Result{}},
+				{"SET TRANSACTION READ ONLY", &Result{}},
+				{"BEGIN", &Result{}},
+				{
+					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+				{"COMMIT", &Result{}},
+			},
+		},
+		{
+			desc: "read-write transactions",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)", &Result{}},
+				{"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
+				{"BEGIN", &Result{}},
+				{
+					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				{"ROLLBACK", &Result{}},
+				{"BEGIN", &Result{}},
+				{"SET TRANSACTION READ WRITE", &Result{}},
+				{
+					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				{"ROLLBACK", &Result{}},
+				{"BEGIN RW", &Result{}},
+				{
+					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				{"COMMIT", &Result{}},
 			},
 		},
 	}
