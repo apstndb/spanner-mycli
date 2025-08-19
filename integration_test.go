@@ -888,7 +888,8 @@ func TestStatements(t *testing.T) {
 				{}, // COMMIT
 			},
 		},*/
-		{
+		// Moved to TestBatchStatements
+		/*{
 			desc: "BATCH DDL",
 			stmt: sliceOf(
 				"SET CLI_ECHO_EXECUTED_DDL = TRUE",
@@ -925,8 +926,9 @@ func TestStatements(t *testing.T) {
 					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
 				}, cmp.Ignore()),
 			),
-		},
-		{
+		},*/
+		// Moved to TestBatchStatements
+		/*{
 			desc: "AUTO_BATCH_DML",
 			stmt: sliceOf(
 				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
@@ -951,7 +953,7 @@ func TestStatements(t *testing.T) {
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 				},
 			},
-		},
+		},*/
 
 		// --- Added Test Cases ---
 		{
@@ -978,7 +980,8 @@ func TestStatements(t *testing.T) {
 				lo.Must((&HelpVariablesStatement{}).Execute(t.Context(), nil)),
 			},
 		},
-		{
+		// Moved to TestBatchStatements
+		/*{
 			desc: "ABORT BATCH DML",
 			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
 			stmt: sliceOf(
@@ -1001,7 +1004,7 @@ func TestStatements(t *testing.T) {
 				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
 					!strings.Contains(path.String(), "wantResults[3]")
 			}, cmp.Ignore())),
-		},
+		},*/
 		{
 			desc: "CQL SELECT",
 			// It can't be tested because cloud-spanner-emulator doesn't support Cassandra interface.
@@ -1427,7 +1430,8 @@ func TestParameterStatements(t *testing.T) {
 				},
 			},
 		},
-		{
+		// Moved to TestBatchStatements
+		/*{
 			desc: "BATCH DML with parameters",
 			stmtResults: []struct {
 				stmt string
@@ -1466,7 +1470,7 @@ func TestParameterStatements(t *testing.T) {
 					},
 				},
 			},
-		},
+		},*/
 		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
 			stmtResults: []struct {
@@ -1822,6 +1826,117 @@ func TestShowStatements(t *testing.T) {
 			},
 			cmpOpts: []cmp.Option{
 				cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows"),
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+// TestBatchStatements tests BATCH-related functionality including BATCH DDL, BATCH DML, AUTO_BATCH_DML
+func TestBatchStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "BATCH DML with parameters",
+			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{`SET PARAM n = 1`, &Result{KeepVariables: true}},
+				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
+				{"INSERT INTO TestTable (id, active) VALUES (@n, false)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"UPDATE TestTable SET active = true WHERE id = @n", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
+				{"RUN BATCH", &Result{
+					IsExecutedDML:    true,
+					AffectedRows:     2,
+					AffectedRowsType: rowCountTypeUpperBound,
+					TableHeader:      toTableHeader("DML", "Rows"),
+					Rows: sliceOf(
+						toRow("INSERT INTO TestTable (id, active) VALUES (@n, false)", "1"),
+						toRow("UPDATE TestTable SET active = true WHERE id = @n", "1"),
+					),
+				}},
+			},
+		},
+		{
+			desc: "BATCH DDL",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{`SET CLI_ECHO_EXECUTED_DDL = TRUE`, &Result{KeepVariables: true}},
+				{"START BATCH DDL", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}}},
+				{heredoc.Doc(`CREATE TABLE TestTable (
+					id		INT64,
+					active	BOOL,
+				) PRIMARY KEY(id)`), &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}}},
+				{`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}}},
+				{"RUN BATCH", &Result{
+					AffectedRows: 0,
+					TableHeader:  toTableHeader("Executed", "Commit Timestamp"),
+					Rows: sliceOf(
+						toRow(heredoc.Doc(`
+							CREATE TABLE TestTable (
+								id		INT64,
+								active	BOOL,
+							) PRIMARY KEY(id);`), "(ignored)"),
+						toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
+					),
+				}},
+			},
+			cmpOpts: []cmp.Option{
+				// Ignore Commit Timestamp column value
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			},
+		},
+		{
+			desc: "AUTO_BATCH_DML",
+			ddls: sliceOf("CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"SET AUTO_BATCH_DML = TRUE", &Result{KeepVariables: true}},
+				{"INSERT INTO TestTable6 (id, active) VALUES (1,true)", &Result{IsExecutedDML: true, AffectedRows: 1}},
+				{"BEGIN", &Result{}},
+				{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"}), // tab is pass-through
+				}},
+				{"SELECT * FROM TestTable6 ORDER BY id", &Result{
+					AffectedRows: 2,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+				}},
+			},
+		},
+		{
+			desc: "ABORT BATCH DML",
+			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
+				{"INSERT INTO TestAbortBatchDML (id) VALUES (1)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"ABORT BATCH", &Result{KeepVariables: true}},
+				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("0")),
+					AffectedRows: 1,
+				}},
+			},
+			cmpOpts: []cmp.Option{
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
+						!strings.Contains(path.String(), "wantResults[3]")
+				}, cmp.Ignore()),
 			},
 		},
 	}
