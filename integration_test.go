@@ -1280,24 +1280,77 @@ func TestStatements(t *testing.T) {
 	}
 }
 
-// TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
-func TestParameterStatements(t *testing.T) {
+// statementTestCase represents a test case for statement execution
+type statementTestCase struct {
+	desc        string
+	ddls, dmls  []string
+	admin       bool    // admin mode (no database)
+	database    string  // specific database name (empty = use random name)
+	stmtResults []struct {
+		stmt string
+		want *Result
+	}
+	cmpOpts []cmp.Option
+}
+
+// runStatementTests is a helper function to run statement execution tests
+func runStatementTests(t *testing.T, tests []statementTestCase) {
+	t.Helper()
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 	
 	ctx := context.Background()
-	
-	tests := []struct {
-		desc        string
-		ddls, dmls  []string
-		stmtResults []struct {
-			stmt string
-			want *Result
-		}
-		cmpOpts []cmp.Option
-	}{
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+			
+			// Validate admin + non-empty database combination
+			if tt.admin && tt.database != "" {
+				t.Fatalf("Invalid test configuration: admin=true with non-empty database=%q", tt.database)
+			}
+
+			var session *Session
+			var teardown func()
+			if tt.admin {
+				// Admin-only session (database must be empty)
+				_, session, teardown = initializeAdminSession(t)
+			} else {
+				// Regular database mode (specific or random database name)
+				_, session, teardown = initializeWithDB(t, tt.database, tt.ddls, tt.dmls)
+			}
+			defer teardown()
+
+			// Create SessionHandler to properly test USE/DETACH statements
+			// SessionHandler will use the session's existing client options for emulator compatibility
+			sessionHandler := NewSessionHandler(session)
+
+			var gots []*Result
+			var wants []*Result
+			
+			for i, sr := range tt.stmtResults {
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
+				if err != nil {
+					t.Fatalf("invalid statement[%d]: error=%s", i, err)
+				}
+
+				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
+				if err != nil {
+					t.Fatalf("unexpected error happened[%d]: %s", i, err)
+				}
+				gots = append(gots, result)
+				wants = append(wants, sr.want)
+			}
+			compareResult(t, gots, wants, tt.cmpOpts...)
+		})
+	}
+}
+
+// TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
+func TestParameterStatements(t *testing.T) {
+	tests := []statementTestCase{
 		{
 			desc: "query parameters",
 			stmtResults: []struct {
@@ -1435,54 +1488,12 @@ func TestParameterStatements(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			
-			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
-			defer teardown()
-			
-			sessionHandler := NewSessionHandler(session)
-			
-			var gots []*Result
-			var wants []*Result
-			
-			for i, sr := range tt.stmtResults {
-				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
-				if err != nil {
-					t.Fatalf("invalid statement[%d]: error=%s", i, err)
-				}
-				
-				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
-				if err != nil {
-					t.Fatalf("unexpected error happened[%d]: %s", i, err)
-				}
-				gots = append(gots, result)
-				wants = append(wants, sr.want)
-			}
-			compareResult(t, gots, wants, tt.cmpOpts...)
-		})
-	}
+	runStatementTests(t, tests)
 }
 
 // TestTransactionStatements tests transaction-related functionality including BEGIN, COMMIT, ROLLBACK, and transaction modes
 func TestTransactionStatements(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	
-	ctx := context.Background()
-	
-	tests := []struct {
-		desc        string
-		ddls, dmls  []string
-		stmtResults []struct {
-			stmt string
-			want *Result
-		}
-		cmpOpts []cmp.Option
-	}{
+	tests := []statementTestCase{
 		{
 			desc: "begin, insert THEN RETURN, rollback, select",
 			stmtResults: []struct {
@@ -1610,34 +1621,212 @@ func TestTransactionStatements(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			
-			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
-			defer teardown()
-			
-			sessionHandler := NewSessionHandler(session)
-			
-			var gots []*Result
-			var wants []*Result
-			
-			for i, sr := range tt.stmtResults {
-				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
-				if err != nil {
-					t.Fatalf("invalid statement[%d]: error=%s", i, err)
-				}
-				
-				result, err := sessionHandler.ExecuteStatement(ctx, stmt)
-				if err != nil {
-					t.Fatalf("unexpected error happened[%d]: %s", i, err)
-				}
-				gots = append(gots, result)
-				wants = append(wants, sr.want)
-			}
-			compareResult(t, gots, wants, tt.cmpOpts...)
-		})
+	runStatementTests(t, tests)
+}
+
+// TestShowStatements tests SHOW, DESCRIBE, and HELP statement functionality
+func TestShowStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "SHOW VARIABLE CLI_VERSION",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					`SHOW VARIABLE CLI_VERSION`,
+					&Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_VERSION"),
+						Rows:          sliceOf(toRow(getVersion())),
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW TABLES",
+			ddls: sliceOf(
+				"CREATE TABLE TestTable1(id INT64) PRIMARY KEY(id)",
+				"CREATE TABLE TestTable2(id INT64) PRIMARY KEY(id)",
+			),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW TABLES",
+					&Result{
+						TableHeader:  toTableHeader(""), // Dynamic based on database name
+						Rows:         sliceOf(toRow("TestTable1"), toRow("TestTable2")),
+						AffectedRows: 2,
+					},
+				},
+			},
+			cmpOpts: []cmp.Option{
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			},
+		},
+		{
+			desc: "SHOW VARIABLES",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW VARIABLES",
+					&Result{
+						TableHeader:   toTableHeader("name", "value"),
+						KeepVariables: true,
+						// Rows and AffectedRows are dynamic, so we don't check them here.
+					},
+				},
+			},
+			cmpOpts: []cmp.Option{
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
+						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
+				}, cmp.Ignore()),
+			},
+		},
+		{
+			desc: "HELP",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"HELP",
+					lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
+				},
+			},
+		},
+		{
+			desc: "HELP VARIABLES",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"HELP VARIABLES",
+					lo.Must((&HelpVariablesStatement{}).Execute(context.Background(), nil)),
+				},
+			},
+		},
+		{
+			desc: "SHOW DDLS",
+			ddls: sliceOf(
+				"CREATE TABLE Musicians (SingerId INT64 NOT NULL, FirstName STRING(1024), LastName STRING(1024), SingerInfo BYTES(MAX)) PRIMARY KEY (SingerId)",
+				"CREATE TABLE Singers (SingerId INT64 NOT NULL, FirstName STRING(1024), LastName STRING(1024), SingerInfo BYTES(MAX)) PRIMARY KEY (SingerId)",
+				"CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName)",
+			),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW DDLS",
+					&Result{
+						TableHeader:   toTableHeader(""),
+						KeepVariables: true,
+						Rows: sliceOf(
+							toRow(heredoc.Doc(`
+							CREATE TABLE Musicians (
+							  SingerId INT64 NOT NULL,
+							  FirstName STRING(1024),
+							  LastName STRING(1024),
+							  SingerInfo BYTES(MAX),
+							) PRIMARY KEY(SingerId);
+							CREATE TABLE Singers (
+							  SingerId INT64 NOT NULL,
+							  FirstName STRING(1024),
+							  LastName STRING(1024),
+							  SingerInfo BYTES(MAX),
+							) PRIMARY KEY(SingerId);
+							CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName);
+							`)),
+						),
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW CREATE INDEX",
+			ddls: sliceOf(
+				"CREATE TABLE TestShowCreateIndexTbl(id INT64, val INT64) PRIMARY KEY(id)",
+				"CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)",
+			),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW CREATE INDEX TestShowCreateIndexIdx",
+					&Result{
+						TableHeader:  toTableHeader("Name", "DDL"),
+						Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
+						AffectedRows: 1,
+					},
+				},
+			},
+		},
+		{
+			desc: "DESCRIBE DML (INSERT with literal)",
+			ddls: sliceOf("CREATE TABLE TestDescribeDMLTbl(id INT64 PRIMARY KEY)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)",
+					&Result{
+						// For DML without THEN RETURN, result is empty.
+						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						Rows:         nil, // No parameters in this DML
+						AffectedRows: 0,   // 0 parameters
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW SCHEMA UPDATE OPERATIONS",
+					&Result{
+						TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+						Rows:         nil, // Expect no operations on a fresh emulator DB
+						AffectedRows: 0,
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW DATABASES in admin mode",
+			admin: true,
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{
+					"SHOW DATABASES",
+					&Result{
+						TableHeader: toTableHeader("Database"),
+						// Don't check specific rows since databases vary
+					},
+				},
+			},
+			cmpOpts: []cmp.Option{
+				cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows"),
+			},
+		},
 	}
+
+	runStatementTests(t, tests)
 }
 
 func TestReadWriteTransaction(t *testing.T) {
