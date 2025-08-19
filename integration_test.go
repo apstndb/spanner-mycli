@@ -77,17 +77,22 @@ const (
 	testTableSimpleDDL = "CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"
 )
 
+// Test helper functions policy:
+// - Use standard go-cmp/cmpopts functions when possible (e.g., cmpopts.IgnoreFields for simple field ignoring)
+// - Only create custom helpers for patterns that cannot be expressed with standard options
+// - Custom helpers should be focused and well-documented with usage examples
+
 // pathMatchesField checks if a path matches the specified field pattern
 func pathMatchesField(path cmp.Path, fieldPattern string) bool {
 	return regexp.MustCompile(regexp.QuoteMeta(fieldPattern)).MatchString(path.GoString())
 }
 
 // Common cmp options for test comparisons
-// ignoreFieldsOpt creates a cmp.Option that ignores specified field patterns
-// Example: ignoreFieldsOpt(".TableHeader", ".Rows") ignores both TableHeader and Rows fields
-func ignoreFieldsOpt(fieldPatterns ...string) cmp.Option {
+// ignorePathOpt creates a cmp.Option that ignores specified path patterns
+// Example: ignorePathOpt(".Rows[0][2]") ignores the third column of the first row
+func ignorePathOpt(pathPatterns ...string) cmp.Option {
 	return cmp.FilterPath(func(path cmp.Path) bool {
-		for _, pattern := range fieldPatterns {
+		for _, pattern := range pathPatterns {
 			if pathMatchesField(path, pattern) {
 				return true
 			}
@@ -817,7 +822,7 @@ func TestShowStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(".TableHeader")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "TableHeader")),
 		},
 		{
 			desc: "SHOW VARIABLES",
@@ -834,7 +839,7 @@ func TestShowStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc: "HELP",
@@ -1269,7 +1274,7 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc:  "CREATE and DROP DATABASE workflow in admin mode",
@@ -1301,7 +1306,7 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc:     "DETACH and USE workflow with database creation",
@@ -1506,7 +1511,7 @@ func TestMiscStatements(t *testing.T) {
 				},
 			},
 			// Ignore duration field in CREATE DATABASE result
-			cmpOpts: sliceOf(ignoreFieldsOpt(`.Rows[0][2]`)),
+			cmpOpts: sliceOf(ignorePathOpt(`.Rows[0][2]`)),
 		},
 		{
 			desc: "SHOW TABLES",
@@ -1520,7 +1525,7 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(`.TableHeader`)),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "TableHeader")),
 		},
 		{
 			desc: "TRY PARTITIONED QUERY",
@@ -1588,7 +1593,7 @@ func TestMiscStatements(t *testing.T) {
 					},
 				},
 			},
-			cmpOpts: sliceOf(ignoreFieldsOpt(".Rows", ".AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc: "HELP VARIABLES",
@@ -1704,7 +1709,7 @@ func TestMiscStatements(t *testing.T) {
 				},
 			},
 			// Ignore actual token values
-			cmpOpts: sliceOf(ignoreFieldsOpt(`.Rows`)),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows")),
 		},
 		{
 			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
