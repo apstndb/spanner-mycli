@@ -1944,6 +1944,95 @@ func TestBatchStatements(t *testing.T) {
 	runStatementTests(t, tests)
 }
 
+// TestPartitionedStatements tests PARTITION-related functionality including partitioned queries and DML
+func TestPartitionedStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "TRY PARTITIONED QUERY",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"TRY PARTITIONED QUERY SELECT 1", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY system variable",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
+				{"SELECT 1", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY with parameters",
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"SET CLI_TRY_PARTITION_QUERY = TRUE", &Result{KeepVariables: true}},
+				{"SET PARAM n = 1", &Result{KeepVariables: true}},
+				{"SELECT @n", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "mutation, pdml, partitioned query",
+			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)", &Result{}},
+				{"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1", &Result{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}},
+				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable", &Result{
+					AffectedRows:   1,
+					PartitionCount: 2,
+					TableHeader:    toTableHeader(testTableRowType),
+					Rows:           sliceOf(toRow("1", "false")),
+				}},
+			},
+		},
+		{
+			desc: "PARTITION SELECT query",
+			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
+			stmtResults: []struct {
+				stmt string
+				want *Result
+			}{
+				{"PARTITION SELECT id FROM TestPartitionQueryTbl", &Result{
+					TableHeader:  toTableHeader("Partition_Token"),
+					AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
+					ForceWrap:    true,
+				}},
+			},
+			cmpOpts: []cmp.Option{
+				cmp.FilterPath(func(path cmp.Path) bool {
+					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) // Ignore actual token values
+				}, cmp.Ignore()),
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
 func TestReadWriteTransaction(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
