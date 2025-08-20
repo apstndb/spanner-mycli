@@ -1366,7 +1366,7 @@ func TestMiscStatements(t *testing.T) {
 				{
 					stmt: "SELECT COUNT(*) FROM TestMutateDeleteTbl",
 					want: &Result{
-						TableHeader:  typesTableHeader{&sppb.StructType_Field{Type: &sppb.Type{Code: sppb.TypeCode_INT64}}},
+						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 						Rows:         sliceOf(toRow("0")),
 						AffectedRows: 1,
 					},
