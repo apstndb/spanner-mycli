@@ -81,6 +81,12 @@ const (
 // - Use standard go-cmp/cmpopts functions when possible (e.g., cmpopts.IgnoreFields for simple field ignoring)
 // - Only create custom helpers for patterns that cannot be expressed with standard options
 // - Custom helpers should be focused and well-documented with usage examples
+//
+// Path.String() vs Path.GoString() usage:
+// - Path.GoString(): Use for detailed path matching with indices/types (e.g., ".Rows[0][2]")
+//   Returns full Go syntax like: (*Result).Rows[0][2]
+// - Path.String(): Use for simple field name matching (e.g., checking "wantResults[1]")
+//   Returns simplified path like: Result.Rows
 
 // pathMatchesField checks if a path matches the specified field pattern
 func pathMatchesField(path cmp.Path, fieldPattern string) bool {
@@ -711,7 +717,7 @@ func TestTransactionStatements(t *testing.T) {
 				want *Result
 			}{
 				{"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
+				{"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
 				{"BEGIN RO", emptyResult()},
 				{
 					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
@@ -742,7 +748,7 @@ func TestTransactionStatements(t *testing.T) {
 				want *Result
 			}{
 				{"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)", &Result{IsExecutedDML: true, AffectedRows: 2}},
+				{"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
 				{"BEGIN", emptyResult()},
 				{
 					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
@@ -1041,7 +1047,7 @@ func TestBatchStatements(t *testing.T) {
 				want *Result
 			}{
 				{"SET AUTO_BATCH_DML = TRUE", keepVariablesResult()},
-				{"INSERT INTO TestTable6 (id, active) VALUES (1,true)", &Result{IsExecutedDML: true, AffectedRows: 1}},
+				{"INSERT INTO TestTable6 (id, active) VALUES (1,true)", dmlResult(1)},
 				{"BEGIN", emptyResult()},
 				{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
 				{"COMMIT", &Result{
@@ -1227,15 +1233,15 @@ func TestProtoStatements(t *testing.T) {
 				},
 				{
 					stmt: "CREATE PROTO BUNDLE (`examples.shipping.Order`)",
-					want: &Result{},
+					want: emptyResult(),
 				},
 				{
 					stmt: "ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-					want: &Result{},
+					want: emptyResult(),
 				},
 				{
 					stmt: "SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-					want: &Result{},
+					want: emptyResult(),
 				},
 			},
 		},
@@ -1255,7 +1261,7 @@ func TestAdminStatements(t *testing.T) {
 			}{
 				{
 					stmt: "CREATE DATABASE test_db_create",
-					want: &Result{}, // CREATE DATABASE returns empty result
+					want: emptyResult(), // CREATE DATABASE returns empty result
 				},
 			},
 		},
@@ -1285,7 +1291,7 @@ func TestAdminStatements(t *testing.T) {
 			}{
 				{
 					stmt: "CREATE DATABASE test_workflow_db",
-					want: &Result{}, // CREATE DATABASE returns empty result
+					want: emptyResult(), // CREATE DATABASE returns empty result
 				},
 				{
 					stmt: "SHOW DATABASES",
@@ -1296,7 +1302,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "DROP DATABASE test_workflow_db",
-					want: &Result{}, // DROP DATABASE should also be mutation
+					want: emptyResult(), // DROP DATABASE should also be mutation
 				},
 				{
 					stmt: "SHOW DATABASES",
@@ -1334,7 +1340,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "DETACH",  // Switch to admin-only mode
-					want: &Result{}, // DETACH statement returns empty result
+					want: emptyResult(), // DETACH statement returns empty result
 				},
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show empty string (*detached*)
@@ -1347,7 +1353,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: &Result{},                          // CREATE DATABASE returns empty result
+					want: emptyResult(),                          // CREATE DATABASE returns empty result
 				},
 				{
 					stmt: "SHOW DATABASES", // Should show both databases
@@ -1359,7 +1365,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "USE `test_detach_db`", // Switch to new database
-					want: &Result{},              // USE statement returns empty result
+					want: emptyResult(),              // USE statement returns empty result
 				},
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test_detach_db
@@ -1380,11 +1386,11 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "DETACH",  // Switch to admin-only mode again
-					want: &Result{}, // DETACH statement returns empty result
+					want: emptyResult(), // DETACH statement returns empty result
 				},
 				{
 					stmt: "DROP DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: &Result{},                        // DROP DATABASE should succeed from admin mode
+					want: emptyResult(),                        // DROP DATABASE should succeed from admin mode
 				},
 			},
 			// Ignore TableHeader details for SELECT statements since they contain complex type information
@@ -1452,11 +1458,11 @@ func TestMiscStatements(t *testing.T) {
 					},
 				},
 			},
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 		},
 		{
 			desc: "SPLIT POINTS statements",
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
 			stmtResults: []struct {
 				stmt string
@@ -1487,7 +1493,7 @@ func TestMiscStatements(t *testing.T) {
 				},
 				{
 					stmt: "CREATE DATABASE `new-database`",
-					want: &Result{}, // CREATE DATABASE returns empty result
+					want: emptyResult(), // CREATE DATABASE returns empty result
 				},
 				{
 					stmt: "SHOW DATABASES",
@@ -1495,15 +1501,15 @@ func TestMiscStatements(t *testing.T) {
 				},
 				{
 					stmt: "USE `new-database` ROLE spanner_info_reader", // nop
-					want: &Result{},
+					want: emptyResult(),
 				},
 				{
 					stmt: "USE `test-database`", // nop
-					want: &Result{},
+					want: emptyResult(),
 				},
 				{
 					stmt: "DROP DATABASE `new-database`",
-					want: &Result{}, // DROP DATABASE
+					want: emptyResult(), // DROP DATABASE
 				},
 				{
 					stmt: "SHOW DATABASES",
@@ -1515,7 +1521,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW TABLES",
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			stmtResults: []struct {
 				stmt string
 				want *Result
@@ -1546,7 +1552,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "CLI_TRY_PARTITION_QUERY system variable",
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			dmls: sliceOf("INSERT INTO TestTable (id, active) VALUES (1, TRUE), (2, FALSE)"),
 			stmtResults: []struct {
 				stmt string
@@ -1569,7 +1575,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "mutation, pdml, partitioned query",
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			dmls: sliceOf("DELETE FROM TestTable WHERE TRUE"),
 			stmtResults: []struct {
 				stmt string
@@ -1614,7 +1620,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "CQL SELECT",
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
+			ddls: sliceOf(testTableSimpleDDL),
 			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
 			stmtResults: []struct {
 				stmt string
