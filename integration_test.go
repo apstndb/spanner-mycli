@@ -90,7 +90,7 @@ const (
 
 // pathMatchesField checks if a path matches the specified field pattern
 func pathMatchesField(path cmp.Path, fieldPattern string) bool {
-	return regexp.MustCompile(regexp.QuoteMeta(fieldPattern)).MatchString(path.GoString())
+	return strings.Contains(path.GoString(), fieldPattern)
 }
 
 // Common cmp options for test comparisons
@@ -110,8 +110,9 @@ func ignorePathOpt(pathPatterns ...string) cmp.Option {
 // ignoreRegexOpt creates a cmp.Option that ignores paths matching the regex pattern
 // Example: ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`) ignores second column of all rows
 func ignoreRegexOpt(regexPattern string) cmp.Option {
+	re := regexp.MustCompile(regexPattern)
 	return cmp.FilterPath(func(path cmp.Path) bool {
-		return regexp.MustCompile(regexPattern).MatchString(path.GoString())
+		return re.MatchString(path.GoString())
 	}, cmp.Ignore())
 }
 
@@ -528,11 +529,10 @@ func runStatementTests(t *testing.T, tests []statementTestCase) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx := context.Background()
-
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
+			ctx := t.Context()
 
 			// Validate admin + non-empty database combination
 			if tt.admin && tt.database != "" {
