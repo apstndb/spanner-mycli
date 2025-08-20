@@ -460,8 +460,7 @@ func TestStringVariables(t *testing.T) {
 					return
 				}
 				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-					return
+					t.Fatalf("unexpected error: %v", err)
 				}
 				if sysVars.Host != tt.wantHost {
 					t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
@@ -501,8 +500,7 @@ func TestStringVariables(t *testing.T) {
 				}
 
 				if err != nil {
-					t.Errorf("unexpected error for value %q: %v", test.value, err)
-					return
+					t.Fatalf("unexpected error for value %q: %v", test.value, err)
 				}
 
 				if sysVars.StatementTimeout == nil || *sysVars.StatementTimeout != test.want {
@@ -516,8 +514,7 @@ func TestStringVariables(t *testing.T) {
 				// Test getter
 				result, err := sysVars.Get("STATEMENT_TIMEOUT")
 				if err != nil {
-					t.Errorf("unexpected error getting STATEMENT_TIMEOUT: %v", err)
-					return
+					t.Fatalf("unexpected error getting STATEMENT_TIMEOUT: %v", err)
 				}
 
 				expected := map[string]string{"STATEMENT_TIMEOUT": test.want.String()}
@@ -589,8 +586,7 @@ func TestBooleanVariables(t *testing.T) {
 				// Test GET
 				got, err := sysVars.Get("CLI_SKIP_COLUMN_NAMES")
 				if err != nil {
-					t.Errorf("unexpected error on Get: %v", err)
-					return
+					t.Fatalf("unexpected error on Get: %v", err)
 				}
 
 				expectedStr := "FALSE"
@@ -878,8 +874,7 @@ func TestTimeAndDurationVariables(t *testing.T) {
 				}
 
 				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-					return
+					t.Fatalf("unexpected error: %v", err)
 				}
 
 				// Compare the timestamp bounds
