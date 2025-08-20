@@ -47,46 +47,99 @@ func assertNoError(t *testing.T, err error) {
 	}
 }
 
-// testSystemVariableSetGet is a helper function to test system variable set/get operations
-func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, string, string) error, methodName string, testCase struct {
-	desc                               string
-	sysVars                            *systemVariables
-	name                               string
-	value                              string
-	want                               map[string]string
-	unimplementedSet, unimplementedGet bool
-},
-) {
-	sysVars := testCase.sysVars
+// testBooleanVariable tests boolean variables with both TRUE and FALSE values
+func testBooleanVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string) {
+	t.Helper()
+	for _, value := range []string{"TRUE", "FALSE"} {
+		t.Run(name+"_"+value, func(t *testing.T) {
+			t.Parallel()
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			err := setFunc(sysVars, name, value)
+			assertNoError(t, err)
+
+			got, err := sysVars.Get(name)
+			assertNoError(t, err)
+			want := map[string]string{name: value}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// testStringVariable tests string variables with a given value
+func testStringVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name, value string) {
+	t.Helper()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	err := setFunc(sysVars, name, value)
+	assertNoError(t, err)
+
+	got, err := sysVars.Get(name)
+	assertNoError(t, err)
+	want := map[string]string{name: value}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// testReadOnlyVariable tests variables that only have getters
+func testReadOnlyVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string, sysVars *systemVariables, want map[string]string) {
+	t.Helper()
 	if sysVars == nil {
 		sysVars = newSystemVariablesWithDefaultsForTest()
 	}
 
-	// Only call Set if value is provided or if testing unimplemented setter
-	if testCase.value != "" || testCase.unimplementedSet {
-		err := setFunc(sysVars, testCase.name, testCase.value)
-		if !testCase.unimplementedSet {
-			assertNoError(t, err)
-		} else {
-			var e errSetterUnimplemented
-			// Accept errSetterReadOnly from implementation
-			if !errors.As(err, &e) && !errors.Is(err, errSetterReadOnly) {
-				t.Errorf("sysVars.%s is skipped, but implemented: %v", methodName, err)
-			}
-		}
+	// Verify setter is unimplemented
+	err := setFunc(sysVars, name, "dummy")
+	var e errSetterUnimplemented
+	if !errors.As(err, &e) && !errors.Is(err, errSetterReadOnly) {
+		t.Errorf("sysVars setter for %s is skipped, but implemented: %v", name, err)
 	}
 
-	got, err := sysVars.Get(testCase.name)
-	if !testCase.unimplementedGet {
+	// Test getter
+	got, err := sysVars.Get(name)
+	assertNoError(t, err)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// testUnimplementedVariable tests variables that have neither setter nor getter implemented
+func testUnimplementedVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string) {
+	t.Helper()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+
+	// Verify setter is unimplemented
+	err := setFunc(sysVars, name, "dummy")
+	var e errSetterUnimplemented
+	if !errors.As(err, &e) && !errors.Is(err, errSetterReadOnly) {
+		t.Errorf("sysVars setter for %s is skipped, but implemented: %v", name, err)
+	}
+
+	// Verify getter is unimplemented
+	_, err = sysVars.Get(name)
+	var eg errGetterUnimplemented
+	if !errors.As(err, &eg) {
+		t.Errorf("sysVars getter for %s is skipped, but implemented: %v", name, err)
+	}
+}
+
+// testSpecialVariable tests variables that need custom setup or validation
+func testSpecialVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, desc, name, value string, sysVars *systemVariables, want map[string]string) {
+	t.Helper()
+	if sysVars == nil {
+		sysVars = newSystemVariablesWithDefaultsForTest()
+	}
+
+	if value != "" {
+		err := setFunc(sysVars, name, value)
 		assertNoError(t, err)
-		if diff := cmp.Diff(testCase.want, got); diff != "" {
-			t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
-		}
-	} else {
-		var e errGetterUnimplemented
-		if !errors.As(err, &e) {
-			t.Errorf("sysVars.Get is skipped, but implemented: %v", err)
-		}
+	}
+
+	got, err := sysVars.Get(name)
+	assertNoError(t, err)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("%s: sysVars.Get() mismatch (-want +got):\n%s", desc, diff)
 	}
 }
 
@@ -128,7 +181,6 @@ func (b *sysVarsBuilder) withPort(p int) *sysVarsBuilder           { b.sv.Port =
 func (b *sysVarsBuilder) withRole(r string) *sysVarsBuilder        { b.sv.Role = r; return b }
 func (b *sysVarsBuilder) withInsecure(i bool) *sysVarsBuilder      { b.sv.Insecure = i; return b }
 func (b *sysVarsBuilder) withLogGrpc(l bool) *sysVarsBuilder       { b.sv.LogGrpc = l; return b }
-func (b *sysVarsBuilder) withEnableADCPlus(e bool) *sysVarsBuilder { b.sv.EnableADCPlus = e; return b }
 func (b *sysVarsBuilder) withMCP(m bool) *sysVarsBuilder           { b.sv.MCP = m; return b }
 
 func (b *sysVarsBuilder) withImpersonateServiceAccount(a string) *sysVarsBuilder {
@@ -864,369 +916,233 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 
 	t.Run("SimpleMode", func(t *testing.T) {
 		t.Parallel()
-		// Test system variables using Simple mode (CLI flags, config files)
-		tests := []struct {
-			desc                               string
-			sysVars                            *systemVariables
-			name                               string
-			value                              string
-			want                               map[string]string
-			unimplementedSet, unimplementedGet bool
+		setFunc := (*systemVariables).SetFromSimple
+
+		// Boolean variables - test both TRUE and FALSE automatically
+		boolVars := []string{
+			"READONLY", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
+			"AUTO_BATCH_DML", "DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
+			"CLI_VERBOSE", "CLI_ECHO_EXECUTED_DDL", "CLI_ECHO_INPUT", "CLI_USE_PAGER",
+			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
+			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
+			"CLI_ENABLE_PROGRESS_BAR", "CLI_ENABLE_ADC_PLUS", "CLI_ASYNC_DDL",
+		}
+		for _, name := range boolVars {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				testBooleanVariable(t, setFunc, name)
+			})
+		}
+
+		// String variables with simple values
+		stringTests := map[string]string{
+			"MAX_COMMIT_DELAY":             "100ms",
+			"READ_ONLY_STALENESS":          "STRONG",
+			"OPTIMIZER_VERSION":            "LATEST",
+			"OPTIMIZER_STATISTICS_PACKAGE": "test-package",
+			"RPC_PRIORITY":                 "HIGH",
+			"STATEMENT_TAG":                "test-statement",
+			"CLI_OUTPUT_TEMPLATE_FILE":     "output_default.tmpl",
+			"CLI_PROMPT":                   "test-prompt",
+			"CLI_PROMPT2":                  "test-prompt2",
+			"CLI_ANALYZE_COLUMNS":          "name:{{.template}}:LEFT",
+			"CLI_INLINE_STATS":             "name:{{.template}}",
+			"CLI_PARSE_MODE":               "FALLBACK",
+			"CLI_LOG_LEVEL":                "INFO",
+			"CLI_VERTEXAI_MODEL":           "test",
+			"CLI_VERTEXAI_PROJECT":         "example-project",
+			"CLI_PROTO_DESCRIPTOR_FILE":    "testdata/protos/order_descriptors.pb",
+			"STATEMENT_TIMEOUT":            "30s",
+			"MAX_PARTITIONED_PARALLELISM":  "10",
+			"CLI_TAB_WIDTH":                "4",
+			"AUTOCOMMIT_DML_MODE":          "TRANSACTIONAL",
+			"DEFAULT_ISOLATION_LEVEL":      "SERIALIZABLE",
+			"CLI_FORMAT":                   "TABLE",
+			"CLI_DATABASE_DIALECT":         "GOOGLE_STANDARD_SQL",
+			"CLI_QUERY_MODE":               "PROFILE",
+			"CLI_EXPLAIN_FORMAT":           "CURRENT",
+		}
+		for name, value := range stringTests {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				testStringVariable(t, setFunc, name, value)
+			})
+		}
+
+		// CLI_ENDPOINT special cases
+		t.Run("CLI_ENDPOINT_setter", func(t *testing.T) {
+			t.Parallel()
+			testStringVariable(t, setFunc, "CLI_ENDPOINT", "example.com:443")
+		})
+		t.Run("CLI_ENDPOINT_setter_IPv6", func(t *testing.T) {
+			t.Parallel()
+			testStringVariable(t, setFunc, "CLI_ENDPOINT", "[2001:db8::1]:443")
+		})
+		t.Run("CLI_ENDPOINT_getter", func(t *testing.T) {
+			t.Parallel()
+			sysVars := newTestSysVars().withHost("localhost").withPort(9010).build()
+			testSpecialVariable(t, setFunc, "CLI_ENDPOINT getter", "CLI_ENDPOINT", "", sysVars,
+				singletonMap("CLI_ENDPOINT", "localhost:9010"))
+		})
+
+		// TRANSACTION_TAG needs active transaction
+		t.Run("TRANSACTION_TAG", func(t *testing.T) {
+			t.Parallel()
+			sysVars := newTestSysVars().withSession(&Session{tc: &transactionContext{
+				attrs: transactionAttributes{mode: transactionModePending},
+			}}).build()
+			testSpecialVariable(t, setFunc, "TRANSACTION_TAG", "TRANSACTION_TAG", "test-tag", sysVars,
+				singletonMap("TRANSACTION_TAG", "test-tag"))
+		})
+
+		// Read-only variables
+		readOnlyTests := []struct {
+			name    string
+			sysVars *systemVariables
+			want    map[string]string
 		}{
-			// Java-spanner compatible variables
 			{
-				desc: "READ_TIMESTAMP", name: "READ_TIMESTAMP", unimplementedSet: true,
-				sysVars: newTestSysVars().withReadTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
-				want:    singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
+				"READ_TIMESTAMP",
+				newTestSysVars().withReadTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
+				singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
 			},
 			{
-				desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", unimplementedSet: true,
-				sysVars: newTestSysVars().withCommitTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
-				want:    singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
+				"COMMIT_TIMESTAMP",
+				newTestSysVars().withCommitTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
+				singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
 			},
 			{
-				desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", unimplementedSet: true,
-				sysVars: newTestSysVars().
+				"COMMIT_RESPONSE",
+				newTestSysVars().
 					withCommitTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).
 					withCommitResponse(&sppb.CommitResponse{CommitStats: &sppb.CommitResponse_CommitStats{MutationCount: 10}}).
 					build(),
-				want: map[string]string{"COMMIT_TIMESTAMP": "1970-01-01T00:00:00Z", "MUTATION_COUNT": "10"},
+				map[string]string{"COMMIT_TIMESTAMP": "1970-01-01T00:00:00Z", "MUTATION_COUNT": "10"},
 			},
-
-			// CLI_* variables
+			{"CLI_VERSION", nil, singletonMap("CLI_VERSION", getVersion())},
 			{
-				desc: "CLI_VERSION", name: "CLI_VERSION", unimplementedSet: true,
-				want: singletonMap("CLI_VERSION", getVersion()),
-			},
-			{
-				desc: "CLI_PROJECT", name: "CLI_PROJECT", unimplementedSet: true,
-				sysVars: newTestSysVars().withProject("test-project").build(),
-				want:    singletonMap("CLI_PROJECT", "test-project"),
+				"CLI_PROJECT",
+				newTestSysVars().withProject("test-project").build(),
+				singletonMap("CLI_PROJECT", "test-project"),
 			},
 			{
-				desc: "CLI_INSTANCE", name: "CLI_INSTANCE", unimplementedSet: true,
-				sysVars: newTestSysVars().withInstance("test-instance").build(),
-				want:    singletonMap("CLI_INSTANCE", "test-instance"),
+				"CLI_INSTANCE",
+				newTestSysVars().withInstance("test-instance").build(),
+				singletonMap("CLI_INSTANCE", "test-instance"),
 			},
 			{
-				desc: "CLI_DATABASE", name: "CLI_DATABASE", unimplementedSet: true,
-				sysVars: newTestSysVars().withDatabase("test-database").build(),
-				want:    singletonMap("CLI_DATABASE", "test-database"),
+				"CLI_DATABASE",
+				newTestSysVars().withDatabase("test-database").build(),
+				singletonMap("CLI_DATABASE", "test-database"),
 			},
 			{
-				desc: "CLI_HISTORY_FILE", name: "CLI_HISTORY_FILE", unimplementedSet: true,
-				sysVars: newTestSysVars().withHistoryFile("/tmp/spanner_mycli_readline.tmp").build(),
-				want:    singletonMap("CLI_HISTORY_FILE", "/tmp/spanner_mycli_readline.tmp"),
+				"CLI_HISTORY_FILE",
+				newTestSysVars().withHistoryFile("/tmp/spanner_mycli_readline.tmp").build(),
+				singletonMap("CLI_HISTORY_FILE", "/tmp/spanner_mycli_readline.tmp"),
 			},
 			{
-				desc: "CLI_ENDPOINT getter", name: "CLI_ENDPOINT",
-				sysVars: newTestSysVars().withHost("localhost").withPort(9010).build(),
-				want:    singletonMap("CLI_ENDPOINT", "localhost:9010"),
+				"CLI_HOST",
+				newTestSysVars().withHost("example.com").build(),
+				singletonMap("CLI_HOST", "example.com"),
 			},
 			{
-				desc: "CLI_ENDPOINT setter", name: "CLI_ENDPOINT", value: "example.com:443",
-				want: singletonMap("CLI_ENDPOINT", "example.com:443"),
+				"CLI_PORT",
+				newTestSysVars().withPort(443).build(),
+				singletonMap("CLI_PORT", "443"),
 			},
 			{
-				desc: "CLI_ENDPOINT setter with IPv6", name: "CLI_ENDPOINT", value: "[2001:db8::1]:443",
-				want: singletonMap("CLI_ENDPOINT", "[2001:db8::1]:443"),
+				"CLI_INSECURE",
+				newTestSysVars().withInsecure(true).build(),
+				singletonMap("CLI_INSECURE", "TRUE"),
 			},
 			{
-				desc: "CLI_HOST", name: "CLI_HOST", unimplementedSet: true,
-				sysVars: newTestSysVars().withHost("example.com").build(),
-				want:    singletonMap("CLI_HOST", "example.com"),
+				"CLI_LOG_GRPC",
+				newTestSysVars().withLogGrpc(true).build(),
+				singletonMap("CLI_LOG_GRPC", "TRUE"),
 			},
 			{
-				desc: "CLI_PORT", name: "CLI_PORT", unimplementedSet: true,
-				sysVars: newTestSysVars().withPort(443).build(),
-				want:    singletonMap("CLI_PORT", "443"),
+				"CLI_ROLE",
+				newTestSysVars().withRole("test-role").build(),
+				singletonMap("CLI_ROLE", "test-role"),
 			},
 			{
-				desc: "CLI_DIRECT_READ", name: "CLI_DIRECT_READ", unimplementedSet: true,
-				sysVars: newTestSysVars().withDirectedRead(&sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+				"CLI_IMPERSONATE_SERVICE_ACCOUNT",
+				newTestSysVars().withImpersonateServiceAccount("test@example.com").build(),
+				singletonMap("CLI_IMPERSONATE_SERVICE_ACCOUNT", "test@example.com"),
+			},
+			{
+				"CLI_MCP",
+				newTestSysVars().withMCP(true).build(),
+				singletonMap("CLI_MCP", "TRUE"),
+			},
+			{
+				"CLI_DIRECT_READ",
+				newTestSysVars().withDirectedRead(&sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
 					IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
 						{Type: sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE, Location: "asia-northeast2"},
 					}},
 				}}).build(),
-				want: singletonMap("CLI_DIRECT_READ", "asia-northeast2:READ_WRITE"),
-			},
-			// Java-spanner compatible boolean variables
-			{
-				desc: "READONLY", name: "READONLY", value: "TRUE",
-				want: singletonMap("READONLY", "TRUE"),
-			},
-			{
-				desc: "AUTO_PARTITION_MODE", name: "AUTO_PARTITION_MODE", value: "TRUE",
-				want: singletonMap("AUTO_PARTITION_MODE", "TRUE"),
-			},
-			{
-				desc: "AUTOCOMMIT", name: "AUTOCOMMIT", unimplementedSet: true, unimplementedGet: true,
-				value: "FALSE",
-				want:  singletonMap("AUTOCOMMIT", "FALSE"),
-			},
-			{
-				desc: "RETRY_ABORTS_INTERNALLY", name: "RETRY_ABORTS_INTERNALLY",
-				unimplementedSet: true, unimplementedGet: true,
-			},
-			{
-				desc: "EXCLUDE_TXN_FROM_CHANGE_STREAMS", name: "EXCLUDE_TXN_FROM_CHANGE_STREAMS", value: "TRUE",
-				want: singletonMap("EXCLUDE_TXN_FROM_CHANGE_STREAMS", "TRUE"),
-			},
-			{
-				desc: "AUTO_BATCH_DML", name: "AUTO_BATCH_DML", value: "TRUE",
-				want: singletonMap("AUTO_BATCH_DML", "TRUE"),
-			},
-			{
-				desc: "DATA_BOOST_ENABLED", name: "DATA_BOOST_ENABLED", value: "TRUE",
-				want: singletonMap("DATA_BOOST_ENABLED", "TRUE"),
-			},
-
-			// CLI_* boolean variables
-			{
-				desc: "CLI_VERBOSE", name: "CLI_VERBOSE", value: "TRUE",
-				want: singletonMap("CLI_VERBOSE", "TRUE"),
-			},
-			{
-				desc: "CLI_ECHO_EXECUTED_DDL", name: "CLI_ECHO_EXECUTED_DDL", value: "TRUE",
-				want: singletonMap("CLI_ECHO_EXECUTED_DDL", "TRUE"),
-			},
-			{
-				desc: "CLI_ECHO_INPUT", name: "CLI_ECHO_INPUT", value: "TRUE",
-				want: singletonMap("CLI_ECHO_INPUT", "TRUE"),
-			},
-			{
-				desc: "CLI_EXPLAIN_FORMAT", name: "CLI_EXPLAIN_FORMAT", value: "CURRENT",
-				want: singletonMap("CLI_EXPLAIN_FORMAT", "CURRENT"),
-			},
-			{
-				desc: "CLI_USE_PAGER", name: "CLI_USE_PAGER", value: "TRUE",
-				want: singletonMap("CLI_USE_PAGER", "TRUE"),
-			},
-			{
-				desc: "CLI_AUTOWRAP", name: "CLI_AUTOWRAP", value: "TRUE",
-				want: singletonMap("CLI_AUTOWRAP", "TRUE"),
-			},
-			{
-				desc: "CLI_ENABLE_HIGHLIGHT", name: "CLI_ENABLE_HIGHLIGHT", value: "TRUE",
-				want: singletonMap("CLI_ENABLE_HIGHLIGHT", "TRUE"),
-			},
-			{
-				desc: "CLI_PROTOTEXT_MULTILINE", name: "CLI_PROTOTEXT_MULTILINE", value: "TRUE",
-				want: singletonMap("CLI_PROTOTEXT_MULTILINE", "TRUE"),
-			},
-			{
-				desc: "CLI_MARKDOWN_CODEBLOCK", name: "CLI_MARKDOWN_CODEBLOCK", value: "TRUE",
-				want: singletonMap("CLI_MARKDOWN_CODEBLOCK", "TRUE"),
-			},
-			{
-				desc: "CLI_LINT_PLAN", name: "CLI_LINT_PLAN", value: "TRUE",
-				want: singletonMap("CLI_LINT_PLAN", "TRUE"),
-			},
-			{
-				desc: "CLI_SKIP_COLUMN_NAMES", name: "CLI_SKIP_COLUMN_NAMES", value: "TRUE",
-				want: singletonMap("CLI_SKIP_COLUMN_NAMES", "TRUE"),
-			},
-			{
-				desc: "CLI_INSECURE", name: "CLI_INSECURE", unimplementedSet: true,
-				sysVars: newTestSysVars().withInsecure(true).build(),
-				want:    singletonMap("CLI_INSECURE", "TRUE"),
-			},
-			{
-				desc: "CLI_LOG_GRPC", name: "CLI_LOG_GRPC", unimplementedSet: true,
-				sysVars: newTestSysVars().withLogGrpc(true).build(),
-				want:    singletonMap("CLI_LOG_GRPC", "TRUE"),
-			},
-
-			// Java-spanner compatible string variables
-			{
-				desc: "MAX_COMMIT_DELAY", name: "MAX_COMMIT_DELAY", value: "100ms",
-				want: singletonMap("MAX_COMMIT_DELAY", "100ms"),
-			},
-			{
-				desc: "READ_ONLY_STALENESS", name: "READ_ONLY_STALENESS", value: "STRONG",
-				want: singletonMap("READ_ONLY_STALENESS", "STRONG"),
-			},
-			{
-				desc: "OPTIMIZER_VERSION", name: "OPTIMIZER_VERSION", value: "LATEST",
-				want: singletonMap("OPTIMIZER_VERSION", "LATEST"),
-			},
-			{
-				desc: "OPTIMIZER_STATISTICS_PACKAGE", name: "OPTIMIZER_STATISTICS_PACKAGE", value: "test-package",
-				want: singletonMap("OPTIMIZER_STATISTICS_PACKAGE", "test-package"),
-			},
-			{
-				desc: "RPC_PRIORITY", name: "RPC_PRIORITY", value: "HIGH",
-				want: singletonMap("RPC_PRIORITY", "HIGH"),
-			},
-			{
-				desc: "STATEMENT_TAG", name: "STATEMENT_TAG", value: "test-statement",
-				want: singletonMap("STATEMENT_TAG", "test-statement"),
-			},
-			{
-				desc: "TRANSACTION_TAG", name: "TRANSACTION_TAG", value: "test-tag",
-				sysVars: newTestSysVars().withSession(&Session{tc: &transactionContext{
-					attrs: transactionAttributes{mode: transactionModePending},
-				}}).build(),
-				want: singletonMap("TRANSACTION_TAG", "test-tag"),
-			},
-
-			// CLI_* string variables
-			{
-				desc: "CLI_OUTPUT_TEMPLATE_FILE", name: "CLI_OUTPUT_TEMPLATE_FILE", value: "output_default.tmpl",
-				want: singletonMap("CLI_OUTPUT_TEMPLATE_FILE", "output_default.tmpl"),
-			},
-			{
-				desc: "CLI_ROLE", name: "CLI_ROLE", unimplementedSet: true,
-				sysVars: newTestSysVars().withRole("test-role").build(),
-				want:    singletonMap("CLI_ROLE", "test-role"),
-			},
-			{
-				desc: "CLI_PROMPT", name: "CLI_PROMPT", value: "test-prompt",
-				want: singletonMap("CLI_PROMPT", "test-prompt"),
-			},
-			{
-				desc: "CLI_PROMPT2", name: "CLI_PROMPT2", value: "test-prompt2",
-				want: singletonMap("CLI_PROMPT2", "test-prompt2"),
-			},
-			{
-				desc: "CLI_ANALYZE_COLUMNS", name: "CLI_ANALYZE_COLUMNS", value: "name:{{.template}}:LEFT",
-				want: singletonMap("CLI_ANALYZE_COLUMNS", "name:{{.template}}:LEFT"),
-			},
-			{
-				desc: "CLI_INLINE_STATS", name: "CLI_INLINE_STATS", value: "name:{{.template}}",
-				want: singletonMap("CLI_INLINE_STATS", "name:{{.template}}"),
-			},
-			{
-				desc: "CLI_PARSE_MODE", name: "CLI_PARSE_MODE", value: "FALLBACK",
-				want: singletonMap("CLI_PARSE_MODE", "FALLBACK"),
-			},
-			{
-				desc: "CLI_LOG_LEVEL", name: "CLI_LOG_LEVEL", value: "INFO",
-				want: singletonMap("CLI_LOG_LEVEL", "INFO"),
-			},
-			{
-				desc: "CLI_VERTEXAI_MODEL", name: "CLI_VERTEXAI_MODEL", value: "test",
-				want: singletonMap("CLI_VERTEXAI_MODEL", "test"),
-			},
-			{
-				desc: "CLI_VERTEXAI_PROJECT", name: "CLI_VERTEXAI_PROJECT", value: "example-project",
-				want: singletonMap("CLI_VERTEXAI_PROJECT", "example-project"),
-			},
-			{
-				desc: "CLI_PROTO_DESCRIPTOR_FILE", name: "CLI_PROTO_DESCRIPTOR_FILE", value: "testdata/protos/order_descriptors.pb",
-				want: singletonMap("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"),
-			},
-			{
-				desc: "STATEMENT_TIMEOUT", name: "STATEMENT_TIMEOUT", value: "30s",
-				want: singletonMap("STATEMENT_TIMEOUT", "30s"),
-			},
-
-			// Java-spanner compatible integer variables
-			{
-				desc: "MAX_PARTITIONED_PARALLELISM", name: "MAX_PARTITIONED_PARALLELISM", value: "10",
-				want: singletonMap("MAX_PARTITIONED_PARALLELISM", "10"),
-			},
-
-			// CLI_* integer variables
-			{
-				desc: "CLI_TAB_WIDTH", name: "CLI_TAB_WIDTH", value: "4",
-				want: singletonMap("CLI_TAB_WIDTH", "4"),
-			},
-
-			// Java-spanner compatible enum variables
-			{
-				desc: "AUTOCOMMIT_DML_MODE", name: "AUTOCOMMIT_DML_MODE", value: "TRANSACTIONAL",
-				want: singletonMap("AUTOCOMMIT_DML_MODE", "TRANSACTIONAL"),
-			},
-			{
-				desc: "DEFAULT_ISOLATION_LEVEL", name: "DEFAULT_ISOLATION_LEVEL", value: "SERIALIZABLE",
-				want: singletonMap("DEFAULT_ISOLATION_LEVEL", "SERIALIZABLE"),
-			},
-
-			// CLI_* enum variables
-			{
-				desc: "CLI_FORMAT", name: "CLI_FORMAT", value: "TABLE",
-				want: singletonMap("CLI_FORMAT", "TABLE"),
-			},
-			{
-				desc: "CLI_DATABASE_DIALECT", name: "CLI_DATABASE_DIALECT",
-				value: "GOOGLE_STANDARD_SQL",
-				want:  singletonMap("CLI_DATABASE_DIALECT", "GOOGLE_STANDARD_SQL"),
-			},
-			{
-				desc: "CLI_QUERY_MODE", name: "CLI_QUERY_MODE", value: "PROFILE",
-				want: singletonMap("CLI_QUERY_MODE", "PROFILE"),
-			},
-
-			// New CLI_* variables added for Issue #243
-			{
-				desc: "CLI_ENABLE_PROGRESS_BAR", name: "CLI_ENABLE_PROGRESS_BAR", value: "TRUE",
-				want: singletonMap("CLI_ENABLE_PROGRESS_BAR", "TRUE"),
-			},
-			{
-				desc: "CLI_IMPERSONATE_SERVICE_ACCOUNT", name: "CLI_IMPERSONATE_SERVICE_ACCOUNT", unimplementedSet: true,
-				sysVars: newTestSysVars().withImpersonateServiceAccount("test@example.com").build(),
-				want:    singletonMap("CLI_IMPERSONATE_SERVICE_ACCOUNT", "test@example.com"),
-			},
-			{
-				desc: "CLI_ENABLE_ADC_PLUS", name: "CLI_ENABLE_ADC_PLUS", value: "true",
-				sysVars: newTestSysVars().withEnableADCPlus(false).build(), // Start with false to test setting
-				want:    singletonMap("CLI_ENABLE_ADC_PLUS", "TRUE"),
-			},
-			{
-				desc: "CLI_MCP", name: "CLI_MCP", unimplementedSet: true,
-				sysVars: newTestSysVars().withMCP(true).build(),
-				want:    singletonMap("CLI_MCP", "TRUE"),
-			},
-			{
-				desc: "RETURN_COMMIT_STATS true", name: "RETURN_COMMIT_STATS", value: "TRUE",
-				want: singletonMap("RETURN_COMMIT_STATS", "TRUE"),
-			},
-			{
-				desc: "RETURN_COMMIT_STATS false", name: "RETURN_COMMIT_STATS", value: "FALSE",
-				want: singletonMap("RETURN_COMMIT_STATS", "FALSE"),
+				singletonMap("CLI_DIRECT_READ", "asia-northeast2:READ_WRITE"),
 			},
 		}
-
-		for _, test := range tests {
-			t.Run(test.desc, func(t *testing.T) {
+		for _, test := range readOnlyTests {
+			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
-				testSystemVariableSetGet(t, (*systemVariables).SetFromSimple, "SetFromSimple", test)
+				testReadOnlyVariable(t, setFunc, test.name, test.sysVars, test.want)
+			})
+		}
+
+		// Unimplemented variables
+		unimplementedVars := []string{"AUTOCOMMIT", "RETRY_ABORTS_INTERNALLY"}
+		for _, name := range unimplementedVars {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				testUnimplementedVariable(t, setFunc, name)
 			})
 		}
 	})
 
 	t.Run("GoogleSQLMode", func(t *testing.T) {
 		t.Parallel()
-		// Test system variables using GoogleSQL mode (REPL, SQL scripts)
-		tests := []struct {
-			desc                               string
-			sysVars                            *systemVariables
-			name                               string
-			value                              string
-			want                               map[string]string
-			unimplementedSet, unimplementedGet bool
-		}{
-			// String variables with GoogleSQL syntax
-			{desc: "CLI_PROMPT with quoted string", name: "CLI_PROMPT", value: `"test-prompt"`, want: singletonMap("CLI_PROMPT", "test-prompt")},
-			{desc: "CLI_PROMPT2 with quoted string", name: "CLI_PROMPT2", value: `"test-prompt2"`, want: singletonMap("CLI_PROMPT2", "test-prompt2")},
-			{desc: "STATEMENT_TAG with quoted string", name: "STATEMENT_TAG", value: `"test-statement"`, want: singletonMap("STATEMENT_TAG", "test-statement")},
-			{desc: "CLI_EXPLAIN_FORMAT with quoted string", name: "CLI_EXPLAIN_FORMAT", value: `"CURRENT"`, want: singletonMap("CLI_EXPLAIN_FORMAT", "CURRENT")},
-			{desc: "OPTIMIZER_VERSION with quoted string", name: "OPTIMIZER_VERSION", value: `"LATEST"`, want: singletonMap("OPTIMIZER_VERSION", "LATEST")},
-			{desc: "OPTIMIZER_STATISTICS_PACKAGE with quoted string", name: "OPTIMIZER_STATISTICS_PACKAGE", value: `"test-package"`, want: singletonMap("OPTIMIZER_STATISTICS_PACKAGE", "test-package")},
-			// Boolean variables with GoogleSQL syntax
-			{desc: "CLI_USE_PAGER with TRUE keyword", name: "CLI_USE_PAGER", value: "TRUE", want: singletonMap("CLI_USE_PAGER", "TRUE")},
-			{desc: "CLI_USE_PAGER with FALSE keyword", name: "CLI_USE_PAGER", value: "FALSE", want: singletonMap("CLI_USE_PAGER", "FALSE")},
-			// Duration with quoted string
-			{desc: "STATEMENT_TIMEOUT with quoted duration", name: "STATEMENT_TIMEOUT", value: `"30s"`, want: singletonMap("STATEMENT_TIMEOUT", "30s")},
-			{desc: "MAX_COMMIT_DELAY with quoted duration", name: "MAX_COMMIT_DELAY", value: `"100ms"`, want: singletonMap("MAX_COMMIT_DELAY", "100ms")},
-		}
+		setFunc := (*systemVariables).SetFromGoogleSQL
 
-		for _, test := range tests {
-			t.Run(test.desc, func(t *testing.T) {
+		// String variables with GoogleSQL syntax (quoted)
+		quotedStringTests := map[string]string{
+			"CLI_PROMPT":                   `"test-prompt"`,
+			"CLI_PROMPT2":                  `"test-prompt2"`,
+			"STATEMENT_TAG":                `"test-statement"`,
+			"CLI_EXPLAIN_FORMAT":           `"CURRENT"`,
+			"OPTIMIZER_VERSION":            `"LATEST"`,
+			"OPTIMIZER_STATISTICS_PACKAGE": `"test-package"`,
+			"STATEMENT_TIMEOUT":            `"30s"`,
+			"MAX_COMMIT_DELAY":             `"100ms"`,
+		}
+		for name, quotedValue := range quotedStringTests {
+			t.Run(name, func(t *testing.T) {
 				t.Parallel()
-				testSystemVariableSetGet(t, (*systemVariables).SetFromGoogleSQL, "SetFromGoogleSQL", test)
+				sysVars := newSystemVariablesWithDefaultsForTest()
+				err := setFunc(sysVars, name, quotedValue)
+				assertNoError(t, err)
+
+				// Strip quotes for expected value
+				expectedValue := strings.Trim(quotedValue, `"`)
+				got, err := sysVars.Get(name)
+				assertNoError(t, err)
+				want := map[string]string{name: expectedValue}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
+				}
 			})
 		}
+
+		// Boolean variables with GoogleSQL keywords
+		t.Run("CLI_USE_PAGER_TRUE", func(t *testing.T) {
+			t.Parallel()
+			testStringVariable(t, setFunc, "CLI_USE_PAGER", "TRUE")
+		})
+		t.Run("CLI_USE_PAGER_FALSE", func(t *testing.T) {
+			t.Parallel()
+			testStringVariable(t, setFunc, "CLI_USE_PAGER", "FALSE")
+		})
 	})
 }
