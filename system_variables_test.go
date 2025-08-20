@@ -99,6 +99,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	t.Parallel()
 
 	t.Run("AddCLIProtoDescriptorFile", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc      string
 			values    []string
@@ -153,6 +154,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 		}
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				var sysVars systemVariables
 				var lastErr error
 				for _, value := range test.values {
@@ -173,6 +175,9 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	})
 
 	t.Run("ReadFileDescriptorProtoFromFile", func(t *testing.T) {
+		// Don't run this test in parallel because it uses an HTTP test server
+		// that needs to be available for all subtests
+
 		// Use t.TempDir() for dynamic test files - automatically cleaned up
 		tempDir := t.TempDir()
 
@@ -276,6 +281,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				// Don't run in parallel - shares httpServer and tempDir with parent test
 				// Skip permission test on Windows as os.Chmod is not effective
 				if test.desc == "permission denied file" && runtime.GOOS == "windows" {
 					t.Skip("Skipping permission test on Windows as os.Chmod is not effective")
@@ -292,6 +298,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	})
 
 	t.Run("Integration", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc             string
 			descriptorFiles  []string
@@ -311,6 +318,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				var sysVars systemVariables
 
 				// Add descriptor files
@@ -337,6 +345,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	})
 
 	t.Run("EdgeCases", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc      string
 			setup     func() *systemVariables
@@ -379,6 +388,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				sysVars := test.setup()
 				err := sysVars.AddFromGoogleSQL(test.varName, test.value)
 
@@ -394,6 +404,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CLI_ENDPOINT_Setter", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc        string
 			value       string
@@ -443,6 +454,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.desc, func(t *testing.T) {
+				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_ENDPOINT", tt.value)
 				assertError(t, err, tt.wantErr, tt.errContains)
@@ -460,6 +472,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 	})
 
 	t.Run("StatementTimeout", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc        string
 			value       string
@@ -478,6 +491,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", test.value)
 
@@ -513,6 +527,7 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CLI_SKIP_COLUMN_NAMES", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			desc    string
 			value   string
@@ -548,6 +563,7 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.desc, func(t *testing.T) {
+				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
 
@@ -583,6 +599,7 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("DefaultIsolationLevel", func(t *testing.T) {
+		t.Parallel()
 		// Use SetFromSimple for this test as it's testing string values that would
 		// come from config files or command-line flags, not GoogleSQL expressions
 		tests := []struct {
@@ -597,6 +614,7 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 		}
 		for _, test := range tests {
 			t.Run(test.value, func(t *testing.T) {
+				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value)
 				assertNoError(t, err)
@@ -615,6 +633,7 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 	t.Parallel()
 
 	t.Run("ParseTimestampBound", func(t *testing.T) {
+		t.Parallel()
 		// Test valid timestamp bounds
 		validTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		validTimeStr := "2024-01-01T00:00:00Z"
@@ -837,6 +856,7 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				got, err := parseTimestampBound(test.input)
 
 				assertError(t, err, test.expectError, test.errorMsg)
@@ -858,6 +878,7 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SessionInitOnlyVariables", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			name           string
 			variableName   string
@@ -940,6 +961,7 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 				// Create a new systemVariables instance
 				sv := &systemVariables{
 					EnableADCPlus: tt.initialValue == "true",
@@ -1017,6 +1039,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SimpleMode", func(t *testing.T) {
+		t.Parallel()
 		// Test system variables using Simple mode (CLI flags, config files)
 		tests := []struct {
 			desc                               string
@@ -1357,12 +1380,14 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				testSystemVariableSetGet(t, (*systemVariables).SetFromSimple, "SetFromSimple", test)
 			})
 		}
 	})
 
 	t.Run("GoogleSQLMode", func(t *testing.T) {
+		t.Parallel()
 		// Test system variables using GoogleSQL mode (REPL, SQL scripts)
 		tests := []struct {
 			desc                               string
@@ -1419,6 +1444,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
 				testSystemVariableSetGet(t, (*systemVariables).SetFromGoogleSQL, "SetFromGoogleSQL", test)
 			})
 		}
