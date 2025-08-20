@@ -100,7 +100,7 @@ func timestampBoundsEqual(a, b spanner.TimestampBound) bool {
 
 // Proto Descriptor File Tests (Array/List Variables)
 
-func TestProtoDescriptorFiles(t *testing.T) {
+func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	t.Parallel()
 
 	t.Run("AddCLIProtoDescriptorFile", func(t *testing.T) {
@@ -395,7 +395,7 @@ func TestProtoDescriptorFiles(t *testing.T) {
 
 // String Variable Tests
 
-func TestStringVariables(t *testing.T) {
+func TestSystemVariables_StringTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CLI_ENDPOINT_Setter", func(t *testing.T) {
@@ -528,7 +528,7 @@ func TestStringVariables(t *testing.T) {
 
 // Boolean Variable Tests
 
-func TestBooleanVariables(t *testing.T) {
+func TestSystemVariables_BooleanTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CLI_SKIP_COLUMN_NAMES", func(t *testing.T) {
@@ -603,7 +603,7 @@ func TestBooleanVariables(t *testing.T) {
 
 // Enum Variable Tests
 
-func TestEnumVariables(t *testing.T) {
+func TestSystemVariables_EnumTypes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("DefaultIsolationLevel", func(t *testing.T) {
@@ -636,7 +636,7 @@ func TestEnumVariables(t *testing.T) {
 
 // Time and Duration Variable Tests
 
-func TestTimeAndDurationVariables(t *testing.T) {
+func TestSystemVariables_TimeAndDuration(t *testing.T) {
 	t.Parallel()
 
 	t.Run("ParseTimestampBound", func(t *testing.T) {
@@ -879,7 +879,7 @@ func TestTimeAndDurationVariables(t *testing.T) {
 
 // Special Behavior Tests
 
-func TestSpecialBehaviors(t *testing.T) {
+func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SessionInitOnlyVariables", func(t *testing.T) {
@@ -1051,7 +1051,7 @@ func TestSpecialBehaviors(t *testing.T) {
 
 // Comprehensive Set/Get Operation Tests
 
-func TestSetGetOperations(t *testing.T) {
+func TestSystemVariables_SetGetOperations(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SimpleMode", func(t *testing.T) {
