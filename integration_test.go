@@ -1339,7 +1339,7 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 				{
-					stmt: "DETACH",  // Switch to admin-only mode
+					stmt: "DETACH",      // Switch to admin-only mode
 					want: emptyResult(), // DETACH statement returns empty result
 				},
 				{
@@ -1353,7 +1353,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: emptyResult(),                          // CREATE DATABASE returns empty result
+					want: emptyResult(),                      // CREATE DATABASE returns empty result
 				},
 				{
 					stmt: "SHOW DATABASES", // Should show both databases
@@ -1365,7 +1365,7 @@ func TestAdminStatements(t *testing.T) {
 				},
 				{
 					stmt: "USE `test_detach_db`", // Switch to new database
-					want: emptyResult(),              // USE statement returns empty result
+					want: emptyResult(),          // USE statement returns empty result
 				},
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test_detach_db
@@ -1385,12 +1385,12 @@ func TestAdminStatements(t *testing.T) {
 					},
 				},
 				{
-					stmt: "DETACH",  // Switch to admin-only mode again
+					stmt: "DETACH",      // Switch to admin-only mode again
 					want: emptyResult(), // DETACH statement returns empty result
 				},
 				{
 					stmt: "DROP DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: emptyResult(),                        // DROP DATABASE should succeed from admin mode
+					want: emptyResult(),                    // DROP DATABASE should succeed from admin mode
 				},
 			},
 			// Ignore TableHeader details for SELECT statements since they contain complex type information
