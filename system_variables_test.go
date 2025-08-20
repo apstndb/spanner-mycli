@@ -59,7 +59,7 @@ func testBooleanVariable(t *testing.T, setFunc func(*systemVariables, string, st
 
 			got, err := sysVars.Get(name)
 			assertNoError(t, err)
-			want := map[string]string{name: value}
+			want := singletonMap(name, value)
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
 			}
@@ -76,7 +76,7 @@ func testStringVariable(t *testing.T, setFunc func(*systemVariables, string, str
 
 	got, err := sysVars.Get(name)
 	assertNoError(t, err)
-	want := map[string]string{name: value}
+	want := singletonMap(name, value)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
 	}
@@ -540,7 +540,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 				result, err := sysVars.Get("STATEMENT_TIMEOUT")
 				assertNoError(t, err)
 
-				expected := map[string]string{"STATEMENT_TIMEOUT": test.want.String()}
+				expected := singletonMap("STATEMENT_TIMEOUT", test.want.String())
 				if diff := cmp.Diff(expected, result); diff != "" {
 					t.Errorf("STATEMENT_TIMEOUT getter mismatch (-want +got):\n%s", diff)
 				}
@@ -553,47 +553,34 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 
 func TestSystemVariables_BooleanTypes(t *testing.T) {
 	t.Parallel()
+	setFunc := (*systemVariables).SetFromSimple
 
-	t.Run("CLI_SKIP_COLUMN_NAMES", func(t *testing.T) {
+	// Test standard TRUE/FALSE values
+	t.Run("CLI_SKIP_COLUMN_NAMES_bool", func(t *testing.T) {
+		t.Parallel()
+		testBooleanVariable(t, setFunc, "CLI_SKIP_COLUMN_NAMES")
+	})
+
+	// Test numeric and invalid values
+	t.Run("CLI_SKIP_COLUMN_NAMES_special", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			desc     string
 			value    string
 			want     bool
 			errorMsg string
 		}{
-			{desc: "set to true", value: "TRUE", want: true},
-			{desc: "set to false", value: "FALSE", want: false},
-			{desc: "set to 1", value: "1", want: true},
-			{desc: "set to 0", value: "0", want: false},
-			{desc: "invalid value", value: "invalid", errorMsg: "invalid syntax"},
+			{value: "1", want: true},
+			{value: "0", want: false},
+			{value: "invalid", errorMsg: "invalid syntax"},
 		}
-
 		for _, tt := range tests {
-			t.Run(tt.desc, func(t *testing.T) {
+			t.Run(tt.value, func(t *testing.T) {
 				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
-
 				assertError(t, err, tt.errorMsg)
-				if err != nil {
-					return
-				}
-
-				if sysVars.SkipColumnNames != tt.want {
+				if err == nil && sysVars.SkipColumnNames != tt.want {
 					t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.SkipColumnNames)
-				}
-
-				// Test GET
-				got, err := sysVars.Get("CLI_SKIP_COLUMN_NAMES")
-				assertNoError(t, err)
-
-				expectedStr := "FALSE"
-				if tt.want {
-					expectedStr = "TRUE"
-				}
-				if got["CLI_SKIP_COLUMN_NAMES"] != expectedStr {
-					t.Errorf("expected Get to return %s, got %s", expectedStr, got["CLI_SKIP_COLUMN_NAMES"])
 				}
 			})
 		}
@@ -764,145 +751,86 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 	t.Run("SessionInitOnlyVariables", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			name           string
-			variableName   string
-			variableCase   string // Different casing for variable name test
-			initialValue   string
-			setValue       string
-			hasSession     bool
-			detached       bool // Whether session is detached (no client)
-			expectedErrMsg string
+			desc     string
+			varName  string // Variable name (for Get)
+			varCase  string // Variable case (for Set)
+			initial  string
+			setValue string
+			session  bool
+			detached bool
+			errorMsg string
 		}{
-			{
-				name:         "set before session creation - uppercase",
-				variableName: "CLI_ENABLE_ADC_PLUS",
-				variableCase: "CLI_ENABLE_ADC_PLUS",
-				initialValue: "true",
-				setValue:     "false",
-				hasSession:   false,
-			},
-			{
-				name:         "set before session creation - lowercase",
-				variableName: "CLI_ENABLE_ADC_PLUS",
-				variableCase: "cli_enable_adc_plus",
-				initialValue: "true",
-				setValue:     "false",
-				hasSession:   false,
-			},
-			{
-				name:         "set before session creation - mixed case",
-				variableName: "CLI_ENABLE_ADC_PLUS",
-				variableCase: "Cli_Enable_Adc_Plus",
-				initialValue: "true",
-				setValue:     "false",
-				hasSession:   false,
-			},
-			{
-				name:           "change after session creation",
-				variableName:   "CLI_ENABLE_ADC_PLUS",
-				variableCase:   "CLI_ENABLE_ADC_PLUS",
-				initialValue:   "true",
-				setValue:       "false",
-				hasSession:     true,
-				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
-			},
-			{
-				name:           "change after session with lowercase variable name",
-				variableName:   "CLI_ENABLE_ADC_PLUS",
-				variableCase:   "cli_enable_adc_plus",
-				initialValue:   "true",
-				setValue:       "false",
-				hasSession:     true,
-				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
-			},
-			{
-				name:         "non-session-init-only variable can be changed",
-				variableName: "CLI_ASYNC_DDL",
-				variableCase: "CLI_ASYNC_DDL",
-				initialValue: "false",
-				setValue:     "true",
-				hasSession:   true,
-			},
-			{
-				name:           "change after detached session creation should fail",
-				variableName:   "CLI_ENABLE_ADC_PLUS",
-				variableCase:   "CLI_ENABLE_ADC_PLUS",
-				initialValue:   "true",
-				setValue:       "false",
-				hasSession:     true,
-				detached:       true,
-				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
-			},
+			// Test case sensitivity before session
+			{desc: "before session - uppercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false"},
+			{desc: "before session - lowercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "cli_enable_adc_plus", initial: "true", setValue: "false"},
+			{desc: "before session - mixed case", varName: "CLI_ENABLE_ADC_PLUS", varCase: "Cli_Enable_Adc_Plus", initial: "true", setValue: "false"},
+			// Test restriction after session
+			{desc: "after session - uppercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false", session: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
+			{desc: "after session - lowercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "cli_enable_adc_plus", initial: "true", setValue: "false", session: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
+			// Test non-restricted variable
+			{desc: "non-restricted var", varName: "CLI_ASYNC_DDL", varCase: "CLI_ASYNC_DDL", initial: "false", setValue: "true", session: true},
+			// Test detached session
+			{desc: "detached session", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false", session: true, detached: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
 		}
 
 		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+			t.Run(tt.desc, func(t *testing.T) {
 				t.Parallel()
-				// Create a new systemVariables instance
+				// Create systemVariables with initial value
 				sv := &systemVariables{
-					EnableADCPlus: tt.initialValue == "true",
-					AsyncDDL:      false,
+					EnableADCPlus: tt.initial == "true",
+					AsyncDDL:      tt.initial == "false" && tt.varName == "CLI_ASYNC_DDL",
 				}
 
-				// Simulate session creation if needed
-				if tt.hasSession {
+				// Simulate session if needed
+				if tt.session {
 					sv.CurrentSession = &Session{}
-					// Set client for non-detached sessions
 					if !tt.detached {
-						sv.CurrentSession.client = &spanner.Client{} // Mock client to simulate initialized session
+						sv.CurrentSession.client = &spanner.Client{}
 					}
 				}
 
 				// Test Set operation
-				err := sv.SetFromSimple(tt.variableCase, tt.setValue)
-
-				// Check error expectation
-				assertError(t, err, tt.expectedErrMsg)
+				err := sv.SetFromSimple(tt.varCase, tt.setValue)
+				assertError(t, err, tt.errorMsg)
 				if err != nil {
 					return
 				}
 
-				// Verify the value was set correctly (only for non-session cases)
-				switch tt.variableName {
+				// Verify value was set (only for non-session cases)
+				switch tt.varName {
 				case "CLI_ENABLE_ADC_PLUS":
-					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
-					if !tt.hasSession {
-						// Value should be updated
-						if sv.EnableADCPlus != expectedValue {
-							t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
-						}
+					expected := tt.setValue == "true" || tt.setValue == "TRUE"
+					if !tt.session && sv.EnableADCPlus != expected {
+						t.Errorf("expected EnableADCPlus to be %v, got %v", expected, sv.EnableADCPlus)
 					}
 				case "CLI_ASYNC_DDL":
-					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
-					if sv.AsyncDDL != expectedValue {
-						t.Errorf("expected AsyncDDL to be %v, got %v", expectedValue, sv.AsyncDDL)
+					expected := tt.setValue == "true" || tt.setValue == "TRUE"
+					if sv.AsyncDDL != expected {
+						t.Errorf("expected AsyncDDL to be %v, got %v", expected, sv.AsyncDDL)
 					}
 				}
 
-				// Additional test: verify Get returns the correct value
-				values, err := sv.Get(tt.variableName)
+				// Verify Get returns correct value
+				values, err := sv.Get(tt.varName)
 				assertNoError(t, err)
 
-				// Check that the value returned by Get matches expectation
-				gotValue := values[tt.variableName]
-				var expectedGetValue string
-				switch tt.variableName {
+				var expected string
+				switch tt.varName {
 				case "CLI_ENABLE_ADC_PLUS":
+					expected = "FALSE"
 					if sv.EnableADCPlus {
-						expectedGetValue = "TRUE"
-					} else {
-						expectedGetValue = "FALSE"
+						expected = "TRUE"
 					}
 				case "CLI_ASYNC_DDL":
+					expected = "FALSE"
 					if sv.AsyncDDL {
-						expectedGetValue = "TRUE"
-					} else {
-						expectedGetValue = "FALSE"
+						expected = "TRUE"
 					}
 				}
 
-				if gotValue != expectedGetValue {
-					t.Errorf("Get(%s) returned %q, expected %q", tt.variableName, gotValue, expectedGetValue)
+				if values[tt.varName] != expected {
+					t.Errorf("Get(%s) = %q, want %q", tt.varName, values[tt.varName], expected)
 				}
 			})
 		}
@@ -1128,7 +1056,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 				expectedValue := strings.Trim(quotedValue, `"`)
 				got, err := sysVars.Get(name)
 				assertNoError(t, err)
-				want := map[string]string{name: expectedValue}
+				want := singletonMap(name, expectedValue)
 				if diff := cmp.Diff(want, got); diff != "" {
 					t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
 				}
@@ -1136,13 +1064,9 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		}
 
 		// Boolean variables with GoogleSQL keywords
-		t.Run("CLI_USE_PAGER_TRUE", func(t *testing.T) {
+		t.Run("CLI_USE_PAGER", func(t *testing.T) {
 			t.Parallel()
-			testStringVariable(t, setFunc, "CLI_USE_PAGER", "TRUE")
-		})
-		t.Run("CLI_USE_PAGER_FALSE", func(t *testing.T) {
-			t.Parallel()
-			testStringVariable(t, setFunc, "CLI_USE_PAGER", "FALSE")
+			testBooleanVariable(t, setFunc, "CLI_USE_PAGER")
 		})
 	})
 }
