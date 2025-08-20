@@ -488,6 +488,26 @@ func srKeep(stmt string) stmtResult {
 	return stmtResult{stmt: stmt, want: keepVariablesResult()}
 }
 
+// srBatchDML creates a stmtResult for statements in DML batch mode that keep variables
+func srBatchDML(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}}
+}
+
+// srBatchDMLSize creates a stmtResult for DML statements with batch size
+func srBatchDMLSize(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: size}}}
+}
+
+// srBatchDDL creates a stmtResult for statements in DDL batch mode that keep variables
+func srBatchDDL(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}}}
+}
+
+// srBatchDDLSize creates a stmtResult for DDL statements with batch size
+func srBatchDDLSize(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: size}}}
+}
+
 // For cases where we want to use sr* but still need the full struct syntax
 // (e.g., when adding inline comments), keep the original format
 
@@ -634,13 +654,13 @@ func TestParameterStatements(t *testing.T) {
 			desc: "BATCH DML with parameters",
 			stmtResults: []stmtResult{
 				srEmpty(testTableSimpleDDL),
-				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
-				{"SET PARAM n = 1", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
-				{"SET PARAM b = true", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
-				{"INSERT INTO TestTable (id, active) VALUES (@n, @b)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"SET PARAM n = 2", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"SET PARAM b = false", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"INSERT INTO TestTable (id, active) VALUES (@n, @b)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
+				srBatchDML("START BATCH DML"),
+				srBatchDML("SET PARAM n = 1"),
+				srBatchDML("SET PARAM b = true"),
+				srBatchDMLSize("INSERT INTO TestTable (id, active) VALUES (@n, @b)", 1),
+				srBatchDMLSize("SET PARAM n = 2", 1),
+				srBatchDMLSize("SET PARAM b = false", 1),
+				srBatchDMLSize("INSERT INTO TestTable (id, active) VALUES (@n, @b)", 2),
 				{
 					"RUN BATCH",
 					&Result{
@@ -981,9 +1001,9 @@ func TestBatchStatements(t *testing.T) {
 			ddls: sliceOf(testTableSimpleDDL),
 			stmtResults: []stmtResult{
 				srKeep(`SET PARAM n = 1`),
-				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
-				{"INSERT INTO TestTable (id, active) VALUES (@n, false)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"UPDATE TestTable SET active = true WHERE id = @n", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
+				srBatchDML("START BATCH DML"),
+				srBatchDMLSize("INSERT INTO TestTable (id, active) VALUES (@n, false)", 1),
+				srBatchDMLSize("UPDATE TestTable SET active = true WHERE id = @n", 2),
 				{"RUN BATCH", &Result{
 					IsExecutedDML:    true,
 					AffectedRows:     2,
@@ -1000,12 +1020,12 @@ func TestBatchStatements(t *testing.T) {
 			desc: "BATCH DDL",
 			stmtResults: []stmtResult{
 				srKeep(`SET CLI_ECHO_EXECUTED_DDL = TRUE`),
-				{"START BATCH DDL", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}}},
+				srBatchDDL("START BATCH DDL"),
 				{heredoc.Doc(`CREATE TABLE TestTable (
 					id		INT64,
 					active	BOOL,
 				) PRIMARY KEY(id)`), &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}}},
-				{`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}}},
+				srBatchDDLSize(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, 2),
 				{"RUN BATCH", &Result{
 					AffectedRows: 0,
 					TableHeader:  toTableHeader("Executed", "Commit Timestamp"),
@@ -1047,8 +1067,8 @@ func TestBatchStatements(t *testing.T) {
 			desc: "ABORT BATCH DML",
 			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
 			stmtResults: []stmtResult{
-				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
-				{"INSERT INTO TestAbortBatchDML (id) VALUES (1)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				srBatchDML("START BATCH DML"),
+				srBatchDMLSize("INSERT INTO TestAbortBatchDML (id) VALUES (1)", 1),
 				srKeep("ABORT BATCH"),
 				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
 					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
