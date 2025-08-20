@@ -648,44 +648,6 @@ func TestParameterStatements(t *testing.T) {
 				},
 			},
 		},
-		// Moved to TestBatchStatements
-		/*{
-			desc: "BATCH DML with parameters",
-			stmtResults: []stmtResult{
-				srEmpty(testTableSimpleDDL),
-				srBatchDMLKeep("START BATCH DML", 0),
-				srBatchDMLKeep("SET PARAM n = 1", 0),
-				srBatchDMLKeep("SET PARAM b = true", 0),
-				srBatchDML("INSERT INTO TestTable (id, active) VALUES (@n, @b)", 1),
-				srBatchDMLKeep("SET PARAM n = 2", 1),
-				srBatchDMLKeep("SET PARAM b = false", 1),
-				srBatchDML("INSERT INTO TestTable (id, active) VALUES (@n, @b)", 2),
-				{
-					"RUN BATCH",
-					&Result{
-						TableHeader: toTableHeader("DML", "Rows"),
-						Rows: sliceOf(
-							toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
-							toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
-						),
-						AffectedRows:     2,
-						AffectedRowsType: rowCountTypeUpperBound,
-						IsExecutedDML:    true,
-					},
-				},
-				{
-					"SELECT id, active FROM TestTable ORDER BY id ASC",
-					&Result{
-						TableHeader: toTableHeader(testTableRowType),
-						Rows: sliceOf(
-							toRow("1", "true"),
-							toRow("2", "false"),
-						),
-						AffectedRows: 2,
-					},
-				},
-			},
-		},*/
 		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
 			stmtResults: []stmtResult{
