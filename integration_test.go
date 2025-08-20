@@ -693,8 +693,7 @@ func TestTransactionStatements(t *testing.T) {
 				{
 					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
-						AffectedRows: 0,
-						TableHeader:  toTableHeader(testTableRowType),
+						TableHeader: toTableHeader(testTableRowType),
 					},
 				},
 			},
@@ -916,8 +915,7 @@ func TestShowStatements(t *testing.T) {
 					&Result{
 						// For DML without THEN RETURN, result is empty.
 						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
-						Rows:         nil, // No parameters in this DML
-						AffectedRows: 0,   // 0 parameters
+						// No parameters in this DML - Rows and AffectedRows default to nil/0
 					},
 				},
 			},
@@ -929,8 +927,7 @@ func TestShowStatements(t *testing.T) {
 					"SHOW SCHEMA UPDATE OPERATIONS",
 					&Result{
 						TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-						Rows:         nil, // Expect no operations on a fresh emulator DB
-						AffectedRows: 0,
+						// Expect no operations on a fresh emulator DB - Rows and AffectedRows default to nil/0
 					},
 				},
 			},
@@ -988,8 +985,7 @@ func TestBatchStatements(t *testing.T) {
 				) PRIMARY KEY(id)`), &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}}},
 				srBatchDDL(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, 2),
 				{"RUN BATCH", &Result{
-					AffectedRows: 0,
-					TableHeader:  toTableHeader("Executed", "Commit Timestamp"),
+					TableHeader: toTableHeader("Executed", "Commit Timestamp"),
 					Rows: sliceOf(
 						toRow(heredoc.Doc(`
 							CREATE TABLE TestTable (
@@ -1216,7 +1212,6 @@ func TestAdminStatements(t *testing.T) {
 						KeepVariables: true,
 						TableHeader:   toTableHeader("CLI_DATABASE"),
 						Rows:          sliceOf(toRow("test-database")),
-						AffectedRows:  0,
 					},
 				},
 				{
@@ -1392,7 +1387,6 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{
 						Rows:          sliceOf(toRow("1"), toRow("2")),
 						AffectedRows:  2,
-						KeepVariables: false,
 						TableHeader:   typesTableHeader{&sppb.StructType_Field{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}},
 					},
 				},
@@ -1490,8 +1484,7 @@ func TestMiscStatements(t *testing.T) {
 					stmt: "DESCRIBE INSERT INTO Users (id, name) VALUES (1, 'Alice')",
 					want: &Result{
 						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
-						Rows:         nil, // DESCRIBE doesn't return rows for DML
-						AffectedRows: 0,
+						// DESCRIBE doesn't return rows for DML - Rows and AffectedRows default to nil/0
 					},
 				},
 			},
