@@ -93,6 +93,53 @@ func timestampBoundsEqual(a, b spanner.TimestampBound) bool {
 	return a.String() == b.String()
 }
 
+// Test system variables builder for cleaner test setup
+type sysVarsBuilder struct{ sv *systemVariables }
+
+func newTestSysVars() *sysVarsBuilder {
+	return &sysVarsBuilder{sv: newSystemVariablesWithDefaultsForTest()}
+}
+
+func (b *sysVarsBuilder) withReadTimestamp(t time.Time) *sysVarsBuilder {
+	b.sv.ReadTimestamp = t
+	return b
+}
+
+func (b *sysVarsBuilder) withCommitTimestamp(t time.Time) *sysVarsBuilder {
+	b.sv.CommitTimestamp = t
+	return b
+}
+
+func (b *sysVarsBuilder) withCommitResponse(r *sppb.CommitResponse) *sysVarsBuilder {
+	b.sv.CommitResponse = r
+	return b
+}
+
+func (b *sysVarsBuilder) withProject(p string) *sysVarsBuilder     { b.sv.Project = p; return b }
+func (b *sysVarsBuilder) withInstance(i string) *sysVarsBuilder    { b.sv.Instance = i; return b }
+func (b *sysVarsBuilder) withDatabase(d string) *sysVarsBuilder    { b.sv.Database = d; return b }
+func (b *sysVarsBuilder) withHistoryFile(f string) *sysVarsBuilder { b.sv.HistoryFile = f; return b }
+func (b *sysVarsBuilder) withHost(h string) *sysVarsBuilder        { b.sv.Host = h; return b }
+func (b *sysVarsBuilder) withPort(p int) *sysVarsBuilder           { b.sv.Port = p; return b }
+func (b *sysVarsBuilder) withRole(r string) *sysVarsBuilder        { b.sv.Role = r; return b }
+func (b *sysVarsBuilder) withInsecure(i bool) *sysVarsBuilder      { b.sv.Insecure = i; return b }
+func (b *sysVarsBuilder) withLogGrpc(l bool) *sysVarsBuilder       { b.sv.LogGrpc = l; return b }
+func (b *sysVarsBuilder) withEnableADCPlus(e bool) *sysVarsBuilder { b.sv.EnableADCPlus = e; return b }
+func (b *sysVarsBuilder) withMCP(m bool) *sysVarsBuilder           { b.sv.MCP = m; return b }
+
+func (b *sysVarsBuilder) withImpersonateServiceAccount(a string) *sysVarsBuilder {
+	b.sv.ImpersonateServiceAccount = a
+	return b
+}
+
+func (b *sysVarsBuilder) withDirectedRead(d *sppb.DirectedReadOptions) *sysVarsBuilder {
+	b.sv.DirectedRead = d
+	return b
+}
+
+func (b *sysVarsBuilder) withSession(s *Session) *sysVarsBuilder { b.sv.CurrentSession = s; return b }
+func (b *sysVarsBuilder) build() *systemVariables                { return b.sv }
+
 // Proto Descriptor File Tests (Array/List Variables)
 
 func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
@@ -348,48 +395,20 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
 			desc      string
-			setup     func() *systemVariables
 			varName   string
 			value     string
 			wantError bool
 			errorMsg  string
 		}{
-			{
-				desc: "empty string value",
-				setup: func() *systemVariables {
-					return newSystemVariablesWithDefaultsForTest()
-				},
-				varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-				value:     `""`,
-				wantError: true,
-				errorMsg:  "no such file or directory",
-			},
-			{
-				desc: "spaces only value",
-				setup: func() *systemVariables {
-					return newSystemVariablesWithDefaultsForTest()
-				},
-				varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-				value:     `"   "`,
-				wantError: true,
-				errorMsg:  "no such file or directory",
-			},
-			{
-				desc: "non-existent path with parent directory traversal",
-				setup: func() *systemVariables {
-					return newSystemVariablesWithDefaultsForTest()
-				},
-				varName:   "CLI_PROTO_DESCRIPTOR_FILE",
-				value:     `"../does_not_exist/non_existent_file.pb"`,
-				wantError: true,
-				errorMsg:  "no such file or directory",
-			},
+			{desc: "empty string value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `""`, wantError: true, errorMsg: "no such file or directory"},
+			{desc: "spaces only value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"   "`, wantError: true, errorMsg: "no such file or directory"},
+			{desc: "non-existent path with parent directory traversal", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"../does_not_exist/non_existent_file.pb"`, wantError: true, errorMsg: "no such file or directory"},
 		}
 
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
 				t.Parallel()
-				sysVars := test.setup()
+				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.AddFromGoogleSQL(test.varName, test.value)
 
 				assertError(t, err, test.wantError, test.errorMsg)
@@ -413,43 +432,12 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 			wantErr     bool
 			errContains string
 		}{
-			{
-				desc:     "valid endpoint",
-				value:    "example.com:443",
-				wantHost: "example.com",
-				wantPort: 443,
-			},
-			{
-				desc:     "endpoint with IPv6",
-				value:    "[2001:db8::1]:443",
-				wantHost: "2001:db8::1",
-				wantPort: 443,
-			},
-			{
-				desc:        "invalid endpoint - no port",
-				value:       "example.com",
-				wantErr:     true,
-				errContains: "invalid endpoint format",
-			},
-			{
-				desc:     "empty endpoint clears host and port",
-				value:    "",
-				wantHost: "",
-				wantPort: 0,
-				wantErr:  false,
-			},
-			{
-				desc:        "invalid endpoint - bare IPv6 without port",
-				value:       "2001:db8::1",
-				wantErr:     true,
-				errContains: "invalid endpoint format",
-			},
-			{
-				desc:        "invalid endpoint - non-numeric port",
-				value:       "example.com:abc",
-				wantErr:     true,
-				errContains: "invalid port in endpoint",
-			},
+			{desc: "valid endpoint", value: "example.com:443", wantHost: "example.com", wantPort: 443},
+			{desc: "endpoint with IPv6", value: "[2001:db8::1]:443", wantHost: "2001:db8::1", wantPort: 443},
+			{desc: "invalid endpoint - no port", value: "example.com", wantErr: true, errContains: "invalid endpoint format"},
+			{desc: "empty endpoint clears host and port", value: "", wantHost: "", wantPort: 0},
+			{desc: "invalid endpoint - bare IPv6 without port", value: "2001:db8::1", wantErr: true, errContains: "invalid endpoint format"},
+			{desc: "invalid endpoint - non-numeric port", value: "example.com:abc", wantErr: true, errContains: "invalid port in endpoint"},
 		}
 
 		for _, tt := range tests {
@@ -479,14 +467,14 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 			want        time.Duration
 			expectError bool
 		}{
-			{"valid_seconds", "30s", 30 * time.Second, false},
-			{"valid_minutes", "5m", 5 * time.Minute, false},
-			{"valid_hours", "1h", 1 * time.Hour, false},
-			{"valid_mixed", "1h30m", 90 * time.Minute, false},
-			{"valid_zero", "0s", 0, false},
-			{"invalid_format", "invalid", 0, true},
-			{"negative_value", "-30s", 0, true},
-			{"empty_string", "", 0, true},
+			{desc: "valid_seconds", value: "30s", want: 30 * time.Second},
+			{desc: "valid_minutes", value: "5m", want: 5 * time.Minute},
+			{desc: "valid_hours", value: "1h", want: 1 * time.Hour},
+			{desc: "valid_mixed", value: "1h30m", want: 90 * time.Minute},
+			{desc: "valid_zero", value: "0s", want: 0},
+			{desc: "invalid_format", value: "invalid", expectError: true},
+			{desc: "negative_value", value: "-30s", expectError: true},
+			{desc: "empty_string", value: "", expectError: true},
 		}
 
 		for _, test := range tests {
@@ -534,31 +522,11 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 			want    bool
 			wantErr bool
 		}{
-			{
-				desc:  "set to true",
-				value: "TRUE",
-				want:  true,
-			},
-			{
-				desc:  "set to false",
-				value: "FALSE",
-				want:  false,
-			},
-			{
-				desc:  "set to 1",
-				value: "1",
-				want:  true,
-			},
-			{
-				desc:  "set to 0",
-				value: "0",
-				want:  false,
-			},
-			{
-				desc:    "invalid value",
-				value:   "invalid",
-				wantErr: true,
-			},
+			{desc: "set to true", value: "TRUE", want: true},
+			{desc: "set to false", value: "FALSE", want: false},
+			{desc: "set to 1", value: "1", want: true},
+			{desc: "set to 0", value: "0", want: false},
+			{desc: "invalid value", value: "invalid", wantErr: true},
 		}
 
 		for _, tt := range tests {
@@ -606,11 +574,11 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 			value string
 			want  sppb.TransactionOptions_IsolationLevel
 		}{
-			{"REPEATABLE_READ", sppb.TransactionOptions_REPEATABLE_READ},
-			{"repeatable_read", sppb.TransactionOptions_REPEATABLE_READ},
-			{"serializable", sppb.TransactionOptions_SERIALIZABLE},
-			{"SERIALIZABLE", sppb.TransactionOptions_SERIALIZABLE},
-			{"ISOLATION_LEVEL_UNSPECIFIED", sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED},
+			{value: "REPEATABLE_READ", want: sppb.TransactionOptions_REPEATABLE_READ},
+			{value: "repeatable_read", want: sppb.TransactionOptions_REPEATABLE_READ},
+			{value: "serializable", want: sppb.TransactionOptions_SERIALIZABLE},
+			{value: "SERIALIZABLE", want: sppb.TransactionOptions_SERIALIZABLE},
+			{value: "ISOLATION_LEVEL_UNSPECIFIED", want: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED},
 		}
 		for _, test := range tests {
 			t.Run(test.value, func(t *testing.T) {
@@ -646,108 +614,36 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 			errorMsg    string
 		}{
 			// Valid cases - all 5 timestamp bound types
-			{
-				desc:  "STRONG read",
-				input: "STRONG",
-				want:  spanner.StrongRead(),
-			},
-			{
-				desc:  "MIN_READ_TIMESTAMP with valid timestamp",
-				input: "MIN_READ_TIMESTAMP " + validTimeStr,
-				want:  spanner.MinReadTimestamp(validTime),
-			},
-			{
-				desc:  "READ_TIMESTAMP with valid timestamp",
-				input: "READ_TIMESTAMP " + validTimeStr,
-				want:  spanner.ReadTimestamp(validTime),
-			},
-			{
-				desc:  "MAX_STALENESS with valid duration",
-				input: "MAX_STALENESS 30s",
-				want:  spanner.MaxStaleness(30 * time.Second),
-			},
-			{
-				desc:  "EXACT_STALENESS with valid duration",
-				input: "EXACT_STALENESS 1h30m",
-				want:  spanner.ExactStaleness(90 * time.Minute),
-			},
+			{desc: "STRONG read", input: "STRONG", want: spanner.StrongRead()},
+			{desc: "MIN_READ_TIMESTAMP with valid timestamp", input: "MIN_READ_TIMESTAMP " + validTimeStr, want: spanner.MinReadTimestamp(validTime)},
+			{desc: "READ_TIMESTAMP with valid timestamp", input: "READ_TIMESTAMP " + validTimeStr, want: spanner.ReadTimestamp(validTime)},
+			{desc: "MAX_STALENESS with valid duration", input: "MAX_STALENESS 30s", want: spanner.MaxStaleness(30 * time.Second)},
+			{desc: "EXACT_STALENESS with valid duration", input: "EXACT_STALENESS 1h30m", want: spanner.ExactStaleness(90 * time.Minute)},
 
 			// Case insensitivity tests
-			{
-				desc:  "lowercase strong",
-				input: "strong",
-				want:  spanner.StrongRead(),
-			},
-			{
-				desc:  "mixed case Strong",
-				input: "Strong",
-				want:  spanner.StrongRead(),
-			},
-			{
-				desc:  "lowercase min_read_timestamp",
-				input: "min_read_timestamp " + validTimeStr,
-				want:  spanner.MinReadTimestamp(validTime),
-			},
-			{
-				desc:  "mixed case Min_Read_Timestamp",
-				input: "Min_Read_Timestamp " + validTimeStr,
-				want:  spanner.MinReadTimestamp(validTime),
-			},
-			{
-				desc:  "lowercase read_timestamp",
-				input: "read_timestamp " + validTimeStr,
-				want:  spanner.ReadTimestamp(validTime),
-			},
-			{
-				desc:  "lowercase max_staleness",
-				input: "max_staleness 15s",
-				want:  spanner.MaxStaleness(15 * time.Second),
-			},
-			{
-				desc:  "lowercase exact_staleness",
-				input: "exact_staleness 45m",
-				want:  spanner.ExactStaleness(45 * time.Minute),
-			},
+			{desc: "lowercase strong", input: "strong", want: spanner.StrongRead()},
+			{desc: "mixed case Strong", input: "Strong", want: spanner.StrongRead()},
+			{desc: "lowercase min_read_timestamp", input: "min_read_timestamp " + validTimeStr, want: spanner.MinReadTimestamp(validTime)},
+			{desc: "mixed case Min_Read_Timestamp", input: "Min_Read_Timestamp " + validTimeStr, want: spanner.MinReadTimestamp(validTime)},
+			{desc: "lowercase read_timestamp", input: "read_timestamp " + validTimeStr, want: spanner.ReadTimestamp(validTime)},
+			{desc: "lowercase max_staleness", input: "max_staleness 15s", want: spanner.MaxStaleness(15 * time.Second)},
+			{desc: "lowercase exact_staleness", input: "exact_staleness 45m", want: spanner.ExactStaleness(45 * time.Minute)},
 
 			// Error cases - invalid timestamps
-			{
-				desc:        "MIN_READ_TIMESTAMP with invalid timestamp format",
-				input:       "MIN_READ_TIMESTAMP invalid-date",
-				expectError: true,
-			},
-			{
-				desc:        "MIN_READ_TIMESTAMP with invalid month",
-				input:       "MIN_READ_TIMESTAMP 2024-13-01T00:00:00Z",
-				expectError: true,
-			},
-			{
-				desc:        "READ_TIMESTAMP with invalid timestamp format",
-				input:       "READ_TIMESTAMP not-a-timestamp",
-				expectError: true,
-			},
-			{
-				desc:        "READ_TIMESTAMP with malformed RFC3339",
-				input:       "READ_TIMESTAMP 2024-01-01",
-				expectError: true,
-			},
+			{desc: "MIN_READ_TIMESTAMP with invalid timestamp format", input: "MIN_READ_TIMESTAMP invalid-date", expectError: true},
+			{desc: "MIN_READ_TIMESTAMP with invalid month", input: "MIN_READ_TIMESTAMP 2024-13-01T00:00:00Z", expectError: true},
+			{desc: "READ_TIMESTAMP with invalid timestamp format", input: "READ_TIMESTAMP not-a-timestamp", expectError: true},
+			{desc: "READ_TIMESTAMP with malformed RFC3339", input: "READ_TIMESTAMP 2024-01-01", expectError: true},
 
 			// Error cases - invalid durations
-			{
-				desc:        "MAX_STALENESS with invalid duration",
-				input:       "MAX_STALENESS invalid-duration",
-				expectError: true,
-			},
+			{desc: "MAX_STALENESS with invalid duration", input: "MAX_STALENESS invalid-duration", expectError: true},
 			{
 				desc:        "MAX_STALENESS with negative duration",
 				input:       "MAX_STALENESS -30s",
 				expectError: true,
 				errorMsg:    "staleness duration \"-30s\" must be non-negative",
 			},
-			{
-				desc:        "EXACT_STALENESS with invalid duration",
-				input:       "EXACT_STALENESS not-a-duration",
-				expectError: true,
-			},
+			{desc: "EXACT_STALENESS with invalid duration", input: "EXACT_STALENESS not-a-duration", expectError: true},
 			{
 				desc:        "EXACT_STALENESS with negative duration",
 				input:       "EXACT_STALENESS -1h",
@@ -776,12 +672,7 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 			},
 
 			// Edge cases
-			{
-				desc:        "STRONG with extra text should fail",
-				input:       "STRONG extra text",
-				expectError: true,
-				errorMsg:    "STRONG accepts at most one parameter",
-			},
+			{desc: "STRONG with extra text should fail", input: "STRONG extra text", expectError: true, errorMsg: "STRONG accepts at most one parameter"},
 			{
 				desc:        "MIN_READ_TIMESTAMP missing timestamp",
 				input:       "MIN_READ_TIMESTAMP",
@@ -806,52 +697,16 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 				expectError: true,
 				errorMsg:    "EXACT_STALENESS requires a duration parameter",
 			},
-			{
-				desc:  "extra whitespace before timestamp",
-				input: "MIN_READ_TIMESTAMP   " + validTimeStr,
-				want:  spanner.MinReadTimestamp(validTime),
-			},
-			{
-				desc:  "tabs instead of spaces",
-				input: "MAX_STALENESS	60s",
-				want:  spanner.MaxStaleness(60 * time.Second),
-			},
-			{
-				desc:  "zero duration for MAX_STALENESS",
-				input: "MAX_STALENESS 0s",
-				want:  spanner.MaxStaleness(0),
-			},
-			{
-				desc:  "very large duration",
-				input: "EXACT_STALENESS 999999h",
-				want:  spanner.ExactStaleness(999999 * time.Hour),
-			},
+			{desc: "extra whitespace before timestamp", input: "MIN_READ_TIMESTAMP   " + validTimeStr, want: spanner.MinReadTimestamp(validTime)},
+			{desc: "tabs instead of spaces", input: "MAX_STALENESS	60s", want: spanner.MaxStaleness(60 * time.Second)},
+			{desc: "zero duration for MAX_STALENESS", input: "MAX_STALENESS 0s", want: spanner.MaxStaleness(0)},
+			{desc: "very large duration", input: "EXACT_STALENESS 999999h", want: spanner.ExactStaleness(999999 * time.Hour)},
 
 			// Extra parameter validation tests
-			{
-				desc:        "MIN_READ_TIMESTAMP with extra parameters",
-				input:       "MIN_READ_TIMESTAMP " + validTimeStr + " extra",
-				expectError: true,
-				errorMsg:    "MIN_READ_TIMESTAMP accepts at most one parameter",
-			},
-			{
-				desc:        "READ_TIMESTAMP with extra parameters",
-				input:       "READ_TIMESTAMP " + validTimeStr + " extra param",
-				expectError: true,
-				errorMsg:    "READ_TIMESTAMP accepts at most one parameter",
-			},
-			{
-				desc:        "MAX_STALENESS with extra parameters",
-				input:       "MAX_STALENESS 30s extra",
-				expectError: true,
-				errorMsg:    "MAX_STALENESS accepts at most one parameter",
-			},
-			{
-				desc:        "EXACT_STALENESS with extra parameters",
-				input:       "EXACT_STALENESS 1h extra param",
-				expectError: true,
-				errorMsg:    "EXACT_STALENESS accepts at most one parameter",
-			},
+			{desc: "MIN_READ_TIMESTAMP with extra parameters", input: "MIN_READ_TIMESTAMP " + validTimeStr + " extra", expectError: true, errorMsg: "MIN_READ_TIMESTAMP accepts at most one parameter"},
+			{desc: "READ_TIMESTAMP with extra parameters", input: "READ_TIMESTAMP " + validTimeStr + " extra param", expectError: true, errorMsg: "READ_TIMESTAMP accepts at most one parameter"},
+			{desc: "MAX_STALENESS with extra parameters", input: "MAX_STALENESS 30s extra", expectError: true, errorMsg: "MAX_STALENESS accepts at most one parameter"},
+			{desc: "EXACT_STALENESS with extra parameters", input: "EXACT_STALENESS 1h extra param", expectError: true, errorMsg: "EXACT_STALENESS accepts at most one parameter"},
 		}
 
 		for _, test := range tests {
@@ -1052,30 +907,20 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			// Java-spanner compatible variables
 			{
 				desc: "READ_TIMESTAMP", name: "READ_TIMESTAMP", unimplementedSet: true,
-				sysVars: func() *systemVariables {
-					sv := newSystemVariablesWithDefaultsForTest()
-					sv.ReadTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
-					return sv
-				}(),
-				want: singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
+				sysVars: newTestSysVars().withReadTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
+				want:    singletonMap("READ_TIMESTAMP", "1970-01-01T00:00:00Z"),
 			},
 			{
 				desc: "COMMIT_TIMESTAMP", name: "COMMIT_TIMESTAMP", unimplementedSet: true,
-				sysVars: func() *systemVariables {
-					sv := newSystemVariablesWithDefaultsForTest()
-					sv.CommitTimestamp = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
-					return sv
-				}(),
-				want: singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
+				sysVars: newTestSysVars().withCommitTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).build(),
+				want:    singletonMap("COMMIT_TIMESTAMP", "1970-01-01T00:00:00Z"),
 			},
 			{
 				desc: "COMMIT_RESPONSE", name: "COMMIT_RESPONSE", unimplementedSet: true,
-				sysVars: &systemVariables{
-					CommitTimestamp: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC),
-					CommitResponse: &sppb.CommitResponse{CommitStats: &sppb.CommitResponse_CommitStats{
-						MutationCount: 10,
-					}},
-				},
+				sysVars: newTestSysVars().
+					withCommitTimestamp(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).
+					withCommitResponse(&sppb.CommitResponse{CommitStats: &sppb.CommitResponse_CommitStats{MutationCount: 10}}).
+					build(),
 				want: map[string]string{"COMMIT_TIMESTAMP": "1970-01-01T00:00:00Z", "MUTATION_COUNT": "10"},
 			},
 
@@ -1086,27 +931,27 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			},
 			{
 				desc: "CLI_PROJECT", name: "CLI_PROJECT", unimplementedSet: true,
-				sysVars: &systemVariables{Project: "test-project"},
+				sysVars: newTestSysVars().withProject("test-project").build(),
 				want:    singletonMap("CLI_PROJECT", "test-project"),
 			},
 			{
 				desc: "CLI_INSTANCE", name: "CLI_INSTANCE", unimplementedSet: true,
-				sysVars: &systemVariables{Instance: "test-instance"},
+				sysVars: newTestSysVars().withInstance("test-instance").build(),
 				want:    singletonMap("CLI_INSTANCE", "test-instance"),
 			},
 			{
 				desc: "CLI_DATABASE", name: "CLI_DATABASE", unimplementedSet: true,
-				sysVars: &systemVariables{Database: "test-database"},
+				sysVars: newTestSysVars().withDatabase("test-database").build(),
 				want:    singletonMap("CLI_DATABASE", "test-database"),
 			},
 			{
 				desc: "CLI_HISTORY_FILE", name: "CLI_HISTORY_FILE", unimplementedSet: true,
-				sysVars: &systemVariables{HistoryFile: "/tmp/spanner_mycli_readline.tmp"},
+				sysVars: newTestSysVars().withHistoryFile("/tmp/spanner_mycli_readline.tmp").build(),
 				want:    singletonMap("CLI_HISTORY_FILE", "/tmp/spanner_mycli_readline.tmp"),
 			},
 			{
 				desc: "CLI_ENDPOINT getter", name: "CLI_ENDPOINT",
-				sysVars: &systemVariables{Host: "localhost", Port: 9010},
+				sysVars: newTestSysVars().withHost("localhost").withPort(9010).build(),
 				want:    singletonMap("CLI_ENDPOINT", "localhost:9010"),
 			},
 			{
@@ -1119,21 +964,21 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			},
 			{
 				desc: "CLI_HOST", name: "CLI_HOST", unimplementedSet: true,
-				sysVars: &systemVariables{Host: "example.com"},
+				sysVars: newTestSysVars().withHost("example.com").build(),
 				want:    singletonMap("CLI_HOST", "example.com"),
 			},
 			{
 				desc: "CLI_PORT", name: "CLI_PORT", unimplementedSet: true,
-				sysVars: &systemVariables{Port: 443},
+				sysVars: newTestSysVars().withPort(443).build(),
 				want:    singletonMap("CLI_PORT", "443"),
 			},
 			{
 				desc: "CLI_DIRECT_READ", name: "CLI_DIRECT_READ", unimplementedSet: true,
-				sysVars: &systemVariables{DirectedRead: &sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+				sysVars: newTestSysVars().withDirectedRead(&sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
 					IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
 						{Type: sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE, Location: "asia-northeast2"},
 					}},
-				}}},
+				}}).build(),
 				want: singletonMap("CLI_DIRECT_READ", "asia-northeast2:READ_WRITE"),
 			},
 			// Java-spanner compatible boolean variables
@@ -1214,12 +1059,12 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			},
 			{
 				desc: "CLI_INSECURE", name: "CLI_INSECURE", unimplementedSet: true,
-				sysVars: &systemVariables{Insecure: true},
+				sysVars: newTestSysVars().withInsecure(true).build(),
 				want:    singletonMap("CLI_INSECURE", "TRUE"),
 			},
 			{
 				desc: "CLI_LOG_GRPC", name: "CLI_LOG_GRPC", unimplementedSet: true,
-				sysVars: &systemVariables{LogGrpc: true},
+				sysVars: newTestSysVars().withLogGrpc(true).build(),
 				want:    singletonMap("CLI_LOG_GRPC", "TRUE"),
 			},
 
@@ -1250,13 +1095,9 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			},
 			{
 				desc: "TRANSACTION_TAG", name: "TRANSACTION_TAG", value: "test-tag",
-				sysVars: func() *systemVariables {
-					sv := newSystemVariablesWithDefaultsForTest()
-					sv.CurrentSession = &Session{tc: &transactionContext{
-						attrs: transactionAttributes{mode: transactionModePending},
-					}}
-					return sv
-				}(),
+				sysVars: newTestSysVars().withSession(&Session{tc: &transactionContext{
+					attrs: transactionAttributes{mode: transactionModePending},
+				}}).build(),
 				want: singletonMap("TRANSACTION_TAG", "test-tag"),
 			},
 
@@ -1266,9 +1107,9 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 				want: singletonMap("CLI_OUTPUT_TEMPLATE_FILE", "output_default.tmpl"),
 			},
 			{
-				desc: "CLI_ROLE", name: "CLI_ROLE",
-				unimplementedSet: true, sysVars: &systemVariables{Role: "test-role"},
-				want: singletonMap("CLI_ROLE", "test-role"),
+				desc: "CLI_ROLE", name: "CLI_ROLE", unimplementedSet: true,
+				sysVars: newTestSysVars().withRole("test-role").build(),
+				want:    singletonMap("CLI_ROLE", "test-role"),
 			},
 			{
 				desc: "CLI_PROMPT", name: "CLI_PROMPT", value: "test-prompt",
@@ -1355,17 +1196,17 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			},
 			{
 				desc: "CLI_IMPERSONATE_SERVICE_ACCOUNT", name: "CLI_IMPERSONATE_SERVICE_ACCOUNT", unimplementedSet: true,
-				sysVars: &systemVariables{ImpersonateServiceAccount: "test@example.com"},
+				sysVars: newTestSysVars().withImpersonateServiceAccount("test@example.com").build(),
 				want:    singletonMap("CLI_IMPERSONATE_SERVICE_ACCOUNT", "test@example.com"),
 			},
 			{
 				desc: "CLI_ENABLE_ADC_PLUS", name: "CLI_ENABLE_ADC_PLUS", value: "true",
-				sysVars: &systemVariables{EnableADCPlus: false}, // Start with false to test setting
+				sysVars: newTestSysVars().withEnableADCPlus(false).build(), // Start with false to test setting
 				want:    singletonMap("CLI_ENABLE_ADC_PLUS", "TRUE"),
 			},
 			{
 				desc: "CLI_MCP", name: "CLI_MCP", unimplementedSet: true,
-				sysVars: &systemVariables{MCP: true},
+				sysVars: newTestSysVars().withMCP(true).build(),
 				want:    singletonMap("CLI_MCP", "TRUE"),
 			},
 			{
@@ -1398,48 +1239,18 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			unimplementedSet, unimplementedGet bool
 		}{
 			// String variables with GoogleSQL syntax
-			{
-				desc: "CLI_PROMPT with quoted string", name: "CLI_PROMPT", value: `"test-prompt"`,
-				want: singletonMap("CLI_PROMPT", "test-prompt"),
-			},
-			{
-				desc: "CLI_PROMPT2 with quoted string", name: "CLI_PROMPT2", value: `"test-prompt2"`,
-				want: singletonMap("CLI_PROMPT2", "test-prompt2"),
-			},
-			{
-				desc: "STATEMENT_TAG with quoted string", name: "STATEMENT_TAG", value: `"test-statement"`,
-				want: singletonMap("STATEMENT_TAG", "test-statement"),
-			},
-			{
-				desc: "CLI_EXPLAIN_FORMAT with quoted string", name: "CLI_EXPLAIN_FORMAT", value: `"CURRENT"`,
-				want: singletonMap("CLI_EXPLAIN_FORMAT", "CURRENT"),
-			},
-			{
-				desc: "OPTIMIZER_VERSION with quoted string", name: "OPTIMIZER_VERSION", value: `"LATEST"`,
-				want: singletonMap("OPTIMIZER_VERSION", "LATEST"),
-			},
-			{
-				desc: "OPTIMIZER_STATISTICS_PACKAGE with quoted string", name: "OPTIMIZER_STATISTICS_PACKAGE", value: `"test-package"`,
-				want: singletonMap("OPTIMIZER_STATISTICS_PACKAGE", "test-package"),
-			},
+			{desc: "CLI_PROMPT with quoted string", name: "CLI_PROMPT", value: `"test-prompt"`, want: singletonMap("CLI_PROMPT", "test-prompt")},
+			{desc: "CLI_PROMPT2 with quoted string", name: "CLI_PROMPT2", value: `"test-prompt2"`, want: singletonMap("CLI_PROMPT2", "test-prompt2")},
+			{desc: "STATEMENT_TAG with quoted string", name: "STATEMENT_TAG", value: `"test-statement"`, want: singletonMap("STATEMENT_TAG", "test-statement")},
+			{desc: "CLI_EXPLAIN_FORMAT with quoted string", name: "CLI_EXPLAIN_FORMAT", value: `"CURRENT"`, want: singletonMap("CLI_EXPLAIN_FORMAT", "CURRENT")},
+			{desc: "OPTIMIZER_VERSION with quoted string", name: "OPTIMIZER_VERSION", value: `"LATEST"`, want: singletonMap("OPTIMIZER_VERSION", "LATEST")},
+			{desc: "OPTIMIZER_STATISTICS_PACKAGE with quoted string", name: "OPTIMIZER_STATISTICS_PACKAGE", value: `"test-package"`, want: singletonMap("OPTIMIZER_STATISTICS_PACKAGE", "test-package")},
 			// Boolean variables with GoogleSQL syntax
-			{
-				desc: "CLI_USE_PAGER with TRUE keyword", name: "CLI_USE_PAGER", value: "TRUE",
-				want: singletonMap("CLI_USE_PAGER", "TRUE"),
-			},
-			{
-				desc: "CLI_USE_PAGER with FALSE keyword", name: "CLI_USE_PAGER", value: "FALSE",
-				want: singletonMap("CLI_USE_PAGER", "FALSE"),
-			},
+			{desc: "CLI_USE_PAGER with TRUE keyword", name: "CLI_USE_PAGER", value: "TRUE", want: singletonMap("CLI_USE_PAGER", "TRUE")},
+			{desc: "CLI_USE_PAGER with FALSE keyword", name: "CLI_USE_PAGER", value: "FALSE", want: singletonMap("CLI_USE_PAGER", "FALSE")},
 			// Duration with quoted string
-			{
-				desc: "STATEMENT_TIMEOUT with quoted duration", name: "STATEMENT_TIMEOUT", value: `"30s"`,
-				want: singletonMap("STATEMENT_TIMEOUT", "30s"),
-			},
-			{
-				desc: "MAX_COMMIT_DELAY with quoted duration", name: "MAX_COMMIT_DELAY", value: `"100ms"`,
-				want: singletonMap("MAX_COMMIT_DELAY", "100ms"),
-			},
+			{desc: "STATEMENT_TIMEOUT with quoted duration", name: "STATEMENT_TIMEOUT", value: `"30s"`, want: singletonMap("STATEMENT_TIMEOUT", "30s")},
+			{desc: "MAX_COMMIT_DELAY with quoted duration", name: "MAX_COMMIT_DELAY", value: `"100ms"`, want: singletonMap("MAX_COMMIT_DELAY", "100ms")},
 		}
 
 		for _, test := range tests {
