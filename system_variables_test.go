@@ -62,9 +62,7 @@ func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, strin
 	if testCase.value != "" || testCase.unimplementedSet {
 		err := setFunc(sysVars, testCase.name, testCase.value)
 		if !testCase.unimplementedSet {
-			if err != nil {
-				t.Errorf("sysVars.%s should success, but failed: %v", methodName, err)
-			}
+			assertNoError(t, err)
 		} else {
 			var e errSetterUnimplemented
 			// Accept errSetterReadOnly from implementation
@@ -76,10 +74,7 @@ func testSystemVariableSetGet(t *testing.T, setFunc func(*systemVariables, strin
 
 	got, err := sysVars.Get(testCase.name)
 	if !testCase.unimplementedGet {
-		if err != nil {
-			t.Errorf("sysVars.Get should success, but failed: %v", err)
-		}
-
+		assertNoError(t, err)
 		if diff := cmp.Diff(testCase.want, got); diff != "" {
 			t.Errorf("sysVars.Get() mismatch (-want +got):\n%s", diff)
 		}
@@ -450,17 +445,9 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 			t.Run(tt.desc, func(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_ENDPOINT", tt.value)
+				assertError(t, err, tt.wantErr, tt.errContains)
 				if tt.wantErr {
-					if err == nil {
-						t.Errorf("expected error but got none")
-					}
-					if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-						t.Errorf("error = %q, want it to contain %q", err.Error(), tt.errContains)
-					}
 					return
-				}
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
 				}
 				if sysVars.Host != tt.wantHost {
 					t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
@@ -494,13 +481,9 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", test.value)
 
+				assertError(t, err, test.expectError, "")
 				if test.expectError {
-					assertError(t, err, true, "")
 					return
-				}
-
-				if err != nil {
-					t.Fatalf("unexpected error for value %q: %v", test.value, err)
 				}
 
 				if sysVars.StatementTimeout == nil || *sysVars.StatementTimeout != test.want {
@@ -513,9 +496,7 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 
 				// Test getter
 				result, err := sysVars.Get("STATEMENT_TIMEOUT")
-				if err != nil {
-					t.Fatalf("unexpected error getting STATEMENT_TIMEOUT: %v", err)
-				}
+				assertNoError(t, err)
 
 				expected := map[string]string{"STATEMENT_TIMEOUT": test.want.String()}
 				if diff := cmp.Diff(expected, result); diff != "" {
@@ -575,9 +556,6 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 					return
 				}
 				assertNoError(t, err)
-				if err != nil {
-					return
-				}
 
 				if sysVars.SkipColumnNames != tt.want {
 					t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.SkipColumnNames)
@@ -585,9 +563,7 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 
 				// Test GET
 				got, err := sysVars.Get("CLI_SKIP_COLUMN_NAMES")
-				if err != nil {
-					t.Fatalf("unexpected error on Get: %v", err)
-				}
+				assertNoError(t, err)
 
 				expectedStr := "FALSE"
 				if tt.want {
@@ -622,9 +598,8 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 		for _, test := range tests {
 			t.Run(test.value, func(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
-				if err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value); err != nil {
-					t.Errorf("should success, but failed, value: %v, err: %v", test.value, err)
-				}
+				err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value)
+				assertNoError(t, err)
 
 				if sysVars.DefaultIsolationLevel != test.want {
 					t.Errorf("DefaultIsolationLevel should be %v, but %v", test.want, sysVars.DefaultIsolationLevel)
@@ -984,44 +959,31 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				err := sv.SetFromSimple(tt.variableCase, tt.setValue)
 
 				// Check error expectation
+				assertError(t, err, tt.expectError, tt.expectedErrMsg)
 				if tt.expectError {
-					if err == nil {
-						t.Errorf("expected error but got none")
-						return
-					}
-					if !strings.Contains(err.Error(), tt.expectedErrMsg) {
-						t.Errorf("expected error message containing %q, got %q", tt.expectedErrMsg, err.Error())
-					}
-				} else {
-					if err != nil {
-						t.Errorf("unexpected error: %v", err)
-						return
-					}
+					return
+				}
 
-					// Verify the value was set correctly (only for non-session cases)
-					switch tt.variableName {
-					case "CLI_ENABLE_ADC_PLUS":
-						expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
-						if !tt.hasSession {
-							// Value should be updated
-							if sv.EnableADCPlus != expectedValue {
-								t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
-							}
+				// Verify the value was set correctly (only for non-session cases)
+				switch tt.variableName {
+				case "CLI_ENABLE_ADC_PLUS":
+					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
+					if !tt.hasSession {
+						// Value should be updated
+						if sv.EnableADCPlus != expectedValue {
+							t.Errorf("expected EnableADCPlus to be %v, got %v", expectedValue, sv.EnableADCPlus)
 						}
-					case "CLI_ASYNC_DDL":
-						expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
-						if sv.AsyncDDL != expectedValue {
-							t.Errorf("expected AsyncDDL to be %v, got %v", expectedValue, sv.AsyncDDL)
-						}
+					}
+				case "CLI_ASYNC_DDL":
+					expectedValue := tt.setValue == "true" || tt.setValue == "TRUE"
+					if sv.AsyncDDL != expectedValue {
+						t.Errorf("expected AsyncDDL to be %v, got %v", expectedValue, sv.AsyncDDL)
 					}
 				}
 
 				// Additional test: verify Get returns the correct value
 				values, err := sv.Get(tt.variableName)
-				if err != nil {
-					t.Errorf("unexpected error from Get: %v", err)
-					return
-				}
+				assertNoError(t, err)
 
 				// Check that the value returned by Get matches expectation
 				gotValue := values[tt.variableName]
