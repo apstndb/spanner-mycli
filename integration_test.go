@@ -1037,8 +1037,7 @@ func TestBatchStatements(t *testing.T) {
 					AffectedRows: 1,
 				}},
 			},
-			// Ignore TableHeader for all results except the SELECT COUNT (index 3)
-			cmpOpts: sliceOf(ignorePathOpt(`wantResults[0].TableHeader`, `wantResults[1].TableHeader`, `wantResults[2].TableHeader`)),
+			// No cmpOpts needed - TableHeader should be nil for batch statements
 		},
 	}
 
@@ -1268,8 +1267,7 @@ func TestAdminStatements(t *testing.T) {
 				srEmpty("DETACH"),                         // Switch to admin-only mode again
 				srEmpty("DROP DATABASE `test_detach_db`"), // Should work from admin-only mode
 			},
-			// Ignore TableHeader for SELECT statements (indices 1 and 8) due to complex type information
-			cmpOpts: sliceOf(ignorePathOpt(`wantResults[1].TableHeader`, `wantResults[8].TableHeader`)),
+			// TableHeaders are explicitly set for SELECT statements
 		},
 	}
 
