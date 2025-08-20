@@ -128,7 +128,6 @@ func dmlResult(n int) *Result {
 	return &Result{AffectedRows: n, IsExecutedDML: true}
 }
 
-
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
@@ -1309,7 +1308,7 @@ func TestAdminStatements(t *testing.T) {
 						AffectedRows: 1,
 					},
 				},
-				srEmpty("DETACH"), // Switch to admin-only mode again
+				srEmpty("DETACH"),                         // Switch to admin-only mode again
 				srEmpty("DROP DATABASE `test_detach_db`"), // Should work from admin-only mode
 			},
 			// Ignore TableHeader details for SELECT statements since they contain complex type information
@@ -1371,15 +1370,15 @@ func TestMiscStatements(t *testing.T) {
 			ddls: sliceOf(testTableSimpleDDL),
 		},
 		{
-			desc: "SPLIT POINTS statements",
-			ddls: sliceOf(testTableSimpleDDL),
-			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
+			desc:        "SPLIT POINTS statements",
+			ddls:        sliceOf(testTableSimpleDDL),
+			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
 			stmtResults: []stmtResult{
 				// Empty results for SPLIT POINTS since it only works with dedicated DB
 			},
 		},
 		{
-			desc: "EXPLAIN & EXPLAIN ANALYZE statements",
+			desc:        "EXPLAIN & EXPLAIN ANALYZE statements",
 			stmtResults: []stmtResult{
 				// Empty results for EXPLAIN since it only works with dedicated DB
 			},
@@ -1398,8 +1397,8 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				},
 				srEmpty("USE `new-database` ROLE spanner_info_reader"), // nop
-				srEmpty("USE `test-database`"), // nop
-				srEmpty("DROP DATABASE `new-database`"), // DROP DATABASE
+				srEmpty("USE `test-database`"),                         // nop
+				srEmpty("DROP DATABASE `new-database`"),                // DROP DATABASE
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
@@ -1448,9 +1447,9 @@ func TestMiscStatements(t *testing.T) {
 			},
 		},
 		{
-			desc: "mutation, pdml, partitioned query",
-			ddls: sliceOf(testTableSimpleDDL),
-			dmls: sliceOf("DELETE FROM TestTable WHERE TRUE"),
+			desc:        "mutation, pdml, partitioned query",
+			ddls:        sliceOf(testTableSimpleDDL),
+			dmls:        sliceOf("DELETE FROM TestTable WHERE TRUE"),
 			stmtResults: []stmtResult{
 				// Empty results since these were moved to other tests
 			},
@@ -1484,9 +1483,9 @@ func TestMiscStatements(t *testing.T) {
 			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
-			desc: "CQL SELECT",
-			ddls: sliceOf(testTableSimpleDDL),
-			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
+			desc:        "CQL SELECT",
+			ddls:        sliceOf(testTableSimpleDDL),
+			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
 			stmtResults: []stmtResult{
 				// Empty results since CQL SELECT would return actual data
 			},
