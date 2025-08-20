@@ -914,7 +914,7 @@ func TestShowStatements(t *testing.T) {
 					"DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)",
 					&Result{
 						// For DML without THEN RETURN, result is empty.
-						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						TableHeader: toTableHeader("Column_Name", "Column_Type"),
 						// No parameters in this DML - Rows and AffectedRows default to nil/0
 					},
 				},
@@ -926,7 +926,7 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW SCHEMA UPDATE OPERATIONS",
 					&Result{
-						TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+						TableHeader: toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 						// Expect no operations on a fresh emulator DB - Rows and AffectedRows default to nil/0
 					},
 				},
@@ -1385,9 +1385,9 @@ func TestMiscStatements(t *testing.T) {
 				{
 					stmt: "SELECT id FROM TestTable WHERE id > 0",
 					want: &Result{
-						Rows:          sliceOf(toRow("1"), toRow("2")),
-						AffectedRows:  2,
-						TableHeader:   typesTableHeader{&sppb.StructType_Field{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}},
+						Rows:         sliceOf(toRow("1"), toRow("2")),
+						AffectedRows: 2,
+						TableHeader:  typesTableHeader{&sppb.StructType_Field{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}},
 					},
 				},
 			},
@@ -1483,7 +1483,7 @@ func TestMiscStatements(t *testing.T) {
 				{
 					stmt: "DESCRIBE INSERT INTO Users (id, name) VALUES (1, 'Alice')",
 					want: &Result{
-						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						TableHeader: toTableHeader("Column_Name", "Column_Type"),
 						// DESCRIBE doesn't return rows for DML - Rows and AffectedRows default to nil/0
 					},
 				},
