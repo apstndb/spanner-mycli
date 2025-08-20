@@ -20,15 +20,19 @@ import (
 // Helper Functions
 
 // assertError checks if an error occurred as expected
-func assertError(t *testing.T, err error, wantError bool, errorMsg string) {
+// If errorMsg is non-empty, an error is expected and must contain the message
+// If errorMsg is empty, no error should occur
+func assertError(t *testing.T, err error, errorMsg string) {
 	t.Helper()
-	if wantError {
+	if errorMsg != "" {
+		// Error is expected
 		if err == nil {
 			t.Errorf("expected error but got none")
-		} else if errorMsg != "" && !strings.Contains(err.Error(), errorMsg) {
+		} else if !strings.Contains(err.Error(), errorMsg) {
 			t.Errorf("expected error containing %q, got %v", errorMsg, err)
 		}
 	} else {
+		// No error expected
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -148,10 +152,9 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	t.Run("AddCLIProtoDescriptorFile", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			desc      string
-			values    []string
-			wantError bool
-			errorMsg  string
+			desc     string
+			values   []string
+			errorMsg string
 		}{
 			{
 				desc:   "single valid descriptor",
@@ -166,16 +169,14 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				values: []string{"testdata/protos/order_descriptors.pb", "testdata/protos/query_plan_descriptors.pb"},
 			},
 			{
-				desc:      "non-existent file",
-				values:    []string{"testdata/protos/non_existent.pb"},
-				wantError: true,
-				errorMsg:  "no such file or directory",
+				desc:     "non-existent file",
+				values:   []string{"testdata/protos/non_existent.pb"},
+				errorMsg: "no such file or directory",
 			},
 			{
-				desc:      "invalid proto file",
-				values:    []string{"testdata/invalid_protos/invalid.txt"},
-				wantError: true,
-				errorMsg:  "error on unmarshal proto descriptor-file",
+				desc:     "invalid proto file",
+				values:   []string{"testdata/invalid_protos/invalid.txt"},
+				errorMsg: "error on unmarshal proto descriptor-file",
 			},
 			{
 				desc:   "empty file",
@@ -187,16 +188,14 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				values: []string{"testdata/protos/singer.proto"},
 			},
 			{
-				desc:      "invalid proto source file",
-				values:    []string{"testdata/invalid_protos/invalid_proto.proto"},
-				wantError: true,
-				errorMsg:  "invalid_proto.proto:",
+				desc:     "invalid proto source file",
+				values:   []string{"testdata/invalid_protos/invalid_proto.proto"},
+				errorMsg: "invalid_proto.proto:",
 			},
 			{
-				desc:      "mix of valid and invalid files",
-				values:    []string{"testdata/protos/order_descriptors.pb", "testdata/protos/non_existent.pb"},
-				wantError: true,
-				errorMsg:  "no such file or directory",
+				desc:     "mix of valid and invalid files",
+				values:   []string{"testdata/protos/order_descriptors.pb", "testdata/protos/non_existent.pb"},
+				errorMsg: "no such file or directory",
 			},
 		}
 		for _, test := range tests {
@@ -207,16 +206,16 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				for _, value := range test.values {
 					if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
 						lastErr = err
-						if !test.wantError {
+						if test.errorMsg == "" {
 							t.Errorf("unexpected error for value %q: %v", value, err)
 						}
-						if test.wantError {
+						if test.errorMsg != "" {
 							break // Exit the loop immediately when expecting an error
 						}
 					}
 				}
 
-				assertError(t, lastErr, test.wantError, test.errorMsg)
+				assertError(t, lastErr, test.errorMsg)
 			})
 		}
 	})
@@ -258,10 +257,9 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 		}
 
 		tests := []struct {
-			desc      string
-			filename  string
-			wantError bool
-			errorMsg  string
+			desc     string
+			filename string
+			errorMsg string
 		}{
 			{
 				desc:     "valid descriptor file",
@@ -272,22 +270,19 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				filename: "testdata/protos/singer.proto",
 			},
 			{
-				desc:      "non-existent file",
-				filename:  "testdata/protos/non_existent.pb",
-				wantError: true,
-				errorMsg:  "no such file or directory",
+				desc:     "non-existent file",
+				filename: "testdata/protos/non_existent.pb",
+				errorMsg: "no such file or directory",
 			},
 			{
-				desc:      "permission denied file",
-				filename:  permissionTestFile,
-				wantError: true,
-				errorMsg:  "permission denied",
+				desc:     "permission denied file",
+				filename: permissionTestFile,
+				errorMsg: "permission denied",
 			},
 			{
-				desc:      "invalid proto binary file",
-				filename:  "testdata/invalid_protos/invalid.txt",
-				wantError: true,
-				errorMsg:  "error on unmarshal proto descriptor-file",
+				desc:     "invalid proto binary file",
+				filename: "testdata/invalid_protos/invalid.txt",
+				errorMsg: "error on unmarshal proto descriptor-file",
 			},
 			{
 				desc:     "empty file",
@@ -295,34 +290,29 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				// Empty files unmarshal successfully to empty FileDescriptorSet
 			},
 			{
-				desc:      "invalid proto source file",
-				filename:  "testdata/invalid_protos/invalid_proto.proto",
-				wantError: true,
-				errorMsg:  "invalid_proto.proto:",
+				desc:     "invalid proto source file",
+				filename: "testdata/invalid_protos/invalid_proto.proto",
+				errorMsg: "invalid_proto.proto:",
 			},
 			{
-				desc:      "directory instead of file",
-				filename:  "testdata/protos/",
-				wantError: true,
-				errorMsg:  "is a directory",
+				desc:     "directory instead of file",
+				filename: "testdata/protos/",
+				errorMsg: "is a directory",
 			},
 			{
-				desc:      "large invalid binary file",
-				filename:  largeFile,
-				wantError: true,
-				errorMsg:  "error on unmarshal proto descriptor-file",
+				desc:     "large invalid binary file",
+				filename: largeFile,
+				errorMsg: "error on unmarshal proto descriptor-file",
 			},
 			{
-				desc:      "HTTP URL - invalid proto",
-				filename:  httpServer.URL + "/invalid.pb",
-				wantError: true,
-				errorMsg:  "error on unmarshal proto descriptor-file",
+				desc:     "HTTP URL - invalid proto",
+				filename: httpServer.URL + "/invalid.pb",
+				errorMsg: "error on unmarshal proto descriptor-file",
 			},
 			{
-				desc:      "HTTP URL - non-existent (404)",
-				filename:  httpServer.URL + "/non_existent.pb",
-				wantError: true,
-				errorMsg:  "failed to fetch proto descriptor",
+				desc:     "HTTP URL - non-existent (404)",
+				filename: httpServer.URL + "/non_existent.pb",
+				errorMsg: "failed to fetch proto descriptor",
 			},
 		}
 
@@ -336,8 +326,8 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 				fds, err := readFileDescriptorProtoFromFile(test.filename)
 
-				assertError(t, err, test.wantError, test.errorMsg)
-				if !test.wantError && fds == nil {
+				assertError(t, err, test.errorMsg)
+				if err == nil && fds == nil {
 					t.Errorf("expected non-nil FileDescriptorSet")
 				}
 			})
@@ -394,15 +384,14 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 	t.Run("EdgeCases", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			desc      string
-			varName   string
-			value     string
-			wantError bool
-			errorMsg  string
+			desc     string
+			varName  string
+			value    string
+			errorMsg string
 		}{
-			{desc: "empty string value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `""`, wantError: true, errorMsg: "no such file or directory"},
-			{desc: "spaces only value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"   "`, wantError: true, errorMsg: "no such file or directory"},
-			{desc: "non-existent path with parent directory traversal", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"../does_not_exist/non_existent_file.pb"`, wantError: true, errorMsg: "no such file or directory"},
+			{desc: "empty string value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `""`, errorMsg: "no such file or directory"},
+			{desc: "spaces only value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"   "`, errorMsg: "no such file or directory"},
+			{desc: "non-existent path with parent directory traversal", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"../does_not_exist/non_existent_file.pb"`, errorMsg: "no such file or directory"},
 		}
 
 		for _, test := range tests {
@@ -411,7 +400,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.AddFromGoogleSQL(test.varName, test.value)
 
-				assertError(t, err, test.wantError, test.errorMsg)
+				assertError(t, err, test.errorMsg)
 			})
 		}
 	})
@@ -429,15 +418,14 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 			value       string
 			wantHost    string
 			wantPort    int
-			wantErr     bool
 			errContains string
 		}{
 			{desc: "valid endpoint", value: "example.com:443", wantHost: "example.com", wantPort: 443},
 			{desc: "endpoint with IPv6", value: "[2001:db8::1]:443", wantHost: "2001:db8::1", wantPort: 443},
-			{desc: "invalid endpoint - no port", value: "example.com", wantErr: true, errContains: "invalid endpoint format"},
+			{desc: "invalid endpoint - no port", value: "example.com", errContains: "invalid endpoint format"},
 			{desc: "empty endpoint clears host and port", value: "", wantHost: "", wantPort: 0},
-			{desc: "invalid endpoint - bare IPv6 without port", value: "2001:db8::1", wantErr: true, errContains: "invalid endpoint format"},
-			{desc: "invalid endpoint - non-numeric port", value: "example.com:abc", wantErr: true, errContains: "invalid port in endpoint"},
+			{desc: "invalid endpoint - bare IPv6 without port", value: "2001:db8::1", errContains: "invalid endpoint format"},
+			{desc: "invalid endpoint - non-numeric port", value: "example.com:abc", errContains: "invalid port in endpoint"},
 		}
 
 		for _, tt := range tests {
@@ -445,8 +433,8 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 				t.Parallel()
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_ENDPOINT", tt.value)
-				assertError(t, err, tt.wantErr, tt.errContains)
-				if tt.wantErr {
+				assertError(t, err, tt.errContains)
+				if err != nil {
 					return
 				}
 				if sysVars.Host != tt.wantHost {
@@ -462,19 +450,19 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 	t.Run("StatementTimeout", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			desc        string
-			value       string
-			want        time.Duration
-			expectError bool
+			desc     string
+			value    string
+			want     time.Duration
+			errorMsg string
 		}{
 			{desc: "valid_seconds", value: "30s", want: 30 * time.Second},
 			{desc: "valid_minutes", value: "5m", want: 5 * time.Minute},
 			{desc: "valid_hours", value: "1h", want: 1 * time.Hour},
 			{desc: "valid_mixed", value: "1h30m", want: 90 * time.Minute},
 			{desc: "valid_zero", value: "0s", want: 0},
-			{desc: "invalid_format", value: "invalid", expectError: true},
-			{desc: "negative_value", value: "-30s", expectError: true},
-			{desc: "empty_string", value: "", expectError: true},
+			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
+			{desc: "empty_string", value: "", errorMsg: "invalid duration"},
 		}
 
 		for _, test := range tests {
@@ -483,8 +471,8 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", test.value)
 
-				assertError(t, err, test.expectError, "")
-				if test.expectError {
+				assertError(t, err, test.errorMsg)
+				if err != nil {
 					return
 				}
 
@@ -517,16 +505,16 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 	t.Run("CLI_SKIP_COLUMN_NAMES", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			desc    string
-			value   string
-			want    bool
-			wantErr bool
+			desc     string
+			value    string
+			want     bool
+			errorMsg string
 		}{
 			{desc: "set to true", value: "TRUE", want: true},
 			{desc: "set to false", value: "FALSE", want: false},
 			{desc: "set to 1", value: "1", want: true},
 			{desc: "set to 0", value: "0", want: false},
-			{desc: "invalid value", value: "invalid", wantErr: true},
+			{desc: "invalid value", value: "invalid", errorMsg: "invalid syntax"},
 		}
 
 		for _, tt := range tests {
@@ -535,11 +523,10 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
 
-				if tt.wantErr {
-					assertError(t, err, true, "")
+				assertError(t, err, tt.errorMsg)
+				if err != nil {
 					return
 				}
-				assertNoError(t, err)
 
 				if sysVars.SkipColumnNames != tt.want {
 					t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.SkipColumnNames)
@@ -607,11 +594,10 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 		validTimeStr := "2024-01-01T00:00:00Z"
 
 		tests := []struct {
-			desc        string
-			input       string
-			want        spanner.TimestampBound
-			expectError bool
-			errorMsg    string
+			desc     string
+			input    string
+			want     spanner.TimestampBound
+			errorMsg string
 		}{
 			// Valid cases - all 5 timestamp bound types
 			{desc: "STRONG read", input: "STRONG", want: spanner.StrongRead()},
@@ -630,72 +616,63 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 			{desc: "lowercase exact_staleness", input: "exact_staleness 45m", want: spanner.ExactStaleness(45 * time.Minute)},
 
 			// Error cases - invalid timestamps
-			{desc: "MIN_READ_TIMESTAMP with invalid timestamp format", input: "MIN_READ_TIMESTAMP invalid-date", expectError: true},
-			{desc: "MIN_READ_TIMESTAMP with invalid month", input: "MIN_READ_TIMESTAMP 2024-13-01T00:00:00Z", expectError: true},
-			{desc: "READ_TIMESTAMP with invalid timestamp format", input: "READ_TIMESTAMP not-a-timestamp", expectError: true},
-			{desc: "READ_TIMESTAMP with malformed RFC3339", input: "READ_TIMESTAMP 2024-01-01", expectError: true},
+			{desc: "MIN_READ_TIMESTAMP with invalid timestamp format", input: "MIN_READ_TIMESTAMP invalid-date", errorMsg: "parsing time"},
+			{desc: "MIN_READ_TIMESTAMP with invalid month", input: "MIN_READ_TIMESTAMP 2024-13-01T00:00:00Z", errorMsg: "parsing time"},
+			{desc: "READ_TIMESTAMP with invalid timestamp format", input: "READ_TIMESTAMP not-a-timestamp", errorMsg: "parsing time"},
+			{desc: "READ_TIMESTAMP with malformed RFC3339", input: "READ_TIMESTAMP 2024-01-01", errorMsg: "parsing time"},
 
 			// Error cases - invalid durations
-			{desc: "MAX_STALENESS with invalid duration", input: "MAX_STALENESS invalid-duration", expectError: true},
+			{desc: "MAX_STALENESS with invalid duration", input: "MAX_STALENESS invalid-duration", errorMsg: "invalid duration"},
 			{
-				desc:        "MAX_STALENESS with negative duration",
-				input:       "MAX_STALENESS -30s",
-				expectError: true,
-				errorMsg:    "staleness duration \"-30s\" must be non-negative",
+				desc:     "MAX_STALENESS with negative duration",
+				input:    "MAX_STALENESS -30s",
+				errorMsg: "staleness duration \"-30s\" must be non-negative",
 			},
-			{desc: "EXACT_STALENESS with invalid duration", input: "EXACT_STALENESS not-a-duration", expectError: true},
+			{desc: "EXACT_STALENESS with invalid duration", input: "EXACT_STALENESS not-a-duration", errorMsg: "invalid duration"},
 			{
-				desc:        "EXACT_STALENESS with negative duration",
-				input:       "EXACT_STALENESS -1h",
-				expectError: true,
-				errorMsg:    "staleness duration \"-1h\" must be non-negative",
+				desc:     "EXACT_STALENESS with negative duration",
+				input:    "EXACT_STALENESS -1h",
+				errorMsg: "staleness duration \"-1h\" must be non-negative",
 			},
 
 			// Error cases - unknown staleness types
 			{
-				desc:        "unknown staleness type",
-				input:       "UNKNOWN_TYPE 30s",
-				expectError: true,
-				errorMsg:    "unknown staleness: UNKNOWN_TYPE",
+				desc:     "unknown staleness type",
+				input:    "UNKNOWN_TYPE 30s",
+				errorMsg: "unknown staleness: UNKNOWN_TYPE",
 			},
 			{
-				desc:        "empty string",
-				input:       "",
-				expectError: true,
-				errorMsg:    "unknown staleness: \"\"",
+				desc:     "empty string",
+				input:    "",
+				errorMsg: "unknown staleness: \"\"",
 			},
 			{
-				desc:        "random text",
-				input:       "some random text",
-				expectError: true,
-				errorMsg:    "some accepts at most one parameter",
+				desc:     "random text",
+				input:    "some random text",
+				errorMsg: "some accepts at most one parameter",
 			},
 
 			// Edge cases
-			{desc: "STRONG with extra text should fail", input: "STRONG extra text", expectError: true, errorMsg: "STRONG accepts at most one parameter"},
+			{desc: "STRONG with extra text should fail", input: "STRONG extra text", errorMsg: "STRONG accepts at most one parameter"},
 			{
-				desc:        "MIN_READ_TIMESTAMP missing timestamp",
-				input:       "MIN_READ_TIMESTAMP",
-				expectError: true,
-				errorMsg:    "MIN_READ_TIMESTAMP requires a timestamp parameter",
+				desc:     "MIN_READ_TIMESTAMP missing timestamp",
+				input:    "MIN_READ_TIMESTAMP",
+				errorMsg: "MIN_READ_TIMESTAMP requires a timestamp parameter",
 			},
 			{
-				desc:        "READ_TIMESTAMP missing timestamp",
-				input:       "READ_TIMESTAMP",
-				expectError: true,
-				errorMsg:    "READ_TIMESTAMP requires a timestamp parameter",
+				desc:     "READ_TIMESTAMP missing timestamp",
+				input:    "READ_TIMESTAMP",
+				errorMsg: "READ_TIMESTAMP requires a timestamp parameter",
 			},
 			{
-				desc:        "MAX_STALENESS missing duration",
-				input:       "MAX_STALENESS",
-				expectError: true,
-				errorMsg:    "MAX_STALENESS requires a duration parameter",
+				desc:     "MAX_STALENESS missing duration",
+				input:    "MAX_STALENESS",
+				errorMsg: "MAX_STALENESS requires a duration parameter",
 			},
 			{
-				desc:        "EXACT_STALENESS missing duration",
-				input:       "EXACT_STALENESS",
-				expectError: true,
-				errorMsg:    "EXACT_STALENESS requires a duration parameter",
+				desc:     "EXACT_STALENESS missing duration",
+				input:    "EXACT_STALENESS",
+				errorMsg: "EXACT_STALENESS requires a duration parameter",
 			},
 			{desc: "extra whitespace before timestamp", input: "MIN_READ_TIMESTAMP   " + validTimeStr, want: spanner.MinReadTimestamp(validTime)},
 			{desc: "tabs instead of spaces", input: "MAX_STALENESS	60s", want: spanner.MaxStaleness(60 * time.Second)},
@@ -703,10 +680,10 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 			{desc: "very large duration", input: "EXACT_STALENESS 999999h", want: spanner.ExactStaleness(999999 * time.Hour)},
 
 			// Extra parameter validation tests
-			{desc: "MIN_READ_TIMESTAMP with extra parameters", input: "MIN_READ_TIMESTAMP " + validTimeStr + " extra", expectError: true, errorMsg: "MIN_READ_TIMESTAMP accepts at most one parameter"},
-			{desc: "READ_TIMESTAMP with extra parameters", input: "READ_TIMESTAMP " + validTimeStr + " extra param", expectError: true, errorMsg: "READ_TIMESTAMP accepts at most one parameter"},
-			{desc: "MAX_STALENESS with extra parameters", input: "MAX_STALENESS 30s extra", expectError: true, errorMsg: "MAX_STALENESS accepts at most one parameter"},
-			{desc: "EXACT_STALENESS with extra parameters", input: "EXACT_STALENESS 1h extra param", expectError: true, errorMsg: "EXACT_STALENESS accepts at most one parameter"},
+			{desc: "MIN_READ_TIMESTAMP with extra parameters", input: "MIN_READ_TIMESTAMP " + validTimeStr + " extra", errorMsg: "MIN_READ_TIMESTAMP accepts at most one parameter"},
+			{desc: "READ_TIMESTAMP with extra parameters", input: "READ_TIMESTAMP " + validTimeStr + " extra param", errorMsg: "READ_TIMESTAMP accepts at most one parameter"},
+			{desc: "MAX_STALENESS with extra parameters", input: "MAX_STALENESS 30s extra", errorMsg: "MAX_STALENESS accepts at most one parameter"},
+			{desc: "EXACT_STALENESS with extra parameters", input: "EXACT_STALENESS 1h extra param", errorMsg: "EXACT_STALENESS accepts at most one parameter"},
 		}
 
 		for _, test := range tests {
@@ -714,9 +691,9 @@ func TestSystemVariables_TimeAndDuration(t *testing.T) {
 				t.Parallel()
 				got, err := parseTimestampBound(test.input)
 
-				assertError(t, err, test.expectError, test.errorMsg)
+				assertError(t, err, test.errorMsg)
 
-				if !test.expectError {
+				if err == nil {
 					// Compare the timestamp bounds
 					if !timestampBoundsEqual(got, test.want) {
 						t.Errorf("expected %v, got %v", test.want, got)
@@ -742,7 +719,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 			setValue       string
 			hasSession     bool
 			detached       bool // Whether session is detached (no client)
-			expectError    bool
 			expectedErrMsg string
 		}{
 			{
@@ -752,7 +728,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue: "true",
 				setValue:     "false",
 				hasSession:   false,
-				expectError:  false,
 			},
 			{
 				name:         "set before session creation - lowercase",
@@ -761,7 +736,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue: "true",
 				setValue:     "false",
 				hasSession:   false,
-				expectError:  false,
 			},
 			{
 				name:         "set before session creation - mixed case",
@@ -770,7 +744,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue: "true",
 				setValue:     "false",
 				hasSession:   false,
-				expectError:  false,
 			},
 			{
 				name:           "change after session creation",
@@ -779,7 +752,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue:   "true",
 				setValue:       "false",
 				hasSession:     true,
-				expectError:    true,
 				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 			},
 			{
@@ -789,7 +761,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue:   "true",
 				setValue:       "false",
 				hasSession:     true,
-				expectError:    true,
 				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 			},
 			{
@@ -799,7 +770,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				initialValue: "false",
 				setValue:     "true",
 				hasSession:   true,
-				expectError:  false,
 			},
 			{
 				name:           "change after detached session creation should fail",
@@ -809,7 +779,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setValue:       "false",
 				hasSession:     true,
 				detached:       true,
-				expectError:    true,
 				expectedErrMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 			},
 		}
@@ -836,8 +805,8 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				err := sv.SetFromSimple(tt.variableCase, tt.setValue)
 
 				// Check error expectation
-				assertError(t, err, tt.expectError, tt.expectedErrMsg)
-				if tt.expectError {
+				assertError(t, err, tt.expectedErrMsg)
+				if err != nil {
 					return
 				}
 
