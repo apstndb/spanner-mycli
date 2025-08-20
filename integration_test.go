@@ -128,6 +128,7 @@ func dmlResult(n int) *Result {
 	return &Result{AffectedRows: n, IsExecutedDML: true}
 }
 
+
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
@@ -445,17 +446,56 @@ func TestSystemVariables(t *testing.T) {
 // - TestAdminStatements: admin mode tests
 // - TestMiscStatements: remaining misc tests
 
+// stmtResult represents a single statement and its expected result
+type stmtResult struct {
+	stmt string
+	want *Result
+}
+
+// sr* helper functions purpose:
+// These shorthand constructors allow defining common stmtResult patterns with minimal information,
+// significantly increasing the density of Test*Statements functions.
+// By reducing boilerplate from multi-line struct literals to single-line function calls,
+// we can fit more test cases on screen and improve readability.
+//
+// Example transformation:
+//   Before: {"SET PARAM n = 1", keepVariablesResult()},       // 51 chars
+//   After:  srKeep("SET PARAM n = 1"),                        // 31 chars (~40% reduction)
+//
+//   Before: {                                                  // 4 lines
+//             stmt: "CREATE DATABASE test",
+//             want: emptyResult(),
+//           },
+//   After:  srEmpty("CREATE DATABASE test"),                  // 1 line (75% line reduction)
+
+// sr is a shorthand constructor for stmtResult
+func sr(stmt string, want *Result) stmtResult {
+	return stmtResult{stmt: stmt, want: want}
+}
+
+// srEmpty creates a stmtResult with an empty result
+func srEmpty(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: emptyResult()}
+}
+
+// srDML creates a stmtResult for DML statements with affected rows
+func srDML(stmt string, rows int) stmtResult {
+	return stmtResult{stmt: stmt, want: dmlResult(rows)}
+}
+
+// srKeep creates a stmtResult that keeps variables
+func srKeep(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: keepVariablesResult()}
+}
+
 // statementTestCase represents a test case for statement execution
 type statementTestCase struct {
 	desc        string
 	ddls, dmls  []string
 	admin       bool   // admin mode (no database)
 	database    string // specific database name (empty = use random name)
-	stmtResults []struct {
-		stmt string
-		want *Result
-	}
-	cmpOpts []cmp.Option
+	stmtResults []stmtResult
+	cmpOpts     []cmp.Option
 }
 
 // runStatementTests is a helper function to run statement execution tests
@@ -518,24 +558,21 @@ func TestParameterStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "query parameters",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{`SET PARAM b = true`, keepVariablesResult()},
-				{`SET PARAM bs = b"foo"`, keepVariablesResult()},
-				{`SET PARAM i64 = 1`, keepVariablesResult()},
-				{`SET PARAM f64 = 1.0`, keepVariablesResult()},
-				{`SET PARAM f32 = CAST(1.0 AS FLOAT32)`, keepVariablesResult()},
-				{`SET PARAM n = NUMERIC "1"`, keepVariablesResult()},
-				{`SET PARAM s = "foo"`, keepVariablesResult()},
-				{`SET PARAM js = JSON "{}"`, keepVariablesResult()},
-				{`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`, keepVariablesResult()},
-				{`SET PARAM ival_single = INTERVAL 3 DAY`, keepVariablesResult()},
-				{`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, keepVariablesResult()},
-				{`SET PARAM a_b = [true]`, keepVariablesResult()},
-				{`SET PARAM n_b = CAST(NULL AS BOOL)`, keepVariablesResult()},
-				{`SET PARAM n_ival = CAST(NULL AS INTERVAL)`, keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep(`SET PARAM b = true`),
+				srKeep(`SET PARAM bs = b"foo"`),
+				srKeep(`SET PARAM i64 = 1`),
+				srKeep(`SET PARAM f64 = 1.0`),
+				srKeep(`SET PARAM f32 = CAST(1.0 AS FLOAT32)`),
+				srKeep(`SET PARAM n = NUMERIC "1"`),
+				srKeep(`SET PARAM s = "foo"`),
+				srKeep(`SET PARAM js = JSON "{}"`),
+				srKeep(`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`),
+				srKeep(`SET PARAM ival_single = INTERVAL 3 DAY`),
+				srKeep(`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`),
+				srKeep(`SET PARAM a_b = [true]`),
+				srKeep(`SET PARAM n_b = CAST(NULL AS BOOL)`),
+				srKeep(`SET PARAM n_ival = CAST(NULL AS INTERVAL)`),
 				{
 					`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
 					        @ival_single AS ival_single, @ival_range AS ival_range,
@@ -569,11 +606,8 @@ func TestParameterStatements(t *testing.T) {
 		},
 		{
 			desc: "SET PARAM TYPE and SHOW PARAMS",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"SET PARAM i INT64", keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep("SET PARAM i INT64"),
 				{
 					"SHOW PARAMS",
 					&Result{
@@ -595,11 +629,8 @@ func TestParameterStatements(t *testing.T) {
 		// Moved to TestBatchStatements
 		/*{
 			desc: "BATCH DML with parameters",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{testTableSimpleDDL, emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"SET PARAM n = 1", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"SET PARAM b = true", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
@@ -635,12 +666,9 @@ func TestParameterStatements(t *testing.T) {
 		},*/
 		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
-				{"SET PARAM n = 1", keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
+				srKeep("SET PARAM n = 1"),
 				{
 					"SELECT @n",
 					&Result{
@@ -662,14 +690,11 @@ func TestTransactionStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "begin, insert THEN RETURN, rollback, select",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"BEGIN", emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
 				{
-					"INSERT INTO TestTable1 (id, active) VALUES (1, true), (2, false) THEN RETURN *",
+					"INSERT INTO TestTable (id, active) VALUES (1, true), (2, false) THEN RETURN *",
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
@@ -680,9 +705,9 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader: toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", emptyResult()},
+				srEmpty("ROLLBACK"),
 				{
-					"SELECT id, active FROM TestTable1 ORDER BY id ASC",
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 0,
 						TableHeader:  toTableHeader(testTableRowType),
@@ -692,16 +717,13 @@ func TestTransactionStatements(t *testing.T) {
 		},
 		{
 			desc: "begin, insert, commit, select",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"BEGIN", emptyResult()},
-				{"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
-				{"COMMIT", emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("COMMIT"),
 				{
-					"SELECT id, active FROM TestTable2 ORDER BY id ASC",
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
 						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
@@ -712,46 +734,40 @@ func TestTransactionStatements(t *testing.T) {
 		},
 		{
 			desc: "read-only transactions",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
-				{"BEGIN RO", emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("BEGIN RO"),
 				{
-					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
 						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 						TableHeader:  toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", emptyResult()},
-				{"SET TRANSACTION READ ONLY", emptyResult()},
-				{"BEGIN", emptyResult()},
+				srEmpty("COMMIT"),
+				srEmpty("SET TRANSACTION READ ONLY"),
+				srEmpty("BEGIN"),
 				{
-					"SELECT id, active FROM TestTable3 ORDER BY id ASC",
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
 						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
 						TableHeader:  toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", emptyResult()},
+				srEmpty("COMMIT"),
 			},
 		},
 		{
 			desc: "read-write transactions",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)", emptyResult()},
-				{"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)", dmlResult(2)},
-				{"BEGIN", emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("BEGIN"),
 				{
-					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
@@ -759,11 +775,11 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", emptyResult()},
-				{"BEGIN", emptyResult()},
-				{"SET TRANSACTION READ WRITE", emptyResult()},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN"),
+				srEmpty("SET TRANSACTION READ WRITE"),
 				{
-					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
@@ -771,10 +787,10 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"ROLLBACK", emptyResult()},
-				{"BEGIN RW", emptyResult()},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN RW"),
 				{
-					"DELETE TestTable4 WHERE TRUE THEN RETURN *",
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
@@ -782,7 +798,7 @@ func TestTransactionStatements(t *testing.T) {
 						TableHeader:   toTableHeader(testTableRowType),
 					},
 				},
-				{"COMMIT", emptyResult()},
+				srEmpty("COMMIT"),
 			},
 		},
 	}
@@ -795,10 +811,7 @@ func TestShowStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "SHOW VARIABLE CLI_VERSION",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					`SHOW VARIABLE CLI_VERSION`,
 					&Result{
@@ -815,10 +828,7 @@ func TestShowStatements(t *testing.T) {
 				"CREATE TABLE TestTable1(id INT64) PRIMARY KEY(id)",
 				"CREATE TABLE TestTable2(id INT64) PRIMARY KEY(id)",
 			),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW TABLES",
 					&Result{
@@ -832,10 +842,7 @@ func TestShowStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW VARIABLES",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW VARIABLES",
 					&Result{
@@ -849,10 +856,7 @@ func TestShowStatements(t *testing.T) {
 		},
 		{
 			desc: "HELP",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"HELP",
 					lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
@@ -861,10 +865,7 @@ func TestShowStatements(t *testing.T) {
 		},
 		{
 			desc: "HELP VARIABLES",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"HELP VARIABLES",
 					lo.Must((&HelpVariablesStatement{}).Execute(context.Background(), nil)),
@@ -878,10 +879,7 @@ func TestShowStatements(t *testing.T) {
 				"CREATE TABLE Singers (SingerId INT64 NOT NULL, FirstName STRING(1024), LastName STRING(1024), SingerInfo BYTES(MAX)) PRIMARY KEY (SingerId)",
 				"CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName)",
 			),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW DDLS",
 					&Result{
@@ -914,10 +912,7 @@ func TestShowStatements(t *testing.T) {
 				"CREATE TABLE TestShowCreateIndexTbl(id INT64, val INT64) PRIMARY KEY(id)",
 				"CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)",
 			),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW CREATE INDEX TestShowCreateIndexIdx",
 					&Result{
@@ -931,10 +926,7 @@ func TestShowStatements(t *testing.T) {
 		{
 			desc: "DESCRIBE DML (INSERT with literal)",
 			ddls: sliceOf("CREATE TABLE TestDescribeDMLTbl(id INT64 PRIMARY KEY)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)",
 					&Result{
@@ -948,10 +940,7 @@ func TestShowStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW SCHEMA UPDATE OPERATIONS",
 					&Result{
@@ -965,10 +954,7 @@ func TestShowStatements(t *testing.T) {
 		{
 			desc:  "SHOW DATABASES in admin mode",
 			admin: true,
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					"SHOW DATABASES",
 					&Result{
@@ -990,11 +976,8 @@ func TestBatchStatements(t *testing.T) {
 		{
 			desc: "BATCH DML with parameters",
 			ddls: sliceOf(testTableSimpleDDL),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{`SET PARAM n = 1`, keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep(`SET PARAM n = 1`),
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"INSERT INTO TestTable (id, active) VALUES (@n, false)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
 				{"UPDATE TestTable SET active = true WHERE id = @n", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}}},
@@ -1012,11 +995,8 @@ func TestBatchStatements(t *testing.T) {
 		},
 		{
 			desc: "BATCH DDL",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{`SET CLI_ECHO_EXECUTED_DDL = TRUE`, keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_ECHO_EXECUTED_DDL = TRUE`),
 				{"START BATCH DDL", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}}},
 				{heredoc.Doc(`CREATE TABLE TestTable (
 					id		INT64,
@@ -1041,22 +1021,19 @@ func TestBatchStatements(t *testing.T) {
 		},
 		{
 			desc: "AUTO_BATCH_DML",
-			ddls: sliceOf("CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"SET AUTO_BATCH_DML = TRUE", keepVariablesResult()},
-				{"INSERT INTO TestTable6 (id, active) VALUES (1,true)", dmlResult(1)},
-				{"BEGIN", emptyResult()},
-				{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1,true)", 1),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
 				{"COMMIT", &Result{
 					IsExecutedDML: true,
 					AffectedRows:  1,
 					TableHeader:   toTableHeader("DML", "Rows"),
-					Rows:          sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"}), // tab is pass-through
+					Rows:          sliceOf(Row{"INSERT INTO TestTable (id, active) VALUES (2,	false)", "1"}), // tab is pass-through
 				}},
-				{"SELECT * FROM TestTable6 ORDER BY id", &Result{
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
 					AffectedRows: 2,
 					TableHeader:  toTableHeader(testTableRowType),
 					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
@@ -1066,13 +1043,10 @@ func TestBatchStatements(t *testing.T) {
 		{
 			desc: "ABORT BATCH DML",
 			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{"START BATCH DML", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}},
 				{"INSERT INTO TestAbortBatchDML (id) VALUES (1)", &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
-				{"ABORT BATCH", keepVariablesResult()},
+				srKeep("ABORT BATCH"),
 				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
 					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
 					Rows:         sliceOf(toRow("0")),
@@ -1097,10 +1071,7 @@ func TestPartitionedStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "TRY PARTITIONED QUERY",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{"TRY PARTITIONED QUERY SELECT 1", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
@@ -1111,11 +1082,8 @@ func TestPartitionedStatements(t *testing.T) {
 		},
 		{
 			desc: "CLI_TRY_PARTITION_QUERY system variable",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
 				{"SELECT 1", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
@@ -1126,12 +1094,9 @@ func TestPartitionedStatements(t *testing.T) {
 		},
 		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"SET CLI_TRY_PARTITION_QUERY = TRUE", keepVariablesResult()},
-				{"SET PARAM n = 1", keepVariablesResult()},
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
+				srKeep("SET PARAM n = 1"),
 				{"SELECT @n", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
@@ -1143,11 +1108,8 @@ func TestPartitionedStatements(t *testing.T) {
 		{
 			desc: "mutation, pdml, partitioned query",
 			ddls: sliceOf(testTableSimpleDDL),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)", emptyResult()},
+			stmtResults: []stmtResult{
+				srEmpty("MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)"),
 				{"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1", &Result{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}},
 				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable", &Result{
 					AffectedRows:   1,
@@ -1166,14 +1128,8 @@ func TestProtoStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "SHOW LOCAL PROTO with pb file",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-					want: keepVariablesResult(),
-				},
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
@@ -1192,14 +1148,8 @@ func TestProtoStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW LOCAL PROTO with proto file",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`,
-					want: keepVariablesResult(),
-				},
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`),
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
@@ -1219,30 +1169,15 @@ func TestProtoStatements(t *testing.T) {
 		{
 			desc: "PROTO BUNDLE statements",
 			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW REMOTE PROTO",
 					want: &Result{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
 				},
-				{
-					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-					want: keepVariablesResult(),
-				},
-				{
-					stmt: "CREATE PROTO BUNDLE (`examples.shipping.Order`)",
-					want: emptyResult(),
-				},
-				{
-					stmt: "ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-					want: emptyResult(),
-				},
-				{
-					stmt: "SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-					want: emptyResult(),
-				},
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
+				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
+				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
+				srEmpty("SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
 			},
 		},
 	}
@@ -1255,23 +1190,14 @@ func TestAdminStatements(t *testing.T) {
 		{
 			desc:  "CREATE DATABASE in admin mode",
 			admin: true,
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: "CREATE DATABASE test_db_create",
-					want: emptyResult(), // CREATE DATABASE returns empty result
-				},
+			stmtResults: []stmtResult{
+				srEmpty("CREATE DATABASE test_db_create"), // CREATE DATABASE returns empty result
 			},
 		},
 		{
 			desc:  "SHOW DATABASES in admin mode",
 			admin: true,
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
@@ -1285,14 +1211,8 @@ func TestAdminStatements(t *testing.T) {
 		{
 			desc:  "CREATE and DROP DATABASE workflow in admin mode",
 			admin: true,
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: "CREATE DATABASE test_workflow_db",
-					want: emptyResult(), // CREATE DATABASE returns empty result
-				},
+			stmtResults: []stmtResult{
+				srEmpty("CREATE DATABASE test_workflow_db"), // CREATE DATABASE returns empty result
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
@@ -1300,10 +1220,7 @@ func TestAdminStatements(t *testing.T) {
 						// Don't check specific content
 					},
 				},
-				{
-					stmt: "DROP DATABASE test_workflow_db",
-					want: emptyResult(), // DROP DATABASE should also be mutation
-				},
+				srEmpty("DROP DATABASE test_workflow_db"), // DROP DATABASE should also be mutation
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
@@ -1317,10 +1234,7 @@ func TestAdminStatements(t *testing.T) {
 		{
 			desc:     "DETACH and USE workflow with database creation",
 			database: "test-database", // Start with a database connection
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test-database (connected)
 					want: &Result{
@@ -1408,10 +1322,7 @@ func TestMiscStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "SHOW VARIABLE CLI_VERSION",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: `SHOW VARIABLE CLI_VERSION`,
 					want: &Result{
@@ -1427,10 +1338,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "HELP",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "HELP",
 					want: lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
@@ -1439,10 +1347,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW DDLS",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW DDLS",
 					want: &Result{
@@ -1464,29 +1369,20 @@ func TestMiscStatements(t *testing.T) {
 			desc: "SPLIT POINTS statements",
 			ddls: sliceOf(testTableSimpleDDL),
 			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				// Empty results for SPLIT POINTS since it only works with dedicated DB
 			},
 		},
 		{
 			desc: "EXPLAIN & EXPLAIN ANALYZE statements",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				// Empty results for EXPLAIN since it only works with dedicated DB
 			},
 		},
 		{
 			desc:     "DATABASE statements (dedicated instance)",
 			database: "test-database",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
@@ -1522,10 +1418,7 @@ func TestMiscStatements(t *testing.T) {
 		{
 			desc: "SHOW TABLES",
 			ddls: sliceOf(testTableSimpleDDL),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW TABLES",
 					want: &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
@@ -1535,10 +1428,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "TRY PARTITIONED QUERY",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "TRY PARTITIONED QUERY SELECT 1",
 					want: &Result{
@@ -1554,14 +1444,8 @@ func TestMiscStatements(t *testing.T) {
 			desc: "CLI_TRY_PARTITION_QUERY system variable",
 			ddls: sliceOf(testTableSimpleDDL),
 			dmls: sliceOf("INSERT INTO TestTable (id, active) VALUES (1, TRUE), (2, FALSE)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: "SET CLI_TRY_PARTITION_QUERY = FALSE",
-					want: keepVariablesResult(),
-				},
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = FALSE"),
 				{
 					stmt: "SELECT id FROM TestTable WHERE id > 0",
 					want: &Result{
@@ -1577,19 +1461,13 @@ func TestMiscStatements(t *testing.T) {
 			desc: "mutation, pdml, partitioned query",
 			ddls: sliceOf(testTableSimpleDDL),
 			dmls: sliceOf("DELETE FROM TestTable WHERE TRUE"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				// Empty results since these were moved to other tests
 			},
 		},
 		{
 			desc: "SHOW VARIABLES",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW VARIABLES",
 					want: &Result{
@@ -1603,10 +1481,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "HELP VARIABLES",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "HELP VARIABLES",
 					want: &Result{
@@ -1622,23 +1497,14 @@ func TestMiscStatements(t *testing.T) {
 			desc: "CQL SELECT",
 			ddls: sliceOf(testTableSimpleDDL),
 			dmls: []string{"DELETE FROM TestTable WHERE TRUE"},
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				// Empty results since CQL SELECT would return actual data
 			},
 		},
 		{
 			desc: "SET ADD statement for CLI_PROTO_FILES",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
-				{
-					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`,
-					want: keepVariablesResult(),
-				},
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`),
 				{
 					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
 					want: &Result{
@@ -1648,10 +1514,7 @@ func TestMiscStatements(t *testing.T) {
 						AffectedRows:  0,
 					},
 				},
-				{
-					stmt: `SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`,
-					want: keepVariablesResult(),
-				},
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`),
 				{
 					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
 					want: &Result{
@@ -1667,10 +1530,7 @@ func TestMiscStatements(t *testing.T) {
 			desc: "SHOW CREATE INDEX",
 			ddls: sliceOf("CREATE TABLE Users (id INT64, name STRING(255), email STRING(255), age INT64) PRIMARY KEY (id)",
 				"CREATE INDEX UsersByEmail ON Users(email)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW CREATE INDEX UsersByEmail",
 					want: &Result{
@@ -1684,10 +1544,7 @@ func TestMiscStatements(t *testing.T) {
 		{
 			desc: "DESCRIBE DML (INSERT with literal)",
 			ddls: sliceOf("CREATE TABLE Users (id INT64, name STRING(255)) PRIMARY KEY (id)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "DESCRIBE INSERT INTO Users (id, name) VALUES (1, 'Alice')",
 					want: &Result{
@@ -1701,10 +1558,7 @@ func TestMiscStatements(t *testing.T) {
 		{
 			desc: "PARTITION SELECT query",
 			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "PARTITION SELECT id FROM TestPartitionQueryTbl",
 					want: &Result{
@@ -1719,10 +1573,7 @@ func TestMiscStatements(t *testing.T) {
 		},
 		{
 			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW SCHEMA UPDATE OPERATIONS",
 					want: &Result{
@@ -1736,10 +1587,7 @@ func TestMiscStatements(t *testing.T) {
 		{
 			desc: "MUTATE DELETE",
 			ddls: sliceOf("CREATE TABLE TestMutateDeleteTbl(id INT64 PRIMARY KEY)"),
-			stmtResults: []struct {
-				stmt string
-				want *Result
-			}{
+			stmtResults: []stmtResult{
 				{
 					stmt: "INSERT INTO TestMutateDeleteTbl (id) VALUES (1)",
 					want: &Result{
