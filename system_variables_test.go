@@ -750,90 +750,108 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 
 	t.Run("SessionInitOnlyVariables", func(t *testing.T) {
 		t.Parallel()
-		tests := []struct {
-			desc     string
-			varName  string // Variable name (for Get)
-			varCase  string // Variable case (for Set)
-			initial  string
-			setValue string
-			session  bool
-			detached bool
-			errorMsg string
-		}{
-			// Test case sensitivity before session
-			{desc: "before session - uppercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false"},
-			{desc: "before session - lowercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "cli_enable_adc_plus", initial: "true", setValue: "false"},
-			{desc: "before session - mixed case", varName: "CLI_ENABLE_ADC_PLUS", varCase: "Cli_Enable_Adc_Plus", initial: "true", setValue: "false"},
-			// Test restriction after session
-			{desc: "after session - uppercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false", session: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
-			{desc: "after session - lowercase", varName: "CLI_ENABLE_ADC_PLUS", varCase: "cli_enable_adc_plus", initial: "true", setValue: "false", session: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
-			// Test non-restricted variable
-			{desc: "non-restricted var", varName: "CLI_ASYNC_DDL", varCase: "CLI_ASYNC_DDL", initial: "false", setValue: "true", session: true},
-			// Test detached session
-			{desc: "detached session", varName: "CLI_ENABLE_ADC_PLUS", varCase: "CLI_ENABLE_ADC_PLUS", initial: "true", setValue: "false", session: true, detached: true, errorMsg: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation"},
-		}
 
-		for _, tt := range tests {
-			t.Run(tt.desc, func(t *testing.T) {
-				t.Parallel()
-				// Create systemVariables with initial value
-				sv := &systemVariables{
-					EnableADCPlus: tt.initial == "true",
-					AsyncDDL:      tt.varName == "CLI_ASYNC_DDL" && tt.initial == "true",
-				}
+		// This test verifies that CLI_ENABLE_ADC_PLUS can only be changed before session creation.
+		// Once a session is created, the variable becomes immutable to ensure consistent
+		// authentication behavior throughout the session lifecycle.
 
-				// Simulate session if needed
-				if tt.session {
-					sv.CurrentSession = &Session{}
-					if !tt.detached {
-						sv.CurrentSession.client = &spanner.Client{}
-					}
-				}
+		// Test changing CLI_ENABLE_ADC_PLUS before session creation (should succeed)
+		t.Run("can_change_before_session", func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
 
-				// Test Set operation
-				err := sv.SetFromSimple(tt.varCase, tt.setValue)
-				assertError(t, err, tt.errorMsg)
-				if err != nil {
-					return
-				}
+			// Should be able to change from default (true) to false
+			err := sv.SetFromSimple("CLI_ENABLE_ADC_PLUS", "false")
+			assertNoError(t, err)
 
-				// Verify value was set (only for non-session cases)
-				switch tt.varName {
-				case "CLI_ENABLE_ADC_PLUS":
-					expected := tt.setValue == "true" || tt.setValue == "TRUE"
-					if !tt.session && sv.EnableADCPlus != expected {
-						t.Errorf("expected EnableADCPlus to be %v, got %v", expected, sv.EnableADCPlus)
-					}
-				case "CLI_ASYNC_DDL":
-					expected := tt.setValue == "true" || tt.setValue == "TRUE"
-					if sv.AsyncDDL != expected {
-						t.Errorf("expected AsyncDDL to be %v, got %v", expected, sv.AsyncDDL)
-					}
-				}
+			values, err := sv.Get("CLI_ENABLE_ADC_PLUS")
+			assertNoError(t, err)
+			if values["CLI_ENABLE_ADC_PLUS"] != "FALSE" {
+				t.Errorf("expected CLI_ENABLE_ADC_PLUS to be FALSE, got %s", values["CLI_ENABLE_ADC_PLUS"])
+			}
 
-				// Verify Get returns correct value
-				values, err := sv.Get(tt.varName)
-				assertNoError(t, err)
+			// Should be able to change back to true
+			err = sv.SetFromSimple("CLI_ENABLE_ADC_PLUS", "true")
+			assertNoError(t, err)
 
-				var expected string
-				switch tt.varName {
-				case "CLI_ENABLE_ADC_PLUS":
-					expected = "FALSE"
-					if sv.EnableADCPlus {
-						expected = "TRUE"
-					}
-				case "CLI_ASYNC_DDL":
-					expected = "FALSE"
-					if sv.AsyncDDL {
-						expected = "TRUE"
-					}
-				}
+			values, err = sv.Get("CLI_ENABLE_ADC_PLUS")
+			assertNoError(t, err)
+			if values["CLI_ENABLE_ADC_PLUS"] != "TRUE" {
+				t.Errorf("expected CLI_ENABLE_ADC_PLUS to be TRUE, got %s", values["CLI_ENABLE_ADC_PLUS"])
+			}
+		})
 
-				if values[tt.varName] != expected {
-					t.Errorf("Get(%s) = %q, want %q", tt.varName, values[tt.varName], expected)
-				}
-			})
-		}
+		// Test that CLI_ENABLE_ADC_PLUS cannot be changed after session creation
+		t.Run("cannot_change_after_session", func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
+
+			// Create a session (simulating a database connection)
+			sv.CurrentSession = &Session{
+				client: &spanner.Client{}, // Mock client to simulate initialized session
+			}
+
+			// Attempt to change should fail
+			err := sv.SetFromSimple("CLI_ENABLE_ADC_PLUS", "false")
+			assertError(t, err, "CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
+
+			// Verify the value hasn't changed from default
+			values, err := sv.Get("CLI_ENABLE_ADC_PLUS")
+			assertNoError(t, err)
+			if values["CLI_ENABLE_ADC_PLUS"] != "TRUE" { // Default is true
+				t.Errorf("CLI_ENABLE_ADC_PLUS should not have changed, got %s", values["CLI_ENABLE_ADC_PLUS"])
+			}
+		})
+
+		// Test that the restriction is case-insensitive for variable names
+		t.Run("case_insensitive_restriction", func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
+			sv.CurrentSession = &Session{client: &spanner.Client{}}
+
+			// Try different case variations - all should be rejected
+			testCases := []string{
+				"CLI_ENABLE_ADC_PLUS",
+				"cli_enable_adc_plus",
+				"Cli_Enable_Adc_Plus",
+				"CLI_enable_ADC_plus",
+			}
+
+			for _, varCase := range testCases {
+				err := sv.SetFromSimple(varCase, "false")
+				assertError(t, err, "CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
+			}
+		})
+
+		// Test that even detached sessions (without client) enforce the restriction
+		t.Run("restriction_applies_to_detached_session", func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
+
+			// Create a detached session (no client)
+			sv.CurrentSession = &Session{} // No client field set
+
+			// Should still be restricted
+			err := sv.SetFromSimple("CLI_ENABLE_ADC_PLUS", "false")
+			assertError(t, err, "CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
+		})
+
+		// Verify that other variables can still be changed after session creation
+		t.Run("other_variables_not_restricted", func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
+			sv.CurrentSession = &Session{client: &spanner.Client{}}
+
+			// CLI_ASYNC_DDL should be changeable after session creation
+			err := sv.SetFromSimple("CLI_ASYNC_DDL", "true")
+			assertNoError(t, err)
+
+			values, err := sv.Get("CLI_ASYNC_DDL")
+			assertNoError(t, err)
+			if values["CLI_ASYNC_DDL"] != "TRUE" {
+				t.Errorf("expected CLI_ASYNC_DDL to be TRUE, got %s", values["CLI_ASYNC_DDL"])
+			}
+		})
 	})
 }
 
