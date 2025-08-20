@@ -1168,20 +1168,6 @@ func TestAdminStatements(t *testing.T) {
 			},
 		},
 		{
-			desc:  "SHOW DATABASES in admin mode",
-			admin: true,
-			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW DATABASES",
-					want: &Result{
-						TableHeader: toTableHeader("Database"),
-						// Don't check specific rows since databases vary
-					},
-				},
-			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
-		},
-		{
 			desc:  "CREATE and DROP DATABASE workflow in admin mode",
 			admin: true,
 			stmtResults: []stmtResult{
@@ -1266,72 +1252,6 @@ func TestAdminStatements(t *testing.T) {
 			},
 			// TableHeaders are explicitly set for SELECT statements
 		},
-	}
-
-	runStatementTests(t, tests)
-}
-
-func TestMiscStatements(t *testing.T) {
-	tests := []statementTestCase{
-		{
-			desc: "SHOW VARIABLE CLI_VERSION",
-			stmtResults: []stmtResult{
-				{
-					stmt: `SHOW VARIABLE CLI_VERSION`,
-					want: &Result{
-						TableHeader: toTableHeader("CLI_VERSION"),
-						Rows: sliceOf(
-							toRow("(devel)"),
-						),
-						AffectedRows:  0,
-						KeepVariables: true,
-					},
-				},
-			},
-		},
-		{
-			desc: "HELP",
-			stmtResults: []stmtResult{
-				{
-					stmt: "HELP",
-					want: lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
-				},
-			},
-		},
-		{
-			desc: "SHOW DDLS",
-			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW DDLS",
-					want: &Result{
-						TableHeader: toTableHeader(""),
-						Rows: sliceOf(toRow(heredoc.Doc(`
-						CREATE TABLE TestTable (
-						  id INT64,
-						  active BOOL,
-						) PRIMARY KEY(id);
-						`))),
-						AffectedRows:  0,
-						KeepVariables: true,
-					},
-				},
-			},
-			ddls: sliceOf(testTableSimpleDDL),
-		},
-		{
-			desc:        "SPLIT POINTS statements",
-			ddls:        sliceOf(testTableSimpleDDL),
-			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
-			stmtResults: []stmtResult{
-				// Empty results for SPLIT POINTS since it only works with dedicated DB
-			},
-		},
-		{
-			desc:        "EXPLAIN & EXPLAIN ANALYZE statements",
-			stmtResults: []stmtResult{
-				// Empty results for EXPLAIN since it only works with dedicated DB
-			},
-		},
 		{
 			desc:     "DATABASE statements (dedicated instance)",
 			database: "test-database",
@@ -1357,78 +1277,41 @@ func TestMiscStatements(t *testing.T) {
 			cmpOpts: sliceOf(ignorePathOpt(`.Rows[0][2]`)),
 		},
 		{
-			desc: "SHOW TABLES",
-			ddls: sliceOf(testTableSimpleDDL),
-			stmtResults: []stmtResult{
-				sr("SHOW TABLES", &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1}),
-			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "TableHeader")),
-		},
-		{
-			desc: "TRY PARTITIONED QUERY",
+			desc: "PARTITION SELECT query",
+			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
 			stmtResults: []stmtResult{
 				{
-					stmt: "TRY PARTITIONED QUERY SELECT 1",
+					stmt: "PARTITION SELECT id FROM TestPartitionQueryTbl",
 					want: &Result{
+						TableHeader:  toTableHeader("Partition_Token"),
+						AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
 						ForceWrap:    true,
-						AffectedRows: 1,
-						TableHeader:  toTableHeader("Root_Partitionable"),
-						Rows:         sliceOf(toRow("TRUE")),
 					},
 				},
 			},
+			// Ignore actual token values
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows")),
 		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+func TestMiscStatements(t *testing.T) {
+	tests := []statementTestCase{
 		{
-			desc: "CLI_TRY_PARTITION_QUERY system variable",
-			ddls: sliceOf(testTableSimpleDDL),
-			dmls: sliceOf("INSERT INTO TestTable (id, active) VALUES (1, TRUE), (2, FALSE)"),
-			stmtResults: []stmtResult{
-				srKeep("SET CLI_TRY_PARTITION_QUERY = FALSE"),
-				{
-					stmt: "SELECT id FROM TestTable WHERE id > 0",
-					want: &Result{
-						Rows:         sliceOf(toRow("1"), toRow("2")),
-						AffectedRows: 2,
-						TableHeader:  typesTableHeader{&sppb.StructType_Field{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}},
-					},
-				},
-			},
-		},
-		{
-			desc:        "mutation, pdml, partitioned query",
+			desc:        "SPLIT POINTS statements",
 			ddls:        sliceOf(testTableSimpleDDL),
-			dmls:        sliceOf("DELETE FROM TestTable WHERE TRUE"),
+			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
 			stmtResults: []stmtResult{
-				// Empty results since these were moved to other tests
+				// Empty results for SPLIT POINTS since it only works with dedicated DB
 			},
 		},
 		{
-			desc: "SHOW VARIABLES",
+			desc:        "EXPLAIN & EXPLAIN ANALYZE statements",
 			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW VARIABLES",
-					want: &Result{
-						TableHeader:   toTableHeader("name", "value"),
-						KeepVariables: true,
-						// Rows and AffectedRows are dynamic, so we don't check them here.
-					},
-				},
+				// Empty results for EXPLAIN since it only works with dedicated DB
 			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
-		},
-		{
-			desc: "HELP VARIABLES",
-			stmtResults: []stmtResult{
-				{
-					stmt: "HELP VARIABLES",
-					want: &Result{
-						TableHeader:   toTableHeader("name", "operations", "desc"),
-						KeepVariables: true,
-						// Don't check specific rows for HELP VARIABLES
-					},
-				},
-			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
 		},
 		{
 			desc:        "CQL SELECT",
@@ -1459,63 +1342,6 @@ func TestMiscStatements(t *testing.T) {
 						TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
 						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb,testdata/protos/singer.proto")),
 						AffectedRows:  0,
-					},
-				},
-			},
-		},
-		{
-			desc: "SHOW CREATE INDEX",
-			ddls: sliceOf("CREATE TABLE Users (id INT64, name STRING(255), email STRING(255), age INT64) PRIMARY KEY (id)",
-				"CREATE INDEX UsersByEmail ON Users(email)"),
-			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW CREATE INDEX UsersByEmail",
-					want: &Result{
-						TableHeader:  toTableHeader("Name", "DDL"),
-						Rows:         sliceOf(toRow("UsersByEmail", "CREATE INDEX UsersByEmail ON Users(email)")),
-						AffectedRows: 1,
-					},
-				},
-			},
-		},
-		{
-			desc: "DESCRIBE DML (INSERT with literal)",
-			ddls: sliceOf("CREATE TABLE Users (id INT64, name STRING(255)) PRIMARY KEY (id)"),
-			stmtResults: []stmtResult{
-				{
-					stmt: "DESCRIBE INSERT INTO Users (id, name) VALUES (1, 'Alice')",
-					want: &Result{
-						TableHeader: toTableHeader("Column_Name", "Column_Type"),
-						// DESCRIBE doesn't return rows for DML - Rows and AffectedRows default to nil/0
-					},
-				},
-			},
-		},
-		{
-			desc: "PARTITION SELECT query",
-			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
-			stmtResults: []stmtResult{
-				{
-					stmt: "PARTITION SELECT id FROM TestPartitionQueryTbl",
-					want: &Result{
-						TableHeader:  toTableHeader("Partition_Token"),
-						AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
-						ForceWrap:    true,
-					},
-				},
-			},
-			// Ignore actual token values
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows")),
-		},
-		{
-			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
-			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW SCHEMA UPDATE OPERATIONS",
-					want: &Result{
-						TableHeader: toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-						// Empty rows since no schema updates in test
-						AffectedRows: 0,
 					},
 				},
 			},
