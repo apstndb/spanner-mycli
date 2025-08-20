@@ -488,6 +488,9 @@ func srKeep(stmt string) stmtResult {
 	return stmtResult{stmt: stmt, want: keepVariablesResult()}
 }
 
+// For cases where we want to use sr* but still need the full struct syntax
+// (e.g., when adding inline comments), keep the original format
+
 // statementTestCase represents a test case for statement execution
 type statementTestCase struct {
 	desc        string
@@ -1170,10 +1173,7 @@ func TestProtoStatements(t *testing.T) {
 			desc: "PROTO BUNDLE statements",
 			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
 			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW REMOTE PROTO",
-					want: &Result{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
-				},
+				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")}),
 				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
 				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
 				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
@@ -1252,10 +1252,7 @@ func TestAdminStatements(t *testing.T) {
 						AffectedRows: 1,
 					},
 				},
-				{
-					stmt: "DETACH",      // Switch to admin-only mode
-					want: emptyResult(), // DETACH statement returns empty result
-				},
+				srEmpty("DETACH"), // Switch to admin-only mode, returns empty result
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show empty string (*detached*)
 					want: &Result{
@@ -1265,10 +1262,7 @@ func TestAdminStatements(t *testing.T) {
 						AffectedRows:  0,
 					},
 				},
-				{
-					stmt: "CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: emptyResult(),                      // CREATE DATABASE returns empty result
-				},
+				srEmpty("CREATE DATABASE `test_detach_db`"), // Should work from admin-only mode
 				{
 					stmt: "SHOW DATABASES", // Should show both databases
 					want: &Result{
@@ -1277,10 +1271,7 @@ func TestAdminStatements(t *testing.T) {
 						AffectedRows: 2,
 					},
 				},
-				{
-					stmt: "USE `test_detach_db`", // Switch to new database
-					want: emptyResult(),          // USE statement returns empty result
-				},
+				srEmpty("USE `test_detach_db`"), // Switch to new database
 				{
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test_detach_db
 					want: &Result{
@@ -1298,14 +1289,8 @@ func TestAdminStatements(t *testing.T) {
 						AffectedRows: 1,
 					},
 				},
-				{
-					stmt: "DETACH",      // Switch to admin-only mode again
-					want: emptyResult(), // DETACH statement returns empty result
-				},
-				{
-					stmt: "DROP DATABASE `test_detach_db`", // Should work from admin-only mode
-					want: emptyResult(),                    // DROP DATABASE should succeed from admin mode
-				},
+				srEmpty("DETACH"), // Switch to admin-only mode again
+				srEmpty("DROP DATABASE `test_detach_db`"), // Should work from admin-only mode
 			},
 			// Ignore TableHeader details for SELECT statements since they contain complex type information
 			cmpOpts: sliceOf[cmp.Option](cmp.FilterPath(func(path cmp.Path) bool {
@@ -1387,26 +1372,14 @@ func TestMiscStatements(t *testing.T) {
 					stmt: "SHOW DATABASES",
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				},
-				{
-					stmt: "CREATE DATABASE `new-database`",
-					want: emptyResult(), // CREATE DATABASE returns empty result
-				},
+				srEmpty("CREATE DATABASE `new-database`"), // CREATE DATABASE returns empty result
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				},
-				{
-					stmt: "USE `new-database` ROLE spanner_info_reader", // nop
-					want: emptyResult(),
-				},
-				{
-					stmt: "USE `test-database`", // nop
-					want: emptyResult(),
-				},
-				{
-					stmt: "DROP DATABASE `new-database`",
-					want: emptyResult(), // DROP DATABASE
-				},
+				srEmpty("USE `new-database` ROLE spanner_info_reader"), // nop
+				srEmpty("USE `test-database`"), // nop
+				srEmpty("DROP DATABASE `new-database`"), // DROP DATABASE
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
@@ -1419,10 +1392,7 @@ func TestMiscStatements(t *testing.T) {
 			desc: "SHOW TABLES",
 			ddls: sliceOf(testTableSimpleDDL),
 			stmtResults: []stmtResult{
-				{
-					stmt: "SHOW TABLES",
-					want: &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
-				},
+				sr("SHOW TABLES", &Result{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1}),
 			},
 			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "TableHeader")),
 		},
