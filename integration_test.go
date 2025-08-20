@@ -1037,13 +1037,8 @@ func TestBatchStatements(t *testing.T) {
 					AffectedRows: 1,
 				}},
 			},
-			// Ignore TableHeader except for wantResults[3]
-			cmpOpts: sliceOf[cmp.Option](cmp.FilterPath(func(path cmp.Path) bool {
-				// Note: Using path.String() here, not path.GoString()
-				pathStr := path.String()
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(pathStr) &&
-					!strings.Contains(pathStr, "wantResults[3]")
-			}, cmp.Ignore())),
+			// Ignore TableHeader for all results except the SELECT COUNT (index 3)
+			cmpOpts: sliceOf(ignorePathOpt(`wantResults[0].TableHeader`, `wantResults[1].TableHeader`, `wantResults[2].TableHeader`)),
 		},
 	}
 
@@ -1273,11 +1268,8 @@ func TestAdminStatements(t *testing.T) {
 				srEmpty("DETACH"),                         // Switch to admin-only mode again
 				srEmpty("DROP DATABASE `test_detach_db`"), // Should work from admin-only mode
 			},
-			// Ignore TableHeader details for SELECT statements since they contain complex type information
-			cmpOpts: sliceOf[cmp.Option](cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-					(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
-			}, cmp.Ignore())),
+			// Ignore TableHeader for SELECT statements (indices 1 and 8) due to complex type information
+			cmpOpts: sliceOf(ignorePathOpt(`wantResults[1].TableHeader`, `wantResults[8].TableHeader`)),
 		},
 	}
 
