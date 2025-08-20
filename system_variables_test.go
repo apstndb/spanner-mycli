@@ -779,7 +779,7 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				// Create systemVariables with initial value
 				sv := &systemVariables{
 					EnableADCPlus: tt.initial == "true",
-					AsyncDDL:      tt.initial == "false" && tt.varName == "CLI_ASYNC_DDL",
+					AsyncDDL:      tt.varName == "CLI_ASYNC_DDL" && tt.initial == "true",
 				}
 
 				// Simulate session if needed
