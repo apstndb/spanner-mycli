@@ -532,7 +532,9 @@ func runStatementTests(t *testing.T, tests []statementTestCase) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
-			ctx := t.Context()
+			// TODO: Consider if this 180s timeout is actually necessary - tests typically complete much faster
+			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+			defer cancel()
 
 			// Validate admin + non-empty database combination
 			if tt.admin && tt.database != "" {
