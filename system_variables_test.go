@@ -864,22 +864,13 @@ func TestTimeAndDurationVariables(t *testing.T) {
 			t.Run(test.desc, func(t *testing.T) {
 				got, err := parseTimestampBound(test.input)
 
-				if test.expectError {
-					if test.errorMsg != "" && err != nil && err.Error() != test.errorMsg {
-						t.Errorf("expected error message %q, got %q", test.errorMsg, err.Error())
-					} else {
-						assertError(t, err, true, "")
+				assertError(t, err, test.expectError, test.errorMsg)
+
+				if !test.expectError {
+					// Compare the timestamp bounds
+					if !timestampBoundsEqual(got, test.want) {
+						t.Errorf("expected %v, got %v", test.want, got)
 					}
-					return
-				}
-
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-
-				// Compare the timestamp bounds
-				if !timestampBoundsEqual(got, test.want) {
-					t.Errorf("expected %v, got %v", test.want, got)
 				}
 			})
 		}
