@@ -4,7 +4,7 @@ This document provides guidance for Gemini Code Assist when reviewing code in th
 
 ## Go Version and Language Features
 
-This project uses **Go 1.24** as specified in `go.mod`. Please consider the following when reviewing Go code:
+This project uses **Go 1.25** as specified in `go.mod`. Please consider the following when reviewing Go code:
 
 ### Loop Variable Semantics (Go 1.22+)
 

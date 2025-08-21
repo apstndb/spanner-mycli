@@ -43,225 +43,285 @@ func ptyStdin() stdinProvider {
 	}
 }
 
+// Common error messages used across tests
+const (
+	errMsgInputMethodsExclusive        = "--execute(-e), --file(-f), --sql, --source are exclusive"
+	errMsgEndpointHostPortExclusive    = "--endpoint and (--host or --port) are mutually exclusive"
+	errMsgStrongReadTimestampExclusive = "--strong and --read-timestamp are mutually exclusive"
+	errMsgTryPartitionRequiresInput    = "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql"
+	errMsgMissingProjectInstance       = "missing parameters: -p, -i are required"
+	errMsgMissingDatabase              = "missing parameter: -d is required"
+)
+
+// withRequiredFlags adds the standard required flags (project, instance, database) to the given additional flags
+func withRequiredFlags(additionalFlags ...string) []string {
+	base := []string{"--project", "p", "--instance", "i", "--database", "d"}
+	return append(base, additionalFlags...)
+}
+
+// contains checks if a string contains a substring
+func contains(s, substr string) bool {
+	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
+}
+
+// ptr returns a pointer to the given string
+func ptr(s string) *string {
+	return &s
+}
+
+// assertEqual compares a field value with an expected pointer value (generic)
+func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
+	t.Helper()
+	if want != nil && got != *want {
+		t.Errorf("%s = %v, want %v", fieldName, got, *want)
+	}
+}
+
+// checkError validates that an error matches expected conditions
+func checkError(t *testing.T, err error, errContains string) {
+	t.Helper()
+	wantErr := errContains != ""
+	if (err != nil) != wantErr {
+		t.Errorf("error = %v, wantErr %v", err, wantErr)
+		return
+	}
+	if errContains != "" && err != nil {
+		if !contains(err.Error(), errContains) {
+			t.Errorf("error %q does not contain expected string %q", err.Error(), errContains)
+		}
+	}
+}
+
+// parseAndValidate parses command-line arguments and validates Spanner options
+func parseAndValidate(args []string) (*globalOptions, error) {
+	var gopts globalOptions
+	parser := flags.NewParser(&gopts, flags.Default)
+	_, err := parser.ParseArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ValidateSpannerOptions(&gopts.Spanner); err != nil {
+		return nil, err
+	}
+
+	return &gopts, nil
+}
+
+// initSysVarsOrFail initializes system variables and fails the test on error
+func initSysVarsOrFail(t *testing.T, opts *spannerOptions) *systemVariables {
+	t.Helper()
+	sysVars, err := initializeSystemVariables(opts)
+	if err != nil {
+		t.Fatalf("Failed to initialize system variables: %v", err)
+	}
+	return sysVars
+}
+
+// verifyConnectionParams checks common connection parameters
+func verifyConnectionParams(t *testing.T, sysVars *systemVariables, wantProject, wantInstance, wantDatabase string) {
+	t.Helper()
+	if sysVars.Project != wantProject {
+		t.Errorf("Project = %q, want %q", sysVars.Project, wantProject)
+	}
+	if sysVars.Instance != wantInstance {
+		t.Errorf("Instance = %q, want %q", sysVars.Instance, wantInstance)
+	}
+	if sysVars.Database != wantDatabase {
+		t.Errorf("Database = %q, want %q", sysVars.Database, wantDatabase)
+	}
+}
+
+// spannerOptionsExpectations holds expected field values for verification
+type spannerOptionsExpectations struct {
+	Priority        *string
+	QueryMode       *string
+	DatabaseDialect *string
+	DirectedRead    *string
+	ReadTimestamp   *string
+	Timeout         *string
+	EmulatorImage   *string
+}
+
+// verifySpannerOptions checks spannerOptions fields against expected values
+func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOptionsExpectations) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	assertEqual(t, "Priority", got.Priority, want.Priority)
+	assertEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
+	assertEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
+	assertEqual(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
+	assertEqual(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
+	assertEqual(t, "Timeout", got.Timeout, want.Timeout)
+	assertEqual(t, "EmulatorImage", got.EmulatorImage, want.EmulatorImage)
+}
+
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
 func TestParseFlagsCombinations(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name        string
 		args        []string
-		wantErr     bool
 		errContains string
 	}{
 		// Alias conflicts
 		{
-			name:    "execute and sql are aliases (both allowed)",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--sql", "SELECT 2"},
-			wantErr: false,
+			name: "execute and sql are aliases (both allowed)",
+			args: withRequiredFlags("--execute", "SELECT 1", "--sql", "SELECT 2"),
 		},
 		{
 			name: "role and database-role both set (aliases allowed)",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--role", "role1", "--database-role", "role2"},
+			args: withRequiredFlags("--role", "role1", "--database-role", "role2"),
 			// Note: Both can be set during parsing, but initializeSystemVariables prefers --role
-			wantErr: false,
 		},
 		{
-			name:    "insecure and skip-tls-verify are aliases (both allowed)",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
-			wantErr: false,
+			name: "insecure and skip-tls-verify are aliases (both allowed)",
+			args: withRequiredFlags("--insecure", "--skip-tls-verify"),
 		},
 		{
 			name: "endpoint and deployment-endpoint both set (aliases allowed)",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"},
+			args: withRequiredFlags("--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"),
 			// Note: Both can be set during parsing, but initializeSystemVariables prefers --endpoint
-			wantErr: false,
 		},
 
 		// Mutually exclusive operations
 		{
 			name:        "execute and file are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql"},
-			wantErr:     true,
-			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
+			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql"),
+			errContains: errMsgInputMethodsExclusive,
 		},
 		{
 			name:        "strong and read-timestamp are mutually exclusive",
 			args:        []string{"--strong", "--read-timestamp", "2023-01-01T00:00:00Z"},
-			wantErr:     true,
-			errContains: "--strong and --read-timestamp are mutually exclusive",
+			errContains: errMsgStrongReadTimestampExclusive,
 		},
 		{
 			name:        "all three input methods (execute, file, sql) are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2"},
-			wantErr:     true,
-			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
+			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2"),
+			errContains: errMsgInputMethodsExclusive,
 		},
 
 		// Invalid combinations
 		{
 			name:        "endpoint and host are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--host", "example.com"},
-			wantErr:     true,
-			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--host", "example.com"),
+			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "endpoint and port are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--port", "9010"},
-			wantErr:     true,
-			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--port", "9010"),
+			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "endpoint and both host/port are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443", "--host", "example.com", "--port", "9010"},
-			wantErr:     true,
-			errContains: "--endpoint and (--host or --port) are mutually exclusive",
+			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--host", "example.com", "--port", "9010"),
+			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "try-partition-query requires SQL input",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
-			wantErr:     true,
-			errContains: "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql",
+			args:        withRequiredFlags("--try-partition-query"),
+			errContains: errMsgTryPartitionRequiresInput,
 		},
 		{
 			name: "table flag without SQL input in batch mode",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
+			args: withRequiredFlags("--table"),
 			// Table flag is valid without SQL input - it affects output format
-			wantErr: false,
 		},
 		{
-			name:    "try-partition-query with execute is valid",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
-			wantErr: false,
+			name: "try-partition-query with execute is valid",
+			args: withRequiredFlags("--try-partition-query", "--execute", "SELECT 1"),
 		},
 		{
-			name:    "try-partition-query with sql is valid",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--sql", "SELECT 1"},
-			wantErr: false,
+			name: "try-partition-query with sql is valid",
+			args: withRequiredFlags("--try-partition-query", "--sql", "SELECT 1"),
 		},
 		{
-			name:    "try-partition-query with file is valid",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--file", "query.sql"},
-			wantErr: false,
+			name: "try-partition-query with file is valid",
+			args: withRequiredFlags("--try-partition-query", "--file", "query.sql"),
 		},
 		{
-			name:    "try-partition-query with source is valid",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--source", "query.sql"},
-			wantErr: false,
+			name: "try-partition-query with source is valid",
+			args: withRequiredFlags("--try-partition-query", "--source", "query.sql"),
 		},
 		{
 			name:        "execute and source are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--source", "query.sql"},
-			wantErr:     true,
-			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
+			args:        withRequiredFlags("--execute", "SELECT 1", "--source", "query.sql"),
+			errContains: errMsgInputMethodsExclusive,
 		},
 		{
 			name:        "all four input methods are mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2", "--source", "query3.sql"},
-			wantErr:     true,
-			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
+			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2", "--source", "query3.sql"),
+			errContains: errMsgInputMethodsExclusive,
 		},
 
 		// Embedded emulator tests
 		{
-			name:    "embedded-emulator without connection params",
-			args:    []string{"--embedded-emulator"},
-			wantErr: false,
+			name: "embedded-emulator without connection params",
+			args: []string{"--embedded-emulator"},
 		},
 		{
-			name:    "embedded-emulator with custom image",
-			args:    []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
-			wantErr: false,
+			name: "embedded-emulator with custom image",
+			args: []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
 		},
 		{
-			name:    "embedded-emulator ignores connection params",
-			args:    []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
-			wantErr: false,
+			name: "embedded-emulator ignores connection params",
+			args: []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
 		},
 
 		// Missing required parameters
 		{
 			name:        "missing project without embedded emulator",
 			args:        []string{"--instance", "i", "--database", "d"},
-			wantErr:     true,
-			errContains: "missing parameters: -p, -i are required",
+			errContains: errMsgMissingProjectInstance,
 		},
 		{
 			name:        "missing instance without embedded emulator",
 			args:        []string{"--project", "p", "--database", "d"},
-			wantErr:     true,
-			errContains: "missing parameters: -p, -i are required",
+			errContains: errMsgMissingProjectInstance,
 		},
 		{
 			name:        "missing database without embedded emulator or detached",
 			args:        []string{"--project", "p", "--instance", "i"},
-			wantErr:     true,
-			errContains: "missing parameter: -d is required",
+			errContains: errMsgMissingDatabase,
 		},
 		{
-			name:    "detached mode doesn't require database",
-			args:    []string{"--project", "p", "--instance", "i", "--detached"},
-			wantErr: false,
+			name: "detached mode doesn't require database",
+			args: []string{"--project", "p", "--instance", "i", "--detached"},
 		},
 		{
-			name:    "embedded emulator doesn't require project/instance/database",
-			args:    []string{"--embedded-emulator"},
-			wantErr: false,
+			name: "embedded emulator doesn't require project/instance/database",
+			args: []string{"--embedded-emulator"},
 		},
 
 		// Valid combinations
 		{
-			name:    "minimal valid flags",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d"},
-			wantErr: false,
+			name: "minimal valid flags",
+			args: withRequiredFlags(),
 		},
 		{
-			name:    "only insecure flag",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure"},
-			wantErr: false,
+			name: "only insecure flag",
+			args: withRequiredFlags("--insecure"),
 		},
 		{
-			name:    "only skip-tls-verify flag",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
-			wantErr: false,
+			name: "only skip-tls-verify flag",
+			args: withRequiredFlags("--skip-tls-verify"),
 		},
 		{
-			name:    "only strong flag",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--strong"},
-			wantErr: false,
+			name: "only strong flag",
+			args: withRequiredFlags("--strong"),
 		},
 		{
-			name:    "only read-timestamp flag",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
-			wantErr: false,
+			name: "only read-timestamp flag",
+			args: withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
-
-			// First check if parsing itself failed
-			if err != nil && !tt.wantErr {
-				t.Errorf("ParseArgs() unexpected error: %v", err)
-				return
-			}
-
-			// If parsing succeeded, validate the options
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-			}
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			_, err := parseAndValidate(tt.args)
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -275,195 +335,135 @@ func TestParseFlagsValidation(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        []string
-		wantErr     bool
 		errContains string
+		want        *spannerOptionsExpectations
 	}{
-		// Enum validation
+		// Enum validation - Invalid values
 		{
 			name:        "invalid priority value",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
-			wantErr:     true,
+			args:        withRequiredFlags("--priority", "INVALID"),
 			errContains: "must be one of:",
 		},
 		{
-			name:    "valid priority HIGH",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "HIGH"},
-			wantErr: false,
-		},
-		{
-			name:    "valid priority MEDIUM",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "MEDIUM"},
-			wantErr: false,
-		},
-		{
-			name:    "valid priority LOW",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "LOW"},
-			wantErr: false,
-		},
-		{
 			name:        "invalid query-mode value",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "INVALID"},
-			wantErr:     true,
+			args:        withRequiredFlags("--query-mode", "INVALID"),
 			errContains: "Invalid value `INVALID' for option `--query-mode'",
 		},
 		{
-			name:    "valid query-mode NORMAL",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "NORMAL"},
-			wantErr: false,
-		},
-		{
-			name:    "valid query-mode PLAN",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PLAN"},
-			wantErr: false,
-		},
-		{
-			name:    "valid query-mode PROFILE",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--query-mode", "PROFILE"},
-			wantErr: false,
-		},
-		{
 			name:        "invalid database-dialect value",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "INVALID"},
-			wantErr:     true,
+			args:        withRequiredFlags("--database-dialect", "INVALID"),
 			errContains: "Invalid value `INVALID' for option `--database-dialect'",
-		},
-		{
-			name:    "valid database-dialect POSTGRESQL",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "POSTGRESQL"},
-			wantErr: false,
-		},
-		{
-			name:    "valid database-dialect GOOGLE_STANDARD_SQL",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--database-dialect", "GOOGLE_STANDARD_SQL"},
-			wantErr: false,
 		},
 
 		// Format validation
 		{
 			name:        "invalid directed-read format",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "invalid:format:too:many"},
-			wantErr:     true,
+			args:        withRequiredFlags("--directed-read", "invalid:format:too:many"),
 			errContains: "directed read option must be in the form of <replica_location>:<replica_type>",
 		},
 		{
-			name:    "valid directed-read with location only",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1"},
-			wantErr: false,
+			name: "valid directed-read with location only",
+			args: withRequiredFlags("--directed-read", "us-east1"),
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1")},
 		},
 		{
-			name:    "valid directed-read with READ_ONLY",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_ONLY"},
-			wantErr: false,
+			name: "valid directed-read with READ_ONLY",
+			args: withRequiredFlags("--directed-read", "us-east1:READ_ONLY"),
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1:READ_ONLY")},
 		},
 		{
-			name:    "valid directed-read with READ_WRITE",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:READ_WRITE"},
-			wantErr: false,
+			name: "valid directed-read with READ_WRITE",
+			args: withRequiredFlags("--directed-read", "us-east1:READ_WRITE"),
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1:READ_WRITE")},
 		},
 		{
 			name:        "invalid directed-read replica type",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:INVALID"},
-			wantErr:     true,
+			args:        withRequiredFlags("--directed-read", "us-east1:INVALID"),
 			errContains: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
 		{
 			name:        "invalid read-timestamp format",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "invalid-timestamp"},
-			wantErr:     true,
+			args:        withRequiredFlags("--read-timestamp", "invalid-timestamp"),
 			errContains: "error on parsing --read-timestamp",
 		},
 		{
-			name:    "valid read-timestamp",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--read-timestamp", "2023-01-01T00:00:00Z"},
-			wantErr: false,
+			name: "valid read-timestamp",
+			args: withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
+			want: &spannerOptionsExpectations{ReadTimestamp: ptr("2023-01-01T00:00:00Z")},
 		},
 		{
 			name:        "invalid timeout format",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "invalid"},
-			wantErr:     true,
+			args:        withRequiredFlags("--timeout", "invalid"),
 			errContains: "invalid value of --timeout",
 		},
 		{
-			name:    "valid timeout",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
-			wantErr: false,
+			name: "valid timeout",
+			args: withRequiredFlags("--timeout", "30s"),
+			want: &spannerOptionsExpectations{Timeout: ptr("30s")},
 		},
 		{
 			name:        "invalid param format",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "invalid syntax"},
-			wantErr:     true,
+			args:        withRequiredFlags("--param", "invalid syntax"),
 			errContains: "error on parsing --param",
 		},
 		{
-			name:    "valid param with string value",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1='hello'"},
-			wantErr: false,
+			name: "valid param with string value",
+			args: withRequiredFlags("--param", "p1='hello'"),
 		},
 		{
-			name:    "valid param with type",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1=STRING"},
-			wantErr: false,
+			name: "valid param with type",
+			args: withRequiredFlags("--param", "p1=STRING"),
 		},
 		{
 			name:        "invalid set value for boolean",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "READONLY=not-a-bool"},
-			wantErr:     true,
+			args:        withRequiredFlags("--set", "READONLY=not-a-bool"),
 			errContains: "failed to set system variable",
 		},
 		{
-			name:    "valid set value",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "READONLY=true"},
-			wantErr: false,
+			name: "valid set value",
+			args: withRequiredFlags("--set", "READONLY=true"),
 		},
 
 		// File validation
 		{
 			name:        "non-existent proto descriptor file",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--proto-descriptor-file", "non-existent-file.pb"},
-			wantErr:     true,
+			args:        withRequiredFlags("--proto-descriptor-file", "non-existent-file.pb"),
 			errContains: "error on --proto-descriptor-file",
 		},
 		{
-			name:    "valid proto descriptor file",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--proto-descriptor-file", validProtoFile},
-			wantErr: false,
+			name: "valid proto descriptor file",
+			args: withRequiredFlags("--proto-descriptor-file", validProtoFile),
 		},
 		{
 			name:        "invalid log level",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--log-level", "INVALID"},
-			wantErr:     true,
+			args:        withRequiredFlags("--log-level", "INVALID"),
 			errContains: "error on parsing --log-level",
 		},
 		{
-			name:    "valid log level",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--log-level", "INFO"},
-			wantErr: false,
+			name: "valid log level",
+			args: withRequiredFlags("--log-level", "INFO"),
 		},
 
 		// Credential file tests
 		{
 			name: "valid credential file",
 			// Use a placeholder that will be replaced in the test
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "__TEMP_CRED_FILE__"},
-			wantErr: false,
+			args: withRequiredFlags("--credential", "__TEMP_CRED_FILE__"),
 		},
 		{
 			name: "non-existent credential file",
-			args: []string{"--project", "p", "--instance", "i", "--database", "d", "--credential", "/non/existent/cred.json"},
+			args: withRequiredFlags("--credential", "/non/existent/cred.json"),
 			// Note: This won't fail during flag parsing/validation, only during run()
-			wantErr: false,
 		},
 
 		// MCP mode tests
 		{
-			name:    "mcp mode with all required params",
-			args:    []string{"--project", "p", "--instance", "i", "--database", "d", "--mcp"},
-			wantErr: false,
+			name: "mcp mode with all required params",
+			args: withRequiredFlags("--mcp"),
 		},
 		{
-			name:    "mcp mode with embedded emulator",
-			args:    []string{"--embedded-emulator", "--mcp"},
-			wantErr: false,
+			name: "mcp mode with embedded emulator",
+			args: []string{"--embedded-emulator", "--mcp"},
 		},
 
 		// Complex flag combinations
@@ -473,7 +473,6 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--set", "CLI_FORMAT=VERTICAL", "--set", "READONLY=true", "--set", "AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC",
 			},
-			wantErr: false,
 		},
 		{
 			name: "multiple param flags",
@@ -481,7 +480,6 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--param", "p1='value1'", "--param", "p2=INT64", "--param", "p3=ARRAY<STRING>",
 			},
-			wantErr: false,
 		},
 		{
 			name: "invalid param syntax",
@@ -489,9 +487,48 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--param", "p1=@{invalid}",
 			},
-			wantErr:     true,
 			errContains: "error on parsing --param",
 		},
+	}
+
+	// Add valid enum test cases using loops
+	for _, priority := range []string{"HIGH", "MEDIUM", "LOW"} {
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid priority %s", priority),
+			args: withRequiredFlags("--priority", priority),
+			want: &spannerOptionsExpectations{Priority: &priority},
+		})
+	}
+
+	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid query-mode %s", mode),
+			args: withRequiredFlags("--query-mode", mode),
+			want: &spannerOptionsExpectations{QueryMode: &mode},
+		})
+	}
+
+	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid database-dialect %s", dialect),
+			args: withRequiredFlags("--database-dialect", dialect),
+			want: &spannerOptionsExpectations{DatabaseDialect: &dialect},
+		})
 	}
 
 	for _, tt := range tests {
@@ -513,36 +550,16 @@ func TestParseFlagsValidation(t *testing.T) {
 				}
 			}
 
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(args)
-			// First check if parsing itself failed
-			if err != nil {
-				if !tt.wantErr {
-					t.Errorf("ParseArgs() unexpected error: %v", err)
-				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
-					t.Errorf("ParseArgs() error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-				return
+			gopts, err := parseAndValidate(args)
+			if err == nil && gopts != nil {
+				_, err = initializeSystemVariables(&gopts.Spanner)
 			}
 
-			// If parsing succeeded, validate the options and initialize system variables
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-				if err == nil {
-					_, err = initializeSystemVariables(&gopts.Spanner)
-				}
-			}
+			checkError(t, err, tt.errContains)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
+			// If successful and we have expectations, verify them
+			if err == nil && tt.want != nil {
+				verifySpannerOptions(t, &gopts.Spanner, tt.want)
 			}
 		})
 	}
@@ -752,41 +769,20 @@ priority = HIGH
 			}
 
 			// Initialize system variables
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Check results
-			if sysVars.Project != tt.wantProject {
-				t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-			}
-			if sysVars.Instance != tt.wantInstance {
-				t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-			}
-			if sysVars.Database != tt.wantDatabase {
-				t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-			}
-			if sysVars.RPCPriority != tt.wantPriority {
-				t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
-			}
+			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
+			assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
 			if sysVars.Host != "" && sysVars.Port != 0 {
 				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
 			}
-			if gotEndpoint != tt.wantEndpoint {
-				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
-			}
-			if sysVars.Role != tt.wantRole {
-				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
-			}
-			if sysVars.LogGrpc != tt.wantLogGrpc {
-				t.Errorf("LogGrpc = %v, want %v", sysVars.LogGrpc, tt.wantLogGrpc)
-			}
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
+			assertEqual(t, "Endpoint (constructed from Host:Port)", gotEndpoint, &tt.wantEndpoint)
+			assertEqual(t, "Role", sysVars.Role, &tt.wantRole)
+			assertEqual(t, "LogGrpc", sysVars.LogGrpc, &tt.wantLogGrpc)
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
 		})
 	}
 }
@@ -926,42 +922,18 @@ func TestFlagSpecialModes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseAndValidate(tt.args)
 			if err != nil {
-				t.Fatalf("Failed to parse flags: %v", err)
+				t.Fatalf("Failed to parse/validate flags: %v", err)
 			}
 
-			// Validate and initialize system variables
-			if err := ValidateSpannerOptions(&gopts.Spanner); err != nil {
-				t.Fatalf("Failed to validate options: %v", err)
-			}
-
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Check results
-			if sysVars.Project != tt.wantProject {
-				t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-			}
-			if sysVars.Instance != tt.wantInstance {
-				t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-			}
-			if sysVars.Database != tt.wantDatabase {
-				t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-			}
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
-			if sysVars.Verbose != tt.wantVerbose {
-				t.Errorf("Verbose = %v, want %v", sysVars.Verbose, tt.wantVerbose)
-			}
-			if sysVars.MCP != tt.wantMCP {
-				t.Errorf("MCP = %v, want %v", sysVars.MCP, tt.wantMCP)
-			}
+			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
+			assertEqual(t, "MCP", sysVars.MCP, &tt.wantMCP)
 
 			// For CLI_FORMAT, we need to simulate what run() does
 			// Check if this test case has specified a desired CLI_FORMAT value
@@ -1025,61 +997,51 @@ func TestFlagErrorMessages(t *testing.T) {
 		},
 		{
 			name:           "conflicting input flags shows which flags conflict",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--file", "query.sql"},
+			args:           withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql"),
 			wantErrKeyword: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:           "invalid enum shows valid options",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--priority", "INVALID"},
+			args:           withRequiredFlags("--priority", "INVALID"),
 			wantErrKeyword: "must be one of:",
 		},
 		{
 			name:           "invalid directed read shows format",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "a:b:c:d"},
+			args:           withRequiredFlags("--directed-read", "a:b:c:d"),
 			wantErrKeyword: "directed read option must be in the form of <replica_location>:<replica_type>",
 		},
 		{
 			name:           "invalid replica type shows valid options",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--directed-read", "us-east1:INVALID"},
+			args:           withRequiredFlags("--directed-read", "us-east1:INVALID"),
 			wantErrKeyword: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
 		{
 			name:           "try-partition-query without input shows requirement",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
+			args:           withRequiredFlags("--try-partition-query"),
 			wantErrKeyword: "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql",
 		},
 		{
 			name:           "invalid timeout shows it's a timeout error",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "invalid"},
+			args:           withRequiredFlags("--timeout", "invalid"),
 			wantErrKeyword: "invalid value of --timeout",
 		},
 		{
 			name:           "invalid param shows which param failed",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--param", "p1=invalid syntax"},
+			args:           withRequiredFlags("--param", "p1=invalid syntax"),
 			wantErrKeyword: "error on parsing --param=p1=invalid syntax",
 		},
 		{
 			name:           "non-existent proto file shows file error",
-			args:           []string{"--project", "p", "--instance", "i", "--database", "d", "--proto-descriptor-file", "missing.pb"},
+			args:           withRequiredFlags("--proto-descriptor-file", "missing.pb"),
 			wantErrKeyword: "error on --proto-descriptor-file, file: missing.pb",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, parseErr := parser.ParseArgs(tt.args)
-
-			var err error
-			if parseErr == nil {
-				// If parsing succeeded, try validation and initialization
-				err = ValidateSpannerOptions(&gopts.Spanner)
-				if err == nil {
-					_, err = initializeSystemVariables(&gopts.Spanner)
-				}
-			} else {
-				err = parseErr
+			gopts, err := parseAndValidate(tt.args)
+			if err == nil && gopts != nil {
+				_, err = initializeSystemVariables(&gopts.Spanner)
 			}
 
 			if err == nil {
@@ -1115,52 +1077,41 @@ func TestFileFlagBehavior(t *testing.T) {
 	}{
 		{
 			name:       "valid file flag",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile},
-			wantErr:    false,
+			args:       withRequiredFlags("--file", testFile),
 			checkInput: true,
 			wantInput:  "SELECT 1;",
 		},
 		{
 			name:        "non-existent file",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--file", "/non/existent/file.sql"},
-			wantErr:     true,
+			args:        withRequiredFlags("--file", "/non/existent/file.sql"),
 			errContains: "read from file /non/existent/file.sql failed",
 			checkInput:  true, // Need to call determineInputAndMode to get the error
 		},
 		{
 			name:       "file flag with dash reads from stdin",
-			args:       []string{"--project", "p", "--instance", "i", "--database", "d", "--file", "-"},
+			args:       withRequiredFlags("--file", "-"),
 			stdin:      "SELECT 2;",
-			wantErr:    false,
 			checkInput: true,
 			wantInput:  "SELECT 2;",
 		},
 		{
 			name:        "file flag with execute is mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile, "--execute", "SELECT 1"},
-			wantErr:     true,
+			args:        withRequiredFlags("--file", testFile, "--execute", "SELECT 1"),
 			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:        "file flag with sql is mutually exclusive",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--file", testFile, "--sql", "SELECT 1"},
-			wantErr:     true,
+			args:        withRequiredFlags("--file", testFile, "--sql", "SELECT 1"),
 			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
-
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-			}
+			gopts, err := parseAndValidate(tt.args)
 
 			// If no validation error, test determineInputAndMode
-			if err == nil && tt.checkInput {
+			if err == nil && tt.checkInput && gopts != nil {
 				input, _, determineErr := determineInputAndMode(&gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
 				if determineErr != nil {
 					err = determineErr
@@ -1169,16 +1120,7 @@ func TestFileFlagBehavior(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1198,7 +1140,7 @@ func TestSpecialFlags(t *testing.T) {
 	}{
 		{
 			name:      "async flag",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
+			args:      withRequiredFlags("--async"),
 			wantAsync: true,
 		},
 		{
@@ -1211,13 +1153,12 @@ func TestSpecialFlags(t *testing.T) {
 		},
 		{
 			name:             "try-partition-query with valid input",
-			args:             []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query", "--execute", "SELECT 1"},
+			args:             withRequiredFlags("--try-partition-query", "--execute", "SELECT 1"),
 			wantTryPartition: true,
 		},
 		{
 			name:        "try-partition-query without input",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--try-partition-query"},
-			wantErr:     true,
+			args:        withRequiredFlags("--try-partition-query"),
 			errContains: "--try-partition-query requires SQL input",
 		},
 		{
@@ -1227,7 +1168,7 @@ func TestSpecialFlags(t *testing.T) {
 		},
 		{
 			name:              "emulator-image without embedded-emulator is ignored",
-			args:              []string{"--project", "p", "--instance", "i", "--database", "d", "--emulator-image", "gcr.io/my-project/my-emulator:latest"},
+			args:              withRequiredFlags("--emulator-image", "gcr.io/my-project/my-emulator:latest"),
 			wantEmulatorImage: "gcr.io/my-project/my-emulator:latest",
 		},
 	}
@@ -1243,38 +1184,22 @@ func TestSpecialFlags(t *testing.T) {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
+			checkError(t, err, tt.errContains)
+			if err != nil {
 				return
 			}
 
 			// Check flag values
-			if gopts.Spanner.Async != tt.wantAsync {
-				t.Errorf("Async = %v, want %v", gopts.Spanner.Async, tt.wantAsync)
-			}
-			if gopts.Spanner.StatementHelp != tt.wantStatementHelp {
-				t.Errorf("StatementHelp = %v, want %v", gopts.Spanner.StatementHelp, tt.wantStatementHelp)
-			}
-			if gopts.Spanner.TryPartitionQuery != tt.wantTryPartition {
-				t.Errorf("TryPartitionQuery = %v, want %v", gopts.Spanner.TryPartitionQuery, tt.wantTryPartition)
-			}
+			assertEqual(t, "Async", gopts.Spanner.Async, &tt.wantAsync)
+			assertEqual(t, "StatementHelp", gopts.Spanner.StatementHelp, &tt.wantStatementHelp)
+			assertEqual(t, "TryPartitionQuery", gopts.Spanner.TryPartitionQuery, &tt.wantTryPartition)
 			if tt.wantEmulatorImage != "" && gopts.Spanner.EmulatorImage != tt.wantEmulatorImage {
 				t.Errorf("EmulatorImage = %q, want %q", gopts.Spanner.EmulatorImage, tt.wantEmulatorImage)
 			}
 
 			// If async flag is set, check it's propagated to system variables
 			if tt.wantAsync && err == nil {
-				sysVars, err := initializeSystemVariables(&gopts.Spanner)
-				if err != nil {
-					t.Fatalf("Failed to initialize system variables: %v", err)
-				}
+				sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 				if !sysVars.AsyncDDL {
 					t.Errorf("AsyncDDL not set in system variables when --async flag is used")
 				}
@@ -1296,31 +1221,30 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 	}{
 		{
 			name:        "timeout without async",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "30s"},
+			args:        withRequiredFlags("--timeout", "30s"),
 			wantTimeout: lo.ToPtr(30 * time.Second),
 			wantAsync:   false,
 		},
 		{
 			name:        "async without timeout uses default",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--async"},
+			args:        withRequiredFlags("--async"),
 			wantTimeout: lo.ToPtr(10 * time.Minute), // default
 			wantAsync:   true,
 		},
 		{
 			name:        "both timeout and async",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "5m", "--async"},
+			args:        withRequiredFlags("--timeout", "5m", "--async"),
 			wantTimeout: lo.ToPtr(5 * time.Minute),
 			wantAsync:   true,
 		},
 		{
 			name:        "invalid timeout format",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "invalid"},
-			wantErr:     true,
+			args:        withRequiredFlags("--timeout", "invalid"),
 			errContains: "invalid value of --timeout",
 		},
 		{
 			name:        "zero timeout",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--timeout", "0s"},
+			args:        withRequiredFlags("--timeout", "0s"),
 			wantTimeout: lo.ToPtr(0 * time.Second),
 			wantAsync:   false,
 		},
@@ -1352,22 +1276,11 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 					}
 
 					// Check async
-					if sysVars.AsyncDDL != tt.wantAsync {
-						t.Errorf("AsyncDDL = %v, want %v", sysVars.AsyncDDL, tt.wantAsync)
-					}
+					assertEqual(t, "AsyncDDL", sysVars.AsyncDDL, &tt.wantAsync)
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1398,34 +1311,29 @@ func TestOutputTemplateValidation(t *testing.T) {
 	}{
 		{
 			name:      "valid output template file",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate},
-			wantErr:   false,
+			args:      withRequiredFlags("--output-template", validTemplate),
 			checkFile: true,
 			wantFile:  validTemplate,
 		},
 		{
 			name:        "non-existent output template file",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", "/non/existent/template.tmpl"},
-			wantErr:     true,
+			args:        withRequiredFlags("--output-template", "/non/existent/template.tmpl"),
 			errContains: "parse error of output template",
 		},
 		{
 			name:        "invalid template syntax",
-			args:        []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", invalidTemplate},
-			wantErr:     true,
+			args:        withRequiredFlags("--output-template", invalidTemplate),
 			errContains: "parse error of output template",
 		},
 		{
 			name:      "output template via --set",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_OUTPUT_TEMPLATE_FILE=" + validTemplate},
-			wantErr:   false,
+			args:      withRequiredFlags("--set", "CLI_OUTPUT_TEMPLATE_FILE="+validTemplate),
 			checkFile: true,
 			wantFile:  validTemplate,
 		},
 		{
 			name:      "clear output template with NULL",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--output-template", validTemplate, "--set", "CLI_OUTPUT_TEMPLATE_FILE=NULL"},
-			wantErr:   false,
+			args:      withRequiredFlags("--output-template", validTemplate, "--set", "CLI_OUTPUT_TEMPLATE_FILE=NULL"),
 			checkFile: true,
 			wantFile:  "", // Should be cleared
 		},
@@ -1452,16 +1360,7 @@ func TestOutputTemplateValidation(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr && tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1522,60 +1421,55 @@ func TestDetermineInitialDatabase(t *testing.T) {
 func TestParsePriority(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		priority string
-		want     sppb.RequestOptions_Priority
-		wantErr  bool
+		name        string
+		priority    string
+		want        sppb.RequestOptions_Priority
+		errContains string
 	}{
 		{
 			name:     "empty string returns unspecified",
 			priority: "",
 			want:     sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			wantErr:  false,
 		},
 		{
 			name:     "HIGH",
 			priority: "HIGH",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
 			name:     "MEDIUM",
 			priority: "MEDIUM",
 			want:     sppb.RequestOptions_PRIORITY_MEDIUM,
-			wantErr:  false,
 		},
 		{
 			name:     "LOW",
 			priority: "LOW",
 			want:     sppb.RequestOptions_PRIORITY_LOW,
-			wantErr:  false,
 		},
 		{
 			name:     "lowercase high",
 			priority: "high",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
 			name:     "with PRIORITY_ prefix",
 			priority: "PRIORITY_HIGH",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
-			name:     "invalid priority",
-			priority: "INVALID",
-			want:     sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			wantErr:  true,
+			name:        "invalid priority",
+			priority:    "INVALID",
+			want:        sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			errContains: "invalid priority",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parsePriority(tt.priority)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePriority() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("parsePriority() error = %v, wantErr %v", err, wantErr)
 				return
 			}
 			if got != tt.want {
@@ -1589,10 +1483,10 @@ func TestParsePriority(t *testing.T) {
 func TestParseDirectedReadOptionMain(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		input   string
-		want    *sppb.DirectedReadOptions
-		wantErr bool
+		name        string
+		input       string
+		want        *sppb.DirectedReadOptions
+		errContains string
 	}{
 		{
 			name:  "location only",
@@ -1610,7 +1504,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "location with READ_ONLY",
@@ -1628,7 +1521,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "location with READ_WRITE",
@@ -1646,7 +1538,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "lowercase replica type",
@@ -1664,28 +1555,28 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
-			name:    "too many colons",
-			input:   "us-east1:READ_ONLY:extra",
-			wantErr: true,
+			name:        "too many colons",
+			input:       "us-east1:READ_ONLY:extra",
+			errContains: "directed read option must be in the form of",
 		},
 		{
-			name:    "invalid replica type",
-			input:   "us-east1:INVALID",
-			wantErr: true,
+			name:        "invalid replica type",
+			input:       "us-east1:INVALID",
+			errContains: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseDirectedReadOption(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDirectedReadOption() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("parseDirectedReadOption() error = %v, wantErr %v", err, wantErr)
 				return
 			}
-			if !tt.wantErr {
+			if err == nil {
 				if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(sppb.DirectedReadOptions{},
 					sppb.DirectedReadOptions_IncludeReplicas_{},
 					sppb.DirectedReadOptions_IncludeReplicas{},
@@ -1720,14 +1611,12 @@ func TestReadCredentialFile(t *testing.T) {
 				return credFile
 			},
 			wantContent: `{"type": "service_account", "project_id": "test"}`,
-			wantErr:     false,
 		},
 		{
 			name: "non-existent file",
 			setupFile: func(t *testing.T) string {
 				return "/non/existent/file.json"
 			},
-			wantErr:     true,
 			errContains: "no such file",
 		},
 		{
@@ -1741,7 +1630,6 @@ func TestReadCredentialFile(t *testing.T) {
 				return credFile
 			},
 			wantContent: "",
-			wantErr:     false,
 		},
 	}
 
@@ -1750,8 +1638,9 @@ func TestReadCredentialFile(t *testing.T) {
 			filepath := tt.setupFile(t)
 
 			got, err := readCredentialFile(filepath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("readCredentialFile() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("readCredentialFile() error = %v, wantErr %v", err, wantErr)
 				return
 			}
 			if err != nil && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
@@ -1780,13 +1669,13 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 		},
 		{
 			name:          "batch mode with --table flag uses table format",
-			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table"},
+			args:          withRequiredFlags("--execute", "SELECT 1", "--table"),
 			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "batch mode without --table uses table format",
-			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1"},
+			args:          withRequiredFlags("--execute", "SELECT 1"),
 			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: enums.DisplayModeTable,
 		},
@@ -1798,19 +1687,19 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 		},
 		{
 			name:          "piped input with --table uses table format",
-			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--table"},
+			args:          withRequiredFlags("--table"),
 			stdinProvider: nonPTYStdin("SELECT 1;"),
 			wantCLIFormat: enums.DisplayModeTable,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides all defaults",
-			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--set", "CLI_FORMAT=VERTICAL"},
+			args:          withRequiredFlags("--set", "CLI_FORMAT=VERTICAL"),
 			stdinProvider: ptyStdin(), // Can be any, as --set overrides
 			wantCLIFormat: enums.DisplayModeVertical,
 		},
 		{
 			name:          "--set CLI_FORMAT overrides --table flag",
-			args:          []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--table", "--set", "CLI_FORMAT=VERTICAL"},
+			args:          withRequiredFlags("--execute", "SELECT 1", "--table", "--set", "CLI_FORMAT=VERTICAL"),
 			stdinProvider: nonPTYStdin(""),
 			wantCLIFormat: enums.DisplayModeVertical,
 		},
@@ -1826,10 +1715,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 
 			// Initialize system variables
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Simulate the logic in run() that determines CLI_FORMAT
 			stdin, cleanup, err := tt.stdinProvider()
@@ -2005,7 +1891,6 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--strong",
 				"--read-timestamp", "2023-01-01T00:00:00Z",
 			},
-			wantErr:     true,
 			errContains: "--strong and --read-timestamp are mutually exclusive",
 		},
 		{
@@ -2033,7 +1918,8 @@ func TestComplexFlagInteractions(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			if err != nil && !tt.wantErr {
+			wantErr := tt.errContains != ""
+			if err != nil && !wantErr {
 				t.Fatalf("Failed to parse flags: %v", err)
 			}
 
@@ -2044,30 +1930,14 @@ func TestComplexFlagInteractions(t *testing.T) {
 					sysVars, err := initializeSystemVariables(&gopts.Spanner)
 					if err == nil {
 						// Check results
-						if sysVars.Project != tt.wantProject {
-							t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-						}
-						if sysVars.Instance != tt.wantInstance {
-							t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-						}
-						if sysVars.Database != tt.wantDatabase {
-							t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-						}
+						verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
 						if sysVars.Role != tt.wantRole {
 							t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
 						}
-						if sysVars.Insecure != tt.wantInsecure {
-							t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-						}
-						if sysVars.Verbose != tt.wantVerbose {
-							t.Errorf("Verbose = %v, want %v", sysVars.Verbose, tt.wantVerbose)
-						}
-						if sysVars.ReadOnly != tt.wantReadOnly {
-							t.Errorf("ReadOnly = %v, want %v", sysVars.ReadOnly, tt.wantReadOnly)
-						}
-						if sysVars.RPCPriority != tt.wantPriority {
-							t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
-						}
+						assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+						assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
+						assertEqual(t, "ReadOnly", sysVars.ReadOnly, &tt.wantReadOnly)
+						assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
 						if tt.wantStaleness && sysVars.ReadOnlyStaleness == nil {
 							t.Errorf("ReadOnlyStaleness = nil, want non-nil")
 						}
@@ -2075,23 +1945,18 @@ func TestComplexFlagInteractions(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
 			}
 		})
 	}
-}
-
-// Helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
 }
 
 // TestAliasFlagPrecedence tests that non-hidden flags take precedence over hidden aliases
@@ -2106,32 +1971,32 @@ func TestAliasFlagPrecedence(t *testing.T) {
 	}{
 		{
 			name:     "role takes precedence over database-role",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--role", "primary-role", "--database-role", "secondary-role"},
+			args:     withRequiredFlags("--role", "primary-role", "--database-role", "secondary-role"),
 			wantRole: "primary-role",
 		},
 		{
 			name:     "database-role used when role not specified",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--database-role", "db-role"},
+			args:     withRequiredFlags("--database-role", "db-role"),
 			wantRole: "db-role",
 		},
 		{
 			name:         "insecure and skip-tls-verify both set",
-			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--insecure", "--skip-tls-verify"},
+			args:         withRequiredFlags("--insecure", "--skip-tls-verify"),
 			wantInsecure: true,
 		},
 		{
 			name:         "only skip-tls-verify set",
-			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--skip-tls-verify"},
+			args:         withRequiredFlags("--skip-tls-verify"),
 			wantInsecure: true,
 		},
 		{
 			name:         "endpoint takes precedence over deployment-endpoint",
-			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "primary-endpoint:443", "--deployment-endpoint", "secondary-endpoint:443"},
+			args:         withRequiredFlags("--endpoint", "primary-endpoint:443", "--deployment-endpoint", "secondary-endpoint:443"),
 			wantEndpoint: "primary-endpoint:443",
 		},
 		{
 			name:         "deployment-endpoint used when endpoint not specified",
-			args:         []string{"--project", "p", "--instance", "i", "--database", "d", "--deployment-endpoint", "deployment-endpoint:443"},
+			args:         withRequiredFlags("--deployment-endpoint", "deployment-endpoint:443"),
 			wantEndpoint: "deployment-endpoint:443",
 		},
 	}
@@ -2153,9 +2018,7 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			if sysVars.Role != tt.wantRole {
 				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
 			}
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
 			if sysVars.Host != "" && sysVars.Port != 0 {
@@ -2180,40 +2043,39 @@ func TestHostPortFlags(t *testing.T) {
 	}{
 		{
 			name:     "only port specified uses localhost",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--port", "9010"},
+			args:     withRequiredFlags("--port", "9010"),
 			wantHost: "localhost",
 			wantPort: 9010,
 		},
 		{
 			name:     "only host specified uses port 443",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--host", "example.com"},
+			args:     withRequiredFlags("--host", "example.com"),
 			wantHost: "example.com",
 			wantPort: 443,
 		},
 		{
 			name:     "both host and port specified",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--host", "example.com", "--port", "9010"},
+			args:     withRequiredFlags("--host", "example.com", "--port", "9010"),
 			wantHost: "example.com",
 			wantPort: 9010,
 		},
 		{
 			name:     "endpoint flag parses into host and port",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "spanner.googleapis.com:443"},
+			args:     withRequiredFlags("--endpoint", "spanner.googleapis.com:443"),
 			wantHost: "spanner.googleapis.com",
 			wantPort: 443,
 		},
 		{
 			name:     "endpoint with IPv6 address",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "[2001:db8::1]:443"},
+			args:     withRequiredFlags("--endpoint", "[2001:db8::1]:443"),
 			wantHost: "2001:db8::1",
 			wantPort: 443,
 		},
 		{
 			name:     "endpoint with bare IPv6 address should fail",
-			args:     []string{"--project", "p", "--instance", "i", "--database", "d", "--endpoint", "2001:db8::1"},
+			args:     withRequiredFlags("--endpoint", "2001:db8::1"),
 			wantHost: "",
 			wantPort: 0,
-			wantErr:  true,
 		},
 	}
 
@@ -2228,7 +2090,7 @@ func TestHostPortFlags(t *testing.T) {
 
 			sysVars, err := initializeSystemVariables(&gopts.Spanner)
 			if err != nil {
-				if !tt.wantErr {
+				if err == nil {
 					t.Fatalf("initializeSystemVariables() error: %v", err)
 				}
 				return
@@ -2237,9 +2099,7 @@ func TestHostPortFlags(t *testing.T) {
 			if sysVars.Host != tt.wantHost {
 				t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
 			}
-			if sysVars.Port != tt.wantPort {
-				t.Errorf("Port = %d, want %d", sysVars.Port, tt.wantPort)
-			}
+			assertEqual(t, "Port", sysVars.Port, &tt.wantPort)
 		})
 	}
 }
@@ -2254,12 +2114,12 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 	}{
 		{
 			name:      "execute takes precedence over sql",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--execute", "SELECT 1", "--sql", "SELECT 2"},
+			args:      withRequiredFlags("--execute", "SELECT 1", "--sql", "SELECT 2"),
 			wantInput: "SELECT 1",
 		},
 		{
 			name:      "sql used when execute not specified",
-			args:      []string{"--project", "p", "--instance", "i", "--database", "d", "--sql", "SELECT 2"},
+			args:      withRequiredFlags("--sql", "SELECT 2"),
 			wantInput: "SELECT 2",
 		},
 	}
@@ -2339,9 +2199,7 @@ func TestEmulatorPlatformFlag(t *testing.T) {
 			if gopts.Spanner.EmulatorPlatform != tt.wantPlatform {
 				t.Errorf("EmulatorPlatform = %q, want %q", gopts.Spanner.EmulatorPlatform, tt.wantPlatform)
 			}
-			if gopts.Spanner.EmbeddedEmulator != tt.wantEmbedded {
-				t.Errorf("EmbeddedEmulator = %v, want %v", gopts.Spanner.EmbeddedEmulator, tt.wantEmbedded)
-			}
+			assertEqual(t, "EmbeddedEmulator", gopts.Spanner.EmbeddedEmulator, &tt.wantEmbedded)
 		})
 	}
 }

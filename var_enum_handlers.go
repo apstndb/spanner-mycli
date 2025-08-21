@@ -120,11 +120,11 @@ func (p *ProtoEnumVar[T]) Set(value string) error {
 
 	validValues := make([]string, 0, len(p.values))
 	for k := range p.values {
-		displayName := k
 		if p.prefix != "" && strings.HasPrefix(k, p.prefix) {
-			displayName = strings.TrimPrefix(k, p.prefix)
+			validValues = append(validValues, strings.TrimPrefix(k, p.prefix))
+		} else {
+			validValues = append(validValues, k)
 		}
-		validValues = append(validValues, displayName)
 	}
 
 	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
