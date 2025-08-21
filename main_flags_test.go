@@ -69,6 +69,14 @@ func ptr(s string) *string {
 	return &s
 }
 
+// assertStringField compares a field value with an expected pointer value
+func assertStringField(t *testing.T, fieldName, got string, want *string) {
+	t.Helper()
+	if want != nil && got != *want {
+		t.Errorf("%s = %q, want %q", fieldName, got, *want)
+	}
+}
+
 // checkError validates that an error matches expected conditions
 func checkError(t *testing.T, err error, errContains string) {
 	t.Helper()
@@ -141,27 +149,13 @@ func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOption
 	if want == nil {
 		return
 	}
-	if want.Priority != nil && got.Priority != *want.Priority {
-		t.Errorf("Priority = %q, want %q", got.Priority, *want.Priority)
-	}
-	if want.QueryMode != nil && got.QueryMode != *want.QueryMode {
-		t.Errorf("QueryMode = %q, want %q", got.QueryMode, *want.QueryMode)
-	}
-	if want.DatabaseDialect != nil && got.DatabaseDialect != *want.DatabaseDialect {
-		t.Errorf("DatabaseDialect = %q, want %q", got.DatabaseDialect, *want.DatabaseDialect)
-	}
-	if want.DirectedRead != nil && got.DirectedRead != *want.DirectedRead {
-		t.Errorf("DirectedRead = %q, want %q", got.DirectedRead, *want.DirectedRead)
-	}
-	if want.ReadTimestamp != nil && got.ReadTimestamp != *want.ReadTimestamp {
-		t.Errorf("ReadTimestamp = %q, want %q", got.ReadTimestamp, *want.ReadTimestamp)
-	}
-	if want.Timeout != nil && got.Timeout != *want.Timeout {
-		t.Errorf("Timeout = %q, want %q", got.Timeout, *want.Timeout)
-	}
-	if want.EmulatorImage != nil && got.EmulatorImage != *want.EmulatorImage {
-		t.Errorf("EmulatorImage = %q, want %q", got.EmulatorImage, *want.EmulatorImage)
-	}
+	assertStringField(t, "Priority", got.Priority, want.Priority)
+	assertStringField(t, "QueryMode", got.QueryMode, want.QueryMode)
+	assertStringField(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
+	assertStringField(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
+	assertStringField(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
+	assertStringField(t, "Timeout", got.Timeout, want.Timeout)
+	assertStringField(t, "EmulatorImage", got.EmulatorImage, want.EmulatorImage)
 }
 
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
