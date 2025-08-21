@@ -72,6 +72,63 @@ CREATE TABLE tbl (
 
 var testTableDDLs = sliceOf(testTableDDL)
 
+// Common test DDL patterns used across multiple tests
+const (
+	testTableSimpleDDL = "CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"
+)
+
+// Test helper functions policy:
+// - Use standard go-cmp/cmpopts functions when possible (e.g., cmpopts.IgnoreFields for simple field ignoring)
+// - Only create custom helpers for patterns that cannot be expressed with standard options
+// - Custom helpers should be focused and well-documented with usage examples
+//
+// Path.String() vs Path.GoString() usage:
+// - Path.GoString(): Use for detailed path matching with indices/types (e.g., ".Rows[0][2]")
+//   Returns full Go syntax like: (*Result).Rows[0][2]
+// - Path.String(): Use for simple field name matching (e.g., checking "wantResults[1]")
+//   Returns simplified path like: Result.Rows
+
+// pathMatchesField checks if a path matches the specified field pattern
+func pathMatchesField(path cmp.Path, fieldPattern string) bool {
+	return strings.Contains(path.GoString(), fieldPattern)
+}
+
+// Common cmp options for test comparisons
+// ignorePathOpt creates a cmp.Option that ignores specified path patterns
+// Example: ignorePathOpt(".Rows[0][2]") ignores the third column of the first row
+func ignorePathOpt(pathPatterns ...string) cmp.Option {
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		for _, pattern := range pathPatterns {
+			if pathMatchesField(path, pattern) {
+				return true
+			}
+		}
+		return false
+	}, cmp.Ignore())
+}
+
+// ignoreRegexOpt creates a cmp.Option that ignores paths matching the regex pattern
+// Example: ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`) ignores second column of all rows
+func ignoreRegexOpt(regexPattern string) cmp.Option {
+	re := regexp.MustCompile(regexPattern)
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		return re.MatchString(path.GoString())
+	}, cmp.Ignore())
+}
+
+// Helper functions for creating common results
+func keepVariablesResult() *Result {
+	return &Result{KeepVariables: true}
+}
+
+func emptyResult() *Result {
+	return &Result{}
+}
+
+func dmlResult(n int) *Result {
+	return &Result{AffectedRows: n, IsExecutedDML: true}
+}
+
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
@@ -379,859 +436,103 @@ func TestSystemVariables(t *testing.T) {
 	})
 }
 
-func TestStatements(t *testing.T) {
+// TestStatements was split into multiple focused test functions:
+// - TestParameterStatements: parameter-related tests
+// - TestTransactionStatements: transaction-related tests
+// - TestShowStatements: SHOW/DESCRIBE/HELP tests
+// - TestBatchStatements: batch DDL/DML tests
+// - TestPartitionedStatements: partition query tests
+// - TestProtoStatements: proto-related tests
+// - TestAdminStatements: admin mode tests
+// - TestMiscStatements: remaining misc tests
+
+// stmtResult represents a single statement and its expected result
+type stmtResult struct {
+	stmt string
+	want *Result
+}
+
+// sr* helper functions purpose:
+// These shorthand constructors allow defining common stmtResult patterns with minimal information,
+// significantly increasing the density of Test*Statements functions.
+// By reducing boilerplate from multi-line struct literals to single-line function calls,
+// we can fit more test cases on screen and improve readability.
+//
+// Example transformation:
+//   Before: {"SET PARAM n = 1", keepVariablesResult()},       // 51 chars
+//   After:  srKeep("SET PARAM n = 1"),                        // 31 chars (~40% reduction)
+//
+//   Before: {                                                  // 4 lines
+//             stmt: "CREATE DATABASE test",
+//             want: emptyResult(),
+//           },
+//   After:  srEmpty("CREATE DATABASE test"),                  // 1 line (75% line reduction)
+
+// sr is a shorthand constructor for stmtResult
+func sr(stmt string, want *Result) stmtResult {
+	return stmtResult{stmt: stmt, want: want}
+}
+
+// srEmpty creates a stmtResult with an empty result
+func srEmpty(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: emptyResult()}
+}
+
+// srDML creates a stmtResult for DML statements with affected rows
+func srDML(stmt string, rows int) stmtResult {
+	return stmtResult{stmt: stmt, want: dmlResult(rows)}
+}
+
+// srKeep creates a stmtResult that keeps variables
+func srKeep(stmt string) stmtResult {
+	return stmtResult{stmt: stmt, want: keepVariablesResult()}
+}
+
+// srBatchDMLKeep creates a stmtResult for DML batch statements that keep variables
+func srBatchDMLKeep(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: size}}}
+}
+
+// srBatchDML creates a stmtResult for DML batch statements that update batch size
+func srBatchDML(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: size}}}
+}
+
+// srBatchDDLKeep creates a stmtResult for DDL batch statements that keep variables
+func srBatchDDLKeep(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: size}}}
+}
+
+// srBatchDDL creates a stmtResult for DDL batch statements that update batch size
+func srBatchDDL(stmt string, size int) stmtResult {
+	return stmtResult{stmt: stmt, want: &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: size}}}
+}
+
+// For cases where we want to use sr* but still need the full struct syntax
+// (e.g., when adding inline comments), keep the original format
+
+// statementTestCase represents a test case for statement execution
+type statementTestCase struct {
+	desc        string
+	ddls, dmls  []string
+	admin       bool   // admin mode (no database)
+	database    string // specific database name (empty = use random name)
+	stmtResults []stmtResult
+	cmpOpts     []cmp.Option
+}
+
+// runStatementTests is a helper function to run statement execution tests
+func runStatementTests(t *testing.T, tests []statementTestCase) {
+	t.Helper()
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
-	}
-	tests := []struct {
-		desc        string
-		ddls, dmls  []string // initialize statements
-		stmt        []string
-		wantResults []*Result
-		cmpOpts     []cmp.Option
-		database    string // Database name behavior:
-		// - Empty + admin=false: Random database name (auto-assigned)
-		// - Empty + admin=true: Admin-only session (no database)
-		// - Non-empty + admin=false: Specific database name
-		// - Non-empty + admin=true: Invalid combination (will be rejected)
-		admin bool // Create admin-only session (no database connection)
-	}{
-		{
-			desc: "query parameters",
-			stmt: sliceOf(
-				`SET PARAM b = true`,
-				`SET PARAM bs = b"foo"`,
-				`SET PARAM i64 = 1`,
-				`SET PARAM f64 = 1.0`,
-				`SET PARAM f32 = CAST(1.0 AS FLOAT32)`,
-				`SET PARAM n = NUMERIC "1"`,
-				`SET PARAM s = "foo"`,
-				`SET PARAM js = JSON "{}"`,
-				`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`,
-				`SET PARAM ival_single = INTERVAL 3 DAY`,
-				`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`,
-				`SET PARAM a_b = [true]`,
-				`SET PARAM n_b = CAST(NULL AS BOOL)`,
-				`SET PARAM n_ival = CAST(NULL AS INTERVAL)`,
-				`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
-				        @ival_single AS ival_single, @ival_range AS ival_range,
- 				        @a_b AS a_b, @n_b AS n_b, @n_ival AS n_ival`,
-			),
-			wantResults: []*Result{
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{KeepVariables: true},
-				{
-					TableHeader: toTableHeader(sliceOf(
-						typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
-						typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
-						typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
-						typector.NameTypeToStructTypeField("f64", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)),
-						typector.NameTypeToStructTypeField("f32", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)),
-						typector.NameTypeToStructTypeField("n", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)),
-						typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
-						typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
-						typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
-						typector.NameTypeToStructTypeField("ival_single", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-						typector.NameTypeToStructTypeField("ival_range", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-						typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
-						typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
-						typector.NameTypeToStructTypeField("n_ival", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-					)),
-					Rows: sliceOf(
-						toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
-							"P3D", "P3Y4M5DT6H7M8.999999999S",
-							"[true]", "NULL", "NULL"),
-					),
-					AffectedRows: 1,
-				},
-			},
-		},
-		{
-			desc: "SHOW VARIABLE CLI_VERSION",
-			stmt: sliceOf(
-				`SHOW VARIABLE CLI_VERSION`,
-			),
-			wantResults: []*Result{
-				{
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_VERSION"),
-					Rows:          sliceOf(toRow(getVersion())),
-				},
-			},
-		},
-		{
-			desc: "SHOW LOCAL PROTO with pb file",
-			stmt: sliceOf(
-				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-				`SHOW LOCAL PROTO`,
-			),
-			wantResults: []*Result{
-				{KeepVariables: true},
-				{
-					TableHeader: toTableHeader("full_name", "kind", "package", "file"),
-					Rows: sliceOf(
-						toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
-						toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
-						toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping", "order_protos.proto"),
-						toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping", "order_protos.proto"),
-					),
-					AffectedRows:  4,
-					KeepVariables: true,
-				},
-			},
-		},
-		{
-			desc: "SHOW LOCAL PROTO with proto file",
-			stmt: sliceOf(
-				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`,
-				`SHOW LOCAL PROTO`,
-			),
-			wantResults: []*Result{
-				{KeepVariables: true},
-				{
-					TableHeader: toTableHeader("full_name", "kind", "package", "file"),
-					Rows: sliceOf(
-						toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
-						toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
-						toRow("examples.spanner.music.Genre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
-						toRow("examples.spanner.music.CustomGenre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
-					),
-					AffectedRows:  4,
-					KeepVariables: true,
-				},
-			},
-		},
-		{
-			desc: "BATCH DML with parameters",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)",
-				"START BATCH DML",
-				"SET PARAM n = 1",
-				"SET PARAM b = true",
-				"INSERT INTO TestTable (id, active) VALUES (@n, @b)",
-				"SET PARAM n = 2",
-				"SET PARAM b = false",
-				"INSERT INTO TestTable (id, active) VALUES (@n, @b)",
-				"RUN BATCH",
-				"SELECT id, active FROM TestTable ORDER BY id ASC",
-			),
-			wantResults: []*Result{
-				{}, // CREATE TABLE
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // START BATCH DML
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // SET PARAM n = 1
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}},          // SET PARAM b = true
-				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},                      // INSERT (batched)
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // SET PARAM n = 2
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // SET PARAM b = false
-				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 2}},                      // INSERT (batched)
-				{
-					TableHeader: toTableHeader("DML", "Rows"),
-					Rows: sliceOf(
-						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
-						toRow("INSERT INTO TestTable (id, active) VALUES (@n, @b)", "1"),
-					),
-					AffectedRows:     2,
-					AffectedRowsType: rowCountTypeUpperBound,
-					IsExecutedDML:    true,
-					KeepVariables:    false,
-				},
-				{
-					AffectedRows: 2,
-					Rows: sliceOf(
-						toRow("1", "true"),
-						toRow("2", "false"),
-					),
-					TableHeader: toTableHeader(testTableRowType),
-				},
-			},
-		},
-		{
-			desc: "begin, insert THEN RETURN, rollback, select",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable1(id INT64, active BOOL) PRIMARY KEY(id)",
-				"BEGIN",
-				"INSERT INTO TestTable1 (id, active) VALUES (1, true), (2, false) THEN RETURN *",
-				"ROLLBACK",
-				"SELECT id, active FROM TestTable1 ORDER BY id ASC",
-			),
-			wantResults: []*Result{
-				{}, // CREATE TABLE
-				{}, // BEGIN
-				{
-					IsExecutedDML: true, AffectedRows: 2, // INSERT with THEN RETURN
-					Rows: sliceOf(
-						toRow("1", "true"),
-						toRow("2", "false"),
-					),
-					TableHeader: toTableHeader(testTableRowType),
-				},
-				{}, // ROLLBACK
-				{
-					Rows:        nil,
-					TableHeader: toTableHeader(testTableRowType),
-				},
-			},
-		},
-		{
-			desc: "begin, insert, commit, select",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable2(id INT64, active BOOL) PRIMARY KEY(id)",
-				"BEGIN",
-				"INSERT INTO TestTable2 (id, active) VALUES (1, true), (2, false)",
-				"COMMIT",
-				"SELECT id, active FROM TestTable2 ORDER BY id ASC",
-			),
-			wantResults: []*Result{
-				{},                                     // CREATE TABLE
-				{},                                     // BEGIN
-				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
-				{},                                     // COMMIT
-				{
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
-				},
-			},
-		},
-		{
-			desc: "read-only transactions",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable3(id INT64, active BOOL) PRIMARY KEY(id)",
-				"INSERT INTO TestTable3 (id, active) VALUES (1, true), (2, false)",
-				"BEGIN RO",
-				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
-				"ROLLBACK",
-				"BEGIN",
-				"SET TRANSACTION READ ONLY",
-				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
-				"COMMIT",
-				"SET READONLY = TRUE",
-				"BEGIN",
-				"SELECT id, active FROM TestTable3 ORDER BY id ASC",
-				"COMMIT",
-			),
-			wantResults: []*Result{
-				{},                                     // CREATE TABLE
-				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
-				{},                                     // BEGIN RO
-				{
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
-				},
-				{}, // ROLLBACK
-				{}, // BEGIN
-				{}, // SET TRANSACTION READ ONLY
-				{
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
-				},
-				{},                    // COMMIT
-				{KeepVariables: true}, // SET READONLY = TRUE
-				{},                    // BEGIN
-				{
-					AffectedRows: 2,
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:  toTableHeader(testTableRowType),
-				},
-				{}, // COMMIT
-			},
-		},
-		{
-			desc: "SET PARAM TYPE and SHOW PARAMS",
-			stmt: sliceOf(
-				"SET PARAM i INT64",
-				"SHOW PARAMS",
-				"DESCRIBE SELECT @i AS i",
-			),
-			wantResults: []*Result{
-				{KeepVariables: true},
-				{
-					KeepVariables: true,
-					TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
-					Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
-				},
-				{
-					AffectedRows: 1,
-					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
-					Rows:         sliceOf(toRow("i", "INT64")),
-				},
-			},
-		},
-		{
-			desc: "HELP",
-			stmt: sliceOf("HELP"),
-			wantResults: []*Result{
-				// It should be safe because HELP doesn't depend on ctx and session.
-				lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
-			},
-		},
-		{
-			desc: "SHOW DDLS",
-			stmt: sliceOf("SHOW DDLS"),
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
-			wantResults: []*Result{
-				{
-					TableHeader:   toTableHeader(""),
-					KeepVariables: true,
-					Rows: sliceOf(
-						toRow(heredoc.Doc(`
-						CREATE TABLE TestTable (
-						  id INT64,
-						  active BOOL,
-						) PRIMARY KEY(id);
-						`))),
-				},
-			},
-		},
-		{
-			desc: "SPLIT POINTS statements",
-			// TODO: Split points are not yet supported by cloud-spanner-emulator.
-		},
-		{
-			desc: "EXPLAIN & EXPLAIN ANALYZE statements",
-			// TODO: QueryMode PLAN(EXPLAIN) and PROFILE(EXPLAIN ANALYZE) are not yet supported by cloud-spanner-emulator.
-		},
-		{
-			desc: "PROTO BUNDLE statements",
-			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
-			stmt: sliceOf(
-				"SHOW REMOTE PROTO",
-				`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`,
-				"CREATE PROTO BUNDLE (`examples.shipping.Order`)",
-				"ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-				"SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)",
-			),
-			wantResults: []*Result{
-				{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")},
-				{KeepVariables: true},
-				{}, // CREATE PROTO BUNDLE
-				{}, // ALTER PROTO BUNDLE
-				{}, // SYNC PROTO BUNDLE
-			},
-		},
-		{
-			desc:     "DATABASE statements (dedicated instance)",
-			database: "test-database",
-			stmt: sliceOf("SHOW DATABASES",
-				"CREATE DATABASE `new-database`",
-				"SHOW DATABASES",
-
-				// Note: The USE statement is not processed by Session, so we can't test the effect of them.
-				"USE `new-database` ROLE spanner_info_reader", // nop
-				"USE `test-database`",                         // nop
-
-				"DROP DATABASE `new-database`",
-				"SHOW DATABASES",
-			),
-			wantResults: []*Result{
-				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-				{}, // CREATE DATABASE returns empty result
-				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
-				{},
-				{},
-				{}, // DROP DATABASE
-				{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
-			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					// Allow regex matching for duration field in CREATE DATABASE result
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows[0][2]`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
-		},
-		{
-			desc: "SHOW TABLES",
-			stmt: sliceOf("SHOW TABLES"),
-			ddls: sliceOf("CREATE TABLE TestTable (id INT64, active BOOL) PRIMARY KEY (id)"),
-			wantResults: []*Result{
-				{TableHeader: toTableHeader(""), Rows: sliceOf(toRow("TestTable")), AffectedRows: 1},
-			},
-			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.GoString())
-			}, cmp.Ignore())),
-		},
-		{
-			desc: "TRY PARTITIONED QUERY",
-			stmt: sliceOf("TRY PARTITIONED QUERY SELECT 1"),
-			wantResults: []*Result{
-				{
-					ForceWrap:    true,
-					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
-				},
-			},
-		},
-		{
-			desc: "CLI_TRY_PARTITION_QUERY system variable",
-			stmt: sliceOf(
-				"SET CLI_TRY_PARTITION_QUERY = TRUE",
-				"SELECT 1",
-			),
-			wantResults: []*Result{
-				{
-					KeepVariables: true,
-				},
-				{
-					ForceWrap:    true,
-					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
-				},
-			},
-		},
-		{
-			desc: "CLI_TRY_PARTITION_QUERY with parameters",
-			stmt: sliceOf(
-				"SET CLI_TRY_PARTITION_QUERY = TRUE",
-				"SET PARAM n = 1",
-				"SELECT @n",
-			),
-			wantResults: []*Result{
-				{
-					KeepVariables: true,
-				},
-				{
-					KeepVariables: true,
-				},
-				{
-					ForceWrap:    true,
-					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
-				},
-			},
-		},
-		{
-			desc: "mutation, pdml, partitioned query",
-			ddls: sliceOf("CREATE TABLE TestTable(id INT64, active BOOL) PRIMARY KEY(id)"),
-			stmt: sliceOf(
-				"MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)",
-				"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1",
-				"RUN PARTITIONED QUERY SELECT id, active FROM TestTable",
-			),
-			wantResults: []*Result{
-				{}, // MUTATE
-				{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}, // PARTITIONED UPDATE
-				{
-					AffectedRows:   1,
-					PartitionCount: 2,
-					TableHeader:    toTableHeader(testTableRowType),
-					Rows:           sliceOf(toRow("1", "false")),
-				},
-			},
-		},
-		{
-			desc: "read-write transactions",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable4(id INT64, active BOOL) PRIMARY KEY(id)",
-				"INSERT INTO TestTable4 (id, active) VALUES (1, true), (2, false)",
-				"BEGIN",
-				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
-				"ROLLBACK",
-				"BEGIN",
-				"SET TRANSACTION READ WRITE",
-				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
-				"ROLLBACK",
-				"BEGIN RW",
-				"DELETE TestTable4 WHERE TRUE THEN RETURN *",
-				"COMMIT",
-			),
-			wantResults: []*Result{
-				{},                                     // CREATE TABLE
-				{IsExecutedDML: true, AffectedRows: 2}, // INSERT
-				{},                                     // BEGIN
-				{
-					IsExecutedDML: true, // DELETE with THEN RETURN
-					AffectedRows:  2,
-					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:   toTableHeader(testTableRowType),
-				},
-				{}, // ROLLBACK
-				{}, // BEGIN
-				{}, // SET TRANSACTION READ WRITE
-				{
-					IsExecutedDML: true, // DELETE with THEN RETURN
-					AffectedRows:  2,
-					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:   toTableHeader(testTableRowType),
-				},
-				{}, // ROLLBACK
-				{}, // BEGIN RW
-				{
-					IsExecutedDML: true, // DELETE with THEN RETURN
-					AffectedRows:  2,
-					Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-					TableHeader:   toTableHeader(testTableRowType),
-				},
-				{}, // COMMIT
-			},
-		},
-		{
-			desc: "BATCH DDL",
-			stmt: sliceOf(
-				"SET CLI_ECHO_EXECUTED_DDL = TRUE",
-				"START BATCH DDL",
-				heredoc.Doc(`
-								CREATE TABLE TestTable (
-									id		INT64,
-									active	BOOL,
-								) PRIMARY KEY(id)`),
-				`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`,
-				"RUN BATCH",
-			),
-			wantResults: []*Result{
-				{KeepVariables: true},
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDDL}},
-				{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}},
-				{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 2}},
-				// tab is pass-through as is in this layer
-				{
-					AffectedRows: 0, TableHeader: toTableHeader("Executed", "Commit Timestamp"), Rows: sliceOf(
-						toRow(
-							heredoc.Doc(`
-										CREATE TABLE TestTable (
-											id		INT64,
-											active	BOOL,
-										) PRIMARY KEY(id);`), "(ignored)"),
-						toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
-					),
-				},
-			},
-			cmpOpts: sliceOf(
-				// Ignore Commit Timestamp column value
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(`\.Rows\[\d*\]\[1\]`).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
-		},
-		{
-			desc: "AUTO_BATCH_DML",
-			stmt: sliceOf(
-				"CREATE TABLE TestTable6(id INT64, active BOOL) PRIMARY KEY(id)",
-				"SET AUTO_BATCH_DML = TRUE",
-				"INSERT INTO TestTable6 (id, active) VALUES (1,true)",
-				"BEGIN",
-				"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", // includes tab character
-				"COMMIT",
-				"SELECT * FROM TestTable6 ORDER BY id",
-			),
-			wantResults: []*Result{
-				{},                                     // CREATE TABLE
-				{KeepVariables: true},                  // SET AUTO_BATCH_DML
-				{IsExecutedDML: true, AffectedRows: 1}, // INSERT
-				{},                                     // BEGIN
-				{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}, // INSERT (batched)
-				// tab is pass-through as is in this layer
-				{IsExecutedDML: true, AffectedRows: 1, TableHeader: toTableHeader("DML", "Rows"), Rows: sliceOf(Row{"INSERT INTO TestTable6 (id, active) VALUES (2,	false)", "1"})},
-				{
-					AffectedRows: 2,
-					TableHeader:  toTableHeader(testTableRowType),
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-				},
-			},
-		},
-
-		// --- Added Test Cases ---
-		{
-			desc: "SHOW VARIABLES",
-			stmt: sliceOf("SHOW VARIABLES"),
-			wantResults: []*Result{
-				{
-					TableHeader:   toTableHeader("name", "value"),
-					KeepVariables: true,
-					// Rows and AffectedRows are dynamic, so we don't check them here.
-				},
-			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
-		},
-		{
-			desc: "HELP VARIABLES",
-			stmt: sliceOf("HELP VARIABLES"),
-			wantResults: []*Result{
-				lo.Must((&HelpVariablesStatement{}).Execute(t.Context(), nil)),
-			},
-		},
-		{
-			desc: "ABORT BATCH DML",
-			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
-			stmt: sliceOf(
-				"START BATCH DML",
-				"INSERT INTO TestAbortBatchDML (id) VALUES (1)",
-				"ABORT BATCH",
-				"SELECT COUNT(*) FROM TestAbortBatchDML",
-			),
-			wantResults: []*Result{
-				{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML}}, // START BATCH
-				{BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}},             // INSERT (batched - not executed)
-				{KeepVariables: true}, // ABORT BATCH
-				{ // SELECT COUNT(*)
-					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-					Rows:         sliceOf(toRow("0")),
-					AffectedRows: 1,
-				},
-			},
-			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-					!strings.Contains(path.String(), "wantResults[3]")
-			}, cmp.Ignore())),
-		},
-		{
-			desc: "CQL SELECT",
-			// It can't be tested because cloud-spanner-emulator doesn't support Cassandra interface.
-		},
-		{
-			desc: "SET ADD statement for CLI_PROTO_FILES",
-			stmt: sliceOf(
-				`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`,
-				`SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
-				`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`,
-				`SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
-			),
-			wantResults: []*Result{
-				{KeepVariables: true}, // SET +=
-				{ // SHOW VARIABLE
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
-					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb`)),
-				},
-				{KeepVariables: true}, // SET +=
-				{ // SHOW VARIABLE
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
-					Rows:          sliceOf(toRow(`testdata/protos/order_descriptors.pb,testdata/protos/singer.proto`)),
-				},
-			},
-		},
-		{
-			desc: "SHOW CREATE INDEX",
-			ddls: sliceOf(
-				"CREATE TABLE TestShowCreateIndexTbl(id INT64, val INT64) PRIMARY KEY(id)",
-				"CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)",
-			),
-			stmt: sliceOf("SHOW CREATE INDEX TestShowCreateIndexIdx"),
-			wantResults: []*Result{
-				{
-					TableHeader:  toTableHeader("Name", "DDL"),
-					Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
-					AffectedRows: 1,
-				},
-			},
-		},
-		{
-			desc: "DESCRIBE DML (INSERT with literal)",
-			ddls: sliceOf("CREATE TABLE TestDescribeDMLTbl(id INT64 PRIMARY KEY)"),
-			stmt: sliceOf("DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)"),
-			wantResults: []*Result{
-				{
-					// For DML without THEN RETURN, result is empty.
-					TableHeader:  toTableHeader("Column_Name", "Column_Type"),
-					Rows:         nil, // No parameters in this DML
-					AffectedRows: 0,   // 0 parameters
-				},
-			},
-		},
-		{
-			desc: "PARTITION SELECT query",
-			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
-			stmt: sliceOf("PARTITION SELECT id FROM TestPartitionQueryTbl"),
-			wantResults: []*Result{
-				{
-					TableHeader:  toTableHeader("Partition_Token"),
-					AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
-					ForceWrap:    true,
-				},
-			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) // Ignore actual token values
-				}, cmp.Ignore()),
-			),
-		},
-		{
-			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
-			stmt: sliceOf("SHOW SCHEMA UPDATE OPERATIONS"),
-			wantResults: []*Result{
-				{
-					TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-					Rows:         nil, // Expect no operations on a fresh emulator DB
-					AffectedRows: 0,
-				},
-			},
-		},
-		{
-			desc: "MUTATE DELETE",
-			ddls: sliceOf("CREATE TABLE TestMutateDeleteTbl(id INT64 PRIMARY KEY)"),
-			stmt: sliceOf(
-				"INSERT INTO TestMutateDeleteTbl (id) VALUES (1)", // Standard DML to insert
-				"MUTATE TestMutateDeleteTbl DELETE (1)",
-				"SELECT COUNT(*) FROM TestMutateDeleteTbl",
-			),
-			wantResults: []*Result{
-				{IsExecutedDML: true, AffectedRows: 1}, // Result of INSERT
-				{},                                     // Result of MUTATE (AffectedRows not set by MutateStatement)
-				{ // SELECT COUNT(*)
-					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-					Rows:         sliceOf(toRow("0")),
-					AffectedRows: 1,
-				},
-			},
-			cmpOpts: sliceOf(cmp.FilterPath(func(path cmp.Path) bool {
-				return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-					!strings.Contains(path.String(), "wantResults[2]") // Allow TableHeader for SELECT
-			}, cmp.Ignore())),
-		},
-		// --- Admin Mode Tests ---
-		{
-			desc: "CREATE DATABASE in admin mode",
-			stmt: sliceOf(
-				"CREATE DATABASE test_db_create",
-			),
-			wantResults: []*Result{
-				{}, // CREATE DATABASE returns empty result
-			},
-			database: "", // Empty database with admin=true means admin-only session
-			admin:    true,
-		},
-		{
-			desc: "SHOW DATABASES in admin mode",
-			stmt: sliceOf(
-				"SHOW DATABASES",
-			),
-			wantResults: []*Result{
-				{
-					TableHeader: toTableHeader("Database"),
-					// Don't check specific rows since databases vary
-				},
-			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
-			database: "", // Empty database with admin=true means admin-only session
-			admin:    true,
-		},
-		{
-			desc: "CREATE and DROP DATABASE workflow in admin mode",
-			stmt: sliceOf(
-				"CREATE DATABASE test_workflow_db",
-				"SHOW DATABASES",
-				"DROP DATABASE test_workflow_db",
-				"SHOW DATABASES",
-			),
-			wantResults: []*Result{
-				{}, // CREATE DATABASE returns empty result
-				{
-					TableHeader: toTableHeader("Database"),
-					// Don't check specific content
-				},
-				{}, // DROP DATABASE should also be mutation
-				{
-					TableHeader: toTableHeader("Database"),
-					// Don't check specific content
-				},
-			},
-			cmpOpts: sliceOf(
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.Rows`)).MatchString(path.GoString()) ||
-						regexp.MustCompile(regexp.QuoteMeta(`.AffectedRows`)).MatchString(path.GoString())
-				}, cmp.Ignore()),
-			),
-			database: "",
-			admin:    true,
-		},
-		{
-			desc: "DETACH and USE workflow with database creation",
-			stmt: sliceOf(
-				"SHOW VARIABLE CLI_DATABASE",       // Should show test-database (connected)
-				"SELECT 1 AS connected",            // Should work from database mode
-				"DETACH",                           // Switch to admin-only mode
-				"SHOW VARIABLE CLI_DATABASE",       // Should show empty string (*detached*)
-				"CREATE DATABASE `test_detach_db`", // Should work from admin-only mode
-				"SHOW DATABASES",                   // Should show both databases
-				"USE `test_detach_db`",             // Switch to new database
-				"SHOW VARIABLE CLI_DATABASE",       // Should show test_detach_db
-				"SELECT 1 AS reconnected",          // Should work from database mode after USE
-				"DETACH",                           // Switch to admin-only mode again
-				"DROP DATABASE `test_detach_db`",   // Should work from admin-only mode
-			),
-			wantResults: []*Result{
-				{
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_DATABASE"),
-					Rows:          sliceOf(toRow("test-database")),
-					AffectedRows:  0,
-				},
-				{
-					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-					Rows:         sliceOf(toRow("1")),
-					AffectedRows: 1,
-				},
-				{}, // DETACH statement returns empty result
-				{
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_DATABASE"),
-					Rows:          sliceOf(toRow("")), // Empty string in detached mode
-					AffectedRows:  0,
-				},
-				{}, // CREATE DATABASE returns empty result
-				{
-					TableHeader:  toTableHeader("Database"),
-					Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
-					AffectedRows: 2,
-				},
-				{}, // USE statement returns empty result
-				{
-					KeepVariables: true,
-					TableHeader:   toTableHeader("CLI_DATABASE"),
-					Rows:          sliceOf(toRow("test_detach_db")), // Shows new database name after USE
-					AffectedRows:  0,
-				},
-				{
-					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-					Rows:         sliceOf(toRow("1")),
-					AffectedRows: 1,
-				},
-				{}, // DETACH statement returns empty result
-				{}, // DROP DATABASE should succeed from admin mode
-			},
-			cmpOpts: sliceOf(
-				// Ignore TableHeader details for SELECT statements since they contain complex type information
-				cmp.FilterPath(func(path cmp.Path) bool {
-					return regexp.MustCompile(regexp.QuoteMeta(`.TableHeader`)).MatchString(path.String()) &&
-						(strings.Contains(path.String(), "wantResults[1]") || strings.Contains(path.String(), "wantResults[8]"))
-				}, cmp.Ignore()),
-			),
-			database: "test-database", // Start with a database connection
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
-
+			// TODO: Consider if this 180s timeout is actually necessary - tests typically complete much faster
 			ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 			defer cancel()
 
@@ -1256,9 +557,10 @@ func TestStatements(t *testing.T) {
 			sessionHandler := NewSessionHandler(session)
 
 			var gots []*Result
-			for i, s := range tt.stmt {
-				// begin
-				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", s))), s, enums.ParseModeNoMemefish)
+			var wants []*Result
+
+			for i, sr := range tt.stmtResults {
+				stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(lo.Must(gsqlutils.StripComments("", sr.stmt))), sr.stmt, enums.ParseModeNoMemefish)
 				if err != nil {
 					t.Fatalf("invalid statement[%d]: error=%s", i, err)
 				}
@@ -1268,10 +570,812 @@ func TestStatements(t *testing.T) {
 					t.Fatalf("unexpected error happened[%d]: %s", i, err)
 				}
 				gots = append(gots, result)
+				wants = append(wants, sr.want)
 			}
-			compareResult(t, gots, tt.wantResults, tt.cmpOpts...)
+			compareResult(t, gots, wants, tt.cmpOpts...)
 		})
 	}
+}
+
+// TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
+func TestParameterStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "query parameters",
+			stmtResults: []stmtResult{
+				srKeep(`SET PARAM b = true`),
+				srKeep(`SET PARAM bs = b"foo"`),
+				srKeep(`SET PARAM i64 = 1`),
+				srKeep(`SET PARAM f64 = 1.0`),
+				srKeep(`SET PARAM f32 = CAST(1.0 AS FLOAT32)`),
+				srKeep(`SET PARAM n = NUMERIC "1"`),
+				srKeep(`SET PARAM s = "foo"`),
+				srKeep(`SET PARAM js = JSON "{}"`),
+				srKeep(`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`),
+				srKeep(`SET PARAM ival_single = INTERVAL 3 DAY`),
+				srKeep(`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`),
+				srKeep(`SET PARAM a_b = [true]`),
+				srKeep(`SET PARAM n_b = CAST(NULL AS BOOL)`),
+				srKeep(`SET PARAM n_ival = CAST(NULL AS INTERVAL)`),
+				{
+					`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
+					        @ival_single AS ival_single, @ival_range AS ival_range,
+					        @a_b AS a_b, @n_b AS n_b, @n_ival AS n_ival`,
+					&Result{
+						TableHeader: toTableHeader(sliceOf(
+							typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
+							typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+							typector.NameTypeToStructTypeField("f64", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)),
+							typector.NameTypeToStructTypeField("f32", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)),
+							typector.NameTypeToStructTypeField("n", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)),
+							typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
+							typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
+							typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
+							typector.NameTypeToStructTypeField("ival_single", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+							typector.NameTypeToStructTypeField("ival_range", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+							typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+							typector.NameTypeToStructTypeField("n_ival", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
+						)),
+						Rows: sliceOf(
+							toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
+								"P3D", "P3Y4M5DT6H7M8.999999999S",
+								"[true]", "NULL", "NULL"),
+						),
+						AffectedRows: 1,
+					},
+				},
+			},
+		},
+		{
+			desc: "SET PARAM TYPE and SHOW PARAMS",
+			stmtResults: []stmtResult{
+				srKeep("SET PARAM i INT64"),
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
+						Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
+					},
+				},
+				{
+					"DESCRIBE SELECT @i AS i",
+					&Result{
+						AffectedRows: 1,
+						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						Rows:         sliceOf(toRow("i", "INT64")),
+					},
+				},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY with parameters",
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
+				srKeep("SET PARAM n = 1"),
+				{
+					"SELECT @n",
+					&Result{
+						ForceWrap:    true,
+						AffectedRows: 1,
+						TableHeader:  toTableHeader("Root_Partitionable"),
+						Rows:         sliceOf(toRow("TRUE")),
+					},
+				},
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+// TestTransactionStatements tests transaction-related functionality including BEGIN, COMMIT, ROLLBACK, and transaction modes
+func TestTransactionStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "begin, insert THEN RETURN, rollback, select",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
+				{
+					"INSERT INTO TestTable (id, active) VALUES (1, true), (2, false) THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows: sliceOf(
+							toRow("1", "true"),
+							toRow("2", "false"),
+						),
+						TableHeader: toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("ROLLBACK"),
+				{
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
+					&Result{
+						TableHeader: toTableHeader(testTableRowType),
+					},
+				},
+			},
+		},
+		{
+			desc: "begin, insert, commit, select",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("COMMIT"),
+				{
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+			},
+		},
+		{
+			desc: "read-only transactions",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("BEGIN RO"),
+				{
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("COMMIT"),
+				srEmpty("SET TRANSACTION READ ONLY"),
+				srEmpty("BEGIN"),
+				{
+					"SELECT id, active FROM TestTable ORDER BY id ASC",
+					&Result{
+						AffectedRows: 2,
+						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:  toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("COMMIT"),
+			},
+		},
+		{
+			desc: "read-write transactions",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true), (2, false)", 2),
+				srEmpty("BEGIN"),
+				{
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN"),
+				srEmpty("SET TRANSACTION READ WRITE"),
+				{
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN RW"),
+				{
+					"DELETE TestTable WHERE TRUE THEN RETURN *",
+					&Result{
+						IsExecutedDML: true,
+						AffectedRows:  2,
+						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
+						TableHeader:   toTableHeader(testTableRowType),
+					},
+				},
+				srEmpty("COMMIT"),
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+// TestShowStatements tests SHOW, DESCRIBE, and HELP statement functionality
+func TestShowStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "SHOW VARIABLE CLI_VERSION",
+			stmtResults: []stmtResult{
+				{
+					`SHOW VARIABLE CLI_VERSION`,
+					&Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_VERSION"),
+						Rows:          sliceOf(toRow(getVersion())),
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW TABLES",
+			ddls: sliceOf(
+				"CREATE TABLE TestTable1(id INT64) PRIMARY KEY(id)",
+				"CREATE TABLE TestTable2(id INT64) PRIMARY KEY(id)",
+			),
+			stmtResults: []stmtResult{
+				{
+					"SHOW TABLES",
+					&Result{
+						TableHeader:  toTableHeader(""), // Dynamic based on database name
+						Rows:         sliceOf(toRow("TestTable1"), toRow("TestTable2")),
+						AffectedRows: 2,
+					},
+				},
+			},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "TableHeader")),
+		},
+		{
+			desc: "SHOW VARIABLES",
+			stmtResults: []stmtResult{
+				{
+					"SHOW VARIABLES",
+					&Result{
+						TableHeader:   toTableHeader("name", "value"),
+						KeepVariables: true,
+						// Rows and AffectedRows are dynamic, so we don't check them here.
+					},
+				},
+			},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+		},
+		{
+			desc: "HELP",
+			stmtResults: []stmtResult{
+				{
+					"HELP",
+					lo.Must((&HelpStatement{}).Execute(t.Context(), nil)),
+				},
+			},
+		},
+		{
+			desc: "HELP VARIABLES",
+			stmtResults: []stmtResult{
+				{
+					"HELP VARIABLES",
+					lo.Must((&HelpVariablesStatement{}).Execute(context.Background(), nil)),
+				},
+			},
+		},
+		{
+			desc: "SHOW DDLS",
+			ddls: sliceOf(
+				"CREATE TABLE Musicians (SingerId INT64 NOT NULL, FirstName STRING(1024), LastName STRING(1024), SingerInfo BYTES(MAX)) PRIMARY KEY (SingerId)",
+				"CREATE TABLE Singers (SingerId INT64 NOT NULL, FirstName STRING(1024), LastName STRING(1024), SingerInfo BYTES(MAX)) PRIMARY KEY (SingerId)",
+				"CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName)",
+			),
+			stmtResults: []stmtResult{
+				{
+					"SHOW DDLS",
+					&Result{
+						TableHeader:   toTableHeader(""),
+						KeepVariables: true,
+						Rows: sliceOf(
+							toRow(heredoc.Doc(`
+							CREATE TABLE Musicians (
+							  SingerId INT64 NOT NULL,
+							  FirstName STRING(1024),
+							  LastName STRING(1024),
+							  SingerInfo BYTES(MAX),
+							) PRIMARY KEY(SingerId);
+							CREATE TABLE Singers (
+							  SingerId INT64 NOT NULL,
+							  FirstName STRING(1024),
+							  LastName STRING(1024),
+							  SingerInfo BYTES(MAX),
+							) PRIMARY KEY(SingerId);
+							CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName);
+							`)),
+						),
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW CREATE INDEX",
+			ddls: sliceOf(
+				"CREATE TABLE TestShowCreateIndexTbl(id INT64, val INT64) PRIMARY KEY(id)",
+				"CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)",
+			),
+			stmtResults: []stmtResult{
+				{
+					"SHOW CREATE INDEX TestShowCreateIndexIdx",
+					&Result{
+						TableHeader:  toTableHeader("Name", "DDL"),
+						Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
+						AffectedRows: 1,
+					},
+				},
+			},
+		},
+		{
+			desc: "DESCRIBE DML (INSERT with literal)",
+			ddls: sliceOf("CREATE TABLE TestDescribeDMLTbl(id INT64 PRIMARY KEY)"),
+			stmtResults: []stmtResult{
+				{
+					"DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)",
+					&Result{
+						// For DML without THEN RETURN, result is empty.
+						TableHeader: toTableHeader("Column_Name", "Column_Type"),
+						// No parameters in this DML - Rows and AffectedRows default to nil/0
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW SCHEMA UPDATE OPERATIONS (empty result expected)",
+			stmtResults: []stmtResult{
+				{
+					"SHOW SCHEMA UPDATE OPERATIONS",
+					&Result{
+						TableHeader: toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+						// Expect no operations on a fresh emulator DB - Rows and AffectedRows default to nil/0
+					},
+				},
+			},
+		},
+		{
+			desc:  "SHOW DATABASES in admin mode",
+			admin: true,
+			stmtResults: []stmtResult{
+				{
+					"SHOW DATABASES",
+					&Result{
+						TableHeader: toTableHeader("Database"),
+						// Don't check specific rows since databases vary
+					},
+				},
+			},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+// TestBatchStatements tests BATCH-related functionality including BATCH DDL, BATCH DML, AUTO_BATCH_DML
+func TestBatchStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "BATCH DML with parameters",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep(`SET PARAM n = 1`),
+				srBatchDMLKeep("START BATCH DML", 0),
+				srBatchDML("INSERT INTO TestTable (id, active) VALUES (@n, false)", 1),
+				srBatchDML("UPDATE TestTable SET active = true WHERE id = @n", 2),
+				{"RUN BATCH", &Result{
+					IsExecutedDML:    true,
+					AffectedRows:     2,
+					AffectedRowsType: rowCountTypeUpperBound,
+					TableHeader:      toTableHeader("DML", "Rows"),
+					Rows: sliceOf(
+						toRow("INSERT INTO TestTable (id, active) VALUES (@n, false)", "1"),
+						toRow("UPDATE TestTable SET active = true WHERE id = @n", "1"),
+					),
+				}},
+			},
+		},
+		{
+			desc: "BATCH DDL",
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_ECHO_EXECUTED_DDL = TRUE`),
+				srBatchDDLKeep("START BATCH DDL", 0),
+				{heredoc.Doc(`CREATE TABLE TestTable (
+					id		INT64,
+					active	BOOL,
+				) PRIMARY KEY(id)`), &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}}},
+				srBatchDDL(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, 2),
+				{"RUN BATCH", &Result{
+					TableHeader: toTableHeader("Executed", "Commit Timestamp"),
+					Rows: sliceOf(
+						toRow(heredoc.Doc(`
+							CREATE TABLE TestTable (
+								id		INT64,
+								active	BOOL,
+							) PRIMARY KEY(id);`), "(ignored)"),
+						toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
+					),
+				}},
+			},
+			// Ignore Commit Timestamp column value
+			cmpOpts: sliceOf(ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`)),
+		},
+		{
+			desc: "AUTO_BATCH_DML",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1,true)", 1),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2,	false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}}, // includes tab
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(Row{"INSERT INTO TestTable (id, active) VALUES (2,	false)", "1"}), // tab is pass-through
+				}},
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
+					AffectedRows: 2,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+				}},
+			},
+		},
+		{
+			desc: "ABORT BATCH DML",
+			ddls: sliceOf("CREATE TABLE TestAbortBatchDML(id INT64 PRIMARY KEY)"),
+			stmtResults: []stmtResult{
+				srBatchDMLKeep("START BATCH DML", 0),
+				srBatchDML("INSERT INTO TestAbortBatchDML (id) VALUES (1)", 1),
+				srKeep("ABORT BATCH"),
+				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
+					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+					Rows:         sliceOf(toRow("0")),
+					AffectedRows: 1,
+				}},
+			},
+			// No cmpOpts needed - TableHeader should be nil for batch statements
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+// TestPartitionedStatements tests PARTITION-related functionality including partitioned queries and DML
+func TestPartitionedStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "TRY PARTITIONED QUERY",
+			stmtResults: []stmtResult{
+				{"TRY PARTITIONED QUERY SELECT 1", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY system variable",
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
+				{"SELECT 1", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "CLI_TRY_PARTITION_QUERY with parameters",
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
+				srKeep("SET PARAM n = 1"),
+				{"SELECT @n", &Result{
+					ForceWrap:    true,
+					AffectedRows: 1,
+					TableHeader:  toTableHeader("Root_Partitionable"),
+					Rows:         sliceOf(toRow("TRUE")),
+				}},
+			},
+		},
+		{
+			desc: "mutation, pdml, partitioned query",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srEmpty("MUTATE TestTable INSERT STRUCT(1 AS id, TRUE AS active)"),
+				{"PARTITIONED UPDATE TestTable SET active = FALSE WHERE id = 1", &Result{IsExecutedDML: true, AffectedRows: 1, AffectedRowsType: rowCountTypeLowerBound}},
+				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable", &Result{
+					AffectedRows:   1,
+					PartitionCount: 2,
+					TableHeader:    toTableHeader(testTableRowType),
+					Rows:           sliceOf(toRow("1", "false")),
+				}},
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+func TestProtoStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc: "SHOW LOCAL PROTO with pb file",
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
+				{
+					stmt: `SHOW LOCAL PROTO`,
+					want: &Result{
+						TableHeader: toTableHeader("full_name", "kind", "package", "file"),
+						Rows: sliceOf(
+							toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
+							toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
+							toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping", "order_protos.proto"),
+							toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping", "order_protos.proto"),
+						),
+						AffectedRows:  4,
+						KeepVariables: true,
+					},
+				},
+			},
+		},
+		{
+			desc: "SHOW LOCAL PROTO with proto file",
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`),
+				{
+					stmt: `SHOW LOCAL PROTO`,
+					want: &Result{
+						TableHeader: toTableHeader("full_name", "kind", "package", "file"),
+						Rows: sliceOf(
+							toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
+							toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
+							toRow("examples.spanner.music.Genre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
+							toRow("examples.spanner.music.CustomGenre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
+						),
+						AffectedRows:  4,
+						KeepVariables: true,
+					},
+				},
+			},
+		},
+		{
+			desc: "PROTO BUNDLE statements",
+			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
+			stmtResults: []stmtResult{
+				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")}),
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
+				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
+				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
+				srEmpty("SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+func TestAdminStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc:  "CREATE DATABASE in admin mode",
+			admin: true,
+			stmtResults: []stmtResult{
+				srEmpty("CREATE DATABASE test_db_create"), // CREATE DATABASE returns empty result
+			},
+		},
+		{
+			desc:  "CREATE and DROP DATABASE workflow in admin mode",
+			admin: true,
+			stmtResults: []stmtResult{
+				srEmpty("CREATE DATABASE test_workflow_db"), // CREATE DATABASE returns empty result
+				{
+					stmt: "SHOW DATABASES",
+					want: &Result{
+						TableHeader: toTableHeader("Database"),
+						// Don't check specific content
+					},
+				},
+				srEmpty("DROP DATABASE test_workflow_db"), // DROP DATABASE should also be mutation
+				{
+					stmt: "SHOW DATABASES",
+					want: &Result{
+						TableHeader: toTableHeader("Database"),
+						// Don't check specific content
+					},
+				},
+			},
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+		},
+		{
+			desc:     "DETACH and USE workflow with database creation",
+			database: "test-database", // Start with a database connection
+			stmtResults: []stmtResult{
+				{
+					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test-database (connected)
+					want: &Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_DATABASE"),
+						Rows:          sliceOf(toRow("test-database")),
+					},
+				},
+				{
+					stmt: "SELECT 1 AS connected", // Should work from database mode
+					want: &Result{
+						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+						Rows:         sliceOf(toRow("1")),
+						AffectedRows: 1,
+					},
+				},
+				srEmpty("DETACH"), // Switch to admin-only mode, returns empty result
+				{
+					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show empty string (*detached*)
+					want: &Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_DATABASE"),
+						Rows:          sliceOf(toRow("")), // Empty string in detached mode
+						AffectedRows:  0,
+					},
+				},
+				srEmpty("CREATE DATABASE `test_detach_db`"), // Should work from admin-only mode
+				{
+					stmt: "SHOW DATABASES", // Should show both databases
+					want: &Result{
+						TableHeader:  toTableHeader("Database"),
+						Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
+						AffectedRows: 2,
+					},
+				},
+				srEmpty("USE `test_detach_db`"), // Switch to new database
+				{
+					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test_detach_db
+					want: &Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_DATABASE"),
+						Rows:          sliceOf(toRow("test_detach_db")), // Shows new database name after USE
+						AffectedRows:  0,
+					},
+				},
+				{
+					stmt: "SELECT 1 AS reconnected", // Should work from database mode after USE
+					want: &Result{
+						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+						Rows:         sliceOf(toRow("1")),
+						AffectedRows: 1,
+					},
+				},
+				srEmpty("DETACH"),                         // Switch to admin-only mode again
+				srEmpty("DROP DATABASE `test_detach_db`"), // Should work from admin-only mode
+			},
+			// TableHeaders are explicitly set for SELECT statements
+		},
+		{
+			desc:     "DATABASE statements (dedicated instance)",
+			database: "test-database",
+			stmtResults: []stmtResult{
+				{
+					stmt: "SHOW DATABASES",
+					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				},
+				srEmpty("CREATE DATABASE `new-database`"), // CREATE DATABASE returns empty result
+				{
+					stmt: "SHOW DATABASES",
+					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+				},
+				srEmpty("USE `new-database` ROLE spanner_info_reader"), // nop
+				srEmpty("USE `test-database`"),                         // nop
+				srEmpty("DROP DATABASE `new-database`"),                // DROP DATABASE
+				{
+					stmt: "SHOW DATABASES",
+					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+				},
+			},
+			// Ignore duration field in CREATE DATABASE result
+			cmpOpts: sliceOf(ignorePathOpt(`.Rows[0][2]`)),
+		},
+		{
+			desc: "PARTITION SELECT query",
+			ddls: sliceOf("CREATE TABLE TestPartitionQueryTbl(id INT64 PRIMARY KEY)"),
+			stmtResults: []stmtResult{
+				{
+					stmt: "PARTITION SELECT id FROM TestPartitionQueryTbl",
+					want: &Result{
+						TableHeader:  toTableHeader("Partition_Token"),
+						AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
+						ForceWrap:    true,
+					},
+				},
+			},
+			// Ignore actual token values
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows")),
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
+func TestMiscStatements(t *testing.T) {
+	tests := []statementTestCase{
+		{
+			desc:        "SPLIT POINTS statements",
+			ddls:        sliceOf(testTableSimpleDDL),
+			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
+			stmtResults: []stmtResult{
+				// Empty results for SPLIT POINTS since it only works with dedicated DB
+			},
+		},
+		{
+			desc:        "EXPLAIN & EXPLAIN ANALYZE statements",
+			stmtResults: []stmtResult{
+				// Empty results for EXPLAIN since it only works with dedicated DB
+			},
+		},
+		{
+			desc:        "CQL SELECT",
+			ddls:        sliceOf(testTableSimpleDDL),
+			dmls:        []string{"DELETE FROM TestTable WHERE TRUE"},
+			stmtResults: []stmtResult{
+				// Empty results since CQL SELECT would return actual data
+			},
+		},
+		{
+			desc: "SET ADD statement for CLI_PROTO_FILES",
+			stmtResults: []stmtResult{
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`),
+				{
+					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+					want: &Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
+						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb")),
+						AffectedRows:  0,
+					},
+				},
+				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`),
+				{
+					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+					want: &Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
+						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb,testdata/protos/singer.proto")),
+						AffectedRows:  0,
+					},
+				},
+			},
+		},
+		{
+			desc: "MUTATE DELETE",
+			ddls: sliceOf("CREATE TABLE TestMutateDeleteTbl(id INT64 PRIMARY KEY)"),
+			stmtResults: []stmtResult{
+				{
+					stmt: "INSERT INTO TestMutateDeleteTbl (id) VALUES (1)",
+					want: &Result{
+						AffectedRows:  1,
+						IsExecutedDML: true,
+					},
+				},
+				{
+					stmt: "MUTATE TestMutateDeleteTbl DELETE (1)",
+					want: &Result{
+						AffectedRows: 0,
+					},
+				},
+				{
+					stmt: "SELECT COUNT(*) FROM TestMutateDeleteTbl",
+					want: &Result{
+						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+						Rows:         sliceOf(toRow("0")),
+						AffectedRows: 1,
+					},
+				},
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
 }
 
 func TestReadWriteTransaction(t *testing.T) {
