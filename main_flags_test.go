@@ -64,6 +64,61 @@ func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
 }
 
+// checkError validates that an error matches expected conditions
+func checkError(t *testing.T, err error, errContains string) {
+	t.Helper()
+	wantErr := errContains != ""
+	if (err != nil) != wantErr {
+		t.Errorf("error = %v, wantErr %v", err, wantErr)
+		return
+	}
+	if errContains != "" && err != nil {
+		if !contains(err.Error(), errContains) {
+			t.Errorf("error %q does not contain expected string %q", err.Error(), errContains)
+		}
+	}
+}
+
+// parseAndValidate parses command-line arguments and validates Spanner options
+func parseAndValidate(args []string) (*globalOptions, error) {
+	var gopts globalOptions
+	parser := flags.NewParser(&gopts, flags.Default)
+	_, err := parser.ParseArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ValidateSpannerOptions(&gopts.Spanner); err != nil {
+		return nil, err
+	}
+
+	return &gopts, nil
+}
+
+// initSysVarsOrFail initializes system variables and fails the test on error
+func initSysVarsOrFail(t *testing.T, opts *spannerOptions) *systemVariables {
+	t.Helper()
+	sysVars, err := initializeSystemVariables(opts)
+	if err != nil {
+		t.Fatalf("Failed to initialize system variables: %v", err)
+	}
+	return sysVars
+}
+
+// verifyConnectionParams checks common connection parameters
+func verifyConnectionParams(t *testing.T, sysVars *systemVariables, wantProject, wantInstance, wantDatabase string) {
+	t.Helper()
+	if sysVars.Project != wantProject {
+		t.Errorf("Project = %q, want %q", sysVars.Project, wantProject)
+	}
+	if sysVars.Instance != wantInstance {
+		t.Errorf("Instance = %q, want %q", sysVars.Instance, wantInstance)
+	}
+	if sysVars.Database != wantDatabase {
+		t.Errorf("Database = %q, want %q", sysVars.Database, wantDatabase)
+	}
+}
+
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
 func TestParseFlagsCombinations(t *testing.T) {
 	t.Parallel()
@@ -226,32 +281,8 @@ func TestParseFlagsCombinations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
-
-			// First check if parsing itself failed
-			wantErr := tt.errContains != ""
-			if err != nil && !wantErr {
-				t.Errorf("ParseArgs() unexpected error: %v", err)
-				return
-			}
-
-			// If parsing succeeded, validate the options
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-			}
-
-			if (err != nil) != wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			_, err := parseAndValidate(tt.args)
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -533,42 +564,16 @@ func TestParseFlagsValidation(t *testing.T) {
 				}
 			}
 
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(args)
-			// First check if parsing itself failed
-			if err != nil {
-				if err == nil {
-					t.Errorf("ParseArgs() unexpected error: %v", err)
-				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
-					t.Errorf("ParseArgs() error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-				return
+			gopts, err := parseAndValidate(args)
+			if err == nil && gopts != nil {
+				_, err = initializeSystemVariables(&gopts.Spanner)
 			}
 
-			// If parsing succeeded, validate the options and initialize system variables
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-				if err == nil {
-					_, err = initializeSystemVariables(&gopts.Spanner)
-				}
-			}
-
-			wantErr := tt.errContains != ""
-			if (err != nil) != wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 
 			// If successful and verify function provided, verify the parsed values
 			if err == nil && tt.verify != nil {
-				tt.verify(t, &gopts)
+				tt.verify(t, gopts)
 			}
 		})
 	}
@@ -778,21 +783,10 @@ priority = HIGH
 			}
 
 			// Initialize system variables
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Check results
-			if sysVars.Project != tt.wantProject {
-				t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-			}
-			if sysVars.Instance != tt.wantInstance {
-				t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-			}
-			if sysVars.Database != tt.wantDatabase {
-				t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-			}
+			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
 			if sysVars.RPCPriority != tt.wantPriority {
 				t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
 			}
@@ -952,33 +946,15 @@ func TestFlagSpecialModes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseAndValidate(tt.args)
 			if err != nil {
-				t.Fatalf("Failed to parse flags: %v", err)
+				t.Fatalf("Failed to parse/validate flags: %v", err)
 			}
 
-			// Validate and initialize system variables
-			if err := ValidateSpannerOptions(&gopts.Spanner); err != nil {
-				t.Fatalf("Failed to validate options: %v", err)
-			}
-
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Check results
-			if sysVars.Project != tt.wantProject {
-				t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-			}
-			if sysVars.Instance != tt.wantInstance {
-				t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-			}
-			if sysVars.Database != tt.wantDatabase {
-				t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-			}
+			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
 			if sysVars.Insecure != tt.wantInsecure {
 				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
 			}
@@ -1093,19 +1069,9 @@ func TestFlagErrorMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, parseErr := parser.ParseArgs(tt.args)
-
-			var err error
-			if parseErr == nil {
-				// If parsing succeeded, try validation and initialization
-				err = ValidateSpannerOptions(&gopts.Spanner)
-				if err == nil {
-					_, err = initializeSystemVariables(&gopts.Spanner)
-				}
-			} else {
-				err = parseErr
+			gopts, err := parseAndValidate(tt.args)
+			if err == nil && gopts != nil {
+				_, err = initializeSystemVariables(&gopts.Spanner)
 			}
 
 			if err == nil {
@@ -1172,16 +1138,10 @@ func TestFileFlagBehavior(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
-
-			if err == nil {
-				err = ValidateSpannerOptions(&gopts.Spanner)
-			}
+			gopts, err := parseAndValidate(tt.args)
 
 			// If no validation error, test determineInputAndMode
-			if err == nil && tt.checkInput {
+			if err == nil && tt.checkInput && gopts != nil {
 				input, _, determineErr := determineInputAndMode(&gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
 				if determineErr != nil {
 					err = determineErr
@@ -1190,17 +1150,7 @@ func TestFileFlagBehavior(t *testing.T) {
 				}
 			}
 
-			wantErr := tt.errContains != ""
-			if (err != nil) != wantErr {
-				t.Errorf("error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1264,16 +1214,8 @@ func TestSpecialFlags(t *testing.T) {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
 
-			wantErr := tt.errContains != ""
-			if (err != nil) != wantErr {
-				t.Errorf("error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
+			checkError(t, err, tt.errContains)
+			if err != nil {
 				return
 			}
 
@@ -1293,10 +1235,7 @@ func TestSpecialFlags(t *testing.T) {
 
 			// If async flag is set, check it's propagated to system variables
 			if tt.wantAsync && err == nil {
-				sysVars, err := initializeSystemVariables(&gopts.Spanner)
-				if err != nil {
-					t.Fatalf("Failed to initialize system variables: %v", err)
-				}
+				sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 				if !sysVars.AsyncDDL {
 					t.Errorf("AsyncDDL not set in system variables when --async flag is used")
 				}
@@ -1379,17 +1318,7 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 				}
 			}
 
-			wantErr := tt.errContains != ""
-			if (err != nil) != wantErr {
-				t.Errorf("error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1469,17 +1398,7 @@ func TestOutputTemplateValidation(t *testing.T) {
 				}
 			}
 
-			wantErr := tt.errContains != ""
-			if (err != nil) != wantErr {
-				t.Errorf("error = %v, wantErr %v", err, wantErr)
-				return
-			}
-
-			if tt.errContains != "" && err != nil {
-				if !contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
-				}
-			}
+			checkError(t, err, tt.errContains)
 		})
 	}
 }
@@ -1834,10 +1753,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 
 			// Initialize system variables
-			sysVars, err := initializeSystemVariables(&gopts.Spanner)
-			if err != nil {
-				t.Fatalf("Failed to initialize system variables: %v", err)
-			}
+			sysVars := initSysVarsOrFail(t, &gopts.Spanner)
 
 			// Simulate the logic in run() that determines CLI_FORMAT
 			stdin, cleanup, err := tt.stdinProvider()
@@ -2052,15 +1968,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 					sysVars, err := initializeSystemVariables(&gopts.Spanner)
 					if err == nil {
 						// Check results
-						if sysVars.Project != tt.wantProject {
-							t.Errorf("Project = %q, want %q", sysVars.Project, tt.wantProject)
-						}
-						if sysVars.Instance != tt.wantInstance {
-							t.Errorf("Instance = %q, want %q", sysVars.Instance, tt.wantInstance)
-						}
-						if sysVars.Database != tt.wantDatabase {
-							t.Errorf("Database = %q, want %q", sysVars.Database, tt.wantDatabase)
-						}
+						verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
 						if sysVars.Role != tt.wantRole {
 							t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
 						}
