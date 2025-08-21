@@ -69,11 +69,21 @@ func ptr(s string) *string {
 	return &s
 }
 
-// assertStringField compares a field value with an expected pointer value
-func assertStringField(t *testing.T, fieldName, got string, want *string) {
+// assertEqual compares a field value with an expected pointer value (generic)
+func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
 	t.Helper()
 	if want != nil && got != *want {
-		t.Errorf("%s = %q, want %q", fieldName, got, *want)
+		t.Errorf("%s = %v, want %v", fieldName, got, *want)
+	}
+}
+
+// assertDeepEqual compares complex structures using go-cmp for detailed diffs
+func assertDeepEqual[T any](t *testing.T, fieldName string, got T, want *T, opts ...cmp.Option) {
+	t.Helper()
+	if want != nil {
+		if diff := cmp.Diff(*want, got, opts...); diff != "" {
+			t.Errorf("%s mismatch (-want +got):\n%s", fieldName, diff)
+		}
 	}
 }
 
@@ -149,13 +159,13 @@ func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOption
 	if want == nil {
 		return
 	}
-	assertStringField(t, "Priority", got.Priority, want.Priority)
-	assertStringField(t, "QueryMode", got.QueryMode, want.QueryMode)
-	assertStringField(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
-	assertStringField(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
-	assertStringField(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
-	assertStringField(t, "Timeout", got.Timeout, want.Timeout)
-	assertStringField(t, "EmulatorImage", got.EmulatorImage, want.EmulatorImage)
+	assertEqual(t, "Priority", got.Priority, want.Priority)
+	assertEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
+	assertEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
+	assertEqual(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
+	assertEqual(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
+	assertEqual(t, "Timeout", got.Timeout, want.Timeout)
+	assertEqual(t, "EmulatorImage", got.EmulatorImage, want.EmulatorImage)
 }
 
 // TestParseFlagsCombinations tests various flag combinations for conflicts and mutual exclusivity
@@ -776,26 +786,16 @@ priority = HIGH
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			if sysVars.RPCPriority != tt.wantPriority {
-				t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
-			}
+			assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
 			if sysVars.Host != "" && sysVars.Port != 0 {
 				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
 			}
-			if gotEndpoint != tt.wantEndpoint {
-				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
-			}
-			if sysVars.Role != tt.wantRole {
-				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
-			}
-			if sysVars.LogGrpc != tt.wantLogGrpc {
-				t.Errorf("LogGrpc = %v, want %v", sysVars.LogGrpc, tt.wantLogGrpc)
-			}
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
+			assertEqual(t, "Endpoint (constructed from Host:Port)", gotEndpoint, &tt.wantEndpoint)
+			assertEqual(t, "Role", sysVars.Role, &tt.wantRole)
+			assertEqual(t, "LogGrpc", sysVars.LogGrpc, &tt.wantLogGrpc)
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
 		})
 	}
 }
@@ -944,15 +944,9 @@ func TestFlagSpecialModes(t *testing.T) {
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
-			if sysVars.Verbose != tt.wantVerbose {
-				t.Errorf("Verbose = %v, want %v", sysVars.Verbose, tt.wantVerbose)
-			}
-			if sysVars.MCP != tt.wantMCP {
-				t.Errorf("MCP = %v, want %v", sysVars.MCP, tt.wantMCP)
-			}
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
+			assertEqual(t, "MCP", sysVars.MCP, &tt.wantMCP)
 
 			// For CLI_FORMAT, we need to simulate what run() does
 			// Check if this test case has specified a desired CLI_FORMAT value
@@ -1209,15 +1203,9 @@ func TestSpecialFlags(t *testing.T) {
 			}
 
 			// Check flag values
-			if gopts.Spanner.Async != tt.wantAsync {
-				t.Errorf("Async = %v, want %v", gopts.Spanner.Async, tt.wantAsync)
-			}
-			if gopts.Spanner.StatementHelp != tt.wantStatementHelp {
-				t.Errorf("StatementHelp = %v, want %v", gopts.Spanner.StatementHelp, tt.wantStatementHelp)
-			}
-			if gopts.Spanner.TryPartitionQuery != tt.wantTryPartition {
-				t.Errorf("TryPartitionQuery = %v, want %v", gopts.Spanner.TryPartitionQuery, tt.wantTryPartition)
-			}
+			assertEqual(t, "Async", gopts.Spanner.Async, &tt.wantAsync)
+			assertEqual(t, "StatementHelp", gopts.Spanner.StatementHelp, &tt.wantStatementHelp)
+			assertEqual(t, "TryPartitionQuery", gopts.Spanner.TryPartitionQuery, &tt.wantTryPartition)
 			if tt.wantEmulatorImage != "" && gopts.Spanner.EmulatorImage != tt.wantEmulatorImage {
 				t.Errorf("EmulatorImage = %q, want %q", gopts.Spanner.EmulatorImage, tt.wantEmulatorImage)
 			}
@@ -1301,9 +1289,7 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 					}
 
 					// Check async
-					if sysVars.AsyncDDL != tt.wantAsync {
-						t.Errorf("AsyncDDL = %v, want %v", sysVars.AsyncDDL, tt.wantAsync)
-					}
+					assertEqual(t, "AsyncDDL", sysVars.AsyncDDL, &tt.wantAsync)
 				}
 			}
 
@@ -1961,18 +1947,10 @@ func TestComplexFlagInteractions(t *testing.T) {
 						if sysVars.Role != tt.wantRole {
 							t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
 						}
-						if sysVars.Insecure != tt.wantInsecure {
-							t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-						}
-						if sysVars.Verbose != tt.wantVerbose {
-							t.Errorf("Verbose = %v, want %v", sysVars.Verbose, tt.wantVerbose)
-						}
-						if sysVars.ReadOnly != tt.wantReadOnly {
-							t.Errorf("ReadOnly = %v, want %v", sysVars.ReadOnly, tt.wantReadOnly)
-						}
-						if sysVars.RPCPriority != tt.wantPriority {
-							t.Errorf("RPCPriority = %v, want %v", sysVars.RPCPriority, tt.wantPriority)
-						}
+						assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+						assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
+						assertEqual(t, "ReadOnly", sysVars.ReadOnly, &tt.wantReadOnly)
+						assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
 						if tt.wantStaleness && sysVars.ReadOnlyStaleness == nil {
 							t.Errorf("ReadOnlyStaleness = nil, want non-nil")
 						}
@@ -2053,9 +2031,7 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			if sysVars.Role != tt.wantRole {
 				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
 			}
-			if sysVars.Insecure != tt.wantInsecure {
-				t.Errorf("Insecure = %v, want %v", sysVars.Insecure, tt.wantInsecure)
-			}
+			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
 			if sysVars.Host != "" && sysVars.Port != 0 {
@@ -2136,9 +2112,7 @@ func TestHostPortFlags(t *testing.T) {
 			if sysVars.Host != tt.wantHost {
 				t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
 			}
-			if sysVars.Port != tt.wantPort {
-				t.Errorf("Port = %d, want %d", sysVars.Port, tt.wantPort)
-			}
+			assertEqual(t, "Port", sysVars.Port, &tt.wantPort)
 		})
 	}
 }
@@ -2238,9 +2212,7 @@ func TestEmulatorPlatformFlag(t *testing.T) {
 			if gopts.Spanner.EmulatorPlatform != tt.wantPlatform {
 				t.Errorf("EmulatorPlatform = %q, want %q", gopts.Spanner.EmulatorPlatform, tt.wantPlatform)
 			}
-			if gopts.Spanner.EmbeddedEmulator != tt.wantEmbedded {
-				t.Errorf("EmbeddedEmulator = %v, want %v", gopts.Spanner.EmbeddedEmulator, tt.wantEmbedded)
-			}
+			assertEqual(t, "EmbeddedEmulator", gopts.Spanner.EmbeddedEmulator, &tt.wantEmbedded)
 		})
 	}
 }
