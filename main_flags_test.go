@@ -77,16 +77,6 @@ func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
 	}
 }
 
-// assertDeepEqual compares complex structures using go-cmp for detailed diffs
-func assertDeepEqual[T any](t *testing.T, fieldName string, got T, want *T, opts ...cmp.Option) {
-	t.Helper()
-	if want != nil {
-		if diff := cmp.Diff(*want, got, opts...); diff != "" {
-			t.Errorf("%s mismatch (-want +got):\n%s", fieldName, diff)
-		}
-	}
-}
-
 // checkError validates that an error matches expected conditions
 func checkError(t *testing.T, err error, errContains string) {
 	t.Helper()
@@ -515,7 +505,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			want: &spannerOptionsExpectations{Priority: &p},
 		})
 	}
-	
+
 	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
 		m := mode // capture loop variable
 		tests = append(tests, struct {
@@ -529,7 +519,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			want: &spannerOptionsExpectations{QueryMode: &m},
 		})
 	}
-	
+
 	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
 		d := dialect // capture loop variable
 		tests = append(tests, struct {
