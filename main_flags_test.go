@@ -64,6 +64,11 @@ func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
 }
 
+// ptr returns a pointer to the given string
+func ptr(s string) *string {
+	return &s
+}
+
 // checkError validates that an error matches expected conditions
 func checkError(t *testing.T, err error, errContains string) {
 	t.Helper()
@@ -116,6 +121,46 @@ func verifyConnectionParams(t *testing.T, sysVars *systemVariables, wantProject,
 	}
 	if sysVars.Database != wantDatabase {
 		t.Errorf("Database = %q, want %q", sysVars.Database, wantDatabase)
+	}
+}
+
+// spannerOptionsExpectations holds expected field values for verification
+type spannerOptionsExpectations struct {
+	Priority        *string
+	QueryMode       *string
+	DatabaseDialect *string
+	DirectedRead    *string
+	ReadTimestamp   *string
+	Timeout         *string
+	EmulatorImage   *string
+}
+
+// verifySpannerOptions checks spannerOptions fields against expected values
+func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOptionsExpectations) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	if want.Priority != nil && got.Priority != *want.Priority {
+		t.Errorf("Priority = %q, want %q", got.Priority, *want.Priority)
+	}
+	if want.QueryMode != nil && got.QueryMode != *want.QueryMode {
+		t.Errorf("QueryMode = %q, want %q", got.QueryMode, *want.QueryMode)
+	}
+	if want.DatabaseDialect != nil && got.DatabaseDialect != *want.DatabaseDialect {
+		t.Errorf("DatabaseDialect = %q, want %q", got.DatabaseDialect, *want.DatabaseDialect)
+	}
+	if want.DirectedRead != nil && got.DirectedRead != *want.DirectedRead {
+		t.Errorf("DirectedRead = %q, want %q", got.DirectedRead, *want.DirectedRead)
+	}
+	if want.ReadTimestamp != nil && got.ReadTimestamp != *want.ReadTimestamp {
+		t.Errorf("ReadTimestamp = %q, want %q", got.ReadTimestamp, *want.ReadTimestamp)
+	}
+	if want.Timeout != nil && got.Timeout != *want.Timeout {
+		t.Errorf("Timeout = %q, want %q", got.Timeout, *want.Timeout)
+	}
+	if want.EmulatorImage != nil && got.EmulatorImage != *want.EmulatorImage {
+		t.Errorf("EmulatorImage = %q, want %q", got.EmulatorImage, *want.EmulatorImage)
 	}
 }
 
@@ -296,42 +341,14 @@ func TestParseFlagsValidation(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        []string
-		wantErr     bool
 		errContains string
-		verify      func(t *testing.T, opts *globalOptions)
+		want        *spannerOptionsExpectations
 	}{
-		// Enum validation
+		// Enum validation - Invalid values
 		{
 			name:        "invalid priority value",
 			args:        withRequiredFlags("--priority", "INVALID"),
 			errContains: "must be one of:",
-		},
-		{
-			name: "valid priority HIGH",
-			args: withRequiredFlags("--priority", "HIGH"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.Priority != "HIGH" {
-					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "HIGH")
-				}
-			},
-		},
-		{
-			name: "valid priority MEDIUM",
-			args: withRequiredFlags("--priority", "MEDIUM"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.Priority != "MEDIUM" {
-					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "MEDIUM")
-				}
-			},
-		},
-		{
-			name: "valid priority LOW",
-			args: withRequiredFlags("--priority", "LOW"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.Priority != "LOW" {
-					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "LOW")
-				}
-			},
 		},
 		{
 			name:        "invalid query-mode value",
@@ -339,54 +356,9 @@ func TestParseFlagsValidation(t *testing.T) {
 			errContains: "Invalid value `INVALID' for option `--query-mode'",
 		},
 		{
-			name: "valid query-mode NORMAL",
-			args: withRequiredFlags("--query-mode", "NORMAL"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.QueryMode != "NORMAL" {
-					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "NORMAL")
-				}
-			},
-		},
-		{
-			name: "valid query-mode PLAN",
-			args: withRequiredFlags("--query-mode", "PLAN"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.QueryMode != "PLAN" {
-					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "PLAN")
-				}
-			},
-		},
-		{
-			name: "valid query-mode PROFILE",
-			args: withRequiredFlags("--query-mode", "PROFILE"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.QueryMode != "PROFILE" {
-					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "PROFILE")
-				}
-			},
-		},
-		{
 			name:        "invalid database-dialect value",
 			args:        withRequiredFlags("--database-dialect", "INVALID"),
 			errContains: "Invalid value `INVALID' for option `--database-dialect'",
-		},
-		{
-			name: "valid database-dialect POSTGRESQL",
-			args: withRequiredFlags("--database-dialect", "POSTGRESQL"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.DatabaseDialect != "POSTGRESQL" {
-					t.Errorf("DatabaseDialect = %q, want %q", opts.Spanner.DatabaseDialect, "POSTGRESQL")
-				}
-			},
-		},
-		{
-			name: "valid database-dialect GOOGLE_STANDARD_SQL",
-			args: withRequiredFlags("--database-dialect", "GOOGLE_STANDARD_SQL"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.DatabaseDialect != "GOOGLE_STANDARD_SQL" {
-					t.Errorf("DatabaseDialect = %q, want %q", opts.Spanner.DatabaseDialect, "GOOGLE_STANDARD_SQL")
-				}
-			},
 		},
 
 		// Format validation
@@ -398,29 +370,17 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name: "valid directed-read with location only",
 			args: withRequiredFlags("--directed-read", "us-east1"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.DirectedRead != "us-east1" {
-					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1")
-				}
-			},
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1")},
 		},
 		{
 			name: "valid directed-read with READ_ONLY",
 			args: withRequiredFlags("--directed-read", "us-east1:READ_ONLY"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.DirectedRead != "us-east1:READ_ONLY" {
-					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1:READ_ONLY")
-				}
-			},
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1:READ_ONLY")},
 		},
 		{
 			name: "valid directed-read with READ_WRITE",
 			args: withRequiredFlags("--directed-read", "us-east1:READ_WRITE"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.DirectedRead != "us-east1:READ_WRITE" {
-					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1:READ_WRITE")
-				}
-			},
+			want: &spannerOptionsExpectations{DirectedRead: ptr("us-east1:READ_WRITE")},
 		},
 		{
 			name:        "invalid directed-read replica type",
@@ -435,11 +395,7 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name: "valid read-timestamp",
 			args: withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.ReadTimestamp != "2023-01-01T00:00:00Z" {
-					t.Errorf("ReadTimestamp = %q, want %q", opts.Spanner.ReadTimestamp, "2023-01-01T00:00:00Z")
-				}
-			},
+			want: &spannerOptionsExpectations{ReadTimestamp: ptr("2023-01-01T00:00:00Z")},
 		},
 		{
 			name:        "invalid timeout format",
@@ -449,11 +405,7 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name: "valid timeout",
 			args: withRequiredFlags("--timeout", "30s"),
-			verify: func(t *testing.T, opts *globalOptions) {
-				if opts.Spanner.Timeout != "30s" {
-					t.Errorf("Timeout = %q, want %q", opts.Spanner.Timeout, "30s")
-				}
-			},
+			want: &spannerOptionsExpectations{Timeout: ptr("30s")},
 		},
 		{
 			name:        "invalid param format",
@@ -545,6 +497,49 @@ func TestParseFlagsValidation(t *testing.T) {
 		},
 	}
 
+	// Add valid enum test cases using loops
+	for _, priority := range []string{"HIGH", "MEDIUM", "LOW"} {
+		p := priority // capture loop variable
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid priority %s", p),
+			args: withRequiredFlags("--priority", p),
+			want: &spannerOptionsExpectations{Priority: &p},
+		})
+	}
+	
+	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
+		m := mode // capture loop variable
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid query-mode %s", m),
+			args: withRequiredFlags("--query-mode", m),
+			want: &spannerOptionsExpectations{QueryMode: &m},
+		})
+	}
+	
+	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
+		d := dialect // capture loop variable
+		tests = append(tests, struct {
+			name        string
+			args        []string
+			errContains string
+			want        *spannerOptionsExpectations
+		}{
+			name: fmt.Sprintf("valid database-dialect %s", d),
+			args: withRequiredFlags("--database-dialect", d),
+			want: &spannerOptionsExpectations{DatabaseDialect: &d},
+		})
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Handle special placeholder for credential file test
@@ -571,9 +566,9 @@ func TestParseFlagsValidation(t *testing.T) {
 
 			checkError(t, err, tt.errContains)
 
-			// If successful and verify function provided, verify the parsed values
-			if err == nil && tt.verify != nil {
-				tt.verify(t, gopts)
+			// If successful and we have expectations, verify them
+			if err == nil && tt.want != nil {
+				verifySpannerOptions(t, &gopts.Spanner, tt.want)
 			}
 		})
 	}
