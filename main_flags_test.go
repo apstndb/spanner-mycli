@@ -70,50 +70,42 @@ func TestParseFlagsCombinations(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        []string
-		wantErr     bool
 		errContains string
 	}{
 		// Alias conflicts
 		{
-			name:    "execute and sql are aliases (both allowed)",
-			args:    withRequiredFlags("--execute", "SELECT 1", "--sql", "SELECT 2"),
-			wantErr: false,
+			name: "execute and sql are aliases (both allowed)",
+			args: withRequiredFlags("--execute", "SELECT 1", "--sql", "SELECT 2"),
 		},
 		{
 			name: "role and database-role both set (aliases allowed)",
 			args: withRequiredFlags("--role", "role1", "--database-role", "role2"),
 			// Note: Both can be set during parsing, but initializeSystemVariables prefers --role
-			wantErr: false,
 		},
 		{
-			name:    "insecure and skip-tls-verify are aliases (both allowed)",
-			args:    withRequiredFlags("--insecure", "--skip-tls-verify"),
-			wantErr: false,
+			name: "insecure and skip-tls-verify are aliases (both allowed)",
+			args: withRequiredFlags("--insecure", "--skip-tls-verify"),
 		},
 		{
 			name: "endpoint and deployment-endpoint both set (aliases allowed)",
 			args: withRequiredFlags("--endpoint", "endpoint1:443", "--deployment-endpoint", "endpoint2:443"),
 			// Note: Both can be set during parsing, but initializeSystemVariables prefers --endpoint
-			wantErr: false,
 		},
 
 		// Mutually exclusive operations
 		{
 			name:        "execute and file are mutually exclusive",
 			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql"),
-			wantErr:     true,
 			errContains: errMsgInputMethodsExclusive,
 		},
 		{
 			name:        "strong and read-timestamp are mutually exclusive",
 			args:        []string{"--strong", "--read-timestamp", "2023-01-01T00:00:00Z"},
-			wantErr:     true,
 			errContains: errMsgStrongReadTimestampExclusive,
 		},
 		{
 			name:        "all three input methods (execute, file, sql) are mutually exclusive",
 			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2"),
-			wantErr:     true,
 			errContains: errMsgInputMethodsExclusive,
 		},
 
@@ -121,138 +113,114 @@ func TestParseFlagsCombinations(t *testing.T) {
 		{
 			name:        "endpoint and host are mutually exclusive",
 			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--host", "example.com"),
-			wantErr:     true,
 			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "endpoint and port are mutually exclusive",
 			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--port", "9010"),
-			wantErr:     true,
 			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "endpoint and both host/port are mutually exclusive",
 			args:        withRequiredFlags("--endpoint", "spanner.googleapis.com:443", "--host", "example.com", "--port", "9010"),
-			wantErr:     true,
 			errContains: errMsgEndpointHostPortExclusive,
 		},
 		{
 			name:        "try-partition-query requires SQL input",
 			args:        withRequiredFlags("--try-partition-query"),
-			wantErr:     true,
 			errContains: errMsgTryPartitionRequiresInput,
 		},
 		{
 			name: "table flag without SQL input in batch mode",
 			args: withRequiredFlags("--table"),
 			// Table flag is valid without SQL input - it affects output format
-			wantErr: false,
 		},
 		{
-			name:    "try-partition-query with execute is valid",
-			args:    withRequiredFlags("--try-partition-query", "--execute", "SELECT 1"),
-			wantErr: false,
+			name: "try-partition-query with execute is valid",
+			args: withRequiredFlags("--try-partition-query", "--execute", "SELECT 1"),
 		},
 		{
-			name:    "try-partition-query with sql is valid",
-			args:    withRequiredFlags("--try-partition-query", "--sql", "SELECT 1"),
-			wantErr: false,
+			name: "try-partition-query with sql is valid",
+			args: withRequiredFlags("--try-partition-query", "--sql", "SELECT 1"),
 		},
 		{
-			name:    "try-partition-query with file is valid",
-			args:    withRequiredFlags("--try-partition-query", "--file", "query.sql"),
-			wantErr: false,
+			name: "try-partition-query with file is valid",
+			args: withRequiredFlags("--try-partition-query", "--file", "query.sql"),
 		},
 		{
-			name:    "try-partition-query with source is valid",
-			args:    withRequiredFlags("--try-partition-query", "--source", "query.sql"),
-			wantErr: false,
+			name: "try-partition-query with source is valid",
+			args: withRequiredFlags("--try-partition-query", "--source", "query.sql"),
 		},
 		{
 			name:        "execute and source are mutually exclusive",
 			args:        withRequiredFlags("--execute", "SELECT 1", "--source", "query.sql"),
-			wantErr:     true,
 			errContains: errMsgInputMethodsExclusive,
 		},
 		{
 			name:        "all four input methods are mutually exclusive",
 			args:        withRequiredFlags("--execute", "SELECT 1", "--file", "query.sql", "--sql", "SELECT 2", "--source", "query3.sql"),
-			wantErr:     true,
 			errContains: errMsgInputMethodsExclusive,
 		},
 
 		// Embedded emulator tests
 		{
-			name:    "embedded-emulator without connection params",
-			args:    []string{"--embedded-emulator"},
-			wantErr: false,
+			name: "embedded-emulator without connection params",
+			args: []string{"--embedded-emulator"},
 		},
 		{
-			name:    "embedded-emulator with custom image",
-			args:    []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
-			wantErr: false,
+			name: "embedded-emulator with custom image",
+			args: []string{"--embedded-emulator", "--emulator-image", "gcr.io/spanner-emulator/emulator:latest"},
 		},
 		{
-			name:    "embedded-emulator ignores connection params",
-			args:    []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
-			wantErr: false,
+			name: "embedded-emulator ignores connection params",
+			args: []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
 		},
 
 		// Missing required parameters
 		{
 			name:        "missing project without embedded emulator",
 			args:        []string{"--instance", "i", "--database", "d"},
-			wantErr:     true,
 			errContains: errMsgMissingProjectInstance,
 		},
 		{
 			name:        "missing instance without embedded emulator",
 			args:        []string{"--project", "p", "--database", "d"},
-			wantErr:     true,
 			errContains: errMsgMissingProjectInstance,
 		},
 		{
 			name:        "missing database without embedded emulator or detached",
 			args:        []string{"--project", "p", "--instance", "i"},
-			wantErr:     true,
 			errContains: errMsgMissingDatabase,
 		},
 		{
-			name:    "detached mode doesn't require database",
-			args:    []string{"--project", "p", "--instance", "i", "--detached"},
-			wantErr: false,
+			name: "detached mode doesn't require database",
+			args: []string{"--project", "p", "--instance", "i", "--detached"},
 		},
 		{
-			name:    "embedded emulator doesn't require project/instance/database",
-			args:    []string{"--embedded-emulator"},
-			wantErr: false,
+			name: "embedded emulator doesn't require project/instance/database",
+			args: []string{"--embedded-emulator"},
 		},
 
 		// Valid combinations
 		{
-			name:    "minimal valid flags",
-			args:    withRequiredFlags(),
-			wantErr: false,
+			name: "minimal valid flags",
+			args: withRequiredFlags(),
 		},
 		{
-			name:    "only insecure flag",
-			args:    withRequiredFlags("--insecure"),
-			wantErr: false,
+			name: "only insecure flag",
+			args: withRequiredFlags("--insecure"),
 		},
 		{
-			name:    "only skip-tls-verify flag",
-			args:    withRequiredFlags("--skip-tls-verify"),
-			wantErr: false,
+			name: "only skip-tls-verify flag",
+			args: withRequiredFlags("--skip-tls-verify"),
 		},
 		{
-			name:    "only strong flag",
-			args:    withRequiredFlags("--strong"),
-			wantErr: false,
+			name: "only strong flag",
+			args: withRequiredFlags("--strong"),
 		},
 		{
-			name:    "only read-timestamp flag",
-			args:    withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
-			wantErr: false,
+			name: "only read-timestamp flag",
+			args: withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
 		},
 	}
 
@@ -263,7 +231,8 @@ func TestParseFlagsCombinations(t *testing.T) {
 			_, err := parser.ParseArgs(tt.args)
 
 			// First check if parsing itself failed
-			if err != nil && !tt.wantErr {
+			wantErr := tt.errContains != ""
+			if err != nil && !wantErr {
 				t.Errorf("ParseArgs() unexpected error: %v", err)
 				return
 			}
@@ -273,12 +242,12 @@ func TestParseFlagsCombinations(t *testing.T) {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
+			if (err != nil) != wantErr {
+				t.Errorf("flag validation error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -304,13 +273,11 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid priority value",
 			args:        withRequiredFlags("--priority", "INVALID"),
-			wantErr:     true,
 			errContains: "must be one of:",
 		},
 		{
-			name:    "valid priority HIGH",
-			args:    withRequiredFlags("--priority", "HIGH"),
-			wantErr: false,
+			name: "valid priority HIGH",
+			args: withRequiredFlags("--priority", "HIGH"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.Priority != "HIGH" {
 					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "HIGH")
@@ -318,9 +285,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid priority MEDIUM",
-			args:    withRequiredFlags("--priority", "MEDIUM"),
-			wantErr: false,
+			name: "valid priority MEDIUM",
+			args: withRequiredFlags("--priority", "MEDIUM"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.Priority != "MEDIUM" {
 					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "MEDIUM")
@@ -328,9 +294,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid priority LOW",
-			args:    withRequiredFlags("--priority", "LOW"),
-			wantErr: false,
+			name: "valid priority LOW",
+			args: withRequiredFlags("--priority", "LOW"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.Priority != "LOW" {
 					t.Errorf("Priority = %q, want %q", opts.Spanner.Priority, "LOW")
@@ -340,13 +305,11 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid query-mode value",
 			args:        withRequiredFlags("--query-mode", "INVALID"),
-			wantErr:     true,
 			errContains: "Invalid value `INVALID' for option `--query-mode'",
 		},
 		{
-			name:    "valid query-mode NORMAL",
-			args:    withRequiredFlags("--query-mode", "NORMAL"),
-			wantErr: false,
+			name: "valid query-mode NORMAL",
+			args: withRequiredFlags("--query-mode", "NORMAL"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.QueryMode != "NORMAL" {
 					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "NORMAL")
@@ -354,9 +317,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid query-mode PLAN",
-			args:    withRequiredFlags("--query-mode", "PLAN"),
-			wantErr: false,
+			name: "valid query-mode PLAN",
+			args: withRequiredFlags("--query-mode", "PLAN"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.QueryMode != "PLAN" {
 					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "PLAN")
@@ -364,9 +326,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid query-mode PROFILE",
-			args:    withRequiredFlags("--query-mode", "PROFILE"),
-			wantErr: false,
+			name: "valid query-mode PROFILE",
+			args: withRequiredFlags("--query-mode", "PROFILE"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.QueryMode != "PROFILE" {
 					t.Errorf("QueryMode = %q, want %q", opts.Spanner.QueryMode, "PROFILE")
@@ -376,13 +337,11 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid database-dialect value",
 			args:        withRequiredFlags("--database-dialect", "INVALID"),
-			wantErr:     true,
 			errContains: "Invalid value `INVALID' for option `--database-dialect'",
 		},
 		{
-			name:    "valid database-dialect POSTGRESQL",
-			args:    withRequiredFlags("--database-dialect", "POSTGRESQL"),
-			wantErr: false,
+			name: "valid database-dialect POSTGRESQL",
+			args: withRequiredFlags("--database-dialect", "POSTGRESQL"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.DatabaseDialect != "POSTGRESQL" {
 					t.Errorf("DatabaseDialect = %q, want %q", opts.Spanner.DatabaseDialect, "POSTGRESQL")
@@ -390,9 +349,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid database-dialect GOOGLE_STANDARD_SQL",
-			args:    withRequiredFlags("--database-dialect", "GOOGLE_STANDARD_SQL"),
-			wantErr: false,
+			name: "valid database-dialect GOOGLE_STANDARD_SQL",
+			args: withRequiredFlags("--database-dialect", "GOOGLE_STANDARD_SQL"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.DatabaseDialect != "GOOGLE_STANDARD_SQL" {
 					t.Errorf("DatabaseDialect = %q, want %q", opts.Spanner.DatabaseDialect, "GOOGLE_STANDARD_SQL")
@@ -404,13 +362,11 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid directed-read format",
 			args:        withRequiredFlags("--directed-read", "invalid:format:too:many"),
-			wantErr:     true,
 			errContains: "directed read option must be in the form of <replica_location>:<replica_type>",
 		},
 		{
-			name:    "valid directed-read with location only",
-			args:    withRequiredFlags("--directed-read", "us-east1"),
-			wantErr: false,
+			name: "valid directed-read with location only",
+			args: withRequiredFlags("--directed-read", "us-east1"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.DirectedRead != "us-east1" {
 					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1")
@@ -418,9 +374,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid directed-read with READ_ONLY",
-			args:    withRequiredFlags("--directed-read", "us-east1:READ_ONLY"),
-			wantErr: false,
+			name: "valid directed-read with READ_ONLY",
+			args: withRequiredFlags("--directed-read", "us-east1:READ_ONLY"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.DirectedRead != "us-east1:READ_ONLY" {
 					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1:READ_ONLY")
@@ -428,9 +383,8 @@ func TestParseFlagsValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "valid directed-read with READ_WRITE",
-			args:    withRequiredFlags("--directed-read", "us-east1:READ_WRITE"),
-			wantErr: false,
+			name: "valid directed-read with READ_WRITE",
+			args: withRequiredFlags("--directed-read", "us-east1:READ_WRITE"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.DirectedRead != "us-east1:READ_WRITE" {
 					t.Errorf("DirectedRead = %q, want %q", opts.Spanner.DirectedRead, "us-east1:READ_WRITE")
@@ -440,19 +394,16 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid directed-read replica type",
 			args:        withRequiredFlags("--directed-read", "us-east1:INVALID"),
-			wantErr:     true,
 			errContains: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
 		{
 			name:        "invalid read-timestamp format",
 			args:        withRequiredFlags("--read-timestamp", "invalid-timestamp"),
-			wantErr:     true,
 			errContains: "error on parsing --read-timestamp",
 		},
 		{
-			name:    "valid read-timestamp",
-			args:    withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
-			wantErr: false,
+			name: "valid read-timestamp",
+			args: withRequiredFlags("--read-timestamp", "2023-01-01T00:00:00Z"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.ReadTimestamp != "2023-01-01T00:00:00Z" {
 					t.Errorf("ReadTimestamp = %q, want %q", opts.Spanner.ReadTimestamp, "2023-01-01T00:00:00Z")
@@ -462,13 +413,11 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid timeout format",
 			args:        withRequiredFlags("--timeout", "invalid"),
-			wantErr:     true,
 			errContains: "invalid value of --timeout",
 		},
 		{
-			name:    "valid timeout",
-			args:    withRequiredFlags("--timeout", "30s"),
-			wantErr: false,
+			name: "valid timeout",
+			args: withRequiredFlags("--timeout", "30s"),
 			verify: func(t *testing.T, opts *globalOptions) {
 				if opts.Spanner.Timeout != "30s" {
 					t.Errorf("Timeout = %q, want %q", opts.Spanner.Timeout, "30s")
@@ -478,79 +427,66 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid param format",
 			args:        withRequiredFlags("--param", "invalid syntax"),
-			wantErr:     true,
 			errContains: "error on parsing --param",
 		},
 		{
-			name:    "valid param with string value",
-			args:    withRequiredFlags("--param", "p1='hello'"),
-			wantErr: false,
+			name: "valid param with string value",
+			args: withRequiredFlags("--param", "p1='hello'"),
 		},
 		{
-			name:    "valid param with type",
-			args:    withRequiredFlags("--param", "p1=STRING"),
-			wantErr: false,
+			name: "valid param with type",
+			args: withRequiredFlags("--param", "p1=STRING"),
 		},
 		{
 			name:        "invalid set value for boolean",
 			args:        withRequiredFlags("--set", "READONLY=not-a-bool"),
-			wantErr:     true,
 			errContains: "failed to set system variable",
 		},
 		{
-			name:    "valid set value",
-			args:    withRequiredFlags("--set", "READONLY=true"),
-			wantErr: false,
+			name: "valid set value",
+			args: withRequiredFlags("--set", "READONLY=true"),
 		},
 
 		// File validation
 		{
 			name:        "non-existent proto descriptor file",
 			args:        withRequiredFlags("--proto-descriptor-file", "non-existent-file.pb"),
-			wantErr:     true,
 			errContains: "error on --proto-descriptor-file",
 		},
 		{
-			name:    "valid proto descriptor file",
-			args:    withRequiredFlags("--proto-descriptor-file", validProtoFile),
-			wantErr: false,
+			name: "valid proto descriptor file",
+			args: withRequiredFlags("--proto-descriptor-file", validProtoFile),
 		},
 		{
 			name:        "invalid log level",
 			args:        withRequiredFlags("--log-level", "INVALID"),
-			wantErr:     true,
 			errContains: "error on parsing --log-level",
 		},
 		{
-			name:    "valid log level",
-			args:    withRequiredFlags("--log-level", "INFO"),
-			wantErr: false,
+			name: "valid log level",
+			args: withRequiredFlags("--log-level", "INFO"),
 		},
 
 		// Credential file tests
 		{
 			name: "valid credential file",
 			// Use a placeholder that will be replaced in the test
-			args:    withRequiredFlags("--credential", "__TEMP_CRED_FILE__"),
-			wantErr: false,
+			args: withRequiredFlags("--credential", "__TEMP_CRED_FILE__"),
 		},
 		{
 			name: "non-existent credential file",
 			args: withRequiredFlags("--credential", "/non/existent/cred.json"),
 			// Note: This won't fail during flag parsing/validation, only during run()
-			wantErr: false,
 		},
 
 		// MCP mode tests
 		{
-			name:    "mcp mode with all required params",
-			args:    withRequiredFlags("--mcp"),
-			wantErr: false,
+			name: "mcp mode with all required params",
+			args: withRequiredFlags("--mcp"),
 		},
 		{
-			name:    "mcp mode with embedded emulator",
-			args:    []string{"--embedded-emulator", "--mcp"},
-			wantErr: false,
+			name: "mcp mode with embedded emulator",
+			args: []string{"--embedded-emulator", "--mcp"},
 		},
 
 		// Complex flag combinations
@@ -560,7 +496,6 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--set", "CLI_FORMAT=VERTICAL", "--set", "READONLY=true", "--set", "AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC",
 			},
-			wantErr: false,
 		},
 		{
 			name: "multiple param flags",
@@ -568,7 +503,6 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--param", "p1='value1'", "--param", "p2=INT64", "--param", "p3=ARRAY<STRING>",
 			},
-			wantErr: false,
 		},
 		{
 			name: "invalid param syntax",
@@ -576,7 +510,6 @@ func TestParseFlagsValidation(t *testing.T) {
 				"--project", "p", "--instance", "i", "--database", "d",
 				"--param", "p1=@{invalid}",
 			},
-			wantErr:     true,
 			errContains: "error on parsing --param",
 		},
 	}
@@ -605,7 +538,7 @@ func TestParseFlagsValidation(t *testing.T) {
 			_, err := parser.ParseArgs(args)
 			// First check if parsing itself failed
 			if err != nil {
-				if !tt.wantErr {
+				if err == nil {
 					t.Errorf("ParseArgs() unexpected error: %v", err)
 				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
 					t.Errorf("ParseArgs() error %q does not contain expected string %q", err.Error(), tt.errContains)
@@ -621,19 +554,20 @@ func TestParseFlagsValidation(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("flag validation error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("flag validation error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
 			}
 
 			// If successful and verify function provided, verify the parsed values
-			if !tt.wantErr && tt.verify != nil {
+			if err == nil && tt.verify != nil {
 				tt.verify(t, &gopts)
 			}
 		})
@@ -1208,14 +1142,12 @@ func TestFileFlagBehavior(t *testing.T) {
 		{
 			name:       "valid file flag",
 			args:       withRequiredFlags("--file", testFile),
-			wantErr:    false,
 			checkInput: true,
 			wantInput:  "SELECT 1;",
 		},
 		{
 			name:        "non-existent file",
 			args:        withRequiredFlags("--file", "/non/existent/file.sql"),
-			wantErr:     true,
 			errContains: "read from file /non/existent/file.sql failed",
 			checkInput:  true, // Need to call determineInputAndMode to get the error
 		},
@@ -1223,20 +1155,17 @@ func TestFileFlagBehavior(t *testing.T) {
 			name:       "file flag with dash reads from stdin",
 			args:       withRequiredFlags("--file", "-"),
 			stdin:      "SELECT 2;",
-			wantErr:    false,
 			checkInput: true,
 			wantInput:  "SELECT 2;",
 		},
 		{
 			name:        "file flag with execute is mutually exclusive",
 			args:        withRequiredFlags("--file", testFile, "--execute", "SELECT 1"),
-			wantErr:     true,
 			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 		{
 			name:        "file flag with sql is mutually exclusive",
 			args:        withRequiredFlags("--file", testFile, "--sql", "SELECT 1"),
-			wantErr:     true,
 			errContains: "--execute(-e), --file(-f), --sql, --source are exclusive",
 		},
 	}
@@ -1261,12 +1190,13 @@ func TestFileFlagBehavior(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -1309,7 +1239,6 @@ func TestSpecialFlags(t *testing.T) {
 		{
 			name:        "try-partition-query without input",
 			args:        withRequiredFlags("--try-partition-query"),
-			wantErr:     true,
 			errContains: "--try-partition-query requires SQL input",
 		},
 		{
@@ -1335,12 +1264,13 @@ func TestSpecialFlags(t *testing.T) {
 				err = ValidateSpannerOptions(&gopts.Spanner)
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -1407,7 +1337,6 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 		{
 			name:        "invalid timeout format",
 			args:        withRequiredFlags("--timeout", "invalid"),
-			wantErr:     true,
 			errContains: "invalid value of --timeout",
 		},
 		{
@@ -1450,12 +1379,13 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -1491,33 +1421,28 @@ func TestOutputTemplateValidation(t *testing.T) {
 		{
 			name:      "valid output template file",
 			args:      withRequiredFlags("--output-template", validTemplate),
-			wantErr:   false,
 			checkFile: true,
 			wantFile:  validTemplate,
 		},
 		{
 			name:        "non-existent output template file",
 			args:        withRequiredFlags("--output-template", "/non/existent/template.tmpl"),
-			wantErr:     true,
 			errContains: "parse error of output template",
 		},
 		{
 			name:        "invalid template syntax",
 			args:        withRequiredFlags("--output-template", invalidTemplate),
-			wantErr:     true,
 			errContains: "parse error of output template",
 		},
 		{
 			name:      "output template via --set",
-			args:      withRequiredFlags("--set", "CLI_OUTPUT_TEMPLATE_FILE=" + validTemplate),
-			wantErr:   false,
+			args:      withRequiredFlags("--set", "CLI_OUTPUT_TEMPLATE_FILE="+validTemplate),
 			checkFile: true,
 			wantFile:  validTemplate,
 		},
 		{
 			name:      "clear output template with NULL",
 			args:      withRequiredFlags("--output-template", validTemplate, "--set", "CLI_OUTPUT_TEMPLATE_FILE=NULL"),
-			wantErr:   false,
 			checkFile: true,
 			wantFile:  "", // Should be cleared
 		},
@@ -1544,12 +1469,13 @@ func TestOutputTemplateValidation(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -1614,60 +1540,55 @@ func TestDetermineInitialDatabase(t *testing.T) {
 func TestParsePriority(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		priority string
-		want     sppb.RequestOptions_Priority
-		wantErr  bool
+		name        string
+		priority    string
+		want        sppb.RequestOptions_Priority
+		errContains string
 	}{
 		{
 			name:     "empty string returns unspecified",
 			priority: "",
 			want:     sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			wantErr:  false,
 		},
 		{
 			name:     "HIGH",
 			priority: "HIGH",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
 			name:     "MEDIUM",
 			priority: "MEDIUM",
 			want:     sppb.RequestOptions_PRIORITY_MEDIUM,
-			wantErr:  false,
 		},
 		{
 			name:     "LOW",
 			priority: "LOW",
 			want:     sppb.RequestOptions_PRIORITY_LOW,
-			wantErr:  false,
 		},
 		{
 			name:     "lowercase high",
 			priority: "high",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
 			name:     "with PRIORITY_ prefix",
 			priority: "PRIORITY_HIGH",
 			want:     sppb.RequestOptions_PRIORITY_HIGH,
-			wantErr:  false,
 		},
 		{
-			name:     "invalid priority",
-			priority: "INVALID",
-			want:     sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			wantErr:  true,
+			name:        "invalid priority",
+			priority:    "INVALID",
+			want:        sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			errContains: "invalid priority",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parsePriority(tt.priority)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePriority() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("parsePriority() error = %v, wantErr %v", err, wantErr)
 				return
 			}
 			if got != tt.want {
@@ -1681,10 +1602,10 @@ func TestParsePriority(t *testing.T) {
 func TestParseDirectedReadOptionMain(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		input   string
-		want    *sppb.DirectedReadOptions
-		wantErr bool
+		name        string
+		input       string
+		want        *sppb.DirectedReadOptions
+		errContains string
 	}{
 		{
 			name:  "location only",
@@ -1702,7 +1623,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "location with READ_ONLY",
@@ -1720,7 +1640,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "location with READ_WRITE",
@@ -1738,7 +1657,6 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:  "lowercase replica type",
@@ -1756,28 +1674,28 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
 		},
 		{
-			name:    "too many colons",
-			input:   "us-east1:READ_ONLY:extra",
-			wantErr: true,
+			name:        "too many colons",
+			input:       "us-east1:READ_ONLY:extra",
+			errContains: "directed read option must be in the form of",
 		},
 		{
-			name:    "invalid replica type",
-			input:   "us-east1:INVALID",
-			wantErr: true,
+			name:        "invalid replica type",
+			input:       "us-east1:INVALID",
+			errContains: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseDirectedReadOption(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDirectedReadOption() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("parseDirectedReadOption() error = %v, wantErr %v", err, wantErr)
 				return
 			}
-			if !tt.wantErr {
+			if err == nil {
 				if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(sppb.DirectedReadOptions{},
 					sppb.DirectedReadOptions_IncludeReplicas_{},
 					sppb.DirectedReadOptions_IncludeReplicas{},
@@ -1812,14 +1730,12 @@ func TestReadCredentialFile(t *testing.T) {
 				return credFile
 			},
 			wantContent: `{"type": "service_account", "project_id": "test"}`,
-			wantErr:     false,
 		},
 		{
 			name: "non-existent file",
 			setupFile: func(t *testing.T) string {
 				return "/non/existent/file.json"
 			},
-			wantErr:     true,
 			errContains: "no such file",
 		},
 		{
@@ -1833,7 +1749,6 @@ func TestReadCredentialFile(t *testing.T) {
 				return credFile
 			},
 			wantContent: "",
-			wantErr:     false,
 		},
 	}
 
@@ -1842,8 +1757,9 @@ func TestReadCredentialFile(t *testing.T) {
 			filepath := tt.setupFile(t)
 
 			got, err := readCredentialFile(filepath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("readCredentialFile() error = %v, wantErr %v", err, tt.wantErr)
+			wantErr := tt.errContains != ""
+			if (err != nil) != wantErr {
+				t.Errorf("readCredentialFile() error = %v, wantErr %v", err, wantErr)
 				return
 			}
 			if err != nil && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
@@ -2097,7 +2013,6 @@ func TestComplexFlagInteractions(t *testing.T) {
 				"--strong",
 				"--read-timestamp", "2023-01-01T00:00:00Z",
 			},
-			wantErr:     true,
 			errContains: "--strong and --read-timestamp are mutually exclusive",
 		},
 		{
@@ -2125,7 +2040,8 @@ func TestComplexFlagInteractions(t *testing.T) {
 			var gopts globalOptions
 			parser := flags.NewParser(&gopts, flags.Default)
 			_, err := parser.ParseArgs(tt.args)
-			if err != nil && !tt.wantErr {
+			wantErr := tt.errContains != ""
+			if err != nil && !wantErr {
 				t.Fatalf("Failed to parse flags: %v", err)
 			}
 
@@ -2167,12 +2083,12 @@ func TestComplexFlagInteractions(t *testing.T) {
 				}
 			}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			if (err != nil) != wantErr {
+				t.Errorf("error = %v, wantErr %v", err, wantErr)
 				return
 			}
 
-			if tt.wantErr && tt.errContains != "" && err != nil {
+			if tt.errContains != "" && err != nil {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("error %q does not contain expected string %q", err.Error(), tt.errContains)
 				}
@@ -2180,7 +2096,6 @@ func TestComplexFlagInteractions(t *testing.T) {
 		})
 	}
 }
-
 
 // TestAliasFlagPrecedence tests that non-hidden flags take precedence over hidden aliases
 func TestAliasFlagPrecedence(t *testing.T) {
@@ -2301,7 +2216,6 @@ func TestHostPortFlags(t *testing.T) {
 			args:     withRequiredFlags("--endpoint", "2001:db8::1"),
 			wantHost: "",
 			wantPort: 0,
-			wantErr:  true,
 		},
 	}
 
@@ -2316,7 +2230,7 @@ func TestHostPortFlags(t *testing.T) {
 
 			sysVars, err := initializeSystemVariables(&gopts.Spanner)
 			if err != nil {
-				if !tt.wantErr {
+				if err == nil {
 					t.Fatalf("initializeSystemVariables() error: %v", err)
 				}
 				return
