@@ -493,44 +493,41 @@ func TestParseFlagsValidation(t *testing.T) {
 
 	// Add valid enum test cases using loops
 	for _, priority := range []string{"HIGH", "MEDIUM", "LOW"} {
-		p := priority // capture loop variable
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid priority %s", p),
-			args: withRequiredFlags("--priority", p),
-			want: &spannerOptionsExpectations{Priority: &p},
+			name: fmt.Sprintf("valid priority %s", priority),
+			args: withRequiredFlags("--priority", priority),
+			want: &spannerOptionsExpectations{Priority: &priority},
 		})
 	}
 
 	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
-		m := mode // capture loop variable
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid query-mode %s", m),
-			args: withRequiredFlags("--query-mode", m),
-			want: &spannerOptionsExpectations{QueryMode: &m},
+			name: fmt.Sprintf("valid query-mode %s", mode),
+			args: withRequiredFlags("--query-mode", mode),
+			want: &spannerOptionsExpectations{QueryMode: &mode},
 		})
 	}
 
 	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
-		d := dialect // capture loop variable
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid database-dialect %s", d),
-			args: withRequiredFlags("--database-dialect", d),
-			want: &spannerOptionsExpectations{DatabaseDialect: &d},
+			name: fmt.Sprintf("valid database-dialect %s", dialect),
+			args: withRequiredFlags("--database-dialect", dialect),
+			want: &spannerOptionsExpectations{DatabaseDialect: &dialect},
 		})
 	}
 

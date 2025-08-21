@@ -198,7 +198,7 @@ func (dr *DependencyResolver) queryForeignKeyRelationships(ctx context.Context, 
 func (dr *DependencyResolver) calculateInterleaveLevels() {
 	for _, table := range dr.tables {
 		level := 0
-		current := table
+		current := table //nolint:copyloopvar // current is modified in the loop
 		visited := make(map[string]bool)
 
 		// Follow parent chain to calculate depth
