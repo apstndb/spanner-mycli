@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,6 +10,44 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/spanner-mycli/enums"
 )
+
+// Helper functions for common test operations
+
+func runPrintTableData(t *testing.T, mode enums.DisplayMode, skipColNames bool, result *Result) (string, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	sysVars := &systemVariables{
+		CLIFormat:       mode,
+		SkipColumnNames: skipColNames,
+	}
+	err := printTableData(sysVars, 0, &buf, result)
+	return buf.String(), err
+}
+
+func assertContains(t *testing.T, output string, want []string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(output, w) {
+			t.Errorf("output missing %q\nGot:\n%s", w, output)
+		}
+	}
+}
+
+func assertNotContains(t *testing.T, output string, notWant []string) {
+	t.Helper()
+	for _, nw := range notWant {
+		if strings.Contains(output, nw) {
+			t.Errorf("output should not contain %q\nGot:\n%s", nw, output)
+		}
+	}
+}
+
+func assertErrorStatus(t *testing.T, err error, wantError bool) {
+	t.Helper()
+	if (err != nil) != wantError {
+		t.Errorf("error = %v, wantError %v", err, wantError)
+	}
+}
 
 func TestPrintTableDataHTML(t *testing.T) {
 	t.Parallel()
@@ -75,31 +114,17 @@ func TestPrintTableDataHTML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			sysVars := &systemVariables{
-				CLIFormat:       enums.DisplayModeHTML,
-				SkipColumnNames: tt.skipColNames,
-			}
-
-			err := printTableData(sysVars, 0, &buf, tt.result)
-			if (err != nil) != tt.wantError {
-				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
-			}
+			got, err := runPrintTableData(t, enums.DisplayModeHTML, tt.skipColNames, tt.result)
+			assertErrorStatus(t, err, tt.wantError)
 			if err != nil {
 				return
 			}
-
-			got := buf.String()
 
 			if tt.wantOutput != "" && got != tt.wantOutput {
 				t.Errorf("printTableData() = %q, want %q", got, tt.wantOutput)
 			}
 
-			for _, want := range tt.wantContains {
-				if !strings.Contains(got, want) {
-					t.Errorf("printTableData() output missing %q", want)
-				}
-			}
+			assertContains(t, got, tt.wantContains)
 		})
 	}
 }
@@ -195,33 +220,14 @@ func TestPrintTableDataXML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			sysVars := &systemVariables{
-				CLIFormat:       enums.DisplayModeXML,
-				SkipColumnNames: tt.skipColNames,
-			}
-
-			err := printTableData(sysVars, 0, &buf, tt.result)
-			if (err != nil) != tt.wantError {
-				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
-			}
+			got, err := runPrintTableData(t, enums.DisplayModeXML, tt.skipColNames, tt.result)
+			assertErrorStatus(t, err, tt.wantError)
 			if err != nil {
 				return
 			}
 
-			got := buf.String()
-
-			for _, want := range tt.wantContains {
-				if !strings.Contains(got, want) {
-					t.Errorf("printTableData() output missing %q\nGot:\n%s", want, got)
-				}
-			}
-
-			for _, notWant := range tt.wantNotContains {
-				if strings.Contains(got, notWant) {
-					t.Errorf("printTableData() output should not contain %q\nGot:\n%s", notWant, got)
-				}
-			}
+			assertContains(t, got, tt.wantContains)
+			assertNotContains(t, got, tt.wantNotContains)
 		})
 	}
 }
@@ -354,20 +360,12 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			sysVars := &systemVariables{
-				CLIFormat: tt.mode,
-			}
-
-			err := printTableData(sysVars, 0, &buf, tt.result)
-			if (err != nil) != tt.wantError {
-				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
-			}
+			got, err := runPrintTableData(t, tt.mode, false, tt.result)
+			assertErrorStatus(t, err, tt.wantError)
 			if err != nil {
 				return
 			}
 
-			got := buf.String()
 			if tt.wantOutput && got == "" {
 				t.Error("expected output but got empty string")
 			} else if !tt.wantOutput && got != "" {
@@ -377,49 +375,29 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 	}
 }
 
-func TestHTMLAndXMLHelpers(t *testing.T) {
+func TestFormatHelpers(t *testing.T) {
 	t.Parallel()
-	t.Run("formatHTML with empty input", func(t *testing.T) {
-		var buf bytes.Buffer
-		result := &Result{Rows: []Row{}}
-		sysVars := &systemVariables{SkipColumnNames: false}
-		err := formatHTML(&buf, result, []string{}, sysVars, 0)
-		if err != nil {
-			t.Errorf("expected nil for empty columns, got error: %v", err)
-		}
-		if buf.String() != "" {
-			t.Errorf("expected empty output, got: %q", buf.String())
-		}
-	})
 
-	t.Run("formatXML with empty input", func(t *testing.T) {
-		var buf bytes.Buffer
-		result := &Result{Rows: []Row{}}
-		sysVars := &systemVariables{SkipColumnNames: false}
-		err := formatXML(&buf, result, []string{}, sysVars, 0)
-		if err != nil {
-			t.Errorf("expected nil for empty columns, got error: %v", err)
-		}
-		if buf.String() != "" {
-			t.Errorf("expected empty output, got: %q", buf.String())
-		}
-	})
+	// Helper to test empty input handling for different formatters
+	testEmptyFormatter := func(t *testing.T, name string, formatter func(io.Writer, *Result, []string, *systemVariables, int) error) {
+		t.Helper()
+		t.Run(name+" with empty input", func(t *testing.T) {
+			var buf bytes.Buffer
+			result := &Result{Rows: []Row{}}
+			sysVars := &systemVariables{SkipColumnNames: false}
+			err := formatter(&buf, result, []string{}, sysVars, 0)
+			if err != nil {
+				t.Errorf("expected nil for empty columns, got error: %v", err)
+			}
+			if buf.String() != "" {
+				t.Errorf("expected empty output, got: %q", buf.String())
+			}
+		})
+	}
 
-	t.Run("formatCSV with empty input", func(t *testing.T) {
-		var buf bytes.Buffer
-		result := &Result{Rows: []Row{}}
-		sysVars := &systemVariables{SkipColumnNames: false}
-		err := formatCSV(&buf, result, []string{}, sysVars, 0)
-		if err != nil {
-			t.Errorf("expected nil for empty columns, got error: %v", err)
-		}
-		if err != nil && err.Error() != "no columns to output" {
-			t.Errorf("unexpected error message: %v", err)
-		}
-		if buf.String() != "" {
-			t.Errorf("expected empty output, got: %q", buf.String())
-		}
-	})
+	testEmptyFormatter(t, "formatHTML", formatHTML)
+	testEmptyFormatter(t, "formatXML", formatXML)
+	testEmptyFormatter(t, "formatCSV", formatCSV)
 
 	t.Run("XML with large dataset", func(t *testing.T) {
 		// Test with a larger dataset to ensure performance
@@ -442,12 +420,10 @@ func TestHTMLAndXMLHelpers(t *testing.T) {
 		}
 
 		output := buf.String()
-		if !strings.Contains(output, "<?xml version='1.0'?>") {
-			t.Error("XML declaration missing")
-		}
-		if !strings.Contains(output, "</resultset>") {
-			t.Error("XML closing tag missing")
-		}
+		assertContains(t, output, []string{
+			"<?xml version='1.0'?>",
+			"</resultset>",
+		})
 	})
 }
 
@@ -539,21 +515,12 @@ func TestPrintTableDataCSV(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			sysVars := &systemVariables{
-				CLIFormat:       enums.DisplayModeCSV,
-				SkipColumnNames: tt.skipColNames,
-			}
-
-			err := printTableData(sysVars, 0, &buf, tt.result)
-			if (err != nil) != tt.wantError {
-				t.Errorf("printTableData() error = %v, wantError %v", err, tt.wantError)
-			}
+			got, err := runPrintTableData(t, enums.DisplayModeCSV, tt.skipColNames, tt.result)
+			assertErrorStatus(t, err, tt.wantError)
 			if err != nil {
 				return
 			}
 
-			got := buf.String()
 			if got != tt.wantOutput {
 				t.Errorf("printTableData() = %q, want %q", got, tt.wantOutput)
 			}
@@ -639,14 +606,13 @@ func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
 	}
 }
 
-// resultLineRegex matches result lines in CLI output
+// Test helpers for result line suppression
+
 var resultLineRegex = regexp.MustCompile(`(?m)^(Query OK|\d+ rows (in set|affected)|Empty set)`)
 
-// testResultLineSuppression is a helper function to test result line suppression
 func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *Result, interactive bool, expectedHasResult bool) {
 	t.Helper()
 
-	// Capture output
 	var buf bytes.Buffer
 	err := printResult(sysVars, 80, &buf, result, interactive, "")
 	if err != nil {
@@ -654,8 +620,6 @@ func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *R
 	}
 
 	output := buf.String()
-
-	// Check for any known result line pattern
 	hasResultLine := resultLineRegex.MatchString(output)
 
 	if hasResultLine != expectedHasResult {
@@ -666,6 +630,22 @@ func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *R
 
 func TestSuppressResultLines(t *testing.T) {
 	t.Parallel()
+
+	// Create a standard test result for reuse
+	createTestResult := func() *Result {
+		return &Result{
+			Rows: []Row{
+				{"value1", "value2"},
+				{"value3", "value4"},
+			},
+			TableHeader:  toTableHeader("Column1", "Column2"),
+			AffectedRows: 2,
+			Stats: QueryStats{
+				ElapsedTime: "0.5 sec",
+			},
+		}
+	}
+
 	tests := []struct {
 		name                string
 		suppressResultLines bool
@@ -710,27 +690,12 @@ func TestSuppressResultLines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a simple result
-			result := &Result{
-				Rows: []Row{
-					{"value1", "value2"},
-					{"value3", "value4"},
-				},
-				TableHeader:  toTableHeader("Column1", "Column2"),
-				AffectedRows: 2,
-				Stats: QueryStats{
-					ElapsedTime: "0.5 sec",
-				},
-			}
-
-			// Create system variables with test settings
 			sysVars := newSystemVariablesWithDefaults()
 			sysVars.SuppressResultLines = tt.suppressResultLines
 			sysVars.Verbose = tt.verbose
 			sysVars.CLIFormat = enums.DisplayModeTable
 
-			// Test using helper function
-			testResultLineSuppression(t, &sysVars, result, tt.interactive, tt.expectedHasResult)
+			testResultLineSuppression(t, &sysVars, createTestResult(), tt.interactive, tt.expectedHasResult)
 		})
 	}
 }
@@ -811,13 +776,11 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create system variables with test settings
 			sysVars := newSystemVariablesWithDefaults()
 			sysVars.SuppressResultLines = tt.suppressResultLines
 			sysVars.Verbose = tt.verbose
 			sysVars.CLIFormat = enums.DisplayModeTable
 
-			// Test using helper function
 			testResultLineSuppression(t, &sysVars, tt.result, tt.interactive, tt.expectedHasResult)
 		})
 	}
