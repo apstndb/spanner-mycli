@@ -38,6 +38,62 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
+// Test helpers for statement processing
+
+func testStatementWithModes(t *testing.T, input string, want Statement, skipModes []enums.ParseMode, typeCheckOnly bool) {
+	t.Helper()
+	modes := []enums.ParseMode{
+		enums.ParseModeNoMemefish,
+		enums.ParseModeFallback,
+		enums.ParseModeMemefishOnly,
+		enums.ParseModeUnspecified,
+	}
+
+	for _, mode := range modes {
+		t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
+			if slices.Contains(skipModes, mode) {
+				t.Skipf("skip by skipParseModes")
+			}
+
+			stripped, err := gsqlutils.StripComments("", input)
+			if err != nil {
+				t.Fatalf("StripComments(%q) got error: %v", input, err)
+			}
+
+			got, err := BuildStatementWithCommentsWithMode(stripped, input, mode)
+			if err != nil {
+				t.Fatalf("BuildStatement(%q) got error: %v", input, err)
+			}
+
+			if typeCheckOnly {
+				// check only type
+				gotType := reflect.TypeOf(got)
+				wantType := reflect.TypeOf(want)
+				if gotType != wantType {
+					t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
+				}
+			} else {
+				// full comparison
+				if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+					t.Errorf("BuildStatement(%q) differ: %v", input, diff)
+				}
+			}
+		})
+	}
+}
+
+// testStatementComplete tests that the statement is parsed correctly with full comparison
+func testStatementComplete(t *testing.T, input string, want Statement, skipModes []enums.ParseMode) {
+	t.Helper()
+	testStatementWithModes(t, input, want, skipModes, false)
+}
+
+// testStatementTypeOnly tests that the statement is parsed to the correct type (ignoring field values)
+func testStatementTypeOnly(t *testing.T, input string, want Statement, skipModes []enums.ParseMode) {
+	t.Helper()
+	testStatementWithModes(t, input, want, skipModes, true)
+}
+
 func TestBuildStatement(t *testing.T) {
 	t.Parallel()
 	timestamp, err := time.Parse(time.RFC3339Nano, "2020-03-30T22:54:44.834017+09:00")
@@ -967,78 +1023,34 @@ TABLE Singers (42)
 			want:  &HelpVariablesStatement{},
 		},
 	} {
-		modes := []enums.ParseMode{enums.ParseModeNoMemefish, enums.ParseModeFallback, enums.ParseModeMemefishOnly, enums.ParseModeUnspecified}
 		t.Run(test.desc, func(t *testing.T) {
-			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
-					if slices.Contains(test.skipParseModes, mode) {
-						t.Skipf("skip by skipParseModes")
-					}
-
-					stripped, err := gsqlutils.StripComments("", test.input)
-					if err != nil {
-						t.Fatalf("StripComments(%q) got error: %v", test.input, err)
-					}
-
-					got, err := BuildStatementWithCommentsWithMode(stripped, test.input, mode)
-					if err != nil {
-						t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
-					}
-					if diff := cmp.Diff(test.want, got, protocmp.Transform()); diff != "" {
-						t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
-					}
-				})
-			}
+			testStatementComplete(t, test.input, test.want, test.skipParseModes)
 		})
 
-		input := strings.ToLower(test.input)
+		// Test lowercase version
 		t.Run("Lower "+test.desc, func(t *testing.T) {
 			if test.skipLowerCase {
 				t.Skip("skip by skipLowerCase")
 			}
-
-			for _, mode := range modes {
-				t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
-					if slices.Contains(test.skipParseModes, mode) {
-						t.Skip("skip by skipParseModes")
-					}
-
-					stripped, err := gsqlutils.StripComments("", input)
-					if err != nil {
-						t.Fatalf("StripComments(%q) got error: %v", test.input, err)
-					}
-
-					got, err := BuildStatementWithCommentsWithMode(stripped, test.input, mode)
-					if err != nil {
-						t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
-					}
-
-					// check only type
-					gotType := reflect.TypeOf(got)
-					wantType := reflect.TypeOf(test.want)
-					if gotType != wantType {
-						t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
-					}
-				})
-			}
+			input := strings.ToLower(test.input)
+			testStatementTypeOnly(t, input, test.want, test.skipParseModes)
 		})
 	}
 }
 
 func TestBuildStatement_InvalidCase(t *testing.T) {
 	t.Parallel()
-	// invalid tests
-	for _, test := range []struct {
-		input string
-	}{
-		{"FOO BAR"},
-		{"SELEC T FROM t1"},
-		{"BEGIN PRIORITY CRITICAL"},
-	} {
-		t.Run(test.input, func(t *testing.T) {
-			got, err := BuildStatement(test.input)
+	invalidInputs := []string{
+		"FOO BAR",
+		"SELEC T FROM t1",
+		"BEGIN PRIORITY CRITICAL",
+	}
+
+	for _, input := range invalidInputs {
+		t.Run(input, func(t *testing.T) {
+			got, err := BuildStatement(input)
 			if err == nil {
-				t.Errorf("BuildStatement(%q) = %#v, but want error", test.input, got)
+				t.Errorf("BuildStatement(%q) = %#v, but want error", input, got)
 			}
 		})
 	}

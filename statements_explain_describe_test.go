@@ -20,11 +20,39 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// Test helpers for explain/describe statements
+
 func mustNewStruct(m map[string]interface{}) *structpb.Struct {
 	if s, err := structpb.NewStruct(m); err != nil {
 		panic(err)
 	} else {
 		return s
+	}
+}
+
+func loadTestPlan(t *testing.T, file string) *sppb.QueryPlan {
+	t.Helper()
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan sppb.QueryPlan
+	err = protojson.Unmarshal(b, &plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &plan
+}
+
+func testPlanProcessing(t *testing.T, file string, want []plantree.RowWithPredicates) {
+	t.Helper()
+	plan := loadTestPlan(t, file)
+	got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0)
+	if err != nil {
+		t.Errorf("error should be nil, but got = %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+		t.Errorf("processPlanNodes() differ: %s", diff)
 	}
 }
 
@@ -380,22 +408,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 		},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			b, err := os.ReadFile(test.file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var plan sppb.QueryPlan
-			err = protojson.Unmarshal(b, &plan)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0)
-			if err != nil {
-				t.Errorf("error should be nil, but got = %v", err)
-			}
-			if diff := cmp.Diff(test.want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
-				t.Errorf("node.RenderTreeWithStats() differ: %s", diff)
-			}
+			testPlanProcessing(t, test.file, test.want)
 		})
 	}
 }
@@ -617,9 +630,11 @@ func TestNodeString(t *testing.T) {
 			}, "Stream Aggregate",
 		},
 	} {
-		if got := spannerplan.NodeTitle(test.node); got != test.want {
-			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
-		}
+		t.Run(test.title, func(t *testing.T) {
+			if got := spannerplan.NodeTitle(test.node); got != test.want {
+				t.Errorf("NodeTitle() = %q but want %q", got, test.want)
+			}
+		})
 	}
 }
 
