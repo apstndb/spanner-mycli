@@ -43,6 +43,11 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 	var mu sync.Mutex
 
 	return func(ctx context.Context, req *mcp.CallToolRequest, params ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
+		// Protect concurrent access with mutex for the entire operation
+		// This ensures parseStatement and executeStatement are atomic
+		mu.Lock()
+		defer mu.Unlock()
+
 		start := time.Now()
 
 		// Log incoming request if debug logging is enabled
@@ -71,9 +76,6 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 		var sb strings.Builder
 
 		// Execute the statement with the string builder as the output
-		// Protect concurrent access with mutex
-		mu.Lock()
-		defer mu.Unlock()
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
 		if err != nil {
 			slog.Debug("MCP execution failed",
