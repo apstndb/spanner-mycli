@@ -19,7 +19,6 @@ import (
 	"github.com/k0kubun/pp/v3"
 	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -82,12 +81,12 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 			return nil, err
 		}
 
-		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row[0]) /* ID */ }, slices.Values(rows))), 2)
+		maxIDLength := max(hiter.Max(hiter.Map(func(row Row) int { return len(row[0]) /* ID */ }, slices.Values(rows))), 2)
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)
 
-		tree := strings.Join(slices.Collect(xiter.Map(
+		tree := strings.Join(slices.Collect(hiter.Map(
 			func(r Row) string {
 				return runewidth.FillLeft(r[0] /* ID */, maxIDLength) + " | " + r[1] /* Plan */
 			},

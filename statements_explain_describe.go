@@ -32,7 +32,7 @@ import (
 	"github.com/apstndb/spannerplan/protoyaml"
 	spstats "github.com/apstndb/spannerplan/stats"
 	"github.com/goccy/go-yaml"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -360,8 +360,8 @@ func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Al
 	baseAlign := explainColumnAlign
 
 	// Extract the names and alignments from the custom column definitions.
-	customNames := slices.Collect(xiter.Map(func(d columnRenderDef) string { return d.Name }, slices.Values(def)))
-	customAligns := slices.Collect(xiter.Map(func(d columnRenderDef) tw.Align { return d.Alignment }, slices.Values(def)))
+	customNames := slices.Collect(hiter.Map(func(d columnRenderDef) string { return d.Name }, slices.Values(def)))
+	customAligns := slices.Collect(hiter.Map(func(d columnRenderDef) tw.Align { return d.Alignment }, slices.Values(def)))
 
 	// Concatenate the base and custom parts.
 	columnNames := slices.Concat(baseNames, customNames)
