@@ -41,10 +41,8 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 
 	// Start server in a goroutine
 	serverDone := make(chan error, 1)
-	var serverSession *mcp.ServerSession
 	go func() {
-		var err error
-		serverSession, err = mcpServer.Connect(ctx, serverTransport)
+		serverSession, err := mcpServer.Connect(ctx, serverTransport, nil)
 		if err != nil {
 			serverDone <- err
 			return
@@ -60,7 +58,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	}, nil)
 
 	// Connect client and get session
-	clientSession, err := mcpClient.Connect(ctx, clientTransport)
+	clientSession, err := mcpClient.Connect(ctx, clientTransport, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect client: %w", err)
 	}
@@ -121,8 +119,10 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 	// Call the execute_statement tool using the MCP client
 	t.Logf("Executing statement via MCP client: %q", statement)
 	params := &mcp.CallToolParams{
-		Name:      "execute_statement",
-		Arguments: ExecuteStatementArgs{Statement: statement},
+		Name: "execute_statement",
+		Arguments: map[string]any{
+			"statement": statement,
+		},
 	}
 	result, err := mcpClient.CallTool(ctx, params)
 	// Handle errors

@@ -34,7 +34,7 @@ require (
 	github.com/k0kubun/pp/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-runewidth v0.0.16
-	github.com/modelcontextprotocol/go-sdk v0.2.0
+	github.com/modelcontextprotocol/go-sdk v0.3.0
 	github.com/ngicks/go-iterator-helper v0.0.21
 	github.com/nyaosorg/go-readline-ny v1.9.0
 	github.com/olekukonko/tablewriter v1.0.9
@@ -100,6 +100,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/google/jsonschema-go v0.2.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect

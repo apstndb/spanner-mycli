@@ -36,58 +36,60 @@ type ExecuteStatementArgs struct {
 }
 
 // executeStatementHandler handles the execute_statement tool
-func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolRequest, ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
 	// Mutex to protect concurrent access to cli.executeStatement
 	// Note: This coarse-grained mutex serializes all MCP requests, which is acceptable
 	// because spanner-mycli's MCP server is designed for single-client use only.
 	var mu sync.Mutex
 
-	return func(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteStatementArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, params ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
+		// Protect concurrent access with mutex for the entire operation
+		// This ensures parseStatement and executeStatement are atomic
+		mu.Lock()
+		defer mu.Unlock()
+
 		start := time.Now()
 
 		// Log incoming request if debug logging is enabled
 		slog.Debug("MCP request received",
 			"method", "tools/call",
 			"tool", "execute_statement",
-			"statement", params.Arguments.Statement,
+			"statement", params.Statement,
 			"timestamp", start)
 
 		// Parse the statement
-		statement := strings.TrimSuffix(params.Arguments.Statement, ";")
+		statement := strings.TrimSuffix(params.Statement, ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
 			slog.Debug("MCP request failed during parsing",
 				"error", err.Error(),
 				"duration", time.Since(start))
-			// Per MCP v0.2.0, return execution errors as tool output, not protocol errors.
-			return &mcp.CallToolResultFor[struct{}]{
+			// Per MCP spec, return execution errors as tool output, not protocol errors.
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
 				},
-			}, nil
+			}, nil, nil
 		}
 
 		// Create a string builder to capture the output
 		var sb strings.Builder
 
 		// Execute the statement with the string builder as the output
-		// Protect concurrent access with mutex
-		mu.Lock()
-		defer mu.Unlock()
 		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
 		if err != nil {
 			slog.Debug("MCP execution failed",
 				"error", err.Error(),
 				"duration", time.Since(start))
-			// Per MCP v0.2.0, return execution errors as tool output, not protocol errors.
-			return &mcp.CallToolResultFor[struct{}]{
+			// Per MCP spec, return execution errors as tool output, not protocol errors.
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
 				},
-			}, nil
+			}, nil, nil
 		}
 
-		result := &mcp.CallToolResultFor[struct{}]{
+		result := &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: sb.String()},
 			},
@@ -99,7 +101,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.ServerSession,
 			"duration", time.Since(start),
 			"output_preview", runewidth.Truncate(sb.String(), 100, "..."))
 
-		return result, nil
+		return result, nil, nil
 	}
 }
 
@@ -135,7 +137,7 @@ Use "HELP" command to see all available statements and their syntax.`)
 		},
 	}
 
-	mcp.AddTool(server, tool, executeStatementHandler(cli))
+	mcp.AddTool[ExecuteStatementArgs, any](server, tool, executeStatementHandler(cli))
 
 	return server
 }
@@ -153,8 +155,8 @@ func (c *Cli) RunMCP(ctx context.Context) error {
 
 	server := createMCPServer(c)
 
-	transport := mcp.NewStdioTransport()
-	session, err := server.Connect(ctx, transport)
+	transport := &mcp.StdioTransport{}
+	session, err := server.Connect(ctx, transport, nil)
 	if err != nil {
 		return fmt.Errorf("failed to serve mcp: %w", err)
 	}
