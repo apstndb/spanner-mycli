@@ -18,7 +18,6 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/char"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -238,7 +237,7 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 			nil
 	case sppb.TypeCode_ARRAY:
 		if gcv.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
-			return nil, slices.Collect(xiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
+			return nil, slices.Collect(hiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
 				return sliceOf(spanner.GenericColumnValue{
 					Type:  gcv.Type.GetArrayElementType(),
 					Value: v,
@@ -247,7 +246,7 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 		}
 		structTypeFields := gcv.Type.GetArrayElementType().GetStructType().GetFields()
 		return extractColumnNames(structTypeFields),
-			slices.Collect(xiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
+			slices.Collect(hiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
 			nil
 	default:
 		// [[value]]

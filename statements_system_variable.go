@@ -10,7 +10,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	scxiter "spheric.cloud/xiter"
 )
 
@@ -164,7 +164,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		Description: "",
 	})
 
-	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+	rows := slices.SortedFunc(hiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
 		return strings.Compare(lhs[0], rhs[0])
 	})
 

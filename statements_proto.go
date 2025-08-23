@@ -12,7 +12,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -218,7 +218,7 @@ func isValidDescriptorProto(message proto.Message) bool {
 
 func toNamedType(fullName string) *ast.NamedType {
 	return &ast.NamedType{
-		Path: slices.Collect(xiter.Map(
+		Path: slices.Collect(hiter.Map(
 			func(s string) *ast.Ident {
 				return &ast.Ident{Name: s}
 			},
@@ -227,5 +227,5 @@ func toNamedType(fullName string) *ast.NamedType {
 }
 
 func toNamedTypes(fullNames []string) []*ast.NamedType {
-	return slices.Collect(xiter.Map(toNamedType, slices.Values(fullNames)))
+	return slices.Collect(hiter.Map(toNamedType, slices.Values(fullNames)))
 }
