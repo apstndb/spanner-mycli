@@ -132,6 +132,13 @@ func dmlResult(n int) *Result {
 var emulator *tcspanner.Container
 
 func TestMain(m *testing.M) {
+	// Clear Spanner-related environment variables that could interfere with tests.
+	// This ensures test isolation from the user's environment.
+	// Individual tests can still set these variables using t.Setenv() when needed.
+	os.Unsetenv("SPANNER_PROJECT_ID")
+	os.Unsetenv("SPANNER_INSTANCE_ID")
+	os.Unsetenv("SPANNER_DATABASE_ID")
+	
 	flag.Parse()
 
 	// Skip emulator setup in short mode
