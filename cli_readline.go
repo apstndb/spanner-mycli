@@ -19,7 +19,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/mattn/go-runewidth"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/nyaosorg/go-readline-ny"
 	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
@@ -228,7 +228,7 @@ const (
 
 func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
-		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
+		return slices.Collect(hiter.Map(func(comment token.TokenComment) []int {
 			return sliceOf(int(comment.Pos), int(comment.End))
 		}, slices.Values(tok.Comments)))
 	}, func(me *memefish.Error) bool {

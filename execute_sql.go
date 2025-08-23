@@ -18,7 +18,6 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -630,7 +629,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
+	return slices.Collect(hiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.

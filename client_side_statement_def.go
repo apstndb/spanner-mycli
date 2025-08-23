@@ -14,8 +14,8 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	scxiter "spheric.cloud/xiter"
 )
@@ -46,7 +46,7 @@ type clientSideStatementDef struct {
 	HandleSubmatch func(matched []string) (Statement, error)
 }
 
-var schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
+var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
 	return strings.ReplaceAll(s, " ", `\s+`)
 }, slices.Values([]string{
 	"SCHEMA",
@@ -1017,7 +1017,7 @@ func exprToFullName(expr ast.Expr) (string, error) {
 	case *ast.Ident:
 		return e.Name, nil
 	case *ast.Path:
-		return scxiter.Join(xiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
+		return scxiter.Join(hiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
 	default:
 		return "", fmt.Errorf("must be ident or path, but: %T", expr)
 	}

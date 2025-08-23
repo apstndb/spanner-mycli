@@ -10,8 +10,8 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 )
 
@@ -140,7 +140,7 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
 		TableHeader: toTableHeader(""),
-		Rows: sliceOf(toRow(stringsiter.Collect(xiter.Map(
+		Rows: sliceOf(toRow(stringsiter.Collect(hiter.Map(
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
 	}, nil

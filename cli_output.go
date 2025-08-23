@@ -21,7 +21,6 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 )
 
@@ -279,11 +278,11 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 	var transposedRows [][]string
 	for columnIdx := range len(header) {
 		transposedRows = append(transposedRows, slices.Collect(
-			xiter.Map(
+			hiter.Map(
 				func(in Row) string {
 					return lo.Must(lo.Nth(in, columnIdx)) // columnIdx represents the index of the column in the row
 				},
-				xiter.Concat(hiter.Once(toRow(header...)), slices.Values(rows)),
+				hiter.Concat(hiter.Once(toRow(header...)), slices.Values(rows)),
 			)))
 	}
 
@@ -291,7 +290,7 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 	for {
 		slog.Debug("widthCounts", "counts", widthCounts)
 
-		firstCounts := xiter.Map(
+		firstCounts := hiter.Map(
 			func(wcs []WidthCount) WidthCount {
 				return lo.FirstOr(wcs, invalidWidthCount)
 			},
@@ -313,7 +312,7 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 
 	// Add rest to the longest shortage column.
 	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
-		return hiter.Max(xiter.Map(WidthCount.Length, slices.Values(item)))
+		return hiter.Max(hiter.Map(WidthCount.Length, slices.Values(item)))
 	})
 
 	idx, _ := MaxWithIdx(math.MinInt, hiter.Unify(
@@ -354,13 +353,13 @@ func (wc *widthCalculator) StringWidth(s string) int {
 }
 
 func (wc *widthCalculator) maxWidth(s string) int {
-	return hiter.Max(xiter.Map(
+	return hiter.Max(hiter.Map(
 		wc.StringWidth,
 		stringsiter.SplitFunc(s, 0, stringsiter.CutNewLine)))
 }
 
 func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] {
-	return xiter.Map(
+	return hiter.Map(
 		func(in E) E {
 			return min(in, maxValue)
 		},
@@ -426,7 +425,7 @@ func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.
 }
 
 func (wc *widthCalculator) countWidth(ss []string) iter.Seq[WidthCount] {
-	return xiter.Map(
+	return hiter.Map(
 		func(e lo.Entry[int, int]) WidthCount {
 			return WidthCount{
 				width: e.Key,
@@ -442,7 +441,7 @@ func (wc *widthCalculator) calculateWidthCounts(currentWidths []int, rows [][]st
 		currentWidth := currentWidths[columnNo]
 		columnValues := rows[columnNo]
 		largerWidthCounts := slices.Collect(
-			xiter.Filter(
+			hiter.Filter(
 				func(v WidthCount) bool {
 					return v.Length() > currentWidth
 				},
@@ -459,7 +458,7 @@ func (wc WidthCount) Length() int { return wc.width }
 func (wc WidthCount) Count() int  { return wc.count }
 
 func adjustByHeader(headers []string, availableWidth int) []int {
-	nameWidths := slices.Collect(xiter.Map(runewidth.StringWidth, slices.Values(headers)))
+	nameWidths := slices.Collect(hiter.Map(runewidth.StringWidth, slices.Values(headers)))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
