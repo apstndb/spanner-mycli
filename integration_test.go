@@ -599,7 +599,7 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 	}
 
 	numCases := len(paramCases)
-	result := make([]stmtResult, 0, numCases+1)  // capacity for SET PARAMs + SELECT
+	result := make([]stmtResult, 0, numCases+1) // capacity for SET PARAMs + SELECT
 	selectParts := make([]string, 0, numCases)
 	fields := make([]*sppb.StructType_Field, 0, numCases)
 	row := make(Row, 0, numCases)
