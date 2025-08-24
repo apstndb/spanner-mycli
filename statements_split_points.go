@@ -32,7 +32,7 @@ func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session)
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type ShowSplitPointsStatement struct{}
@@ -63,8 +63,8 @@ func newParser(filepath, s string) *memefish.Parser {
 			},
 		},
 	}
-
 }
+
 func parseAddSplitPointsBody(body string) ([]*databasepb.SplitPoints, error) {
 	p := newParser("", body)
 	if err := p.NextToken(); err != nil {
@@ -81,11 +81,7 @@ func parseAddSplitPointsBody(body string) ([]*databasepb.SplitPoints, error) {
 
 func parseSplitPoints(p *memefish.Parser, expireTime *timestamppb.Timestamp) ([]*databasepb.SplitPoints, error) {
 	var result []*databasepb.SplitPoints
-	for {
-		if p.Token.Kind == token.TokenEOF {
-			break
-		}
-
+	for p.Token.Kind != token.TokenEOF {
 		sp, err := parseSplitPointsEntry(p, expireTime)
 		if err != nil {
 			return nil, err

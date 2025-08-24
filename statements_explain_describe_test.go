@@ -1,18 +1,26 @@
 package main
 
 import (
+	"context"
+	_ "embed"
 	"os"
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spannerplanviz/plantree"
-	"github.com/apstndb/spannerplanviz/queryplan"
-	"github.com/apstndb/spannerplanviz/stats"
+	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spannerplan"
+	"github.com/apstndb/spannerplan/plantree"
+	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/olekukonko/tablewriter/tw"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// Test helpers for explain/describe statements
 
 func mustNewStruct(m map[string]interface{}) *structpb.Struct {
 	if s, err := structpb.NewStruct(m); err != nil {
@@ -22,7 +30,34 @@ func mustNewStruct(m map[string]interface{}) *structpb.Struct {
 	}
 }
 
+func loadTestPlan(t *testing.T, file string) *sppb.QueryPlan {
+	t.Helper()
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan sppb.QueryPlan
+	err = protojson.Unmarshal(b, &plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &plan
+}
+
+func testPlanProcessing(t *testing.T, file string, want []plantree.RowWithPredicates) {
+	t.Helper()
+	plan := loadTestPlan(t, file)
+	got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0)
+	if err != nil {
+		t.Errorf("error should be nil, but got = %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+		t.Errorf("processPlanNodes() differ: %s", diff)
+	}
+}
+
 func TestRenderTreeUsingTestdataPlans(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		title string
 		file  string
@@ -69,7 +104,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       7,
 					TreePart: "                  +- ", NodeText: "Index Scan (Index: SingersByFirstLastName)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query:
@@ -109,7 +145,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       9,
 					TreePart: "         +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query: https://cloud.google.com/spanner/docs/query-execution-operators?hl=en#array_subqueries
@@ -160,7 +197,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       11,
 					TreePart: "                  +- ", NodeText: "Index Scan (Index: ConcertsBySingerId)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query: https://cloud.google.com/spanner/docs/query-execution-operators?hl=en#scalar_subqueries
@@ -221,7 +259,8 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 					ID:       16,
 					TreePart: "                        +- ", NodeText: "Table Scan (Full scan: true, Table: Songs)",
 				},
-			}},
+			},
+		},
 		{
 			/*
 				Original Query:
@@ -369,22 +408,7 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 		},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			b, err := os.ReadFile(test.file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var plan sppb.QueryPlan
-			err = protojson.Unmarshal(b, &plan)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := processPlanNodes(plan.GetPlanNodes(), true)
-			if err != nil {
-				t.Errorf("error should be nil, but got = %v", err)
-			}
-			if diff := cmp.Diff(test.want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
-				t.Errorf("node.RenderTreeWithStats() differ: %s", diff)
-			}
+			testPlanProcessing(t, test.file, test.want)
 		})
 	}
 }
@@ -398,10 +422,12 @@ func TotalWithUnit(s, unit string) stats.ExecutionStatsValue {
 }
 
 func TestRenderTreeWithStats(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
-		title string
-		plan  *sppb.QueryPlan
-		want  []plantree.RowWithPredicates
+		title           string
+		plan            *sppb.QueryPlan
+		inlineStatsDefs []inlineStatsDef
+		want            []plantree.RowWithPredicates
 	}{
 		{
 			title: "Simple Query",
@@ -454,9 +480,18 @@ func TestRenderTreeWithStats(t *testing.T) {
 						Metadata:    mustNewStruct(map[string]interface{}{"scan_type": "IndexScan", "scan_target": "SongsBySingerAlbumSongNameDesc", "Full scan": "true"}),
 						ExecutionStats: mustNewStruct(map[string]interface{}{
 							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9"},
+							"rows":              map[string]interface{}{"total": "9", "unit": "rows"},
+							"scanned_rows":      map[string]interface{}{"total": "9", "unit": "rows"},
 							"execution_summary": map[string]interface{}{"num_executions": "1"},
 						}),
+					},
+				},
+			},
+			inlineStatsDefs: []inlineStatsDef{
+				{
+					Name: "scanned_rows",
+					MapFunc: func(row plantree.RowWithPredicates) (string, error) {
+						return row.ExecutionStats.ScannedRows.Total, nil
 					},
 				},
 			},
@@ -490,17 +525,25 @@ func TestRenderTreeWithStats(t *testing.T) {
 				},
 				{
 					ID:       3,
-					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc)",
+					TreePart: "      +- ", NodeText: "Index Scan (Full scan: true, Index: SongsBySingerAlbumSongNameDesc, scanned_rows=9)",
 					ExecutionStats: stats.ExecutionStats{
-						Rows:             Total("9"),
+						Rows:             TotalWithUnit("9", "rows"),
 						ExecutionSummary: stats.ExecutionStatsSummary{NumExecutions: "1"},
 						Latency:          TotalWithUnit("1", "msec"),
+						ScannedRows:      TotalWithUnit("9", "rows"),
 					},
 				},
-			}},
+			},
+		},
 	} {
 		t.Run(test.title, func(t *testing.T) {
-			got, err := plantree.ProcessPlan(queryplan.New(test.plan.GetPlanNodes()))
+			var opts []plantree.Option
+			if len(test.inlineStatsDefs) > 0 {
+				opts = append(opts, plantree.WithQueryPlanOptions(
+					spannerplan.WithInlineStatsFunc(inlineStatsFunc(test.inlineStatsDefs)),
+				))
+			}
+			got, err := plantree.ProcessPlan(lo.Must(spannerplan.New(test.plan.GetPlanNodes())), opts...)
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
@@ -510,13 +553,16 @@ func TestRenderTreeWithStats(t *testing.T) {
 		})
 	}
 }
+
 func TestNodeString(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		title string
 		node  *sppb.PlanNode
 		want  string
 	}{
-		{"Distributed Union with call_type=Local",
+		{
+			"Distributed Union with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Distributed Union",
 				Metadata: mustNewStruct(map[string]interface{}{
@@ -525,7 +571,8 @@ func TestNodeString(t *testing.T) {
 				}),
 			}, "Local Distributed Union",
 		},
-		{"Scan with scan_type=IndexScan and Full scan=true",
+		{
+			"Scan with scan_type=IndexScan and Full scan=true",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
@@ -533,47 +580,189 @@ func TestNodeString(t *testing.T) {
 					"scan_target": "SongsBySongName",
 					"Full scan":   "true",
 				}),
-			}, "Index Scan (Full scan: true, Index: SongsBySongName)"},
-		{"Scan with scan_type=TableScan",
+			}, "Index Scan (Full scan: true, Index: SongsBySongName)",
+		},
+		{
+			"Scan with scan_type=TableScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "TableScan",
 					"scan_target": "Songs",
 				}),
-			}, "Table Scan (Table: Songs)"},
-		{"Scan with scan_type=BatchScan",
+			}, "Table Scan (Table: Songs)",
+		},
+		{
+			"Scan with scan_type=BatchScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"scan_type":   "BatchScan",
 					"scan_target": "$v2",
 				}),
-			}, "Batch Scan (Batch: $v2)"},
-		{"Sort Limit with call_type=Local",
+			}, "Batch Scan (Batch: $v2)",
+		},
+		{
+			"Sort Limit with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Local",
 				}),
-			}, "Local Sort Limit"},
-		{"Sort Limit with call_type=Global",
+			}, "Local Sort Limit",
+		},
+		{
+			"Sort Limit with call_type=Global",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"call_type": "Global",
 				}),
-			}, "Global Sort Limit"},
-		{"Aggregate with iterator_type=Stream",
+			}, "Global Sort Limit",
+		},
+		{
+			"Aggregate with iterator_type=Stream",
 			&sppb.PlanNode{
 				DisplayName: "Aggregate",
 				Metadata: mustNewStruct(map[string]interface{}{
 					"iterator_type": "Stream",
 				}),
-			}, "Stream Aggregate"},
+			}, "Stream Aggregate",
+		},
 	} {
-		if got := queryplan.NodeTitle(test.node); got != test.want {
-			t.Errorf("%s: node.String() = %q but want %q", test.title, got, test.want)
-		}
+		t.Run(test.title, func(t *testing.T) {
+			if got := spannerplan.NodeTitle(test.node); got != test.want {
+				t.Errorf("NodeTitle() = %q but want %q", got, test.want)
+			}
+		})
+	}
+}
+
+//go:embed testdata/stats/select.json
+var selectProfileJSON []byte
+var selectProfileResultSet = lo.Must(protojsonUnmarshal[sppb.ResultSet](selectProfileJSON))
+
+func TestExplainLastQueryStatement_Execute(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		statement      *ExplainLastQueryStatement
+		lastQueryCache *LastQueryCache
+		want           *Result
+		wantErr        bool
+	}{
+		{"no cache", &ExplainLastQueryStatement{}, nil, nil, true},
+		{"no query plan", &ExplainLastQueryStatement{}, &LastQueryCache{}, nil, true},
+		{"EXPLAIN", &ExplainLastQueryStatement{}, &LastQueryCache{
+			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+		}, &Result{
+			Rows:         sliceOf(toRow("0", "Serialize Result <Row>"), toRow("1", "+- Unit Relation <Row>")),
+			AffectedRows: 2,
+			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft),
+			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)"),
+		}, false},
+		{"EXPLAIN ANALYZE", &ExplainLastQueryStatement{Analyze: true}, &LastQueryCache{
+			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+		}, &Result{
+			Rows:         sliceOf(toRow("0", "Serialize Result <Row>", "1", "1", "0 msecs"), toRow("1", "+- Unit Relation <Row>", "1", "1", "0 msecs")),
+			AffectedRows: 2,
+			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft, tw.AlignRight, tw.AlignRight, tw.AlignRight),
+			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)", "Rows", "Exec.", "Total Latency"),
+			Stats: QueryStats{
+				ElapsedTime:                "0.23 msecs",
+				CPUTime:                    "0.2 msecs",
+				RowsReturned:               "1",
+				RowsScanned:                "0",
+				DeletedRowsScanned:         "0",
+				OptimizerVersion:           "7",
+				OptimizerStatisticsPackage: "auto_20250604_03_26_04UTC",
+				RemoteServerCalls:          "0/0",
+				MemoryPeakUsageBytes:       "4",
+				TotalMemoryPeakUsageByte:   "4",
+				QueryText:                  "SELECT 1",
+				BytesReturned:              "8",
+				RuntimeCreationTime:        "",
+				StatisticsLoadTime:         "0",
+				MemoryUsagePercentage:      "0.000",
+				FilesystemDelaySeconds:     "0 msecs",
+				LockingDelay:               "0 msecs",
+				ServerQueueDelay:           "0.01 msecs",
+				IsGraphQuery:               "false",
+				RuntimeCached:              "true",
+				QueryPlanCached:            "true",
+			},
+			ForceVerbose: true,
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				LastQueryCache:       tt.lastQueryCache,
+			}})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("Execute() diff = %v", diff)
+				return
+			}
+		})
+	}
+}
+
+func TestShowPlanNodeStatement_Execute(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		statement      *ShowPlanNodeStatement
+		lastQueryCache *LastQueryCache
+		want           *Result
+		wantErr        bool
+	}{
+		{
+			"EXPLAIN ANALYZE",
+			&ShowPlanNodeStatement{NodeID: 1},
+			&LastQueryCache{
+				QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
+				QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
+			},
+			&Result{
+				Rows: sliceOf(toRow(heredoc.Doc(`
+index: 1
+kind: 1
+display_name: Unit Relation
+child_links:
+- {child_index: 2}
+metadata: {execution_method: Row}
+execution_stats:
+  cpu_time: {total: "0", unit: msecs}
+  execution_summary: {num_executions: "1"}
+  latency: {total: "0", unit: msecs}
+  rows: {total: "1", unit: rows}
+`))),
+				AffectedRows: 1,
+				TableHeader:  toTableHeader("Content of Node 1"),
+			}, false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
+				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				LastQueryCache:       tt.lastQueryCache,
+			}})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("Execute() diff = %v", diff)
+				return
+			}
+		})
 	}
 }

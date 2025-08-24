@@ -14,6 +14,8 @@ import (
 
 type ShowParamsStatement struct{}
 
+func (s *ShowParamsStatement) isDetachedCompatible() {}
+
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	strMap := make(map[string]string)
 	for k, v := range session.systemVariables.Params {
@@ -27,7 +29,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 		ToSortFunc(func(r Row) string { return r[0] /* parameter name */ }))
 
 	return &Result{
-		ColumnNames:   []string{"Param_Name", "Param_Kind", "Param_Value"},
+		TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
@@ -37,6 +39,8 @@ type SetParamTypeStatement struct {
 	Name string
 	Type string
 }
+
+func (s *SetParamTypeStatement) isDetachedCompatible() {}
 
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseType("", s.Type); err != nil {
@@ -51,6 +55,8 @@ type SetParamValueStatement struct {
 	Name  string
 	Value string
 }
+
+func (s *SetParamValueStatement) isDetachedCompatible() {}
 
 func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if expr, err := memefish.ParseExpr("", s.Value); err != nil {

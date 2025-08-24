@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -18,7 +18,6 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/char"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -36,8 +35,8 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	_, stats, _, _, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		err = session.tc.RWTxn().BufferWrite(mutations)
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		err = tx.BufferWrite(mutations)
 		if err != nil {
 			return 0, nil, nil, err
 		}
@@ -47,9 +46,8 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 	return &Result{
-		IsMutation:  true,
-		CommitStats: stats.CommitStats,
-		Timestamp:   stats.CommitTs,
+		CommitStats:     result.CommitResponse.CommitStats,
+		CommitTimestamp: result.CommitResponse.CommitTs,
 	}, nil
 }
 
@@ -184,7 +182,7 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 			return nil, err
 		}
 		if len(columns) > 0 {
-			log.Printf("delete mutation ignores column names: %v", columns)
+			slog.Warn("delete mutation ignores column names", "columns", columns)
 		}
 
 		var keys []spanner.Key
@@ -239,7 +237,7 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 			nil
 	case sppb.TypeCode_ARRAY:
 		if gcv.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
-			return nil, slices.Collect(xiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
+			return nil, slices.Collect(hiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
 				return sliceOf(spanner.GenericColumnValue{
 					Type:  gcv.Type.GetArrayElementType(),
 					Value: v,
@@ -248,7 +246,7 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 		}
 		structTypeFields := gcv.Type.GetArrayElementType().GetStructType().GetFields()
 		return extractColumnNames(structTypeFields),
-			slices.Collect(xiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
+			slices.Collect(hiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
 			nil
 	default:
 		// [[value]]

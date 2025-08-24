@@ -34,15 +34,10 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func DecodeRow(row *spanner.Row) ([]string, error) {
 	return spanvalue.FormatRowSpannerCLICompatible(row)
-}
-
-func DecodeColumn(column spanner.GenericColumnValue) (string, error) {
-	return spanvalue.FormatColumnSpannerCLICompatible(column)
 }
 
 func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
@@ -59,8 +54,6 @@ func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) 
 			FormatStructParen: spanvalue.FormatBracketStruct,
 		},
 		FormatComplexPlugins: []spanvalue.FormatComplexFunc{
-			formatInterval(), // workaround
-			formatUUID(),     // workaround
 			formatProto(types, multiline),
 			formatEnum(types),
 		},
@@ -86,8 +79,10 @@ type protoEnumResolver interface {
 	FindEnumByName(protoreflect.FullName) (protoreflect.EnumType, error)
 }
 
-var _ protoEnumResolver = (*dynamicpb.Types)(nil)
-var _ protoEnumResolver = (*protoregistry.Types)(nil)
+var (
+	_ protoEnumResolver = (*dynamicpb.Types)(nil)
+	_ protoEnumResolver = (*protoregistry.Types)(nil)
+)
 
 func formatProto(types protoEnumResolver, multiline bool) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
 	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
@@ -136,34 +131,6 @@ func formatEnum(types protoEnumResolver) func(formatter spanvalue.Formatter, val
 		return cmp.Or(
 			string(enumType.Descriptor().Values().ByNumber(protoreflect.EnumNumber(n)).Name()),
 			value.Value.GetStringValue()), nil
-	}
-}
-
-// formatUUID is workaround because google-cloud-go/spanner doesn't yet support UUID type.
-func formatUUID() spanvalue.FormatComplexFunc {
-	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-		if value.Type.GetCode() != sppb.TypeCode_UUID {
-			return "", spanvalue.ErrFallthrough
-		}
-
-		if _, ok := value.Value.Kind.(*structpb.Value_NullValue); ok {
-			return "NULL", nil
-		}
-		return value.Value.GetStringValue(), nil
-	}
-}
-
-// formatInterval is workaround because google-cloud-go/spanner doesn't yet support INTERVAL type.
-func formatInterval() spanvalue.FormatComplexFunc {
-	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-		if value.Type.GetCode() != sppb.TypeCode_INTERVAL {
-			return "", spanvalue.ErrFallthrough
-		}
-
-		if _, ok := value.Value.Kind.(*structpb.Value_NullValue); ok {
-			return "NULL", nil
-		}
-		return value.Value.GetStringValue(), nil
 	}
 }
 

@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -12,9 +15,9 @@ import (
 	"time"
 
 	"github.com/apstndb/gsqlutils"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -22,6 +25,7 @@ import (
 	"github.com/go-json-experiment/json"
 
 	"cloud.google.com/go/spanner"
+	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/mattn/go-runewidth"
@@ -32,13 +36,96 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// executeSQLWithFormat executes SQL with specific format settings without modifying shared session variables.
+// It creates a temporary copy of system variables to avoid race conditions.
+func executeSQLWithFormat(ctx context.Context, session *Session, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+	// Create a copy of the system variables for this specific execution
+	tempVars := *session.systemVariables
+
+	// Set temporary values on the copy
+	tempVars.CLIFormat = format
+	tempVars.StreamingMode = streamingMode
+	if sqlTableName != "" {
+		tempVars.SQLTableName = sqlTableName
+	}
+	tempVars.SkipColumnNames = true
+	tempVars.SuppressResultLines = true
+	tempVars.EnableProgressBar = false
+
+	// Execute with the temporary, isolated settings
+	return executeSQLImplWithVars(ctx, session, sql, &tempVars)
+}
+
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	return executeSQLImpl(ctx, session, sql)
+}
+
+// executeSQLImpl delegates to executeSQLImplWithVars with the session's system variables
+func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result, error) {
+	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
+}
+
+// executeSQLImplWithVars is the actual implementation that accepts custom system variables
+func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	// Always collect metrics - display is controlled by template based on Profile flag
+	metrics := &ExecutionMetrics{
+		QueryStartTime: time.Now(),
+		Profile:        sysVars.Profile,
+	}
+
+	// Capture memory snapshot before execution if profiling is enabled
+	if sysVars.Profile {
+		before := GetMemoryStats()
+		metrics.MemoryBefore = &before
+	}
+
+	// Choose the appropriate format config based on the output format
+	// TODO(future): Current design formats values early (at Result creation time) which limits flexibility.
+	// Ideally, Result should store raw *spanner.Row data and formatters should handle conversion.
+	// This would allow:
+	// - Different formats for the same data without re-querying
+	// - Format-specific optimizations
+	// - Better separation of concerns
+	// However, this requires significant changes to Result struct and RowProcessor interface.
+	var fc *spanvalue.FormatConfig
+	var usingSQLLiterals bool
+	var err error
+	switch sysVars.CLIFormat {
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		// Use SQL literal formatting for SQL export modes
+		// LiteralFormatConfig formats values as valid Spanner SQL literals
+		fc = spanvalue.LiteralFormatConfig
+		usingSQLLiterals = true
+		err = nil
+
+		// Auto-detect table name if not explicitly set
+		if sysVars.SQLTableName == "" {
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			if detectedTableName != "" {
+				// Create a copy of sysVars to use the detected table name for this execution only.
+				// This is important for:
+				// 1. Scope isolation: auto-detection only affects this specific query execution
+				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
+				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
+				tempVars := *sysVars
+				tempVars.SQLTableName = detectedTableName
+				sysVars = &tempVars
+				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
+			} else if detectionErr != nil {
+				// Log why auto-detection failed for debugging
+				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
+			}
+		}
+	default:
+		// Use regular display formatting for other modes
+		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+		usingSQLLiterals = false
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	params := session.systemVariables.Params
+	params := sysVars.Params
 	stmt, err := newStatement(sql, params, false)
 	if err != nil {
 		return nil, err
@@ -46,37 +133,250 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	rows, stats, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	// Decide whether to use streaming or buffered mode
+	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
+	metrics.IsStreaming = useStreaming
+
+	slog.Debug("executeSQL decision",
+		"useStreaming", useStreaming,
+		"format", sysVars.CLIFormat,
+		"sqlTableName", sysVars.SQLTableName)
+
+	// Execute with the appropriate mode
+	var result *Result
+
+	if useStreaming {
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
+	} else {
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals, sysVars)
+	}
+
+	// Complete metrics collection
+	metrics.CompletionTime = time.Now()
+
+	// Capture memory snapshot after execution if profiling is enabled
+	if sysVars.Profile {
+		after := GetMemoryStats()
+		metrics.MemoryAfter = &after
+	}
+
 	if err != nil {
+		// Handle aborted transaction
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			// Need to call rollback to free the acquired session in underlying google-cloud-go/spanner.
 			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); err != nil {
+			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 			}
 		}
 		return nil, err
 	}
 
+	// Attach metrics to result
+	result.Metrics = metrics
+
+	// Store the SQL table name if we're using SQL export format
+	// This ensures the table name is available during formatting phase in buffered mode
+	if sysVars.CLIFormat.IsSQLExport() && sysVars.SQLTableName != "" {
+		result.SQLTableNameForExport = sysVars.SQLTableName
+	}
+
+	return result, nil
+}
+
+// decideExecutionMode determines whether to use streaming or buffered mode.
+// Returns true and a processor if streaming should be used, false and nil otherwise.
+func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.FormatConfig, sysVars *systemVariables) (bool, RowProcessor) {
+	// Get output writer from StreamManager (respects tee/redirect settings)
+	outStream := sysVars.StreamManager.GetWriter()
+	if outStream == nil {
+		return false, nil
+	}
+
+	// Determine screen width based on system variables
+	screenWidth := math.MaxInt
+	if sysVars.AutoWrap {
+		if sysVars.FixedWidth != nil {
+			screenWidth = int(*sysVars.FixedWidth)
+		} else {
+			// Get terminal width from StreamManager
+			width, err := sysVars.StreamManager.GetTerminalWidth()
+			if err != nil {
+				// If terminal width cannot be determined, don't wrap
+				screenWidth = math.MaxInt
+			} else {
+				screenWidth = width
+			}
+		}
+	}
+
+	// Try to create streaming processor based on settings
+	processor, _ := createStreamingProcessor(sysVars, outStream, screenWidth)
+	return processor != nil, processor
+}
+
+// executeWithStreaming executes the query using streaming mode.
+func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+	// Collect memory stats if debug logging is enabled
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before streaming")
+		defer LogMemoryStats("After streaming")
+	}
+
+	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
+	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
+}
+
+// executeWithBuffering executes the query using buffered mode.
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+	// Collect memory stats if debug logging is enabled
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before buffered")
+		defer LogMemoryStats("After buffered")
+	}
+
+	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
+
+	// Collect all rows with metrics
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("Buffered mode complete",
+		"endTime", time.Now().Format(time.RFC3339Nano),
+		"rowCount", len(rows))
+
+	// Parse query stats
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, err
 	}
 
+	// Extract server-side metrics from stats
+	metrics.ServerElapsedTime = queryStats.ElapsedTime
+	metrics.ServerCPUTime = queryStats.CPUTime
+
+	// Build result
 	result := &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		Rows:         rows,
-		ColumnTypes:  metadata.GetRowType().GetFields(),
-		AffectedRows: len(rows),
-		Stats:        queryStats,
+		Rows:                  rows,
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          len(rows),
+		Stats:                 queryStats,
+		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
 	}
 
-	// ReadOnlyTransaction.Timestamp() is invalid until read.
+	// Get transaction timestamp if available
 	if roTxn != nil {
-		result.Timestamp, _ = roTxn.Timestamp()
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err, "sql", sql)
+		} else {
+			result.ReadTimestamp = ts
+		}
+	}
+
+	// Update query cache
+	sysVars.LastQueryCache = &LastQueryCache{
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
 	}
 
 	return result, nil
+}
+
+// executeStreamingSQL processes query results in streaming mode.
+// It outputs rows directly as they arrive without buffering the entire result set.
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+	slog.Debug("executeStreamingSQL called",
+		"format", sysVars.CLIFormat)
+
+	// Process the stream with metrics
+	rowTransform := spannerRowToRow(fc)
+	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, metrics)
+	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse stats
+	queryStats, err := parseQueryStats(stats)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract server-side metrics from stats
+	metrics.ServerElapsedTime = queryStats.ElapsedTime
+	metrics.ServerCPUTime = queryStats.CPUTime
+
+	// Create result for metadata (rows already streamed)
+	result := &Result{
+		Rows:                  nil, // Already streamed
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          int(rowCount),
+		Stats:                 queryStats,
+		Streamed:              true,             // Mark as streamed
+		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
+	}
+
+	// Handle ReadOnlyTransaction timestamp
+	if roTxn != nil {
+		ts, err := roTxn.Timestamp()
+		if err != nil {
+			slog.Warn("failed to get read-only transaction timestamp", "err", err)
+		} else {
+			result.ReadTimestamp = ts
+		}
+	}
+
+	// Update last query cache
+	sysVars.LastQueryCache = &LastQueryCache{
+		QueryPlan:     plan,
+		QueryStats:    stats,
+		ReadTimestamp: result.ReadTimestamp,
+	}
+
+	return result, nil
+}
+
+// createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
+// Returns nil if streaming should not be used (based on StreamingMode setting and format).
+func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
+	// Check if streaming should be used based on mode
+	shouldStream := false
+	switch sysVars.StreamingMode {
+	case enums.StreamingModeTrue:
+		// Always stream if format supports it
+		shouldStream = true
+	case enums.StreamingModeFalse:
+		// Never stream
+		return nil, nil
+	case enums.StreamingModeAuto:
+		// AUTO mode: decide based on format
+		switch sysVars.CLIFormat {
+		case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+			// Table formats: buffer by default for accurate column widths
+			shouldStream = false
+		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML,
+			enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+			// Other formats: stream by default for better performance
+			shouldStream = true
+		default:
+			// Unknown format: buffer for safety
+			shouldStream = false
+		}
+	default:
+		// Unknown mode: buffer for safety
+		return nil, nil
+	}
+
+	if !shouldStream {
+		return nil, nil
+	}
+
+	// Use the shared processor creation logic to avoid duplication
+	return createStreamingProcessorForMode(sysVars.CLIFormat, out, sysVars, screenWidth)
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
@@ -85,19 +385,22 @@ func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []
 		return nil, errors.New("there is active batch DML")
 	case *BulkDdlStatement:
 		b.Ddls = append(b.Ddls, ddls...)
-		return &Result{IsMutation: true}, nil
+		return &Result{}, nil
 	default:
 		return executeDdlStatements(ctx, session, ddls)
 	}
 }
 
-func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
-	logParseStatements(ddls)
+// replacerForProgress replaces tabs and newlines to avoid breaking progress bars.
+var replacerForProgress = strings.NewReplacer(
+	"\n", " ",
+	"\t", " ",
+)
 
+func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
 		return &Result{
-			IsMutation:  true,
-			ColumnNames: lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp")),
+			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
 		}, nil
 	}
 
@@ -118,12 +421,12 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 	if session.systemVariables.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
-		// defer p.Shutdown()
+
 		for _, ddl := range ddls {
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(strings.ReplaceAll(ddl, "\n", " "), 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(runewidth.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),
@@ -141,6 +444,13 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if err != nil {
 		teardown()
 		return nil, fmt.Errorf("error on create op: %w", err)
+	}
+
+	// If async mode is enabled, return operation info immediately
+	// This allows the client to continue without waiting for the DDL operation to complete.
+	// In async DDL, errors are reported when polling, not immediately available.
+	if session.systemVariables.AsyncDDL {
+		return formatAsyncDdlResult(op)
 	}
 
 	for !op.Done() {
@@ -189,18 +499,19 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
-	result := &Result{IsMutation: true, Timestamp: lastCommitTS}
+	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.EchoExecutedDDL {
-		result.ColumnNames = sliceOf("Executed", "Commit Timestamp")
+		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
-			func(k string, v *timestamppb.Timestamp) Row { return toRow(k+";", v.AsTime().Format(time.RFC3339Nano)) },
+			func(ddl string, v *timestamppb.Timestamp) Row {
+				return toRow(ddl+";", v.AsTime().Format(time.RFC3339Nano))
+			},
 			hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
 		),
 		)
 	}
 
 	return result, nil
-
 }
 
 func isInsert(sql string) bool {
@@ -213,7 +524,6 @@ func isInsert(sql string) bool {
 }
 
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
-	// TODO: Support query params
 	switch b := session.currentBatch.(type) {
 	case *BatchDMLStatement:
 		stmt, err := newStatement(sql, session.systemVariables.Params, false)
@@ -221,22 +531,26 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return nil, err
 		}
 		b.DMLs = append(b.DMLs, stmt)
-		return &Result{IsMutation: true}, nil
+		// Buffered DML is not executed yet, so no IsExecutedDML flag
+		return &Result{}, nil
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
-		if session.InReadWriteTransaction() && session.systemVariables.AutoBatchDML {
+		// Get both transaction flags in a single lock acquisition
+		inTransaction, inReadWriteTransaction := session.GetTransactionFlagsWithLock()
+
+		if inReadWriteTransaction && session.systemVariables.AutoBatchDML {
 			stmt, err := newStatement(sql, session.systemVariables.Params, false)
 			if err != nil {
 				return nil, err
 			}
 			session.currentBatch = &BatchDMLStatement{DMLs: []spanner.Statement{stmt}}
-			return &Result{IsMutation: true}, nil
+			return &Result{}, nil
 		}
 
-		if !session.InTransaction() &&
+		if !inTransaction &&
 			!isInsert(sql) &&
-			session.systemVariables.AutocommitDMLMode == AutocommitDMLModePartitionedNonAtomic {
+			session.systemVariables.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
 			return executePDML(ctx, session, sql)
 		}
 
@@ -246,8 +560,8 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = session.tc.RWTxn().BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {
@@ -255,17 +569,16 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 	}
 
 	return &Result{
-		IsMutation:  true,
-		Timestamp:   commitResp.CommitTs,
-		CommitStats: commitResp.CommitStats,
-		ColumnTypes: metadata.GetRowType().GetFields(),
+		IsExecutedDML:   true, // This is a batch DML statement
+		CommitTimestamp: result.CommitResponse.CommitTs,
+		CommitStats:     result.CommitResponse.CommitStats,
 		Rows: slices.Collect(hiter.Unify(
 			func(s spanner.Statement, n int64) Row {
 				return toRow(s.SQL, strconv.FormatInt(n, 10))
 			},
 			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
-		ColumnNames:      sliceOf("DML", "Rows"),
-		AffectedRows:     int(affected),
+		TableHeader:      toTableHeader("DML", "Rows"),
+		AffectedRows:     int(result.Affected),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
 	}, nil
 }
@@ -277,14 +590,15 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	var rows []Row
-	var columnNames []string
 	var queryStats map[string]any
-	affected, commitResp, _, metadata, err := session.RunInNewOrExistRwTx(ctx, func(implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		rs, stats, columns, num, meta, err := session.RunUpdate(ctx, stmt, implicit)
-		rows = rs
-		columnNames = columns
-		queryStats = stats
-		return num, nil, meta, err
+	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		updateResult, err := session.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		rows = updateResult.Rows
+		queryStats = updateResult.Stats
+		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
 		return nil, err
@@ -295,21 +609,27 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
+	session.systemVariables.LastQueryCache = &LastQueryCache{
+		QueryPlan:       result.Plan,
+		QueryStats:      queryStats,
+		CommitTimestamp: result.CommitResponse.CommitTs,
+	}
+
 	return &Result{
-		IsMutation:   true,
-		Timestamp:    commitResp.CommitTs,
-		CommitStats:  commitResp.CommitStats,
-		Stats:        stats,
-		ColumnTypes:  metadata.GetRowType().GetFields(),
-		Rows:         rows,
-		ColumnNames:  columnNames,
-		AffectedRows: int(affected),
+		IsExecutedDML:         true, // This is a regular DML statement
+		CommitTimestamp:       result.CommitResponse.CommitTs,
+		CommitStats:           result.CommitResponse.CommitStats,
+		Stats:                 stats,
+		TableHeader:           toTableHeader(result.Metadata.GetRowType().GetFields()),
+		Rows:                  rows,
+		AffectedRows:          int(result.Affected),
+		HasSQLFormattedValues: false, // DML with THEN RETURN uses regular formatting, not SQL literals
 	}, nil
 }
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	return slices.Collect(xiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
+	return slices.Collect(hiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
@@ -358,6 +678,36 @@ func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row
 	return results, stats, count, metadata, plan, err
 }
 
+// consumeRowIterCollectWithMetrics is like consumeRowIterCollect but collects metrics during execution.
+func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), metrics *ExecutionMetrics) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	var results []T
+	firstRow := true
+
+	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+		now := time.Now()
+
+		// Record TTFB on first row
+		if firstRow {
+			firstRow = false
+			metrics.FirstRowTime = &now
+		}
+
+		v, err := f(row)
+		if err != nil {
+			return err
+		}
+		results = append(results, v)
+
+		// Update last row time
+		metrics.LastRowTime = &now
+		metrics.RowCount = int64(len(results))
+
+		return nil
+	})
+
+	return results, stats, count, metadata, plan, err
+}
+
 func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, error) {
 	return func(row *spanner.Row) (Row, error) {
 		columns, err := fc.FormatRow(row)
@@ -383,7 +733,6 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	if err != nil {
 		return nil, err
 	}
-
 	defer func() {
 		batchROTx.Cleanup(ctx)
 		batchROTx.Close()
@@ -394,6 +743,8 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		Rows     []Row
 	}
 
+	// Go 1.25+ automatically detects container CPU limits on Linux through container-aware GOMAXPROCS.
+	// This ensures optimal parallelism in containerized environments (Docker, Kubernetes) without manual configuration.
 	p := pool.NewWithResults[*partitionQueryResult]().
 		WithContext(ctx).
 		WithMaxGoroutines(cmp.Or(int(session.systemVariables.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
@@ -425,9 +776,8 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	}
 
 	result := &Result{
-		ColumnNames:    extractColumnNames(rowType.GetFields()),
 		Rows:           allRows,
-		ColumnTypes:    rowType.GetFields(),
+		TableHeader:    toTableHeader(rowType.GetFields()),
 		AffectedRows:   len(allRows),
 		PartitionCount: len(partitions),
 	}
@@ -440,17 +790,35 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, pdmlTimeout)
-	defer cancel()
-
 	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	return &Result{
-		IsMutation:       true,
+		IsExecutedDML:    true, // This is a partitioned DML statement
 		AffectedRows:     int(count),
 		AffectedRowsType: rowCountTypeLowerBound,
+	}, nil
+}
+
+// formatAsyncDdlResult formats the async DDL operation result in the same format as SHOW OPERATION
+func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, error) {
+	// Get the metadata from the operation
+	metadata, err := op.Metadata()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation metadata: %w", err)
+	}
+
+	operationId := lo.LastOrEmpty(strings.Split(op.Name(), "/"))
+
+	// Use the same formatting logic as SHOW OPERATION statement
+	// For async DDL, errors are reported when polling, not immediately available
+	rows := formatUpdateDatabaseDdlRows(operationId, metadata, op.Done(), "")
+
+	return &Result{
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+		Rows:         rows,
+		AffectedRows: 1,
 	}, nil
 }

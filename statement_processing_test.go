@@ -19,11 +19,14 @@ package main
 import (
 	_ "embed"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/gsqlutils"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -35,7 +38,64 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
+// Test helpers for statement processing
+
+func testStatementWithModes(t *testing.T, input string, want Statement, skipModes []enums.ParseMode, typeCheckOnly bool) {
+	t.Helper()
+	modes := []enums.ParseMode{
+		enums.ParseModeNoMemefish,
+		enums.ParseModeFallback,
+		enums.ParseModeMemefishOnly,
+		enums.ParseModeUnspecified,
+	}
+
+	for _, mode := range modes {
+		t.Run(lo.CoalesceOrEmpty(mode.String(), "UNSPECIFIED"), func(t *testing.T) {
+			if slices.Contains(skipModes, mode) {
+				t.Skipf("skip by skipParseModes")
+			}
+
+			stripped, err := gsqlutils.StripComments("", input)
+			if err != nil {
+				t.Fatalf("StripComments(%q) got error: %v", input, err)
+			}
+
+			got, err := BuildStatementWithCommentsWithMode(stripped, input, mode)
+			if err != nil {
+				t.Fatalf("BuildStatement(%q) got error: %v", input, err)
+			}
+
+			if typeCheckOnly {
+				// check only type
+				gotType := reflect.TypeOf(got)
+				wantType := reflect.TypeOf(want)
+				if gotType != wantType {
+					t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
+				}
+			} else {
+				// full comparison
+				if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+					t.Errorf("BuildStatement(%q) differ: %v", input, diff)
+				}
+			}
+		})
+	}
+}
+
+// testStatementComplete tests that the statement is parsed correctly with full comparison
+func testStatementComplete(t *testing.T, input string, want Statement, skipModes []enums.ParseMode) {
+	t.Helper()
+	testStatementWithModes(t, input, want, skipModes, false)
+}
+
+// testStatementTypeOnly tests that the statement is parsed to the correct type (ignoring field values)
+func testStatementTypeOnly(t *testing.T, input string, want Statement, skipModes []enums.ParseMode) {
+	t.Helper()
+	testStatementWithModes(t, input, want, skipModes, true)
+}
+
 func TestBuildStatement(t *testing.T) {
+	t.Parallel()
 	timestamp, err := time.Parse(time.RFC3339Nano, "2020-03-30T22:54:44.834017+09:00")
 	if err != nil {
 		t.Fatalf("unexpected time parse error: %v", err)
@@ -43,10 +103,11 @@ func TestBuildStatement(t *testing.T) {
 
 	// valid tests
 	for _, test := range []struct {
-		desc          string
-		input         string
-		want          Statement
-		skipLowerCase bool
+		desc           string
+		input          string
+		want           Statement
+		skipLowerCase  bool
+		skipParseModes []enums.ParseMode
 	}{
 		{
 			desc:  "SELECT statement",
@@ -97,12 +158,12 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER DATABASE statement",
 			input: "ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )",
-			want:  &DdlStatement{Ddl: `ALTER DATABASE d1 SET OPTIONS (version_retention_period = "7d")`},
+			want:  &DdlStatement{Ddl: `ALTER DATABASE d1 SET OPTIONS ( version_retention_period = '7d' )`},
 		},
 		{
 			desc:  "CREATE TABLE statement",
 			input: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)",
-			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (\n  id INT64 NOT NULL\n) PRIMARY KEY (id)"},
+			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)"},
 		},
 		{
 			desc:  "RENAME TABLE statement",
@@ -122,7 +183,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "CREATE INDEX statement",
 			input: "CREATE INDEX idx_name ON t1 (name DESC)",
-			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1(name DESC)"},
+			want:  &DdlStatement{Ddl: "CREATE INDEX idx_name ON t1 (name DESC)"},
 		},
 		{
 			desc:  "DROP INDEX statement",
@@ -177,7 +238,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "ALTER CHANGE STREAM SET OPTIONS statement",
 			input: "ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )",
-			want:  &DdlStatement{Ddl: `ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS (retention_period = "36h")`},
+			want:  &DdlStatement{Ddl: `ALTER CHANGE STREAM NamesAndAlbums SET OPTIONS( retention_period = '36h' )`},
 		},
 		{
 			desc:  "ALTER CHANGE STREAM DROP FOR ALL statement",
@@ -364,7 +425,7 @@ func TestBuildStatement(t *testing.T) {
 		},
 		{
 			desc:          "BEGIN RO read timestamp statement",
-			input:         "BEGIN RO 2020-03-30T22:54:44.834017+09:00",
+			input:         `BEGIN RO "2020-03-30T22:54:44.834017+09:00"`,
 			want:          &BeginRoStatement{Timestamp: timestamp, TimestampBoundType: readTimestamp},
 			skipLowerCase: true,
 		},
@@ -538,6 +599,36 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowSchemaUpdateOperations{},
 		},
 		{
+			desc:  "SHOW OPERATION statement with operation ID (default ASYNC)",
+			input: "SHOW OPERATION auto_op_123456789",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with quoted operation ID",
+			input: "SHOW OPERATION 'auto_op_123456789'",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with full operation name",
+			input: "SHOW OPERATION 'projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789'",
+			want:  &ShowOperationStatement{OperationId: "projects/my-project/instances/my-instance/databases/my-db/operations/auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with explicit ASYNC mode",
+			input: "SHOW OPERATION 'auto_op_123456789' ASYNC",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "ASYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with SYNC mode",
+			input: "SHOW OPERATION 'auto_op_123456789' SYNC",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "SYNC"},
+		},
+		{
+			desc:  "SHOW OPERATION statement with case insensitive mode",
+			input: "SHOW OPERATION 'auto_op_123456789' sync",
+			want:  &ShowOperationStatement{OperationId: "auto_op_123456789", Mode: "SYNC"},
+		},
+		{
 			desc:  "EXPLAIN SELECT statement",
 			input: "EXPLAIN SELECT * FROM t1",
 			want:  &ExplainStatement{Explain: "SELECT * FROM t1"},
@@ -553,9 +644,10 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainStatement{Explain: "WITH t1 AS (SELECT 1) SELECT * FROM t1"},
 		},
 		{
-			desc:  "GRAPH statement",
-			input: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
-			want:  &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
+			desc:           "GRAPH statement",
+			input:          "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
+			want:           &SelectStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
+			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
 		},
 		{
 			desc:  "EXPLAIN GRAPH statement",
@@ -566,6 +658,61 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "EXPLAIN ANALYZE GRAPH statement",
 			input: "EXPLAIN ANALYZE GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:  &ExplainAnalyzeStatement{Query: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with FORMAT=COMPACT",
+			input: "EXPLAIN FORMAT=COMPACT SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Format: enums.ExplainFormatCompact},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with WIDTH",
+			input: "EXPLAIN WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Width: 50},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
+			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 DELETE t1 WHERE FALSE",
+			want:  &ExplainAnalyzeDmlStatement{Dml: "DELETE t1 WHERE FALSE", Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE LAST QUERY",
+			input: "EXPLAIN ANALYZE LAST QUERY",
+			want:  &ExplainLastQueryStatement{Analyze: true},
+		},
+		{
+			desc:  "EXPLAIN ANALYZE LAST QUERY with options",
+			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 LAST QUERY",
+			want:  &ExplainLastQueryStatement{Analyze: true, Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY",
+			input: "EXPLAIN LAST QUERY",
+			want:  &ExplainLastQueryStatement{},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY with options",
+			input: "EXPLAIN FORMAT=COMPACT WIDTH=50 LAST QUERY",
+			want:  &ExplainLastQueryStatement{Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY with options",
+			input: "EXPLAIN LAST QUERY FORMAT=COMPACT WIDTH=50",
+			want:  &ExplainLastQueryStatement{Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "SHOW PLAN NODE",
+			input: "SHOW PLAN NODE 42",
+			want:  &ShowPlanNodeStatement{NodeID: 42},
 		},
 		{
 			desc:  "DESCRIBE SELECT statement",
@@ -720,6 +867,20 @@ TABLE Singers (42)
 			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
 		},
 		{
+			desc: "SYNC PROTO BUNDLE UPSERT statement with single path",
+			// input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType")},
+		},
+		// TODO: Not yet implemented
+		/*
+			{
+				desc: "SYNC PROTO BUNDLE UPSERT DELETE statement",
+				input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+				want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},,
+			},
+		*/
+		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
@@ -851,54 +1012,52 @@ TABLE Singers (42)
 			input: `CQL SELECT id, active, username FROM users`,
 			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},
 		},
+		{
+			desc:  "HELP statement",
+			input: `HELP`,
+			want:  &HelpStatement{},
+		},
+		{
+			desc:  "HELP VARIABLES statement",
+			input: `HELP VARIABLES`,
+			want:  &HelpVariablesStatement{},
+		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := BuildStatement(test.input)
-			if err != nil {
-				t.Fatalf("BuildStatement(%q) got error: %v", test.input, err)
-			}
-			if diff := cmp.Diff(test.want, got, protocmp.Transform()); diff != "" {
-				t.Errorf("BuildStatement(%q) differ: %v", test.input, diff)
-			}
+			testStatementComplete(t, test.input, test.want, test.skipParseModes)
 		})
 
-		if !test.skipLowerCase {
+		// Test lowercase version
+		t.Run("Lower "+test.desc, func(t *testing.T) {
+			if test.skipLowerCase {
+				t.Skip("skip by skipLowerCase")
+			}
 			input := strings.ToLower(test.input)
-			t.Run("Lower "+test.desc, func(t *testing.T) {
-				got, err := BuildStatement(input)
-				if err != nil {
-					t.Fatalf("BuildStatement(%q) got error: %v", input, err)
-				}
-				// check only type
-				gotType := reflect.TypeOf(got)
-				wantType := reflect.TypeOf(test.want)
-				if gotType != wantType {
-					t.Errorf("BuildStatement(%q) has invalid statement type: got = %q, but want = %q", input, gotType, wantType)
-				}
-			})
-		}
+			testStatementTypeOnly(t, input, test.want, test.skipParseModes)
+		})
 	}
 }
 
 func TestBuildStatement_InvalidCase(t *testing.T) {
-	// invalid tests
-	for _, test := range []struct {
-		input string
-	}{
-		{"FOO BAR"},
-		{"SELEC T FROM t1"},
-		{"BEGIN PRIORITY CRITICAL"},
-	} {
-		t.Run(test.input, func(t *testing.T) {
-			got, err := BuildStatement(test.input)
+	t.Parallel()
+	invalidInputs := []string{
+		"FOO BAR",
+		"SELEC T FROM t1",
+		"BEGIN PRIORITY CRITICAL",
+	}
+
+	for _, input := range invalidInputs {
+		t.Run(input, func(t *testing.T) {
+			got, err := BuildStatement(input)
 			if err == nil {
-				t.Errorf("BuildStatement(%q) = %#v, but want error", test.input, got)
+				t.Errorf("BuildStatement(%q) = %#v, but want error", input, got)
 			}
 		})
 	}
 }
 
 func TestIsCreateDDL(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc       string
 		ddl        string
@@ -959,6 +1118,7 @@ func TestIsCreateDDL(t *testing.T) {
 }
 
 func TestExtractSchemaAndTable(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc   string
 		input  string
@@ -1057,6 +1217,7 @@ func decodeMessage[T any, PT interface {
 }
 
 func TestComposeProtoBundleDDLs(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc        string
 		fds         *descriptorpb.FileDescriptorSet

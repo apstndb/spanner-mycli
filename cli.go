@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hymkor/go-multiline-ny"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
@@ -50,46 +51,69 @@ const (
 )
 
 type Cli struct {
-	Session         *Session
+	SessionHandler  *SessionHandler
 	Credential      []byte
-	InStream        io.ReadCloser
-	OutStream       io.Writer
-	ErrStream       io.Writer
 	SystemVariables *systemVariables
 	waitingStatus   string
 }
 
-func NewCli(ctx context.Context, credential []byte, inStream io.ReadCloser, outStream io.Writer, errStream io.Writer, sysVars *systemVariables) (*Cli, error) {
+func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*Cli, error) {
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
 	}
 
+	sessionHandler := NewSessionHandler(session)
+
+	// StreamManager now manages the TTY stream internally
+
 	return &Cli{
-		Session:         session,
+		SessionHandler:  sessionHandler,
 		Credential:      credential,
-		InStream:        inStream,
-		OutStream:       outStream,
-		ErrStream:       errStream,
 		SystemVariables: sysVars,
 	}, nil
 }
 
-func (c *Cli) RunInteractive(ctx context.Context) int {
-	exists, err := c.Session.DatabaseExists()
-	if err != nil {
-		return c.ExitOnError(err)
-	}
+// GetWriter returns the current output writer (with or without tee)
+func (c *Cli) GetWriter() io.Writer {
+	return c.SystemVariables.StreamManager.GetWriter()
+}
 
-	if exists {
-		fmt.Fprintf(c.OutStream, "Connected.\n")
+// GetTtyStream returns the TTY stream for terminal operations
+func (c *Cli) GetTtyStream() *os.File {
+	return c.SystemVariables.StreamManager.GetTtyStream()
+}
+
+// GetErrStream returns the error stream
+func (c *Cli) GetErrStream() io.Writer {
+	return c.SystemVariables.StreamManager.GetErrStream()
+}
+
+// GetInStream returns the input stream
+func (c *Cli) GetInStream() io.ReadCloser {
+	return c.SystemVariables.StreamManager.GetInStream()
+}
+
+func (c *Cli) RunInteractive(ctx context.Context) error {
+	// Only check database existence if we're not in detached mode
+	if !c.SessionHandler.IsDetached() {
+		exists, err := c.SessionHandler.DatabaseExists(ctx)
+		if err != nil {
+			return NewExitCodeError(c.ExitOnError(err))
+		}
+
+		if exists {
+			fmt.Fprintf(c.GetWriter(), "Connected.\n")
+		} else {
+			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		}
 	} else {
-		return c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database))
+		fmt.Fprintf(c.GetWriter(), "Connected in detached mode.\n")
 	}
 
 	ed, history, err := initializeMultilineEditor(c)
 	if err != nil {
-		return c.ExitOnError(err)
+		return NewExitCodeError(c.ExitOnError(err))
 	}
 
 	// ensure reset
@@ -99,50 +123,43 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 		// Reset everytime to reflect system variable
 		setLineEditor(ed, c.SystemVariables.EnableHighlight)
 
-		input, err := readInteractiveInput(ctx, ed)
-
-		// reset for next input before continue
-		ed.SetDefault(nil)
-
-		switch {
-		case errors.Is(err, io.EOF):
-			fmt.Fprintln(c.OutStream, "Bye")
-			return c.handleExit()
-		case isInterrupted(err), err != nil:
-			c.PrintInteractiveError(err)
-			continue
+		input, err := c.readInputLine(ctx, ed)
+		if err != nil {
+			switch {
+			case errors.Is(err, io.EOF):
+				fmt.Fprintln(c.GetWriter(), "Bye")
+				return NewExitCodeError(c.handleExit())
+			case isInterrupted(err):
+				// This section is currently redundant but keep as intended
+				c.PrintInteractiveError(err)
+				continue
+			default:
+				c.PrintInteractiveError(err)
+				continue
+			}
 		}
 
-		stmt, err := BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+		stmt, err := c.parseStatement(input)
 		if err != nil {
 			c.PrintInteractiveError(err)
 			continue
 		}
 
-		history.Add(input.statement + ";")
-
-		// Some statements are needed to be handled.
-
-		if _, ok := stmt.(*ExitStatement); ok {
-			fmt.Fprintln(c.OutStream, "Bye")
-			return c.handleExit()
+		// Add to history with appropriate terminator
+		if IsMetaCommand(input.statement) {
+			history.Add(input.statement)
+		} else {
+			history.Add(input.statement + ";")
 		}
 
-		// DropDatabaseStatement requires confirmation in interactive mode.
-		if s, ok := stmt.(*DropDatabaseStatement); ok {
-			if c.SystemVariables.Database == s.DatabaseId {
-				c.PrintInteractiveError(
-					fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
-				)
-				continue
+		if exitCode, processed := c.handleSpecialStatements(ctx, stmt); processed {
+			if exitCode >= 0 {
+				return NewExitCodeError(exitCode)
 			}
-
-			if !confirm(c.OutStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
-				continue
-			}
+			continue
 		}
 
-		preInput, err := c.executeStatement(ctx, stmt, true, input.statement)
+		preInput, err := c.executeStatementInteractive(ctx, stmt, input)
 		if err != nil {
 			c.PrintInteractiveError(err)
 			continue
@@ -152,61 +169,205 @@ func (c *Cli) RunInteractive(ctx context.Context) int {
 	}
 }
 
-func (c *Cli) updateSystemVariables(result *Result) {
-	if result.IsMutation {
-		c.SystemVariables.ReadTimestamp = time.Time{}
-		c.SystemVariables.CommitTimestamp = result.Timestamp
-	} else {
-		c.SystemVariables.ReadTimestamp = result.Timestamp
-		c.SystemVariables.CommitTimestamp = time.Time{}
+// readInputLine reads and processes an input line from the editor.
+func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	input, err := readInteractiveInput(ctx, ed)
+
+	// reset for next input before continue
+	ed.SetDefault(nil)
+
+	if err != nil {
+		return nil, err
 	}
 
+	return input, nil
+}
+
+// parseStatement parses the input statement.
+func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
+	// Check if this is a meta command
+	if IsMetaCommand(input.statement) {
+		return ParseMetaCommand(input.statement)
+	}
+	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+}
+
+// handleSpecialStatements handles special client-side statements.
+// Returns (exitCode, processed) where:
+// - exitCode: if >= 0, the function should return this exit code
+// - processed: if true, the main loop should continue (either returning exitCode or skipping to next iteration)
+func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exitCode int, processed bool) {
+	// Handle ExitStatement
+	if _, ok := stmt.(*ExitStatement); ok {
+		fmt.Fprintln(c.GetWriter(), "Bye")
+		return c.handleExit(), true
+	}
+
+	// Handle SourceMetaCommand
+	if s, ok := stmt.(*SourceMetaCommand); ok {
+		err := c.executeSourceFile(ctx, s.FilePath)
+		if err != nil {
+			c.PrintInteractiveError(err)
+		}
+		return -1, true
+	}
+
+	// Handle DropDatabaseStatement
+	if s, ok := stmt.(*DropDatabaseStatement); ok {
+		if c.SystemVariables.Database == s.DatabaseId {
+			c.PrintInteractiveError(
+				fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
+			)
+			return -1, true
+		}
+
+		// Interactive confirmations require a TTY
+		ttyStream := c.GetTtyStream()
+		if ttyStream == nil {
+			c.PrintInteractiveError(fmt.Errorf("cannot confirm DROP DATABASE without a TTY for output; stdout is not a terminal"))
+			return -1, true
+		}
+		if !confirm(c.GetInStream(), ttyStream, fmt.Sprintf("Database %q will be dropped.\nDo you want to continue?", s.DatabaseId)) {
+			return -1, true
+		}
+	}
+
+	return -1, false
+}
+
+// executeStatementInteractive executes the statement and displays the result.
+func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
+	preInput, err := c.executeStatement(ctx, stmt, true, input.statement, c.GetWriter())
+	if err != nil {
+		return "", err
+	}
+
+	return preInput, nil
+}
+
+func (c *Cli) updateSystemVariables(result *Result) {
+	// Update timestamps - both ReadTimestamp and CommitTimestamp are now separate fields
+	c.SystemVariables.ReadTimestamp = result.ReadTimestamp
+	c.SystemVariables.CommitTimestamp = result.CommitTimestamp
+
 	if result.CommitStats != nil {
-		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: timestamppb.New(result.Timestamp)}
+		var ts *timestamppb.Timestamp
+		if !result.CommitTimestamp.IsZero() {
+			ts = timestamppb.New(result.CommitTimestamp)
+		}
+		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
 	} else {
 		c.SystemVariables.CommitResponse = nil
 	}
 }
 
-func (c *Cli) RunBatch(ctx context.Context, input string) int {
+// executeSourceFile executes SQL statements from a file
+func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
+	// Open the file to get a stable file handle
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer f.Close()
+
+	// Check if the file is a regular file to prevent DoS from special files
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file %s: %w", filePath, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("sourcing from a non-regular file is not supported: %s", filePath)
+	}
+
+	// Add a check to prevent reading excessively large files.
+	const maxFileSize = 100 * 1024 * 1024 // 100MB
+	if fi.Size() > maxFileSize {
+		return fmt.Errorf("file %s is too large to be sourced (size: %d bytes, max: %d bytes)", filePath, fi.Size(), maxFileSize)
+	}
+
+	// Read the file contents from the opened handle
+	contents, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", filePath, err)
+	}
+
+	// Parse the contents using buildCommands (same as batch mode)
+	// IMPORTANT: buildCommands explicitly rejects meta-commands (including \.) with the error
+	// "meta commands are not supported in batch mode". This means nested sourcing
+	// (i.e., having \. commands within a sourced file) is not possible by design.
+	// Meta-commands are only processed in the interactive mode's main loop.
+	stmts, err := buildCommands(string(contents), c.SystemVariables.BuildStatementMode)
+	if err != nil {
+		return fmt.Errorf("failed to parse SQL from file %s: %w", filePath, err)
+	}
+
+	// Execute each statement sequentially
+	for i, fileStmt := range stmts {
+		// Skip ExitStatement in source files (exit should only end the file, not the session)
+		if _, ok := fileStmt.(*ExitStatement); ok {
+			continue
+		}
+
+		// Extract SQL text for ECHO support
+		// TODO: Currently we reconstruct the SQL text using Statement.String() method.
+		// Ideally, buildCommands() should return the original text from the file
+		// to echo exactly what was written in the source file.
+		// See: https://github.com/apstndb/spanner-mycli/issues/380
+		sqlText := ""
+		if stringer, ok := fileStmt.(fmt.Stringer); ok {
+			sqlText = stringer.String()
+		}
+
+		// Execute the statement in interactive mode to get proper output formatting
+		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.GetWriter())
+		if err != nil {
+			return fmt.Errorf("error executing statement %d from file %s: %w", i+1, filePath, err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	stmts, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
-		return exitCodeError
+		return NewExitCodeError(exitCodeError)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel()
+	go handleInterrupt(ctx, cancel)
 
 	for _, stmt := range stmts {
 		if _, ok := stmt.(*ExitStatement); ok {
-			return c.handleExit()
+			return NewExitCodeError(c.handleExit())
 		}
 
-		_, err = c.executeStatement(ctx, stmt, false, input)
+		_, err = c.executeStatement(ctx, stmt, false, input, c.GetWriter())
 		if err != nil {
 			c.PrintBatchError(err)
-			return exitCodeError
+			return NewExitCodeError(exitCodeError)
 		}
 	}
 
-	return exitCodeSuccess
+	return nil
 }
 
 // handleExit processes EXIT statement.
 func (c *Cli) handleExit() int {
-	c.Session.Close()
+	c.SessionHandler.Close()
 	return exitCodeSuccess
 }
 
 func (c *Cli) ExitOnError(err error) int {
-	c.Session.Close()
-	printError(c.ErrStream, err)
+	c.SessionHandler.Close()
+	printError(c.GetErrStream(), err)
 	return exitCodeError
 }
 
 func (c *Cli) PrintInteractiveError(err error) {
-	printError(c.OutStream, err)
+	printError(c.GetErrStream(), err)
 }
 
 func printError(w io.Writer, err error) {
@@ -228,74 +389,101 @@ func printError(w io.Writer, err error) {
 }
 
 func (c *Cli) PrintBatchError(err error) {
-	printError(c.ErrStream, err)
+	printError(c.GetErrStream(), err)
 }
 
-func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string) {
-	ostream := c.OutStream
+func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) error {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.GetWriter()
+	}
+
+	ostream := w
 	var cmd *exec.Cmd
 	if c.SystemVariables.UsePager {
 		pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
 
 		split, err := shellquote.Split(pagerpath)
 		if err != nil {
-			return
+			return fmt.Errorf("failed to parse pager command: %w", err)
 		}
 		cmd = exec.CommandContext(context.Background(), split[0], split[1:]...)
 
 		pr, pw := io.Pipe()
 		ostream = pw
 		cmd.Stdin = pr
-		cmd.Stdout = c.OutStream
+		cmd.Stdout = w
 
 		err = cmd.Start()
 		if err != nil {
-			log.Println(err)
-			return
+			slog.Error("failed to start pager command", "err", err)
+			return fmt.Errorf("failed to start pager: %w", err)
 		}
 		defer func() {
 			err := pw.Close()
 			if err != nil {
-				log.Println(err)
+				slog.Error("failed to close pipe", "err", err)
 			}
 			err = cmd.Wait()
 			if err != nil {
-				log.Println(err)
+				slog.Error("failed to wait for pager command", "err", err)
 			}
 		}()
 	}
-	printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
+	return printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
 }
 
-func (c *Cli) PrintProgressingMark() func() {
+func (c *Cli) PrintProgressingMark(w io.Writer) func() {
+	// Progress marks use terminal control characters, so they should always
+	// go to TtyOutStream to avoid polluting tee output. If no TTY is available,
+	// disable progress marks.
+	ttyStream := c.GetTtyStream()
+	if ttyStream == nil {
+		return func() {}
+	}
+	ttyWriter := ttyStream
+
 	progressMarks := []string{`-`, `\`, `|`, `/`}
 	ticker := time.NewTicker(time.Millisecond * 100)
+	done := make(chan struct{})
+
 	go func() {
 		// wait to avoid corruption with first output of command
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-done:
+			return
+		}
 
 		i := 0
 		for {
-			<-ticker.C
-			mark := progressMarks[i%len(progressMarks)]
-			fmt.Fprintf(c.OutStream, "\r%s", mark)
-			i++
+			select {
+			case <-ticker.C:
+				mark := progressMarks[i%len(progressMarks)]
+				fmt.Fprintf(ttyWriter, "\r%s", mark)
+				i++
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	stop := func() {
+		close(done)
 		ticker.Stop()
-		fmt.Fprintf(c.OutStream, "\r") // clear progressing mark
+		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
 	}
 	return stop
 }
 
-var promptRe = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
-var promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+var (
+	promptRe               = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
+	promptSystemVariableRe = regexp.MustCompile(`%\{([^}]+)}`)
+)
 
 // getInterpolatedPrompt returns the prompt string with the values of system variables interpolated.
 func (c *Cli) getInterpolatedPrompt(prompt string) string {
-	sysVars := c.Session.systemVariables
+	sysVars := c.SessionHandler.GetSession().systemVariables
 	return promptRe.ReplaceAllStringFunc(prompt, func(s string) string {
 		switch s {
 		case "%%":
@@ -307,14 +495,17 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 		case "%i":
 			return sysVars.Instance
 		case "%d":
+			if c.SessionHandler.IsDetached() {
+				return "*detached*"
+			}
 			return sysVars.Database
 		case "%t":
 			switch {
-			case c.Session.InReadWriteTransaction():
+			case c.SessionHandler.InReadWriteTransaction():
 				return "(rw txn)"
-			case c.Session.InReadOnlyTransaction():
+			case c.SessionHandler.InReadOnlyTransaction():
 				return "(ro txn)"
-			case c.Session.InPendingTransaction():
+			case c.SessionHandler.InPendingTransaction():
 				return "(txn)"
 			default:
 				return ""
@@ -323,21 +514,27 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 			return runewidth.FillLeft(
 				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)
 		default:
-			varName := promptSystemVariableRe.FindStringSubmatch(s)[1]
-			value, err := sysVars.Get(varName)
-			if err != nil {
-				// Return error pattern to be interpolated.
-				return fmt.Sprintf("INVALID_VAR{%v}", varName)
+			// Check if it's a system variable pattern %{...}
+			matches := promptSystemVariableRe.FindStringSubmatch(s)
+			if len(matches) > 1 {
+				varName := matches[1]
+				value, err := sysVars.Get(varName)
+				if err != nil {
+					// Return error pattern to be interpolated.
+					return fmt.Sprintf("INVALID_VAR{%v}", varName)
+				}
+				return value[varName]
 			}
-			return value[varName]
+			// For unrecognized percent sequences, return them unchanged
+			return s
 		}
 	})
 }
 
-func confirm(out io.Writer, msg string) bool {
+func confirm(in io.Reader, out io.Writer, msg string) bool {
 	fmt.Fprintf(out, "%s [yes/no] ", msg)
 
-	s := bufio.NewScanner(os.Stdin)
+	s := bufio.NewScanner(in)
 	for {
 		s.Scan()
 		switch strings.ToLower(s.Text()) {
@@ -351,30 +548,33 @@ func confirm(out io.Writer, msg string) bool {
 	}
 }
 
-func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string) (string, error) {
+func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive bool, input string, w io.Writer) (string, error) {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.GetWriter()
+	}
 	ctx, cancel := context.WithCancel(ctx)
-	go handleInterrupt(cancel)
+	defer cancel() // Ensure context is cancelled when function returns
 
-	if s, ok := stmt.(*UseStatement); ok {
-		err := c.handleUse(ctx, s, interactive)
-		if err != nil {
-			return "", err
-		}
-
-		fmt.Fprintf(c.OutStream, "Database changed")
+	// Start interrupt handler in interactive mode only
+	if interactive {
+		go handleInterrupt(ctx, cancel)
 	}
 
+	// Setup progress mark and timing
 	t0 := time.Now()
-	stop := func() {}
-	switch stmt.(type) {
-	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement:
-		break
-	default:
-		stop = c.PrintProgressingMark()
+	// Only call setupProgressMark in interactive mode
+	var stop func()
+	if interactive {
+		stop = c.setupProgressMark(stmt, w)
+	} else {
+		stop = func() {}
 	}
 
-	result, err := c.Session.ExecuteStatement(ctx, stmt)
+	// Execute the statement
+	result, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
 
+	// Stop progress mark
 	stop()
 	elapsed := time.Since(t0).Seconds()
 
@@ -383,14 +583,63 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
 			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 			// the Cloud Spanner's session with new one to revert the lock priority of the session.
-			innerErr := c.Session.RecreateClient()
+			innerErr := c.SessionHandler.RecreateClient()
 			if innerErr != nil {
 				err = errors.Join(err, innerErr)
 			}
 		}
 		return "", err
+	} else {
+		// Handle special output messages for session-changing statements
+		switch stmt.(type) {
+		case *UseStatement, *UseDatabaseMetaCommand:
+			fmt.Fprintf(w, "Database changed")
+		case *DetachStatement:
+			fmt.Fprintf(w, "Detached from database")
+		}
 	}
 
+	// Update result stats and system variables
+	c.updateResultStats(result, elapsed)
+
+	// Display the result (skip for meta commands)
+	if _, isMetaCommand := stmt.(MetaCommandStatement); !isMetaCommand {
+		if err := c.displayResult(result, interactive, input, w); err != nil {
+			return "", fmt.Errorf("failed to display result: %w", err)
+		}
+	}
+
+	return result.PreInput, nil
+}
+
+// setupProgressMark sets up the progress mark display for the statement execution.
+// Returns a function to stop the progress mark.
+// Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
+// or that use streaming output (like DUMP statements) are excluded to avoid conflicting progress indicators.
+func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
+	// Check if this is a SELECT statement that might use streaming
+	if _, ok := stmt.(*SelectStatement); ok {
+		// Check if streaming will be used
+		if shouldUseStreaming(c.SystemVariables) {
+			// Disable progress mark for streaming output to prevent
+			// control character interference (Issue #431)
+			return func() {}
+		}
+	}
+
+	switch stmt.(type) {
+	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement,
+		// TODO: This is a temporary fix. DUMP statements will eventually output directly to files in interactive mode,
+		// making progress mark suppression unnecessary. Progress marks don't appear in batch mode anyway.
+		*DumpDatabaseStatement, *DumpSchemaStatement, *DumpTablesStatement:
+		return func() {}
+	default:
+		return c.PrintProgressingMark(w)
+	}
+}
+
+// updateResultStats updates the result stats and system variables.
+func (c *Cli) updateResultStats(result *Result, elapsed float64) {
 	// only SELECT statement has the elapsed time measured by the server
 	if result.Stats.ElapsedTime == "" {
 		result.Stats.ElapsedTime = fmt.Sprintf("%0.2f sec", elapsed)
@@ -399,59 +648,106 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	if !result.KeepVariables {
 		c.updateSystemVariables(result)
 	}
+}
 
-	size := math.MaxInt
-	if c.SystemVariables.AutoWrap {
-		sz, _, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil {
-			size = math.MaxInt
-		} else {
-			size = sz
+// GetTerminalSize returns the width of the terminal for the given io.Writer.
+// It attempts to type assert the writer to *os.File to get the file descriptor.
+// Returns an error if the terminal size cannot be determined.
+func GetTerminalSize(w io.Writer) (int, error) {
+	// Try to type assert to *os.File
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0, fmt.Errorf("writer is not a file")
+	}
+
+	// Get terminal size using the file descriptor
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0, err
+	}
+
+	return width, nil
+}
+
+// GetTerminalSizeWithTty returns the width of the terminal.
+// It uses the TtyOutStream from StreamManager if available, otherwise falls back to
+// attempting to type assert the writer to *os.File.
+// Returns an error if the terminal size cannot be determined.
+func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
+	var f *os.File
+
+	// Prefer TtyOutStream if available
+	ttyStream := c.GetTtyStream()
+	if ttyStream != nil {
+		f = ttyStream
+	} else {
+		// Fallback to type assertion
+		var ok bool
+		f, ok = w.(*os.File)
+		if !ok {
+			return 0, fmt.Errorf("writer is not a file and TtyOutStream is not set")
 		}
 	}
 
-	c.PrintResult(size, result, interactive, input)
-
-	if interactive {
-		fmt.Fprintf(c.OutStream, "\n")
+	// Get terminal size using the file descriptor
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0, err
 	}
 
-	return result.PreInput, nil
+	return width, nil
 }
 
-func (c *Cli) handleUse(ctx context.Context, s *UseStatement, interactive bool) error {
-	newSystemVariables := *c.SystemVariables
+// displayResult displays the result of the statement execution.
+// It returns an error if the output operation fails.
+func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) error {
+	// If no writer is provided, use the CLI's OutStream
+	if w == nil {
+		w = c.GetWriter()
+	}
 
-	newSystemVariables.Database = s.Database
-	newSystemVariables.Role = s.Role
+	size := math.MaxInt
+	if c.SystemVariables.AutoWrap {
+		if c.SystemVariables.FixedWidth != nil {
+			// Use fixed width if set
+			size = int(*c.SystemVariables.FixedWidth)
+		} else {
+			// Otherwise get terminal width
+			width, err := c.GetTerminalSizeWithTty(w)
+			if err != nil {
+				// Add warning log when terminal size cannot be obtained
+				// and CLI_AUTOWRAP = TRUE
+				slog.Warn("failed to get terminal size", "err", err)
+				size = math.MaxInt
+			} else {
+				size = width
+			}
+		}
+	}
 
-	newSession, err := createSession(ctx, c.Credential, &newSystemVariables)
-	if err != nil {
+	if err := c.PrintResult(size, result, interactive, input, w); err != nil {
 		return err
 	}
 
-	exists, err := newSession.DatabaseExists()
-	if err != nil {
-		newSession.Close()
-		return err
+	if interactive {
+		if _, err := fmt.Fprintf(w, "\n"); err != nil {
+			return err
+		}
 	}
-
-	if !exists {
-		newSession.Close()
-		return fmt.Errorf("unknown database %q", s.Database)
-	}
-
-	c.Session.Close()
-	c.Session = newSession
-
-	c.SystemVariables = &newSystemVariables
 
 	return nil
 }
 
-func handleInterrupt(cancel context.CancelFunc) {
+func handleInterrupt(ctx context.Context, cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	<-c
-	cancel()
+	defer signal.Stop(c)
+
+	select {
+	case <-c:
+		cancel()
+	case <-ctx.Done():
+		// Context cancelled, exit gracefully
+		return
+	}
 }

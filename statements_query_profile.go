@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"text/template"
@@ -13,12 +13,12 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	"github.com/k0kubun/pp/v3"
 	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -76,17 +76,17 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.SpannerCLICompatiblePlan)
+		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.ExplainFormat, session.systemVariables.ExplainWrapWidth)
 		if err != nil {
 			return nil, err
 		}
 
-		maxIDLength := max(hiter.Max(xiter.Map(func(row Row) int { return len(row[0]) /* ID */ }, slices.Values(rows))), 2)
+		maxIDLength := max(hiter.Max(hiter.Map(func(row Row) int { return len(row[0]) /* ID */ }, slices.Values(rows))), 2)
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)
 
-		tree := strings.Join(slices.Collect(xiter.Map(
+		tree := strings.Join(slices.Collect(hiter.Map(
 			func(r Row) string {
 				return runewidth.FillLeft(r[0] /* ID */, maxIDLength) + " | " + r[1] /* Plan */
 			},
@@ -98,7 +98,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Plan"),
+		TableHeader:  toTableHeader("Plan"),
 		Rows:         resultRows,
 		AffectedRows: len(resultRows),
 	}, nil
@@ -147,7 +147,8 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, err
 	}
 
-	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats)
+	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats,
+		enums.ExplainFormatUnspecified, 0)
 }
 
 func formatStats(stats *queryProfilesRow) string {
@@ -158,7 +159,7 @@ func formatStats(stats *queryProfilesRow) string {
 
 	err := temp.Execute(&sb, stats)
 	if err != nil {
-		log.Println(err)
+		slog.Error("error occurred", "err", err)
 		return ""
 	}
 

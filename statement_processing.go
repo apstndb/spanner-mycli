@@ -20,22 +20,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json/jsontext"
-	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
-
-// Partitioned DML tends to take long time to be finished.
-// See: https://github.com/cloudspannerecosystem/spanner-cli/issues/102
-const pdmlTimeout = time.Hour * 24
 
 type Statement interface {
 	Execute(ctx context.Context, session *Session) (*Result, error)
@@ -45,6 +42,12 @@ type Statement interface {
 // Mutation statements are not permitted in a read-only transaction. It determines pending transactions.
 type MutationStatement interface {
 	isMutationStatement()
+}
+
+// DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
+// Statements implementing this interface can execute when session.IsDetached() is true.
+type DetachedCompatible interface {
+	isDetachedCompatible()
 }
 
 // rowCountType is type of modified rows count by DML.
@@ -64,31 +67,152 @@ type BatchInfo struct {
 	Size int
 }
 
+type TableHeader interface {
+	// internalRender shouldn't be called directly. Use renderTableHeader().
+	internalRender(verbose bool) []string
+	// structFields returns the complete field information with types if available.
+	// Returns (fields, true) if type information is available.
+	// Returns (nil, false) if only column names are available (e.g., simpleTableHeader).
+	structFields() ([]*sppb.StructType_Field, bool)
+}
+
+type simpleTableHeader []string
+
+func (th simpleTableHeader) internalRender(verbose bool) []string {
+	return th
+}
+
+func (th simpleTableHeader) structFields() ([]*sppb.StructType_Field, bool) {
+	// simpleTableHeader only contains column names, no type information
+	return nil, false
+}
+
+// toTableHeader convert slice or variable arguments to TableHeader.
+// nil or empty slice will return untyped nil.
+//
+// Note: In practice, this should never receive empty input from Spanner query results
+// because Spanner requires at least one column in SELECT queries. Empty input might
+// occur only in client-side statements or error conditions.
+func toTableHeader[T interface {
+	string | []string | *sppb.StructType_Field | []*sppb.StructType_Field
+}](ss ...T) TableHeader {
+	if len(ss) == 0 {
+		return nil
+	}
+
+	switch any(ss[0]).(type) {
+	case *sppb.StructType_Field:
+		var result typesTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).(*sppb.StructType_Field))
+		}
+
+		return result
+	case string:
+		var result simpleTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).(string))
+		}
+
+		return result
+	case []*sppb.StructType_Field:
+		var result typesTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).([]*sppb.StructType_Field)...)
+		}
+
+		if len(result) == 0 {
+			return nil
+		}
+
+		return result
+	case []string:
+		var result simpleTableHeader
+		for _, s := range ss {
+			result = append(result, any(s).([]string)...)
+		}
+
+		if len(result) == 0 {
+			return nil
+		}
+
+		return result
+	default:
+		// This should be unreachable due to type constraints, but log instead of panic
+		slog.Warn("toTableHeader received unexpected type", "type", fmt.Sprintf("%T", ss))
+		return nil
+	}
+}
+
+type typesTableHeader []*sppb.StructType_Field
+
+func (th typesTableHeader) internalRender(verbose bool) []string {
+	var result []string
+	for _, f := range th {
+		if verbose {
+			result = append(result, formatTypedHeaderColumn(f))
+		} else {
+			result = append(result, f.Name)
+		}
+	}
+	return result
+}
+
+func (th typesTableHeader) structFields() ([]*sppb.StructType_Field, bool) {
+	// typesTableHeader contains complete field information with types
+	return []*sppb.StructType_Field(th), true
+}
+
 type Result struct {
-	ColumnNames      []string
-	ColumnAlign      []int // optional
+	ColumnAlign      []tw.Align // optional
 	Rows             []Row
 	Predicates       []string
 	AffectedRows     int
 	AffectedRowsType rowCountType
 	Stats            QueryStats
 
-	// Used for switch output("rows in set" / "rows affected")
-	IsMutation bool
+	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
+	IsExecutedDML bool
 
-	Timestamp     time.Time
-	ForceVerbose  bool
-	CommitStats   *sppb.CommitResponse_CommitStats
-	KeepVariables bool
+	ReadTimestamp   time.Time // For SELECT/read-only transactions
+	CommitTimestamp time.Time // For COMMIT/DML operations
+	ForceVerbose    bool
+	CommitStats     *sppb.CommitResponse_CommitStats
+	KeepVariables   bool
 
-	// ColumnTypes will be printed in `--verbose` mode if it is not empty
-	ColumnTypes []*sppb.StructType_Field
+	TableHeader TableHeader
+
 	ForceWrap   bool
 	LintResults []string
 	PreInput    string
 
+	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals
+	// using spanvalue.LiteralFormatConfig instead of regular display formatting.
+	// This flag is set to true only when:
+	// - executeSQL is called with SQL export format (SQL_INSERT, SQL_INSERT_OR_IGNORE, SQL_INSERT_OR_UPDATE)
+	// - The values in Rows are valid SQL literals that can be used in INSERT statements
+	// When false, SQL export formats will fall back to table format to prevent invalid SQL generation.
+	// Examples of statements that have this as false:
+	// - SHOW CREATE TABLE, SHOW TABLES (metadata queries)
+	// - EXPLAIN, EXPLAIN ANALYZE (query plan information)
+	// - DML with THEN RETURN (uses regular formatting)
+	HasSQLFormattedValues bool
+
+	// IsDirectOutput indicates that Rows contain pre-formatted text lines that should
+	// be printed directly without any table formatting. Used by DUMP statements and
+	// potentially other commands that produce pre-formatted output.
+	// When true, Rows bypass normal table formatting and are output as-is.
+	IsDirectOutput bool
+
+	// SQLTableNameForExport stores the auto-detected or explicitly set table name for SQL export.
+	// This field is populated during query execution when SQL export formats are used.
+	// It ensures the table name is available during the formatting phase, even in buffered mode.
+	SQLTableNameForExport string
+
 	BatchInfo      *BatchInfo
 	PartitionCount int
+	Streamed       bool              // Indicates rows were streamed and not buffered
+	Metrics        *ExecutionMetrics // Performance metrics for query execution
 }
 
 type Row []string
@@ -124,18 +248,17 @@ type QueryStats struct {
 	Unknown jsontext.Value `json:",unknown" pp:"-"`
 }
 
-type parseMode string
-
-const (
-	parseModeUnspecified parseMode = ""
-	parseModeFallback    parseMode = "FALLBACK"
-	parseModeNoMemefish  parseMode = "NO_MEMEFISH"
-	parseMemefishOnly    parseMode = "MEMEFISH_ONLY"
-)
-
 var (
-	explainColumnNames = []string{"ID", "Query_Execution_Plan <execution_method> (metadata, ...)"}
-	explainColumnAlign = []int{tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_LEFT}
+	operatorColumnName       = "Operator <execution_method> (metadata, ...)"
+	operatorColumnNameLength = int64(len(operatorColumnName))
+
+	// default EXPLAIN columns
+	explainColumnNames = []string{"ID", operatorColumnName}
+
+	// EXPLAIN columns for limited width
+	explainColumnNamesShort = []string{"ID", "Operator"}
+
+	explainColumnAlign = []tw.Align{tw.AlignRight, tw.AlignLeft}
 
 	describeColumnNames = []string{"Column_Name", "Column_Type"}
 
@@ -145,11 +268,18 @@ var (
 
 var errStatementNotMatched = errors.New("statement not matched")
 
+type statementParseFunc func(stripped, raw string) (Statement, error)
+
 func BuildStatement(input string) (Statement, error) {
 	return BuildStatementWithComments(input, input)
 }
 
-func BuildCLIStatement(trimmed string) (Statement, error) {
+func BuildCLIStatement(stripped, raw string) (Statement, error) {
+	trimmed := strings.TrimSpace(stripped)
+	if trimmed == "" {
+		return nil, errors.New("empty statement")
+	}
+
 	for _, cs := range clientSideStatementDefs {
 		if cs.Pattern.MatchString(trimmed) {
 			matches := cs.Pattern.FindStringSubmatch(trimmed)
@@ -165,41 +295,75 @@ func BuildCLIStatement(trimmed string) (Statement, error) {
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
-	return BuildStatementWithCommentsWithMode(stripped, raw, parseModeFallback)
+	return BuildStatementWithCommentsWithMode(stripped, raw, enums.ParseModeFallback)
 }
 
-func BuildStatementWithCommentsWithMode(stripped, raw string, mode parseMode) (Statement, error) {
-	trimmed := strings.TrimSpace(stripped)
-	if trimmed == "" {
-		return nil, errors.New("empty statement")
+func composeStatementParseFunc(funcs ...statementParseFunc) statementParseFunc {
+	return func(stripped, raw string) (Statement, error) {
+		for _, f := range funcs {
+			stmt, err := f(stripped, raw)
+			switch {
+			case errors.Is(err, errStatementNotMatched):
+				slog.Debug("fallback to next parser", "err", err)
+				continue
+			case err != nil:
+				return nil, err
+			default:
+				return stmt, nil
+			}
+		}
+		return nil, errStatementNotMatched
 	}
+}
 
-	switch stmt, err := BuildCLIStatement(trimmed); {
-	case err != nil && !errors.Is(err, errStatementNotMatched):
-		return nil, err
-	case stmt != nil:
-		return stmt, nil
-	default:
-		// no action
-	}
-
-	if mode != parseModeNoMemefish && mode != parseModeUnspecified {
-		switch stmt, err := BuildNativeStatementMemefish(raw); {
-		case mode == parseMemefishOnly && err != nil:
-			return nil, fmt.Errorf("invalid statement: %w", err)
+func ignoreParseError(f statementParseFunc) statementParseFunc {
+	return func(stripped, raw string) (Statement, error) {
+		s, err := f(stripped, raw)
+		switch {
 		case errors.Is(err, errStatementNotMatched):
-			log.Println(fmt.Errorf("ignore unknown statement, err: %w", err))
+			return nil, err
 		case err != nil:
-			log.Println(fmt.Errorf("ignore memefish parse error, err: %w", err))
+			slog.Warn("error ignored", "err", err)
+			return nil, fmt.Errorf("error ignored: %w", errors.Join(err, errStatementNotMatched))
 		default:
-			return stmt, nil
+			return s, nil
 		}
 	}
-
-	return BuildNativeStatementFallback(trimmed, raw)
 }
 
-func BuildNativeStatementMemefish(raw string) (Statement, error) {
+// getParserForMode returns the appropriate StatementParser for the given mode
+func getParserForMode(mode enums.ParseMode) (statementParseFunc, error) {
+	switch mode {
+	case enums.ParseModeNoMemefish:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			BuildNativeStatementLexical,
+		), nil
+	case enums.ParseModeMemefishOnly:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			BuildNativeStatementMemefish,
+		), nil
+	case enums.ParseModeFallback, enums.ParseModeUnspecified:
+		return composeStatementParseFunc(
+			BuildCLIStatement,
+			ignoreParseError(BuildNativeStatementMemefish),
+			BuildNativeStatementLexical,
+		), nil
+	default:
+		return nil, fmt.Errorf("invalid parseMode: %q", mode)
+	}
+}
+
+func BuildStatementWithCommentsWithMode(stripped, raw string, mode enums.ParseMode) (Statement, error) {
+	parser, err := getParserForMode(mode)
+	if err != nil {
+		return nil, err
+	}
+	return parser(stripped, raw)
+}
+
+func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
 		return nil, err
@@ -214,19 +378,18 @@ func BuildNativeStatementMemefish(raw string) (Statement, error) {
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil
 	case kind.IsDDL():
-		// Currently, UpdateDdl doesn't permit comments, so we need to unparse DDLs.
-
 		// Only CREATE DATABASE needs special treatment in DDL.
 		if instanceOf[*ast.CreateDatabase](stmt) {
-			return &CreateDatabaseStatement{CreateStatement: stmt.SQL()}, nil
+			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
-		return &DdlStatement{Ddl: stmt.SQL()}, nil
+
+		return &DdlStatement{Ddl: raw}, nil
 	default:
 		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
 	}
 }
 
-func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error) {
+func BuildNativeStatementLexical(stripped string, raw string) (Statement, error) {
 	kind, err := stmtkind.DetectLexical(raw)
 	if err != nil {
 		return nil, err
@@ -240,14 +403,12 @@ func BuildNativeStatementFallback(trimmed string, raw string) (Statement, error)
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil
 	case kind.IsDDL():
-		// Currently, UpdateDdl doesn't permit comments, so we need to use trimmed SQL tex.
-
 		// Only CREATE DATABASE needs special treatment in DDL.
-		if createDatabaseRe.MatchString(trimmed) {
-			return &CreateDatabaseStatement{CreateStatement: trimmed}, nil
+		if createDatabaseRe.MatchString(stripped) {
+			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
 
-		return &DdlStatement{Ddl: trimmed}, nil
+		return &DdlStatement{Ddl: raw}, nil
 	default:
 		return nil, errors.New("invalid statement")
 	}
@@ -257,29 +418,32 @@ func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-func logParseStatement(stmt string) {
-	if !logMemefish {
-		return
+// splitTableNames parses a comma-separated list of table names
+func splitTableNames(input string) []string {
+	parts := strings.Split(input, ",")
+	tables := make([]string, 0, len(parts))
+	for _, part := range parts {
+		table := unquoteIdentifier(part)
+		if table != "" {
+			tables = append(tables, table)
+		}
 	}
-	n, err := memefish.ParseStatement("", stmt)
-	if err != nil {
-		log.Printf("SQL can't parsed as a statement, err: %v", err)
-	} else {
-		log.Printf("parsed: %v", n.SQL())
-	}
-}
-
-func logParseStatements(stmts []string) {
-	for _, stmt := range stmts {
-		logParseStatement(stmt)
-	}
+	return tables
 }
 
 // buildCommands parses the input and builds a list of commands for batch execution.
 // It can compose BulkDdlStatement from consecutive DDL statements.
-func buildCommands(input string, mode parseMode) ([]Statement, error) {
+func buildCommands(input string, mode enums.ParseMode) ([]Statement, error) {
 	var cmds []Statement
 	var pendingDdls []string
+
+	// Check if input starts with a meta command.
+	// This check must be performed before separateInput() because meta-commands
+	// (starting with '\') are not valid GoogleSQL lexical structure and would
+	// cause parsing errors.
+	if IsMetaCommand(strings.TrimSpace(input)) {
+		return nil, errors.New("meta commands are not supported in batch mode")
+	}
 
 	stmts, err := separateInput(input)
 	if err != nil {
@@ -289,6 +453,11 @@ func buildCommands(input string, mode parseMode) ([]Statement, error) {
 		// Ignore the last empty statement
 		if separated.delim == delimiterUndefined && separated.statementWithoutComments == "" {
 			continue
+		}
+
+		// Check each statement after splitting as a safety net
+		if IsMetaCommand(strings.TrimSpace(separated.statement)) {
+			return nil, errors.New("meta commands are not supported in batch mode")
 		}
 
 		stmt, err := BuildStatementWithCommentsWithMode(strings.TrimSpace(separated.statementWithoutComments), separated.statement, mode)

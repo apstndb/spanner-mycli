@@ -1,0 +1,22 @@
+version: "2"
+
+formatters:
+  enable:
+    - goimports
+    - gofumpt  # gofumpt is a superset of gofmt with -s always enabled
+
+linters:
+  enable:
+    - copyloopvar  # Detects unnecessary loop variable copies (Go 1.22+)
+  settings:
+    copyloopvar:
+      check-alias: true  # Also check aliased loop variables
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*os.File).Close
+        - (*os.File).Sync
+        - (io.ReadCloser).Close
+        - (*github.com/gocql/gocql.Iter).Close

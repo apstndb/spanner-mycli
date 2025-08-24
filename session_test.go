@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseDirectedReadOption(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		desc   string
 		option string
@@ -83,29 +84,31 @@ func TestParseDirectedReadOption(t *testing.T) {
 }
 
 func TestSession_TransactionMode(t *testing.T) {
+	t.Parallel()
 	s := &Session{}
 
 	if got := s.TransactionMode(); got != transactionModeUndetermined {
 		t.Errorf("New session should have undetermined transaction mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModeReadWrite}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
 	if got := s.TransactionMode(); got != transactionModeReadWrite {
 		t.Errorf("Session with read-write transaction should return read-write mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModeReadOnly}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}}
 	if got := s.TransactionMode(); got != transactionModeReadOnly {
 		t.Errorf("Session with read-only transaction should return read-only mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{mode: transactionModePending}
+	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModePending}}
 	if got := s.TransactionMode(); got != transactionModePending {
 		t.Errorf("Session with pending transaction should return pending mode, got %v", got)
 	}
 }
 
 func TestSession_FailStatementIfReadOnly(t *testing.T) {
+	t.Parallel()
 	s := &Session{systemVariables: &systemVariables{ReadOnly: true}}
 	err := s.failStatementIfReadOnly()
 	if err == nil {

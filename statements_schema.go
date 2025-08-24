@@ -10,8 +10,9 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/samber/lo"
 )
 
 type ShowCreateStatement struct {
@@ -42,7 +43,7 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 	}
 
 	result := &Result{
-		ColumnNames:  []string{"Name", "DDL"},
+		TableHeader:  toTableHeader("Name", "DDL"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}
@@ -70,7 +71,8 @@ type ShowColumnsStatement struct {
 }
 
 func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	stmt := spanner.Statement{SQL: `SELECT
+	stmt := spanner.Statement{
+		SQL: `SELECT
   C.COLUMN_NAME as Field,
   C.SPANNER_TYPE as Type,
   C.IS_NULLABLE as ` + "`NULL`" + `,
@@ -89,7 +91,8 @@ WHERE
   LOWER(C.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(C.TABLE_NAME) = LOWER(@table_name)
 ORDER BY
   C.ORDINAL_POSITION ASC`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
+	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW COLUMNS", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
@@ -115,7 +118,8 @@ FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
   LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema}}
+		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
+	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
@@ -135,8 +139,8 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 	return &Result{
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
-		ColumnNames: sliceOf(""),
-		Rows: sliceOf(toRow(stringsiter.Collect(xiter.Map(
+		TableHeader: toTableHeader(""),
+		Rows: sliceOf(toRow(stringsiter.Collect(hiter.Map(
 			func(s string) string { return s + ";\n" },
 			slices.Values(resp.GetStatements()))))),
 	}, nil
@@ -171,9 +175,10 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		return nil, emptyErrorF()
 	}
 
+	tableHeader := toTableHeader(metadata.GetRowType().GetFields())
 	return &Result{
-		ColumnNames:  extractColumnNames(metadata.GetRowType().GetFields()),
-		ColumnTypes:  lox.IfOrEmpty(forceVerbose, metadata.GetRowType().GetFields()),
+		// Pre-render only column names when forceVerbose is false
+		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(extractTableColumnNames(tableHeader))),
 		ForceVerbose: forceVerbose,
 		Rows:         rows,
 		AffectedRows: len(rows),

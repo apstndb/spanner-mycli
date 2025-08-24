@@ -90,6 +90,7 @@ type jsonMessage struct {
 }
 
 func TestDecodeColumn(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc        string
 		value       interface{}
@@ -421,6 +422,7 @@ func TestDecodeColumn(t *testing.T) {
 }
 
 func TestDecodeColumnRoundTripEnum(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc  string
 		value interface{}
@@ -455,6 +457,7 @@ func TestDecodeColumnRoundTripEnum(t *testing.T) {
 }
 
 func TestDecodeColumnRoundTripProto(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc      string
 		value     interface{}
@@ -496,6 +499,7 @@ func TestDecodeColumnRoundTripProto(t *testing.T) {
 }
 
 func TestDecodeRow(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc   string
 		values []interface{}
@@ -526,6 +530,7 @@ func TestDecodeRow(t *testing.T) {
 }
 
 func TestFormatTypeVerbose(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		desc     string
 		sppbType *sppb.Type

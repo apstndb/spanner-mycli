@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"slices"
@@ -19,11 +19,12 @@ import (
 	"github.com/fatih/color"
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/mattn/go-runewidth"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/nyaosorg/go-readline-ny"
 	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 	"github.com/samber/lo"
+	"github.com/spf13/afero"
 )
 
 // This file contains readline related code
@@ -35,6 +36,7 @@ type History interface {
 type persistentHistory struct {
 	filename string
 	history  *simplehistory.Container
+	fs       afero.Fs
 }
 
 func (p *persistentHistory) Len() int {
@@ -47,27 +49,31 @@ func (p *persistentHistory) At(i int) string {
 
 func (p *persistentHistory) Add(s string) {
 	p.history.Add(s)
-	file, err := os.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	file, err := p.fs.OpenFile(p.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		log.Println(err)
+		slog.Error("failed to open history file", "file", p.filename, "err", err)
 		return
 	}
-	defer func(file *os.File) {
+	defer func(file afero.File) {
 		err := file.Close()
 		if err != nil {
-			log.Println(err)
+			slog.Error("failed to close history file", "file", p.filename, "err", err)
 		}
 	}(file)
 	_, err = fmt.Fprintf(file, "%q\n", s)
 	if err != nil {
-		log.Println(err)
+		slog.Error("failed to write to history file", "file", p.filename, "err", err)
 	}
 }
 
 func newPersistentHistory(filename string, h *simplehistory.Container) (History, error) {
-	b, err := os.ReadFile(filename)
+	return newPersistentHistoryWithFS(filename, h, afero.NewOsFs())
+}
+
+func newPersistentHistoryWithFS(filename string, h *simplehistory.Container, fs afero.Fs) (History, error) {
+	b, err := afero.ReadFile(fs, filename)
 	if errors.Is(err, os.ErrNotExist) {
-		return &persistentHistory{filename: filename, history: h}, nil
+		return &persistentHistory{filename: filename, history: h, fs: fs}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -82,11 +88,39 @@ func newPersistentHistory(filename string, h *simplehistory.Container) (History,
 		}
 		h.Add(unquoted)
 	}
-	return &persistentHistory{filename: filename, history: h}, nil
+	return &persistentHistory{filename: filename, history: h, fs: fs}, nil
+}
+
+// shouldSubmitStatement determines if the input should be submitted based on statements and errors
+func shouldSubmitStatement(statements []inputStatement, err error) (shouldSubmit bool, waitingStatus string) {
+	// Continue with waiting prompt if there is an error with waiting status
+	if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
+		return false, e.WaitingString
+	}
+
+	// Submit if there is an error or completed statement.
+	shouldSubmit = err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+	return shouldSubmit, ""
+}
+
+// generatePS2Prompt generates the continuation prompt (PS2) based on PS1 and PS2 template
+func generatePS2Prompt(ps1 string, ps2Template string, ps2Interpolated string) string {
+	lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
+	_, needPadding := strings.CutPrefix(ps2Template, "%P")
+	return lo.Ternary(needPadding, runewidth.FillLeft(ps2Interpolated, runewidth.StringWidth(lastLineOfPrompt)), ps2Interpolated)
 }
 
 func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	ed := &multiline.Editor{}
+
+	// Configure the LineEditor with proper I/O streams
+	// Use TtyOutStream for readline to avoid polluting tee output with prompts.
+	// Interactive mode requires a TTY for output.
+	ttyStream := c.SystemVariables.StreamManager.GetTtyStream()
+	if ttyStream == nil {
+		return nil, nil, fmt.Errorf("cannot run in interactive mode: stdout is not a terminal")
+	}
+	ed.LineEditor.Writer = ttyStream
 
 	err := ed.BindKey(keys.CtrlJ, readline.AnonymousCommand(ed.NewLine))
 	if err != nil {
@@ -99,19 +133,18 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 	}
 
 	ed.SubmitOnEnterWhen(func(lines []string, _ int) bool {
-		statements, err := separateInput(strings.Join(lines, "\n"))
+		text := strings.Join(lines, "\n")
 
-		// Continue with waiting prompt if there is an error with waiting status
-		if e, ok := lo.ErrorsAs[*gsqlutils.ErrLexerStatus](err); ok {
-			c.waitingStatus = e.WaitingString
-			return false
+		// Meta commands are submitted immediately on Enter
+		if IsMetaCommand(strings.TrimSpace(text)) {
+			c.waitingStatus = ""
+			return true
 		}
 
-		// reset waitingStatus
-		c.waitingStatus = ""
-
-		// Submit if there is an error or completed statement.
-		return err != nil || len(statements) > 1 || (len(statements) == 1 && statements[0].delim != delimiterUndefined)
+		statements, err := separateInput(text)
+		shouldSubmit, newWaitingStatus := shouldSubmitStatement(statements, err)
+		c.waitingStatus = newWaitingStatus
+		return shouldSubmit
 	})
 
 	ed.SetPrompt(PS1PS2FuncToPromptFunc(
@@ -119,11 +152,9 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
 		},
 		func(ps1 string) string {
-			lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
-
-			prompt2, needPadding := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			prompt2, _ := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
 			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
-			return lo.Ternary(needPadding, runewidth.FillLeft(interpolatedPrompt2, runewidth.StringWidth(lastLineOfPrompt)), interpolatedPrompt2)
+			return generatePS2Prompt(ps1, c.SystemVariables.Prompt2, interpolatedPrompt2)
 		}))
 
 	return ed, history, nil
@@ -189,13 +220,15 @@ func kindHighlighter(kinds ...token.TokenKind) highlighterFunc {
 	})
 }
 
-const errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
-const errMessageUnclosedStringLiteral = `unclosed string literal`
-const errMessageUnclosedComment = `unclosed comment`
+const (
+	errMessageUnclosedTripleQuotedStringLiteral = `unclosed triple-quoted string literal`
+	errMessageUnclosedStringLiteral             = `unclosed string literal`
+	errMessageUnclosedComment                   = `unclosed comment`
+)
 
 func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
-		return slices.Collect(xiter.Map(func(comment token.TokenComment) []int {
+		return slices.Collect(hiter.Map(func(comment token.TokenComment) []int {
 			return sliceOf(int(comment.Pos), int(comment.End))
 		}, slices.Values(tok.Comments)))
 	}, func(me *memefish.Error) bool {
@@ -266,11 +299,11 @@ func setupHistory(ed *multiline.Editor, historyFileName string) (History, error)
 	return history, nil
 }
 
-func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
-	lines, err := ed.Read(ctx)
-	if err != nil {
+// processInputLines converts lines and read error into an inputStatement
+func processInputLines(lines []string, readErr error) (*inputStatement, error) {
+	if readErr != nil {
 		if len(lines) == 0 {
-			return nil, err
+			return nil, fmt.Errorf("failed to read input: %w", readErr)
 		}
 
 		str := strings.Join(lines, "\n")
@@ -278,16 +311,13 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 			statement:                str,
 			statementWithoutComments: str,
 			delim:                    "",
-		}, err
+		}, readErr
 	}
+	return nil, nil
+}
 
-	input := strings.Join(lines, "\n") + "\n"
-
-	statements, err := separateInput(input)
-	if err != nil {
-		return nil, err
-	}
-
+// validateInteractiveInput validates that input contains at most one statement for interactive mode
+func validateInteractiveInput(statements []inputStatement) (*inputStatement, error) {
 	switch len(statements) {
 	case 0:
 		return nil, errors.New("no input")
@@ -296,6 +326,35 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 	default:
 		return nil, errors.New("sql queries are limited to single statements in interactive mode")
 	}
+}
+
+func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
+	lines, err := ed.Read(ctx)
+
+	// Handle read errors
+	if stmt, procErr := processInputLines(lines, err); procErr != nil || stmt != nil {
+		return stmt, procErr
+	}
+
+	input := strings.Join(lines, "\n") + "\n"
+
+	// Check if this is a meta command (starts with \)
+	trimmed := strings.TrimSpace(input)
+	if IsMetaCommand(trimmed) {
+		// For meta commands, return the raw input without SQL parsing
+		return &inputStatement{
+			statement:                trimmed,
+			statementWithoutComments: trimmed,
+			delim:                    "", // Meta commands don't use semicolon delimiters
+		}, nil
+	}
+
+	statements, err := separateInput(input)
+	if err != nil {
+		return nil, err
+	}
+
+	return validateInteractiveInput(statements)
 }
 
 func isInterrupted(err error) bool {

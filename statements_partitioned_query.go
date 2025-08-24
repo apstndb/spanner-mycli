@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"cloud.google.com/go/spanner"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 )
 
 type PartitionStatement struct{ SQL string }
@@ -23,7 +23,7 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 		return nil, err
 	}
 
-	rows := slices.Collect(xiter.Map(
+	rows := slices.Collect(hiter.Map(
 		func(partition *spanner.Partition) Row {
 			return toRow(base64.StdEncoding.EncodeToString(partition.GetPartitionToken()))
 		},
@@ -35,11 +35,11 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Partition_Token"),
-		Rows:         rows,
-		AffectedRows: len(rows),
-		Timestamp:    ts,
-		ForceWrap:    true,
+		TableHeader:   toTableHeader("Partition_Token"),
+		Rows:          rows,
+		AffectedRows:  len(rows),
+		ReadTimestamp: ts,
+		ForceWrap:     true,
 	}, nil
 }
 
@@ -67,11 +67,11 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 	}
 
 	return &Result{
-		ColumnNames:  sliceOf("Root_Partitionable"),
-		Rows:         sliceOf(toRow("TRUE")),
-		AffectedRows: 1,
-		Timestamp:    ts,
-		ForceWrap:    true,
+		TableHeader:   toTableHeader("Root_Partitionable"),
+		Rows:          sliceOf(toRow("TRUE")),
+		AffectedRows:  1,
+		ReadTimestamp: ts,
+		ForceWrap:     true,
 	}, nil
 }
 

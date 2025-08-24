@@ -2,18 +2,23 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	scxiter "spheric.cloud/xiter"
 )
 
 type ShowVariableStatement struct {
 	VarName string
 }
+
+func (s *ShowVariableStatement) isDetachedCompatible() {}
 
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	value, err := session.systemVariables.Get(s.VarName)
@@ -27,7 +32,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 		row = append(row, value[n])
 	}
 	return &Result{
-		ColumnNames:   columnNames,
+		TableHeader:   toTableHeader(columnNames),
 		Rows:          sliceOf(toRow(row...)),
 		KeepVariables: true,
 	}, nil
@@ -35,23 +40,27 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 
 type ShowVariablesStatement struct{}
 
-func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	merged := make(map[string]string)
-	for k, v := range systemVariableDefMap {
-		if v.Accessor.Getter == nil {
-			continue
-		}
+func (s *ShowVariablesStatement) isDetachedCompatible() {}
 
-		value, err := v.Accessor.Getter(session.systemVariables, k)
-		if errors.Is(err, errIgnored) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range value {
-			merged[k] = v
-		}
+func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Get all variables from the registry
+	merged := session.systemVariables.ListVariables()
+
+	// Special handling for COMMIT_RESPONSE
+	if session.systemVariables.CommitResponse != nil {
+		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.CommitTimestamp, "NULL")
+		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.CommitResponse.GetCommitStats().GetMutationCount(), 10)
+	}
+
+	// Special handling for CLI_DIRECT_READ
+	if session.systemVariables.DirectedRead != nil {
+		values := scxiter.Join(scxiter.Map(
+			slices.Values(session.systemVariables.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
+				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
+			},
+		), ";")
+		merged["CLI_DIRECT_READ"] = values
 	}
 
 	rows := slices.SortedFunc(
@@ -59,7 +68,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		ToSortFunc(func(r Row) string { return r[0] /* name */ }))
 
 	return &Result{
-		ColumnNames:   []string{"name", "value"},
+		TableHeader:   toTableHeader("name", "value"),
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
@@ -70,8 +79,10 @@ type SetStatement struct {
 	Value   string
 }
 
+func (s *SetStatement) isDetachedCompatible() {}
+
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Set(s.VarName, s.Value); err != nil {
+	if err := session.systemVariables.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
@@ -82,14 +93,18 @@ type SetAddStatement struct {
 	Value   string
 }
 
+func (s *SetAddStatement) isDetachedCompatible() {}
+
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.Add(s.VarName, s.Value); err != nil {
+	if err := session.systemVariables.AddFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
 }
 
 type HelpVariablesStatement struct{}
+
+func (s *HelpVariablesStatement) isDetachedCompatible() {}
 
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	type variableDesc struct {
@@ -98,35 +113,74 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		Description string
 	}
 
-	var merged []variableDesc
-	for k, v := range systemVariableDefMap {
-		var ops []string
-		if v.Accessor.Getter != nil {
-			ops = append(ops, "read")
-		}
+	// Get all variable info from the registry
+	var varInfo map[string]struct {
+		Description string
+		ReadOnly    bool
+		CanAdd      bool
+	}
 
-		if v.Accessor.Setter != nil {
+	if session != nil {
+		varInfo = session.systemVariables.ListVariableInfo()
+	} else {
+		// If session is nil, create a temporary systemVariables to get the variable info
+		tmpSV := newSystemVariablesWithDefaults()
+		tmpSV.ensureRegistry()
+		varInfo = tmpSV.ListVariableInfo()
+	}
+
+	var merged []variableDesc
+	for name, info := range varInfo {
+		var ops []string
+
+		// All variables support read
+		ops = append(ops, "read")
+
+		// Check if variable supports write
+		if !info.ReadOnly {
 			ops = append(ops, "write")
 		}
 
-		if v.Accessor.Adder != nil {
+		// Check if variable supports ADD
+		if info.CanAdd {
 			ops = append(ops, "add")
 		}
 
-		if len(ops) == 0 {
-			continue
-		}
-		merged = append(merged, variableDesc{Name: k, Operations: ops, Description: v.Description})
+		merged = append(merged, variableDesc{Name: name, Operations: ops, Description: info.Description})
 	}
 
-	rows := slices.SortedFunc(xiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+	// Add special variables not in registry
+	// COMMIT_RESPONSE - virtual variable
+	merged = append(merged, variableDesc{
+		Name:        "COMMIT_RESPONSE",
+		Operations:  []string{"read"},
+		Description: "The most recent response for a read-write transaction. This is a virtual variable: it can be used in SHOW COMMIT_RESPONSE and SHOW COMMIT_RESPONSE.COMMIT_TIMESTAMP and SHOW COMMIT_RESPONSE.MUTATION_COUNT, but attempting to read its value directly will give an error. Instead use the sub-fields COMMIT_TIMESTAMP and MUTATION_COUNT.",
+	})
+
+	// CLI_DIRECT_READ - complex proto type
+	merged = append(merged, variableDesc{
+		Name:        "CLI_DIRECT_READ",
+		Operations:  []string{"read"},
+		Description: "",
+	})
+
+	rows := slices.SortedFunc(hiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
 		return strings.Compare(lhs[0], rhs[0])
 	})
 
 	return &Result{
-		ColumnNames:   []string{"name", "operations", "desc"},
+		TableHeader:   toTableHeader("name", "operations", "desc"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
 	}, nil
+}
+
+// formatTimestamp formats a timestamp for display.
+// Returns defaultValue for zero time, RFC3339Nano format otherwise.
+func formatTimestamp(t time.Time, defaultValue string) string {
+	if t.IsZero() {
+		return defaultValue
+	}
+	return t.Format(time.RFC3339Nano)
 }

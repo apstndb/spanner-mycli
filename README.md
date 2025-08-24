@@ -1,7 +1,7 @@
 spanner-mycli
 ===
 
-My personal fork of spanner-cli, interactive command line tool for Cloud Spanner.
+My personal fork of [spanner-cli](https://github.com/cloudspannerecosystem/spanner-cli), interactive command line tool for Cloud Spanner.
 
 ## Description
 
@@ -10,25 +10,41 @@ You can control your Spanner databases with idiomatic SQL commands.
 
 ## Differences from original spanner-cli
 
+spanner-mycli was forked from [spanner-cli v0.10.6](https://github.com/cloudspannerecosystem/spanner-cli/releases/tag/v0.10.6) and restarted its version numbering from [v0.1.0](https://github.com/apstndb/spanner-mycli/releases/tag/v0.1.0).
+There are differences between spanner-mycli and spanner-cli that include not only functionality but also philosophical differences.
+
+* Advanced query plan features for constrained display environments and comprehensive analysis. See [docs/query_plan.md](docs/query_plan.md) for details.
+  * Configurable `EXPLAIN ANALYZE` with customizable execution stats columns using `CLI_ANALYZE_COLUMNS` and inline stats using `CLI_INLINE_STATS`
+  * Query plan investigation with `EXPLAIN [ANALYZE] LAST QUERY` for re-rendering without re-execution and `SHOW PLAN NODE` for inspecting specific plan nodes
+  * Compact format (`FORMAT=COMPACT`) and wrapped plans (`WIDTH=<width>`) for limited display spaces like narrow terminals, code blocks, and technical documentation
+  * Query plan linter (EARLY EXPERIMENTAL) using `CLI_LINT_PLAN` system variable for heuristic query plan analysis
+  * Query profiles (EARLY EXPERIMENTAL) for rendering sampled query plans using `SHOW QUERY PROFILES` and `SHOW QUERY PROFILE`
 * Respects my minor use cases
-  * Protocol Buffere support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
+  * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
   * Can use embedded emulator (`--embedded-emulator`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * Interactive DDL batching
+  * Async DDL execution support (`--async` flag and `CLI_ASYNC_DDL` system variable)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
-  * Customizable plan node stats & query stats.
+  * Run as MCP (Model Context Protocol) server (EXPERIMENTAL, `--mcp`). See [Model Context Protocol](https://modelcontextprotocol.io/introduction) for more information.
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
 * Respects batch use cases as well as interactive use cases
+  * **Breaking change from spanner-cli**: Default output format for batch mode is `TABLE` (same as interactive mode), not `TAB`. Use `--format=TAB` for tab-separated output.
 * More `gcloud spanner databases execute-sql` compatibilities
-  * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`)
+  * Support compatible flags (`--sql`, `--query-mode`, `--strong`, `--read-timestamp`, `--timeout`)
 * More `gcloud spanner databases ddl update` compatibilities
   * Support [`--proto-descriptor-file`](#protocol-buffers-support) flag
+* More Google Cloud Spanner CLI (`gcloud alpha spanner cli`) compatibilities
+  * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
+  * Support `--host` and `--port` flags as first-class options
+  * Support `--deployment-endpoint` as an alias for `--endpoint`
+  * Support `--html`, `--xml`, and `--csv` output format options with proper escaping (security-enhanced compared to reference implementation)
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
@@ -43,7 +59,8 @@ You can control your Spanner databases with idiomatic SQL commands.
     * Allow newlines in prompt using `%n`
     * System variables expansion
     * Prompt2 with margin and waiting status
-  * Autowrap and auto adjust column width to fit within terminal width when `CLI_AUTOWRAP = TRUE`).
+  * Autowrap and auto adjust column width to fit within terminal width (overridable with `CLI_FIXED_WIDTH`) when
+    `CLI_AUTOWRAP = TRUE`).
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
@@ -69,19 +86,28 @@ v0.X.Y will be operated as follows:
 
 ## Install
 
+### Pre-built binaries
+
+Download pre-built binaries from [GitHub Releases](https://github.com/apstndb/spanner-mycli/releases).
+
+### Build from source
+
 [Install Go](https://go.dev/doc/install) and run the following command.
 
 ```
-# For Go 1.23+
+# Requires Go 1.25+
 go install github.com/apstndb/spanner-mycli@latest
 ```
 
-Or you can use a container image.
+### Container image
+
+Use the container image from GitHub Container Registry.
 
 https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 
 ## Usage
 
+<!-- Content from ./tmp/help_clean.txt. Generated by: make docs-update -->
 ```
 Usage:
   spanner-mycli [OPTIONS]
@@ -89,27 +115,35 @@ Usage:
 spanner:
   -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
   -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
-  -d, --database=                                         (required) Cloud Spanner Database ID. [$SPANNER_DATABASE_ID]
+  -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used. [$SPANNER_DATABASE_ID]
+      --detached                                          Start in detached mode, ignoring database env var/flag
   -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
-  -f, --file=                                             Execute SQL statement from file and quit.
+  -f, --file=                                             Execute SQL statement from file and quit. --source is an alias.
   -t, --table                                             Display output in table format for batch mode.
+      --html                                              Display output in HTML format.
+      --xml                                               Display output in XML format.
+      --csv                                               Display output in CSV format.
+      --format=                                           Output format (table, tab, vertical, html, xml, csv)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
       --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
-      --log-memefish                                      Emit SQL parse log using memefish
       --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
       --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
       --role=                                             Use the specific database role. --database-role is an alias.
       --endpoint=                                         Set the Spanner API endpoint (host:port)
+      --host=                                             Host on which Spanner server is located
+      --port=                                             Port number for Spanner connection
       --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
       --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
       --param=                                            Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
       --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
       --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=                                   container image for --embedded-emulator (default: gcr.io/cloud-spanner-emulator/emulator:1.5.32)
+      --emulator-image=                                   container image for --embedded-emulator
+      --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
+      --log-level=
       --log-grpc                                          Show gRPC logs
       --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
       --strong                                            Perform a strong query.
@@ -120,6 +154,20 @@ spanner:
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
       --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
+      --async                                             Return immediately, without waiting for the operation in progress to complete
+      --try-partition-query                               Test whether the query can be executed as partition query without execution
+      --mcp                                               Run as MCP server
+      --skip-system-command                               Do not allow system commands
+      --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
+      --tee=                                              Append a copy of output to the specified file (both screen and file)
+  -o, --output=                                           Redirect output to file (file only, no screen output)
+      --skip-column-names                                 Suppress column headers in output
+      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream) (default: AUTO)
+  -q, --quiet                                             Suppress result lines like 'rows in set' for clean output
+
+Help Options:
+  -h, --help                                              Show this help message
 ```
 
 ### Authentication
@@ -207,24 +255,6 @@ By passing SQL from standard input, `spanner-mycli` runs in batch mode.
 
 ```
 $ echo 'SELECT * FROM users;' | spanner-mycli -p myproject -i myinstance -d mydb
-id      name    active
-1       foo     true
-2       bar     false
-```
-
-You can also pass SQL with command line option `-e`.
-
-```
-$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
-id      name    active
-1       foo     true
-2       bar     false
-```
-
-With `-t` option, results are displayed in table format.
-
-```
-$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
@@ -233,10 +263,183 @@ $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t
 +----+------+--------+
 ```
 
+You can also pass SQL with command line option `-e`.
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
++----+------+--------+
+| id | name | active |
++----+------+--------+
+| 1  | foo  | true   |
+| 2  | bar  | false  |
++----+------+--------+
+```
+
+For tab-separated output (useful for scripting), use `--format=TAB`:
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --format=TAB
+id      name    active
+1       foo     true
+2       bar     false
+```
+
+With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
+
+```
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --skip-column-names
+1       foo     true
+2       bar     false
+
+# With table format
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' -t --skip-column-names
++---+-----+-------+
+| 1 | foo | true  |
+| 2 | bar | false |
++---+-----+-------+
+```
+
+### Timeout support
+
+The `--timeout` flag allows you to set a timeout for SQL statement execution, compatible with `gcloud spanner databases execute-sql` behavior.
+
+```bash
+# Set 30 second timeout for queries
+$ spanner-mycli --timeout 30s -p myproject -i myinstance -d mydb -e 'SELECT * FROM large_table;'
+
+# Set 5 minute timeout for partitioned DML
+$ spanner-mycli --timeout 5m --enable-partitioned-dml -p myproject -i myinstance -d mydb -e 'UPDATE large_table SET status = "active";'
+
+# Use default timeout (10 minutes for queries, 24 hours for partitioned DML)
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
+```
+
+You can also configure timeout interactively using the `STATEMENT_TIMEOUT` system variable:
+
+```sql
+spanner> SET STATEMENT_TIMEOUT = '2m';
+Query OK, 0 rows affected (0.00 sec)
+
+spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
++-------------------+-------+
+| Variable_name     | Value |
++-------------------+-------+
+| STATEMENT_TIMEOUT | 2m0s  |
++-------------------+-------+
+1 rows in set (0.00 sec)
+```
+
+### Output logging and redirection
+
+spanner-mycli provides two ways to capture output to files:
+
+1. **Tee functionality**: Append output to a file while still displaying it on the console (like the Unix `tee` command)
+2. **Output redirect**: Send output only to a file, with no screen output (like shell redirection `>`)
+
+Both features are available through command-line options and interactive meta-commands.
+
+#### Tee output (both screen and file)
+
+##### Using --tee option
+
+```bash
+# Log all query results to a file while displaying on screen
+$ spanner-mycli --tee output.log -p myproject -i myinstance -d mydb
+
+# In batch mode with --tee
+$ spanner-mycli --tee queries.log -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
+```
+
+##### Using \T and \t meta-commands (MySQL-style)
+
+```sql
+spanner> \T session.log       -- Start tee to session.log (both screen and file)
+spanner> SELECT * FROM users; -- This query and result will be logged and displayed
+spanner> \t                   -- Stop tee
+spanner> SELECT * FROM keys;  -- This won't be logged (screen only)
+spanner> \T another.log       -- Start tee to a different file
+```
+
+#### Output redirect (file only)
+
+##### Using --output option
+
+```bash
+# Redirect all output to file (no screen output)
+$ spanner-mycli --output backup.sql -p myproject -i myinstance -d mydb -e 'DUMP DATABASE;'
+
+# Useful for clean SQL exports without progress messages on screen
+$ spanner-mycli --output export.sql -p myproject -i myinstance -d mydb
+```
+
+##### Using \o meta-command (PostgreSQL-style)
+
+```sql
+spanner> \o backup.sql        -- Redirect output to file only
+spanner> DUMP DATABASE;       -- SQL goes to file, progress shows on screen
+spanner> \o                   -- Disable redirect (return to screen output)
+spanner> SELECT * FROM users; -- This shows on screen only
+
+-- Alternative using \O (symmetric with \T/\t pattern)
+spanner> \o export.sql        -- Redirect output to file only
+spanner> SELECT * FROM keys;  -- Output goes to file only
+spanner> \O                   -- Disable redirect using \O
+```
+
+#### What gets logged
+
+The tee file will contain:
+- Query results and output
+- SQL statements when `CLI_ECHO_INPUT` is enabled
+- Error messages and warnings
+- Result metadata (row counts, execution times)
+
+The tee file will NOT contain:
+- Interactive prompts (e.g., `spanner>`)
+- Progress indicators (e.g., DDL progress bars)
+- Confirmation dialogs (e.g., DROP DATABASE confirmations)
+- Readline input display
+
+#### Features
+
+- **Dynamic control** with meta-commands: Start and stop logging during the session
+- **File switching**: Starting a new tee (with `\T`) automatically closes the previous file
+- **Quoted filenames**: Supports filenames with spaces: `\T "my output.log"`
+- **Combine with --tee**: Start with `--tee`, use `\t` to pause, and `\T` to resume
+
+#### File handling
+
+- Files are opened in **append mode** (existing content is preserved)
+- Files are created if they don't exist
+- Only regular files are supported (not directories, FIFOs, or device files)
+- Write errors are handled gracefully with warnings
+
+```bash
+# Example: Logging a session with CLI_ECHO_INPUT
+$ spanner-mycli --tee session.log -p myproject -i myinstance -d mydb
+Connected.
+spanner> SET CLI_ECHO_INPUT = TRUE;
+Query OK, 0 rows affected (0.00 sec)
+
+spanner> SELECT 1 AS test;
+# In session.log:
+# SELECT 1 AS test;
+# +------+
+# | test |
+# +------+
+# | 1    |
+# +------+
+# 1 rows in set (2.41 msecs)
+```
 
 ### EXPLAIN
 
+> [!WARNING]
+> The Cloud Spanner Emulator does not return query plans in PLAN mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+
 You can see query plan without query execution using the `EXPLAIN` client side statement.
+
+For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
 
 ```
 spanner> EXPLAIN
@@ -261,8 +464,13 @@ Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https
 
 ### EXPLAIN ANALYZE
 
+> [!WARNING]
+> The Cloud Spanner Emulator does not return query plans in PROFILE mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN ANALYZE` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+
 You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
 You should know that it requires executing the query.
+
+For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
 
 ```
 spanner> EXPLAIN ANALYZE
@@ -301,7 +509,7 @@ The replica name can be specified in one of the following formats:
 
 The `<replica_location>` specifies the region where the replica is located such as `us-central1`, `asia-northeast2`.  
 The `<replica_type>` specifies the type of the replica either `READ_WRITE` or `READ_ONLY`. 
- 
+
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1
 
@@ -332,58 +540,83 @@ and `{A|B|...}` for a mutually exclusive keyword.
 
 * The syntax is case-insensitive.
 
-<!-- spanner-mycli --statement-help -->
-|                       Usage                        |                                                   Syntax                                                   |                                                                            Note                                                                             |
-|----------------------------------------------------|------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Switch database                                    | `USE <database> [ROLE <role>];`                                                                            | The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about).                                |
-| Drop database                                      | `DROP DATABASE <database>;`                                                                                |                                                                                                                                                             |
-| List databases                                     | `SHOW DATABASES;`                                                                                          |                                                                                                                                                             |
-| Show DDL of the schema object                      | `SHOW CREATE <type> <fqn>;`                                                                                |                                                                                                                                                             |
-| List tables                                        | `SHOW TABLES [<schema>];`                                                                                  | If schema is not provided, the default schema is used                                                                                                       |
-| Show columns                                       | `SHOW COLUMNS FROM <table_fqn>;`                                                                           |                                                                                                                                                             |
-| Show indexes                                       | `SHOW INDEX FROM <table_fqn>;`                                                                             |                                                                                                                                                             |
-| SHOW DDLs                                          | `SHOW DDLS;`                                                                                               |                                                                                                                                                             |
-| Show schema update operations                      | `SHOW SCHEMA UPDATE OPERATIONS;`                                                                           |                                                                                                                                                             |
-| Add split points                                   | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`         |                                                                                                                                                             |
-| Drop split points                                  | `DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                                 |                                                                                                                                                             |
-| Show split points                                  | `SHOW SPLIT POINTS;`                                                                                       |                                                                                                                                                             |
-| Show local proto descriptors                       | `SHOW LOCAL PROTO;`                                                                                        |                                                                                                                                                             |
-| Show remote proto bundle                           | `SHOW REMOTE PROTO;`                                                                                       |                                                                                                                                                             |
-| Manipulate PROTO BUNDLE                            | `SYNC PROTO BUNDLE [{UPSERT\|DELETE} (<type> ...)];`                                                       |                                                                                                                                                             |
-| Truncate table                                     | `TRUNCATE TABLE <table_fqn>;`                                                                              | Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en). |
-| Show execution plan without execution              | `EXPLAIN <sql>;`                                                                                           |                                                                                                                                                             |
-| Execute query and show execution plan with profile | `EXPLAIN ANALYZE <sql>;`                                                                                   |                                                                                                                                                             |
-| Show result shape without execution                | `DESCRIBE <sql>;`                                                                                          |                                                                                                                                                             |
-| Partitioned DML                                    | `PARTITIONED {UPDATE\|DELETE} ...;`                                                                        |                                                                                                                                                             |
-| Show partition tokens of partition query           | `PARTITION <sql>;`                                                                                         |                                                                                                                                                             |
-| Run partitioned query                              | `RUN PARTITIONED QUERY <sql>;`                                                                             |                                                                                                                                                             |
-| Test root-partitionable                            | `TRY PARTITIONED QUERY <sql>;`                                                                             |                                                                                                                                                             |
-| Start R/W transaction                              | `BEGIN RW [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE\|REPEATABLE READ}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | (spanner-cli style);  See [Request Priority](#request-priority) for details on the priority.                                                                |
-| Start R/O transaction                              | `BEGIN RO [TRANSACTION] [{<seconds>\|<RFC3339-formatted time>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];`           | `<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.                   |
-| Start transaction                                  | `BEGIN [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE\|REPEATABLE READ}] [PRIORITY {HIGH\|MEDIUM\|LOW}];`    | (Spanner JDBC driver style); It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.                 |
-| Commit R/W transaction or end R/O Transaction      | `COMMIT [TRANSACTION];`                                                                                    |                                                                                                                                                             |
-| Rollback R/W transaction or end R/O transaction    | `ROLLBACK [TRANSACTION];`                                                                                  | `CLOSE` can be used as a synonym of `ROLLBACK`.                                                                                                             |
-| Set transaction mode                               | `SET TRANSACTION {READ ONLY\|READ WRITE};`                                                                 | (Spanner JDBC driver style); Set transaction mode for the current transaction.                                                                              |
-| Start DDL batching                                 | `START BATCH DDL;`                                                                                         |                                                                                                                                                             |
-| Start DML batching                                 | `START BATCH DML;`                                                                                         |                                                                                                                                                             |
-| Run active batch                                   | `RUN BATCH;`                                                                                               |                                                                                                                                                             |
-| Abort active batch                                 | `ABORT BATCH [TRANSACTION];`                                                                               |                                                                                                                                                             |
-| Set variable                                       | `SET <name> = <value>;`                                                                                    |                                                                                                                                                             |
-| Add value to variable                              | `SET <name> += <value>;`                                                                                   |                                                                                                                                                             |
-| Show variables                                     | `SHOW VARIABLES;`                                                                                          |                                                                                                                                                             |
-| Show variable                                      | `SHOW VARIABLE <name>;`                                                                                    |                                                                                                                                                             |
-| Set type query parameter                           | `SET PARAM <name> <type>;`                                                                                 |                                                                                                                                                             |
-| Set value query parameter                          | `SET PARAM <name> = <value>;`                                                                              |                                                                                                                                                             |
-| Show query parameters                              | `SHOW PARAMS;`                                                                                             |                                                                                                                                                             |
-| Perform write mutations                            | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...;`                                      |                                                                                                                                                             |
-| Perform delete mutations                           | `MUTATE <table_fqn> DELETE ...;`                                                                           |                                                                                                                                                             |
-| Show sampled query plans                           | `SHOW QUERY PROFILES;`                                                                                     | EARLY EXPERIMENTAL                                                                                                                                          |
-| Show the single sampled query plan                 | `SHOW QUERY PROFILE <fingerprint>;`                                                                        | EARLY EXPERIMENTAL                                                                                                                                          |
-| Compose query using LLM                            | `GEMINI "<prompt>";`                                                                                       |                                                                                                                                                             |
-| Execute CQL                                        | `CQL ...;`                                                                                                 | EARLY EXPERIMENTAL                                                                                                                                          |
-| Show help                                          | `HELP;`                                                                                                    |                                                                                                                                                             |
-| Show help for variables                            | `HELP VARIABLES;`                                                                                          |                                                                                                                                                             |
-| Exit CLI                                           | `EXIT;`                                                                                                    |                                                                                                                                                             |
+<!-- Generated with: make docs-update -->
+| Usage                                                           | Syntax                                                                                                     | Note                                                                                                                                                                       |
+|:----------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Switch database                                                 | `USE <database> [ROLE <role>];`                                                                            | The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about).                                               |
+| Detach from database                                            | `DETACH;`                                                                                                  | Switch to detached mode, disconnecting from the current database.                                                                                                          |
+| Drop database                                                   | `DROP DATABASE <database>;`                                                                                |                                                                                                                                                                            |
+| List databases                                                  | `SHOW DATABASES;`                                                                                          |                                                                                                                                                                            |
+| Show DDL of the schema object                                   | `SHOW CREATE <type> <fqn>;`                                                                                |                                                                                                                                                                            |
+| List tables                                                     | `SHOW TABLES [<schema>];`                                                                                  | If schema is not provided, the default schema is used                                                                                                                      |
+| Show columns                                                    | `SHOW COLUMNS FROM <table_fqn>;`                                                                           |                                                                                                                                                                            |
+| Show indexes                                                    | `SHOW INDEX FROM <table_fqn>;`                                                                             |                                                                                                                                                                            |
+| SHOW DDLs                                                       | `SHOW DDLS;`                                                                                               |                                                                                                                                                                            |
+| Show schema update operations                                   | `SHOW SCHEMA UPDATE OPERATIONS;`                                                                           |                                                                                                                                                                            |
+| Add split points                                                | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`         |                                                                                                                                                                            |
+| Drop split points                                               | `DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                                 |                                                                                                                                                                            |
+| Show split points                                               | `SHOW SPLIT POINTS;`                                                                                       |                                                                                                                                                                            |
+| Show local proto descriptors                                    | `SHOW LOCAL PROTO;`                                                                                        |                                                                                                                                                                            |
+| Show remote proto bundle                                        | `SHOW REMOTE PROTO;`                                                                                       |                                                                                                                                                                            |
+| Manipulate PROTO BUNDLE                                         | `SYNC PROTO BUNDLE [{UPSERT\|DELETE} (<type> ...)];`                                                       |                                                                                                                                                                            |
+| Truncate table                                                  | `TRUNCATE TABLE <table_fqn>;`                                                                              | Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en).                |
+| Show execution plan without execution                           | `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>;`                                                         | Options can be in any order. Spaces are not allowed before or after the `=`.                                                                                               |
+| Execute query and show execution plan with profile              | `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>;`                                                 | Options can be in any order. Spaces are not allowed before or after the `=`.                                                                                               |
+| Show EXPLAIN [ANALYZE] of the last query without execution      | `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY;`                                          | Options can be in any order. Spaces are not allowed before or after the `=`.                                                                                               |
+| Show the specific raw plan node from the last cached query plan | `SHOW PLAN NODE <node_id>;`                                                                                | Requires a preceding query or EXPLAIN ANALYZE.                                                                                                                             |
+| Show result shape without execution                             | `DESCRIBE <sql>;`                                                                                          |                                                                                                                                                                            |
+| Partitioned DML                                                 | `PARTITIONED {UPDATE\|DELETE} ...;`                                                                        |                                                                                                                                                                            |
+| Show partition tokens of partition query                        | `PARTITION <sql>;`                                                                                         |                                                                                                                                                                            |
+| Run partitioned query                                           | `RUN PARTITIONED QUERY <sql>;`                                                                             |                                                                                                                                                                            |
+| Test root-partitionable                                         | `TRY PARTITIONED QUERY <sql>;`                                                                             |                                                                                                                                                                            |
+| Start R/W transaction                                           | `BEGIN RW [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE\|REPEATABLE READ}] [PRIORITY {HIGH\|MEDIUM\|LOW}];` | (spanner-cli style);  See [Request Priority](#request-priority) for details on the priority.                                                                               |
+| Start R/O transaction                                           | `BEGIN RO [TRANSACTION] [{<seconds>\|<rfc3339_timestamp>}] [PRIORITY {HIGH\|MEDIUM\|LOW}];`                | `<seconds>` and `<rfc3339_timestamp>` is used for stale read. `<rfc3339_timestamp>` must be quoted. See [Request Priority](#request-priority) for details on the priority. |
+| Start transaction                                               | `BEGIN [TRANSACTION] [ISOLATION LEVEL {SERIALIZABLE\|REPEATABLE READ}] [PRIORITY {HIGH\|MEDIUM\|LOW}];`    | (Spanner JDBC driver style); It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.                                |
+| Commit R/W transaction or end R/O Transaction                   | `COMMIT [TRANSACTION];`                                                                                    |                                                                                                                                                                            |
+| Rollback R/W transaction or end R/O transaction                 | `ROLLBACK [TRANSACTION];`                                                                                  | `CLOSE` can be used as a synonym of `ROLLBACK`.                                                                                                                            |
+| Set transaction mode                                            | `SET TRANSACTION {READ ONLY\|READ WRITE};`                                                                 | (Spanner JDBC driver style); Set transaction mode for the current transaction.                                                                                             |
+| Start DDL batching                                              | `START BATCH DDL;`                                                                                         |                                                                                                                                                                            |
+| Start DML batching                                              | `START BATCH DML;`                                                                                         |                                                                                                                                                                            |
+| Run active batch                                                | `RUN BATCH;`                                                                                               |                                                                                                                                                                            |
+| Abort active batch                                              | `ABORT BATCH [TRANSACTION];`                                                                               |                                                                                                                                                                            |
+| Set variable                                                    | `SET <name> = <value>;`                                                                                    |                                                                                                                                                                            |
+| Add value to variable                                           | `SET <name> += <value>;`                                                                                   |                                                                                                                                                                            |
+| Show variables                                                  | `SHOW VARIABLES;`                                                                                          |                                                                                                                                                                            |
+| Show variable                                                   | `SHOW VARIABLE <name>;`                                                                                    |                                                                                                                                                                            |
+| Set type query parameter                                        | `SET PARAM <name> <type>;`                                                                                 |                                                                                                                                                                            |
+| Set value query parameter                                       | `SET PARAM <name> = <value>;`                                                                              |                                                                                                                                                                            |
+| Show query parameters                                           | `SHOW PARAMS;`                                                                                             |                                                                                                                                                                            |
+| Perform write mutations                                         | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...;`                                      |                                                                                                                                                                            |
+| Perform delete mutations                                        | `MUTATE <table_fqn> DELETE ...;`                                                                           |                                                                                                                                                                            |
+| Show sampled query plans                                        | `SHOW QUERY PROFILES;`                                                                                     | EARLY EXPERIMENTAL                                                                                                                                                         |
+| Show the single sampled query plan                              | `SHOW QUERY PROFILE <fingerprint>;`                                                                        | EARLY EXPERIMENTAL                                                                                                                                                         |
+| Compose query using LLM                                         | `GEMINI "<prompt>";`                                                                                       |                                                                                                                                                                            |
+| Execute CQL                                                     | `CQL ...;`                                                                                                 | EARLY EXPERIMENTAL                                                                                                                                                         |
+| Show help                                                       | `HELP;`                                                                                                    |                                                                                                                                                                            |
+| Show help for variables                                         | `HELP VARIABLES;`                                                                                          |                                                                                                                                                                            |
+| Exit CLI                                                        | `EXIT;`                                                                                                    |                                                                                                                                                                            |
+
+## Meta Commands
+
+Meta commands are special commands that start with a backslash (`\`) and are processed by the CLI itself rather than being sent to Spanner. They are terminated by a newline rather than a semicolon, following the [official spanner-cli style](https://cloud.google.com/spanner/docs/spanner-cli#supported-meta-commands).
+
+**Note**: Meta commands are only supported in interactive mode. They cannot be used in batch mode (with `--execute` or `--file` flags).
+
+### Supported Meta Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
+| `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
+| `\R <prompt_string>` | Change the prompt string | `\R mycli> ` |
+| `\u <database>` | Switch to a different database | `\u mydb` |
+| `\T <filename>` | Start tee logging to file (both screen and file) | `\T output.txt` |
+| `\t` | Stop tee logging | `\t` |
+| `\o <filename>` | Redirect output to file only (no screen) | `\o backup.sql` |
+| `\o` | Disable output redirect (return to screen) | `\o` |
+| `\O` | Disable output redirect (alternative to `\o`) | `\O` |
+
+For detailed documentation on each meta command, see [docs/meta_commands.md](docs/meta_commands.md).
 
 ## Customize prompt
 
@@ -394,7 +627,7 @@ Escape sequences:
 
 * `%p` : GCP Project ID
 * `%i` : Cloud Spanner Instance ID
-* `%d` : Cloud Spanner Database ID
+* `%d` : Cloud Spanner Database ID (shows `*detached*` when in detached mode)
 * `%t` : In transaction mode `(ro txn)` or `(rw txn)`
 * `%n` : Newline
 * `%%` : Character `%`
@@ -562,6 +795,96 @@ $ unset SPANNER_EMULATOR_HOST
 $ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=localhost:9010 --insecure
 ```
 
+> [!WARNING]
+> The Cloud Spanner Emulator has several limitations that affect spanner-mycli functionality. See the [official emulator limitations documentation](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for a complete list. Notable limitations include:
+> - Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported
+> - `EXPLAIN` and `EXPLAIN ANALYZE` will error (emulator doesn't return query plans)
+
+## Using Regional Endpoints
+
+spanner-mycli supports connecting to [regional endpoints](https://cloud.google.com/spanner/docs/endpoints#available-regional-endpoints) for improved performance and reliability. You can specify a regional endpoint using either the `--endpoint` flag or the `--host` flag:
+
+```sh
+# Using --endpoint (requires both host and port)
+$ spanner-mycli -p myproject -i myinstance -d mydb --endpoint=spanner.us-central1.rep.googleapis.com:443
+
+# Using --host (port 443 is used by default)
+$ spanner-mycli -p myproject -i myinstance -d mydb --host=spanner.us-central1.rep.googleapis.com
+
+# Verify the endpoint configuration
+spanner> SHOW VARIABLE CLI_ENDPOINT;
++--------------------------------------------+
+| CLI_ENDPOINT                               |
++--------------------------------------------+
+| spanner.us-central1.rep.googleapis.com:443 |
++--------------------------------------------+
+```
+
+The `--host` and `--port` flags provide more flexibility:
+- Use `--port` alone to connect to a local emulator: `--port=9010` (implies `localhost:9010`)
+- Use `--host` alone to connect to a regional endpoint: `--host=spanner.us-central1.rep.googleapis.com` (implies port 443)
+- Use both for custom configurations: `--host=custom-host --port=9999`
+
+Note: `--endpoint` and the combination of `--host`/`--port` are mutually exclusive.
+
+## Detached Mode
+
+spanner-mycli supports a detached mode (admin operation only mode) that allows you to connect to a Cloud Spanner instance without initially connecting to a specific database. This is useful for performing instance-level administrative operations like creating or dropping databases.
+
+### Starting in Detached Mode
+
+You can start spanner-mycli in detached mode using the `--detached` flag:
+
+```bash
+$ spanner-mycli -p myproject -i myinstance --detached
+Connected in detached mode.
+spanner:*detached*> SHOW DATABASES;
++----------------+
+| Database       |
++----------------+
+| db1            |
+| db2            |
++----------------+
+2 rows in set (18.66 msecs)
+
+spanner:*detached*> CREATE DATABASE mydb;
+Query OK, 0 rows affected (45.20 sec)
+```
+
+### Switching Between Database and Detached Mode
+
+You can switch between databases and detached mode during an interactive session:
+
+```bash
+# Connect to a database from detached mode
+spanner:*detached*> USE mydb;
+Database changed
+spanner:mydb> 
+
+# Detach from database and return to detached mode  
+spanner:mydb> DETACH;
+Detached from database
+spanner:*detached*>
+```
+
+### Database Parameter Priority
+
+The database connection follows this priority order:
+
+1. `--detached` flag (highest priority) - forces detached mode
+2. `--database` command line option
+3. `SPANNER_DATABASE_ID` environment variable
+4. Default behavior (detached mode if no database specified)
+
+### Limitations in Detached Mode
+
+When in detached mode, you can only execute:
+- Instance-level operations (`SHOW DATABASES`, `CREATE DATABASE`, `DROP DATABASE`)
+- Client-side statements that don't require database access
+- `USE` statements to connect to a database
+
+Database-specific operations will fail with an error message indicating that no database is connected.
+
 ## Notable features of spanner-mycli
 
 This section describes some notable features of spanner-mycli, they are not appeared in original spanner-cli.
@@ -590,6 +913,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | AUTOCOMMIT_DML_MODE             | READ_WRITE | `"PARTITIONED_NON_ATOMIC"`                          |
 | MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
+| STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
 
 #### spanner-mycli original variables
 
@@ -600,7 +924,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
 | CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
 | CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT                | READ_WRITE | `"TABLE"`                                      |
+| CLI_FORMAT                | READ_WRITE | `"TABLE"` (`"TAB"` in batch mode)              |
 | CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
 | CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
 | CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
@@ -616,6 +940,28 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
+| CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
+| CLI_STREAMING             | READ_WRITE | `"AUTO"`                                       |
+| CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
+
+> **Note**: `CLI_FORMAT` accepts the following values:
+> - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
+> - `TABLE_COMMENT` - Table wrapped in /* */ comments  
+> - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
+> - `VERTICAL` - Vertical format (column: value pairs)
+> - `TAB` - Tab-separated values
+> - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
+> - `XML` - XML format (compatible with Google Cloud Spanner CLI)
+> - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
+>
+> You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, or `--csv`.
+
+> **Note**: `CLI_STREAMING` controls streaming output mode:
+> - `AUTO` (default) - Automatically selects streaming for CSV/Tab/Vertical/HTML/XML formats, buffered for Table formats
+> - `TRUE` - Forces streaming for all formats (reduces memory usage, faster time-to-first-byte)
+> - `FALSE` - Forces buffered mode for all formats (allows accurate column width calculation)
+>
+> For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
 
 ### Batch statements
 
@@ -706,7 +1052,7 @@ mutation_count: 9
 spanner-mycli can launch Cloud Spanner Emulator with empty database, powered by testcontainers.
 
 ```
-$ spanner-mycli --embedded-emulator [--emulator-image= gcr.io/cloud-spanner-emulator/emulator:${VERSION}]
+$ spanner-mycli --embedded-emulator [--emulator-image=gcr.io/cloud-spanner-emulator/emulator:${VERSION}] [--emulator-platform=linux/amd64]
 > SET CLI_PROMPT="%p:%i:%d%n> ";
 Empty set (0.00 sec)
 
@@ -719,6 +1065,9 @@ emulator-project:emulator-instance:emulator-database
 +---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
 Empty set (8.763167ms)
 ```
+
+> [!NOTE]
+> The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
 
 ### Protocol Buffers support
 
@@ -1038,6 +1387,9 @@ spanner> SHOW SCHEMA UPDATE OPERATIONS;
 
 ### Split Points support
 
+> [!WARNING]
+> Split points operations (`ADD SPLIT POINTS`, `SHOW SPLIT POINTS`, `DROP SPLIT POINTS`) are not supported by the Cloud Spanner Emulator and will result in an error. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+
 spanner-mycli can [manage split points](https://cloud.google.com/spanner/docs/create-manage-split-points) for [pre-splitting](https://cloud.google.com/spanner/docs/pre-splitting-overview.
 
 #### `ADD SPLIT POINTS`
@@ -1179,38 +1531,6 @@ server queue delay:   0.02 msecs
 is graph query:       false
 ```
 
-### Configurable EXPLAIN ANALYZE
-
-spanner-mycli supports to configure execution stats columns of `EXPLAIN ANALYZE` using `CLI_ANALYZE_COLUMNS`.
-
-Note: `CLI_ANALYZE_COLUMNS` is formatted string like `<name>:<template>[:<alignment>]`. `<template>` is needed to be written in [`text/template`] format and it is bounded with [`ExecutionStats`](https://pkg.go.dev/github.com/apstndb/spannerplanviz/stats#ExecutionStats).
-
-```
-spanner> SET CLI_ANALYZE_COLUMNS='Rows:{{if ne .Rows.Total ""}}{{.Rows.Total}}{{end}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}';
-
-Empty set (0.00 sec)
-
-spanner> EXPLAIN ANALYZE
-         SELECT * FROM Singers
-         JOIN Albums USING (SingerId)
-         WHERE FirstName LIKE "M%c%";
-+-----+--------------------------------------------------------------------------------+------+---------+----------+
-| ID  | Query_Execution_Plan <execution_method> (metadata, ...)                        | Rows | Scanned | Filtered |
-+-----+--------------------------------------------------------------------------------+------+---------+----------+
-|   0 | Distributed Union on Singers <Row> (split_ranges_aligned: true)                |  864 |         |          |
-|   1 | +- Local Distributed Union <Row>                                               |  864 |         |          |
-|   2 |    +- Serialize Result <Row>                                                   |  864 |         |          |
-|   3 |       +- Cross Apply <Row>                                                     |  864 |         |          |
-|  *4 |          +- [Input] Filter Scan <Row> (seekable_key_size: 0)                   |      |         |          |
-|   5 |          |  +- Table Scan on Singers <Row> (Full scan, scan_method: Automatic) |   27 |    1000 |      973 |
-|  15 |          +- [Map] Local Distributed Union <Row>                                |  864 |         |          |
-|  16 |             +- Filter Scan <Row> (seekable_key_size: 0)                        |      |         |          |
-| *17 |                +- Table Scan on Albums <Row> (scan_method: Row)                |  864 |     864 |        0 |
-+-----+--------------------------------------------------------------------------------+------+---------+----------+
-Predicates(identified by ID):
-  4: Residual Condition: ($FirstName LIKE 'M%c%')
- 17: Seek Condition: ($SingerId_1 = $SingerId)
-```
 
 ### memefish integration
 
@@ -1568,7 +1888,7 @@ You can change it using `MAX_PARTITIONED_PARALLELISM`.
 spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
 ```
 
-Note: There is no streaming output, so result won't be printed unless all work is done.
+Note: Partitioned queries do not support streaming output in the current implementation.
 
 #### Show partition tokens.
 
@@ -1588,33 +1908,6 @@ spanner> PARTITION SELECT * FROM Singers;
 3 rows in set (0.65 sec)
 ```
 
-### Query plan linter (EARLY EXPERIMANTAL)
-
-`CLI_LINT_PLAN` system variable enables heuristic query plan linter in `EXPLAIN` and `EXPLAIN ANALYZE`.
-
-```
-spanner> SET CLI_LINT_PLAN = TRUE;
-Empty set (0.00 sec)
-
-spanner> EXPLAIN SELECT * FROM Singers WHERE FirstName LIKE "%Hoge%";
-+----+----------------------------------------------------------------------------------+
-| ID | Query_Execution_Plan                                                             |
-+----+----------------------------------------------------------------------------------+
-|  0 | Distributed Union (distribution_table: Singers, split_ranges_aligned: false)     |
-|  1 | +- Local Distributed Union                                                       |
-|  2 |    +- Serialize Result                                                           |
-| *3 |       +- Filter Scan (seekable_key_size: 0)                                      |
-|  4 |          +- Table Scan (Full scan: true, Table: Singers, scan_method: Automatic) |
-+----+----------------------------------------------------------------------------------+
-Predicates(identified by ID):
- 3: Residual Condition: ($FirstName LIKE '%Hoge%')
-
-Experimental Lint Result:
- 3: Filter Scan (seekable_key_size: 0)
-     Residual Condition: Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition
- 4: Table Scan (Full scan: true, Table: Singers, scan_method: Automatic)
-     Full scan=true: Potentially expensive execution full scan: Do you really want full scan?
-```
 
 ### GenAI support
 
@@ -1641,85 +1934,6 @@ spanner> GEMINI "Generate query to show all table with table_schema concat by do
 Empty set (5.72 sec)
 
 spanner> SELECT IF(table_schema != '', CONCAT(table_schema, '.', table_name), table_name) AS table_name_with_schema FROM INFORMATION_SCHEMA.TABLES;
-```
-
-### Show query profiles (EARLY EXPERIMENTAL)
-
-spanner-mycli can render undocumented underlying table of [sampled query plans](https://cloud.google.com/spanner/docs/query-execution-plans#sampled-plans).
-These features are early experimental state so it will be changed.
-
-#### Show query profiles(It will be very long outputs).
-
-```
-spanner> SHOW QUERY PROFILES;
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| Plan                                                                                                                                                      |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| SELECT INTERVAL_END, QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR                                                                               |
-| ID | Plan                                                                                                                                                 |
-| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false)                                                              |
-|  1 | +- Local Distributed Union                                                                                                                           |
-|  2 |    +- Serialize Result                                                                                                                               |
-| *3 |       +- Filter Scan (seekable_key_size: 0)                                                                                                          |
-| *4 |          +- Table Scan (Table: _TopNQueryProfiles, scan_method: Scalar)                                                                              |
-| Predicates:                                                                                                                                               |
-| 0: Split Range: (($interval_seconds = <scrubbed>) AND ($source = <scrubbed>) AND ($call_type = <scrubbed>))                                               |
-| 3: Residual Condition: (($source = <scrubbed>) AND ($call_type = <scrubbed>))                                                                             |
-| 4: Seek Condition: ($interval_seconds = <scrubbed>)                                                                                                       |
-|                                                                                                                                                           |
-| interval_end:                 2024-11-29 16:00:00 +0000 UTC                                                                                               |
-| text_fingerprint:             1603015871075919821                                                                                                         |
-| elapsed_time:                 8.52 msecs                                                                                                                  |
-| cpu_time:                     7.48 msecs                                                                                                                  |
-| rows_returned:                24                                                                                                                          |
-| deleted_rows_scanned:         3                                                                                                                           |
-| optimizer_version:            7                                                                                                                           |
-| optimizer_statistics_package: auto_20241128_05_46_13UTC                                                                                                   |
-|                                                                                                                                                           |
-| SELECT @_p0_INT64                                                                                                                                         |
-| ID | Plan                                                                                                                                                 |
-|  0 | Serialize Result                                                                                                                                     |
-|  1 | +- Unit Relation                                                                                                                                     |
-|                                                                                                                                                           |
-| interval_end:                 2024-11-23 17:00:00 +0000 UTC                                                                                               |
-| text_fingerprint:             -773118905674708524                                                                                                         |
-| elapsed_time:                 2.25 msecs                                                                                                                  |
-| cpu_time:                     1.26 msecs                                                                                                                  |
-| rows_returned:                1                                                                                                                           |
-| deleted_rows_scanned:         0                                                                                                                           |
-| optimizer_version:            7                                                                                                                           |
-| optimizer_statistics_package: auto_20241122_05_36_46UTC                                                                                                   |
-|
-```
-
-Render a latest profile for a `TEXT_FINGERPRINT`. It is compatible with plan linter(`CLI_LINT_PLAN`).
-
-```
-spanner> SHOW QUERY PROFILE 1603015871075919821;
-+----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
-| ID | Query_Execution_Plan                                                                    | Rows_Returned | Executions | Total_Latency |
-+----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
-| *0 | Distributed Union (distribution_table: _TopNQueryProfiles, split_ranges_aligned: false) | 24            | 1          | 3.31 msecs    |
-|  1 | +- Local Distributed Union                                                              | 24            | 1          | 3.29 msecs    |
-|  2 |    +- Serialize Result                                                                  | 24            | 1          | 3.28 msecs    |
-| *3 |       +- Filter Scan (seekable_key_size: 0)                                             |               |            |               |
-| *4 |          +- Table Scan (Table: _TopNQueryProfiles, scan_method: Scalar)                 | 24            | 1          | 0.27 msecs    |
-+----+-----------------------------------------------------------------------------------------+---------------+------------+---------------+
-Predicates(identified by ID):
- 0: Split Range: (($interval_seconds = <scrubbed>) AND ($source = <scrubbed>) AND ($call_type = <scrubbed>))
- 3: Residual Condition: (($source = <scrubbed>) AND ($call_type = <scrubbed>))
- 4: Seek Condition: ($interval_seconds = <scrubbed>)
-
-Experimental Lint Result:
- 3: Filter Scan (seekable_key_size: 0)
-     Residual Condition: Potentially expensive Residual Condition: Maybe better to modify it to Scan Condition
-
-5 rows in set (8.52 msecs)
-cpu time:             7.48 msecs
-rows scanned:         24 rows
-deleted rows scanned: 3 rows
-optimizer version:    7
-optimizer statistics: auto_20241128_05_46_13UTC
 ```
 
 ### Markdown output
@@ -1806,9 +2020,73 @@ In principle, spanner-mycli accepts the same input as spanner-cli, but some comp
 - `BEGIN RW TAG <tag>` and `BEGIN RO TAG <tag>` are no longer supported.
   - Use `SET TRANSACTION TAG = "<tag>"` and `SET STATEMENT_TAG = "<tag>"`.
   - Rationale: spanner-cli are broken. https://github.com/cloudspannerecosystem/spanner-cli/issues/132
+- `<rfc3339_timestamp>` in `BEGIN RO <rfc3339_timestamp>` must be quoted like `BEGIN RO "2025-01-01T00:00:00Z"`.
+  - Rationale: Raw RFC3339 timestamp is not compatible with [GoogleSQL lexical structure](https://cloud.google.com/spanner/docs/reference/standard-sql/lexical) and [memefish](https://github.com/cloudspannerecosystem/memefish).
 - `\G` is no longer supported.
   - Use `SET CLI_FORMAT = "VERTICAL"`.
   - Rationale: `\G` is not compatible with [GoogleSQL lexical structure](https://cloud.google.com/spanner/docs/reference/standard-sql/lexical) and [memefish](https://github.com/cloudspannerecosystem/memefish).
 - `\` is no longer used for prompt expansions.
   - Use `%` instead.
   - Rationale: `\` is needed to be escaped in ini files of [jassevdk/go-flags](https://github.com/jessevdk/go-flags).
+- The default format of `EXPLAIN` and `EXPLAIN ANALYZE` has been changed.
+
+### Tab character handling
+
+spanner-mycli expands tab characters to whitespaces.
+Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)
+
+```
+spanner> SET CLI_TAB_WIDTH = 2;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------+
+| s                                    |
++--------------------------------------+
+| a b c d e f                          |
+| あ  い  う  え  お  か               |
+| abc def ghi jkl mno pqr              |
+| あい  うえ  おか  きく  けこ  さし   |
++--------------------------------------+
+1 rows in set (2.81 msecs)
+
+spanner> SET CLI_TAB_WIDTH = 4;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------------------+
+| s                                                |
++--------------------------------------------------+
+| a   b   c   d   e   f                            |
+| あ  い  う  え  お  か                           |
+| abc def ghi jkl mno pqr                          |
+| あい    うえ    おか    きく    けこ    さし     |
++--------------------------------------------------+
+1 rows in set (2.31 msecs)
+
+spanner> SET CLI_TAB_WIDTH = 8;
+
+Empty set (0.00 sec)
+
+spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
+      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
+      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
+      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
++--------------------------------------------------+
+| s                                                |
++--------------------------------------------------+
+| a       b       c       d       e       f        |
+| あ      い      う      え      お      か       |
+| abc     def     ghi     jkl     mno     pqr      |
+| あい    うえ    おか    きく    けこ    さし     |
++--------------------------------------------------+
+1 rows in set (2.76 msecs)
+```

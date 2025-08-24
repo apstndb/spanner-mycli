@@ -15,17 +15,49 @@
 on:
   push:
     branches:
+      - main
       - master
   pull_request:
+
 name: CI
 jobs:
-  test:
+  # Run linting in a separate job for parallel execution
+  lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
       - run: go version
-      - name: make test-verbose
-        run: make test-verbose
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.4
+          args: --timeout=5m
+
+  # Run tests in a separate job for parallel execution
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go version
+      - name: run tests with coverage
+        run: make test-coverage
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: tmp/coverage.html
+          retention-days: 7
+      - uses: k1LoW/octocov-action@v1
+        env:
+          COVERAGE_ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -45,7 +45,7 @@ func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Resu
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type BeginStatement struct {
@@ -65,8 +65,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		}
 
 		return &Result{
-			IsMutation: true,
-			Timestamp:  ts,
+			ReadTimestamp: ts,
 		}, nil
 	}
 
@@ -75,7 +74,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		return nil, err
 	}
 
-	return &Result{IsMutation: true}, nil
+	return &Result{}, nil
 }
 
 type SetTransactionStatement struct {
@@ -83,21 +82,24 @@ type SetTransactionStatement struct {
 }
 
 func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	if !session.InPendingTransaction() {
-		// nop
+	result := &Result{}
+
+	// Get transaction attributes atomically to avoid check-then-act race
+	attrs := session.TransactionAttrsWithLock()
+	if attrs.mode != transactionModePending {
+		// nop - not in pending transaction
 		return result, nil
 	}
 
 	if s.IsReadOnly {
-		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, session.tc.priority)
+		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, attrs.priority)
 		if err != nil {
 			return nil, err
 		}
-		result.Timestamp = ts
+		result.ReadTimestamp = ts
 		return result, nil
 	} else {
-		err := session.BeginReadWriteTransaction(ctx, session.tc.isolationLevel, session.tc.priority)
+		err := session.BeginReadWriteTransaction(ctx, attrs.isolationLevel, attrs.priority)
 		if err != nil {
 			return nil, err
 		}
@@ -108,23 +110,26 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 type CommitStatement struct{}
 
 func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	switch {
-	case session.InPendingTransaction():
+	result := &Result{}
+
+	// Get transaction state once to avoid multiple mutex acquisitions
+	mode, isActive := session.TransactionState()
+
+	// Handle based on transaction mode
+	switch mode {
+	case transactionModePending:
 		if err := session.ClosePendingTransaction(); err != nil {
 			return nil, err
 		}
+		return result, nil
 
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
+	case transactionModeReadOnly:
 		if err := session.CloseReadOnlyTransaction(); err != nil {
 			return nil, err
 		}
-
 		return result, nil
-	case session.InReadWriteTransaction():
+
+	case transactionModeReadWrite:
 		if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
 			var err error
 			result, err = runBatch(ctx, session)
@@ -138,41 +143,53 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 			return nil, err
 		}
 
-		result.Timestamp = resp.CommitTs
+		result.CommitTimestamp = resp.CommitTs
 		result.CommitStats = resp.CommitStats
 		return result, nil
+
 	default:
-		return nil, errors.New("invalid state")
+		// No active transaction - this is a no-op
+		if !isActive {
+			return result, nil
+		}
+		return nil, fmt.Errorf("invalid transaction state: %v", mode)
 	}
 }
 
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{IsMutation: true}
-	switch {
-	case session.InPendingTransaction():
+	result := &Result{}
+
+	// Get transaction state once to avoid multiple mutex acquisitions
+	mode, isActive := session.TransactionState()
+
+	// Handle based on transaction mode
+	switch mode {
+	case transactionModePending:
 		if err := session.ClosePendingTransaction(); err != nil {
 			return nil, err
 		}
+		return result, nil
 
-		return result, nil
-	case !session.InReadWriteTransaction() && !session.InReadOnlyTransaction():
-		return result, nil
-	case session.InReadOnlyTransaction():
+	case transactionModeReadOnly:
 		if err := session.CloseReadOnlyTransaction(); err != nil {
 			return nil, err
 		}
-
 		return result, nil
-	case session.InReadWriteTransaction():
+
+	case transactionModeReadWrite:
 		if err := session.RollbackReadWriteTransaction(ctx); err != nil {
 			return nil, err
 		}
-
 		return result, nil
+
 	default:
-		return nil, errors.New("invalid state")
+		// No active transaction - this is a no-op
+		if !isActive {
+			return result, nil
+		}
+		return nil, fmt.Errorf("invalid transaction state: %v", mode)
 	}
 }
 
@@ -194,7 +211,6 @@ func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Resu
 	}
 
 	return &Result{
-		IsMutation: true,
-		Timestamp:  ts,
+		ReadTimestamp: ts,
 	}, nil
 }

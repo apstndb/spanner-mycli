@@ -12,7 +12,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -38,7 +38,6 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 	_, fds, err := session.GetDatabaseSchema(ctx)
 	if err != nil {
 		return nil, err
-
 	}
 
 	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
@@ -95,7 +94,7 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "kind", "package", "file"},
+		TableHeader:   toTableHeader("full_name", "kind", "package", "file"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
@@ -127,7 +126,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	)
 
 	return &Result{
-		ColumnNames:   []string{"full_name", "kind", "package"},
+		TableHeader:   toTableHeader("full_name", "kind", "package"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
@@ -218,14 +217,15 @@ func isValidDescriptorProto(message proto.Message) bool {
 }
 
 func toNamedType(fullName string) *ast.NamedType {
-	return &ast.NamedType{Path: slices.Collect(xiter.Map(
-		func(s string) *ast.Ident {
-			return &ast.Ident{Name: s}
-		},
-		slices.Values(strings.Split(fullName, ".")))),
+	return &ast.NamedType{
+		Path: slices.Collect(hiter.Map(
+			func(s string) *ast.Ident {
+				return &ast.Ident{Name: s}
+			},
+			slices.Values(strings.Split(fullName, ".")))),
 	}
 }
 
 func toNamedTypes(fullNames []string) []*ast.NamedType {
-	return slices.Collect(xiter.Map(toNamedType, slices.Values(fullNames)))
+	return slices.Collect(hiter.Map(toNamedType, slices.Values(fullNames)))
 }

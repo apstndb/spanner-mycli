@@ -32,12 +32,16 @@ import (
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
+	"github.com/mattn/go-runewidth"
 	"github.com/samber/lo"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -51,20 +55,27 @@ type SelectStatement struct {
 	Query string
 }
 
+func (s *SelectStatement) String() string {
+	return s.Query
+}
+
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	_, err := session.DetermineTransaction(ctx)
+	// Single lock acquisition for both DetermineTransaction and InTransaction check
+	_, inTransaction, err := session.DetermineTransactionAndState(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	qm := session.systemVariables.QueryMode
 	switch {
+	case session.systemVariables.TryPartitionQuery:
+		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Query, false)
+		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyze(ctx, session, s.Query)
+		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0)
 	default:
-		if !session.InTransaction() && session.systemVariables.AutoPartitionMode {
+		if !inTransaction && session.systemVariables.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
 		return executeSQL(ctx, session, s.Query)
@@ -75,14 +86,20 @@ type DmlStatement struct {
 	Dml string
 }
 
+func (s *DmlStatement) String() string {
+	return s.Dml
+}
+
 func (DmlStatement) isMutationStatement() {}
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	switch lo.FromPtr(session.systemVariables.QueryMode) {
-	case sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Dml, true)
-	case sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyzeDML(ctx, session, s.Dml)
+	switch {
+	case session.systemVariables.TryPartitionQuery:
+		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session)
+	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
+		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0)
+	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
+		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0)
 	default:
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}
@@ -90,6 +107,10 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 
 type DdlStatement struct {
 	Ddl string
+}
+
+func (s *DdlStatement) String() string {
+	return s.Ddl
 }
 
 func (DdlStatement) isMutationStatement() {}
@@ -102,7 +123,13 @@ type CreateDatabaseStatement struct {
 	CreateStatement string
 }
 
+func (s *CreateDatabaseStatement) String() string {
+	return s.CreateStatement
+}
+
 func (CreateDatabaseStatement) IsMutationStatement() {}
+
+func (s *CreateDatabaseStatement) isDetachedCompatible() {}
 
 func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
@@ -110,13 +137,20 @@ func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session)
 		CreateStatement: s.CreateStatement,
 	})
 	if err != nil {
-		return nil, err
-	}
-	if _, err := op.Wait(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initiate database creation: %w", err)
 	}
 
-	return &Result{IsMutation: true}, nil
+	dbResponse, err := op.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database creation operation failed: %w", err)
+	}
+
+	if dbResponse == nil || dbResponse.Name == "" {
+		return nil, fmt.Errorf("database creation succeeded but response is missing database name")
+	}
+
+	// Return empty result like previous versions (non-breaking change)
+	return &Result{}, nil
 }
 
 // Database
@@ -128,25 +162,36 @@ type UseStatement struct {
 	NopStatement
 }
 
+func (s *UseStatement) isDetachedCompatible() {}
+
+// DetachStatement is actually implemented in cli.go because it needs to replace Session pointer in Cli.
+type DetachStatement struct {
+	NopStatement
+}
+
+func (s *DetachStatement) isDetachedCompatible() {}
+
 type DropDatabaseStatement struct {
 	DatabaseId string
 }
 
 func (DropDatabaseStatement) isMutationStatement() {}
 
+func (s *DropDatabaseStatement) isDetachedCompatible() {}
+
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
-		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, session.systemVariables.Database),
+		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, s.DatabaseId),
 	}); err != nil {
 		return nil, err
 	}
 
-	return &Result{
-		IsMutation: true,
-	}, nil
+	return &Result{}, nil
 }
 
 type ShowDatabasesStatement struct{}
+
+func (s *ShowDatabasesStatement) isDetachedCompatible() {}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
@@ -165,7 +210,8 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		rows = append(rows, toRow(matched[1]))
 	}
 
-	return &Result{ColumnNames: []string{"Database"},
+	return &Result{
+		TableHeader:  toTableHeader("Database"),
 		Rows:         rows,
 		AffectedRows: len(rows),
 	}, nil
@@ -223,10 +269,241 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 		}
 	}
 	return &Result{
-		ColumnNames:  []string{"OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"},
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
 		Rows:         rows,
 		AffectedRows: num,
 	}, nil
+}
+
+type ShowOperationStatement struct {
+	OperationId string
+	Mode        string // "ASYNC" or "SYNC"
+}
+
+func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Check mode support
+	if s.Mode == "SYNC" {
+		return s.executeSyncMode(ctx, session)
+	}
+
+	operationName := s.OperationId
+
+	// If the operation ID doesn't contain a full path, construct the full operation name
+	if !strings.Contains(operationName, "/") {
+		operationName = session.DatabasePath() + "/operations/" + operationName
+	}
+
+	return s.executeAsyncMode(ctx, session, operationName)
+}
+
+func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *Session) (*Result, error) {
+	operationName := s.OperationId
+
+	// If the operation ID doesn't contain a full path, construct the full operation name
+	if !strings.Contains(operationName, "/") {
+		operationName = session.DatabasePath() + "/operations/" + operationName
+	}
+
+	// Get the specific operation
+	op, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		Name: operationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
+	}
+
+	// If operation is already done, return the status
+	if op.GetDone() {
+		return s.executeAsyncMode(ctx, session, operationName)
+	}
+
+	// Start progress monitoring
+	var p *mpb.Progress
+	var bar *mpb.Bar
+	teardown := func() {
+		if bar != nil {
+			bar.Abort(true)
+		}
+		if p != nil {
+			p.Wait()
+		}
+	}
+
+	// Extract operation description for progress bar
+	operationDesc := s.getOperationDescription(op)
+
+	if session.systemVariables.EnableProgressBar {
+		p = mpb.NewWithContext(ctx)
+		bar = p.AddBar(int64(100),
+			mpb.PrependDecorators(
+				decor.Spinner(nil, decor.WCSyncSpaceR),
+				decor.Name(runewidth.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
+				decor.Percentage(decor.WCSyncSpace),
+				decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+			mpb.BarRemoveOnComplete(),
+		)
+		bar.EnableTriggerComplete()
+		defer teardown()
+	}
+
+	// Update progress bar with initial status
+	if bar != nil && !bar.Completed() {
+		progressPercent := s.getOperationProgress(op)
+		bar.SetCurrent(int64(progressPercent))
+	}
+
+	// Polling loop
+	for !op.GetDone() {
+		select {
+		case <-time.After(5 * time.Second):
+			// Continue polling
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+
+		// Poll the operation
+		op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+			Name: operationName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to poll operation %q: %w", operationName, err)
+		}
+
+		// Update progress bar
+		if bar != nil && !bar.Completed() {
+			progressPercent := s.getOperationProgress(op)
+			bar.SetCurrent(int64(progressPercent))
+		}
+	}
+
+	// Operation completed, update progress bar to 100%
+	if bar != nil && !bar.Completed() {
+		bar.SetCurrent(100)
+	}
+
+	// Return final operation status
+	return s.executeAsyncMode(ctx, session, operationName)
+}
+
+func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *Session, operationName string) (*Result, error) {
+	// Get the specific operation
+	op, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		Name: operationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
+	}
+
+	var rows []Row
+
+	// Handle different operation types
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		// Handle operations with no metadata
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		rows = append(rows, toRow(
+			operationId,
+			"N/A (No metadata available)",
+			strconv.FormatBool(op.GetDone()),
+			"N/A",
+			"N/A",
+			op.GetError().GetMessage(),
+		))
+	} else {
+		switch metadata.GetTypeUrl() {
+		case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+			var md databasepb.UpdateDatabaseDdlMetadata
+			if err := metadata.UnmarshalTo(&md); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
+			}
+
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+			errorMessage := ""
+			if opError := op.GetError(); opError != nil {
+				errorMessage = opError.GetMessage()
+			}
+			rows = append(rows, formatUpdateDatabaseDdlRows(operationId, &md, op.GetDone(), errorMessage)...)
+
+		default:
+			// For other operation types, show basic information
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+			rows = append(rows, toRow(
+				operationId,
+				"N/A (Non-DDL Operation)",
+				strconv.FormatBool(op.GetDone()),
+				"N/A",
+				"N/A",
+				op.GetError().GetMessage(),
+			))
+		}
+	}
+
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("operation %q not found or has no statements", operationName)
+	}
+
+	return &Result{
+		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
+		Rows:         rows,
+		AffectedRows: 1, // We're showing one operation
+	}, nil
+}
+
+func (s *ShowOperationStatement) getOperationDescription(op *longrunningpb.Operation) string {
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("Operation %s", operationId)
+	}
+
+	switch metadata.GetTypeUrl() {
+	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := metadata.UnmarshalTo(&md); err != nil {
+			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+			return fmt.Sprintf("Operation %s", operationId)
+		}
+
+		if len(md.GetStatements()) > 0 {
+			return md.GetStatements()[0] // Use first statement as description
+		}
+
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("DDL Operation %s", operationId)
+
+	default:
+		operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
+		return fmt.Sprintf("Operation %s", operationId)
+	}
+}
+
+func (s *ShowOperationStatement) getOperationProgress(op *longrunningpb.Operation) float64 {
+	metadata := op.GetMetadata()
+	if metadata == nil {
+		return 0.0
+	}
+
+	switch metadata.GetTypeUrl() {
+	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := metadata.UnmarshalTo(&md); err != nil {
+			return 0.0
+		}
+
+		if len(md.GetProgress()) > 0 {
+			// Return average progress if multiple statements
+			var total float64
+			for _, p := range md.GetProgress() {
+				total += float64(p.GetProgressPercent())
+			}
+			return total / float64(len(md.GetProgress()))
+		}
+
+		return 0.0
+
+	default:
+		return 0.0
+	}
 }
 
 // Protocol Buffers related statements are defined in statements_proto.go
@@ -271,11 +548,11 @@ func (PartitionedDmlStatement) isMutationStatement() {}
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if session.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-write transaction`)
+		return nil, errors.New(`partitioned DML statement can not be run in a read-write transaction`)
 	}
 	if session.InReadOnlyTransaction() {
 		// Just for user-friendly.
-		return nil, errors.New(`Partitioned DML statement can not be run in a read-only transaction`)
+		return nil, errors.New(`partitioned DML statement can not be run in a read-only transaction`)
 	}
 
 	return executePDML(ctx, session, s.Dml)
@@ -296,6 +573,10 @@ const (
 
 type BulkDdlStatement struct {
 	Ddls []string
+}
+
+func (s *BulkDdlStatement) String() string {
+	return strings.Join(s.Ddls, ";\n")
 }
 
 func (BulkDdlStatement) IsMutationStatement() {}
@@ -437,7 +718,7 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 		rows = append(rows, row)
 	}
 
-	return &Result{ColumnNames: headers, Rows: rows, AffectedRows: len(rows)}, nil
+	return &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}, nil
 }
 
 func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
@@ -455,6 +736,8 @@ func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
 
 type HelpStatement struct{}
 
+func (s *HelpStatement) isDetachedCompatible() {}
+
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var rows []Row
 	for _, stmt := range clientSideStatementDefs {
@@ -463,7 +746,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 		}
 	}
 	return &Result{
-		ColumnNames:   sliceOf("Usage", "Syntax"),
+		TableHeader:   toTableHeader("Usage", "Syntax"),
 		Rows:          rows,
 		AffectedRows:  len(rows),
 		KeepVariables: true,
@@ -473,6 +756,8 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 type ExitStatement struct {
 	NopStatement
 }
+
+func (s *ExitStatement) isDetachedCompatible() {}
 
 type NopStatement struct{}
 
@@ -529,6 +814,26 @@ func extractSchemaAndName(s string) (string, string) {
 		return "", unquoteIdentifier(s)
 	}
 	return unquoteIdentifier(schema), unquoteIdentifier(name)
+}
+
+// formatUpdateDatabaseDdlRows formats UpdateDatabaseDdlMetadata into rows for SHOW OPERATION format
+func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDatabaseDdlMetadata, done bool, errorMessage string) []Row {
+	var rows []Row
+	for i := range md.GetStatements() {
+		rows = append(rows, toRow(
+			lo.Ternary(i == 0, operationId, ""),
+			md.GetStatements()[i]+";",
+			lox.IfOrEmpty(i == 0, strconv.FormatBool(done)),
+			lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+				return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
+			}),
+			lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+				return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
+			}),
+			errorMessage,
+		))
+	}
+	return rows
 }
 
 func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[string]any, error) {

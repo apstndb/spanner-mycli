@@ -10,11 +10,12 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
-	"github.com/ngicks/go-iterator-helper/x/exp/xiter"
 	"github.com/samber/lo"
 	scxiter "spheric.cloud/xiter"
 )
@@ -45,7 +46,7 @@ type clientSideStatementDef struct {
 	HandleSubmatch func(matched []string) (Statement, error)
 }
 
-var schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
+var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
 	return strings.ReplaceAll(s, " ", `\s+`)
 }, slices.Values([]string{
 	"SCHEMA",
@@ -64,6 +65,8 @@ var schemaObjectsReStr = stringsiter.Join("|", xiter.Map(func(s string) string {
 	"PROPERTY GRAPH",
 })))
 
+var whitespaceRe = regexp.MustCompile(`\s+`)
+
 var clientSideStatementDefs = []*clientSideStatementDef{
 	// Database
 	{
@@ -77,6 +80,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Detach from database`,
+				Syntax: `DETACH`,
+				Note:   `Switch to detached mode, disconnecting from the current database.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DETACH$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DetachStatement{}, nil
 		},
 	},
 	{
@@ -114,7 +130,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
 		HandleSubmatch: func(matched []string) (Statement, error) {
-			objectType := strings.ToUpper(regexp.MustCompile(`\s+`).ReplaceAllString(matched[1], " "))
+			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(matched[1], " "))
 			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
 			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
 		},
@@ -170,6 +186,44 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowDdlsStatement{}, nil
 		},
 	},
+	// DUMP statements for database export
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export database DDL and data as SQL statements`,
+				Syntax: `DUMP DATABASE`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DumpDatabaseStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export database DDL only as SQL statements`,
+				Syntax: `DUMP SCHEMA`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+SCHEMA$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &DumpSchemaStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export specific tables as SQL INSERT statements`,
+				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(.+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			tables := splitTableNames(matched[1])
+			return &DumpTablesStatement{Tables: tables}, nil
+		},
+	},
 	// Operations
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -181,6 +235,24 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+SCHEMA\s+UPDATE\s+OPERATIONS$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &ShowSchemaUpdateOperations{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show specific operation (async)`,
+				Syntax: `SHOW OPERATION <operation-id-or-name> [ASYNC|SYNC]`,
+				Note:   `Attach to and monitor a specific Long Running Operation by its operation ID or full operation name. ASYNC (default) returns current status, SYNC provides real-time monitoring (planned).`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(.+?)(?:\s+(SYNC|ASYNC))?$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			operationId := unquoteString(matched[1])
+			mode := strings.ToUpper(matched[2])
+			if mode == "" {
+				mode = "ASYNC" // Default to ASYNC mode
+			}
+			return &ShowOperationStatement{OperationId: operationId, Mode: mode}, nil
 		},
 	},
 	// Split Points
@@ -291,25 +363,122 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show execution plan without execution`,
-				Syntax: `EXPLAIN <sql>`,
+				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
 				Usage:  `Execute query and show execution plan with profile`,
-				Syntax: `EXPLAIN ANALYZE <sql>`,
+				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
+			},
+			{
+				Usage:  `Show EXPLAIN [ANALYZE] of the last query without execution`,
+				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY`,
+				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(ANALYZE\s+)?(.+)$`),
+		// EXPLAIN statement pattern:
+		// - (?is): case-insensitive, dot matches newline
+		// - ^EXPLAIN\s+: start with EXPLAIN keyword
+		// - (?P<analyze>ANALYZE\s+)?: optional ANALYZE keyword
+		// - (?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)): options with format/width/last/query
+		// - (?P<query>.*|): optional query text or empty string
+		// - $: end of string
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)(?P<query>.*|)$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			isAnalyze := matched[1] != ""
-			isDML := stmtkind.IsDMLLexical(matched[2])
+			options, err := parseExplainOptions(matched[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			formatStr := lo.FromPtr(options["FORMAT"])
+			var format enums.ExplainFormat
+			// TODO: This empty string handling could be simplified since ExplainFormatUnspecified
+			// is already the zero value. Options include:
+			// 1. Make ExplainFormatString return (ExplainFormatUnspecified, nil) for empty strings
+			// 2. Just use the zero value when parsing fails for empty strings
+			// Currently we explicitly handle empty strings to avoid error messages for a valid case.
+			if formatStr == "" {
+				format = enums.ExplainFormatUnspecified
+			} else {
+				format, err = enums.ExplainFormatString(formatStr)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
+			}
+
+			var width int64
+			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
+				width, err = strconv.ParseInt(widthStr, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", widthStr, err)
+				}
+				if width <= 0 {
+					return nil, fmt.Errorf("invalid WIDTH option value: %d, expected a positive integer", width)
+				}
+			}
+
+			// expectLabel enforces <name> is not appeared as <name>=<value> form.
+			expectLabel := func(options map[string]*string, name string) (bool, error) {
+				v, ok := options[name]
+				if v != nil {
+					return false, fmt.Errorf(`invalid option %s=%s, %s must be specified without a value (e.g., EXPLAIN LAST QUERY)`, name, *v, name)
+				}
+				return ok, nil
+			}
+
+			hasLastOption, err := expectLabel(options, "LAST")
+			if err != nil {
+				return nil, err
+			}
+
+			hasQueryOption, err := expectLabel(options, "QUERY")
+			if err != nil {
+				return nil, err
+			}
+
+			query := matched[3]
+			if hasLastOption && hasQueryOption {
+				if strings.TrimSpace(query) != "" {
+					return nil, fmt.Errorf(`invalid string after LAST QUERY: %q. Correct syntax: EXPLAIN [ANALYZE] [options] LAST QUERY`, query)
+				}
+
+				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
+			}
+
+			if strings.TrimSpace(query) == "" && (!hasLastOption || !hasQueryOption) {
+				return nil, fmt.Errorf("missing SQL query or 'LAST QUERY' for EXPLAIN%s statement", lo.Ternary(isAnalyze, " ANALYZE", ""))
+			}
+
+			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: matched[2]}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: query, Format: format, Width: width}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: matched[2]}, nil
+				return &ExplainAnalyzeStatement{Query: query, Format: format, Width: width}, nil
 			default:
-				return &ExplainStatement{Explain: matched[2], IsDML: isDML}, nil
+				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width}, nil
 			}
+		},
+	},
+	// SHOW PLAN NODE
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show the specific raw plan node from the last cached query plan`,
+				Syntax: `SHOW PLAN NODE <node_id>`,
+				Note:   `Requires a preceding query or EXPLAIN ANALYZE.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PLAN\s+NODE\s+(\d+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			nodeIDStr := matched[1]
+			nodeID, err := strconv.ParseInt(nodeIDStr, 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid node ID: %q. Node ID must be an integer", nodeIDStr)
+			}
+			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
 		},
 	},
 	// DESCRIBE
@@ -372,9 +541,17 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 	},
 	{
-		// unimplemented
-		Descriptions: []clientSideStatementDescription{},
-		Pattern:      regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
+		Descriptions: []clientSideStatementDescription{
+			// It is commented out because it is not implemented yet.
+			/*
+				{
+					Usage:  `Run a specific partition`,
+					Syntax: `RUN PARTITION <token>`,
+					Note:   `This statement is currently unimplemented.`,
+				},
+			*/
+		},
+		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
 		},
@@ -419,8 +596,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Start R/O transaction`,
-				Syntax: `BEGIN RO [TRANSACTION] [{<seconds>|<RFC3339-formatted time>}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
-				Note:   "`<seconds>` and `<RFC3339-formatted time>` is used for stale read. See [Request Priority](#request-priority) for details on the priority.",
+				Syntax: `BEGIN RO [TRANSACTION] [{<seconds>|<rfc3339_timestamp>}] [PRIORITY {HIGH|MEDIUM|LOW}]`,
+				Note:   "`<seconds>` and `<rfc3339_timestamp>` is used for stale read. `<rfc3339_timestamp>` must be quoted. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
@@ -430,7 +607,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 
 			if matched[1] != "" {
-				if t, err := time.Parse(time.RFC3339Nano, matched[1]); err == nil {
+				if t, err := time.Parse(time.RFC3339Nano, unquoteString(matched[1])); err == nil {
 					stmt = &BeginRoStatement{
 						TimestampBoundType: readTimestamp,
 						Timestamp:          t,
@@ -840,7 +1017,7 @@ func exprToFullName(expr ast.Expr) (string, error) {
 	case *ast.Ident:
 		return e.Name, nil
 	case *ast.Path:
-		return scxiter.Join(xiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
+		return scxiter.Join(hiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
 	default:
 		return "", fmt.Errorf("must be ident or path, but: %T", expr)
 	}
@@ -858,4 +1035,16 @@ func parseIsolationLevel(isolationLevel string) (sppb.TransactionOptions_Isolati
 		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, fmt.Errorf("invalid isolation level: %q", value)
 	}
 	return sppb.TransactionOptions_IsolationLevel(p), nil
+}
+
+func parseExplainOptions(ss string) (map[string]*string, error) {
+	m := make(map[string]*string)
+	for s := range strings.FieldsSeq(ss) {
+		before, after, found := strings.Cut(s, "=")
+		if before == "" {
+			return nil, fmt.Errorf("invalid EXPLAIN option, expect <key>[=<value>], but: %s", s)
+		}
+		m[strings.ToUpper(before)] = lo.Ternary(found, lo.ToPtr(after), nil)
+	}
+	return m, nil
 }
