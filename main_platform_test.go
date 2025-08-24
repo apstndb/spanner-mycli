@@ -48,10 +48,20 @@ func TestInspectImagePlatform(t *testing.T) {
 		}
 	}()
 
+	// Pull the test image explicitly to ensure it's available in CI environments
+	// where images may not be cached
+	testImage := "testcontainers/ryuk:0.12.0"
+	t.Logf("Pulling test image: %s", testImage)
+	ctx := context.Background()
+	err = provider.PullImage(ctx, testImage)
+	if err != nil {
+		t.Fatalf("Failed to pull test image %s: %v", testImage, err)
+	}
+	t.Logf("Successfully pulled test image: %s", testImage)
+
 	// Test cases for inspectImagePlatform function.
-	// Note: We use testcontainers/ryuk image because it's guaranteed to be available
-	// in CI environments where testcontainers is used. This avoids image pull failures
-	// that could occur with other images like hello-world:latest.
+	// Note: We explicitly pull the testcontainers/ryuk image above to ensure
+	// it's available in CI environments where images may not be cached.
 	tests := []struct {
 		name      string
 		imageName string
@@ -59,8 +69,8 @@ func TestInspectImagePlatform(t *testing.T) {
 		wantEmpty bool // true if we expect empty string (error case)
 	}{
 		{
-			name:      "testcontainers ryuk image (always available)",
-			imageName: "testcontainers/ryuk:0.11.0",
+			name:      "testcontainers ryuk image (explicitly pulled)",
+			imageName: testImage, // Use the same image we pulled above
 			wantOS:    "linux",
 			wantEmpty: false,
 		},
