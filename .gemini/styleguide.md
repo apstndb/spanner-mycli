@@ -60,6 +60,43 @@ Reference: https://go.dev/doc/go1.20#errors
 - Use `t.Setenv()` instead of `os.Setenv()` for better test isolation
 - Avoid global state modifications in tests
 
+### Test Code Quality vs Performance
+
+**IMPORTANT**: In test code, prioritize readability and maintainability over micro-optimizations.
+
+Test code should be:
+1. **Clear and readable**: Easy to understand what is being tested
+2. **Maintainable**: Easy to modify when requirements change
+3. **Correct**: Accurately tests the intended behavior
+
+**DO NOT** suggest performance optimizations in test code unless there is a demonstrated problem:
+- Combining loops for minor efficiency gains
+- Pre-allocating slices with exact sizes using index access
+- Avoiding helper functions to reduce function calls
+- Other micro-optimizations that harm readability
+
+**PREFER** idiomatic Go patterns in tests:
+```go
+// GOOD: Clear intent with capacity hint
+result := make([]stmtResult, 0, numCases+1)
+for _, s := range paramCases {
+    result = append(result, processCase(s))
+}
+
+// AVOID in tests: Index-based assignment for minor performance
+result := make([]stmtResult, numCases+1)
+for i, s := range paramCases {
+    result[i] = processCase(s)  // Less idiomatic, no real benefit in tests
+}
+```
+
+Test performance optimizations are only justified when:
+- The specific test becomes a bottleneck in the overall test suite
+- The optimization significantly reduces total test execution time
+- Memory usage causes actual test failures or CI issues
+
+**Key principle**: If a test's execution time doesn't meaningfully impact the overall test suite duration, performance optimizations that reduce readability are not warranted. Focus optimization efforts on tests that are actual bottlenecks, not theoretical inefficiencies.
+
 ### Global State Exceptions
 
 While global state modifications should generally be avoided in tests, `slog` (structured logging) is an **accepted exception** in this project because:
