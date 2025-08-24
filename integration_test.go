@@ -594,23 +594,26 @@ type paramCase struct {
 // paramCasesToStmtResults converts a slice of paramCase to a slice of stmtResult.
 // It is a helper function for TestParameterStatements.
 func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
+	if len(paramCases) == 0 {
+		return nil
+	}
+
 	var result []stmtResult
 	for _, s := range paramCases {
 		result = append(result, srKeep(fmt.Sprintf("SET PARAM %s = %s", s.name, s.input)))
 	}
 
-	var sb strings.Builder
-	sb.WriteString("SELECT ")
+	selectParts := make([]string, len(paramCases))
 	var fields []*sppb.StructType_Field
 	var row Row
-	for _, s := range paramCases {
-		sb.WriteString(fmt.Sprintf("@%s AS %s,", s.name, s.name))
+	for i, s := range paramCases {
+		selectParts[i] = fmt.Sprintf("@%s AS %s", s.name, s.name)
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
 		row = append(row, s.output)
 	}
 
 	result = append(result, stmtResult{
-		stmt: sb.String(),
+		stmt: "SELECT " + strings.Join(selectParts, ", "),
 		want: &Result{
 			TableHeader:  toTableHeader(fields...),
 			Rows:         sliceOf(row),
