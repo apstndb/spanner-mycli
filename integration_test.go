@@ -598,16 +598,15 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 		return nil
 	}
 
-	var result []stmtResult
+	numCases := len(paramCases)
+	result := make([]stmtResult, 0, numCases+1)  // capacity for SET PARAMs + SELECT
+	selectParts := make([]string, 0, numCases)
+	fields := make([]*sppb.StructType_Field, 0, numCases)
+	row := make(Row, 0, numCases)
+
 	for _, s := range paramCases {
 		result = append(result, srKeep(fmt.Sprintf("SET PARAM %s = %s", s.name, s.input)))
-	}
-
-	selectParts := make([]string, len(paramCases))
-	var fields []*sppb.StructType_Field
-	var row Row
-	for i, s := range paramCases {
-		selectParts[i] = fmt.Sprintf("@%s AS %s", s.name, s.name)
+		selectParts = append(selectParts, fmt.Sprintf("@%s AS %s", s.name, s.name))
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
 		row = append(row, s.output)
 	}
