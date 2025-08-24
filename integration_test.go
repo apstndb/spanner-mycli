@@ -41,7 +41,7 @@ import (
 
 	"google.golang.org/protobuf/testing/protocmp"
 
-	spanner "cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/iterator"
@@ -583,56 +583,65 @@ func runStatementTests(t *testing.T, tests []statementTestCase) {
 	}
 }
 
+type paramCase struct {
+	name   string
+	input  string
+	output string
+	typ    *sppb.Type
+}
+
+// paramCasesToStmtResults converts a slice of paramCase to a slice of stmtResult.
+// It is a helper function for TestParameterStatements.
+func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
+	var result []stmtResult
+	for _, s := range paramCases {
+		result = append(result, srKeep(fmt.Sprintf("SET PARAM %s = %s", s.name, s.input)))
+	}
+
+	var sb strings.Builder
+	sb.WriteString("SELECT ")
+	var fields []*sppb.StructType_Field
+	var row Row
+	for _, s := range paramCases {
+		sb.WriteString(fmt.Sprintf("@%s AS %s,", s.name, s.name))
+		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
+		row = append(row, s.output)
+	}
+
+	result = append(result, stmtResult{
+		stmt: sb.String(),
+		want: &Result{
+			TableHeader:  toTableHeader(fields...),
+			Rows:         sliceOf(row),
+			AffectedRows: 1,
+		},
+	})
+	return result
+}
+
 // TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
 func TestParameterStatements(t *testing.T) {
 	tests := []statementTestCase{
 		{
 			desc: "query parameters",
-			stmtResults: []stmtResult{
-				srKeep(`SET PARAM b = true`),
-				srKeep(`SET PARAM bs = b"foo"`),
-				srKeep(`SET PARAM i64 = 1`),
-				srKeep(`SET PARAM f64 = 1.0`),
-				srKeep(`SET PARAM f32 = CAST(1.0 AS FLOAT32)`),
-				srKeep(`SET PARAM n = NUMERIC "1"`),
-				srKeep(`SET PARAM s = "foo"`),
-				srKeep(`SET PARAM js = JSON "{}"`),
-				srKeep(`SET PARAM ts = TIMESTAMP "2000-01-01T00:00:00Z"`),
-				srKeep(`SET PARAM ival_single = INTERVAL 3 DAY`),
-				srKeep(`SET PARAM ival_range = INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`),
-				srKeep(`SET PARAM a_b = [true]`),
-				srKeep(`SET PARAM n_b = CAST(NULL AS BOOL)`),
-				srKeep(`SET PARAM n_ival = CAST(NULL AS INTERVAL)`),
-				{
-					`SELECT @b AS b, @bs AS bs, @i64 AS i64, @f64 AS f64, @f32 AS f32, @n AS n, @s AS s, @js AS js, @ts AS ts,
-					        @ival_single AS ival_single, @ival_range AS ival_range,
-					        @a_b AS a_b, @n_b AS n_b, @n_ival AS n_ival`,
-					&Result{
-						TableHeader: toTableHeader(sliceOf(
-							typector.NameTypeToStructTypeField("b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
-							typector.NameTypeToStructTypeField("bs", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
-							typector.NameTypeToStructTypeField("i64", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
-							typector.NameTypeToStructTypeField("f64", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)),
-							typector.NameTypeToStructTypeField("f32", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)),
-							typector.NameTypeToStructTypeField("n", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)),
-							typector.NameTypeToStructTypeField("s", typector.CodeToSimpleType(sppb.TypeCode_STRING)),
-							typector.NameTypeToStructTypeField("js", typector.CodeToSimpleType(sppb.TypeCode_JSON)),
-							typector.NameTypeToStructTypeField("ts", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)),
-							typector.NameTypeToStructTypeField("ival_single", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-							typector.NameTypeToStructTypeField("ival_range", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-							typector.NameTypeToStructTypeField("a_b", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)),
-							typector.NameTypeToStructTypeField("n_b", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
-							typector.NameTypeToStructTypeField("n_ival", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)),
-						)),
-						Rows: sliceOf(
-							toRow("true", "Zm9v", "1", "1.000000", "1.000000", "1", "foo", "{}", "2000-01-01T00:00:00Z",
-								"P3D", "P3Y4M5DT6H7M8.999999999S",
-								"[true]", "NULL", "NULL"),
-						),
-						AffectedRows: 1,
-					},
-				},
-			},
+			stmtResults: paramCasesToStmtResults([]paramCase{
+				{"b", "true", "true", typector.CodeToSimpleType(sppb.TypeCode_BOOL)},
+				{"bs", `b"foo"`, "Zm9v", typector.CodeToSimpleType(sppb.TypeCode_BYTES)},
+				{"i64", "1", "1", typector.CodeToSimpleType(sppb.TypeCode_INT64)},
+				{"f64", "1.0", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)},
+				{"f32", "CAST(1.0 AS FLOAT32)", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)},
+				{"n", `NUMERIC "1"`, "1", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)},
+				{"s", `"foo"`, "foo", typector.CodeToSimpleType(sppb.TypeCode_STRING)},
+				{"js", `JSON "{}"`, "{}", typector.CodeToSimpleType(sppb.TypeCode_JSON)},
+				{"ts", `TIMESTAMP "2000-01-01T00:00:00Z"`, "2000-01-01T00:00:00Z", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)},
+				{"ival_single", "INTERVAL 3 DAY", "P3D", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
+				{"ival_range", `INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, "P3Y4M5DT6H7M8.999999999S", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
+				// UUID type is not yet supported by the emulator, so we comment it out for now
+				// {"u", `CAST("f703e11e-b175-46b0-8e04-3723bd71ff62" AS UUID)`, "f703e11e-b175-46b0-8e04-3723bd71ff62", typector.CodeToSimpleType(sppb.TypeCode_UUID)},
+				{"a_b", "[true]", "[true]", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)},
+				{"n_b", "CAST(NULL AS BOOL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_BOOL)},
+				{"n_ival", "CAST(NULL AS INTERVAL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
+			}),
 		},
 		{
 			desc: "SET PARAM TYPE and SHOW PARAMS",
