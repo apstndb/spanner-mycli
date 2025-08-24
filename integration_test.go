@@ -32,12 +32,13 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanemuboost"
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/apstndb/spanner-mycli/enums"
 
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -636,7 +637,7 @@ func TestParameterStatements(t *testing.T) {
 				{"ts", `TIMESTAMP "2000-01-01T00:00:00Z"`, "2000-01-01T00:00:00Z", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)},
 				{"ival_single", "INTERVAL 3 DAY", "P3D", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
 				{"ival_range", `INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, "P3Y4M5DT6H7M8.999999999S", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
-				// UUID type is not yet supported by the emulator, so we comment it out for now
+				// UUID type is not yet supported by the emulator, so we comment it out until it is supported.
 				// {"u", `CAST("f703e11e-b175-46b0-8e04-3723bd71ff62" AS UUID)`, "f703e11e-b175-46b0-8e04-3723bd71ff62", typector.CodeToSimpleType(sppb.TypeCode_UUID)},
 				{"a_b", "[true]", "[true]", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)},
 				{"n_b", "CAST(NULL AS BOOL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_BOOL)},
