@@ -606,7 +606,7 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 
 	for _, s := range paramCases {
 		result = append(result, srKeep(fmt.Sprintf("SET PARAM %s = %s", s.name, s.input)))
-		selectParts = append(selectParts, fmt.Sprintf("@%s AS %s", s.name, s.name))
+		selectParts = append(selectParts, fmt.Sprintf("@%s AS `%s`", s.name, s.name))
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
 		row = append(row, s.output)
 	}
