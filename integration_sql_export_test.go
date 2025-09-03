@@ -816,12 +816,12 @@ func TestSQLExportAutoTableNameDetection(t *testing.T) {
 			description:      "Auto-detect with quoted table name",
 		},
 		{
-			name:             "SELECT with column list - no auto-detection",
+			name:             "SELECT with column list - now auto-detects",
 			query:            "SELECT id, name FROM TestTable",
-			shouldAutoDetect: false,
-			expectedTable:    "",
+			shouldAutoDetect: true,
+			expectedTable:    "TestTable",
 			exportMode:       enums.DisplayModeSQLInsert,
-			description:      "Column list should not auto-detect",
+			description:      "Column list now auto-detects table name",
 		},
 		{
 			name:             "SELECT with JOIN - no auto-detection",

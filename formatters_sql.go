@@ -26,18 +26,18 @@ import (
 )
 
 // extractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
-// It only supports whitelisted patterns that preserve the original table's structure:
+// It supports simple SELECT patterns including:
 //   - SELECT * FROM table_name
+//   - SELECT columns FROM table_name
 //   - SELECT * FROM table_name WHERE ...
 //   - SELECT * FROM table_name ORDER BY ...
 //   - SELECT * FROM table_name LIMIT ...
-//   - SELECT DISTINCT * FROM table_name (DISTINCT is allowed since Spanner tables always have PKs)
+//   - SELECT DISTINCT columns FROM table_name (DISTINCT is allowed since Spanner tables always have PKs)
 //   - Combinations of the above
 //
 // NOT supported:
 //   - GROUP BY / HAVING (aggregations change the result set structure)
 //   - JOINs (combine multiple tables)
-//   - Specific column selection (may cause NOT NULL violations)
 //   - Subqueries, CTEs, UNIONs (complex structures)
 //
 // Note: DISTINCT is allowed because Spanner tables always have primary keys,
@@ -116,17 +116,25 @@ func extractTableNameFromQuery(sql string) (string, error) {
 	// Note: DISTINCT is allowed because Spanner tables always have primary keys,
 	// so SELECT * results are inherently unique. DISTINCT doesn't change the result set.
 
-	// Check if it's SELECT * (all columns)
-	if len(selectStmt.Results) != 1 {
-		// Multiple result items or no results - not supported
-		return "", fmt.Errorf("only SELECT * is supported (found %d result items)", len(selectStmt.Results))
-	}
-
-	_, isStar := selectStmt.Results[0].(*ast.Star)
-	if !isStar {
-		// Not SELECT * - specific columns selected, not supported
-		// (risk of NOT NULL constraint violations)
-		return "", fmt.Errorf("only SELECT * is supported (specific columns may cause NOT NULL violations)")
+	// Check SELECT list - only allow * or simple column names (Ident)
+	// Other patterns like table.*, expressions, functions are not auto-detected
+	for _, result := range selectStmt.Results {
+		switch r := result.(type) {
+		case *ast.Star:
+			// SELECT * is allowed
+			continue
+		case *ast.ExprSelectItem:
+			// Check if the expression is a simple identifier
+			if _, ok := r.Expr.(*ast.Ident); ok {
+				// Simple column name is allowed
+				continue
+			}
+			// Other expressions (functions, operators, etc.) are not supported
+			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found expression: %T)", r.Expr)
+		default:
+			// Any other pattern is not supported for auto-detection
+			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found %T)", result)
+		}
 	}
 
 	// Check if it's a simple table reference (no JOINs, subqueries, etc.)
