@@ -239,6 +239,20 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			description:   "DISTINCT with specific columns",
 		},
 		{
+			name:          "SELECT * mixed with columns",
+			query:         "SELECT *, name FROM Users",
+			wantTableName: "",
+			wantError:     "SELECT * cannot be mixed",
+			description:   "* mixed with columns not supported (causes duplicate columns)",
+		},
+		{
+			name:          "SELECT columns mixed with *",
+			query:         "SELECT name, * FROM Users",
+			wantTableName: "",
+			wantError:     "SELECT * cannot be mixed",
+			description:   "columns mixed with * not supported (causes duplicate columns)",
+		},
+		{
 			name:          "SELECT with JOIN",
 			query:         "SELECT * FROM Users u JOIN Orders o ON u.id = o.user_id",
 			wantTableName: "",
@@ -361,8 +375,8 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			name:          "SELECT with multiple stars",
 			query:         "SELECT *, * FROM Users",
 			wantTableName: "",
-			wantError:     "multiple * in SELECT not supported",
-			description:   "multiple * not supported (redundant)",
+			wantError:     "SELECT * cannot be mixed",
+			description:   "multiple * not supported (leads to duplicate columns)",
 		},
 		{
 			name:          "SELECT with expression",

@@ -116,17 +116,25 @@ func extractTableNameFromQuery(sql string) (string, error) {
 	// Note: DISTINCT is allowed because Spanner tables always have primary keys,
 	// so SELECT * results are inherently unique. DISTINCT doesn't change the result set.
 
+	// Check for SELECT * mixed with other columns, which is not supported
+	// because it can lead to duplicate column names in the generated INSERT statements.
+	hasStar := false
+	for _, r := range selectStmt.Results {
+		if _, ok := r.(*ast.Star); ok {
+			hasStar = true
+			break
+		}
+	}
+	if hasStar && len(selectStmt.Results) > 1 {
+		return "", fmt.Errorf("SELECT * cannot be mixed with other columns or used multiple times for auto-detection")
+	}
+
 	// Check SELECT list - only allow * or simple column names (Ident)
 	// Other patterns like table.*, expressions, functions are not auto-detected
-	starCount := 0
 	for _, result := range selectStmt.Results {
 		switch r := result.(type) {
 		case *ast.Star:
-			// SELECT * is allowed, but only once
-			starCount++
-			if starCount > 1 {
-				return "", fmt.Errorf("multiple * in SELECT not supported for auto-detection")
-			}
+			// SELECT * is allowed
 			continue
 		case *ast.ExprSelectItem:
 			// Check if the expression is a simple identifier
