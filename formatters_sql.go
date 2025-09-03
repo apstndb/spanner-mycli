@@ -124,12 +124,13 @@ func extractTableNameFromQuery(sql string) (string, error) {
 			// SELECT * is allowed
 			continue
 		case *ast.ExprSelectItem:
-			// Check if the expression is a simple identifier
+			// Check if the expression is a simple identifier 
+			// Reject any select items that are more complex than a simple identifier
 			if _, ok := r.Expr.(*ast.Ident); ok {
 				// Simple column name is allowed
 				continue
 			}
-			// Other expressions (functions, operators, etc.) are not supported
+			// Other expressions (functions, operators, path expressions) are not supported
 			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found expression: %T)", r.Expr)
 		default:
 			// Any other pattern is not supported for auto-detection
