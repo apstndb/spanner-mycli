@@ -124,7 +124,7 @@ func extractTableNameFromQuery(sql string) (string, error) {
 			// SELECT * is allowed
 			continue
 		case *ast.ExprSelectItem:
-			// Check if the expression is a simple identifier 
+			// Check if the expression is a simple identifier
 			// Reject any select items that are more complex than a simple identifier
 			if _, ok := r.Expr.(*ast.Ident); ok {
 				// Simple column name is allowed
