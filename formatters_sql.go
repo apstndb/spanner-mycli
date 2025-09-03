@@ -147,6 +147,8 @@ func extractTableNameFromQuery(sql string) (string, error) {
 			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found expression: %T)", r.Expr)
 		default:
 			// Any other pattern is not supported for auto-detection
+			// This includes ast.Alias (column aliases like "name AS full_name"),
+			// ast.DotStar (table.* notation), and other complex SelectItem types
 			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found %T)", result)
 		}
 	}
