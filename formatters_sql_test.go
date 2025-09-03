@@ -360,9 +360,9 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 		{
 			name:          "SELECT with multiple stars",
 			query:         "SELECT *, * FROM Users",
-			wantTableName: "Users",
-			wantError:     "",
-			description:   "multiple * allowed (even if redundant)",
+			wantTableName: "",
+			wantError:     "multiple * in SELECT not supported",
+			description:   "multiple * not supported (redundant)",
 		},
 		{
 			name:          "SELECT with expression",

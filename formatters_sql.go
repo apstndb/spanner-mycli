@@ -118,10 +118,15 @@ func extractTableNameFromQuery(sql string) (string, error) {
 
 	// Check SELECT list - only allow * or simple column names (Ident)
 	// Other patterns like table.*, expressions, functions are not auto-detected
+	starCount := 0
 	for _, result := range selectStmt.Results {
 		switch r := result.(type) {
 		case *ast.Star:
-			// SELECT * is allowed
+			// SELECT * is allowed, but only once
+			starCount++
+			if starCount > 1 {
+				return "", fmt.Errorf("multiple * in SELECT not supported for auto-detection")
+			}
 			continue
 		case *ast.ExprSelectItem:
 			// Check if the expression is a simple identifier
