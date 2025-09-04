@@ -147,11 +147,13 @@ func extractTableNameFromQuery(sql string) (string, error) {
 			// Check if the expression is a simple identifier
 			// Reject any select items that are more complex than a simple identifier
 			if ident, ok := r.Expr.(*ast.Ident); ok {
-				// Check for duplicate column names
-				if _, exists := seenColumns[ident.Name]; exists {
+				// Check for duplicate column names (case-insensitive)
+				// Spanner SQL identifiers are case-insensitive unless quoted
+				lowerName := strings.ToLower(ident.Name)
+				if _, exists := seenColumns[lowerName]; exists {
 					return "", fmt.Errorf("duplicate column name %q in SELECT list not supported for auto-detection", ident.Name)
 				}
-				seenColumns[ident.Name] = struct{}{}
+				seenColumns[lowerName] = struct{}{}
 				// Simple column name is allowed
 				continue
 			}

@@ -246,6 +246,13 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			description:   "duplicate columns not supported (causes invalid INSERT)",
 		},
 		{
+			name:          "SELECT with case-insensitive duplicate columns",
+			query:         "SELECT id, name, ID FROM Users",
+			wantTableName: "",
+			wantError:     "duplicate column name",
+			description:   "case-insensitive duplicate columns not supported",
+		},
+		{
 			name:          "SELECT * mixed with columns",
 			query:         "SELECT *, name FROM Users",
 			wantTableName: "",
