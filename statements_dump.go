@@ -87,6 +87,10 @@ func buildSelectQueryWithColumns(columns []string, tableName string) string {
 // NOTE: INFORMATION_SCHEMA queries cannot be used in read-write transactions.
 func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, tableName string) ([]string, error) {
 	// Split table name to handle schema-qualified names (e.g., "myschema.Users" or just "Users")
+	// Cloud Spanner supports named schemas and schema-qualified table names (FQNs) as documented in:
+	// https://cloud.google.com/spanner/docs/reference/standard-sql/data-definition-language#names
+	// Table identifiers can only contain letters, numbers, and underscores, but schema-qualified
+	// names use dot notation to separate schema and table names.
 	parts := strings.Split(tableName, ".")
 	var tableSchema, tableNameOnly string
 
