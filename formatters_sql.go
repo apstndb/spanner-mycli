@@ -148,7 +148,8 @@ func extractTableNameFromQuery(sql string) (string, error) {
 			// Reject any select items that are more complex than a simple identifier
 			if ident, ok := r.Expr.(*ast.Ident); ok {
 				// Check for duplicate column names (case-insensitive)
-				// Spanner SQL identifiers are case-insensitive unless quoted
+				// In Spanner, ALL identifiers (including column names) are case-insensitive,
+				// even when quoted. For example, `A` and `a` refer to the same column.
 				lowerName := strings.ToLower(ident.Name)
 				if _, exists := seenColumns[lowerName]; exists {
 					return "", fmt.Errorf("duplicate column name %q in SELECT list not supported for auto-detection", ident.Name)
