@@ -136,8 +136,13 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 		return nil, err
 	}
 
-	// Use the transaction directly for the query with PROFILE mode
-	iter := txn.Query(ctx, stmt)
+	// Prepare query options to preserve profile mode and priority
+	opts := spanner.QueryOptions{
+		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
+		Priority: sysVars.RPCPriority,
+	}
+	// Use the transaction directly with query options
+	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
 	// Decide whether to use streaming or buffered mode
 	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
