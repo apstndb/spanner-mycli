@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestDumpStatements(t *testing.T) {
@@ -512,5 +513,67 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 	// Mixed dependency: Products before OrderItems (FK from OrderItems to Products)
 	if productIndex > orderItemIndex && orderItemIndex != -1 {
 		t.Errorf("Products should appear before OrderItems (FK dependency)")
+	}
+}
+
+func TestDumpWithGeneratedColumns(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx := context.Background()
+
+	_, session, teardown := initializeWithRandomDB(t, nil, nil)
+	defer teardown()
+
+	// Create test table with generated columns and reserved word column names
+	ddl := `CREATE TABLE Users (
+		UserId INT64 NOT NULL,
+		FirstName STRING(100),
+		LastName STRING(100),
+		FullName STRING(201) AS (CONCAT(FirstName, ' ', LastName)) STORED,
+		` + "`Order`" + ` INT64,
+		SearchTokens TOKENLIST AS (TOKENIZE_FULLTEXT(FullName)) HIDDEN,
+		ComputedValue INT64 AS (UserId * 2),
+		CreatedAt TIMESTAMP NOT NULL
+	) PRIMARY KEY (UserId)`
+
+	stmt, err := BuildStatement(ddl)
+	if err != nil {
+		t.Fatalf("Failed to build DDL statement: %v", err)
+	}
+	if _, err := stmt.Execute(ctx, session); err != nil {
+		t.Fatalf("Failed to create test table: %v", err)
+	}
+
+	// Insert test data with fixed timestamp (only writable columns)
+	insertSQL := "INSERT INTO Users (UserId, FirstName, LastName, `Order`, CreatedAt) VALUES (1, 'John', 'Doe', 10, TIMESTAMP '2024-01-01T12:00:00Z')"
+	insertStmt, err := BuildStatement(insertSQL)
+	if err != nil {
+		t.Fatalf("Failed to build INSERT statement: %v", err)
+	}
+	if _, err := insertStmt.Execute(ctx, session); err != nil {
+		t.Fatalf("Failed to insert test data: %v", err)
+	}
+
+	// Execute DUMP TABLES
+	dumpStmt := &DumpTablesStatement{Tables: []string{"Users"}}
+	result, err := dumpStmt.Execute(ctx, session)
+	if err != nil {
+		t.Fatalf("DUMP TABLES failed: %v", err)
+	}
+
+	// Expected output with only writable columns
+	// The generated INSERT should include: UserId, FirstName, LastName, Order, CreatedAt
+	// It should NOT include: FullName, SearchTokens, ComputedValue (all generated columns)
+	// Note: The formatter only quotes identifiers when necessary (e.g., reserved words like "Order")
+	expectedRows := []Row{
+		{"-- Data for table Users"},
+		{"INSERT INTO Users (UserId, FirstName, LastName, `Order`, CreatedAt) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"},
+		{""},
+	}
+
+	if diff := cmp.Diff(expectedRows, result.Rows); diff != "" {
+		t.Errorf("DUMP output mismatch (-want +got):\n%s", diff)
 	}
 }

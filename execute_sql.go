@@ -36,9 +36,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// executeSQLWithFormat executes SQL with specific format settings without modifying shared session variables.
-// It creates a temporary copy of system variables to avoid race conditions.
-func executeSQLWithFormat(ctx context.Context, session *Session, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+// executeSQLWithFormatAndTxn executes SQL with specific format settings and within a given transaction.
+// This is for use within withReadOnlyTransaction callbacks where we already have a transaction.
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
 	// Create a copy of the system variables for this specific execution
 	tempVars := *session.systemVariables
 
@@ -52,8 +52,8 @@ func executeSQLWithFormat(ctx context.Context, session *Session, sql string, for
 	tempVars.SuppressResultLines = true
 	tempVars.EnableProgressBar = false
 
-	// Execute with the temporary, isolated settings
-	return executeSQLImplWithVars(ctx, session, sql, &tempVars)
+	// Execute with the transaction directly
+	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -63,6 +63,93 @@ func executeSQL(ctx context.Context, session *Session, sql string) (*Result, err
 // executeSQLImpl delegates to executeSQLImplWithVars with the session's system variables
 func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result, error) {
 	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
+}
+
+// executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
+// This is for use when we have a specific transaction to use.
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
+	// Always collect metrics - display is controlled by template based on Profile flag
+	metrics := &ExecutionMetrics{
+		QueryStartTime: time.Now(),
+		Profile:        sysVars.Profile,
+	}
+
+	// Capture memory snapshot before execution if profiling is enabled
+	if sysVars.Profile {
+		before := GetMemoryStats()
+		metrics.MemoryBefore = &before
+	}
+
+	// Choose the appropriate format config based on the output format
+	var fc *spanvalue.FormatConfig
+	var usingSQLLiterals bool
+	var err error
+	switch sysVars.CLIFormat {
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		// Use SQL literal formatting for SQL export modes
+		fc = spanvalue.LiteralFormatConfig
+		usingSQLLiterals = true
+		err = nil
+
+		// Auto-detect table name if not explicitly set
+		if sysVars.SQLTableName == "" {
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			if detectedTableName != "" {
+				tempVars := *sysVars
+				tempVars.SQLTableName = detectedTableName
+				sysVars = &tempVars
+				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
+			} else if detectionErr != nil {
+				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
+			}
+		}
+	default:
+		// Use regular display formatting for other modes
+		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+		usingSQLLiterals = false
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	params := sysVars.Params
+	stmt, err := newStatement(sql, params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the transaction directly for the query with PROFILE mode
+	iter := txn.Query(ctx, stmt)
+
+	// Decide whether to use streaming or buffered mode
+	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
+	metrics.IsStreaming = useStreaming
+
+	slog.Debug("executeSQL decision",
+		"useStreaming", useStreaming,
+		"format", sysVars.CLIFormat,
+		"sqlTableName", sysVars.SQLTableName)
+
+	// Execute with the appropriate mode
+	var result *Result
+
+	if useStreaming {
+		result, err = executeWithStreaming(ctx, session, iter, txn, fc, processor, metrics, usingSQLLiterals, sysVars)
+	} else {
+		result, err = executeWithBuffering(ctx, session, iter, txn, fc, sql, metrics, usingSQLLiterals, sysVars)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Set post-execution fields that were not handled by the processor
+	if sysVars.Profile {
+		after := GetMemoryStats()
+		metrics.MemoryAfter = &after
+	}
+
+	return result, nil
 }
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
