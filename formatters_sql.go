@@ -26,18 +26,18 @@ import (
 )
 
 // extractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
-// It only supports whitelisted patterns that preserve the original table's structure:
+// It supports simple SELECT patterns including:
 //   - SELECT * FROM table_name
+//   - SELECT columns FROM table_name
 //   - SELECT * FROM table_name WHERE ...
 //   - SELECT * FROM table_name ORDER BY ...
 //   - SELECT * FROM table_name LIMIT ...
-//   - SELECT DISTINCT * FROM table_name (DISTINCT is allowed since Spanner tables always have PKs)
+//   - SELECT DISTINCT columns FROM table_name (DISTINCT is allowed since Spanner tables always have PKs)
 //   - Combinations of the above
 //
 // NOT supported:
 //   - GROUP BY / HAVING (aggregations change the result set structure)
 //   - JOINs (combine multiple tables)
-//   - Specific column selection (may cause NOT NULL violations)
 //   - Subqueries, CTEs, UNIONs (complex structures)
 //
 // Note: DISTINCT is allowed because Spanner tables always have primary keys,
@@ -97,6 +97,11 @@ func extractTableNameFromQuery(sql string) (string, error) {
 		return "", fmt.Errorf("query type not supported for auto-detection")
 	}
 
+	// Check for SELECT AS STRUCT - not supported for auto-detection
+	if selectStmt.As != nil {
+		return "", fmt.Errorf("SELECT AS STRUCT not supported for auto-detection")
+	}
+
 	// Check if there's a FROM clause first
 	if selectStmt.From == nil {
 		// No FROM clause - not a table query
@@ -116,17 +121,51 @@ func extractTableNameFromQuery(sql string) (string, error) {
 	// Note: DISTINCT is allowed because Spanner tables always have primary keys,
 	// so SELECT * results are inherently unique. DISTINCT doesn't change the result set.
 
-	// Check if it's SELECT * (all columns)
-	if len(selectStmt.Results) != 1 {
-		// Multiple result items or no results - not supported
-		return "", fmt.Errorf("only SELECT * is supported (found %d result items)", len(selectStmt.Results))
+	// Check for SELECT * mixed with other columns, which is not supported
+	// because it can lead to duplicate column names in the generated INSERT statements.
+	hasStar := false
+	for _, r := range selectStmt.Results {
+		if _, ok := r.(*ast.Star); ok {
+			hasStar = true
+			break
+		}
+	}
+	if hasStar && len(selectStmt.Results) > 1 {
+		return "", fmt.Errorf("SELECT * cannot be mixed with other columns or used multiple times for auto-detection")
 	}
 
-	_, isStar := selectStmt.Results[0].(*ast.Star)
-	if !isStar {
-		// Not SELECT * - specific columns selected, not supported
-		// (risk of NOT NULL constraint violations)
-		return "", fmt.Errorf("only SELECT * is supported (specific columns may cause NOT NULL violations)")
+	// Check SELECT list - only allow * or simple column names (Ident)
+	// Other patterns like table.*, expressions, functions are not auto-detected
+	// Also check for duplicate column names to avoid invalid INSERT statements
+	seenColumns := make(map[string]struct{})
+	for _, result := range selectStmt.Results {
+		switch r := result.(type) {
+		case *ast.Star:
+			// SELECT * is allowed
+			continue
+		case *ast.ExprSelectItem:
+			// Check if the expression is a simple identifier
+			// Reject any select items that are more complex than a simple identifier
+			if ident, ok := r.Expr.(*ast.Ident); ok {
+				// Check for duplicate column names (case-insensitive)
+				// In Spanner, ALL identifiers (including column names) are case-insensitive,
+				// even when quoted. For example, `A` and `a` refer to the same column.
+				lowerName := strings.ToLower(ident.Name)
+				if _, exists := seenColumns[lowerName]; exists {
+					return "", fmt.Errorf("duplicate column name %q in SELECT list not supported for auto-detection", ident.Name)
+				}
+				seenColumns[lowerName] = struct{}{}
+				// Simple column name is allowed
+				continue
+			}
+			// Other expressions (functions, operators, path expressions) are not supported
+			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found expression: %T)", r.Expr)
+		default:
+			// Any other pattern is not supported for auto-detection
+			// This includes ast.Alias (column aliases like "name AS full_name"),
+			// ast.DotStar (table.* notation), and other complex SelectItem types
+			return "", fmt.Errorf("only * or simple column names supported for auto-detection (found %T)", result)
+		}
 	}
 
 	// Check if it's a simple table reference (no JOINs, subqueries, etc.)
