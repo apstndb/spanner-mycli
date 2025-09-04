@@ -86,24 +86,30 @@ func buildSelectQueryWithColumns(columns []string, tableName string) string {
 // Returns column names in their original form, ordered by ORDINAL_POSITION.
 // NOTE: INFORMATION_SCHEMA queries cannot be used in read-write transactions.
 func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, tableName string) ([]string, error) {
-	// Split table name to handle schema-qualified names (e.g., "myschema.Users" or just "Users")
-	// Cloud Spanner supports named schemas and schema-qualified table names (FQNs) as documented in:
-	// https://cloud.google.com/spanner/docs/reference/standard-sql/data-definition-language#names
-	// Table identifiers can only contain letters, numbers, and underscores, but schema-qualified
-	// names use dot notation to separate schema and table names.
+	// Handle both simple and schema-qualified table names.
+	// Cloud Spanner table identifiers can only contain letters, numbers, and underscores.
+	// Dots are used exclusively to separate schema from table name in fully qualified names (FQNs).
+	// Examples: "Users" (simple) or "myschema.Users" (schema-qualified)
+	// Reference: https://cloud.google.com/spanner/docs/reference/standard-sql/data-definition-language#names
+	//
+	// Note: The current dependency resolver only queries tables from the default schema (empty string),
+	// so it will only return simple table names. However, we support schema-qualified names
+	// for future extensibility when we might need to export from non-default schemas.
 	parts := strings.Split(tableName, ".")
 	var tableSchema, tableNameOnly string
 
-	if len(parts) == 2 {
-		// Schema-qualified table name
-		tableSchema = parts[0]
-		tableNameOnly = parts[1]
-	} else if len(parts) == 1 {
-		// Simple table name (use empty schema which means default)
+	switch len(parts) {
+	case 1:
+		// Simple table name - use default schema (empty string)
 		tableSchema = ""
 		tableNameOnly = parts[0]
-	} else {
-		return nil, fmt.Errorf("invalid table name format: %s", tableName)
+	case 2:
+		// Schema-qualified table name (e.g., "myschema.Users")
+		tableSchema = parts[0]
+		tableNameOnly = parts[1]
+	default:
+		// More than one dot is invalid - dots can only separate schema from table
+		return nil, fmt.Errorf("invalid table name format: %s (expected 'table' or 'schema.table')", tableName)
 	}
 
 	// Build the query to get writable columns
