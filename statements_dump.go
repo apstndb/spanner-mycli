@@ -148,10 +148,8 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 		return nil, fmt.Errorf("failed to query writable columns for %s: %w", tableName, err)
 	}
 
-	if len(columns) == 0 {
-		return nil, fmt.Errorf("no writable columns found for table %s", tableName)
-	}
-
+	// Return empty slice for tables with no writable columns (e.g., all generated columns)
+	// Callers should handle this case gracefully by skipping data export
 	return columns, nil
 }
 
@@ -185,6 +183,12 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			columns, err := getWritableColumnsWithTxn(ctx, txn, table)
 			if err != nil {
 				return fmt.Errorf("failed to get writable columns for table %s: %w", table, err)
+			}
+
+			// Skip tables with no writable columns (e.g., all generated columns)
+			if len(columns) == 0 {
+				result.Rows = append(result.Rows, Row{fmt.Sprintf("-- Skipping table %s (no writable columns)", table)})
+				continue
 			}
 
 			// Build SELECT query with explicit column list
@@ -273,6 +277,12 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 			columns, err := getWritableColumnsWithTxn(ctx, txn, table)
 			if err != nil {
 				return fmt.Errorf("failed to get writable columns for table %s: %w", table, err)
+			}
+
+			// Skip tables with no writable columns (e.g., all generated columns)
+			if len(columns) == 0 {
+				fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table)
+				continue
 			}
 
 			// Build SELECT query with explicit column list
