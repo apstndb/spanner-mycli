@@ -167,10 +167,12 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	}
 
 	// Set post-execution fields that were not handled by the processor
+	metrics.CompletionTime = time.Now()
 	if sysVars.Profile {
 		after := GetMemoryStats()
 		metrics.MemoryAfter = &after
 	}
+	result.Metrics = metrics
 
 	return result, nil
 }
