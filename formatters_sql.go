@@ -136,6 +136,8 @@ func extractTableNameFromQuery(sql string) (string, error) {
 
 	// Check SELECT list - only allow * or simple column names (Ident)
 	// Other patterns like table.*, expressions, functions are not auto-detected
+	// Also check for duplicate column names to avoid invalid INSERT statements
+	seenColumns := make(map[string]struct{})
 	for _, result := range selectStmt.Results {
 		switch r := result.(type) {
 		case *ast.Star:
@@ -144,7 +146,12 @@ func extractTableNameFromQuery(sql string) (string, error) {
 		case *ast.ExprSelectItem:
 			// Check if the expression is a simple identifier
 			// Reject any select items that are more complex than a simple identifier
-			if _, ok := r.Expr.(*ast.Ident); ok {
+			if ident, ok := r.Expr.(*ast.Ident); ok {
+				// Check for duplicate column names
+				if _, exists := seenColumns[ident.Name]; exists {
+					return "", fmt.Errorf("duplicate column name %q in SELECT list not supported for auto-detection", ident.Name)
+				}
+				seenColumns[ident.Name] = struct{}{}
 				// Simple column name is allowed
 				continue
 			}

@@ -239,6 +239,13 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			description:   "DISTINCT with specific columns",
 		},
 		{
+			name:          "SELECT with duplicate columns",
+			query:         "SELECT id, name, id FROM Users",
+			wantTableName: "",
+			wantError:     "duplicate column name",
+			description:   "duplicate columns not supported (causes invalid INSERT)",
+		},
+		{
 			name:          "SELECT * mixed with columns",
 			query:         "SELECT *, name FROM Users",
 			wantTableName: "",
