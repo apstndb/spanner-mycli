@@ -65,6 +65,50 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
 }
 
+// prepareFormatConfig determines the appropriate format configuration based on the display mode.
+// It returns the format config, whether SQL literals are being used, and the potentially modified sysVars.
+// This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
+func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, bool, *systemVariables, error) {
+	var fc *spanvalue.FormatConfig
+	var usingSQLLiterals bool
+	var err error
+
+	switch sysVars.CLIFormat {
+	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		// Use SQL literal formatting for SQL export modes
+		// LiteralFormatConfig formats values as valid Spanner SQL literals
+		fc = spanvalue.LiteralFormatConfig
+		usingSQLLiterals = true
+		err = nil
+
+		// Auto-detect table name if not explicitly set
+		if sysVars.SQLTableName == "" {
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			if detectedTableName != "" {
+				// Create a copy of sysVars to use the detected table name for this execution only.
+				// This is important for:
+				// 1. Scope isolation: auto-detection only affects this specific query execution
+				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
+				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
+				tempVars := *sysVars
+				tempVars.SQLTableName = detectedTableName
+				sysVars = &tempVars
+				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
+			} else if detectionErr != nil {
+				// Log why auto-detection failed for debugging
+				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
+			}
+		}
+	default:
+		// Use regular display formatting for other modes
+		// formatConfigWithProto handles custom proto descriptors if set
+		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+		usingSQLLiterals = false
+	}
+
+	return fc, usingSQLLiterals, sysVars, err
+}
+
 // executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
 // This is for use when we have a specific transaction to use.
 func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
@@ -81,33 +125,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	}
 
 	// Choose the appropriate format config based on the output format
-	var fc *spanvalue.FormatConfig
-	var usingSQLLiterals bool
-	var err error
-	switch sysVars.CLIFormat {
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		// Use SQL literal formatting for SQL export modes
-		fc = spanvalue.LiteralFormatConfig
-		usingSQLLiterals = true
-		err = nil
-
-		// Auto-detect table name if not explicitly set
-		if sysVars.SQLTableName == "" {
-			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
-			if detectedTableName != "" {
-				tempVars := *sysVars
-				tempVars.SQLTableName = detectedTableName
-				sysVars = &tempVars
-				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
-			} else if detectionErr != nil {
-				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
-			}
-		}
-	default:
-		// Use regular display formatting for other modes
-		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
-		usingSQLLiterals = false
-	}
+	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -174,40 +192,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	// - Format-specific optimizations
 	// - Better separation of concerns
 	// However, this requires significant changes to Result struct and RowProcessor interface.
-	var fc *spanvalue.FormatConfig
-	var usingSQLLiterals bool
-	var err error
-	switch sysVars.CLIFormat {
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		// Use SQL literal formatting for SQL export modes
-		// LiteralFormatConfig formats values as valid Spanner SQL literals
-		fc = spanvalue.LiteralFormatConfig
-		usingSQLLiterals = true
-		err = nil
-
-		// Auto-detect table name if not explicitly set
-		if sysVars.SQLTableName == "" {
-			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
-			if detectedTableName != "" {
-				// Create a copy of sysVars to use the detected table name for this execution only.
-				// This is important for:
-				// 1. Scope isolation: auto-detection only affects this specific query execution
-				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
-				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
-				tempVars := *sysVars
-				tempVars.SQLTableName = detectedTableName
-				sysVars = &tempVars
-				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
-			} else if detectionErr != nil {
-				// Log why auto-detection failed for debugging
-				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
-			}
-		}
-	default:
-		// Use regular display formatting for other modes
-		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
-		usingSQLLiterals = false
-	}
+	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}

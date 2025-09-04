@@ -145,15 +145,6 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 	return columns, nil
 }
 
-// getTablesForExportWithTxn returns the list of tables to export using a transaction.
-// For data export modes, it returns tables in dependency order (parents before children).
-func getTablesForExportWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, mode dumpMode, specificTables []string) ([]string, error) {
-	if !mode.shouldExportData() {
-		return nil, nil
-	}
-	return getTableDependencyOrderWithTxn(ctx, txn, specificTables)
-}
-
 // executeDumpBuffered performs dump operation with buffering.
 // All output is collected in memory before being returned.
 func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
@@ -171,7 +162,10 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
 	err := session.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
 		// Get tables to export (this queries INFORMATION_SCHEMA)
-		tables, err := getTablesForExportWithTxn(ctx, txn, mode, specificTables)
+		if !mode.shouldExportData() {
+			return nil
+		}
+		tables, err := getTableDependencyOrderWithTxn(ctx, txn, specificTables)
 		if err != nil {
 			return fmt.Errorf("failed to get table dependency order: %w", err)
 		}
@@ -256,7 +250,10 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 	var totalAffectedRows int
 	err := session.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
 		// Get tables to export (this queries INFORMATION_SCHEMA)
-		tables, err := getTablesForExportWithTxn(ctx, txn, mode, specificTables)
+		if !mode.shouldExportData() {
+			return nil
+		}
+		tables, err := getTableDependencyOrderWithTxn(ctx, txn, specificTables)
 		if err != nil {
 			return fmt.Errorf("failed to get table dependency order: %w", err)
 		}
