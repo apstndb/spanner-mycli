@@ -97,6 +97,11 @@ func extractTableNameFromQuery(sql string) (string, error) {
 		return "", fmt.Errorf("query type not supported for auto-detection")
 	}
 
+	// Check for SELECT AS STRUCT - not supported for auto-detection
+	if selectStmt.As != nil {
+		return "", fmt.Errorf("SELECT AS STRUCT not supported for auto-detection")
+	}
+
 	// Check if there's a FROM clause first
 	if selectStmt.From == nil {
 		// No FROM clause - not a table query

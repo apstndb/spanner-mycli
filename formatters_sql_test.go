@@ -407,6 +407,13 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 			description:   "qualified column names not supported for auto-detection",
 		},
 		{
+			name:          "SELECT AS STRUCT",
+			query:         "SELECT AS STRUCT id, name FROM Users",
+			wantTableName: "",
+			wantError:     "SELECT AS STRUCT not supported",
+			description:   "SELECT AS STRUCT is not supported for auto-detection",
+		},
+		{
 			name:          "SELECT * with UNNEST",
 			query:         "SELECT * FROM UNNEST([1, 2, 3])",
 			wantTableName: "",
