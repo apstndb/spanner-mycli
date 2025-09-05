@@ -336,6 +336,35 @@ func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) 
 	})
 }
 
+// withReadOnlyTransactionOrStart executes fn with a read-only transaction.
+// If already in a read-only transaction, uses it.
+// If not in any transaction, starts a new read-only transaction and closes it after fn completes.
+// If in a read-write transaction, returns an error as INFORMATION_SCHEMA queries cannot be used there.
+//
+// IMPORTANT: The callback fn must NOT call methods that try to acquire the transaction mutex
+// (e.g., RunQueryWithStats). Only use methods designed for transaction contexts
+// or direct transaction operations (like txn.Query).
+func (s *Session) withReadOnlyTransactionOrStart(ctx context.Context, fn func(*spanner.ReadOnlyTransaction) error) error {
+	// First try to use existing RO transaction
+	err := s.withReadOnlyTransaction(fn)
+	if err != ErrNotInReadOnlyTransaction {
+		// Either succeeded with existing transaction or different error
+		return err
+	}
+
+	// Not in RO transaction, start one
+	_, err = s.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+	if err != nil {
+		return fmt.Errorf("failed to begin read-only transaction: %w", err)
+	}
+	defer func() {
+		_ = s.CloseReadOnlyTransaction()
+	}()
+
+	// Now execute within the transaction we created
+	return s.withReadOnlyTransaction(fn)
+}
+
 // clearTransactionContext atomically clears the transaction context.
 // This is equivalent to setTransactionContext(nil) but more expressive.
 func (s *Session) clearTransactionContext() {

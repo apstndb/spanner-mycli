@@ -36,9 +36,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// executeSQLWithFormat executes SQL with specific format settings without modifying shared session variables.
-// It creates a temporary copy of system variables to avoid race conditions.
-func executeSQLWithFormat(ctx context.Context, session *Session, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+// executeSQLWithFormatAndTxn executes SQL with specific format settings and within a given transaction.
+// This is for use within withReadOnlyTransaction callbacks where we already have a transaction.
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
 	// Create a copy of the system variables for this specific execution
 	tempVars := *session.systemVariables
 
@@ -52,8 +52,8 @@ func executeSQLWithFormat(ctx context.Context, session *Session, sql string, for
 	tempVars.SuppressResultLines = true
 	tempVars.EnableProgressBar = false
 
-	// Execute with the temporary, isolated settings
-	return executeSQLImplWithVars(ctx, session, sql, &tempVars)
+	// Execute with the transaction directly
+	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -65,31 +65,14 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
 }
 
-// executeSQLImplWithVars is the actual implementation that accepts custom system variables
-func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
-	// Always collect metrics - display is controlled by template based on Profile flag
-	metrics := &ExecutionMetrics{
-		QueryStartTime: time.Now(),
-		Profile:        sysVars.Profile,
-	}
-
-	// Capture memory snapshot before execution if profiling is enabled
-	if sysVars.Profile {
-		before := GetMemoryStats()
-		metrics.MemoryBefore = &before
-	}
-
-	// Choose the appropriate format config based on the output format
-	// TODO(future): Current design formats values early (at Result creation time) which limits flexibility.
-	// Ideally, Result should store raw *spanner.Row data and formatters should handle conversion.
-	// This would allow:
-	// - Different formats for the same data without re-querying
-	// - Format-specific optimizations
-	// - Better separation of concerns
-	// However, this requires significant changes to Result struct and RowProcessor interface.
+// prepareFormatConfig determines the appropriate format configuration based on the display mode.
+// It returns the format config, whether SQL literals are being used, and the potentially modified sysVars.
+// This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
+func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, bool, *systemVariables, error) {
 	var fc *spanvalue.FormatConfig
 	var usingSQLLiterals bool
 	var err error
+
 	switch sysVars.CLIFormat {
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		// Use SQL literal formatting for SQL export modes
@@ -118,9 +101,113 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		}
 	default:
 		// Use regular display formatting for other modes
+		// formatConfigWithProto handles custom proto descriptors if set
 		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
 		usingSQLLiterals = false
 	}
+
+	return fc, usingSQLLiterals, sysVars, err
+}
+
+// executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
+// This is for use when we have a specific transaction to use.
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
+	// Always collect metrics - display is controlled by template based on Profile flag
+	metrics := &ExecutionMetrics{
+		QueryStartTime: time.Now(),
+		Profile:        sysVars.Profile,
+	}
+
+	// Capture memory snapshot before execution if profiling is enabled
+	if sysVars.Profile {
+		before := GetMemoryStats()
+		metrics.MemoryBefore = &before
+	}
+
+	// Choose the appropriate format config based on the output format
+	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
+	if err != nil {
+		return nil, err
+	}
+
+	params := sysVars.Params
+	stmt, err := newStatement(sql, params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare query options to preserve profile mode and priority
+	// Note: We always use ExecuteSqlRequest_PROFILE mode (not NORMAL) because:
+	// 1. Spanner historically doesn't return any execution summary in NORMAL mode
+	// 2. spanner-mycli needs execution statistics even when not displaying query plan trees
+	// 3. sysVars.Profile is for CLI tool profiling (memory stats, etc.), NOT for Spanner's PROFILE mode
+	//    - sysVars.Profile=true: Enables CLI profiling features (memory tracking)
+	//    - ExecuteSqlRequest_PROFILE: Always used to get execution statistics from Spanner
+	opts := spanner.QueryOptions{
+		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
+		Priority: sysVars.RPCPriority,
+	}
+	// Use the transaction directly with query options
+	iter := txn.QueryWithOptions(ctx, stmt, opts)
+
+	// Decide whether to use streaming or buffered mode
+	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
+	metrics.IsStreaming = useStreaming
+
+	slog.Debug("executeSQL decision",
+		"useStreaming", useStreaming,
+		"format", sysVars.CLIFormat,
+		"sqlTableName", sysVars.SQLTableName)
+
+	// Execute with the appropriate mode
+	var result *Result
+
+	if useStreaming {
+		result, err = executeWithStreaming(ctx, session, iter, txn, fc, processor, metrics, usingSQLLiterals, sysVars)
+	} else {
+		result, err = executeWithBuffering(ctx, session, iter, txn, fc, sql, metrics, usingSQLLiterals, sysVars)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Set post-execution fields that were not handled by the processor
+	metrics.CompletionTime = time.Now()
+	// sysVars.Profile enables CLI tool profiling features (memory stats tracking)
+	// This is unrelated to Spanner's ExecuteSqlRequest_PROFILE mode
+	if sysVars.Profile {
+		after := GetMemoryStats()
+		metrics.MemoryAfter = &after
+	}
+	result.Metrics = metrics
+
+	return result, nil
+}
+
+// executeSQLImplWithVars is the actual implementation that accepts custom system variables
+func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	// Always collect metrics - display is controlled by template based on Profile flag
+	metrics := &ExecutionMetrics{
+		QueryStartTime: time.Now(),
+		Profile:        sysVars.Profile,
+	}
+
+	// Capture memory snapshot before execution if profiling is enabled
+	if sysVars.Profile {
+		before := GetMemoryStats()
+		metrics.MemoryBefore = &before
+	}
+
+	// Choose the appropriate format config based on the output format
+	// TODO(future): Current design formats values early (at Result creation time) which limits flexibility.
+	// Ideally, Result should store raw *spanner.Row data and formatters should handle conversion.
+	// This would allow:
+	// - Different formats for the same data without re-querying
+	// - Format-specific optimizations
+	// - Better separation of concerns
+	// However, this requires significant changes to Result struct and RowProcessor interface.
+	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}

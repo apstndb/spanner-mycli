@@ -116,7 +116,7 @@ func TestDependencyResolver_TopologicalSort(t *testing.T) {
 					"Employees": {
 						TableName: "Employees",
 						ForeignKeys: []FKReference{
-							{ParentTable: "Employees", ChildTable: "Employees", ChildColumn: "ManagerId"},
+							{ConstraintName: "FK_Employees_Manager", ParentTable: "Employees", ChildTable: "Employees"},
 						},
 						Level: 0,
 					},
@@ -421,8 +421,8 @@ func TestDependencyResolver_ComplexScenarios(t *testing.T) {
 			"Posts": {
 				TableName: "Posts",
 				ForeignKeys: []FKReference{
-					{ParentTable: "Users", ChildTable: "Posts", ChildColumn: "AuthorId"},
-					{ParentTable: "Users", ChildTable: "Posts", ChildColumn: "EditorId"},
+					{ConstraintName: "FK_Posts_Author", ParentTable: "Users", ChildTable: "Posts"},
+					{ConstraintName: "FK_Posts_Editor", ParentTable: "Users", ChildTable: "Posts"},
 				},
 				Level: 0,
 			},
@@ -557,8 +557,6 @@ func TestDependencyResolver_MultiColumnFK(t *testing.T) {
 						ConstraintName: "FK_User",
 						ParentTable:    "Users",
 						ChildTable:     "UserPreferences",
-						ChildColumn:    "UserId", // Would be first column of multi-column FK
-						ParentColumn:   "Id",
 					},
 				},
 				Level: 0,

@@ -8,16 +8,13 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"google.golang.org/api/iterator"
 )
 
-// FKReference represents a foreign key relationship
+// FKReference represents a foreign key relationship between tables
 type FKReference struct {
-	ConstraintName string
-	ChildTable     string
-	ChildColumn    string
-	ParentTable    string
-	ParentColumn   string
+	ConstraintName string `spanner:"CONSTRAINT_NAME"`
+	ChildTable     string `spanner:"CHILD_TABLE"`
+	ParentTable    string `spanner:"PARENT_TABLE"`
 }
 
 // TableDependency represents a table with all its dependencies
@@ -45,15 +42,22 @@ func NewDependencyResolver() *DependencyResolver {
 	}
 }
 
-// BuildDependencyGraph queries the database and builds the complete dependency graph
-func (dr *DependencyResolver) BuildDependencyGraph(ctx context.Context, session *Session) error {
+// interleaveRow represents a row from INFORMATION_SCHEMA.TABLES for interleave relationships
+type interleaveRow struct {
+	TableName      string  `spanner:"TABLE_NAME"`
+	ParentTable    *string `spanner:"PARENT_TABLE_NAME"`
+	OnDeleteAction *string `spanner:"ON_DELETE_ACTION"`
+}
+
+// BuildDependencyGraphWithTxn queries the database and builds the complete dependency graph using a transaction
+func (dr *DependencyResolver) BuildDependencyGraphWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
 	// First, query INTERLEAVE relationships
-	if err := dr.queryInterleaveRelationships(ctx, session); err != nil {
+	if err := dr.queryInterleaveRelationshipsWithTxn(ctx, txn); err != nil {
 		return fmt.Errorf("failed to query interleave relationships: %w", err)
 	}
 
 	// Then, query foreign key relationships
-	if err := dr.queryForeignKeyRelationships(ctx, session); err != nil {
+	if err := dr.queryForeignKeyRelationshipsWithTxn(ctx, txn); err != nil {
 		return fmt.Errorf("failed to query foreign key relationships: %w", err)
 	}
 
@@ -63,8 +67,30 @@ func (dr *DependencyResolver) BuildDependencyGraph(ctx context.Context, session 
 	return nil
 }
 
-// queryInterleaveRelationships queries and builds INTERLEAVE parent-child relationships
-func (dr *DependencyResolver) queryInterleaveRelationships(ctx context.Context, session *Session) error {
+// processInterleaveRows processes all interleave relationship rows and updates the dependency graph.
+func (dr *DependencyResolver) processInterleaveRows(rows []interleaveRow) {
+	for _, data := range rows {
+		// Get or create table dependency
+		table := dr.getOrCreateTable(data.TableName)
+
+		// Set INTERLEAVE parent information
+		if data.ParentTable != nil {
+			table.ParentTable = *data.ParentTable
+			if data.OnDeleteAction != nil {
+				table.OnDeleteAction = *data.OnDeleteAction
+			}
+
+			// Update parent's children list
+			parent := dr.getOrCreateTable(*data.ParentTable)
+			if !slices.Contains(parent.ChildrenTables, data.TableName) {
+				parent.ChildrenTables = append(parent.ChildrenTables, data.TableName)
+			}
+		}
+	}
+}
+
+// queryInterleaveRelationshipsWithTxn queries and builds INTERLEAVE parent-child relationships using a transaction
+func (dr *DependencyResolver) queryInterleaveRelationshipsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
 	query := `
 		SELECT 
 			TABLE_NAME,
@@ -75,122 +101,54 @@ func (dr *DependencyResolver) queryInterleaveRelationships(ctx context.Context, 
 		ORDER BY TABLE_NAME
 	`
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
-	defer iter.Stop()
-
-	for {
-		row, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		var tableName, parentTable, onDeleteAction spanner.NullString
-		if err := row.Columns(&tableName, &parentTable, &onDeleteAction); err != nil {
-			return err
-		}
-
-		if !tableName.Valid {
-			continue
-		}
-
-		name := tableName.StringVal
-
-		// Get or create table dependency
-		table := dr.getOrCreateTable(name)
-
-		// Set INTERLEAVE parent information
-		if parentTable.Valid {
-			table.ParentTable = parentTable.StringVal
-			table.OnDeleteAction = onDeleteAction.StringVal
-
-			// Update parent's children list
-			parent := dr.getOrCreateTable(parentTable.StringVal)
-			if !slices.Contains(parent.ChildrenTables, name) {
-				parent.ChildrenTables = append(parent.ChildrenTables, name)
-			}
-		}
+	var rows []interleaveRow
+	if err := spanner.SelectAll(txn.Query(ctx, spanner.Statement{SQL: query}), &rows); err != nil {
+		return fmt.Errorf("failed to query interleave relationships: %w", err)
 	}
 
+	dr.processInterleaveRows(rows)
 	return nil
 }
 
-// queryForeignKeyRelationships queries and builds foreign key relationships
-func (dr *DependencyResolver) queryForeignKeyRelationships(ctx context.Context, session *Session) error {
-	// Query using REFERENTIAL_CONSTRAINTS and KEY_COLUMN_USAGE tables
-	// For multi-column FKs, POSITION_IN_UNIQUE_CONSTRAINT on the child side
-	// matches ORDINAL_POSITION on the parent side
+// processForeignKeyRows processes all foreign key rows and updates the dependency graph.
+func (dr *DependencyResolver) processForeignKeyRows(rows []FKReference) {
+	// No need for deduplication since the query now returns unique constraints only
+	for _, fkRef := range rows {
+		// Update child table's foreign keys
+		childDep := dr.getOrCreateTable(fkRef.ChildTable)
+		childDep.ForeignKeys = append(childDep.ForeignKeys, fkRef)
+
+		// Update parent table's referenced by list
+		parentDep := dr.getOrCreateTable(fkRef.ParentTable)
+		parentDep.ReferencedBy = append(parentDep.ReferencedBy, fkRef)
+	}
+}
+
+// queryForeignKeyRelationshipsWithTxn queries and builds foreign key relationships using a transaction
+func (dr *DependencyResolver) queryForeignKeyRelationshipsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
+	// Query foreign key relationships at the table level
+	// KEY_COLUMN_USAGE is needed because REFERENTIAL_CONSTRAINTS doesn't contain table names
 	query := `
-		SELECT 
+		SELECT DISTINCT
 			rc.CONSTRAINT_NAME,
-			kcu_child.TABLE_NAME AS child_table,
-			kcu_child.COLUMN_NAME AS child_column,
-			kcu_parent.TABLE_NAME AS parent_table,
-			kcu_parent.COLUMN_NAME AS parent_column
+			kcu_child.TABLE_NAME AS CHILD_TABLE,
+			kcu_parent.TABLE_NAME AS PARENT_TABLE
 		FROM information_schema.referential_constraints rc
 		JOIN information_schema.key_column_usage kcu_child
-			ON rc.CONSTRAINT_SCHEMA = kcu_child.CONSTRAINT_SCHEMA 
-			AND rc.CONSTRAINT_NAME = kcu_child.CONSTRAINT_NAME
+			USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME)
 		JOIN information_schema.key_column_usage kcu_parent
 			ON rc.UNIQUE_CONSTRAINT_SCHEMA = kcu_parent.CONSTRAINT_SCHEMA
 			AND rc.UNIQUE_CONSTRAINT_NAME = kcu_parent.CONSTRAINT_NAME
-			AND kcu_child.POSITION_IN_UNIQUE_CONSTRAINT = kcu_parent.ORDINAL_POSITION
 		WHERE rc.CONSTRAINT_SCHEMA = ''
-		ORDER BY rc.CONSTRAINT_NAME, kcu_child.ORDINAL_POSITION
+		ORDER BY rc.CONSTRAINT_NAME
 	`
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
-	defer iter.Stop()
-
-	// Track which constraints we've already processed (for multi-column FKs)
-	processedConstraints := make(map[string]bool)
-
-	for {
-		row, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		var constraintName, childTable, childColumn, parentTable, parentColumn spanner.NullString
-		if err := row.Columns(&constraintName, &childTable, &childColumn, &parentTable, &parentColumn); err != nil {
-			return err
-		}
-
-		if !childTable.Valid || !parentTable.Valid || !constraintName.Valid {
-			continue
-		}
-
-		// For dependency resolution, we only need one entry per constraint
-		// (table-to-table relationship), not per column
-		constraintKey := constraintName.StringVal
-		if processedConstraints[constraintKey] {
-			// Already processed this constraint (multi-column FK)
-			continue
-		}
-		processedConstraints[constraintKey] = true
-
-		fkRef := FKReference{
-			ConstraintName: constraintName.StringVal,
-			ChildTable:     childTable.StringVal,
-			ChildColumn:    childColumn.StringVal, // Note: This will be the first column for multi-column FKs
-			ParentTable:    parentTable.StringVal,
-			ParentColumn:   parentColumn.StringVal, // Note: This will be the first column for multi-column FKs
-		}
-
-		// Add FK to child table's foreign keys
-		child := dr.getOrCreateTable(childTable.StringVal)
-		child.ForeignKeys = append(child.ForeignKeys, fkRef)
-
-		// Add FK to parent table's referenced by list
-		parent := dr.getOrCreateTable(parentTable.StringVal)
-		parent.ReferencedBy = append(parent.ReferencedBy, fkRef)
+	var rows []FKReference
+	if err := spanner.SelectAll(txn.Query(ctx, spanner.Statement{SQL: query}), &rows); err != nil {
+		return fmt.Errorf("failed to query foreign key relationships: %w", err)
 	}
 
+	dr.processForeignKeyRows(rows)
 	return nil
 }
 
