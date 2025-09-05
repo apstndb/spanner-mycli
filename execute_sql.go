@@ -137,6 +137,12 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	}
 
 	// Prepare query options to preserve profile mode and priority
+	// Note: We always use ExecuteSqlRequest_PROFILE mode (not NORMAL) because:
+	// 1. Spanner historically doesn't return any execution summary in NORMAL mode
+	// 2. spanner-mycli needs execution statistics even when not displaying query plan trees
+	// 3. sysVars.Profile is for CLI tool profiling (memory stats, etc.), NOT for Spanner's PROFILE mode
+	//    - sysVars.Profile=true: Enables CLI profiling features (memory tracking)
+	//    - ExecuteSqlRequest_PROFILE: Always used to get execution statistics from Spanner
 	opts := spanner.QueryOptions{
 		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
 		Priority: sysVars.RPCPriority,
@@ -168,6 +174,8 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 	// Set post-execution fields that were not handled by the processor
 	metrics.CompletionTime = time.Now()
+	// sysVars.Profile enables CLI tool profiling features (memory stats tracking)
+	// This is unrelated to Spanner's ExecuteSqlRequest_PROFILE mode
 	if sysVars.Profile {
 		after := GetMemoryStats()
 		metrics.MemoryAfter = &after
