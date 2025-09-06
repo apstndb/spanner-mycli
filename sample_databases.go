@@ -130,30 +130,30 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) 
 
 	var wg sync.WaitGroup
 
-	// Process file:// URIs in parallel (local I/O is fast)
-	for _, task := range fileJobs {
-		wg.Go(func() {
-			path := strings.TrimPrefix(task.uri, "file://")
-			data, err := os.ReadFile(path)
-			if err != nil {
-				errors[task.index] = fmt.Errorf("failed to read file %s: %w", task.uri, err)
-				return
-			}
-			results[task.index] = data
-		})
+	// Helper function to process individual URIs in parallel
+	processURIs := func(jobs []loadTask, loader func(string) ([]byte, error)) {
+		for _, task := range jobs {
+			wg.Go(func() {
+				data, err := loader(task.uri)
+				if err != nil {
+					errors[task.index] = err
+					return
+				}
+				results[task.index] = data
+			})
+		}
 	}
 
+	// Process file:// URIs in parallel (local I/O is fast)
+	processURIs(fileJobs, func(uri string) ([]byte, error) {
+		path := strings.TrimPrefix(uri, "file://")
+		return os.ReadFile(path)
+	})
+
 	// Process HTTP(S) URIs in parallel
-	for _, task := range httpJobs {
-		wg.Go(func() {
-			data, err := loadFromHTTP(ctx, task.uri)
-			if err != nil {
-				errors[task.index] = err
-				return
-			}
-			results[task.index] = data
-		})
-	}
+	processURIs(httpJobs, func(uri string) ([]byte, error) {
+		return loadFromHTTP(ctx, uri)
+	})
 
 	// Process GCS URIs in a single batch (single client for efficiency)
 	if len(gcsJobs) > 0 {
