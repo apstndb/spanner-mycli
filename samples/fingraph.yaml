@@ -1,0 +1,6 @@
+name: fingraph
+description: Financial graph example demonstrating Spanner Graph features
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: fingraph-schema.sql
+dataURI: fingraph-data.sql
+source: https://cloud.google.com/spanner/docs/graph/set-up?hl=en#console

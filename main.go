@@ -105,7 +105,7 @@ type spannerOptions struct {
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
 	EmulatorPlatform          string            `long:"emulator-platform" description:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator" default-mask:"-"`
-	SampleDatabase            string            `long:"sample-database" description:"Initialize emulator with specified sample database (banking, finance, finance-graph, finance-pg, gaming). Requires --embedded-emulator." default-mask:"-"`
+	SampleDatabase            string            `long:"sample-database" description:"Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator." default-mask:"-"`
 	ListSamples               bool              `long:"list-samples" description:"List available sample databases and exit" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
 	LogLevel                  string            `long:"log-level" default-mask:"-"`
@@ -471,13 +471,28 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 		// Load sample database if specified
 		if opts.SampleDatabase != "" {
-			sample, ok := sampleDatabases[opts.SampleDatabase]
-			if !ok {
-				return fmt.Errorf("unknown sample database: %s", opts.SampleDatabase)
+			var sample *SampleDatabase
+			var err error
+
+			// Check if it's a path to metadata file (.json, .yaml, .yml)
+			if metadataFileRegex.MatchString(opts.SampleDatabase) {
+				// Load from metadata file
+				sample, err = loadSampleFromMetadata(opts.SampleDatabase)
+				if err != nil {
+					return fmt.Errorf("failed to load sample metadata: %w", err)
+				}
+			} else {
+				// Look for built-in sample by name
+				samples := discoverBuiltinSamples()
+				if s, ok := samples[opts.SampleDatabase]; ok {
+					sample = &s
+				} else {
+					return fmt.Errorf("sample database not found: %s", opts.SampleDatabase)
+				}
 			}
 
 			// Use the sample's dialect
-			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.Dialect))
+			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.ParsedDialect))
 
 			// Prepare URIs for batch loading
 			var uris []string

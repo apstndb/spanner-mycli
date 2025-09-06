@@ -1,0 +1,6 @@
+name: banking
+description: Banking application with accounts and transactions
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: gs://cloud-spanner-samples/banking/schema/banking-schema.sdl
+dataURI: gs://cloud-spanner-samples/banking/data-insert-statements/banking-inserts.sql
+source: Google Cloud Spanner Samples

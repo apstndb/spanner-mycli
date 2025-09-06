@@ -1,0 +1,6 @@
+name: gaming
+description: Gaming application with players and scores
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: gs://cloud-spanner-samples/gaming/schema/gaming-schema.sdl
+dataURI: gs://cloud-spanner-samples/gaming/data-insert-statements/gaming-inserts.sql
+source: Google Cloud Spanner Samples

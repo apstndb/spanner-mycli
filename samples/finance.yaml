@@ -1,0 +1,5 @@
+name: finance
+description: Finance application schema (GoogleSQL)
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: gs://cloud-spanner-samples/finance/schema/finance-schema.sdl
+source: Google Cloud Spanner Samples

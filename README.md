@@ -142,7 +142,7 @@ spanner:
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
       --emulator-image=                                   container image for --embedded-emulator
       --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
-      --sample-database=                                  Initialize emulator with specified sample database (banking, finance, finance-graph, finance-pg, gaming). Requires --embedded-emulator.
+      --sample-database=                                  Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator.
       --list-samples                                      List available sample databases and exit
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
@@ -1081,9 +1081,12 @@ Available sample databases:
   finance        GoogleSQL    Finance application schema (GoogleSQL)
   finance-graph  GoogleSQL    Finance application with graph features
   finance-pg     PostgreSQL   Finance application (PostgreSQL dialect)
+  fingraph       GoogleSQL    Financial graph example demonstrating Spanner Graph features
   gaming         GoogleSQL    Gaming application with players and scores
+  singers        GoogleSQL    Music database used throughout Spanner documentation
 
 Usage: spanner-mycli --embedded-emulator --sample-database=<name>
+       spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.json
 
 # Start with the banking sample database
 $ spanner-mycli --embedded-emulator --sample-database=banking
@@ -1097,11 +1100,14 @@ emulator-project:emulator-instance:emulator-database
 +-------+
 1 rows in set (2.76 ms)
 
-# Use PostgreSQL sample
-$ spanner-mycli --embedded-emulator --sample-database=finance-pg
+# Use embedded fingraph sample
+$ spanner-mycli --embedded-emulator --sample-database=fingraph
+
+# Use custom sample with metadata file
+$ spanner-mycli --embedded-emulator --sample-database=/path/to/mysample.yaml
 ```
 
-The sample databases are automatically downloaded from Google Cloud Storage and initialized when the emulator starts. This provides realistic test data for development and demonstrations.
+The sample databases include both embedded samples (fingraph, singers) and samples downloaded from Google Cloud Storage. You can also create custom samples using metadata files in JSON or YAML format.
 
 > [!NOTE]
 > The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.

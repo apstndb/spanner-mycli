@@ -1,0 +1,5 @@
+name: finance-pg
+description: Finance application (PostgreSQL dialect)
+dialect: POSTGRESQL
+schemaURI: gs://cloud-spanner-samples/finance/schema/finance-schema-pg.sdl
+source: Google Cloud Spanner Samples

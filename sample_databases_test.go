@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,17 +32,25 @@ import (
 func TestListAvailableSamples(t *testing.T) {
 	output := ListAvailableSamples()
 
-	// Check that all samples are listed
-	expectedSamples := []string{"banking", "finance", "finance-graph", "finance-pg", "gaming"}
-	for _, sample := range expectedSamples {
+	// Check that GCS samples are listed
+	expectedGCSSamples := []string{"banking", "finance", "finance-graph", "finance-pg", "gaming"}
+	for _, sample := range expectedGCSSamples {
 		if !strings.Contains(output, sample) {
-			t.Errorf("ListAvailableSamples() missing sample %q", sample)
+			t.Errorf("ListAvailableSamples() missing GCS sample %q", sample)
+		}
+	}
+
+	// Check that embedded samples are listed
+	expectedEmbeddedSamples := []string{"fingraph", "singers"}
+	for _, sample := range expectedEmbeddedSamples {
+		if !strings.Contains(output, sample) {
+			t.Errorf("ListAvailableSamples() missing embedded sample %q", sample)
 		}
 	}
 
 	// Check for usage instruction
-	if !strings.Contains(output, "Usage:") {
-		t.Error("ListAvailableSamples() missing usage instruction")
+	if !strings.Contains(output, "metadata.json") {
+		t.Error("ListAvailableSamples() missing metadata.json instruction")
 	}
 }
 
@@ -101,6 +110,174 @@ func TestLoadFromFile(t *testing.T) {
 	_, err = loadFromURI(ctx, "file:///nonexistent/file.sql")
 	if err == nil {
 		t.Error("loadFromURI() expected error for non-existent file, got nil")
+	}
+}
+
+func TestSampleDatabaseURIResolution(t *testing.T) {
+	// Test URI resolution for embedded sample
+	embedded := SampleDatabase{
+		Name:       "test-embedded",
+		SchemaURI:  "test-schema.sql",
+		DataURI:    "test-data.sql",
+		BaseDir:    "samples",
+		IsEmbedded: true,
+	}
+	embedded.ResolveURIs()
+	if embedded.SchemaURI != "embedded://test-schema.sql" {
+		t.Errorf("embedded SchemaURI = %q, want embedded://test-schema.sql", embedded.SchemaURI)
+	}
+	if embedded.DataURI != "embedded://test-data.sql" {
+		t.Errorf("embedded DataURI = %q, want embedded://test-data.sql", embedded.DataURI)
+	}
+
+	// Test URI resolution for user sample (relative paths)
+	user := SampleDatabase{
+		Name:       "test-user",
+		SchemaURI:  "schema.sql",
+		DataURI:    "https://example.com/data.sql", // Already absolute
+		BaseDir:    "/home/user/samples/test",
+		IsEmbedded: false,
+	}
+	user.ResolveURIs()
+	if user.SchemaURI != "file:///home/user/samples/test/schema.sql" {
+		t.Errorf("user SchemaURI = %q, want file:///home/user/samples/test/schema.sql", user.SchemaURI)
+	}
+	if user.DataURI != "https://example.com/data.sql" {
+		t.Errorf("user DataURI = %q, want https://example.com/data.sql (unchanged)", user.DataURI)
+	}
+}
+
+func TestLoadSampleFromMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+
+	// Test valid metadata
+	validMetadata := `{
+		"name": "test",
+		"description": "Test sample",
+		"dialect": "GOOGLE_STANDARD_SQL",
+		"schemaURI": "schema.sql",
+		"dataURI": "gs://bucket/data.sql"
+	}`
+	if err := os.WriteFile(metadataPath, []byte(validMetadata), 0o644); err != nil {
+		t.Fatalf("Failed to write metadata: %v", err)
+	}
+
+	sample, err := loadSampleFromMetadata(metadataPath)
+	if err != nil {
+		t.Fatalf("loadSampleFromMetadata() error = %v", err)
+	}
+
+	if sample.Name != "test" {
+		t.Errorf("sample.Name = %q, want %q", sample.Name, "test")
+	}
+	if sample.ParsedDialect != databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL {
+		t.Errorf("sample.ParsedDialect = %v, want GOOGLE_STANDARD_SQL", sample.ParsedDialect)
+	}
+	expectedSchemaURI := fmt.Sprintf("file://%s/schema.sql", tmpDir)
+	if sample.SchemaURI != expectedSchemaURI {
+		t.Errorf("sample.SchemaURI = %q, want %q", sample.SchemaURI, expectedSchemaURI)
+	}
+	if sample.DataURI != "gs://bucket/data.sql" {
+		t.Errorf("sample.DataURI = %q, want gs://bucket/data.sql", sample.DataURI)
+	}
+
+	// Test invalid dialect
+	invalidDialectMetadata := `{
+		"name": "test",
+		"dialect": "INVALID_SQL",
+		"schemaURI": "schema.sql"
+	}`
+	invalidPath := filepath.Join(tmpDir, "invalid.json")
+	if err := os.WriteFile(invalidPath, []byte(invalidDialectMetadata), 0o644); err != nil {
+		t.Fatalf("Failed to write invalid metadata: %v", err)
+	}
+
+	_, err = loadSampleFromMetadata(invalidPath)
+	if err == nil {
+		t.Error("loadSampleFromMetadata() expected error for invalid dialect, got nil")
+	}
+
+	// Test missing required fields
+	missingFieldsMetadata := `{
+		"name": "test",
+		"dialect": "GOOGLE_STANDARD_SQL"
+	}`
+	missingPath := filepath.Join(tmpDir, "missing.json")
+	if err := os.WriteFile(missingPath, []byte(missingFieldsMetadata), 0o644); err != nil {
+		t.Fatalf("Failed to write metadata with missing fields: %v", err)
+	}
+
+	_, err = loadSampleFromMetadata(missingPath)
+	if err == nil {
+		t.Error("loadSampleFromMetadata() expected error for missing schemaURI, got nil")
+	}
+}
+
+func TestDiscoverBuiltinSamples(t *testing.T) {
+	samples := discoverBuiltinSamples()
+
+	// Check that embedded samples are discovered
+	if _, ok := samples["fingraph"]; !ok {
+		t.Error("discoverBuiltinSamples() missing 'fingraph' sample")
+	}
+	if _, ok := samples["singers"]; !ok {
+		t.Error("discoverBuiltinSamples() missing 'singers' sample")
+	}
+
+	// Verify fingraph sample properties
+	if fingraph, ok := samples["fingraph"]; ok {
+		if fingraph.ParsedDialect != databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL {
+			t.Errorf("fingraph.ParsedDialect = %v, want GOOGLE_STANDARD_SQL", fingraph.ParsedDialect)
+		}
+		if !fingraph.IsEmbedded {
+			t.Error("fingraph.IsEmbedded = false, want true")
+		}
+		if !strings.HasPrefix(fingraph.SchemaURI, "embedded://") {
+			t.Errorf("fingraph.SchemaURI = %q, should start with embedded://", fingraph.SchemaURI)
+		}
+	}
+
+	// Verify singers sample properties
+	if singers, ok := samples["singers"]; ok {
+		if singers.ParsedDialect != databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL {
+			t.Errorf("singers.ParsedDialect = %v, want GOOGLE_STANDARD_SQL", singers.ParsedDialect)
+		}
+		if !singers.IsEmbedded {
+			t.Error("singers.IsEmbedded = false, want true")
+		}
+		if !strings.HasPrefix(singers.SchemaURI, "embedded://") {
+			t.Errorf("singers.SchemaURI = %q, should start with embedded://", singers.SchemaURI)
+		}
+	}
+}
+
+func TestLoadEmbeddedURI(t *testing.T) {
+	ctx := context.Background()
+
+	// Test loading embedded fingraph schema
+	data, err := loadFromURI(ctx, "embedded://fingraph-schema.sql")
+	if err != nil {
+		t.Fatalf("loadFromURI(embedded://fingraph-schema.sql) error = %v", err)
+	}
+
+	// Check that it contains expected content
+	if !strings.Contains(string(data), "CREATE TABLE Person") {
+		t.Error("embedded fingraph schema missing 'CREATE TABLE Person'")
+	}
+	if !strings.Contains(string(data), "CREATE OR REPLACE PROPERTY GRAPH FinGraph") {
+		t.Error("embedded fingraph schema missing graph definition")
+	}
+
+	// Test loading embedded singers data
+	data, err = loadFromURI(ctx, "embedded://singers-data.sql")
+	if err != nil {
+		t.Fatalf("loadFromURI(embedded://singers-data.sql) error = %v", err)
+	}
+
+	// Check that it contains expected content
+	if !strings.Contains(string(data), "INSERT INTO Singers") {
+		t.Error("embedded singers data missing 'INSERT INTO Singers'")
 	}
 }
 
@@ -190,37 +367,39 @@ INSERT INTO test VALUES (1);`,
 	}
 }
 
-func TestSampleDatabaseRegistry(t *testing.T) {
-	// Test that all expected samples are in registry
+func TestBuiltinSampleRegistry(t *testing.T) {
+	// Test that all expected samples are discovered correctly
+	samples := discoverBuiltinSamples()
+
 	expectedSamples := map[string]databasepb.DatabaseDialect{
 		"banking":       databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
 		"finance":       databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
 		"finance-graph": databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
 		"finance-pg":    databasepb.DatabaseDialect_POSTGRESQL,
 		"gaming":        databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
+		"fingraph":      databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
+		"singers":       databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
 	}
 
 	for name, expectedDialect := range expectedSamples {
-		sample, ok := sampleDatabases[name]
+		sample, ok := samples[name]
 		if !ok {
-			t.Errorf("Sample %q not found in registry", name)
+			t.Errorf("Sample %q not found in builtin samples", name)
 			continue
 		}
 
-		if sample.Dialect != expectedDialect {
-			t.Errorf("Sample %q has dialect %v, want %v", name, sample.Dialect, expectedDialect)
+		if sample.ParsedDialect != expectedDialect {
+			t.Errorf("Sample %q has dialect %v, want %v", name, sample.ParsedDialect, expectedDialect)
 		}
 
 		// Check that URIs are properly formatted
-		if !strings.HasPrefix(sample.SchemaURI, "gs://") {
-			t.Errorf("Sample %q has invalid schema URI: %q", name, sample.SchemaURI)
+		if sample.SchemaURI == "" {
+			t.Errorf("Sample %q has empty schema URI", name)
 		}
 
-		// finance and finance-pg don't have data URIs
-		if name != "finance" && name != "finance-pg" {
-			if !strings.HasPrefix(sample.DataURI, "gs://") {
-				t.Errorf("Sample %q has invalid data URI: %q", name, sample.DataURI)
-			}
+		// Check that the URIs have valid schemes or are embedded
+		if !strings.Contains(sample.SchemaURI, "://") {
+			t.Errorf("Sample %q has invalid schema URI: %q", name, sample.SchemaURI)
 		}
 	}
 }
