@@ -45,6 +45,38 @@ err3 := fmt.Errorf("first: %w, second: %w", err1, err2)                // Valid 
 
 Reference: https://go.dev/doc/go1.20#errors
 
+### WaitGroup.Go Method (Go 1.25+)
+
+Since Go 1.25, `sync.WaitGroup` has a new `Go` method that simplifies concurrent task management:
+
+- **`WaitGroup.Go(f func())`** starts a goroutine and automatically manages Add/Done
+- Eliminates the need for manual `wg.Add(1)` and `defer wg.Done()` calls
+- Makes concurrent code cleaner and less error-prone
+
+**DO NOT** suggest that `sync.WaitGroup` doesn't have a `Go` method when reviewing Go 1.25+ code:
+
+```go
+// Go 1.25+ simplified pattern
+var wg sync.WaitGroup
+wg.Go(func() {
+    // Task executes in goroutine
+    // No need for Add(1) or defer Done()
+    doWork()
+})
+wg.Wait()
+
+// Old pattern (still valid but more verbose)
+var wg sync.WaitGroup
+wg.Add(1)
+go func() {
+    defer wg.Done()
+    doWork()
+}()
+wg.Wait()
+```
+
+Reference: https://pkg.go.dev/sync#WaitGroup.Go
+
 ### Other Go Best Practices
 
 - Follow standard Go idioms and conventions

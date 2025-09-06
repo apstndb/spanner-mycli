@@ -136,11 +136,18 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 				data, err = loadFromGCSWithClient(ctx, gcsClient, uri)
 			case strings.HasPrefix(uri, "file://"):
 				path := strings.TrimPrefix(uri, "file://")
-				// Check file size before reading
+				// Check file size and type before reading
 				fi, statErr := os.Stat(path)
 				if statErr != nil {
 					mu.Lock()
 					errors[uri] = fmt.Errorf("failed to stat file %s: %w", uri, statErr)
+					mu.Unlock()
+					return
+				}
+				// Check for special files (devices, named pipes, etc.)
+				if fi.Mode()&(os.ModeDevice|os.ModeNamedPipe|os.ModeSocket|os.ModeCharDevice) != 0 {
+					mu.Lock()
+					errors[uri] = fmt.Errorf("cannot read special file %s", uri)
 					mu.Unlock()
 					return
 				}
