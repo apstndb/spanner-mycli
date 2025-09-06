@@ -105,6 +105,8 @@ type spannerOptions struct {
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
 	EmulatorPlatform          string            `long:"emulator-platform" description:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator" default-mask:"-"`
+	SampleDatabase            string            `long:"sample-database" description:"Initialize emulator with specified sample database (banking, finance, finance-graph, finance-pg, gaming). Requires --embedded-emulator." default-mask:"-"`
+	ListSamples               bool              `long:"list-samples" description:"List available sample databases and exit" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
 	LogLevel                  string            `long:"log-level" default-mask:"-"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs" default-mask:"-"`
@@ -410,6 +412,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return nil
 	}
 
+	if opts.ListSamples {
+		fmt.Print(ListAvailableSamples())
+		return nil
+	}
+
 	if err := ValidateSpannerOptions(opts); err != nil {
 		return err
 	}
@@ -460,6 +467,45 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		// Add platform customizer if specified
 		if opts.EmulatorPlatform != "" {
 			emulatorOpts = append(emulatorOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
+		}
+
+		// Load sample database if specified
+		if opts.SampleDatabase != "" {
+			sample, ok := sampleDatabases[opts.SampleDatabase]
+			if !ok {
+				return fmt.Errorf("unknown sample database: %s", opts.SampleDatabase)
+			}
+
+			// Use the sample's dialect
+			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.Dialect))
+
+			// Load and parse schema
+			if sample.SchemaURI != "" {
+				schemaContent, err := loadFromURI(ctx, sample.SchemaURI)
+				if err != nil {
+					return fmt.Errorf("failed to load schema for %q: %w", opts.SampleDatabase, err)
+				}
+
+				ddlStatements, err := ParseStatements(schemaContent, sample.SchemaURI)
+				if err != nil {
+					return fmt.Errorf("failed to parse schema statements: %w", err)
+				}
+				emulatorOpts = append(emulatorOpts, spanemuboost.WithSetupDDLs(ddlStatements))
+			}
+
+			// Load and parse data
+			if sample.DataURI != "" {
+				dataContent, err := loadFromURI(ctx, sample.DataURI)
+				if err != nil {
+					return fmt.Errorf("failed to load data for %q: %w", opts.SampleDatabase, err)
+				}
+
+				dmlStatements, err := ParseStatements(dataContent, sample.DataURI)
+				if err != nil {
+					return fmt.Errorf("failed to parse data statements: %w", err)
+				}
+				emulatorOpts = append(emulatorOpts, spanemuboost.WithSetupRawDMLs(dmlStatements))
+			}
 		}
 
 		container, teardown, err := spanemuboost.NewEmulator(ctx, emulatorOpts...)
@@ -577,6 +623,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 
 	if inputMethodsCount > 1 {
 		return fmt.Errorf("invalid combination: --execute(-e), --file(-f), --sql, --source are exclusive")
+	}
+	// Validate sample database flags
+	if opts.SampleDatabase != "" && !opts.EmbeddedEmulator {
+		return fmt.Errorf("--sample-database requires --embedded-emulator")
+	}
+	if opts.ListSamples && opts.SampleDatabase != "" {
+		return fmt.Errorf("--list-samples and --sample-database are mutually exclusive")
 	}
 
 	if opts.TryPartitionQuery {
