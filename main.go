@@ -479,13 +479,34 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			// Use the sample's dialect
 			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.Dialect))
 
-			// Load and parse schema
+			// Prepare URIs for batch loading
+			var uris []string
 			if sample.SchemaURI != "" {
-				schemaContent, err := loadFromURI(ctx, sample.SchemaURI)
-				if err != nil {
-					return fmt.Errorf("failed to load schema for %q: %w", opts.SampleDatabase, err)
-				}
+				uris = append(uris, sample.SchemaURI)
+			}
+			if sample.DataURI != "" {
+				uris = append(uris, sample.DataURI)
+			}
 
+			// Batch load all URIs efficiently (handles mixed sources)
+			results, err := loadMultipleFromURIs(ctx, uris)
+			if err != nil {
+				return fmt.Errorf("failed to load sample database %q: %w", opts.SampleDatabase, err)
+			}
+
+			// Extract results based on what was loaded
+			var schemaContent, dataContent []byte
+			resultIdx := 0
+			if sample.SchemaURI != "" {
+				schemaContent = results[resultIdx]
+				resultIdx++
+			}
+			if sample.DataURI != "" {
+				dataContent = results[resultIdx]
+			}
+
+			// Parse and add DDL statements
+			if len(schemaContent) > 0 {
 				ddlStatements, err := ParseStatements(schemaContent, sample.SchemaURI)
 				if err != nil {
 					return fmt.Errorf("failed to parse schema statements: %w", err)
@@ -493,13 +514,8 @@ func run(ctx context.Context, opts *spannerOptions) error {
 				emulatorOpts = append(emulatorOpts, spanemuboost.WithSetupDDLs(ddlStatements))
 			}
 
-			// Load and parse data
-			if sample.DataURI != "" {
-				dataContent, err := loadFromURI(ctx, sample.DataURI)
-				if err != nil {
-					return fmt.Errorf("failed to load data for %q: %w", opts.SampleDatabase, err)
-				}
-
+			// Parse and add DML statements
+			if len(dataContent) > 0 {
 				dmlStatements, err := ParseStatements(dataContent, sample.DataURI)
 				if err != nil {
 					return fmt.Errorf("failed to parse data statements: %w", err)

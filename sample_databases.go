@@ -26,6 +26,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"cloud.google.com/go/storage"
@@ -79,52 +81,165 @@ var sampleDatabases = map[string]SampleDatabase{
 	},
 }
 
-// loadFromURI loads content from various URI schemes
+// loadFromURI loads content from various URI schemes (for single URI compatibility)
 func loadFromURI(ctx context.Context, uri string) ([]byte, error) {
-	switch {
-	case strings.HasPrefix(uri, "gs://"):
-		// Google Cloud Storage
-		return loadFromGCS(ctx, uri)
-	case strings.HasPrefix(uri, "file://"):
-		// Local file system
-		path := strings.TrimPrefix(uri, "file://")
-		return os.ReadFile(path)
-	case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
-		// HTTP(S) download
-		return loadFromHTTP(ctx, uri)
-	default:
-		return nil, fmt.Errorf("unsupported URI scheme: %s", uri)
+	results, err := loadMultipleFromURIs(ctx, []string{uri})
+	if err != nil {
+		return nil, err
 	}
+	return results[0], nil
 }
 
-// loadFromGCS loads content from Google Cloud Storage
-func loadFromGCS(ctx context.Context, uri string) ([]byte, error) {
-	// Parse gs://bucket/path/to/object
-	u, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("invalid GCS URI: %w", err)
+// loadMultipleFromURIs efficiently loads multiple URIs in parallel, using batch loading for GCS
+func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) {
+	if len(uris) == 0 {
+		return nil, nil
 	}
 
-	bucket := u.Host
-	object := strings.TrimPrefix(u.Path, "/")
+	results := make([][]byte, len(uris))
+	errors := make([]error, len(uris))
 
+	// Group URIs by type for optimal processing
+	type loadTask struct {
+		uri   string
+		index int
+	}
+
+	var gcsJobs []loadTask
+	var httpJobs []loadTask
+	var fileJobs []loadTask
+
+	// Categorize URIs by type
+	for i, uri := range uris {
+		if uri == "" {
+			continue
+		}
+
+		task := loadTask{uri: uri, index: i}
+		switch {
+		case strings.HasPrefix(uri, "gs://"):
+			gcsJobs = append(gcsJobs, task)
+		case strings.HasPrefix(uri, "file://"):
+			fileJobs = append(fileJobs, task)
+		case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
+			httpJobs = append(httpJobs, task)
+		default:
+			errors[i] = fmt.Errorf("unsupported URI scheme: %s", uri)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	// Process file:// URIs in parallel (local I/O is fast)
+	for _, task := range fileJobs {
+		wg.Go(func() {
+			path := strings.TrimPrefix(task.uri, "file://")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				errors[task.index] = fmt.Errorf("failed to read file %s: %w", task.uri, err)
+				return
+			}
+			results[task.index] = data
+		})
+	}
+
+	// Process HTTP(S) URIs in parallel
+	for _, task := range httpJobs {
+		wg.Go(func() {
+			data, err := loadFromHTTP(ctx, task.uri)
+			if err != nil {
+				errors[task.index] = err
+				return
+			}
+			results[task.index] = data
+		})
+	}
+
+	// Process GCS URIs in a single batch (single client for efficiency)
+	if len(gcsJobs) > 0 {
+		wg.Go(func() {
+			// Extract just the URIs for batch loading
+			gcsURIs := make([]string, len(gcsJobs))
+			for i, job := range gcsJobs {
+				gcsURIs[i] = job.uri
+			}
+
+			gcsResults, err := loadBatchFromGCS(ctx, gcsURIs)
+			if err != nil {
+				// Mark all GCS jobs as failed
+				for _, job := range gcsJobs {
+					errors[job.index] = err
+				}
+				return
+			}
+
+			// Map results back to their original positions
+			for i, job := range gcsJobs {
+				results[job.index] = gcsResults[i]
+			}
+		})
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Check for any errors
+	for i, err := range errors {
+		if err != nil {
+			return nil, fmt.Errorf("failed to load URI at index %d: %w", i, err)
+		}
+	}
+
+	return results, nil
+}
+
+// loadBatchFromGCS efficiently loads multiple GCS objects using a single client
+func loadBatchFromGCS(ctx context.Context, uris []string) ([][]byte, error) {
+	if len(uris) == 0 {
+		return nil, nil
+	}
+
+	// Create a single GCS client for all operations
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
 
-	reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open GCS object %s: %w", uri, err)
-	}
-	defer func() { _ = reader.Close() }()
+	results := make([][]byte, len(uris))
+	for i, uri := range uris {
+		// Parse gs://bucket/path/to/object
+		u, err := url.Parse(uri)
+		if err != nil {
+			return nil, fmt.Errorf("invalid GCS URI %q: %w", uri, err)
+		}
 
-	return io.ReadAll(reader)
+		bucket := u.Host
+		object := strings.TrimPrefix(u.Path, "/")
+
+		reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open GCS object %s: %w", uri, err)
+		}
+
+		data, err := io.ReadAll(reader)
+		reader.Close() // Close immediately after reading
+		if err != nil {
+			return nil, fmt.Errorf("failed to read GCS object %s: %w", uri, err)
+		}
+
+		results[i] = data
+	}
+
+	return results, nil
 }
 
 // loadFromHTTP loads content from HTTP/HTTPS URLs
 func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
+	// Add timeout to prevent hanging indefinitely
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
 	if err != nil {
 		return nil, err
