@@ -37,6 +37,10 @@ import (
 const (
 	// gcsSamplesBase is the base path for Google Cloud Spanner sample databases
 	gcsSamplesBase = "gs://cloud-spanner-samples/"
+	
+	// maxFileSize is the maximum allowed file size for sample databases (10MB)
+	// This prevents accidental OOM from loading unexpectedly large files
+	maxFileSize = 10 * 1024 * 1024 // 10MB
 )
 
 // SampleDatabase represents a sample database configuration
@@ -133,6 +137,20 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 				data, err = loadFromGCSWithClient(ctx, gcsClient, currentURI)
 			case strings.HasPrefix(currentURI, "file://"):
 				path := strings.TrimPrefix(currentURI, "file://")
+				// Check file size before reading
+				fi, err := os.Stat(path)
+				if err != nil {
+					mu.Lock()
+					errors[currentURI] = fmt.Errorf("failed to stat file %s: %w", currentURI, err)
+					mu.Unlock()
+					return
+				}
+				if fi.Size() > maxFileSize {
+					mu.Lock()
+					errors[currentURI] = fmt.Errorf("file %s too large: %d bytes (max %d)", currentURI, fi.Size(), maxFileSize)
+					mu.Unlock()
+					return
+				}
 				data, err = os.ReadFile(path)
 			case strings.HasPrefix(currentURI, "https://") || strings.HasPrefix(currentURI, "http://"):
 				data, err = loadFromHTTP(ctx, currentURI)
@@ -174,6 +192,15 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 	bucket := u.Host
 	object := strings.TrimPrefix(u.Path, "/")
 
+	// Check object size before reading
+	attrs, err := client.Bucket(bucket).Object(object).Attrs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GCS object attributes for %s: %w", uri, err)
+	}
+	if attrs.Size > maxFileSize {
+		return nil, fmt.Errorf("GCS object %s too large: %d bytes (max %d)", uri, attrs.Size, maxFileSize)
+	}
+
 	reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open GCS object %s: %w", uri, err)
@@ -209,7 +236,24 @@ func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, uri)
 	}
 
-	return io.ReadAll(resp.Body)
+	// Check Content-Length header if present
+	if resp.ContentLength > 0 && resp.ContentLength > maxFileSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: %d bytes (max %d)", uri, resp.ContentLength, maxFileSize)
+	}
+
+	// Use io.LimitReader as a safety measure even if Content-Length is not set
+	limitedReader := io.LimitReader(resp.Body, maxFileSize+1)
+	data, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read HTTP response from %s: %w", uri, err)
+	}
+	
+	// Check if we hit the limit
+	if len(data) > maxFileSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, maxFileSize)
+	}
+
+	return data, nil
 }
 
 // dialectToString converts a database dialect enum to a display string
