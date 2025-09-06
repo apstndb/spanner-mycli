@@ -105,6 +105,8 @@ type spannerOptions struct {
 	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
 	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
 	EmulatorPlatform          string            `long:"emulator-platform" description:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator" default-mask:"-"`
+	SampleDatabase            string            `long:"sample-database" description:"Initialize emulator with specified sample database (banking, finance, finance-graph, finance-pg, gaming). Requires --embedded-emulator." default-mask:"-"`
+	ListSamples               bool              `long:"list-samples" description:"List available sample databases and exit" default-mask:"-"`
 	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
 	LogLevel                  string            `long:"log-level" default-mask:"-"`
 	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs" default-mask:"-"`
@@ -410,6 +412,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return nil
 	}
 
+	if opts.ListSamples {
+		fmt.Print(ListAvailableSamples())
+		return nil
+	}
+
 	if err := ValidateSpannerOptions(opts); err != nil {
 		return err
 	}
@@ -460,6 +467,54 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		// Add platform customizer if specified
 		if opts.EmulatorPlatform != "" {
 			emulatorOpts = append(emulatorOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
+		}
+
+		// Load sample database if specified
+		if opts.SampleDatabase != "" {
+			sample, ok := sampleDatabases[opts.SampleDatabase]
+			if !ok {
+				return fmt.Errorf("unknown sample database: %s", opts.SampleDatabase)
+			}
+
+			// Use the sample's dialect
+			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.Dialect))
+
+			// Prepare URIs for batch loading
+			var uris []string
+			if sample.SchemaURI != "" {
+				uris = append(uris, sample.SchemaURI)
+			}
+			if sample.DataURI != "" {
+				uris = append(uris, sample.DataURI)
+			}
+
+			// Batch load all URIs efficiently (handles mixed sources)
+			results, err := loadMultipleFromURIs(ctx, uris)
+			if err != nil {
+				return fmt.Errorf("failed to load sample database %q: %w", opts.SampleDatabase, err)
+			}
+
+			// Helper function to parse and add statements to emulator options
+			addStatements := func(uri string, setupFunc func([]string) spanemuboost.Option, stmtType string) error {
+				if content, ok := results[uri]; ok && len(content) > 0 {
+					statements, err := ParseStatements(content, uri)
+					if err != nil {
+						return fmt.Errorf("failed to parse %s statements: %w", stmtType, err)
+					}
+					emulatorOpts = append(emulatorOpts, setupFunc(statements))
+				}
+				return nil
+			}
+
+			// Parse and add DDL statements
+			if err := addStatements(sample.SchemaURI, spanemuboost.WithSetupDDLs, "schema"); err != nil {
+				return err
+			}
+
+			// Parse and add DML statements
+			if err := addStatements(sample.DataURI, spanemuboost.WithSetupRawDMLs, "data"); err != nil {
+				return err
+			}
 		}
 
 		container, teardown, err := spanemuboost.NewEmulator(ctx, emulatorOpts...)
@@ -577,6 +632,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 
 	if inputMethodsCount > 1 {
 		return fmt.Errorf("invalid combination: --execute(-e), --file(-f), --sql, --source are exclusive")
+	}
+	// Validate sample database flags
+	if opts.SampleDatabase != "" && !opts.EmbeddedEmulator {
+		return fmt.Errorf("--sample-database requires --embedded-emulator")
+	}
+	if opts.ListSamples && opts.SampleDatabase != "" {
+		return fmt.Errorf("--list-samples and --sample-database are mutually exclusive")
 	}
 
 	if opts.TryPartitionQuery {

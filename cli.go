@@ -263,32 +263,10 @@ func (c *Cli) updateSystemVariables(result *Result) {
 
 // executeSourceFile executes SQL statements from a file
 func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
-	// Open the file to get a stable file handle
-	f, err := os.Open(filePath)
+	// Use common file safety checks (nil uses DefaultMaxFileSize - 100MB)
+	contents, err := SafeReadFile(filePath, nil)
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", filePath, err)
-	}
-	defer f.Close()
-
-	// Check if the file is a regular file to prevent DoS from special files
-	fi, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat file %s: %w", filePath, err)
-	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("sourcing from a non-regular file is not supported: %s", filePath)
-	}
-
-	// Add a check to prevent reading excessively large files.
-	const maxFileSize = 100 * 1024 * 1024 // 100MB
-	if fi.Size() > maxFileSize {
-		return fmt.Errorf("file %s is too large to be sourced (size: %d bytes, max: %d bytes)", filePath, fi.Size(), maxFileSize)
-	}
-
-	// Read the file contents from the opened handle
-	contents, err := io.ReadAll(f)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", filePath, err)
+		return err
 	}
 
 	// Parse the contents using buildCommands (same as batch mode)
