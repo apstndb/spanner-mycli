@@ -142,6 +142,8 @@ spanner:
       --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
       --emulator-image=                                   container image for --embedded-emulator
       --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
+      --sample-database=                                  Initialize emulator with specified sample database (banking, finance, finance-graph, finance-pg, gaming). Requires --embedded-emulator.
+      --list-samples                                      List available sample databases and exit
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
       --log-grpc                                          Show gRPC logs
@@ -1065,6 +1067,41 @@ emulator-project:emulator-instance:emulator-database
 +---------------+--------------+------------+-------------------+------------------+------------+---------------+-----------------+--------------------------------+
 Empty set (8.763167ms)
 ```
+
+#### Sample Databases
+
+You can initialize the emulator with Google's official sample databases using the `--sample-database` flag:
+
+```bash
+# List available sample databases
+$ spanner-mycli --list-samples
+Available sample databases:
+
+  banking        GoogleSQL    Banking application with accounts and transactions
+  finance        GoogleSQL    Finance application schema (GoogleSQL)
+  finance-graph  GoogleSQL    Finance application with graph features
+  finance-pg     PostgreSQL   Finance application (PostgreSQL dialect)
+  gaming         GoogleSQL    Gaming application with players and scores
+
+Usage: spanner-mycli --embedded-emulator --sample-database=<name>
+
+# Start with the banking sample database
+$ spanner-mycli --embedded-emulator --sample-database=banking
+emulator-project:emulator-instance:emulator-database
+> SELECT COUNT(*) AS count FROM Accounts;
++-------+
+| count |
+| INT64 |
++-------+
+| 10    |
++-------+
+1 rows in set (2.76 ms)
+
+# Use PostgreSQL sample
+$ spanner-mycli --embedded-emulator --sample-database=finance-pg
+```
+
+The sample databases are automatically downloaded from Google Cloud Storage and initialized when the emulator starts. This provides realistic test data for development and demonstrations.
 
 > [!NOTE]
 > The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
