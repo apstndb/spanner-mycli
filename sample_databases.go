@@ -21,6 +21,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -147,11 +148,13 @@ func discoverBuiltinSamples() map[string]SampleDatabase {
 		path := filepath.Join("samples", name)
 		data, err := embeddedSamples.ReadFile(path)
 		if err != nil {
+			slog.Error("failed to read embedded sample file", "path", path, "error", err)
 			continue
 		}
 
 		sample, err := unmarshalMetadata(data)
 		if err != nil {
+			slog.Error("failed to unmarshal embedded sample metadata", "path", path, "error", err)
 			continue
 		}
 
@@ -159,6 +162,7 @@ func discoverBuiltinSamples() map[string]SampleDatabase {
 		sample.BaseDir = "samples" // All files are in the same directory
 		sample.IsEmbedded = true   // All built-in samples are from embedded FS
 		if err := sample.parseDialect(); err != nil {
+			slog.Error("failed to parse dialect for embedded sample", "path", path, "name", sample.Name, "error", err)
 			continue
 		}
 
