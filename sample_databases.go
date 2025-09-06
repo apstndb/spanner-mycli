@@ -163,7 +163,7 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 			errorURIs = append(errorURIs, uri)
 		}
 		slices.Sort(errorURIs)
-		
+
 		for _, uri := range errorURIs {
 			errStrings = append(errStrings, fmt.Sprintf("failed to load %s: %v", uri, errors[uri]))
 		}
