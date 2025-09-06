@@ -98,98 +98,78 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) 
 
 	results := make([][]byte, len(uris))
 	errors := make([]error, len(uris))
-
-	// Group URIs by type for optimal processing
-	type loadTask struct {
-		uri   string
-		index int
-	}
-
-	var gcsJobs []loadTask
-	var httpJobs []loadTask
-	var fileJobs []loadTask
-
-	// Categorize URIs by type
+	
+	var wg sync.WaitGroup
+	
+	// Collect GCS URIs for batch processing
+	var gcsURIs []string
+	var gcsIndices []int
+	
 	for i, uri := range uris {
 		if uri == "" {
 			continue
 		}
-
-		task := loadTask{uri: uri, index: i}
-		switch {
-		case strings.HasPrefix(uri, "gs://"):
-			gcsJobs = append(gcsJobs, task)
-		case strings.HasPrefix(uri, "file://"):
-			fileJobs = append(fileJobs, task)
-		case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
-			httpJobs = append(httpJobs, task)
-		default:
-			errors[i] = fmt.Errorf("unsupported URI scheme: %s", uri)
+		
+		if strings.HasPrefix(uri, "gs://") {
+			gcsURIs = append(gcsURIs, uri)
+			gcsIndices = append(gcsIndices, i)
+			continue
 		}
-	}
-
-	var wg sync.WaitGroup
-
-	// Helper function to process individual URIs in parallel
-	processURIs := func(jobs []loadTask, loader func(string) ([]byte, error)) {
-		for _, task := range jobs {
-			wg.Go(func() {
-				data, err := loader(task.uri)
-				if err != nil {
-					errors[task.index] = err
-					return
-				}
-				results[task.index] = data
-			})
-		}
-	}
-
-	// Process file:// URIs in parallel (local I/O is fast)
-	processURIs(fileJobs, func(uri string) ([]byte, error) {
-		path := strings.TrimPrefix(uri, "file://")
-		return os.ReadFile(path)
-	})
-
-	// Process HTTP(S) URIs in parallel
-	processURIs(httpJobs, func(uri string) ([]byte, error) {
-		return loadFromHTTP(ctx, uri)
-	})
-
-	// Process GCS URIs in a single batch (single client for efficiency)
-	if len(gcsJobs) > 0 {
+		
+		// Process non-GCS URIs immediately in parallel
+		index := i
 		wg.Go(func() {
-			// Extract just the URIs for batch loading
-			gcsURIs := make([]string, len(gcsJobs))
-			for i, job := range gcsJobs {
-				gcsURIs[i] = job.uri
+			var data []byte
+			var err error
+			
+			switch {
+			case strings.HasPrefix(uri, "file://"):
+				path := strings.TrimPrefix(uri, "file://")
+				data, err = os.ReadFile(path)
+			case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
+				data, err = loadFromHTTP(ctx, uri)
+			default:
+				err = fmt.Errorf("unsupported URI scheme: %s", uri)
 			}
-
-			gcsResults, err := loadBatchFromGCS(ctx, gcsURIs)
+			
 			if err != nil {
-				// Mark all GCS jobs as failed
-				for _, job := range gcsJobs {
-					errors[job.index] = err
-				}
-				return
-			}
-
-			// Map results back to their original positions
-			for i, job := range gcsJobs {
-				results[job.index] = gcsResults[i]
+				errors[index] = err
+			} else {
+				results[index] = data
 			}
 		})
 	}
-
+	
+	// Process all GCS URIs in a single batch
+	if len(gcsURIs) > 0 {
+		wg.Go(func() {
+			gcsResults, err := loadBatchFromGCS(ctx, gcsURIs)
+			
+			if err != nil {
+				// Mark all GCS loads as failed
+				for _, idx := range gcsIndices {
+					errors[idx] = err
+				}
+				return
+			}
+			
+			// Map results back to their original positions
+			for i, idx := range gcsIndices {
+				results[idx] = gcsResults[i]
+			}
+		})
+	}
+	
 	// Wait for all goroutines to complete
 	wg.Wait()
-
+	
 	// Check for any errors
 	for i, err := range errors {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load URI at index %d: %w", i, err)
 		}
 	}
-
+	
 	return results, nil
 }
 
