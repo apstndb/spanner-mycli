@@ -18,11 +18,16 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -31,57 +36,186 @@ import (
 	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"cloud.google.com/go/storage"
 	"github.com/cloudspannerecosystem/memefish"
+	"github.com/goccy/go-yaml"
 )
 
-const (
-	// gcsSamplesBase is the base path for Google Cloud Spanner sample databases
-	gcsSamplesBase = "gs://cloud-spanner-samples/"
+var (
+	// Embed the samples directory at compile time
+	// This includes all metadata files (*.yaml, *.json) and SQL files (*.sql)
+	//go:embed samples/*
+	embeddedSamples embed.FS
+
+	// metadataFileRegex matches metadata files (.json, .yaml, .yml)
+	// Used to identify which files contain sample database definitions
+	metadataFileRegex = regexp.MustCompile(`\.(json|ya?ml)$`)
 )
 
-// SampleDatabase represents a sample database configuration
+// SampleDatabase represents both metadata and runtime configuration
 type SampleDatabase struct {
-	Dialect     databasepb.DatabaseDialect // SQL dialect
-	SchemaURI   string                     // URI to schema file (gs://, file://, https://)
-	DataURI     string                     // URI to data file (optional)
-	Description string                     // Human-readable description
+	Name        string `json:"name"`              // Unique identifier for the sample
+	Description string `json:"description"`       // Human-readable description
+	Dialect     string `json:"dialect"`           // SQL dialect (GOOGLE_STANDARD_SQL or POSTGRESQL)
+	SchemaURI   string `json:"schemaURI"`         // URI to schema file (can be relative or absolute)
+	DataURI     string `json:"dataURI,omitempty"` // URI to data file (optional)
+	Source      string `json:"source,omitempty"`  // Documentation URL or description (optional)
+
+	// Runtime fields (not in JSON)
+	BaseDir       string                     `json:"-"` // Base directory for relative path resolution
+	IsEmbedded    bool                       `json:"-"` // Distinguishes embedded:// from file:// base URIs
+	ParsedDialect databasepb.DatabaseDialect `json:"-"` // Parsed dialect enum value
 }
 
-// sampleDatabases is the registry of available sample databases
-var sampleDatabases = map[string]SampleDatabase{
-	"banking": {
-		Dialect:     databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-		SchemaURI:   gcsSamplesBase + "banking/schema/banking-schema.sdl",
-		DataURI:     gcsSamplesBase + "banking/data-insert-statements/banking-inserts.sql",
-		Description: "Banking application with accounts and transactions",
-	},
-	"finance": {
-		Dialect:     databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-		SchemaURI:   gcsSamplesBase + "finance/schema/finance-schema.sdl",
-		DataURI:     "",
-		Description: "Finance application schema (GoogleSQL)",
-	},
-	"finance-graph": {
-		Dialect:     databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-		SchemaURI:   gcsSamplesBase + "finance-graph/schema/finance-graph-schema.sdl",
-		DataURI:     gcsSamplesBase + "finance-graph/data-insert-statements/finance-graph-inserts.sql",
-		Description: "Finance application with graph features",
-	},
-	"finance-pg": {
-		Dialect:     databasepb.DatabaseDialect_POSTGRESQL,
-		SchemaURI:   gcsSamplesBase + "finance/schema/finance-schema-pg.sdl",
-		DataURI:     "",
-		Description: "Finance application (PostgreSQL dialect)",
-	},
-	"gaming": {
-		Dialect:     databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
-		SchemaURI:   gcsSamplesBase + "gaming/schema/gaming-schema.sdl",
-		DataURI:     gcsSamplesBase + "gaming/data-insert-statements/gaming-inserts.sql",
-		Description: "Gaming application with players and scores",
-	},
+// ResolveURIs converts relative paths to absolute URIs based on BaseDir
+func (s *SampleDatabase) ResolveURIs() {
+	s.SchemaURI = s.resolveURI(s.SchemaURI)
+	s.DataURI = s.resolveURI(s.DataURI)
+}
+
+// resolveURI converts a relative path to an absolute URI
+func (s *SampleDatabase) resolveURI(uri string) string {
+	if uri == "" {
+		return ""
+	}
+
+	// Already an absolute URI (has scheme)
+	if strings.Contains(uri, "://") {
+		return uri
+	}
+
+	// Relative path - resolve based on whether it's embedded or file-based
+	if s.IsEmbedded {
+		// For embedded files, construct embedded:// URI
+		// BaseDir is like "samples/fingraph" or "samples"
+		relPath := filepath.ToSlash(filepath.Join(s.BaseDir, uri))
+		// Remove the "samples/" prefix for the embedded:// URI
+		return fmt.Sprintf("embedded://%s", strings.TrimPrefix(relPath, "samples/"))
+	} else {
+		// For user files, construct file:// URI
+		absPath := filepath.Join(s.BaseDir, uri)
+		return fmt.Sprintf("file://%s", absPath)
+	}
+}
+
+// parseDialect converts the string dialect to the protobuf enum
+func (s *SampleDatabase) parseDialect() error {
+	switch s.Dialect {
+	case "GOOGLE_STANDARD_SQL":
+		s.ParsedDialect = databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL
+	case "POSTGRESQL":
+		s.ParsedDialect = databasepb.DatabaseDialect_POSTGRESQL
+	default:
+		return fmt.Errorf("unknown dialect: %s", s.Dialect)
+	}
+	return nil
+}
+
+// unmarshalMetadata unmarshal JSON or YAML data into SampleDatabase
+func unmarshalMetadata(data []byte) (*SampleDatabase, error) {
+	var sample SampleDatabase
+
+	// goccy/go-yaml can parse both JSON and YAML formats transparently
+	// This allows metadata files to be in either format without separate parsing logic
+	if err := yaml.Unmarshal(data, &sample); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata: %w", err)
+	}
+
+	return &sample, nil
+}
+
+// discoverBuiltinSamples discovers all built-in samples from embed.FS
+func discoverBuiltinSamples() map[string]SampleDatabase {
+	samples := make(map[string]SampleDatabase)
+
+	// Read all JSON/YAML files in samples directory
+	entries, err := embeddedSamples.ReadDir("samples")
+	if err != nil {
+		return samples
+	}
+
+	for _, entry := range entries {
+		// Skip directories and non-metadata files
+		if entry.IsDir() || entry.Name() == "README.md" {
+			continue
+		}
+
+		// Accept .json, .yaml, .yml files
+		name := entry.Name()
+		if !metadataFileRegex.MatchString(name) {
+			// Skip SQL files and other non-metadata files
+			continue
+		}
+
+		path := filepath.Join("samples", name)
+		data, err := embeddedSamples.ReadFile(path)
+		if err != nil {
+			slog.Error("failed to read embedded sample file", "path", path, "error", err)
+			continue
+		}
+
+		sample, err := unmarshalMetadata(data)
+		if err != nil {
+			slog.Error("failed to unmarshal embedded sample metadata", "path", path, "error", err)
+			continue
+		}
+
+		// Set runtime fields
+		sample.BaseDir = "samples" // All files are in the same directory
+		sample.IsEmbedded = true   // All built-in samples are from embedded FS
+		if err := sample.parseDialect(); err != nil {
+			slog.Error("failed to parse dialect for embedded sample", "path", path, "name", sample.Name, "error", err)
+			continue
+		}
+
+		// Resolve relative URIs to absolute URIs (safe to call - only modifies relative paths)
+		sample.ResolveURIs()
+
+		samples[sample.Name] = *sample
+	}
+
+	return samples
+}
+
+// loadSampleFromMetadata loads sample from metadata file path (JSON or YAML)
+func loadSampleFromMetadata(metadataPath string) (*SampleDatabase, error) {
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metadata: %w", err)
+	}
+
+	sample, err := unmarshalMetadata(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metadata format: %w", err)
+	}
+
+	// Validate required fields
+	if sample.Name == "" {
+		return nil, fmt.Errorf("sample name is required")
+	}
+	if sample.SchemaURI == "" {
+		return nil, fmt.Errorf("schemaURI is required")
+	}
+
+	// Set runtime fields for relative path resolution
+	sample.BaseDir = filepath.Dir(metadataPath)
+	sample.IsEmbedded = false
+	if err := sample.parseDialect(); err != nil {
+		return nil, err
+	}
+	sample.ResolveURIs()
+
+	return sample, nil
 }
 
 // loadFromURI loads content from various URI schemes (for single URI compatibility)
 func loadFromURI(ctx context.Context, uri string) ([]byte, error) {
+	// Handle embedded:// URIs directly here to avoid unnecessary parallelism setup
+	if strings.HasPrefix(uri, "embedded://") {
+		path := strings.TrimPrefix(uri, "embedded://")
+		return embeddedSamples.ReadFile(filepath.Join("samples", path))
+	}
+
+	// For other URI schemes, delegate to the parallel loader
+	// This ensures consistent error handling and GCS client management
 	results, err := loadMultipleFromURIs(ctx, []string{uri})
 	if err != nil {
 		return nil, err
@@ -101,7 +235,8 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Protect concurrent map writes
 
-	// Check if we need a GCS client
+	// Pre-check if we need a GCS client to avoid creating it unnecessarily
+	// Create a single GCS client that will be shared across all goroutines for efficiency
 	var gcsClient *storage.Client
 	var gcsClientErr error
 	for _, uri := range uris {
@@ -122,11 +257,15 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 		}
 
 		// Process all URIs uniformly in parallel
+		// Note: wg.Go requires Go 1.25+ (combines Add(1) and go func with automatic Done())
 		wg.Go(func() {
 			var data []byte
 			var err error
 
 			switch {
+			case strings.HasPrefix(uri, "embedded://"):
+				path := strings.TrimPrefix(uri, "embedded://")
+				data, err = embeddedSamples.ReadFile(filepath.Join("samples", path))
 			case strings.HasPrefix(uri, "gs://"):
 				data, err = loadFromGCSWithClient(ctx, gcsClient, uri)
 			case strings.HasPrefix(uri, "file://"):
@@ -258,11 +397,13 @@ func dialectToString(dialect databasepb.DatabaseDialect) string {
 
 // ListAvailableSamples returns a formatted list of available sample databases
 func ListAvailableSamples() string {
+	samples := discoverBuiltinSamples()
+
 	var sb strings.Builder
 	sb.WriteString("Available sample databases:\n\n")
 
 	// Get sorted list of sample names
-	names := slices.Collect(maps.Keys(sampleDatabases))
+	names := slices.Collect(maps.Keys(samples))
 	slices.Sort(names)
 
 	// Calculate max width for formatting
@@ -275,11 +416,12 @@ func ListAvailableSamples() string {
 
 	// Print samples in sorted order
 	for _, name := range names {
-		sample := sampleDatabases[name]
-		fmt.Fprintf(&sb, "  %-*s  %-11s  %s\n", maxNameLen, name, dialectToString(sample.Dialect), sample.Description)
+		sample := samples[name]
+		fmt.Fprintf(&sb, "  %-*s  %-11s  %s\n", maxNameLen, name, dialectToString(sample.ParsedDialect), sample.Description)
 	}
 
 	sb.WriteString("\nUsage: spanner-mycli --embedded-emulator --sample-database=<name>\n")
+	sb.WriteString("       spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.json\n")
 	return sb.String()
 }
 

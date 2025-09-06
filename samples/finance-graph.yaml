@@ -1,0 +1,6 @@
+name: finance-graph
+description: Finance application with graph features
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: gs://cloud-spanner-samples/finance-graph/schema/finance-graph-schema.sdl
+dataURI: gs://cloud-spanner-samples/finance-graph/data-insert-statements/finance-graph-inserts.sql
+source: Google Cloud Spanner Samples

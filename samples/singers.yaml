@@ -1,0 +1,6 @@
+name: singers
+description: Music database used throughout Spanner documentation
+dialect: GOOGLE_STANDARD_SQL
+schemaURI: singers-schema.sql
+dataURI: singers-data.sql
+source: https://cloud.google.com/spanner/docs/query-execution-operators?hl=en
