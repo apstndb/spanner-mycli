@@ -154,6 +154,7 @@ INSERT INTO test VALUES (1);`,
 			// memefish.SplitRawStatements returns:
 			// - First statement includes the leading line comment
 			// - Second statement does not include the block comment that appears before it
+			// TODO: This behavior may change when https://github.com/cloudspannerecosystem/memefish/pull/322 is merged
 			want: []string{
 				"-- This is a comment\nCREATE TABLE test (id INT64)",
 				"INSERT INTO test VALUES (1)",
