@@ -1578,8 +1578,8 @@ func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
 	err := cli.executeSourceFile(context.Background(), "/non/existent/file.sql")
 	if err == nil {
 		t.Error("Expected error for non-existent file")
-	} else if !strings.Contains(err.Error(), "failed to open file") {
-		t.Errorf("Expected error to contain 'failed to open file', got: %v", err)
+	} else if !strings.Contains(err.Error(), "no such file or directory") {
+		t.Errorf("Expected error to contain 'no such file or directory', got: %v", err)
 	}
 }
 
@@ -1599,8 +1599,8 @@ func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
 	err := cli.executeSourceFile(context.Background(), "/dev/null")
 	if err == nil {
 		t.Error("Expected error for non-regular file")
-	} else if !strings.Contains(err.Error(), "sourcing from a non-regular file is not supported") {
-		t.Errorf("Expected error to contain 'sourcing from a non-regular file is not supported', got: %v", err)
+	} else if !strings.Contains(err.Error(), "cannot read") {
+		t.Errorf("Expected error to contain 'cannot read', got: %v", err)
 	}
 }
 
@@ -1636,7 +1636,7 @@ func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
 	err = cli.executeSourceFile(context.Background(), tmpFile.Name())
 	if err == nil {
 		t.Error("Expected error for file too large")
-	} else if !strings.Contains(err.Error(), "is too large to be sourced") {
-		t.Errorf("Expected error to contain 'is too large to be sourced', got: %v", err)
+	} else if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("Expected error to contain 'too large', got: %v", err)
 	}
 }
