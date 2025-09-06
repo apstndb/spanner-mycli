@@ -407,6 +407,9 @@ go tool cover -html=tmp/coverage.out         # Generate HTML coverage report (de
 - **Backward Compatibility**: Not required since spanner-mycli is not used as an external library
 - **No Future-Proofing**: Since spanner-mycli is not used as a library, don't add parameters or abstractions for potential future use. Only implement what's needed now.
 - **Issue Management**: All fixes must go through Pull Requests - never close issues manually
-- **License Headers for New Files**: When creating new files, use "Copyright [year] apstndb" instead of "Copyright [year] Google LLC" in the Apache 2.0 license header
+- **License Headers**: 
+  - For new files created after the fork from spanner-cli: Use "Copyright [year] apstndb"
+  - For existing files that originated from spanner-cli: Keep "Copyright [year] Google LLC"
+  - This applies to all new logic and features added to spanner-mycli after forking
 
 For any detailed information not covered here, refer to the appropriate documentation in `dev-docs/` or `docs/`.

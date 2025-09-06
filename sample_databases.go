@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Google LLC
+// Copyright 2025 apstndb
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -154,11 +154,20 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 	// Wait for all goroutines to complete
 	wg.Wait()
 
-	// Check for any errors
-	for uri, err := range errors {
-		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", uri, err)
+	// Check for any errors and report all of them
+	if len(errors) > 0 {
+		var errStrings []string
+		// Sort URIs for deterministic error output
+		errorURIs := make([]string, 0, len(errors))
+		for uri := range errors {
+			errorURIs = append(errorURIs, uri)
 		}
+		slices.Sort(errorURIs)
+		
+		for _, uri := range errorURIs {
+			errStrings = append(errStrings, fmt.Sprintf("failed to load %s: %v", uri, errors[uri]))
+		}
+		return nil, fmt.Errorf("multiple errors occurred:\n- %s", strings.Join(errStrings, "\n- "))
 	}
 
 	return results, nil
