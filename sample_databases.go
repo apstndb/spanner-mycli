@@ -37,7 +37,7 @@ import (
 const (
 	// gcsSamplesBase is the base path for Google Cloud Spanner sample databases
 	gcsSamplesBase = "gs://cloud-spanner-samples/"
-	
+
 	// maxFileSize is the maximum allowed file size for sample databases (10MB)
 	// This prevents accidental OOM from loading unexpectedly large files
 	maxFileSize = 10 * 1024 * 1024 // 10MB
@@ -102,10 +102,10 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 
 	results := make(map[string][]byte)
 	errors := make(map[string]error)
-	
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Protect concurrent map writes
-	
+
 	// Check if we need a GCS client
 	var gcsClient *storage.Client
 	var gcsClientErr error
@@ -120,64 +120,63 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 			break
 		}
 	}
-	
+
 	for _, uri := range uris {
 		if uri == "" {
 			continue
 		}
-		
+
 		// Process all URIs uniformly in parallel
-		currentURI := uri
 		wg.Go(func() {
 			var data []byte
 			var err error
-			
+
 			switch {
-			case strings.HasPrefix(currentURI, "gs://"):
-				data, err = loadFromGCSWithClient(ctx, gcsClient, currentURI)
-			case strings.HasPrefix(currentURI, "file://"):
-				path := strings.TrimPrefix(currentURI, "file://")
+			case strings.HasPrefix(uri, "gs://"):
+				data, err = loadFromGCSWithClient(ctx, gcsClient, uri)
+			case strings.HasPrefix(uri, "file://"):
+				path := strings.TrimPrefix(uri, "file://")
 				// Check file size before reading
-				fi, err := os.Stat(path)
-				if err != nil {
+				fi, statErr := os.Stat(path)
+				if statErr != nil {
 					mu.Lock()
-					errors[currentURI] = fmt.Errorf("failed to stat file %s: %w", currentURI, err)
+					errors[uri] = fmt.Errorf("failed to stat file %s: %w", uri, statErr)
 					mu.Unlock()
 					return
 				}
 				if fi.Size() > maxFileSize {
 					mu.Lock()
-					errors[currentURI] = fmt.Errorf("file %s too large: %d bytes (max %d)", currentURI, fi.Size(), maxFileSize)
+					errors[uri] = fmt.Errorf("file %s too large: %d bytes (max %d)", uri, fi.Size(), maxFileSize)
 					mu.Unlock()
 					return
 				}
 				data, err = os.ReadFile(path)
-			case strings.HasPrefix(currentURI, "https://") || strings.HasPrefix(currentURI, "http://"):
-				data, err = loadFromHTTP(ctx, currentURI)
+			case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
+				data, err = loadFromHTTP(ctx, uri)
 			default:
-				err = fmt.Errorf("unsupported URI scheme: %s", currentURI)
+				err = fmt.Errorf("unsupported URI scheme: %s", uri)
 			}
-			
+
 			mu.Lock()
 			if err != nil {
-				errors[currentURI] = err
+				errors[uri] = err
 			} else {
-				results[currentURI] = data
+				results[uri] = data
 			}
 			mu.Unlock()
 		})
 	}
-	
+
 	// Wait for all goroutines to complete
 	wg.Wait()
-	
+
 	// Check for any errors
 	for uri, err := range errors {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s: %w", uri, err)
 		}
 	}
-	
+
 	return results, nil
 }
 
@@ -205,7 +204,7 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to open GCS object %s: %w", uri, err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -247,7 +246,7 @@ func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HTTP response from %s: %w", uri, err)
 	}
-	
+
 	// Check if we hit the limit
 	if len(data) > maxFileSize {
 		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, maxFileSize)
