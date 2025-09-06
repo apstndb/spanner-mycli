@@ -494,33 +494,26 @@ func run(ctx context.Context, opts *spannerOptions) error {
 				return fmt.Errorf("failed to load sample database %q: %w", opts.SampleDatabase, err)
 			}
 
-			// Extract results based on what was loaded
-			var schemaContent, dataContent []byte
-			resultIdx := 0
-			if sample.SchemaURI != "" {
-				schemaContent = results[resultIdx]
-				resultIdx++
-			}
-			if sample.DataURI != "" {
-				dataContent = results[resultIdx]
+			// Helper function to parse and add statements to emulator options
+			addStatements := func(uri string, setupFunc func([]string) spanemuboost.Option, stmtType string) error {
+				if content, ok := results[uri]; ok && len(content) > 0 {
+					statements, err := ParseStatements(content, uri)
+					if err != nil {
+						return fmt.Errorf("failed to parse %s statements: %w", stmtType, err)
+					}
+					emulatorOpts = append(emulatorOpts, setupFunc(statements))
+				}
+				return nil
 			}
 
 			// Parse and add DDL statements
-			if len(schemaContent) > 0 {
-				ddlStatements, err := ParseStatements(schemaContent, sample.SchemaURI)
-				if err != nil {
-					return fmt.Errorf("failed to parse schema statements: %w", err)
-				}
-				emulatorOpts = append(emulatorOpts, spanemuboost.WithSetupDDLs(ddlStatements))
+			if err := addStatements(sample.SchemaURI, spanemuboost.WithSetupDDLs, "schema"); err != nil {
+				return err
 			}
 
 			// Parse and add DML statements
-			if len(dataContent) > 0 {
-				dmlStatements, err := ParseStatements(dataContent, sample.DataURI)
-				if err != nil {
-					return fmt.Errorf("failed to parse data statements: %w", err)
-				}
-				emulatorOpts = append(emulatorOpts, spanemuboost.WithSetupRawDMLs(dmlStatements))
+			if err := addStatements(sample.DataURI, spanemuboost.WithSetupRawDMLs, "data"); err != nil {
+				return err
 			}
 		}
 

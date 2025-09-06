@@ -87,19 +87,20 @@ func loadFromURI(ctx context.Context, uri string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return results[0], nil
+	return results[uri], nil
 }
 
-// loadMultipleFromURIs efficiently loads multiple URIs in parallel, using batch loading for GCS
-func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) {
+// loadMultipleFromURIs efficiently loads multiple URIs in parallel, returning a map keyed by URI
+func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte, error) {
 	if len(uris) == 0 {
 		return nil, nil
 	}
 
-	results := make([][]byte, len(uris))
-	errors := make([]error, len(uris))
+	results := make(map[string][]byte)
+	errors := make(map[string]error)
 	
 	var wg sync.WaitGroup
+	var mu sync.Mutex // Protect concurrent map writes
 	
 	// Check if we need a GCS client
 	var gcsClient *storage.Client
@@ -116,34 +117,36 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) 
 		}
 	}
 	
-	for i, uri := range uris {
+	for _, uri := range uris {
 		if uri == "" {
 			continue
 		}
 		
 		// Process all URIs uniformly in parallel
-		index := i
+		currentURI := uri
 		wg.Go(func() {
 			var data []byte
 			var err error
 			
 			switch {
-			case strings.HasPrefix(uri, "gs://"):
-				data, err = loadFromGCSWithClient(ctx, gcsClient, uri)
-			case strings.HasPrefix(uri, "file://"):
-				path := strings.TrimPrefix(uri, "file://")
+			case strings.HasPrefix(currentURI, "gs://"):
+				data, err = loadFromGCSWithClient(ctx, gcsClient, currentURI)
+			case strings.HasPrefix(currentURI, "file://"):
+				path := strings.TrimPrefix(currentURI, "file://")
 				data, err = os.ReadFile(path)
-			case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
-				data, err = loadFromHTTP(ctx, uri)
+			case strings.HasPrefix(currentURI, "https://") || strings.HasPrefix(currentURI, "http://"):
+				data, err = loadFromHTTP(ctx, currentURI)
 			default:
-				err = fmt.Errorf("unsupported URI scheme: %s", uri)
+				err = fmt.Errorf("unsupported URI scheme: %s", currentURI)
 			}
 			
+			mu.Lock()
 			if err != nil {
-				errors[index] = err
+				errors[currentURI] = err
 			} else {
-				results[index] = data
+				results[currentURI] = data
 			}
+			mu.Unlock()
 		})
 	}
 	
@@ -151,9 +154,9 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) ([][]byte, error) 
 	wg.Wait()
 	
 	// Check for any errors
-	for i, err := range errors {
+	for uri, err := range errors {
 		if err != nil {
-			return nil, fmt.Errorf("failed to load URI at index %d: %w", i, err)
+			return nil, fmt.Errorf("failed to load %s: %w", uri, err)
 		}
 	}
 	
