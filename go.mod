@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go v0.121.6
 	cloud.google.com/go/longrunning v0.6.7
 	cloud.google.com/go/spanner v1.84.1
+	cloud.google.com/go/storage v1.56.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.1.1
@@ -14,7 +15,7 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
-	github.com/apstndb/spanemuboost v0.2.12
+	github.com/apstndb/spanemuboost v0.2.13
 	github.com/apstndb/spannerplan v0.1.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.8
@@ -62,7 +63,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
-	cloud.google.com/go/storage v1.56.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.5.3 // indirect
