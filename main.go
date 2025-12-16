@@ -35,12 +35,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/testcontainers/testcontainers-go"
 	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
+
+	"github.com/apstndb/spanner-mycli/enums"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -194,6 +195,12 @@ func init() {
 		Level: slog.LevelWarn,
 	}))
 	slog.SetDefault(h)
+
+	// Disable multiplexed session for r/w transaction,
+	// workaround for https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/issues/282
+	if err := os.Setenv("GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS_FOR_RW", "false"); err != nil {
+		slog.Error("failed to set required environment variable for spanner emulator workaround", "error", err)
+	}
 }
 
 func SetLogLevel(logLevel string) (slog.Level, error) {
