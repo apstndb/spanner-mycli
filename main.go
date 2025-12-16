@@ -35,12 +35,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/testcontainers/testcontainers-go"
 	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
+
+	"github.com/apstndb/spanner-mycli/enums"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -52,6 +53,12 @@ import (
 	"golang.org/x/term"
 	"spheric.cloud/xiter"
 )
+
+func init() {
+	// Disable multiplexed session for r/w transaction,
+	// workaround for https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/issues/282
+	_ = os.Setenv("GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS_FOR_RW", "false")
+}
 
 type globalOptions struct {
 	Spanner spannerOptions `group:"spanner"`
