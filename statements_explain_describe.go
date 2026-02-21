@@ -268,7 +268,6 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		Rows:         rows,
 		Predicates:   predicates,
 		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(queryPlan) }),
-		IndexAdvice:  extractIndexAdvice(queryPlan),
 	}
 	return result, nil
 }
