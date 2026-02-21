@@ -4,20 +4,23 @@ This document provides detailed architectural information for spanner-mycli deve
 
 ## Core Components
 
+All core Go source files reside in `internal/mycli/`. The root `main.go` is a thin wrapper.
+
 ### Entry Point and Configuration
-- **main.go**: Entry point, CLI argument parsing, configuration management
-- **session.go**: Database session management and Spanner client connections
-- **session_transaction_context.go**: Transaction context types and encapsulation methods
+- **main.go** (root): Thin entry point, calls `mycli.Main(version, installFrom)`
+- **internal/mycli/app.go**: `Main()` function, CLI argument parsing, configuration management
+- **internal/mycli/session.go**: Database session management and Spanner client connections
+- **internal/mycli/session_transaction_context.go**: Transaction context types and encapsulation methods
 
 ### Interactive Interface
-- **cli.go**: Main interactive CLI interface and batch processing
-- **cli_output.go**: Output formatting and display logic
-- **cli_readline.go**: Terminal input handling and readline integration
-- **cli_mcp.go**: MCP (Model Context Protocol) server integration
+- **internal/mycli/cli.go**: Main interactive CLI interface and batch processing
+- **internal/mycli/cli_output.go**: Output formatting and display logic
+- **internal/mycli/cli_readline.go**: Terminal input handling and readline integration
+- **internal/mycli/cli_mcp.go**: MCP (Model Context Protocol) server integration
 
 ### SQL Processing
-- **statements.go**: Core SQL statement processing and execution
-- **statements_*.go**: Specialized statement handlers:
+- **internal/mycli/statements.go**: Core SQL statement processing and execution
+- **internal/mycli/statements_*.go**: Specialized statement handlers:
   - `statements_mutations.go`: DML and mutation operations
   - `statements_schema.go`: DDL and schema operations
   - `statements_explain_describe.go`: Query analysis and introspection
@@ -27,8 +30,8 @@ This document provides detailed architectural information for spanner-mycli deve
   - `statements_query_profile.go`: Query profiling and performance analysis
 
 ### Configuration and Variables
-- **system_variables.go**: System variable definitions and management
-- **client_side_statement_def.go**: **CRITICAL** - Defines all client-side statement patterns and handlers
+- **internal/mycli/system_variables.go**: System variable definitions and management
+- **internal/mycli/client_side_statement_def.go**: **CRITICAL** - Defines all client-side statement patterns and handlers
 
 ## Output Handling Architecture
 
@@ -64,7 +67,7 @@ When implementing features that write output:
 
 ## Client-Side Statement System
 
-The `client_side_statement_def.go` file is the heart of spanner-mycli's extended SQL syntax.
+The `internal/mycli/client_side_statement_def.go` file is the heart of spanner-mycli's extended SQL syntax.
 
 ### Core Components
 
@@ -116,7 +119,7 @@ The `client_side_statement_def.go` file is the heart of spanner-mycli's extended
 
 ### Step-by-Step Process
 
-1. **Add Definition**: Add new entry to `clientSideStatementDefs` slice in `client_side_statement_def.go`
+1. **Add Definition**: Add new entry to `clientSideStatementDefs` slice in `internal/mycli/client_side_statement_def.go`
    ```go
    {
        Regex: regexp.MustCompile(`(?is)^SHOW\s+MY_FEATURE(?:\s+(.*))?$`),
@@ -489,19 +492,25 @@ make clean
 
 ```
 spanner-mycli/
-├── main.go                          # Entry point
-├── cli*.go                          # CLI interface components
-├── session.go                       # Session management
-├── statements*.go                   # Statement processing
-├── system_variables.go              # System variable management
-├── client_side_statement_def.go     # Statement definitions (CRITICAL)
-├── execute_sql.go                   # SQL execution logic
-├── internal/                        # Internal packages
-├── testdata/                        # Test fixtures
+├── main.go                          # Thin entry point (calls internal/mycli.Main())
+├── internal/
+│   ├── mycli/                       # Core application code (package mycli)
+│   │   ├── app.go                   # Main() function, CLI argument parsing
+│   │   ├── cli*.go                  # CLI interface components
+│   │   ├── session.go               # Session management
+│   │   ├── statements*.go           # Statement processing
+│   │   ├── system_variables.go      # System variable management
+│   │   ├── client_side_statement_def.go  # Statement definitions (CRITICAL)
+│   │   ├── execute_sql.go           # SQL execution logic
+│   │   ├── testdata/                # Test fixtures
+│   │   ├── samples/                 # Sample files
+│   │   └── official_docs/           # Upstream documentation
+│   ├── protostruct/                 # Protocol buffer utilities
+│   └── proto*/                      # Generated protobuf code
+├── enums/                           # Enum type definitions
 ├── docs/                            # User documentation
 ├── dev-docs/                        # Developer documentation
-├── bin/                             # Development tool symlinks (created by make build-tools)
-└── official_docs/                   # Upstream documentation
+└── bin/                             # Development tool symlinks (created by make build-tools)
 ```
 
 ## Related Documentation

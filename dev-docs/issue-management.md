@@ -49,7 +49,7 @@ gh pr create --title "feat: new feature" --body "Description"
 go tool gh-helper reviews wait --timeout 15m
 
 # 3. For subsequent pushes: ALWAYS request Gemini review
-git add . && git commit -m "fix: address feedback" && git push
+git add <specific-files> && git commit -m "fix: address feedback" && git push
 go tool gh-helper reviews wait <PR> --request-review --timeout 15m
 ```
 
@@ -581,7 +581,7 @@ When working with sub-issues:
 ## Implementation Plan
 
 ### Phase 1: Core Implementation (independently mergeable)
-- **Files to Modify**: `main.go:90-95`, `system_variables.go:606`
+- **Files to Modify**: `internal/mycli/app.go:90-95`, `internal/mycli/system_variables.go:606`
 - **System Variable**: `CLI_FEATURE_NAME` (default: false)
 - **Implementation**: Brief description of approach
 - **Testing**: Test strategy and coverage
