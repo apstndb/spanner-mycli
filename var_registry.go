@@ -275,6 +275,9 @@ func (r *VarRegistry) registerAll() {
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution."))
 	r.Register("DEFAULT_ISOLATION_LEVEL", IsolationLevelVar(&sv.DefaultIsolationLevel,
 		"The transaction isolation level that is used by default for read/write transactions."))
+	r.Register("READ_LOCK_MODE", ReadLockModeVar(&sv.ReadLockMode,
+		"The read lock mode for read/write transactions. OPTIMISTIC uses optimistic concurrency control; PESSIMISTIC uses pessimistic locking. Default is UNSPECIFIED (server default)."))
+
 	r.Register("CLI_DATABASE_DIALECT", DatabaseDialectVar(&sv.DatabaseDialect,
 		"Database dialect for the session."))
 	r.Register("CLI_QUERY_MODE", &CustomVar{

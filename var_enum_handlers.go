@@ -216,6 +216,16 @@ func ExplainFormatVar(ptr *enums.ExplainFormat, desc string) *EnumVar[enums.Expl
 	}
 }
 
+// ReadLockModeVar creates an enum handler for ReadLockMode
+func ReadLockModeVar(ptr *sppb.TransactionOptions_ReadWrite_ReadLockMode, desc string) *ProtoEnumVar[sppb.TransactionOptions_ReadWrite_ReadLockMode] {
+	return &ProtoEnumVar[sppb.TransactionOptions_ReadWrite_ReadLockMode]{
+		ptr:         ptr,
+		values:      sppb.TransactionOptions_ReadWrite_ReadLockMode_value,
+		prefix:      "READ_LOCK_MODE_",
+		description: desc,
+	}
+}
+
 // StreamingModeVar creates an enum handler for StreamingMode
 func StreamingModeVar(ptr *enums.StreamingMode, desc string) *EnumVar[enums.StreamingMode] {
 	return &EnumVar[enums.StreamingMode]{
