@@ -756,6 +756,7 @@ func (b *TransactionOptionsBuilder) Build() spanner.TransactionOptions {
 		TransactionTag:              b.tag,
 		ExcludeTxnFromChangeStreams: b.session.systemVariables.ExcludeTxnFromChangeStreams,
 		IsolationLevel:              isolationLevel,
+		ReadLockMode:                b.session.systemVariables.ReadLockMode,
 	}
 }
 

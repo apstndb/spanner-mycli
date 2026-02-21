@@ -69,7 +69,8 @@ type systemVariables struct {
 	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
 	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
 
-	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel // DEFAULT_ISOLATION_LEVEL
+	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
+	ReadLockMode          sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
 
 	// CLI_* variables
 

@@ -619,6 +619,33 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("ReadLockMode", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			value string
+			want  sppb.TransactionOptions_ReadWrite_ReadLockMode
+		}{
+			{value: "OPTIMISTIC", want: sppb.TransactionOptions_ReadWrite_OPTIMISTIC},
+			{value: "optimistic", want: sppb.TransactionOptions_ReadWrite_OPTIMISTIC},
+			{value: "PESSIMISTIC", want: sppb.TransactionOptions_ReadWrite_PESSIMISTIC},
+			{value: "pessimistic", want: sppb.TransactionOptions_ReadWrite_PESSIMISTIC},
+			{value: "UNSPECIFIED", want: sppb.TransactionOptions_ReadWrite_READ_LOCK_MODE_UNSPECIFIED},
+			{value: "READ_LOCK_MODE_UNSPECIFIED", want: sppb.TransactionOptions_ReadWrite_READ_LOCK_MODE_UNSPECIFIED},
+		}
+		for _, test := range tests {
+			t.Run(test.value, func(t *testing.T) {
+				t.Parallel()
+				sysVars := newSystemVariablesWithDefaultsForTest()
+				err := sysVars.SetFromSimple("READ_LOCK_MODE", test.value)
+				assertNoError(t, err)
+
+				if sysVars.ReadLockMode != test.want {
+					t.Errorf("ReadLockMode should be %v, but %v", test.want, sysVars.ReadLockMode)
+				}
+			})
+		}
+	})
 }
 
 // Time and Duration Variable Tests
@@ -937,6 +964,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_TAB_WIDTH":                "4",
 			"AUTOCOMMIT_DML_MODE":          "TRANSACTIONAL",
 			"DEFAULT_ISOLATION_LEVEL":      "SERIALIZABLE",
+			"READ_LOCK_MODE":               "OPTIMISTIC",
 			"CLI_FORMAT":                   "TABLE",
 			"CLI_DATABASE_DIALECT":         "GOOGLE_STANDARD_SQL",
 			"CLI_QUERY_MODE":               "PROFILE",
