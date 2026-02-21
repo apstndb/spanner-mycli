@@ -107,90 +107,76 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session)
 	}
 }
 
-type CommitStatement struct{}
-
-func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{}
-
-	// Get transaction state once to avoid multiple mutex acquisitions
-	mode, isActive := session.TransactionState()
-
-	// Handle based on transaction mode
+// closeNonRWTransaction handles pending, read-only, and inactive transaction states
+// shared by both Commit and Rollback. Returns (result, true, nil) if handled,
+// or (nil, false, nil) if the caller should handle read-write transaction.
+func closeNonRWTransaction(session *Session, mode transactionMode, isActive bool) (*Result, bool, error) {
 	switch mode {
 	case transactionModePending:
 		if err := session.ClosePendingTransaction(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return result, nil
+		return &Result{}, true, nil
 
 	case transactionModeReadOnly:
 		if err := session.CloseReadOnlyTransaction(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return result, nil
+		return &Result{}, true, nil
 
 	case transactionModeReadWrite:
-		if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
-			var err error
-			result, err = runBatch(ctx, session)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		resp, err := session.CommitReadWriteTransaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		result.CommitTimestamp = resp.CommitTs
-		result.CommitStats = resp.CommitStats
-		return result, nil
+		return nil, false, nil
 
 	default:
 		// No active transaction - this is a no-op
 		if !isActive {
-			return result, nil
+			return &Result{}, true, nil
 		}
-		return nil, fmt.Errorf("invalid transaction state: %v", mode)
+		return nil, false, fmt.Errorf("invalid transaction state: %v", mode)
 	}
+}
+
+type CommitStatement struct{}
+
+func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	mode, isActive := session.TransactionState()
+	if result, handled, err := closeNonRWTransaction(session, mode, isActive); handled || err != nil {
+		return result, err
+	}
+
+	// Handle read-write transaction
+	result := &Result{}
+	if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
+		var err error
+		result, err = runBatch(ctx, session)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	resp, err := session.CommitReadWriteTransaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result.CommitTimestamp = resp.CommitTs
+	result.CommitStats = resp.CommitStats
+	return result, nil
 }
 
 type RollbackStatement struct{}
 
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	result := &Result{}
-
-	// Get transaction state once to avoid multiple mutex acquisitions
 	mode, isActive := session.TransactionState()
-
-	// Handle based on transaction mode
-	switch mode {
-	case transactionModePending:
-		if err := session.ClosePendingTransaction(); err != nil {
-			return nil, err
-		}
-		return result, nil
-
-	case transactionModeReadOnly:
-		if err := session.CloseReadOnlyTransaction(); err != nil {
-			return nil, err
-		}
-		return result, nil
-
-	case transactionModeReadWrite:
-		if err := session.RollbackReadWriteTransaction(ctx); err != nil {
-			return nil, err
-		}
-		return result, nil
-
-	default:
-		// No active transaction - this is a no-op
-		if !isActive {
-			return result, nil
-		}
-		return nil, fmt.Errorf("invalid transaction state: %v", mode)
+	if result, handled, err := closeNonRWTransaction(session, mode, isActive); handled || err != nil {
+		return result, err
 	}
+
+	// Handle read-write transaction
+	if err := session.RollbackReadWriteTransaction(ctx); err != nil {
+		return nil, err
+	}
+	return &Result{}, nil
 }
 
 func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {

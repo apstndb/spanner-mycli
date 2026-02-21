@@ -317,6 +317,17 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
 	format enums.ExplainFormat, width int64,
 ) (*Result, error) {
+	queryStats, err := parseQueryStats(stats)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse query stats: %w", err)
+	}
+	return buildExplainAnalyzeResult(sysVars, plan, queryStats, format, width)
+}
+
+// buildExplainAnalyzeResult builds an EXPLAIN ANALYZE result from pre-parsed QueryStats.
+func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, queryStats QueryStats,
+	format enums.ExplainFormat, width int64,
+) (*Result, error) {
 	def := sysVars.ParsedAnalyzeColumns
 	inlines := sysVars.ParsedInlineStats
 	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.ExplainFormat)
@@ -328,11 +339,6 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 	}
 
 	columnNames, columnAlign := explainAnalyzeHeader(def, width)
-
-	queryStats, err := parseQueryStats(stats)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse query stats: %w", err)
-	}
 
 	var lintResults []string
 	if sysVars.LintPlan {
