@@ -150,8 +150,13 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 	if len(result.IndexAdvice) > 0 {
 		fmt.Fprintln(out, "Query Advisor Recommendations:")
-		for _, ddl := range result.IndexAdvice {
-			fmt.Fprintf(out, "  %s;\n", ddl)
+		for _, advice := range result.IndexAdvice {
+			if advice.ImprovementFactor > 0 {
+				fmt.Fprintf(out, "  -- Estimated improvement: %.1fx\n", advice.ImprovementFactor)
+			}
+			for _, ddl := range advice.DDL {
+				fmt.Fprintf(out, "  %s\n", ddl)
+			}
 		}
 		fmt.Fprintln(out)
 	}

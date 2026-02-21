@@ -163,6 +163,12 @@ func (th typesTableHeader) structFields() ([]*sppb.StructType_Field, bool) {
 	return []*sppb.StructType_Field(th), true
 }
 
+// QueryIndexAdvice holds an index recommendation from the Spanner query advisor.
+type QueryIndexAdvice struct {
+	DDL               []string
+	ImprovementFactor float64
+}
+
 type Result struct {
 	ColumnAlign      []tw.Align // optional
 	Rows             []Row
@@ -184,7 +190,7 @@ type Result struct {
 
 	ForceWrap   bool
 	LintResults []string
-	IndexAdvice []string // DDL recommendations from query advisor
+	IndexAdvice []QueryIndexAdvice // Index recommendations from query advisor
 	PreInput    string
 
 	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals

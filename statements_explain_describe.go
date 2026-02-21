@@ -609,10 +609,16 @@ func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format
 	return plantree.ProcessPlan(qp, options...)
 }
 
-func extractIndexAdvice(plan *sppb.QueryPlan) []string {
-	var result []string
+func extractIndexAdvice(plan *sppb.QueryPlan) []QueryIndexAdvice {
+	var result []QueryIndexAdvice
 	for _, advice := range plan.GetQueryAdvice().GetIndexAdvice() {
-		result = append(result, advice.GetDdl()...)
+		if len(advice.GetDdl()) == 0 {
+			continue
+		}
+		result = append(result, QueryIndexAdvice{
+			DDL:               advice.GetDdl(),
+			ImprovementFactor: advice.GetImprovementFactor(),
+		})
 	}
 	return result
 }
