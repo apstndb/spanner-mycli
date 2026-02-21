@@ -148,6 +148,20 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out)
 	}
 
+	if len(result.IndexAdvice) > 0 {
+		fmt.Fprintln(out, "Query Advisor Recommendations:")
+		for _, advice := range result.IndexAdvice {
+			for _, ddl := range advice.DDL {
+				if advice.ImprovementFactor > 0 {
+					fmt.Fprintf(out, "  %s  -- Est. improvement: %.2f%%\n", ddl, (1-1/advice.ImprovementFactor)*100)
+				} else {
+					fmt.Fprintf(out, "  %s\n", ddl)
+				}
+			}
+		}
+		fmt.Fprintln(out)
+	}
+
 	// Only print result line if not suppressed
 	if !sysVars.SuppressResultLines && (sysVars.Verbose || result.ForceVerbose || interactive) {
 		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
