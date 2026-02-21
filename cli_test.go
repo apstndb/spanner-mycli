@@ -711,6 +711,20 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			want:    "Empty set (12 msec)\n",
 		},
 		{
+			desc: "DML with THEN RETURN no rows (has result set, is mutation, empty, verbose)",
+			result: &Result{
+				TableHeader:   toTableHeader("id", "name"), // Has result set from THEN RETURN
+				AffectedRows:  0,
+				IsExecutedDML: true,
+				CommitStats:   &sppb.CommitResponse_CommitStats{MutationCount: 0},
+				Stats: QueryStats{
+					ElapsedTime: "12 msec",
+				},
+			},
+			verbose: true,
+			want:    "Empty set (12 msec)\n",
+		},
+		{
 			desc: "SHOW VARIABLES (has result set)",
 			result: &Result{
 				TableHeader:  toTableHeader("name", "value"), // Has result set
