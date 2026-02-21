@@ -109,48 +109,30 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	return fc, usingSQLLiterals, sysVars, err
 }
 
-// executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
-// This is for use when we have a specific transaction to use.
-func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
-	// Always collect metrics - display is controlled by template based on Profile flag
+// newMetrics creates and initializes execution metrics from system variables.
+func newMetrics(sysVars *systemVariables) *ExecutionMetrics {
 	metrics := &ExecutionMetrics{
 		QueryStartTime: time.Now(),
 		Profile:        sysVars.Profile,
 	}
-
-	// Capture memory snapshot before execution if profiling is enabled
 	if sysVars.Profile {
 		before := GetMemoryStats()
 		metrics.MemoryBefore = &before
 	}
+	return metrics
+}
 
-	// Choose the appropriate format config based on the output format
-	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
-	if err != nil {
-		return nil, err
+// finalizeMetrics completes metrics collection after query execution.
+func finalizeMetrics(metrics *ExecutionMetrics, sysVars *systemVariables) {
+	metrics.CompletionTime = time.Now()
+	if sysVars.Profile {
+		after := GetMemoryStats()
+		metrics.MemoryAfter = &after
 	}
+}
 
-	params := sysVars.Params
-	stmt, err := newStatement(sql, params, false)
-	if err != nil {
-		return nil, err
-	}
-
-	// Prepare query options to preserve profile mode and priority
-	// Note: We always use ExecuteSqlRequest_PROFILE mode (not NORMAL) because:
-	// 1. Spanner historically doesn't return any execution summary in NORMAL mode
-	// 2. spanner-mycli needs execution statistics even when not displaying query plan trees
-	// 3. sysVars.Profile is for CLI tool profiling (memory stats, etc.), NOT for Spanner's PROFILE mode
-	//    - sysVars.Profile=true: Enables CLI profiling features (memory tracking)
-	//    - ExecuteSqlRequest_PROFILE: Always used to get execution statistics from Spanner
-	opts := spanner.QueryOptions{
-		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
-		Priority: sysVars.RPCPriority,
-	}
-	// Use the transaction directly with query options
-	iter := txn.QueryWithOptions(ctx, stmt, opts)
-
-	// Decide whether to use streaming or buffered mode
+// executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
+func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, sysVars *systemVariables, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
 	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
 	metrics.IsStreaming = useStreaming
 
@@ -159,94 +141,64 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 		"format", sysVars.CLIFormat,
 		"sqlTableName", sysVars.SQLTableName)
 
-	// Execute with the appropriate mode
 	var result *Result
-
+	var err error
 	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, txn, fc, processor, metrics, usingSQLLiterals, sysVars)
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
 	} else {
-		result, err = executeWithBuffering(ctx, session, iter, txn, fc, sql, metrics, usingSQLLiterals, sysVars)
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals, sysVars)
 	}
-
 	if err != nil {
 		return nil, err
 	}
 
-	// Set post-execution fields that were not handled by the processor
-	metrics.CompletionTime = time.Now()
-	// sysVars.Profile enables CLI tool profiling features (memory stats tracking)
-	// This is unrelated to Spanner's ExecuteSqlRequest_PROFILE mode
-	if sysVars.Profile {
-		after := GetMemoryStats()
-		metrics.MemoryAfter = &after
-	}
+	finalizeMetrics(metrics, sysVars)
 	result.Metrics = metrics
-
 	return result, nil
 }
 
-// executeSQLImplWithVars is the actual implementation that accepts custom system variables
-func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
-	// Always collect metrics - display is controlled by template based on Profile flag
-	metrics := &ExecutionMetrics{
-		QueryStartTime: time.Now(),
-		Profile:        sysVars.Profile,
-	}
+// executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
+// This is for use when we have a specific transaction to use.
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
+	metrics := newMetrics(sysVars)
 
-	// Capture memory snapshot before execution if profiling is enabled
-	if sysVars.Profile {
-		before := GetMemoryStats()
-		metrics.MemoryBefore = &before
-	}
-
-	// Choose the appropriate format config based on the output format
-	// TODO(future): Current design formats values early (at Result creation time) which limits flexibility.
-	// Ideally, Result should store raw *spanner.Row data and formatters should handle conversion.
-	// This would allow:
-	// - Different formats for the same data without re-querying
-	// - Format-specific optimizations
-	// - Better separation of concerns
-	// However, this requires significant changes to Result struct and RowProcessor interface.
 	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}
 
-	params := sysVars.Params
-	stmt, err := newStatement(sql, params, false)
+	stmt, err := newStatement(sql, sysVars.Params, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always use ExecuteSqlRequest_PROFILE mode to get execution statistics from Spanner.
+	opts := spanner.QueryOptions{
+		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
+		Priority: sysVars.RPCPriority,
+	}
+	iter := txn.QueryWithOptions(ctx, stmt, opts)
+
+	return executeAndCollect(ctx, session, iter, txn, fc, sql, sysVars, metrics, usingSQLLiterals)
+}
+
+// executeSQLImplWithVars is the actual implementation that accepts custom system variables
+func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	metrics := newMetrics(sysVars)
+
+	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := newStatement(sql, sysVars.Params, false)
 	if err != nil {
 		return nil, err
 	}
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	// Decide whether to use streaming or buffered mode
-	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
-	metrics.IsStreaming = useStreaming
-
-	slog.Debug("executeSQL decision",
-		"useStreaming", useStreaming,
-		"format", sysVars.CLIFormat,
-		"sqlTableName", sysVars.SQLTableName)
-
-	// Execute with the appropriate mode
-	var result *Result
-
-	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
-	} else {
-		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals, sysVars)
-	}
-
-	// Complete metrics collection
-	metrics.CompletionTime = time.Now()
-
-	// Capture memory snapshot after execution if profiling is enabled
-	if sysVars.Profile {
-		after := GetMemoryStats()
-		metrics.MemoryAfter = &after
-	}
-
+	result, err := executeAndCollect(ctx, session, iter, roTxn, fc, sql, sysVars, metrics, usingSQLLiterals)
 	if err != nil {
 		// Handle aborted transaction
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
@@ -258,11 +210,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	// Attach metrics to result
-	result.Metrics = metrics
-
 	// Store the SQL table name if we're using SQL export format
-	// This ensures the table name is available during formatting phase in buffered mode
 	if sysVars.CLIFormat.IsSQLExport() && sysVars.SQLTableName != "" {
 		result.SQLTableNameForExport = sysVars.SQLTableName
 	}
@@ -313,101 +261,16 @@ func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.R
 	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
 }
 
-// executeWithBuffering executes the query using buffered mode.
-func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
-	// Collect memory stats if debug logging is enabled
-	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		LogMemoryStats("Before buffered")
-		defer LogMemoryStats("After buffered")
-	}
-
-	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
-
-	// Collect all rows with metrics
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), metrics)
-	if err != nil {
-		return nil, err
-	}
-
-	slog.Debug("Buffered mode complete",
-		"endTime", time.Now().Format(time.RFC3339Nano),
-		"rowCount", len(rows))
-
-	// Parse query stats
+// finalizeQueryResult parses query stats, extracts the read timestamp, and updates the query cache.
+func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.ReadOnlyTransaction, plan *sppb.QueryPlan, sysVars *systemVariables, metrics *ExecutionMetrics) error {
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	// Extract server-side metrics from stats
+	result.Stats = queryStats
 	metrics.ServerElapsedTime = queryStats.ElapsedTime
 	metrics.ServerCPUTime = queryStats.CPUTime
 
-	// Build result
-	result := &Result{
-		Rows:                  rows,
-		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows:          len(rows),
-		Stats:                 queryStats,
-		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
-	}
-
-	// Get transaction timestamp if available
-	if roTxn != nil {
-		ts, err := roTxn.Timestamp()
-		if err != nil {
-			slog.Warn("failed to get read-only transaction timestamp", "err", err, "sql", sql)
-		} else {
-			result.ReadTimestamp = ts
-		}
-	}
-
-	// Update query cache
-	sysVars.LastQueryCache = &LastQueryCache{
-		QueryPlan:     plan,
-		QueryStats:    stats,
-		ReadTimestamp: result.ReadTimestamp,
-	}
-
-	return result, nil
-}
-
-// executeStreamingSQL processes query results in streaming mode.
-// It outputs rows directly as they arrive without buffering the entire result set.
-func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
-	slog.Debug("executeStreamingSQL called",
-		"format", sysVars.CLIFormat)
-
-	// Process the stream with metrics
-	rowTransform := spannerRowToRow(fc)
-	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
-	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, metrics)
-	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse stats
-	queryStats, err := parseQueryStats(stats)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract server-side metrics from stats
-	metrics.ServerElapsedTime = queryStats.ElapsedTime
-	metrics.ServerCPUTime = queryStats.CPUTime
-
-	// Create result for metadata (rows already streamed)
-	result := &Result{
-		Rows:                  nil, // Already streamed
-		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows:          int(rowCount),
-		Stats:                 queryStats,
-		Streamed:              true,             // Mark as streamed
-		HasSQLFormattedValues: usingSQLLiterals, // Only true when using SQL literal formatting
-	}
-
-	// Handle ReadOnlyTransaction timestamp
 	if roTxn != nil {
 		ts, err := roTxn.Timestamp()
 		if err != nil {
@@ -417,13 +280,68 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 		}
 	}
 
-	// Update last query cache
 	sysVars.LastQueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
 	}
+	return nil
+}
 
+// executeWithBuffering executes the query using buffered mode.
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		LogMemoryStats("Before buffered")
+		defer LogMemoryStats("After buffered")
+	}
+
+	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
+
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("Buffered mode complete",
+		"endTime", time.Now().Format(time.RFC3339Nano),
+		"rowCount", len(rows))
+
+	result := &Result{
+		Rows:                  rows,
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          len(rows),
+		HasSQLFormattedValues: usingSQLLiterals,
+	}
+
+	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, metrics); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// executeStreamingSQL processes query results in streaming mode.
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+	slog.Debug("executeStreamingSQL called", "format", sysVars.CLIFormat)
+
+	rowTransform := spannerRowToRow(fc)
+	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, metrics)
+	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &Result{
+		Rows:                  nil,
+		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows:          int(rowCount),
+		Streamed:              true,
+		HasSQLFormattedValues: usingSQLLiterals,
+	}
+
+	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, metrics); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
