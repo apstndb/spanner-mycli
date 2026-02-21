@@ -184,6 +184,7 @@ type Result struct {
 
 	ForceWrap   bool
 	LintResults []string
+	IndexAdvice []string // DDL recommendations from query advisor
 	PreInput    string
 
 	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals

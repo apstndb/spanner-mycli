@@ -268,6 +268,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		Rows:         rows,
 		Predicates:   predicates,
 		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(queryPlan) }),
+		IndexAdvice:  extractIndexAdvice(queryPlan),
 	}
 	return result, nil
 }
@@ -349,6 +350,7 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 		Rows:         rows,
 		Predicates:   predicates,
 		LintResults:  lintResults,
+		IndexAdvice:  extractIndexAdvice(plan),
 	}
 
 	return result, nil
@@ -605,6 +607,14 @@ func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format
 	}
 
 	return plantree.ProcessPlan(qp, options...)
+}
+
+func extractIndexAdvice(plan *sppb.QueryPlan) []string {
+	var result []string
+	for _, advice := range plan.GetQueryAdvice().GetIndexAdvice() {
+		result = append(result, advice.GetDdl()...)
+	}
+	return result
 }
 
 func inlineStatsFunc(defs []inlineStatsDef) func(*sppb.PlanNode) []string {

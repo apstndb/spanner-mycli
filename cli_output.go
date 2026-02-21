@@ -148,6 +148,14 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out)
 	}
 
+	if len(result.IndexAdvice) > 0 {
+		fmt.Fprintln(out, "Query Advisor Recommendations:")
+		for _, ddl := range result.IndexAdvice {
+			fmt.Fprintf(out, "  %s;\n", ddl)
+		}
+		fmt.Fprintln(out)
+	}
+
 	// Only print result line if not suppressed
 	if !sysVars.SuppressResultLines && (sysVars.Verbose || result.ForceVerbose || interactive) {
 		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
