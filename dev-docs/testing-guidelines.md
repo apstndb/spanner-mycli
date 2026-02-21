@@ -145,12 +145,12 @@ func TestPlatformSpecific(t *testing.T) {
 ## Priority Areas for Coverage Improvement
 
 ### High Priority
-1. **Core SQL Processing** (`statements.go`)
+1. **Core SQL Processing** (`internal/mycli/statements.go`)
    - Statement parsing and execution
    - Error handling paths
    - Edge cases in query processing
 
-2. **Session Management** (`session.go`)
+2. **Session Management** (`internal/mycli/session.go`)
    - Connection lifecycle
    - Transaction handling
    - Concurrent operations
@@ -159,13 +159,13 @@ func TestPlatformSpecific(t *testing.T) {
    - `internal/protostruct` - Protocol buffer utilities
    - Other internal utilities (excluding generated code)
 
-4. **System Variables** (`system_variables.go`)
+4. **System Variables** (`internal/mycli/system_variables.go`)
    - Variable validation
    - Type conversions
    - Default value handling
 
 ### Medium Priority
-1. **Client-side Statements** (`client_side_statement_def.go`)
+1. **Client-side Statements** (`internal/mycli/client_side_statement_def.go`)
    - Pattern matching
    - Command execution
    - Error scenarios

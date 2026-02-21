@@ -16,7 +16,7 @@ This document provides detailed patterns and best practices for implementing sys
 
 3. **Implementation Template**:
    ```go
-   // In system_variables_registry.go
+   // In internal/mycli/system_variables_registry.go
    
    // Read/write variable (boolean)
    r.Register("CLI_VARIABLE_NAME", 
@@ -35,7 +35,7 @@ This document provides detailed patterns and best practices for implementing sys
            "Description explaining read-only nature"))
    ```
 
-4. **Testing Requirements**: Add comprehensive test cases to `system_variables_test.go` covering both successful operations and proper error handling for unimplemented setters
+4. **Testing Requirements**: Add comprehensive test cases to `internal/mycli/system_variables_test.go` covering both successful operations and proper error handling for unimplemented setters
 
 5. **Documentation**: Include clear descriptions explaining purpose, default values, and any access restrictions
 
@@ -44,8 +44,8 @@ This document provides detailed patterns and best practices for implementing sys
 - **Pattern**: Use generic VarHandler types (BoolVar, StringVar, IntVar, etc.) for type-safe variable handling
 - **Architecture**: Session behavior variables should be read-only to prevent runtime session state changes that could cause inconsistencies
 - **Error Handling**: The registry automatically handles type validation and returns appropriate errors
-- **Testing Strategy**: System variables test pattern in `system_variables_test.go` covers both SET/GET operations and proper error handling
-- **Code Organization**: All variable registrations are centralized in `system_variables_registry.go`
+- **Testing Strategy**: System variables test pattern in `internal/mycli/system_variables_test.go` covers both SET/GET operations and proper error handling
+- **Code Organization**: All variable registrations are centralized in `internal/mycli/system_variables_registry.go`
 
 ### Session-Init-Only Variables
 
@@ -57,7 +57,7 @@ Some variables can only be set before session creation because they control clie
 
 **Example**:
 ```go
-// In system_variables_registry.go
+// In internal/mycli/system_variables_registry.go
 r.Register("CLI_ENABLE_ADC_PLUS",
     BoolVar(&sv.EnableADCPlus).
         WithValidator(func(v bool) error {
@@ -235,7 +235,7 @@ if session.systemVariables.AsyncDDL {
 
 **Implementation Template**:
 ```go
-// In system_variables_registry.go
+// In internal/mycli/system_variables_registry.go
 r.Register("CLI_ASYNC_DDL",
     BoolVar(&sv.AsyncDDL).
         WithDescription("A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))

@@ -65,15 +65,16 @@ For full gh-helper command reference, see [dev-docs/issue-management.md](dev-doc
 ## Core Architecture Overview
 
 ### Critical Components
-- **main.go**: Entry point, CLI argument parsing
-- **session.go**: Database session management
-- **statements.go**: Core SQL statement processing
-- **system_variables.go**: System variable management
-- **client_side_statement_def.go**: **CRITICAL** - Defines all client-side statement patterns
+- **main.go**: Thin entry point, calls `internal/mycli.Main()`
+- **internal/mycli/app.go**: CLI argument parsing, configuration, `Main()` entry point
+- **internal/mycli/session.go**: Database session management
+- **internal/mycli/statements.go**: Core SQL statement processing
+- **internal/mycli/system_variables.go**: System variable management
+- **internal/mycli/client_side_statement_def.go**: **CRITICAL** - Defines all client-side statement patterns
 
 ### System Variable Conventions
 - CLI-specific variables **MUST** use `CLI_` prefix
-- All registrations in `system_variables_registry.go`
+- All registrations in `internal/mycli/system_variables_registry.go`
 - Details: [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md)
 
 ### Regex Pattern Guidelines
