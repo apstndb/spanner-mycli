@@ -135,19 +135,7 @@ ORDER BY INTERVAL_END DESC`,
 		return nil, errors.New("empty result")
 	}
 
-	// TODO: Simplify the logic to get map[string]any of query stats.
-	b, err := json.Marshal(qpr.QueryProfile.QueryStats)
-	if err != nil {
-		return nil, err
-	}
-
-	var queryStats map[string]any
-	err = json.Unmarshal(b, &queryStats)
-	if err != nil {
-		return nil, err
-	}
-
-	return generateExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, queryStats,
+	return buildExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, qpr.QueryProfile.QueryStats,
 		enums.ExplainFormatUnspecified, 0)
 }
 
