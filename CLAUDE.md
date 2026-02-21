@@ -82,10 +82,22 @@ For full gh-helper command reference, see [dev-docs/issue-management.md](dev-doc
 
 ## Development Workflow
 
-### Phantom Worktree Usage
+### Worktree Usage
+
+Choose the right tool for the job:
+
+| Use case | Tool |
+|----------|------|
+| Claude Code session (auto-cleanup) | `claude --worktree feature-auth` |
+| tmux parallel work, manual editing | `make worktree-setup WORKTREE_NAME=issue-123-feature` |
+| Start from GitHub Issue/PR | `phantom github checkout <number>` |
+| Resume PR-linked session | `claude --from-pr <number>` |
+
 ```bash
+# Phantom workflow
 make worktree-setup WORKTREE_NAME=issue-123-feature  # Auto-fetches, bases on origin/main
 phantom shell issue-123-feature --tmux-horizontal
+phantom github checkout 248                           # Checkout issue/PR directly
 ```
 
 **CRITICAL**: **NEVER delete a worktree without explicit user permission.** Unauthorized deletion can permanently lose uncommitted work. Always check `git status` first.
