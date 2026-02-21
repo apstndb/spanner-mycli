@@ -35,10 +35,8 @@ dev-docs/
 ### [Issue Management](issue-management.md)
 - Development tools usage (Go 1.24 tool management)
 - GitHub issue workflow and labeling
-- Pull request process and code review
-- Gemini AI review integration
+- Pull request process (see also `/create-pr` skill)
 - Git best practices and phantom worktree management
-- Knowledge management through PR comments
 
 ### [Coding Guidelines](coding-guidelines.md)
 - Go language standards and conventions
@@ -72,36 +70,7 @@ dev-docs/
 
 ### Updating Help Output in README.md
 
-#### Automated Process (Recommended)
-
-```bash
-# Generate help output files
-make docs-update
-
-# Files are generated in ./tmp/
-# - help_clean.txt: Content for README.md --help section (lines 97-135)
-# - statement_help.txt: Content for README.md statement help table (lines 355-406)
-```
-
-**Manual Steps Required:**
-1. Replace content between code block markers in README.md (lines 97-135) with `./tmp/help_clean.txt`
-2. Replace statement help table content (lines 355-406) with `./tmp/statement_help.txt`
-
-#### Manual Process (For Reference)
-
-```bash
-mkdir -p ./tmp
-script -q ./tmp/help_output.txt sh -c "stty cols 200; go run . --help"
-go run . --statement-help > ./tmp/statement_help.txt
-sed '1s/^.\{2\}//' ./tmp/help_output.txt > ./tmp/help_clean.txt
-# Then manually update README.md with the generated content
-```
-
-#### Update Locations in README.md
-
-- **--help output**: Lines 97-135 (within code block at lines 96-136)
-- **--statement-help table**: Lines 355-406 (markdown table format)
-- **Generation comments**: Document the generation commands in HTML comments for maintainability
+Run `make docs-update` to regenerate help output files in `./tmp/`, then update the corresponding sections in README.md.
 
 ## Contributing to Documentation
 

@@ -19,6 +19,12 @@ After addressing review feedback, please:
 
 For each thread ID found above, reply with the CORRECT commit hash where that specific issue was fixed and resolve it, regardless of whether it's marked as outdated.
 
+**Response strategy per thread type:**
+
+- **Code fix needed**: Make the fix, commit, then reply with commit hash and resolve
+- **Explanation only** (no code change needed): Reply with reasoning why current code is correct, then resolve
+- **Praise/positive comment**: Acknowledge briefly (e.g., "Thank you!") and resolve — don't leave these unresolved
+
 When replying to threads, include a brief explanation of the fix:
 - Use `--message "Brief explanation of what was fixed"` for single-line responses
 - For multi-line responses, use stdin with heredoc
@@ -34,6 +40,12 @@ cat <<EOF | go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --res
 Fixed by switching from buffering to streaming output.
 This prevents DoS attacks from commands with large output.
 EOF
+
+# Acknowledge praise comment (no code change)
+go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
+
+# Explanation-only response (no code change)
+go tool gh-helper threads reply THREAD_ID --message "This is intentional because ..." --resolve
 ```
 
 Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
