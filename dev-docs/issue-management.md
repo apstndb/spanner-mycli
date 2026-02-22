@@ -42,20 +42,24 @@ go tool gh-helper threads resolve <ID1> <ID2> <ID3>    # Batch resolve threads
 
 **Gemini Review Workflow:**
 ```bash
-# 1. Create PR (Gemini automatically reviews initial creation)
+# 1. Create PR (Gemini automatically reviews and summarizes)
 gh pr create --title "feat: new feature" --body "Description"
 
-# 2. Wait for automatic Gemini review (initial PR only)
+# 2. Wait for automatic Gemini review (initial PR only — no flags needed)
 go tool gh-helper reviews wait --timeout 15m
 
-# 3. For subsequent pushes: ALWAYS request Gemini review
+# 3. After additional commits: request a new review
 git add <specific-files> && git commit -m "fix: address feedback" && git push
 go tool gh-helper reviews wait <PR> --request-review --timeout 15m
+
+# 4. Right before merge: update summary if additional commits were pushed
+go tool gh-helper reviews wait <PR> --request-summary --timeout 15m
 ```
 
 **Gemini Review Rules:**
-- ✅ Initial PR creation: Automatic review (no flag needed)
-- ✅ All subsequent pushes: MUST use `--request-review` flag
+- ✅ Initial PR creation: Review and summary are auto-triggered (no flags needed)
+- ✅ After additional commits: Use `--request-review` for a new review
+- ✅ Right before merge: Use `--request-summary` to update the summary
 - ✅ Always wait for review completion before proceeding
 
 ## Issue Management
