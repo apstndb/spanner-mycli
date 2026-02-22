@@ -16,6 +16,13 @@ type Variable interface {
 	IsReadOnly() bool
 }
 
+// ValidValuesEnumerator is implemented by variables that have a constrained set of valid values.
+// Used by fuzzy completion to offer value candidates for SET <name> = <Ctrl+T>.
+// Values must be returned as valid GoogleSQL literals (e.g., 'TABLE' for strings, TRUE for booleans).
+type ValidValuesEnumerator interface {
+	ValidValues() []string
+}
+
 // formatBool formats a boolean value for display (uppercase string)
 func formatBool(b bool) string {
 	return strings.ToUpper(strconv.FormatBool(b))
@@ -37,6 +44,7 @@ type VarHandler[T any] struct {
 	validate    func(T) error
 	readOnly    bool
 	description string
+	enumValues  []string // optional: constrained valid values for fuzzy completion
 }
 
 // Get returns the formatted value
@@ -89,6 +97,12 @@ func (h *VarHandler[T]) AsReadOnly() *VarHandler[T] {
 	return h
 }
 
+// ValidValues returns the constrained valid values, if any.
+// Implements ValidValuesEnumerator for VarHandler instances with enumValues set.
+func (h *VarHandler[T]) ValidValues() []string {
+	return h.enumValues
+}
+
 // WithValidator adds a validator function
 func (h *VarHandler[T]) WithValidator(validate func(T) error) *VarHandler[T] {
 	h.validate = validate
@@ -102,6 +116,7 @@ func BoolVar(ptr *bool, desc string) *VarHandler[bool] {
 		description: desc,
 		format:      formatBool,
 		parse:       strconv.ParseBool,
+		enumValues:  []string{"TRUE", "FALSE"},
 	}
 }
 

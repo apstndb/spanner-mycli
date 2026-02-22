@@ -43,6 +43,11 @@ func (r *VarRegistry) RegisterWithAdd(name string, v Variable, addFunc func(stri
 	r.addHandlers[strings.ToUpper(name)] = addFunc
 }
 
+// GetVariable retrieves the Variable handler by name, or nil if not found.
+func (r *VarRegistry) GetVariable(name string) Variable {
+	return r.vars[strings.ToUpper(name)]
+}
+
 // Get retrieves a variable value
 func (r *VarRegistry) Get(name string) (string, error) {
 	v, ok := r.vars[strings.ToUpper(name)]
@@ -285,12 +290,16 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_DATABASE_DIALECT", DatabaseDialectVar(&sv.DatabaseDialect,
 		"Database dialect for the session."))
 	r.Register("CLI_QUERY_MODE", &CustomVar{
-		base: StringVar(&sv.AnalyzeColumns, "Query execution mode."), // dummy for description
+		base: QueryModeVar(func() *sppb.ExecuteSqlRequest_QueryMode {
+			// Use a zero-value pointer just for ValidValues() / description;
+			// actual get/set are handled by custom getter/setter below.
+			var mode sppb.ExecuteSqlRequest_QueryMode
+			return &mode
+		}(), "Query execution mode."),
 		customGetter: func() (string, error) {
 			if sv.QueryMode == nil {
 				return "NULL", nil
 			}
-			// Create temporary variable for QueryModeVar
 			mode := *sv.QueryMode
 			return QueryModeVar(&mode, "").Get()
 		},
@@ -302,7 +311,6 @@ func (r *VarRegistry) registerAll() {
 			if sv.QueryMode == nil {
 				sv.QueryMode = new(sppb.ExecuteSqlRequest_QueryMode)
 			}
-			// Create temporary variable for QueryModeVar
 			mode := *sv.QueryMode
 			err := QueryModeVar(&mode, "").Set(value)
 			if err != nil {

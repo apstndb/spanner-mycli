@@ -40,6 +40,7 @@ const (
 	fuzzyCompleteDatabase fuzzyCompletionType = iota + 1
 	fuzzyCompleteVariable
 	fuzzyCompleteTable
+	fuzzyCompleteVariableValue
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -50,6 +51,8 @@ func (t fuzzyCompletionType) String() string {
 		return "variable"
 	case fuzzyCompleteTable:
 		return "table"
+	case fuzzyCompleteVariableValue:
+		return "variable_value"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -62,6 +65,9 @@ type fuzzyArgCompletion struct {
 
 	// CompletionType specifies what candidates to fetch.
 	CompletionType fuzzyCompletionType
+
+	// Suffix is appended to the selected candidate after insertion (e.g., " = " for SET variable name).
+	Suffix string
 }
 
 type clientSideStatementDef struct {
@@ -796,10 +802,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 		},
-		Completion: []fuzzyArgCompletion{{
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+([^\s=]*)$`),
-			CompletionType: fuzzyCompleteVariable,
-		}},
+		Completion: []fuzzyArgCompletion{
+			{
+				// Value completion: SET <name> = <partial_value>
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+(\S+)\s*=\s*(\S*)$`),
+				CompletionType: fuzzyCompleteVariableValue,
+			},
+			{
+				// Name completion: SET <partial_name>
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+([^\s=]*)$`),
+				CompletionType: fuzzyCompleteVariable,
+				Suffix:         " = ",
+			},
+		},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{

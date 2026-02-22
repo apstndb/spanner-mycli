@@ -27,6 +27,8 @@ func TestDetectFuzzyContext(t *testing.T) {
 		wantCompletionType fuzzyCompletionType
 		wantArgPrefix      string
 		wantArgStartPos    int
+		wantContext        string
+		wantSuffix         string
 	}{
 		// Argument completion: USE → database
 		{
@@ -64,13 +66,14 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    6,
 		},
-		// Argument completion: SET → variable
+		// Argument completion: SET → variable (with " = " suffix)
 		{
 			name:               "SET with partial name",
 			input:              "SET CLI_",
 			wantCompletionType: fuzzyCompleteVariable,
 			wantArgPrefix:      "CLI_",
 			wantArgStartPos:    4,
+			wantSuffix:         " = ",
 		},
 		{
 			name:               "SET with no name",
@@ -78,6 +81,7 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantCompletionType: fuzzyCompleteVariable,
 			wantArgPrefix:      "",
 			wantArgStartPos:    4,
+			wantSuffix:         " = ",
 		},
 		{
 			name:               "set lowercase",
@@ -85,6 +89,7 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantCompletionType: fuzzyCompleteVariable,
 			wantArgPrefix:      "cli_f",
 			wantArgStartPos:    4,
+			wantSuffix:         " = ",
 		},
 		// Argument completion: SHOW VARIABLE → variable
 		{
@@ -175,20 +180,54 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "my",
 			wantArgStartPos:    14,
 		},
-		// SET with = should not match arg completion → falls through to statement name
+		// Argument completion: SET <name> = → variable value
 		{
-			name:               "SET with = falls through to statement name",
-			input:              "SET CLI_FORMAT = TABLE",
-			wantCompletionType: 0,
-			wantArgPrefix:      "SET CLI_FORMAT = TABLE",
-			wantArgStartPos:    0,
+			name:               "SET value completion with space after =",
+			input:              "SET CLI_FORMAT = ",
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "",
+			wantArgStartPos:    17,
+			wantContext:        "CLI_FORMAT",
 		},
 		{
-			name:               "SET with = no space falls through to statement name",
+			name:               "SET value completion with partial value",
+			input:              "SET CLI_FORMAT = TA",
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "TA",
+			wantArgStartPos:    17,
+			wantContext:        "CLI_FORMAT",
+		},
+		{
+			name:               "SET value completion no space after =",
+			input:              "SET CLI_FORMAT=",
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
+			wantContext:        "CLI_FORMAT",
+		},
+		{
+			name:               "SET value completion no space after = with value",
 			input:              "SET CLI_FORMAT=TABLE",
-			wantCompletionType: 0,
-			wantArgPrefix:      "SET CLI_FORMAT=TABLE",
-			wantArgStartPos:    0,
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "TABLE",
+			wantArgStartPos:    15,
+			wantContext:        "CLI_FORMAT",
+		},
+		{
+			name:               "SET value completion for boolean var",
+			input:              "SET READONLY = ",
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
+			wantContext:        "READONLY",
+		},
+		{
+			name:               "set value completion lowercase",
+			input:              "set cli_format = ta",
+			wantCompletionType: fuzzyCompleteVariableValue,
+			wantArgPrefix:      "ta",
+			wantArgStartPos:    17,
+			wantContext:        "cli_format",
 		},
 		// Statement name completion (fallback)
 		{
@@ -255,6 +294,8 @@ func TestDetectFuzzyContext(t *testing.T) {
 			assert.Equal(t, tt.wantCompletionType, got.completionType)
 			assert.Equal(t, tt.wantArgPrefix, got.argPrefix)
 			assert.Equal(t, tt.wantArgStartPos, got.argStartPos)
+			assert.Equal(t, tt.wantContext, got.context)
+			assert.Equal(t, tt.wantSuffix, got.suffix)
 		})
 	}
 }
