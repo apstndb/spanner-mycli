@@ -22,143 +22,341 @@ import (
 
 func TestDetectFuzzyContext(t *testing.T) {
 	tests := []struct {
-		name            string
-		input           string
-		wantContextType fuzzyContextType
-		wantArgPrefix   string
-		wantArgStartPos int
+		name               string
+		input              string
+		wantCompletionType fuzzyCompletionType
+		wantArgPrefix      string
+		wantArgStartPos    int
 	}{
+		// Argument completion: USE → database
 		{
-			name:            "USE with trailing space",
-			input:           "USE ",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "",
-			wantArgStartPos: 4,
+			name:               "USE with trailing space",
+			input:              "USE ",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "USE without space",
-			input:           "USE",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "",
-			wantArgStartPos: 3,
+			name:               "USE with partial db name",
+			input:              "USE apst",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "apst",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "USE with partial db name",
-			input:           "USE apst",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "apst",
-			wantArgStartPos: 4,
+			name:               "USE with full db name",
+			input:              "USE my-database",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "my-database",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "USE with full db name",
-			input:           "USE my-database",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "my-database",
-			wantArgStartPos: 4,
+			name:               "use lowercase",
+			input:              "use db",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "db",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "use lowercase",
-			input:           "use db",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "db",
-			wantArgStartPos: 4,
+			name:               "USE with leading space",
+			input:              "  USE ",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "",
+			wantArgStartPos:    6,
+		},
+		// Argument completion: SET → variable
+		{
+			name:               "SET with partial name",
+			input:              "SET CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "USE with leading space",
-			input:           "  USE ",
-			wantContextType: fuzzyContextDatabase,
-			wantArgPrefix:   "",
-			wantArgStartPos: 6,
+			name:               "SET with no name",
+			input:              "SET ",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    4,
 		},
 		{
-			name:            "SELECT query",
-			input:           "SELECT 1",
-			wantContextType: "",
+			name:               "set lowercase",
+			input:              "set cli_f",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "cli_f",
+			wantArgStartPos:    4,
+		},
+		// Argument completion: SHOW VARIABLE → variable
+		{
+			name:               "SHOW VARIABLE with partial name",
+			input:              "SHOW VARIABLE CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    14,
 		},
 		{
-			name:            "empty input",
-			input:           "",
-			wantContextType: "",
+			name:               "SHOW VARIABLE with no name",
+			input:              "SHOW VARIABLE ",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    14,
 		},
 		{
-			name:            "SHOW DATABASES",
-			input:           "SHOW DATABASES",
-			wantContextType: "",
+			name:               "show variable lowercase",
+			input:              "show variable read",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "read",
+			wantArgStartPos:    14,
 		},
-		// SET variable context
+		// Argument completion: SHOW COLUMNS FROM → table
 		{
-			name:            "SET with partial name",
-			input:           "SET CLI_",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "CLI_",
-			wantArgStartPos: 4,
-		},
-		{
-			name:            "SET with no name",
-			input:           "SET ",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "",
-			wantArgStartPos: 4,
+			name:               "SHOW COLUMNS FROM with trailing space",
+			input:              "SHOW COLUMNS FROM ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
 		},
 		{
-			name:            "SET without space should not match",
-			input:           "SET",
-			wantContextType: "",
+			name:               "SHOW COLUMNS FROM with partial table",
+			input:              "SHOW COLUMNS FROM Sin",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Sin",
+			wantArgStartPos:    18,
+		},
+		// Argument completion: SHOW INDEX FROM → table
+		{
+			name:               "SHOW INDEX FROM with trailing space",
+			input:              "SHOW INDEX FROM ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    16,
 		},
 		{
-			name:            "set lowercase",
-			input:           "set cli_f",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "cli_f",
-			wantArgStartPos: 4,
+			name:               "SHOW INDEXES FROM with partial table",
+			input:              "SHOW INDEXES FROM Al",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Al",
+			wantArgStartPos:    18,
 		},
 		{
-			name:            "SET with = should not match",
-			input:           "SET CLI_FORMAT = TABLE",
-			wantContextType: "",
+			name:               "SHOW KEYS FROM",
+			input:              "SHOW KEYS FROM ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
+		},
+		// Argument completion: TRUNCATE TABLE → table
+		{
+			name:               "TRUNCATE TABLE with trailing space",
+			input:              "TRUNCATE TABLE ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
 		},
 		{
-			name:            "SET with = no space should not match",
-			input:           "SET CLI_FORMAT=TABLE",
-			wantContextType: "",
+			name:               "TRUNCATE TABLE with partial table",
+			input:              "TRUNCATE TABLE Sin",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Sin",
+			wantArgStartPos:    15,
 		},
-		// SHOW VARIABLE context
+		// Argument completion: DROP DATABASE → database
 		{
-			name:            "SHOW VARIABLE with partial name",
-			input:           "SHOW VARIABLE CLI_",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "CLI_",
-			wantArgStartPos: 14,
-		},
-		{
-			name:            "SHOW VARIABLE with no name",
-			input:           "SHOW VARIABLE ",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "",
-			wantArgStartPos: 14,
+			name:               "DROP DATABASE with trailing space",
+			input:              "DROP DATABASE ",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "",
+			wantArgStartPos:    14,
 		},
 		{
-			name:            "show variable lowercase",
-			input:           "show variable read",
-			wantContextType: fuzzyContextVariable,
-			wantArgPrefix:   "read",
-			wantArgStartPos: 14,
+			name:               "DROP DATABASE with partial name",
+			input:              "DROP DATABASE my",
+			wantCompletionType: fuzzyCompleteDatabase,
+			wantArgPrefix:      "my",
+			wantArgStartPos:    14,
+		},
+		// SET with = should not match arg completion → falls through to statement name
+		{
+			name:               "SET with = falls through to statement name",
+			input:              "SET CLI_FORMAT = TABLE",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SET CLI_FORMAT = TABLE",
+			wantArgStartPos:    0,
 		},
 		{
-			name:            "SHOW VARIABLES should not match",
-			input:           "SHOW VARIABLES",
-			wantContextType: "",
+			name:               "SET with = no space falls through to statement name",
+			input:              "SET CLI_FORMAT=TABLE",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SET CLI_FORMAT=TABLE",
+			wantArgStartPos:    0,
+		},
+		// Statement name completion (fallback)
+		{
+			name:               "USE without space falls through to statement name",
+			input:              "USE",
+			wantCompletionType: 0,
+			wantArgPrefix:      "USE",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "SET without space falls through to statement name",
+			input:              "SET",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SET",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "partial statement name SHO",
+			input:              "SHO",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SHO",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "empty input falls through to statement name",
+			input:              "",
+			wantCompletionType: 0,
+			wantArgPrefix:      "",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "SELECT query falls through to statement name",
+			input:              "SELECT 1",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SELECT 1",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "SHOW DATABASES falls through to statement name",
+			input:              "SHOW DATABASES",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SHOW DATABASES",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "SHOW VARIABLES falls through to statement name",
+			input:              "SHOW VARIABLES",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SHOW VARIABLES",
+			wantArgStartPos:    0,
+		},
+		{
+			name:               "leading spaces preserved in statement name fallback",
+			input:              "  SHO",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SHO",
+			wantArgStartPos:    2,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := detectFuzzyContext(tt.input)
-			assert.Equal(t, tt.wantContextType, got.contextType)
-			if tt.wantContextType != "" {
-				assert.Equal(t, tt.wantArgPrefix, got.argPrefix)
-				assert.Equal(t, tt.wantArgStartPos, got.argStartPos)
-			}
+			assert.Equal(t, tt.wantCompletionType, got.completionType)
+			assert.Equal(t, tt.wantArgPrefix, got.argPrefix)
+			assert.Equal(t, tt.wantArgStartPos, got.argStartPos)
 		})
+	}
+}
+
+func TestExtractFixedPrefix(t *testing.T) {
+	tests := []struct {
+		name   string
+		syntax string
+		want   string
+	}{
+		{
+			name:   "no-arg statement",
+			syntax: "SHOW DATABASES",
+			want:   "SHOW DATABASES",
+		},
+		{
+			name:   "single-arg with angle bracket",
+			syntax: "USE <database> [ROLE <role>]",
+			want:   "USE ",
+		},
+		{
+			name:   "multi-keyword prefix",
+			syntax: "SHOW COLUMNS FROM <table_fqn>",
+			want:   "SHOW COLUMNS FROM ",
+		},
+		{
+			name:   "optional bracket",
+			syntax: "SHOW TABLES [<schema>]",
+			want:   "SHOW TABLES ",
+		},
+		{
+			name:   "curly brace alternatives",
+			syntax: "START BATCH {DDL|DML}",
+			want:   "START BATCH ",
+		},
+		{
+			name:   "no-arg single word",
+			syntax: "HELP",
+			want:   "HELP",
+		},
+		{
+			name:   "no-arg two words",
+			syntax: "EXIT",
+			want:   "EXIT",
+		},
+		{
+			name:   "ellipsis in args",
+			syntax: "DUMP TABLES <table1> [, <table2>, ...]",
+			want:   "DUMP TABLES ",
+		},
+		{
+			name:   "complex multi-keyword with angle bracket",
+			syntax: "SHOW INDEX FROM <table_fqn>",
+			want:   "SHOW INDEX FROM ",
+		},
+		{
+			name:   "EXPLAIN with angle bracket",
+			syntax: "EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>",
+			want:   "EXPLAIN ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractFixedPrefix(tt.syntax)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBuildStatementNameCandidates(t *testing.T) {
+	candidates := buildStatementNameCandidates()
+
+	// Should have candidates (at least as many as defs with descriptions)
+	assert.Greater(t, len(candidates), 0)
+
+	// Each candidate should have non-empty DisplayText and InsertText
+	for _, c := range candidates {
+		assert.NotEmpty(t, c.DisplayText, "DisplayText should not be empty")
+		assert.NotEmpty(t, c.InsertText, "InsertText should not be empty")
+	}
+
+	// Verify specific well-known candidates exist
+	displayTexts := make(map[string]string)
+	for _, c := range candidates {
+		displayTexts[c.DisplayText] = c.InsertText
+	}
+
+	// No-arg statement: full text, no trailing space
+	assert.Equal(t, "SHOW DATABASES", displayTexts["SHOW DATABASES"])
+
+	// Arg statement: keyword prefix with trailing space
+	assert.Equal(t, "USE ", displayTexts["USE <database> [ROLE <role>]"])
+
+	// Multi-keyword prefix
+	assert.Equal(t, "SHOW COLUMNS FROM ", displayTexts["SHOW COLUMNS FROM <table_fqn>"])
+}
+
+func TestStatementNameDisplayTexts(t *testing.T) {
+	texts := statementNameDisplayTexts()
+	assert.Equal(t, len(statementNameCandidates), len(texts))
+	for i, c := range statementNameCandidates {
+		assert.Equal(t, c.DisplayText, texts[i])
 	}
 }

@@ -33,6 +33,24 @@ type clientSideStatementDescription struct {
 	Note string
 }
 
+// fuzzyCompletionType represents what kind of candidates to provide for argument completion.
+type fuzzyCompletionType int
+
+const (
+	fuzzyCompleteDatabase fuzzyCompletionType = iota + 1
+	fuzzyCompleteVariable
+	fuzzyCompleteTable
+)
+
+// fuzzyArgCompletion defines how to detect and complete an argument for a client-side statement.
+type fuzzyArgCompletion struct {
+	// PrefixPattern matches partial input and captures the argument being typed in group 1.
+	PrefixPattern *regexp.Regexp
+
+	// CompletionType specifies what candidates to fetch.
+	CompletionType fuzzyCompletionType
+}
+
 type clientSideStatementDef struct {
 	// Descriptions represents human-readable descriptions.
 	// It can be multiple because some clientSideStatementDef represents multiple statements in single pattern.
@@ -44,6 +62,10 @@ type clientSideStatementDef struct {
 
 	// HandleSubmatch holds a handler which converts the result of (*regexp.Regexp).FindStringSubmatch() to Statement.
 	HandleSubmatch func(matched []string) (Statement, error)
+
+	// Completion defines optional fuzzy argument completion for this statement.
+	// When non-nil, each entry's PrefixPattern is tried against partial input to detect argument completion.
+	Completion []fuzzyArgCompletion
 }
 
 var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
@@ -81,6 +103,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*USE\s+(\S*)$`),
+			CompletionType: fuzzyCompleteDatabase,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -107,6 +133,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*DROP\s+DATABASE\s+(\S*)$`),
+			CompletionType: fuzzyCompleteDatabase,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -160,6 +190,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 			return &ShowColumnsStatement{Schema: schema, Table: table}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+COLUMNS\s+FROM\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -173,6 +207,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 			return &ShowIndexStatement{Schema: schema, Table: table}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -357,6 +395,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
 			return &TruncateTableStatement{Schema: schema, Table: table}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*TRUNCATE\s+TABLE\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
 	},
 	// EXPLAIN & EXPLAIN ANALYZE
 	{
@@ -741,6 +783,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+([^\s=]*)$`),
+			CompletionType: fuzzyCompleteVariable,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -777,6 +823,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &ShowVariableStatement{VarName: matched[1]}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+VARIABLE\s+(\S*)$`),
+			CompletionType: fuzzyCompleteVariable,
+		}},
 	},
 	// Query Parameter
 	{
