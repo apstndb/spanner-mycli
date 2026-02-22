@@ -1,7 +1,7 @@
 ---
 name: Review Respond
 description: Reply to all review threads with commit hash and resolve
-arguments: "[commit-message]"
+arguments: "[commit_message]"
 ---
 
 # Respond to Review Threads
@@ -17,35 +17,38 @@ After addressing review feedback, please:
 2. Find all unresolved threads (including outdated ones) and respond to each one:
 !go tool gh-helper reviews fetch --unresolved-only
 
-For each thread ID found above, reply with the CORRECT commit hash where that specific issue was fixed and resolve it, regardless of whether it's marked as outdated.
+For each thread ID found above, reply and resolve it, regardless of whether it's marked as outdated.
+
+**Reply content guidelines — always write a meaningful reply:**
+- Do NOT just post a commit hash. Explain what was changed and why.
+- For code fixes: Describe the specific change made to address the feedback.
+- For explanations: Provide concrete reasoning, not just "this is intentional."
+- Keep it concise but substantive: 1-3 sentences is ideal.
 
 **Response strategy per thread type:**
 
-- **Code fix needed**: Make the fix, commit, then reply with commit hash and resolve
+- **Code fix needed**: Make the fix, commit, then reply with commit hash and explanation, and resolve
 - **Explanation only** (no code change needed): Reply with reasoning why current code is correct, then resolve
 - **Praise/positive comment**: Acknowledge briefly (e.g., "Thank you!") and resolve — don't leave these unresolved
 
-When replying to threads, include a brief explanation of the fix:
-- Use `--message "Brief explanation of what was fixed"` for single-line responses
-- For multi-line responses, use stdin with heredoc
-- Default format: "Fixed in [commit-hash] - [brief explanation]$ARGUMENTS"
-
 Examples:
 ```bash
-# Single-line response
-go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --message "Fixed by making CLI_SKIP_SYSTEM_COMMAND read-only" --resolve
+# Code fix — explain what was changed
+go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve \
+  --message "Removed the redundant nil check. ListVariables() calls ensureRegistry() internally, so the explicit guard was preventing first-use initialization."
 
 # Multi-line response for complex fixes
 cat <<EOF | go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve
-Fixed by switching from buffering to streaming output.
-This prevents DoS attacks from commands with large output.
+Switched from buffering to streaming output.
+This prevents memory issues from commands with large output.
 EOF
 
 # Acknowledge praise comment (no code change)
 go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
 
 # Explanation-only response (no code change)
-go tool gh-helper threads reply THREAD_ID --message "This is intentional because ..." --resolve
+go tool gh-helper threads reply THREAD_ID --resolve \
+  --message "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
 ```
 
 Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
