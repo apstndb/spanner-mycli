@@ -37,6 +37,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -264,7 +265,7 @@ func (c *Cli) updateSystemVariables(result *Result) {
 // executeSourceFile executes SQL statements from a file
 func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 	// Use common file safety checks (nil uses DefaultMaxFileSize - 100MB)
-	contents, err := SafeReadFile(filePath, nil)
+	contents, err := filesafety.SafeReadFile(filePath, nil)
 	if err != nil {
 		return err
 	}

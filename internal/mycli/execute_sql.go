@@ -16,6 +16,7 @@ import (
 
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/sourcegraph/conc/pool"
@@ -110,31 +111,31 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 }
 
 // newMetrics creates and initializes execution metrics from system variables.
-func newMetrics(sysVars *systemVariables) *ExecutionMetrics {
-	metrics := &ExecutionMetrics{
+func newMetrics(sysVars *systemVariables) *metrics.ExecutionMetrics {
+	m := &metrics.ExecutionMetrics{
 		QueryStartTime: time.Now(),
 		Profile:        sysVars.Profile,
 	}
 	if sysVars.Profile {
-		before := GetMemoryStats()
-		metrics.MemoryBefore = &before
+		before := metrics.GetMemoryStats()
+		m.MemoryBefore = &before
 	}
-	return metrics
+	return m
 }
 
 // finalizeMetrics completes metrics collection after query execution.
-func finalizeMetrics(metrics *ExecutionMetrics, sysVars *systemVariables) {
-	metrics.CompletionTime = time.Now()
+func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
+	m.CompletionTime = time.Now()
 	if sysVars.Profile {
-		after := GetMemoryStats()
-		metrics.MemoryAfter = &after
+		after := metrics.GetMemoryStats()
+		m.MemoryAfter = &after
 	}
 }
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
-func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, sysVars *systemVariables, metrics *ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
+func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, sysVars *systemVariables, m *metrics.ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
 	useStreaming, processor := decideExecutionMode(ctx, session, fc, sysVars)
-	metrics.IsStreaming = useStreaming
+	m.IsStreaming = useStreaming
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
@@ -144,23 +145,23 @@ func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowI
 	var result *Result
 	var err error
 	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
+		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, m, usingSQLLiterals, sysVars)
 	} else {
-		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, metrics, usingSQLLiterals, sysVars)
+		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, m, usingSQLLiterals, sysVars)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	finalizeMetrics(metrics, sysVars)
-	result.Metrics = metrics
+	finalizeMetrics(m, sysVars)
+	result.Metrics = m
 	return result, nil
 }
 
 // executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
 // This is for use when we have a specific transaction to use.
 func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
-	metrics := newMetrics(sysVars)
+	m := newMetrics(sysVars)
 
 	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
@@ -179,12 +180,12 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
-	return executeAndCollect(ctx, session, iter, txn, fc, sql, sysVars, metrics, usingSQLLiterals)
+	return executeAndCollect(ctx, session, iter, txn, fc, sql, sysVars, m, usingSQLLiterals)
 }
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
-	metrics := newMetrics(sysVars)
+	m := newMetrics(sysVars)
 
 	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
@@ -198,7 +199,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	result, err := executeAndCollect(ctx, session, iter, roTxn, fc, sql, sysVars, metrics, usingSQLLiterals)
+	result, err := executeAndCollect(ctx, session, iter, roTxn, fc, sql, sysVars, m, usingSQLLiterals)
 	if err != nil {
 		// Handle aborted transaction
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
@@ -250,26 +251,26 @@ func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.Fo
 }
 
 // executeWithStreaming executes the query using streaming mode.
-func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		LogMemoryStats("Before streaming")
-		defer LogMemoryStats("After streaming")
+		metrics.LogMemoryStats("Before streaming")
+		defer metrics.LogMemoryStats("After streaming")
 	}
 
 	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
-	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, metrics, usingSQLLiterals, sysVars)
+	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, m, usingSQLLiterals, sysVars)
 }
 
 // finalizeQueryResult parses query stats, extracts the read timestamp, and updates the query cache.
-func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.ReadOnlyTransaction, plan *sppb.QueryPlan, sysVars *systemVariables, metrics *ExecutionMetrics) error {
+func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.ReadOnlyTransaction, plan *sppb.QueryPlan, sysVars *systemVariables, m *metrics.ExecutionMetrics) error {
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return err
 	}
 	result.Stats = queryStats
-	metrics.ServerElapsedTime = queryStats.ElapsedTime
-	metrics.ServerCPUTime = queryStats.CPUTime
+	m.ServerElapsedTime = queryStats.ElapsedTime
+	m.ServerCPUTime = queryStats.CPUTime
 
 	if roTxn != nil {
 		ts, err := roTxn.Timestamp()
@@ -289,15 +290,15 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 }
 
 // executeWithBuffering executes the query using buffered mode.
-func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		LogMemoryStats("Before buffered")
-		defer LogMemoryStats("After buffered")
+		metrics.LogMemoryStats("Before buffered")
+		defer metrics.LogMemoryStats("After buffered")
 	}
 
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), metrics)
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), m)
 	if err != nil {
 		return nil, err
 	}
@@ -313,19 +314,19 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 		HasSQLFormattedValues: usingSQLLiterals,
 	}
 
-	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, metrics); err != nil {
+	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, m); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 // executeStreamingSQL processes query results in streaming mode.
-func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, metrics *ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
 	slog.Debug("executeStreamingSQL called", "format", sysVars.CLIFormat)
 
 	rowTransform := spannerRowToRow(fc)
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
-	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, metrics)
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, m)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
 	if err != nil {
 		return nil, err
@@ -339,7 +340,7 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 		HasSQLFormattedValues: usingSQLLiterals,
 	}
 
-	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, metrics); err != nil {
+	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, m); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -684,7 +685,7 @@ func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row
 }
 
 // consumeRowIterCollectWithMetrics is like consumeRowIterCollect but collects metrics during execution.
-func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), metrics *ExecutionMetrics) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), m *metrics.ExecutionMetrics) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
 	firstRow := true
 
@@ -694,7 +695,7 @@ func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*
 		// Record TTFB on first row
 		if firstRow {
 			firstRow = false
-			metrics.FirstRowTime = &now
+			m.FirstRowTime = &now
 		}
 
 		v, err := f(row)
@@ -704,8 +705,8 @@ func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*
 		results = append(results, v)
 
 		// Update last row time
-		metrics.LastRowTime = &now
-		metrics.RowCount = int64(len(results))
+		m.LastRowTime = &now
+		m.RowCount = int64(len(results))
 
 		return nil
 	})

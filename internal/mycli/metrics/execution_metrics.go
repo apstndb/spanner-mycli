@@ -1,4 +1,4 @@
-package mycli
+package metrics
 
 import (
 	"fmt"

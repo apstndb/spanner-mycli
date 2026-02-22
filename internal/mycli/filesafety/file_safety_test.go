@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package mycli
+package filesafety
 
 import (
 	"os"

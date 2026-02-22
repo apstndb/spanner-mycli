@@ -28,6 +28,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/go-json-experiment/json/jsontext"
@@ -218,8 +219,8 @@ type Result struct {
 
 	BatchInfo      *BatchInfo
 	PartitionCount int
-	Streamed       bool              // Indicates rows were streamed and not buffered
-	Metrics        *ExecutionMetrics // Performance metrics for query execution
+	Streamed       bool                      // Indicates rows were streamed and not buffered
+	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
 }
 
 type Row []string

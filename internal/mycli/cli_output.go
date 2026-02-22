@@ -16,6 +16,7 @@ import (
 	"github.com/apstndb/go-runewidthex"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/go-sprout/sprout"
 	"github.com/go-sprout/sprout/group/hermetic"
 	"github.com/mattn/go-runewidth"
@@ -185,7 +186,7 @@ type OutputContext struct {
 	CommitTimestamp string
 	Stats           *QueryStats
 	CommitStats     *sppb.CommitResponse_CommitStats
-	Metrics         *ExecutionMetrics
+	Metrics         *metrics.ExecutionMetrics
 }
 
 func sproutFuncMap() template.FuncMap {

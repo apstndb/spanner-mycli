@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 )
 
 // RowIterResult contains metadata and a row iterator sequence.
@@ -30,7 +31,7 @@ type RowIterResult struct {
 func rowIterToSeq(
 	rowIter *spanner.RowIterator,
 	rowTransform func(*spanner.Row) (Row, error),
-	metrics *ExecutionMetrics,
+	m *metrics.ExecutionMetrics,
 ) *RowIterResult {
 	result := &RowIterResult{}
 
@@ -52,11 +53,11 @@ func rowIterToSeq(
 				result.Metadata = rowIter.Metadata
 
 				// Record TTFB if metrics collection is enabled
-				if metrics != nil && metrics.FirstRowTime == nil {
-					metrics.FirstRowTime = &now
+				if m != nil && m.FirstRowTime == nil {
+					m.FirstRowTime = &now
 					slog.Debug("Metadata retrieved (TTFB)",
 						"fieldCount", len(result.Metadata.GetRowType().GetFields()),
-						"ttfb", now.Sub(metrics.QueryStartTime))
+						"ttfb", now.Sub(m.QueryStartTime))
 				} else if result.Metadata != nil && result.Metadata.RowType != nil {
 					fields := result.Metadata.RowType.GetFields()
 					slog.Debug("Metadata retrieved",
@@ -76,9 +77,9 @@ func rowIterToSeq(
 			}
 
 			rowCount++
-			if metrics != nil {
-				metrics.LastRowTime = &now
-				metrics.RowCount = rowCount
+			if m != nil {
+				m.LastRowTime = &now
+				m.RowCount = rowCount
 			}
 
 			return nil
@@ -121,10 +122,10 @@ func consumeRowIterWithProcessor(
 	processor RowProcessor,
 	rowTransform func(*spanner.Row) (Row, error),
 	sysVars *systemVariables,
-	metrics *ExecutionMetrics,
+	m *metrics.ExecutionMetrics,
 ) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	// Convert RowIterator to iter.Seq with metadata extraction and metrics
-	result := rowIterToSeq(iter, rowTransform, metrics)
+	result := rowIterToSeq(iter, rowTransform, m)
 
 	// Process rows through the sequence
 	rowCount = 0
