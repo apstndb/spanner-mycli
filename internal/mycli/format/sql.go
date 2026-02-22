@@ -1,4 +1,4 @@
-// formatters_sql.go implements SQL export formatting for query results.
+// Package format implements SQL export formatting for query results.
 // It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
 // that can be used for database migration, backup/restore, and test data generation.
 //
@@ -13,7 +13,7 @@
 // - Would enable format-specific optimizations and better separation of concerns
 //
 // The implementation uses memefish's ast.Path for correct identifier handling.
-package mycli
+package format
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
-// extractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
+// ExtractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
 // It supports simple SELECT patterns including:
 //   - SELECT * FROM table_name
 //   - SELECT columns FROM table_name
@@ -50,7 +50,7 @@ import (
 // The error messages are intended for debug logging to help understand why
 // auto-detection failed, allowing users to adjust their queries or use explicit
 // CLI_SQL_TABLE_NAME setting.
-func extractTableNameFromQuery(sql string) (string, error) {
+func ExtractTableNameFromQuery(sql string) (string, error) {
 	// Validation flow:
 	// 1. Parse SQL and verify it's a SELECT statement
 	// 2. Navigate through AST structure (handling Query wrapper for ORDER BY/LIMIT)
@@ -230,7 +230,7 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE %d exceeds maximum supported value on this platform", batchSize)
 	}
 
-	tablePath, err := parseSimpleTablePath(tableName)
+	tablePath, err := ParseSimpleTablePath(tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -245,12 +245,12 @@ func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, ba
 	}, nil
 }
 
-// parseSimpleTablePath converts a simple table path string from CLI input to an ast.Path.
+// ParseSimpleTablePath converts a simple table path string from CLI input to an ast.Path.
 // This function handles user-friendly input where reserved words don't need quoting.
 // Examples: "Users", "Order" (reserved word OK), "myschema.Users"
 // The function does NOT parse SQL expressions - it simply splits on dots.
 // Quoting for reserved words is handled automatically by ast.Ident.SQL() during output.
-func parseSimpleTablePath(input string) (*ast.Path, error) {
+func ParseSimpleTablePath(input string) (*ast.Path, error) {
 	// Trim spaces and check for empty input
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -386,16 +386,14 @@ func (f *SQLFormatter) flushBatch() error {
 }
 
 // SQLStreamingFormatter implements StreamingFormatter for SQL export.
-// Note: While this supports streaming, partitioned queries currently buffer all results
-// before formatting, so streaming benefits are not realized for partitioned queries.
 type SQLStreamingFormatter struct {
 	formatter   *SQLFormatter
 	initialized bool
 }
 
 // NewSQLStreamingFormatter creates a new streaming SQL formatter.
-func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enums.DisplayMode) (*SQLStreamingFormatter, error) {
-	if sysVars.SQLTableName == "" {
+func NewSQLStreamingFormatter(out io.Writer, config FormatConfig, mode enums.DisplayMode) (*SQLStreamingFormatter, error) {
+	if config.SQLTableName == "" {
 		return nil, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
 			"Options:\n" +
 			"  1. Use DUMP TABLE for full table exports\n" +
@@ -403,7 +401,7 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 			"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 	}
 
-	formatter, err := NewSQLFormatter(out, mode, sysVars.SQLTableName, sysVars.SQLBatchSize)
+	formatter, err := NewSQLFormatter(out, mode, config.SQLTableName, config.SQLBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -415,11 +413,9 @@ func NewSQLStreamingFormatter(out io.Writer, sysVars *systemVariables, mode enum
 }
 
 // InitFormat initializes the formatter with column information.
-func (s *SQLStreamingFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (s *SQLStreamingFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	s.initialized = true
-	// WriteHeader will validate column names
-	columns := extractTableColumnNames(header)
-	return s.formatter.WriteHeader(columns)
+	return s.formatter.WriteHeader(columnNames)
 }
 
 // WriteRow outputs a single row.
@@ -431,23 +427,14 @@ func (s *SQLStreamingFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes the SQL export.
-func (s *SQLStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+func (s *SQLStreamingFormatter) FinishFormat() error {
 	return s.formatter.Finish()
 }
 
-// formatSQL is the non-streaming formatter for SQL export.
-// PRECONDITION: result.TableHeader must contain valid column information.
-// The TableHeader is essential for generating the column names in INSERT statements
-// (e.g., INSERT INTO table(col1, col2, ...) VALUES ...).
-// Without valid column headers, SQL export cannot generate syntactically correct INSERT statements.
-func formatSQL(mode enums.DisplayMode) FormatFunc {
-	return func(out io.Writer, result *Result, columnNames []string, sysVars *systemVariables, screenWidth int) error {
-		// Use the table name from Result if available (for buffered mode with auto-detection)
-		// Otherwise fall back to sysVars.SQLTableName
-		tableName := result.SQLTableNameForExport
-		if tableName == "" {
-			tableName = sysVars.SQLTableName
-		}
+// FormatSQL is the non-streaming formatter for SQL export.
+func FormatSQL(mode enums.DisplayMode) FormatFunc {
+	return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+		tableName := config.SQLTableName
 
 		if tableName == "" {
 			return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
@@ -457,7 +444,7 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
 
-		formatter, err := NewSQLFormatter(out, mode, tableName, sysVars.SQLBatchSize)
+		formatter, err := NewSQLFormatter(out, mode, tableName, config.SQLBatchSize)
 		if err != nil {
 			return err
 		}
@@ -468,7 +455,7 @@ func formatSQL(mode enums.DisplayMode) FormatFunc {
 		}
 
 		// Write all rows
-		for _, row := range result.Rows {
+		for _, row := range rows {
 			if err := formatter.WriteRow(row); err != nil {
 				return err
 			}

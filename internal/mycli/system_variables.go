@@ -24,6 +24,7 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -171,6 +172,18 @@ type systemVariables struct {
 	// Unimplemented variables (kept for compatibility)
 	Autocommit            bool // AUTOCOMMIT (unimplemented)
 	RetryAbortsInternally bool // RETRY_ABORTS_INTERNALLY (unimplemented)
+}
+
+// toFormatConfig converts the formatter-relevant fields of systemVariables into a format.FormatConfig.
+func (sv *systemVariables) toFormatConfig() format.FormatConfig {
+	return format.FormatConfig{
+		TabWidth:        int(sv.TabWidth),
+		Verbose:         sv.Verbose,
+		SkipColumnNames: sv.SkipColumnNames,
+		SQLTableName:    sv.SQLTableName,
+		SQLBatchSize:    sv.SQLBatchSize,
+		PreviewRows:     sv.TablePreviewRows,
+	}
 }
 
 // parseEndpoint parses an endpoint string into host and port components.

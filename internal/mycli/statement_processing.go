@@ -28,6 +28,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -69,8 +70,9 @@ type BatchInfo struct {
 }
 
 type TableHeader interface {
-	// internalRender shouldn't be called directly. Use renderTableHeader().
-	internalRender(verbose bool) []string
+	// Render returns the header strings. When verbose is true, type information is included.
+	// Use renderTableHeader() as a nil-safe wrapper.
+	Render(verbose bool) []string
 	// structFields returns the complete field information with types if available.
 	// Returns (fields, true) if type information is available.
 	// Returns (nil, false) if only column names are available (e.g., simpleTableHeader).
@@ -79,7 +81,7 @@ type TableHeader interface {
 
 type simpleTableHeader []string
 
-func (th simpleTableHeader) internalRender(verbose bool) []string {
+func (th simpleTableHeader) Render(verbose bool) []string {
 	return th
 }
 
@@ -147,7 +149,7 @@ func toTableHeader[T interface {
 
 type typesTableHeader []*sppb.StructType_Field
 
-func (th typesTableHeader) internalRender(verbose bool) []string {
+func (th typesTableHeader) Render(verbose bool) []string {
 	var result []string
 	for _, f := range th {
 		if verbose {
@@ -223,7 +225,8 @@ type Result struct {
 	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
 }
 
-type Row []string
+// Row is a row of string values. It is a type alias for format.Row (= []string).
+type Row = format.Row
 
 // QueryStats contains query statistics.
 // Some fields may not have a valid value depending on the environment.

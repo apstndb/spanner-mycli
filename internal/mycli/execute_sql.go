@@ -16,6 +16,7 @@ import (
 
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
@@ -84,7 +85,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.SQLTableName == "" {
-			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
+			detectedTableName, detectionErr := format.ExtractTableNameFromQuery(sql)
 			if detectedTableName != "" {
 				// Create a copy of sysVars to use the detected table name for this execution only.
 				// This is important for:

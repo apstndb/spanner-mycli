@@ -1,4 +1,4 @@
-package mycli
+package format
 
 import (
 	"encoding/csv"
@@ -25,19 +25,18 @@ func NewCSVFormatter(out io.Writer, skipHeaders bool) *CSVFormatter {
 }
 
 // InitFormat writes CSV headers if needed.
-func (f *CSVFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *CSVFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	if len(columns) == 0 {
+	if len(columnNames) == 0 {
 		return nil
 	}
 
 	// Write headers unless skipping
 	if !f.skipHeaders {
-		if err := f.writer.Write(columns); err != nil {
+		if err := f.writer.Write(columnNames); err != nil {
 			return fmt.Errorf("failed to write CSV header: %w", err)
 		}
 	}
@@ -62,7 +61,7 @@ func (f *CSVFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes CSV output.
-func (f *CSVFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+func (f *CSVFormatter) FinishFormat() error {
 	f.writer.Flush()
 	if err := f.writer.Error(); err != nil {
 		return fmt.Errorf("CSV writer error: %w", err)
@@ -87,21 +86,20 @@ func NewTabFormatter(out io.Writer, skipHeaders bool) *TabFormatter {
 }
 
 // InitFormat writes tab-separated headers if needed.
-func (f *TabFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *TabFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	f.columns = columns
+	f.columns = columnNames
 
-	if len(columns) == 0 {
+	if len(columnNames) == 0 {
 		return nil
 	}
 
 	// Write headers unless skipping
 	if !f.skipHeaders {
-		if _, err := fmt.Fprintln(f.out, strings.Join(columns, "\t")); err != nil {
+		if _, err := fmt.Fprintln(f.out, strings.Join(columnNames, "\t")); err != nil {
 			return fmt.Errorf("failed to write TAB header: %w", err)
 		}
 	}
@@ -124,8 +122,7 @@ func (f *TabFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes tab-separated output.
-func (f *TabFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
-	// Nothing to do for tab format
+func (f *TabFormatter) FinishFormat() error {
 	return nil
 }
 
@@ -147,21 +144,20 @@ func NewVerticalFormatter(out io.Writer) *VerticalFormatter {
 }
 
 // InitFormat prepares vertical format output.
-func (f *VerticalFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *VerticalFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	f.columns = columns
+	f.columns = columnNames
 
-	if len(columns) == 0 {
+	if len(columnNames) == 0 {
 		return nil
 	}
 
 	// Calculate max column name length for alignment
 	f.maxLen = 0
-	for _, col := range columns {
+	for _, col := range columnNames {
 		if len(col) > f.maxLen {
 			f.maxLen = len(col)
 		}
@@ -200,7 +196,6 @@ func (f *VerticalFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes vertical format output.
-func (f *VerticalFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
-	// Nothing to do for vertical format
+func (f *VerticalFormatter) FinishFormat() error {
 	return nil
 }

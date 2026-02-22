@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 )
 
@@ -182,7 +183,7 @@ func shouldUseStreaming(sysVars *systemVariables) bool {
 
 // isStreamingSupported checks if a specific display mode supports streaming.
 func isStreamingSupported(mode enums.DisplayMode) bool {
-	_, err := createStreamingFormatter(mode, io.Discard, &systemVariables{})
+	_, err := format.NewStreamingFormatter(mode, io.Discard, format.FormatConfig{})
 	return err == nil
 }
 
