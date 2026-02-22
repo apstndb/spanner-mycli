@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -125,12 +126,12 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 	// Try argument completion first: iterate all defs with Completion entries.
 	for _, def := range clientSideStatementDefs {
 		for _, comp := range def.Completion {
-			m := comp.PrefixPattern.FindStringSubmatch(input)
-			if m == nil {
+			loc := comp.PrefixPattern.FindStringSubmatchIndex(input)
+			if loc == nil {
 				continue
 			}
-			argPrefix := m[1]
-			argStart := len([]rune(input)) - len([]rune(argPrefix))
+			argPrefix := input[loc[2]:loc[3]]
+			argStart := utf8.RuneCountInString(input[:loc[2]])
 			return fuzzyContextResult{
 				completionType: comp.CompletionType,
 				argPrefix:      argPrefix,

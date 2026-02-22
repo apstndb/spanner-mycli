@@ -51,7 +51,7 @@ func (t fuzzyCompletionType) String() string {
 	case fuzzyCompleteTable:
 		return "table"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
 }
 
