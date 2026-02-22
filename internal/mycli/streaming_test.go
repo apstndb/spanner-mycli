@@ -6,6 +6,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -179,18 +180,16 @@ func TestBufferedVsStreaming(t *testing.T) {
 
 	// Buffered output
 	var bufBuffered bytes.Buffer
-	result := &Result{
-		TableHeader: simpleTableHeader(columnNames),
-		Rows:        rows,
-	}
-	err := formatCSV(&bufBuffered, result, columnNames, sysVars, 0)
+	config := sysVars.toFormatConfig()
+	csvFormatter, err := format.NewFormatter(enums.DisplayModeCSV)
+	assert.NoError(t, err)
+	err = csvFormatter(&bufBuffered, rows, columnNames, config, 0)
 	assert.NoError(t, err)
 
 	// Streaming output
 	var bufStreaming bytes.Buffer
-	formatter := NewCSVFormatter(&bufStreaming, sysVars.SkipColumnNames)
-	header := simpleTableHeader(columnNames)
-	err = formatter.InitFormat(header, sysVars, nil)
+	formatter := format.NewCSVFormatter(&bufStreaming, sysVars.SkipColumnNames)
+	err = formatter.InitFormat(columnNames, config, nil)
 	assert.NoError(t, err)
 
 	for _, row := range rows {
@@ -198,7 +197,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	err = formatter.FinishFormat(QueryStats{}, int64(len(rows)))
+	err = formatter.FinishFormat()
 	assert.NoError(t, err)
 
 	// Compare outputs

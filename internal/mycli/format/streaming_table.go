@@ -1,6 +1,7 @@
-package mycli
+package format
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
@@ -16,7 +17,7 @@ import (
 // It uses a configurable number of preview rows to calculate optimal column widths.
 type TableStreamingFormatter struct {
 	out          io.Writer
-	sysVars      *systemVariables
+	config       FormatConfig
 	screenWidth  int
 	table        *tablewriter.Table
 	columns      []string
@@ -29,10 +30,10 @@ type TableStreamingFormatter struct {
 
 // NewTableStreamingFormatter creates a new table streaming formatter.
 // previewSize determines how many rows to use for width calculation (0 = all rows).
-func NewTableStreamingFormatter(out io.Writer, sysVars *systemVariables, screenWidth int, previewSize int) *TableStreamingFormatter {
+func NewTableStreamingFormatter(out io.Writer, config FormatConfig, screenWidth int, previewSize int) *TableStreamingFormatter {
 	return &TableStreamingFormatter{
 		out:         out,
-		sysVars:     sysVars,
+		config:      config,
 		screenWidth: screenWidth,
 		previewSize: previewSize,
 		previewRows: []Row{},
@@ -40,18 +41,17 @@ func NewTableStreamingFormatter(out io.Writer, sysVars *systemVariables, screenW
 }
 
 // InitFormat initializes the table with preview rows for width calculation.
-func (f *TableStreamingFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *TableStreamingFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	f.columns = columns
-	f.sysVars = sysVars
+	f.columns = columnNames
+	f.config = config
 	f.previewRows = previewRows
 
 	// Calculate optimal widths using preview rows
-	f.calculateWidths(columns, previewRows)
+	f.calculateWidths(columnNames, previewRows)
 
 	// Create table with streaming configuration
 	f.table = tablewriter.NewTable(f.out,
@@ -63,12 +63,12 @@ func (f *TableStreamingFormatter) InitFormat(header TableHeader, sysVars *system
 		tablewriter.WithStreaming(tw.StreamConfig{
 			Enable: true,
 		}),
-	).Configure(func(config *tablewriter.Config) {
+	).Configure(func(twConfig *tablewriter.Config) {
 		// Note: Column alignment is not set here because:
 		// 1. Regular SQL queries don't specify column alignment (defaults to left)
 		// 2. EXPLAIN/DESCRIBE statements that use custom alignment don't use streaming mode
 		// They return a complete Result with ColumnAlign set and use buffered formatting
-		config.Row.Formatting.AutoWrap = tw.WrapNone
+		twConfig.Row.Formatting.AutoWrap = tw.WrapNone
 	})
 
 	// Start streaming table
@@ -77,17 +77,13 @@ func (f *TableStreamingFormatter) InitFormat(header TableHeader, sysVars *system
 	}
 
 	// Set headers
-	if !f.sysVars.SkipColumnNames && len(columns) > 0 {
+	if !f.config.SkipColumnNames && len(columnNames) > 0 {
 		// Apply calculated widths to headers
-		headers := f.wrapHeaders(columns)
-		// Header method doesn't return an error in tablewriter v1.0.9
+		headers := f.wrapHeaders(columnNames)
 		f.table.Header(headers)
 	}
 
 	f.initialized = true
-
-	// Don't write preview rows here - they will be written by the TablePreviewProcessor
-	// after this initialization completes
 
 	return nil
 }
@@ -102,8 +98,7 @@ func (f *TableStreamingFormatter) WriteRow(row Row) error {
 		// Check if we have enough preview rows
 		if f.previewSize > 0 && f.rowsBuffered >= f.previewSize {
 			// Initialize with buffered rows
-			header := simpleTableHeader(f.columns)
-			return f.InitFormat(header, f.sysVars, f.previewRows)
+			return f.InitFormat(f.columns, f.config, f.previewRows)
 		}
 		return nil
 	}
@@ -122,11 +117,10 @@ func (f *TableStreamingFormatter) writeRowInternal(row Row) error {
 }
 
 // FinishFormat completes the table output.
-func (f *TableStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+func (f *TableStreamingFormatter) FinishFormat() error {
 	// Initialize if not done yet (e.g., fewer rows than preview size)
 	if !f.initialized && len(f.columns) > 0 {
-		header := simpleTableHeader(f.columns)
-		if err := f.InitFormat(header, f.sysVars, f.previewRows); err != nil {
+		if err := f.InitFormat(f.columns, f.config, f.previewRows); err != nil {
 			return err
 		}
 	}
@@ -142,32 +136,14 @@ func (f *TableStreamingFormatter) FinishFormat(stats QueryStats, rowCount int64)
 }
 
 // calculateWidths calculates optimal column widths based on preview rows.
-// If previewRows is empty, it uses only header names for width calculation.
 func (f *TableStreamingFormatter) calculateWidths(columns []string, previewRows []Row) {
 	rw := runewidthex.NewCondition()
-	rw.TabWidth = 4
-	if f.sysVars != nil && f.sysVars.TabWidth > 0 {
-		rw.TabWidth = int(f.sysVars.TabWidth)
-	}
+	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
 
 	wc := &widthCalculator{Condition: rw}
 
-	// If no preview rows, calculate based on headers only
-	rowsForCalculation := previewRows
-	if len(previewRows) == 0 {
-		// Use empty rows for header-only calculation
-		// calculateWidth will use header widths as the baseline
-		rowsForCalculation = []Row{}
-	}
-
-	// Create a mock result for width calculation
-	mockResult := &Result{
-		TableHeader: simpleTableHeader(columns),
-		Rows:        rowsForCalculation,
-	}
-
-	// Calculate optimal widths
-	f.widths = calculateWidth(mockResult, wc, f.screenWidth, rowsForCalculation)
+	// Calculate optimal widths using column names as header
+	f.widths = CalculateWidth(columns, columns, wc, f.screenWidth, previewRows)
 }
 
 // wrapHeaders wraps headers according to calculated widths.
@@ -177,10 +153,7 @@ func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 	}
 
 	rw := runewidthex.NewCondition()
-	rw.TabWidth = 4
-	if f.sysVars != nil && f.sysVars.TabWidth > 0 {
-		rw.TabWidth = int(f.sysVars.TabWidth)
-	}
+	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
 
 	return slices.Collect(hiter.Unify(
 		rw.Wrap,
@@ -194,10 +167,7 @@ func (f *TableStreamingFormatter) wrapRow(row Row) []string {
 	}
 
 	rw := runewidthex.NewCondition()
-	rw.TabWidth = 4
-	if f.sysVars != nil && f.sysVars.TabWidth > 0 {
-		rw.TabWidth = int(f.sysVars.TabWidth)
-	}
+	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
 
 	return slices.Collect(hiter.Unify(
 		rw.Wrap,

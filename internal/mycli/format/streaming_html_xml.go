@@ -1,4 +1,4 @@
-package mycli
+package format
 
 import (
 	"bytes"
@@ -26,15 +26,14 @@ func NewHTMLFormatter(out io.Writer, skipHeaders bool) *HTMLFormatter {
 }
 
 // InitFormat writes the HTML table opening and headers.
-func (f *HTMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *HTMLFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	f.columns = columns
+	f.columns = columnNames
 
-	if len(columns) == 0 {
+	if len(columnNames) == 0 {
 		return nil
 	}
 
@@ -48,7 +47,7 @@ func (f *HTMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables,
 		if _, err := fmt.Fprint(f.out, "<TR>"); err != nil {
 			return err
 		}
-		for _, col := range columns {
+		for _, col := range columnNames {
 			if _, err := fmt.Fprintf(f.out, "<TH>%s</TH>", html.EscapeString(col)); err != nil {
 				return err
 			}
@@ -86,7 +85,7 @@ func (f *HTMLFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes the HTML table.
-func (f *HTMLFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+func (f *HTMLFormatter) FinishFormat() error {
 	if _, err := fmt.Fprintln(f.out, "</TABLE>"); err != nil {
 		return err
 	}
@@ -112,15 +111,14 @@ func NewXMLFormatter(out io.Writer, skipHeaders bool) *XMLFormatter {
 }
 
 // InitFormat writes the XML declaration and starts the result set.
-func (f *XMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error {
+func (f *XMLFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
 	if f.initialized {
 		return nil
 	}
 
-	columns := extractTableColumnNames(header)
-	f.columns = columns
+	f.columns = columnNames
 
-	if len(columns) == 0 {
+	if len(columnNames) == 0 {
 		return nil
 	}
 
@@ -139,7 +137,7 @@ func (f *XMLFormatter) InitFormat(header TableHeader, sysVars *systemVariables, 
 		if _, err := fmt.Fprint(f.out, "<header>"); err != nil {
 			return err
 		}
-		for _, col := range columns {
+		for _, col := range columnNames {
 			if _, err := fmt.Fprintf(f.out, "<field>%s</field>", xmlEscape(col)); err != nil {
 				return err
 			}
@@ -183,7 +181,7 @@ func (f *XMLFormatter) WriteRow(row Row) error {
 }
 
 // FinishFormat completes the XML output.
-func (f *XMLFormatter) FinishFormat(stats QueryStats, rowCount int64) error {
+func (f *XMLFormatter) FinishFormat() error {
 	// Close resultset
 	if _, err := fmt.Fprintln(f.out, "</resultset>"); err != nil {
 		return err

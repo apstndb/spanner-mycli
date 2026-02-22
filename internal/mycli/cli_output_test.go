@@ -2,13 +2,13 @@ package mycli
 
 import (
 	"bytes"
-	"io"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 )
 
 // Helper functions for common test operations
@@ -379,13 +379,12 @@ func TestFormatHelpers(t *testing.T) {
 	t.Parallel()
 
 	// Helper to test empty input handling for different formatters
-	testEmptyFormatter := func(t *testing.T, name string, formatter func(io.Writer, *Result, []string, *systemVariables, int) error) {
+	testEmptyFormatter := func(t *testing.T, name string, formatter format.FormatFunc) {
 		t.Helper()
 		t.Run(name+" with empty input", func(t *testing.T) {
 			var buf bytes.Buffer
-			result := &Result{Rows: []Row{}}
-			sysVars := &systemVariables{SkipColumnNames: false}
-			err := formatter(&buf, result, []string{}, sysVars, 0)
+			config := format.FormatConfig{SkipColumnNames: false}
+			err := formatter(&buf, []Row{}, []string{}, config, 0)
 			if err != nil {
 				t.Errorf("expected nil for empty columns, got error: %v", err)
 			}
@@ -395,9 +394,12 @@ func TestFormatHelpers(t *testing.T) {
 		})
 	}
 
-	testEmptyFormatter(t, "formatHTML", formatHTML)
-	testEmptyFormatter(t, "formatXML", formatXML)
-	testEmptyFormatter(t, "formatCSV", formatCSV)
+	htmlFormatter, _ := format.NewFormatter(enums.DisplayModeHTML)
+	xmlFormatter, _ := format.NewFormatter(enums.DisplayModeXML)
+	csvFormatter, _ := format.NewFormatter(enums.DisplayModeCSV)
+	testEmptyFormatter(t, "formatHTML", htmlFormatter)
+	testEmptyFormatter(t, "formatXML", xmlFormatter)
+	testEmptyFormatter(t, "formatCSV", csvFormatter)
 
 	t.Run("XML with large dataset", func(t *testing.T) {
 		// Test with a larger dataset to ensure performance
@@ -412,9 +414,8 @@ func TestFormatHelpers(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		result := &Result{Rows: rows}
-		sysVars := &systemVariables{SkipColumnNames: false}
-		err := formatXML(&buf, result, columns, sysVars, 0)
+		config := format.FormatConfig{SkipColumnNames: false}
+		err := xmlFormatter(&buf, rows, columns, config, 0)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}

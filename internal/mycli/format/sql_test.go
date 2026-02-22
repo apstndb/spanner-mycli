@@ -1,4 +1,4 @@
-package mycli
+package format
 
 import (
 	"testing"
@@ -80,7 +80,7 @@ func TestParseSimpleTablePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseSimpleTablePath(tt.input)
+			got, err := ParseSimpleTablePath(tt.input)
 
 			if tt.wantError != "" {
 				require.Error(t, err)
@@ -303,6 +303,13 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 		},
 		{
 			name:          "SELECT with CTE",
+			query:         "SELECT * FROM active_users",
+			wantTableName: "active_users",
+			wantError:     "",
+			description:   "simple table reference works",
+		},
+		{
+			name:          "SELECT with CTE full",
 			query:         "WITH active_users AS (SELECT * FROM Users WHERE status = 'ACTIVE') SELECT * FROM active_users",
 			wantTableName: "",
 			wantError:     "CTE (WITH clause) not supported",
@@ -445,7 +452,7 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractTableNameFromQuery(tt.query)
+			got, err := ExtractTableNameFromQuery(tt.query)
 
 			if tt.wantError != "" {
 				// Expecting an error
@@ -498,7 +505,7 @@ func TestParseSimpleTablePathSQL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, err := parseSimpleTablePath(tt.input)
+			path, err := ParseSimpleTablePath(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantSQL, path.SQL())
 		})

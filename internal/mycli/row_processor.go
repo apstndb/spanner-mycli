@@ -4,6 +4,7 @@ import (
 	"io"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 )
 
 // RowProcessor handles rows either in buffered or streaming mode.
@@ -29,14 +30,14 @@ type BufferedProcessor struct {
 	rows        []Row
 	metadata    *sppb.ResultSetMetadata
 	sysVars     *systemVariables
-	formatter   FormatFunc
+	formatter   format.FormatFunc
 	out         io.Writer
 	screenWidth int
 	result      *Result // Accumulates the complete result
 }
 
 // NewBufferedProcessor creates a processor that collects all rows before formatting.
-func NewBufferedProcessor(formatter FormatFunc, out io.Writer, screenWidth int) *BufferedProcessor {
+func NewBufferedProcessor(formatter format.FormatFunc, out io.Writer, screenWidth int) *BufferedProcessor {
 	return &BufferedProcessor{
 		formatter:   formatter,
 		out:         out,
@@ -66,11 +67,11 @@ func (p *BufferedProcessor) Finish(stats QueryStats, rowCount int64) error {
 	p.result.Stats = stats
 	p.result.AffectedRows = len(p.rows)
 
-	// Extract column names for formatting
+	// Extract column names and construct FormatConfig for formatting
 	columnNames := extractTableColumnNames(p.result.TableHeader)
+	config := p.sysVars.toFormatConfig()
 
-	// Use the existing formatter
-	return p.formatter(p.out, p.result, columnNames, p.sysVars, p.screenWidth)
+	return p.formatter(p.out, p.result.Rows, columnNames, config, p.screenWidth)
 }
 
 // StreamingProcessor processes rows immediately as they arrive.
@@ -78,27 +79,11 @@ func (p *BufferedProcessor) Finish(stats QueryStats, rowCount int64) error {
 type StreamingProcessor struct {
 	metadata    *sppb.ResultSetMetadata
 	sysVars     *systemVariables
-	formatter   StreamingFormatter
+	formatter   format.StreamingFormatter
 	out         io.Writer
 	screenWidth int
 	rowCount    int64
 	initialized bool
-}
-
-// StreamingFormatter defines the interface for format-specific streaming output.
-// Each format (CSV, TAB, etc.) implements this interface to handle streaming output.
-type StreamingFormatter interface {
-	// InitFormat is called once with table header information to output headers.
-	// TableHeader provides both column names and type information (if available).
-	// For table formats, previewRows contains the first N rows for width calculation.
-	// For other formats, previewRows may be empty as they don't need preview.
-	InitFormat(header TableHeader, sysVars *systemVariables, previewRows []Row) error
-
-	// WriteRow outputs a single row.
-	WriteRow(row Row) error
-
-	// FinishFormat completes the output (e.g., closing tags, final flush).
-	FinishFormat(stats QueryStats, rowCount int64) error
 }
 
 // TablePreviewProcessor collects a configurable number of rows for table width calculation.
@@ -106,7 +91,7 @@ type StreamingFormatter interface {
 type TablePreviewProcessor struct {
 	previewSize int   // Number of rows to preview (0 = all rows for non-streaming)
 	previewRows []Row // Collected preview rows
-	formatter   StreamingFormatter
+	formatter   format.StreamingFormatter
 	metadata    *sppb.ResultSetMetadata
 	sysVars     *systemVariables
 	initialized bool
@@ -115,7 +100,7 @@ type TablePreviewProcessor struct {
 
 // NewTablePreviewProcessor creates a processor that previews rows for width calculation.
 // previewSize of 0 means collect all rows (non-streaming mode).
-func NewTablePreviewProcessor(formatter StreamingFormatter, previewSize int) *TablePreviewProcessor {
+func NewTablePreviewProcessor(formatter format.StreamingFormatter, previewSize int) *TablePreviewProcessor {
 	return &TablePreviewProcessor{
 		formatter:   formatter,
 		previewSize: previewSize,
@@ -172,7 +157,7 @@ func (p *TablePreviewProcessor) Finish(stats QueryStats, rowCount int64) error {
 		}
 	}
 
-	return p.formatter.FinishFormat(stats, rowCount)
+	return p.formatter.FinishFormat()
 }
 
 // initializeFormatter initializes the formatter with preview rows.
@@ -182,9 +167,11 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 	}
 
 	header := toTableHeader(p.metadata.GetRowType().GetFields())
+	columnNames := extractTableColumnNames(header)
+	config := p.sysVars.toFormatConfig()
 
 	// Initialize formatter with preview rows for width calculation
-	if err := p.formatter.InitFormat(header, p.sysVars, p.previewRows); err != nil {
+	if err := p.formatter.InitFormat(columnNames, config, p.previewRows); err != nil {
 		return err
 	}
 
@@ -201,7 +188,7 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 }
 
 // NewStreamingProcessor creates a processor that outputs rows immediately.
-func NewStreamingProcessor(formatter StreamingFormatter, out io.Writer, screenWidth int) *StreamingProcessor {
+func NewStreamingProcessor(formatter format.StreamingFormatter, out io.Writer, screenWidth int) *StreamingProcessor {
 	return &StreamingProcessor{
 		formatter:   formatter,
 		out:         out,
@@ -216,10 +203,11 @@ func (p *StreamingProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *sys
 
 	// Get header from metadata
 	header := toTableHeader(metadata.GetRowType().GetFields())
+	columnNames := extractTableColumnNames(header)
+	config := sysVars.toFormatConfig()
 
 	// Initialize the format (e.g., write CSV headers)
-	// For streaming formats, we don't need preview rows
-	if err := p.formatter.InitFormat(header, sysVars, nil); err != nil {
+	if err := p.formatter.InitFormat(columnNames, config, nil); err != nil {
 		return err
 	}
 
@@ -238,5 +226,5 @@ func (p *StreamingProcessor) ProcessRow(row Row) error {
 
 // Finish completes the streaming output.
 func (p *StreamingProcessor) Finish(stats QueryStats, rowCount int64) error {
-	return p.formatter.FinishFormat(stats, rowCount)
+	return p.formatter.FinishFormat()
 }
