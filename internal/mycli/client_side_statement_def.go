@@ -42,6 +42,19 @@ const (
 	fuzzyCompleteTable
 )
 
+func (t fuzzyCompletionType) String() string {
+	switch t {
+	case fuzzyCompleteDatabase:
+		return "database"
+	case fuzzyCompleteVariable:
+		return "variable"
+	case fuzzyCompleteTable:
+		return "table"
+	default:
+		return "unknown"
+	}
+}
+
 // fuzzyArgCompletion defines how to detect and complete an argument for a client-side statement.
 type fuzzyArgCompletion struct {
 	// PrefixPattern matches partial input and captures the argument being typed in group 1.
