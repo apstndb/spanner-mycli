@@ -424,3 +424,7 @@ When reviewing pull requests, please focus on:
 5. **Documentation**: Are public APIs and complex logic adequately documented?
 
 Please avoid suggesting changes that are purely stylistic unless they significantly impact readability or maintainability.
+
+### Avoid Praise-Only Comments
+
+**DO NOT** create review threads that only praise existing code without actionable feedback. Comments like "This is a good improvement" or "The test coverage is excellent" create noise that must be manually resolved by the author. If code is good, simply don't comment on it. Every review comment should contain actionable feedback or a specific concern.
