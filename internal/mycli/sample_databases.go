@@ -35,6 +35,7 @@ import (
 
 	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"cloud.google.com/go/storage"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/goccy/go-yaml"
 )
@@ -271,8 +272,8 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 			case strings.HasPrefix(uri, "file://"):
 				path := strings.TrimPrefix(uri, "file://")
 				// Use common file safety checks with sample database size limit
-				data, err = SafeReadFile(path, &FileSafetyOptions{
-					MaxSize: SampleDatabaseMaxFileSize,
+				data, err = filesafety.SafeReadFile(path, &filesafety.FileSafetyOptions{
+					MaxSize: filesafety.SampleDatabaseMaxFileSize,
 				})
 			case strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://"):
 				data, err = loadFromHTTP(ctx, uri)
@@ -328,8 +329,8 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GCS object attributes for %s: %w", uri, err)
 	}
-	if attrs.Size > SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("GCS object %s too large: %d bytes (max %d)", uri, attrs.Size, SampleDatabaseMaxFileSize)
+	if attrs.Size > filesafety.SampleDatabaseMaxFileSize {
+		return nil, fmt.Errorf("GCS object %s too large: %d bytes (max %d)", uri, attrs.Size, filesafety.SampleDatabaseMaxFileSize)
 	}
 
 	reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
@@ -368,20 +369,20 @@ func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
 	}
 
 	// Check Content-Length header if present
-	if resp.ContentLength > 0 && resp.ContentLength > SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("HTTP response from %s too large: %d bytes (max %d)", uri, resp.ContentLength, SampleDatabaseMaxFileSize)
+	if resp.ContentLength > 0 && resp.ContentLength > filesafety.SampleDatabaseMaxFileSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: %d bytes (max %d)", uri, resp.ContentLength, filesafety.SampleDatabaseMaxFileSize)
 	}
 
 	// Use io.LimitReader as a safety measure even if Content-Length is not set
-	limitedReader := io.LimitReader(resp.Body, SampleDatabaseMaxFileSize+1)
+	limitedReader := io.LimitReader(resp.Body, filesafety.SampleDatabaseMaxFileSize+1)
 	data, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HTTP response from %s: %w", uri, err)
 	}
 
 	// Check if we hit the limit
-	if len(data) > SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, SampleDatabaseMaxFileSize)
+	if len(data) > filesafety.SampleDatabaseMaxFileSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, filesafety.SampleDatabaseMaxFileSize)
 	}
 
 	return data, nil
