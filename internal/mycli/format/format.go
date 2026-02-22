@@ -141,6 +141,8 @@ func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config 
 	// Handle comment mode transformations
 	if mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
 		s := strings.TrimSpace(tableBuf.String())
+		// Sanitize */ in table content to prevent premature SQL comment closure.
+		s = strings.ReplaceAll(s, "*/", "* /")
 		s = strings.ReplaceAll(s, "\n", "\n ")
 		s = topLeftRe.ReplaceAllLiteralString(s, "/*")
 
