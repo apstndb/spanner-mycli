@@ -197,7 +197,7 @@ func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]str
 // fetchVariableCandidates returns sorted system variable names from the registry.
 func (f *fuzzyFinderCommand) fetchVariableCandidates() []string {
 	sv := f.cli.SystemVariables
-	if sv == nil || sv.Registry == nil {
+	if sv == nil {
 		return nil
 	}
 	names := slices.Sorted(maps.Keys(sv.ListVariables()))
