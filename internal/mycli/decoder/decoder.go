@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package mycli
+package decoder
 
 import (
 	"cmp"
@@ -40,7 +40,7 @@ func DecodeRow(row *spanner.Row) ([]string, error) {
 	return spanvalue.FormatRowSpannerCLICompatible(row)
 }
 
-func formatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
+func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
 	types, err := dynamicTypesByFDS(fds)
 	if err != nil {
 		return nil, err
@@ -134,8 +134,8 @@ func formatEnum(types protoEnumResolver) func(formatter spanvalue.Formatter, val
 	}
 }
 
-// formatTypeSimple is format type for headers.
-func formatTypeSimple(typ *sppb.Type) string {
+// FormatTypeSimple is format type for headers.
+func FormatTypeSimple(typ *sppb.Type) string {
 	return spantype.FormatType(typ, spantype.FormatOption{
 		Struct: spantype.StructModeBase,
 		Proto:  spantype.ProtoEnumModeLeafWithKind,
@@ -144,7 +144,7 @@ func formatTypeSimple(typ *sppb.Type) string {
 	})
 }
 
-// formatTypeVerbose is format type for DESCRIBE.
-func formatTypeVerbose(typ *sppb.Type) string {
+// FormatTypeVerbose is format type for DESCRIBE.
+func FormatTypeVerbose(typ *sppb.Type) string {
 	return spantype.FormatTypeMoreVerbose(typ)
 }

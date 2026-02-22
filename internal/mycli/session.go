@@ -32,6 +32,7 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
+	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/gocql/gocql"
 	"github.com/samber/lo"
 	"google.golang.org/api/iterator"
@@ -1161,7 +1162,7 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 // Using non-locked versions of methods like TransactionAttrs(), CurrentPriority(),
 // or QueryOptions() here will cause a deadlock. Always use the *Locked variants.
 func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}
@@ -1342,7 +1343,7 @@ func (s *Session) runSingleUseQuery(ctx context.Context, stmt spanner.Statement,
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64,
 	*sppb.ResultSetMetadata, *sppb.QueryPlan, error,
 ) {
-	fc, err := formatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, nil, 0, nil, nil, err
 	}

@@ -228,6 +228,14 @@ type Result struct {
 // Row is a row of string values. It is a type alias for format.Row (= []string).
 type Row = format.Row
 
+func toRow(vs ...string) Row {
+	return vs
+}
+
+func sliceOf[V any](vs ...V) []V {
+	return vs
+}
+
 // QueryStats contains query statistics.
 // Some fields may not have a valid value depending on the environment.
 // For example, only ElapsedTime and RowsReturned has valid value for Cloud Spanner Emulator.
@@ -390,7 +398,7 @@ func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 		return &SelectStatement{Query: raw}, nil
 	case kind.IsDDL():
 		// Only CREATE DATABASE needs special treatment in DDL.
-		if instanceOf[*ast.CreateDatabase](stmt) {
+		if _, ok := stmt.(*ast.CreateDatabase); ok {
 			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
 

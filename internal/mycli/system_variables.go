@@ -35,6 +35,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 type LastQueryCache struct {
@@ -139,7 +141,7 @@ type systemVariables struct {
 	// Use StreamManager.GetTtyStream() instead.
 
 	// StreamManager manages tee output functionality
-	StreamManager *StreamManager
+	StreamManager *streamio.StreamManager
 
 	EnableProgressBar         bool   // CLI_ENABLE_PROGRESS_BAR
 	ImpersonateServiceAccount string // CLI_IMPERSONATE_SERVICE_ACCOUNT
@@ -217,6 +219,18 @@ func parseEndpoint(endpoint string) (host string, port int, err error) {
 }
 
 var errIgnored = errors.New("ignored")
+
+func projectPath(projectID string) string {
+	return fmt.Sprintf("projects/%v", projectID)
+}
+
+func instancePath(projectID, instanceID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v", projectID, instanceID)
+}
+
+func databasePath(projectID, instanceID, databaseID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v/databases/%v", projectID, instanceID, databaseID)
+}
 
 func (sv *systemVariables) InstancePath() string {
 	return instancePath(sv.Project, sv.Instance)

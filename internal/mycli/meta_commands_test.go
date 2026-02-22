@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 func TestIsMetaCommand(t *testing.T) {
@@ -345,7 +347,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = true
-		sysVars.StreamManager = NewStreamManager(os.Stdin, io.Discard, io.Discard)
+		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, io.Discard, io.Discard)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -365,7 +367,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.StreamManager = NewStreamManager(os.Stdin, &output, &errOutput)
+		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -389,7 +391,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
 		sysVars.SkipSystemCommand = false
-		sysVars.StreamManager = NewStreamManager(os.Stdin, &output, &errOutput)
+		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
 		}
@@ -589,7 +591,7 @@ func createTestSession(t *testing.T) (*Session, *systemVariables) {
 	sysVars := newSystemVariablesWithDefaults()
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	sysVars.StreamManager = NewStreamManager(os.Stdin, outBuf, errBuf)
+	sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, outBuf, errBuf)
 	session := &Session{
 		systemVariables: &sysVars,
 	}

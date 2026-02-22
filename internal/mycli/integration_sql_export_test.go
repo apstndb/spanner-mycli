@@ -12,6 +12,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/apstndb/spantype/typector"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/google/go-cmp/cmp"
@@ -458,7 +459,7 @@ CREATE TABLE TestTable (
 
 			// Create StreamManager and assign it to system variables
 			// The streaming execution will use GetOutputStream() to get the writer
-			session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+			session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
 
 			// Execute the query - with streaming mode, output goes directly to buffer
 			stmt, err := BuildStatement(tt.query)
@@ -669,7 +670,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 
 		// Set up StreamManager for streaming
 		var buf bytes.Buffer
-		session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+		session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
 
 		query := "SELECT id + 100, CONCAT('Name: ', name) FROM TestTable"
 		stmt, err := BuildStatement(query)
@@ -712,7 +713,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 
 		// Set up StreamManager for streaming
 		var buf bytes.Buffer
-		session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+		session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
 
 		query := "SELECT id AS record_id, name AS customer_name FROM TestTable"
 		stmt, err := BuildStatement(query)
@@ -895,7 +896,7 @@ CREATE TABLE TestTable (
 				// Test buffered mode: format the result using printTableData
 				// This verifies that auto-detected table name is preserved in Result struct
 				var buf bytes.Buffer
-				session.systemVariables.StreamManager = NewStreamManager(nil, &buf, &buf)
+				session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
 
 				// Format the buffered result
 				err = printTableData(session.systemVariables, 0, &buf, result)

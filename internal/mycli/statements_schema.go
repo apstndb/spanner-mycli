@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
@@ -159,7 +160,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
 	}
 
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
@@ -104,7 +105,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	default:
 		// Use regular display formatting for other modes
 		// formatConfigWithProto handles custom proto descriptors if set
-		fc, err = formatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+		fc, err = decoder.FormatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
 		usingSQLLiterals = false
 	}
 
@@ -726,7 +727,7 @@ func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, er
 }
 
 func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, err := formatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}

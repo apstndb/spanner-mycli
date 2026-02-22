@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -267,7 +268,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	// Replace the session's output stream with our buffer
 	// This simulates streaming mode with captured output
 	originalStream := session.systemVariables.StreamManager
-	session.systemVariables.StreamManager = NewStreamManager(
+	session.systemVariables.StreamManager = streamio.NewStreamManager(
 		originalStream.GetInStream(),
 		&buf, // Use our buffer as output
 		originalStream.GetErrStream(),
