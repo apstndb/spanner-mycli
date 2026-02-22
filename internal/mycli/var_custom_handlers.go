@@ -289,6 +289,11 @@ func (l *LogLevelVar) IsReadOnly() bool {
 	return false
 }
 
+// ValidValues returns the standard log level names as GoogleSQL string literals.
+func (l *LogLevelVar) ValidValues() []string {
+	return []string{"'DEBUG'", "'ERROR'", "'INFO'", "'WARN'", "'WARNING'"}
+}
+
 // UnimplementedVar handles unimplemented variables
 type UnimplementedVar struct {
 	name        string
