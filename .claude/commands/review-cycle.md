@@ -50,7 +50,7 @@ go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
 
 5. After addressing all threads with code changes, commit and push the fixes.
 
-6. After push and resolve, request a new review to re-validate:
+6. With the new commit hash, reply to and resolve all code-fix threads, then request a new review to re-validate:
 !go tool gh-helper reviews wait --request-review
 
 7. Repeat from step 2 until there are no unresolved threads.
