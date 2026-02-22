@@ -18,7 +18,6 @@ import (
 	"context"
 	"log/slog"
 	"regexp"
-	"strings"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/hymkor/go-multiline-ny"
@@ -45,7 +44,9 @@ func (f *fuzzyFinderCommand) SetEditor(e *multiline.Editor) {
 }
 
 func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readline.Result {
-	input := strings.Join(f.editor.Lines(), "\n")
+	// Use current line buffer, not the full multiline text.
+	// B is the buffer for the current line only, so argStartPos must be relative to it.
+	input := B.String()
 	result := detectFuzzyContext(input)
 	if result.contextType == "" {
 		return readline.CONTINUE
