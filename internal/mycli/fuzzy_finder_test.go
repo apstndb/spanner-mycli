@@ -85,6 +85,70 @@ func TestDetectFuzzyContext(t *testing.T) {
 			input:           "SHOW DATABASES",
 			wantContextType: "",
 		},
+		// SET variable context
+		{
+			name:            "SET with partial name",
+			input:           "SET CLI_",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "CLI_",
+			wantArgStartPos: 4,
+		},
+		{
+			name:            "SET with no name",
+			input:           "SET ",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "",
+			wantArgStartPos: 4,
+		},
+		{
+			name:            "SET without space should not match",
+			input:           "SET",
+			wantContextType: "",
+		},
+		{
+			name:            "set lowercase",
+			input:           "set cli_f",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "cli_f",
+			wantArgStartPos: 4,
+		},
+		{
+			name:            "SET with = should not match",
+			input:           "SET CLI_FORMAT = TABLE",
+			wantContextType: "",
+		},
+		{
+			name:            "SET with = no space should not match",
+			input:           "SET CLI_FORMAT=TABLE",
+			wantContextType: "",
+		},
+		// SHOW VARIABLE context
+		{
+			name:            "SHOW VARIABLE with partial name",
+			input:           "SHOW VARIABLE CLI_",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "CLI_",
+			wantArgStartPos: 14,
+		},
+		{
+			name:            "SHOW VARIABLE with no name",
+			input:           "SHOW VARIABLE ",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "",
+			wantArgStartPos: 14,
+		},
+		{
+			name:            "show variable lowercase",
+			input:           "show variable read",
+			wantContextType: fuzzyContextVariable,
+			wantArgPrefix:   "read",
+			wantArgStartPos: 14,
+		},
+		{
+			name:            "SHOW VARIABLES should not match",
+			input:           "SHOW VARIABLES",
+			wantContextType: "",
+		},
 	}
 
 	for _, tt := range tests {

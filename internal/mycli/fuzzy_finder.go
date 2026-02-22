@@ -17,7 +17,9 @@ package mycli
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"regexp"
+	"slices"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/hymkor/go-multiline-ny"
@@ -100,6 +102,7 @@ type fuzzyContextType = string
 
 const (
 	fuzzyContextDatabase fuzzyContextType = "database"
+	fuzzyContextVariable fuzzyContextType = "variable"
 )
 
 // fuzzyContextResult holds the detected context, the argument prefix typed so far,
@@ -110,19 +113,44 @@ type fuzzyContextResult struct {
 	argStartPos int    // position in the current line buffer where the argument starts (in runes)
 }
 
-// useContextRe matches "USE" followed by optional whitespace and captures any partial argument.
-var useContextRe = regexp.MustCompile(`(?i)^\s*USE(\s+(\S*))?$`)
+var (
+	// useContextRe matches "USE" followed by optional whitespace and captures any partial argument.
+	useContextRe = regexp.MustCompile(`(?i)^\s*USE(\s+(\S*))?$`)
+
+	// setVarContextRe matches "SET <varname>" before the "=" sign.
+	// Captures the partial variable name being typed (must not contain "=").
+	setVarContextRe = regexp.MustCompile(`(?i)^\s*SET\s+([^\s=]*)$`)
+
+	// showVarContextRe matches "SHOW VARIABLE <varname>".
+	showVarContextRe = regexp.MustCompile(`(?i)^\s*SHOW\s+VARIABLE\s+(\S*)$`)
+)
 
 // detectFuzzyContext analyzes the current editor buffer to determine
 // what kind of fuzzy completion is appropriate.
 func detectFuzzyContext(input string) fuzzyContextResult {
 	if m := useContextRe.FindStringSubmatch(input); m != nil {
-		argPrefix := m[2] // may be empty
-		// argStartPos: position after "USE " in runes.
-		// Find where the argument starts by locating USE + whitespace.
+		argPrefix := m[2]
 		argStart := len([]rune(input)) - len([]rune(argPrefix))
 		return fuzzyContextResult{
 			contextType: fuzzyContextDatabase,
+			argPrefix:   argPrefix,
+			argStartPos: argStart,
+		}
+	}
+	if m := setVarContextRe.FindStringSubmatch(input); m != nil {
+		argPrefix := m[1]
+		argStart := len([]rune(input)) - len([]rune(argPrefix))
+		return fuzzyContextResult{
+			contextType: fuzzyContextVariable,
+			argPrefix:   argPrefix,
+			argStartPos: argStart,
+		}
+	}
+	if m := showVarContextRe.FindStringSubmatch(input); m != nil {
+		argPrefix := m[1]
+		argStart := len([]rune(input)) - len([]rune(argPrefix))
+		return fuzzyContextResult{
+			contextType: fuzzyContextVariable,
 			argPrefix:   argPrefix,
 			argStartPos: argStart,
 		}
@@ -135,6 +163,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ctxType fuzzyC
 	switch ctxType {
 	case fuzzyContextDatabase:
 		return f.fetchDatabaseCandidates(ctx)
+	case fuzzyContextVariable:
+		return f.fetchVariableCandidates(), nil
 	default:
 		return nil, nil
 	}
@@ -162,4 +192,14 @@ func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]str
 		}
 	}
 	return databases, nil
+}
+
+// fetchVariableCandidates returns sorted system variable names from the registry.
+func (f *fuzzyFinderCommand) fetchVariableCandidates() []string {
+	sv := f.cli.SystemVariables
+	if sv == nil || sv.Registry == nil {
+		return nil
+	}
+	names := slices.Sorted(maps.Keys(sv.ListVariables()))
+	return names
 }
