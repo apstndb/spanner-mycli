@@ -2,6 +2,8 @@ package mycli
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -50,6 +52,15 @@ func (e *EnumVar[T]) Description() string {
 
 func (e *EnumVar[T]) IsReadOnly() bool {
 	return false
+}
+
+// ValidValues returns sorted valid values as GoogleSQL string literals.
+func (e *EnumVar[T]) ValidValues() []string {
+	keys := slices.Sorted(maps.Keys(e.values))
+	for i, k := range keys {
+		keys[i] = "'" + k + "'"
+	}
+	return keys
 }
 
 // ProtoEnumVar handles Protocol Buffer enum variables
@@ -136,6 +147,20 @@ func (p *ProtoEnumVar[T]) Description() string {
 
 func (p *ProtoEnumVar[T]) IsReadOnly() bool {
 	return false
+}
+
+// ValidValues returns sorted prefix-stripped valid values as GoogleSQL string literals.
+func (p *ProtoEnumVar[T]) ValidValues() []string {
+	values := make([]string, 0, len(p.values))
+	for k := range p.values {
+		if p.prefix != "" && strings.HasPrefix(k, p.prefix) {
+			values = append(values, "'"+strings.TrimPrefix(k, p.prefix)+"'")
+		} else {
+			values = append(values, "'"+k+"'")
+		}
+	}
+	slices.Sort(values)
+	return values
 }
 
 // Helper functions to create proto enum handlers for common types

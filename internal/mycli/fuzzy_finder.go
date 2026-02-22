@@ -61,7 +61,7 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	result := detectFuzzyContext(input)
 
 	// Resolve candidates (may show loading indicator for network fetches).
-	candidates, err := f.resolveCandidates(ctx, result.completionType)
+	candidates, err := f.resolveCandidates(ctx, result.completionType, result.context)
 	if err != nil {
 		slog.Debug("fuzzy finder: failed to fetch candidates", "completionType", result.completionType, "err", err)
 		return readline.CONTINUE
@@ -92,8 +92,8 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 
 	var selected string
 	if result.completionType != 0 {
-		// Argument completion: insert the candidate directly
-		selected = candidates[idx]
+		// Argument completion: insert the candidate with optional suffix
+		selected = candidates[idx] + result.suffix
 	} else {
 		// Statement name completion: insert the fixed prefix text
 		selected = statementNameCandidates[idx].InsertText
@@ -117,6 +117,8 @@ type fuzzyContextResult struct {
 	completionType fuzzyCompletionType // 0 means statement name completion (fallback)
 	argPrefix      string              // partial argument already typed (used as initial fzf query)
 	argStartPos    int                 // position in the current line buffer where the argument starts (in runes)
+	context        string              // additional context from earlier capture groups (e.g., variable name for value completion)
+	suffix         string              // appended after selected candidate (e.g., " = " for SET variable name)
 }
 
 // detectFuzzyContext analyzes the current editor buffer to determine
@@ -130,12 +132,23 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 			if loc == nil {
 				continue
 			}
-			argPrefix := input[loc[2]:loc[3]]
-			argStart := utf8.RuneCountInString(input[:loc[2]])
+			// Use the last capture group as argPrefix, earlier groups as context.
+			numGroups := len(loc)/2 - 1
+			lastIdx := numGroups * 2
+			argPrefix := input[loc[lastIdx]:loc[lastIdx+1]]
+			argStart := utf8.RuneCountInString(input[:loc[lastIdx]])
+
+			var context string
+			if numGroups > 1 {
+				context = input[loc[2]:loc[3]]
+			}
+
 			return fuzzyContextResult{
 				completionType: comp.CompletionType,
 				argPrefix:      argPrefix,
 				argStartPos:    argStart,
+				context:        context,
+				suffix:         comp.Suffix,
 			}
 		}
 	}
@@ -222,15 +235,25 @@ func requiresNetwork(ct fuzzyCompletionType) bool {
 	}
 }
 
+// unwrapCustomVar extracts the base Variable from a CustomVar, if applicable.
+// This is needed because variables wrapped in CustomVar (e.g., for custom setters)
+// still have their original type implementing ValidValuesEnumerator on the base.
+func unwrapCustomVar(v Variable) Variable {
+	if cv, ok := v.(*CustomVar); ok {
+		return cv.base
+	}
+	return v
+}
+
 // resolveCandidates returns candidates for the given completion type.
 // For statement name completion (ct == 0), returns pre-built display texts.
 // For network-dependent types, shows a loading indicator on the terminal and applies a timeout.
-func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType) ([]string, error) {
+func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]string, error) {
 	if ct == 0 {
 		return statementNameDisplayTexts(), nil
 	}
 	if !requiresNetwork(ct) {
-		return f.fetchCandidates(ctx, ct)
+		return f.fetchCandidates(ctx, ct, completionContext)
 	}
 
 	// Show loading indicator below the editor.
@@ -244,7 +267,7 @@ func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyComp
 	fetchCtx, cancel := context.WithTimeout(ctx, fuzzyFetchTimeout)
 	defer cancel()
 
-	candidates, err := f.fetchCandidates(fetchCtx, ct)
+	candidates, err := f.fetchCandidates(fetchCtx, ct, completionContext)
 
 	// Clear loading indicator and restore cursor.
 	fmt.Fprint(out, "\r\033[2K")
@@ -257,7 +280,7 @@ func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyComp
 }
 
 // fetchCandidates returns completion candidates for the given completion type.
-func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyCompletionType) ([]string, error) {
+func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]string, error) {
 	switch ct {
 	case fuzzyCompleteDatabase:
 		return f.fetchDatabaseCandidates(ctx)
@@ -265,6 +288,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchVariableCandidates(), nil
 	case fuzzyCompleteTable:
 		return f.fetchTableCandidates(ctx)
+	case fuzzyCompleteVariableValue:
+		return f.fetchVariableValueCandidates(completionContext), nil
 	default:
 		return nil, nil
 	}
@@ -302,6 +327,29 @@ func (f *fuzzyFinderCommand) fetchVariableCandidates() []string {
 	}
 	names := slices.Sorted(maps.Keys(sv.ListVariables()))
 	return names
+}
+
+// fetchVariableValueCandidates returns valid values for a system variable, if enumerable.
+// Values are returned as GoogleSQL literals (e.g., 'TABLE' for strings, TRUE for booleans).
+// Returns nil if the variable is unknown or doesn't have constrained values.
+func (f *fuzzyFinderCommand) fetchVariableValueCandidates(varName string) []string {
+	sv := f.cli.SystemVariables
+	if sv == nil || sv.Registry == nil {
+		return nil
+	}
+
+	v := sv.Registry.GetVariable(varName)
+	if v == nil {
+		return nil
+	}
+
+	// Unwrap CustomVar to check the base handler for ValidValuesEnumerator.
+	v = unwrapCustomVar(v)
+
+	if enumerator, ok := v.(ValidValuesEnumerator); ok {
+		return enumerator.ValidValues()
+	}
+	return nil
 }
 
 // fetchTableCandidates lists table names from INFORMATION_SCHEMA.TABLES.

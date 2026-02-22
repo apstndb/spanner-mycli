@@ -43,6 +43,11 @@ func (r *VarRegistry) RegisterWithAdd(name string, v Variable, addFunc func(stri
 	r.addHandlers[strings.ToUpper(name)] = addFunc
 }
 
+// GetVariable retrieves the Variable handler by name, or nil if not found.
+func (r *VarRegistry) GetVariable(name string) Variable {
+	return r.vars[strings.ToUpper(name)]
+}
+
 // Get retrieves a variable value
 func (r *VarRegistry) Get(name string) (string, error) {
 	v, ok := r.vars[strings.ToUpper(name)]
