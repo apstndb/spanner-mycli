@@ -34,7 +34,7 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging (**DO NOT** use `--request-review`). Request `/gemini summary` only if additional commits were pushed after initial review.
+5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new review. Use `--request-summary` only right before merge to update the summary.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
 8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
