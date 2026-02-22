@@ -1,4 +1,4 @@
-package mycli
+package streamio
 
 import (
 	"bytes"

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/creack/pty"
 )
 
@@ -159,7 +160,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 
 			// Create a Cli with our system variables and the pseudoterminal as output
 			sysVars := &systemVariables{
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), tty, os.Stderr),
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), tty, os.Stderr),
 				AutoWrap:      tt.autowrap,
 				FixedWidth:    tt.fixedWidth,
 				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output

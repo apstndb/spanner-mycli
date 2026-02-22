@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 // createTestCli creates a test CLI with the given input, output, and error streams
 func createTestCli(t *testing.T, ctx context.Context, input io.ReadCloser, output, errOutput io.Writer, sysVars *systemVariables) *Cli {
 	// Create StreamManager with the provided streams
-	sysVars.StreamManager = NewStreamManager(input, output, errOutput)
+	sysVars.StreamManager = streamio.NewStreamManager(input, output, errOutput)
 
 	cli, err := NewCli(ctx, nil, sysVars)
 	if err != nil {
@@ -178,7 +180,7 @@ SELECT "foo" AS s;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
@@ -224,7 +226,7 @@ SELECT "foo" AS s;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
@@ -291,7 +293,7 @@ SELECT "foo" AS s;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
@@ -342,7 +344,7 @@ SELECT "foo" AS s;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
@@ -493,7 +495,7 @@ SELECT "foo" AS s;`
 		input := strings.NewReader(commands + "\nexit;\n")
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), consoleBuf, consoleBuf)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), consoleBuf, consoleBuf)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,

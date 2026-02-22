@@ -10,6 +10,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/samber/lo"
@@ -26,7 +27,7 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	session.systemVariables.Verbose = true // Set Verbose to true to ensure result line is printed
 
 	// Update the session's StreamManager to use the output buffer
-	session.systemVariables.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf)
+	session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf)
 
 	cli := &Cli{
 		SessionHandler:  NewSessionHandler(session),
@@ -252,7 +253,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	defer func() { _ = pipeWriter.Close() }()
 
 	// Create StreamManager with the pipe for input
-	sysVarsNonExistent.StreamManager = NewStreamManager(pipeReader, &outputBuf, &outputBuf)
+	sysVarsNonExistent.StreamManager = streamio.NewStreamManager(pipeReader, &outputBuf, &outputBuf)
 
 	cli, err := NewCli(ctx, nil, &sysVarsNonExistent)
 	if err != nil {
@@ -444,7 +445,7 @@ func TestRunMCP(t *testing.T) {
 			StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 			AutoWrap:              true,                    // Set a different value
 			EnableHighlight:       true,                    // Set a different value
-			StreamManager:         NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
+			StreamManager:         streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
 		}
 		cli := &Cli{
 			SessionHandler:  NewSessionHandler(session),

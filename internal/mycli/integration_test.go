@@ -39,6 +39,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -173,7 +174,7 @@ func initializeSession(ctx context.Context, emulator *tcspanner.Container, clien
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}
 	// Initialize StreamManager for tests
-	sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
 	// Initialize the registry
 	sysVars.ensureRegistry()
 	session, err = NewSession(ctx, sysVars, options...)
@@ -261,7 +262,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 	}
 	// Initialize StreamManager for tests
-	sysVars.StreamManager = NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
 	// Initialize the registry
 	sysVars.ensureRegistry()
 

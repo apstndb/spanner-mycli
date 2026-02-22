@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 func TestSourceCommandWithEcho(t *testing.T) {
@@ -49,7 +51,7 @@ DESCRIBE SELECT * FROM users;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,
@@ -117,7 +119,7 @@ DESCRIBE SELECT * FROM users;`
 		output := &bytes.Buffer{}
 
 		// Create StreamManager with the test streams
-		sysVars.StreamManager = NewStreamManager(io.NopCloser(input), output, output)
+		sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(input), output, output)
 
 		cli := &Cli{
 			SessionHandler:  sessionHandler,

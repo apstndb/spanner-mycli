@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 // TestCli_displayResult tests the displayResult method
@@ -59,7 +60,7 @@ func TestCli_displayResult(t *testing.T) {
 				AutoWrap:      tt.autowrap,
 				FixedWidth:    tt.fixedWidth,
 				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
 				SystemVariables: sysVars,

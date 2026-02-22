@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 func TestCliCurrentWidthWithTee(t *testing.T) {
@@ -15,7 +17,7 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 
 	t.Run("with TtyStream in StreamManager", func(t *testing.T) {
 		// Setup StreamManager with a buffer for tee output
-		teeManager := NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
+		teeManager := streamio.NewStreamManager(os.Stdin, os.Stdout, os.Stderr)
 		teeManager.SetTtyStream(os.Stdout)
 
 		sysVars := &systemVariables{
@@ -42,7 +44,7 @@ func TestCliCurrentWidthWithTee(t *testing.T) {
 	t.Run("without TtyStream and non-file stream", func(t *testing.T) {
 		// Setup StreamManager with non-TTY output
 		consoleBuf := &bytes.Buffer{}
-		teeManager := NewStreamManager(io.NopCloser(bytes.NewReader(nil)), consoleBuf, consoleBuf)
+		teeManager := streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), consoleBuf, consoleBuf)
 		// Do not set TTY stream
 
 		sysVars := &systemVariables{

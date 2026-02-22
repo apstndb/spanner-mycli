@@ -41,6 +41,7 @@ import (
 	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 
 	"github.com/cloudspannerecosystem/memefish"
 
@@ -573,7 +574,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 	var originalOut io.Writer = os.Stdout
 
 	// Create StreamManager for managing all input/output streams
-	streamManager := NewStreamManager(os.Stdin, originalOut, errStream)
+	streamManager := streamio.NewStreamManager(os.Stdin, originalOut, errStream)
 	// StreamManager will automatically detect if os.Stdout is a TTY
 	if term.IsTerminal(int(os.Stdout.Fd())) {
 		streamManager.SetTtyStream(os.Stdout)

@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package mycli
+package decoder
 
 import (
 	"math/big"
@@ -399,7 +399,7 @@ func TestDecodeColumn(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := lo.Must(formatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
+			got, err := lo.Must(FormatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
 			if err != nil {
 				t.Error(err)
 			}
@@ -410,7 +410,7 @@ func TestDecodeColumn(t *testing.T) {
 					t.Error(err)
 				}
 				if diff := cmp.Diff(nm.Interface(), test.wantMessage, protocmp.Transform()); diff != "" {
-					t.Errorf("formatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
+					t.Errorf("FormatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
 				}
 			} else {
 				if got != test.want {
@@ -442,7 +442,7 @@ func TestDecodeColumnRoundTripEnum(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := lo.Must(formatConfigWithProto(test.fds, false)).FormatToplevelColumn(createColumnValue(t, test.value))
+			got, err := lo.Must(FormatConfigWithProto(test.fds, false)).FormatToplevelColumn(createColumnValue(t, test.value))
 			if err != nil {
 				t.Error(err)
 			}
@@ -450,7 +450,7 @@ func TestDecodeColumnRoundTripEnum(t *testing.T) {
 			gotEnumValue := test.want.Type().Descriptor().Values().ByName(protoreflect.Name(got))
 			gotNumber := gotEnumValue.Number()
 			if gotNumber != test.want.Number() {
-				t.Errorf("formatConfigWithProto(%v): %v(%v), want: %v(%v)", test.value, gotEnumValue.Name(), gotNumber, test.want, test.want.Number())
+				t.Errorf("FormatConfigWithProto(%v): %v(%v), want: %v(%v)", test.value, gotEnumValue.Name(), gotNumber, test.want, test.want.Number())
 			}
 		})
 	}
@@ -482,7 +482,7 @@ func TestDecodeColumnRoundTripProto(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := lo.Must(formatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
+			got, err := lo.Must(FormatConfigWithProto(test.fds, test.multiline)).FormatToplevelColumn(createColumnValue(t, test.value))
 			if err != nil {
 				t.Error(err)
 			}
@@ -492,7 +492,7 @@ func TestDecodeColumnRoundTripProto(t *testing.T) {
 				t.Error(err)
 			}
 			if diff := cmp.Diff(nm.Interface(), test.want, protocmp.Transform()); diff != "" {
-				t.Errorf("formatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
+				t.Errorf("FormatConfigWithProto(%v) mismatch (-got +want):\n%s", test.value, diff)
 			}
 		})
 	}
@@ -549,9 +549,9 @@ func TestFormatTypeVerbose(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			got := formatTypeVerbose(test.sppbType)
+			got := FormatTypeVerbose(test.sppbType)
 			if diff := cmp.Diff(got, test.want); diff != "" {
-				t.Errorf("formatTypeVerbose(%v) mismatch (-got +want):\n%s", test.sppbType, diff)
+				t.Errorf("FormatTypeVerbose(%v) mismatch (-got +want):\n%s", test.sppbType, diff)
 			}
 		})
 	}

@@ -12,6 +12,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/go-sprout/sprout"
@@ -280,5 +281,5 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 }
 
 func formatTypedHeaderColumn(field *sppb.StructType_Field) string {
-	return field.GetName() + "\n" + formatTypeSimple(field.GetType())
+	return field.GetName() + "\n" + decoder.FormatTypeSimple(field.GetType())
 }

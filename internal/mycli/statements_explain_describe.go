@@ -27,6 +27,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	"github.com/apstndb/spannerplan/protoyaml"
@@ -214,7 +215,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 
 	var rows []Row
 	for _, field := range metadata.GetRowType().GetFields() {
-		rows = append(rows, toRow(field.GetName(), formatTypeVerbose(field.GetType())))
+		rows = append(rows, toRow(field.GetName(), decoder.FormatTypeVerbose(field.GetType())))
 	}
 
 	result := &Result{

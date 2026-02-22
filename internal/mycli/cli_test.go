@@ -40,6 +40,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/apstndb/spanner-mycli/internal/protostruct"
 )
 
@@ -1122,7 +1123,7 @@ func TestCli_handleExit(t *testing.T) {
 	t.Parallel()
 	outBuf := &bytes.Buffer{}
 	sysVars := &systemVariables{
-		StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+		StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 	}
 	cli := &Cli{
 		SessionHandler:  NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
@@ -1163,7 +1164,7 @@ func TestCli_ExitOnError(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
 			}
 			cli := &Cli{
 				SessionHandler:  NewSessionHandler(&Session{}), // Dummy session, Close() is now safe with nil client
@@ -1266,7 +1267,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 			}
 
 			// Create StreamManager with the test streams
-			sysVars.StreamManager = NewStreamManager(
+			sysVars.StreamManager = streamio.NewStreamManager(
 				io.NopCloser(strings.NewReader(tt.confirmInput)), // InStream for confirm
 				outBuf,
 				errBuf,
@@ -1323,7 +1324,7 @@ func TestCli_PrintResult(t *testing.T) {
 			sysVars := &systemVariables{
 				UsePager:      tt.usePager,
 				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
 				SystemVariables: sysVars,
@@ -1367,7 +1368,7 @@ func TestCli_PrintBatchError(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			errBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), errBuf, errBuf),
 			}
 			cli := &Cli{
 				SystemVariables: sysVars,
@@ -1553,7 +1554,7 @@ func TestCli_executeSourceFile(t *testing.T) {
 			sysVars := &systemVariables{
 				BuildStatementMode: enums.ParseModeFallback,
 				CLIFormat:          enums.DisplayModeTab,
-				StreamManager:      NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+				StreamManager:      streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			session := &Session{systemVariables: sysVars}
 
@@ -1639,7 +1640,7 @@ func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
 	outBuf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	sysVars := &systemVariables{
-		StreamManager: NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, errBuf),
+		StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, errBuf),
 	}
 	cli := &Cli{
 		SessionHandler:  NewSessionHandler(&Session{}),
