@@ -40,6 +40,10 @@ func DecodeRow(row *spanner.Row) ([]string, error) {
 	return spanvalue.FormatRowSpannerCLICompatible(row)
 }
 
+// FormatConfigWithProto creates a format configuration for decoding Spanner values,
+// with special handling for PROTO and ENUM types based on the provided protobuf file descriptor set.
+// If fds is nil, it returns a config without custom proto/enum support.
+// The multiline parameter controls the formatting of protobuf messages.
 func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
 	types, err := dynamicTypesByFDS(fds)
 	if err != nil {
