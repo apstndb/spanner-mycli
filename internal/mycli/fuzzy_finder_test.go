@@ -229,6 +229,39 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgStartPos:    17,
 			wantContext:        "cli_format",
 		},
+		// Argument completion: USE <db> ROLE → role
+		{
+			name:               "USE db ROLE with trailing space",
+			input:              "USE mydb ROLE ",
+			wantCompletionType: fuzzyCompleteRole,
+			wantArgPrefix:      "",
+			wantArgStartPos:    14,
+			wantContext:        "mydb",
+		},
+		{
+			name:               "USE db ROLE with partial role",
+			input:              "USE mydb ROLE ad",
+			wantCompletionType: fuzzyCompleteRole,
+			wantArgPrefix:      "ad",
+			wantArgStartPos:    14,
+			wantContext:        "mydb",
+		},
+		{
+			name:               "use db role lowercase",
+			input:              "use db role ",
+			wantCompletionType: fuzzyCompleteRole,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+			wantContext:        "db",
+		},
+		{
+			name:               "USE db ROLE with leading spaces",
+			input:              "  USE mydb ROLE ",
+			wantCompletionType: fuzzyCompleteRole,
+			wantArgPrefix:      "",
+			wantArgStartPos:    16,
+			wantContext:        "mydb",
+		},
 		// Statement name completion (fallback)
 		{
 			name:               "USE without space falls through to statement name",

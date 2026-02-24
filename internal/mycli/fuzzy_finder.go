@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -204,6 +205,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Tables"
 	case fuzzyCompleteVariableValue:
 		return "Variable Values"
+	case fuzzyCompleteRole:
+		return "Database Roles"
 	default:
 		return "Statements"
 	}
@@ -302,7 +305,7 @@ func extractFixedPrefix(syntax string) string {
 // requiresNetwork reports whether the completion type requires a network call.
 func requiresNetwork(ct fuzzyCompletionType) bool {
 	switch ct {
-	case fuzzyCompleteDatabase, fuzzyCompleteTable:
+	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole:
 		return true
 	default:
 		return false
@@ -364,6 +367,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchTableCandidates(ctx)
 	case fuzzyCompleteVariableValue:
 		return f.fetchVariableValueCandidates(completionContext), nil
+	case fuzzyCompleteRole:
+		return f.fetchRoleCandidates(ctx, completionContext)
 	default:
 		return nil, nil
 	}
@@ -424,6 +429,35 @@ func (f *fuzzyFinderCommand) fetchVariableValueCandidates(varName string) []stri
 		return enumerator.ValidValues()
 	}
 	return nil
+}
+
+// extractRoleRe extracts the role name from a full database role resource name.
+var extractRoleRe = regexp.MustCompile(`databaseRoles/(.+)`)
+
+// fetchRoleCandidates lists database roles for the given database.
+func (f *fuzzyFinderCommand) fetchRoleCandidates(ctx context.Context, database string) ([]string, error) {
+	session := f.cli.SessionHandler.GetSession()
+	if session == nil || session.adminClient == nil {
+		return nil, nil
+	}
+
+	dbPath := session.InstancePath() + "/databases/" + database
+	roleIter := session.adminClient.ListDatabaseRoles(ctx, &databasepb.ListDatabaseRolesRequest{
+		Parent: dbPath,
+	})
+
+	var roles []string
+	for role, err := range roleIter.All() {
+		if err != nil {
+			return nil, err
+		}
+		matched := extractRoleRe.FindStringSubmatch(role.GetName())
+		if len(matched) > 1 {
+			roles = append(roles, matched[1])
+		}
+	}
+	slices.Sort(roles)
+	return roles, nil
 }
 
 // fetchTableCandidates lists table names from INFORMATION_SCHEMA.TABLES.

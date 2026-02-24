@@ -41,6 +41,7 @@ const (
 	fuzzyCompleteVariable
 	fuzzyCompleteTable
 	fuzzyCompleteVariableValue
+	fuzzyCompleteRole
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -53,6 +54,8 @@ func (t fuzzyCompletionType) String() string {
 		return "table"
 	case fuzzyCompleteVariableValue:
 		return "variable_value"
+	case fuzzyCompleteRole:
+		return "role"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -122,10 +125,16 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
 		},
-		Completion: []fuzzyArgCompletion{{
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*USE\s+(\S*)$`),
-			CompletionType: fuzzyCompleteDatabase,
-		}},
+		Completion: []fuzzyArgCompletion{
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*USE\s+(\S+)\s+ROLE\s+(\S*)$`),
+				CompletionType: fuzzyCompleteRole,
+			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*USE\s+(\S*)$`),
+				CompletionType: fuzzyCompleteDatabase,
+			},
+		},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
