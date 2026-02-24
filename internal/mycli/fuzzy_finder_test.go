@@ -165,6 +165,21 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "Sin",
 			wantArgStartPos:    15,
 		},
+		// Argument completion: MUTATE → table
+		{
+			name:               "MUTATE with trailing space",
+			input:              "MUTATE ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    7,
+		},
+		{
+			name:               "MUTATE with partial table",
+			input:              "MUTATE Sin",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Sin",
+			wantArgStartPos:    7,
+		},
 		// Argument completion: DROP DATABASE → database
 		{
 			name:               "DROP DATABASE with trailing space",
