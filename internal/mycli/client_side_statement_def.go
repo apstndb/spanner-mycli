@@ -909,6 +909,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*MUTATE\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
 	},
 	// Query Profiles
 	{
