@@ -64,6 +64,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
+  * Fuzzy finder (default `Ctrl+T`, configurable via `CLI_FUZZY_FINDER_KEY`) powered by [fzf](https://github.com/junegunn/fzf) for databases, tables, system variables, and statement names
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).
@@ -945,6 +946,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
 | CLI_STREAMING             | READ_WRITE | `"AUTO"`                                       |
 | CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
+| CLI_FUZZY_FINDER_KEY      | READ_WRITE | `"C_T"`                                        |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)

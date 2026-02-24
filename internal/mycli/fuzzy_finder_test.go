@@ -394,6 +394,37 @@ func TestBuildStatementNameCandidates(t *testing.T) {
 	assert.Equal(t, "SHOW COLUMNS FROM ", displayTexts["SHOW COLUMNS FROM <table_fqn>"])
 }
 
+func TestStatementNameInsertText(t *testing.T) {
+	tests := []struct {
+		name        string
+		displayText string
+		want        string
+	}{
+		{
+			name:        "known no-arg statement",
+			displayText: "SHOW DATABASES",
+			want:        "SHOW DATABASES",
+		},
+		{
+			name:        "known arg statement",
+			displayText: "USE <database> [ROLE <role>]",
+			want:        "USE ",
+		},
+		{
+			name:        "unknown display text falls back to input",
+			displayText: "NONEXISTENT COMMAND",
+			want:        "NONEXISTENT COMMAND",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := statementNameInsertText(tt.displayText)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestStatementNameDisplayTexts(t *testing.T) {
 	texts := statementNameDisplayTexts()
 	assert.Equal(t, len(statementNameCandidates), len(texts))

@@ -150,8 +150,7 @@ type systemVariables struct {
 	AsyncDDL                  bool   // CLI_ASYNC_DDL
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
-	EnableFuzzyFinder         bool   // CLI_ENABLE_FUZZY_FINDER
-	FuzzyFinderKey            string // CLI_FUZZY_FINDER_KEY
+	FuzzyFinderKey            string // CLI_FUZZY_FINDER_KEY (empty = disabled)
 
 	// Streaming output configuration
 	StreamingMode    enums.StreamingMode // CLI_STREAMING
@@ -267,8 +266,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 		LogLevel:             slog.LevelWarn,
 
 		// Interactive defaults
-		EnableFuzzyFinder: true,
-		FuzzyFinderKey:    "C_T",
+		FuzzyFinderKey: "C_T",
 
 		// Streaming defaults
 		StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
