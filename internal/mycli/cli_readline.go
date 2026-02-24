@@ -127,7 +127,7 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 		return nil, nil, err
 	}
 
-	if c.SystemVariables.EnableFuzzyFinder {
+	if c.SystemVariables.FuzzyFinderKey != "" {
 		if keyCode, ok := keys.NameToCode[keys.NormalizeName(c.SystemVariables.FuzzyFinderKey)]; ok {
 			fuzzyCmd := &fuzzyFinderCommand{cli: c}
 			err = ed.BindKey(keyCode, fuzzyCmd)

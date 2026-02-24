@@ -212,10 +212,8 @@ func (r *VarRegistry) registerAll() {
 		"Controls whether system commands are disabled."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
-	r.Register("CLI_ENABLE_FUZZY_FINDER", BoolVar(&sv.EnableFuzzyFinder,
-		"Enable fuzzy finder. The default is true."))
 	r.Register("CLI_FUZZY_FINDER_KEY", StringVar(&sv.FuzzyFinderKey,
-		"Key binding for fuzzy finder. Uses go-readline-ny key names (e.g., C_T, M_F, F1). The default is C_T (Ctrl+T)."))
+		"Key binding for fuzzy finder. Uses go-readline-ny key names (e.g., C_T, M_F, F1). Set to empty string to disable. The default is C_T (Ctrl+T)."))
 	r.Register("CLI_STREAMING", StreamingModeVar(&sv.StreamingMode,
 		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
 

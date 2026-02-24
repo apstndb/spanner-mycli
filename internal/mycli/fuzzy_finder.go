@@ -28,7 +28,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/ktr0731/go-fuzzyfinder"
+	fzf "github.com/junegunn/fzf/src"
 	"github.com/nyaosorg/go-readline-ny"
 	"google.golang.org/api/iterator"
 )
@@ -73,30 +73,29 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	// Terminal handoff: move cursor below editor, run fzf, then restore
 	rewind := f.editor.GotoEndLine()
 
-	opts := []fuzzyfinder.Option{}
-	if result.argPrefix != "" {
-		opts = append(opts, fuzzyfinder.WithQuery(result.argPrefix))
-	}
-
-	idx, err := fuzzyfinder.Find(candidates, func(i int) string {
-		return candidates[i]
-	}, opts...)
+	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType))
 
 	rewind()
 	B.RepaintLastLine()
 
-	if err != nil {
-		// User cancelled (Escape/Ctrl+C) or other error
+	if !ok {
+		// User cancelled (Escape/Ctrl+C) or no match
 		return readline.CONTINUE
 	}
 
 	var selected string
 	if result.completionType != 0 {
 		// Argument completion: insert the candidate with optional suffix
-		selected = candidates[idx] + result.suffix
+		selected = chosen + result.suffix
 	} else {
-		// Statement name completion: insert the fixed prefix text
-		selected = statementNameCandidates[idx].InsertText
+		// Statement name completion: insert the fixed prefix text.
+		// No-arg statements (no trailing space) get a semicolon for immediate submit.
+		insertText := statementNameInsertText(chosen)
+		if strings.HasSuffix(insertText, " ") {
+			selected = insertText
+		} else {
+			selected = insertText + ";"
+		}
 	}
 
 	// Replace the argument portion: delete from argStartPos to end of buffer,
@@ -173,8 +172,83 @@ type statementNameCandidate struct {
 // statementNameCandidates is built at init time from clientSideStatementDefs.
 var statementNameCandidates []statementNameCandidate
 
+// statementNameInsertMap maps display text to insert text for statement name completion.
+// fzf returns the selected string (not an index), so we need this lookup.
+var statementNameInsertMap map[string]string
+
 func init() {
 	statementNameCandidates = buildStatementNameCandidates()
+	statementNameInsertMap = make(map[string]string, len(statementNameCandidates))
+	for _, c := range statementNameCandidates {
+		statementNameInsertMap[c.DisplayText] = c.InsertText
+	}
+}
+
+// statementNameInsertText returns the insert text for a given display text.
+// Falls back to the display text itself if not found in the map.
+func statementNameInsertText(displayText string) string {
+	if t, ok := statementNameInsertMap[displayText]; ok {
+		return t
+	}
+	return displayText
+}
+
+// completionHeader returns a header string for the fzf UI based on completion type.
+func completionHeader(ct fuzzyCompletionType) string {
+	switch ct {
+	case fuzzyCompleteDatabase:
+		return "Databases"
+	case fuzzyCompleteVariable:
+		return "System Variables"
+	case fuzzyCompleteTable:
+		return "Tables"
+	case fuzzyCompleteVariableValue:
+		return "Variable Values"
+	default:
+		return "Statements"
+	}
+}
+
+// runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
+// Returns the selected string and true, or ("", false) if cancelled or no match.
+func runFzf(candidates []string, query string, header string) (string, bool) {
+	opts, err := fzf.ParseOptions(false, []string{
+		"--reverse", "--no-sort",
+		"--height=~20",
+		"--border=rounded",
+		"--info=inline-right",
+	})
+	if err != nil {
+		slog.Debug("fuzzy finder: parse fzf options", "err", err)
+		return "", false
+	}
+	if query != "" {
+		opts.Query = query
+	}
+	if header != "" {
+		opts.Header = []string{header}
+	}
+	opts.ForceTtyIn = true
+
+	inputChan := make(chan string, len(candidates))
+	for _, c := range candidates {
+		inputChan <- c
+	}
+	close(inputChan)
+	opts.Input = inputChan
+
+	var result string
+	var selected bool
+	opts.Printer = func(s string) {
+		result = s
+		selected = true
+	}
+
+	code, err := fzf.Run(opts)
+	if err != nil && code != fzf.ExitInterrupt && code != fzf.ExitNoMatch {
+		slog.Debug("fuzzy finder: fzf run error", "code", code, "err", err)
+	}
+	return result, selected
 }
 
 // statementNameDisplayTexts returns the display texts for fzf.
