@@ -458,6 +458,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	// This allows the client to continue without waiting for the DDL operation to complete.
 	// In async DDL, errors are reported when polling, not immediately available.
 	if session.systemVariables.AsyncDDL {
+		session.IncrementSchemaGeneration()
 		return formatAsyncDdlResult(op)
 	}
 
@@ -505,6 +506,8 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 		p.Wait()
 	}
+
+	session.IncrementSchemaGeneration()
 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
 	result := &Result{CommitTimestamp: lastCommitTS}

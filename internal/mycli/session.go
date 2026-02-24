@@ -160,9 +160,24 @@ type Session struct {
 
 	currentBatch Statement
 
+	// schemaGeneration is incremented after DDL execution to signal
+	// that schema-dependent caches (e.g., fuzzy completion table list) are stale.
+	schemaGeneration uint64
+
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
+}
+
+// SchemaGeneration returns the current schema generation counter.
+func (s *Session) SchemaGeneration() uint64 {
+	return s.schemaGeneration
+}
+
+// IncrementSchemaGeneration bumps the schema generation counter,
+// signaling that schema-dependent caches should be invalidated.
+func (s *Session) IncrementSchemaGeneration() {
+	s.schemaGeneration++
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements

@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -430,5 +431,84 @@ func TestStatementNameDisplayTexts(t *testing.T) {
 	assert.Equal(t, len(statementNameCandidates), len(texts))
 	for i, c := range statementNameCandidates {
 		assert.Equal(t, c.DisplayText, texts[i])
+	}
+}
+
+func TestFuzzyCacheEntryValid(t *testing.T) {
+	session1 := &Session{}
+	session2 := &Session{}
+	session1WithDDL := &Session{schemaGeneration: 1}
+
+	tests := []struct {
+		name        string
+		entry       *fuzzyCacheEntry
+		session     *Session
+		checkSchema bool
+		want        bool
+	}{
+		{
+			name:    "nil entry",
+			entry:   nil,
+			session: session1,
+			want:    false,
+		},
+		{
+			name: "different session",
+			entry: &fuzzyCacheEntry{
+				session:   session1,
+				expiresAt: time.Now().Add(time.Minute),
+			},
+			session: session2,
+			want:    false,
+		},
+		{
+			name: "expired",
+			entry: &fuzzyCacheEntry{
+				session:   session1,
+				expiresAt: time.Now().Add(-time.Second),
+			},
+			session: session1,
+			want:    false,
+		},
+		{
+			name: "valid without schema check",
+			entry: &fuzzyCacheEntry{
+				session:    session1,
+				expiresAt:  time.Now().Add(time.Minute),
+				candidates: []string{"db1"},
+			},
+			session: session1,
+			want:    true,
+		},
+		{
+			name: "valid with matching schema generation",
+			entry: &fuzzyCacheEntry{
+				session:          session1,
+				expiresAt:        time.Now().Add(time.Minute),
+				schemaGeneration: 0,
+				candidates:       []string{"table1"},
+			},
+			session:     session1,
+			checkSchema: true,
+			want:        true,
+		},
+		{
+			name: "stale schema generation",
+			entry: &fuzzyCacheEntry{
+				session:          session1WithDDL,
+				expiresAt:        time.Now().Add(time.Minute),
+				schemaGeneration: 0,
+			},
+			session:     session1WithDDL,
+			checkSchema: true,
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.entry.valid(tt.session, tt.checkSchema)
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
