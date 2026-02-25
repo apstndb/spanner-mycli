@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -160,9 +161,24 @@ type Session struct {
 
 	currentBatch Statement
 
+	// schemaGeneration is incremented after DDL execution to signal
+	// that schema-dependent caches (e.g., fuzzy completion table list) are stale.
+	schemaGeneration uint64
+
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
+}
+
+// SchemaGeneration returns the current schema generation counter.
+func (s *Session) SchemaGeneration() uint64 {
+	return atomic.LoadUint64(&s.schemaGeneration)
+}
+
+// IncrementSchemaGeneration bumps the schema generation counter,
+// signaling that schema-dependent caches should be invalidated.
+func (s *Session) IncrementSchemaGeneration() {
+	atomic.AddUint64(&s.schemaGeneration, 1)
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements

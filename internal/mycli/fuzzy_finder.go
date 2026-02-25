@@ -34,7 +34,33 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-const fuzzyFetchTimeout = 10 * time.Second
+const (
+	fuzzyFetchTimeout = 10 * time.Second
+	fuzzyCacheTTL     = 30 * time.Second
+)
+
+// fuzzyCacheEntry holds cached completion candidates with expiry metadata.
+type fuzzyCacheEntry struct {
+	candidates       []string
+	expiresAt        time.Time
+	session          *Session // session when cache was populated
+	schemaGeneration uint64   // schema generation when cache was populated
+}
+
+// valid reports whether the cache entry is still usable for the given session.
+// If checkSchema is true, the schema generation is also compared.
+func (e *fuzzyCacheEntry) valid(session *Session, checkSchema bool) bool {
+	if e == nil || e.session != session {
+		return false
+	}
+	if time.Now().After(e.expiresAt) {
+		return false
+	}
+	if checkSchema && e.schemaGeneration != session.SchemaGeneration() {
+		return false
+	}
+	return true
+}
 
 // fuzzyFinderCommand implements readline.Command for the fuzzy finder feature.
 // It detects the current input context and launches a fuzzy finder with
@@ -43,6 +69,10 @@ const fuzzyFetchTimeout = 10 * time.Second
 type fuzzyFinderCommand struct {
 	editor *multiline.Editor
 	cli    *Cli
+
+	// Caches for network-dependent candidates.
+	databaseCache *fuzzyCacheEntry
+	tableCache    *fuzzyCacheEntry
 }
 
 func (f *fuzzyFinderCommand) String() string {
@@ -322,9 +352,45 @@ func unwrapCustomVar(v Variable) Variable {
 	return v
 }
 
+// getCachedCandidates returns cached candidates if the cache is valid, or nil.
+func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []string {
+	session := f.cli.SessionHandler.GetSession()
+	switch ct {
+	case fuzzyCompleteDatabase:
+		if f.databaseCache.valid(session, false) {
+			return f.databaseCache.candidates
+		}
+	case fuzzyCompleteTable:
+		if f.tableCache.valid(session, true) {
+			return f.tableCache.candidates
+		}
+	}
+	return nil
+}
+
+// setCachedCandidates stores candidates in the appropriate cache.
+func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candidates []string) {
+	session := f.cli.SessionHandler.GetSession()
+	if session == nil {
+		return
+	}
+	entry := &fuzzyCacheEntry{
+		candidates:       candidates,
+		expiresAt:        time.Now().Add(fuzzyCacheTTL),
+		session:          session,
+		schemaGeneration: session.SchemaGeneration(),
+	}
+	switch ct {
+	case fuzzyCompleteDatabase:
+		f.databaseCache = entry
+	case fuzzyCompleteTable:
+		f.tableCache = entry
+	}
+}
+
 // resolveCandidates returns candidates for the given completion type.
 // For statement name completion (ct == 0), returns pre-built display texts.
-// For network-dependent types, shows a loading indicator on the terminal and applies a timeout.
+// For network-dependent types, checks cache first, then shows a loading indicator and fetches.
 func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]string, error) {
 	if ct == 0 {
 		return statementNameDisplayTexts(), nil
@@ -333,7 +399,12 @@ func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyComp
 		return f.fetchCandidates(ctx, ct, completionContext)
 	}
 
-	// Show loading indicator below the editor.
+	// Check cache first.
+	if candidates := f.getCachedCandidates(ct); candidates != nil {
+		return candidates, nil
+	}
+
+	// Cache miss: show loading indicator below the editor.
 	rewind := f.editor.GotoEndLine()
 	out := f.editor.Out()
 	fmt.Fprint(out, "Loading...")
@@ -353,7 +424,14 @@ func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyComp
 	}
 	rewind()
 
-	return candidates, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the results on success.
+	f.setCachedCandidates(ct, candidates)
+
+	return candidates, nil
 }
 
 // fetchCandidates returns completion candidates for the given completion type.
