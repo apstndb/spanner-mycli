@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -171,13 +172,13 @@ type Session struct {
 
 // SchemaGeneration returns the current schema generation counter.
 func (s *Session) SchemaGeneration() uint64 {
-	return s.schemaGeneration
+	return atomic.LoadUint64(&s.schemaGeneration)
 }
 
 // IncrementSchemaGeneration bumps the schema generation counter,
 // signaling that schema-dependent caches should be invalidated.
 func (s *Session) IncrementSchemaGeneration() {
-	s.schemaGeneration++
+	atomic.AddUint64(&s.schemaGeneration, 1)
 }
 
 // SessionHandler manages a session pointer and can handle session-changing statements
