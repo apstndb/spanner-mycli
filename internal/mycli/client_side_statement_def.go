@@ -42,6 +42,7 @@ const (
 	fuzzyCompleteTable
 	fuzzyCompleteVariableValue
 	fuzzyCompleteRole
+	fuzzyCompleteOperation
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -56,6 +57,8 @@ func (t fuzzyCompletionType) String() string {
 		return "variable_value"
 	case fuzzyCompleteRole:
 		return "role"
+	case fuzzyCompleteOperation:
+		return "operation"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -320,6 +323,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 			return &ShowOperationStatement{OperationId: operationId, Mode: mode}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+OPERATION\s+(\S*)$`),
+			CompletionType: fuzzyCompleteOperation,
+		}},
 	},
 	// Split Points
 	{
