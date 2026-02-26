@@ -43,6 +43,11 @@ const (
 	fuzzyCompleteVariableValue
 	fuzzyCompleteRole
 	fuzzyCompleteOperation
+	fuzzyCompleteView
+	fuzzyCompleteIndex
+	fuzzyCompleteChangeStream
+	fuzzyCompleteSequence
+	fuzzyCompleteModel
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -59,6 +64,16 @@ func (t fuzzyCompletionType) String() string {
 		return "role"
 	case fuzzyCompleteOperation:
 		return "operation"
+	case fuzzyCompleteView:
+		return "view"
+	case fuzzyCompleteIndex:
+		return "index"
+	case fuzzyCompleteChangeStream:
+		return "change_stream"
+	case fuzzyCompleteSequence:
+		return "sequence"
+	case fuzzyCompleteModel:
+		return "model"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -194,6 +209,28 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(matched[1], " "))
 			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
 			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
+		},
+		Completion: []fuzzyArgCompletion{
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+CHANGE\s+STREAM\s+(\S*)$`),
+				CompletionType: fuzzyCompleteChangeStream,
+			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+VIEW\s+(\S*)$`),
+				CompletionType: fuzzyCompleteView,
+			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+INDEX\s+(\S*)$`),
+				CompletionType: fuzzyCompleteIndex,
+			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+SEQUENCE\s+(\S*)$`),
+				CompletionType: fuzzyCompleteSequence,
+			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+MODEL\s+(\S*)$`),
+				CompletionType: fuzzyCompleteModel,
+			},
 		},
 	},
 	{

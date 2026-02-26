@@ -88,8 +88,13 @@ type fuzzyFinderCommand struct {
 	cli    *Cli
 
 	// Caches for network-dependent candidates.
-	databaseCache *fuzzyCacheEntry
-	tableCache    *fuzzyCacheEntry
+	databaseCache     *fuzzyCacheEntry
+	tableCache        *fuzzyCacheEntry
+	viewCache         *fuzzyCacheEntry
+	indexCache        *fuzzyCacheEntry
+	changeStreamCache *fuzzyCacheEntry
+	sequenceCache     *fuzzyCacheEntry
+	modelCache        *fuzzyCacheEntry
 }
 
 func (f *fuzzyFinderCommand) String() string {
@@ -225,6 +230,16 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Database Roles"
 	case fuzzyCompleteOperation:
 		return "Operations"
+	case fuzzyCompleteView:
+		return "Views"
+	case fuzzyCompleteIndex:
+		return "Indexes"
+	case fuzzyCompleteChangeStream:
+		return "Change Streams"
+	case fuzzyCompleteSequence:
+		return "Sequences"
+	case fuzzyCompleteModel:
+		return "Models"
 	default:
 		return "Statements"
 	}
@@ -469,7 +484,8 @@ func extractFixedPrefix(syntax string) string {
 // requiresNetwork reports whether the completion type requires a network call.
 func requiresNetwork(ct fuzzyCompletionType) bool {
 	switch ct {
-	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation:
+	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation,
+		fuzzyCompleteView, fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel:
 		return true
 	default:
 		return false
@@ -498,6 +514,26 @@ func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []fzfIt
 		if f.tableCache.valid(session, true) {
 			return f.tableCache.candidates
 		}
+	case fuzzyCompleteView:
+		if f.viewCache.valid(session, true) {
+			return f.viewCache.candidates
+		}
+	case fuzzyCompleteIndex:
+		if f.indexCache.valid(session, true) {
+			return f.indexCache.candidates
+		}
+	case fuzzyCompleteChangeStream:
+		if f.changeStreamCache.valid(session, true) {
+			return f.changeStreamCache.candidates
+		}
+	case fuzzyCompleteSequence:
+		if f.sequenceCache.valid(session, true) {
+			return f.sequenceCache.candidates
+		}
+	case fuzzyCompleteModel:
+		if f.modelCache.valid(session, true) {
+			return f.modelCache.candidates
+		}
 	}
 	return nil
 }
@@ -519,6 +555,16 @@ func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candida
 		f.databaseCache = entry
 	case fuzzyCompleteTable:
 		f.tableCache = entry
+	case fuzzyCompleteView:
+		f.viewCache = entry
+	case fuzzyCompleteIndex:
+		f.indexCache = entry
+	case fuzzyCompleteChangeStream:
+		f.changeStreamCache = entry
+	case fuzzyCompleteSequence:
+		f.sequenceCache = entry
+	case fuzzyCompleteModel:
+		f.modelCache = entry
 	}
 }
 
@@ -583,6 +629,16 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchRoleCandidates(ctx, completionContext)
 	case fuzzyCompleteOperation:
 		return f.fetchOperationCandidates(ctx)
+	case fuzzyCompleteView:
+		return f.fetchViewCandidates(ctx)
+	case fuzzyCompleteIndex:
+		return f.fetchIndexCandidates(ctx)
+	case fuzzyCompleteChangeStream:
+		return f.fetchChangeStreamCandidates(ctx)
+	case fuzzyCompleteSequence:
+		return f.fetchSequenceCandidates(ctx)
+	case fuzzyCompleteModel:
+		return f.fetchModelCandidates(ctx)
 	default:
 		return nil, nil
 	}
@@ -676,19 +732,15 @@ func (f *fuzzyFinderCommand) fetchRoleCandidates(ctx context.Context, database s
 	return items, nil
 }
 
-// fetchTableCandidates lists table names from INFORMATION_SCHEMA.TABLES.
-// Returns table names formatted as "schema.name" for non-default schemas, or just "name" for default schema.
-func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]fzfItem, error) {
+// fetchSchemaObjectCandidates queries INFORMATION_SCHEMA with 2 columns (schema, name)
+// and returns schema-qualified fzfItems. Used by fetchTableCandidates and similar functions.
+func (f *fuzzyFinderCommand) fetchSchemaObjectCandidates(ctx context.Context, query, funcName string) ([]fzfItem, error) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil || session.client == nil {
 		return nil, nil
 	}
 
-	stmt := spanner.Statement{
-		SQL: `SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG = '' ORDER BY TABLE_SCHEMA, TABLE_NAME`,
-	}
-
-	iter := session.client.Single().Query(ctx, stmt)
+	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
 	defer iter.Stop()
 
 	var items []fzfItem
@@ -698,12 +750,12 @@ func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]fzfIte
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("fetchTableCandidates: %w", err)
+			return nil, fmt.Errorf("%s: %w", funcName, err)
 		}
 
 		var schema, name string
 		if err := row.Columns(&schema, &name); err != nil {
-			return nil, fmt.Errorf("fetchTableCandidates: %w", err)
+			return nil, fmt.Errorf("%s: %w", funcName, err)
 		}
 
 		if schema == "" {
@@ -713,6 +765,50 @@ func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]fzfIte
 		}
 	}
 	return items, nil
+}
+
+// fetchTableCandidates lists table names from INFORMATION_SCHEMA.TABLES.
+// Returns table names formatted as "schema.name" for non-default schemas, or just "name" for default schema.
+func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG = '' ORDER BY TABLE_SCHEMA, TABLE_NAME`,
+		"fetchTableCandidates")
+}
+
+// fetchViewCandidates lists views from INFORMATION_SCHEMA.VIEWS.
+func (f *fuzzyFinderCommand) fetchViewCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_CATALOG = '' ORDER BY TABLE_SCHEMA, TABLE_NAME`,
+		"fetchViewCandidates")
+}
+
+// fetchIndexCandidates lists indexes from INFORMATION_SCHEMA.INDEXES.
+// Excludes primary keys and managed (FK backing) indexes.
+func (f *fuzzyFinderCommand) fetchIndexCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT TABLE_SCHEMA, INDEX_NAME FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_CATALOG = '' AND INDEX_TYPE != 'PRIMARY_KEY' AND SPANNER_IS_MANAGED = FALSE ORDER BY TABLE_SCHEMA, INDEX_NAME`,
+		"fetchIndexCandidates")
+}
+
+// fetchChangeStreamCandidates lists change streams from INFORMATION_SCHEMA.CHANGE_STREAMS.
+func (f *fuzzyFinderCommand) fetchChangeStreamCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT CHANGE_STREAM_SCHEMA, CHANGE_STREAM_NAME FROM INFORMATION_SCHEMA.CHANGE_STREAMS WHERE CHANGE_STREAM_CATALOG = '' ORDER BY CHANGE_STREAM_SCHEMA, CHANGE_STREAM_NAME`,
+		"fetchChangeStreamCandidates")
+}
+
+// fetchSequenceCandidates lists sequences from INFORMATION_SCHEMA.SEQUENCES.
+func (f *fuzzyFinderCommand) fetchSequenceCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT SCHEMA, NAME FROM INFORMATION_SCHEMA.SEQUENCES WHERE CATALOG = '' ORDER BY SCHEMA, NAME`,
+		"fetchSequenceCandidates")
+}
+
+// fetchModelCandidates lists models from INFORMATION_SCHEMA.MODELS.
+func (f *fuzzyFinderCommand) fetchModelCandidates(ctx context.Context) ([]fzfItem, error) {
+	return f.fetchSchemaObjectCandidates(ctx,
+		`SELECT MODEL_SCHEMA, MODEL_NAME FROM INFORMATION_SCHEMA.MODELS WHERE MODEL_CATALOG = '' ORDER BY MODEL_SCHEMA, MODEL_NAME`,
+		"fetchModelCandidates")
 }
 
 // fetchOperationCandidates lists DDL operations from the current database.
