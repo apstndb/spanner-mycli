@@ -216,6 +216,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				CompletionType: fuzzyCompleteChangeStream,
 			},
 			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+TABLE\s+(\S*)$`),
+				CompletionType: fuzzyCompleteTable,
+			},
+			{
 				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+VIEW\s+(\S*)$`),
 				CompletionType: fuzzyCompleteView,
 			},
@@ -329,6 +333,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			tables := splitTableNames(matched[1])
 			return &DumpTablesStatement{Tables: tables}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*DUMP\s+TABLES\s+(?:.*,\s*)?(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
 	},
 	// Operations
 	{
