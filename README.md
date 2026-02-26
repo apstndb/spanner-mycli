@@ -64,7 +64,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
-  * Fuzzy finder (default `Ctrl+T`, configurable via `CLI_FUZZY_FINDER_KEY`) powered by [fzf](https://github.com/junegunn/fzf) for databases, tables, system variables, and statement names
+  * Fuzzy finder (default `Ctrl+T`, configurable via `CLI_FUZZY_FINDER_KEY`) powered by [fzf](https://github.com/junegunn/fzf) for databases, tables, system variables, database roles, operations, and statement names
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).

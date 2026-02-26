@@ -15,6 +15,8 @@
 package mycli
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -278,6 +280,28 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgStartPos:    16,
 			wantContext:        "mydb",
 		},
+		// Argument completion: SHOW OPERATION → operation
+		{
+			name:               "SHOW OPERATION with trailing space",
+			input:              "SHOW OPERATION ",
+			wantCompletionType: fuzzyCompleteOperation,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
+		},
+		{
+			name:               "SHOW OPERATION with partial id",
+			input:              "SHOW OPERATION _auto",
+			wantCompletionType: fuzzyCompleteOperation,
+			wantArgPrefix:      "_auto",
+			wantArgStartPos:    15,
+		},
+		{
+			name:               "show operation lowercase",
+			input:              "show operation ",
+			wantCompletionType: fuzzyCompleteOperation,
+			wantArgPrefix:      "",
+			wantArgStartPos:    15,
+		},
 		// Statement name completion (fallback)
 		{
 			name:               "USE without space falls through to statement name",
@@ -415,70 +439,276 @@ func TestExtractFixedPrefix(t *testing.T) {
 	}
 }
 
-func TestBuildStatementNameCandidates(t *testing.T) {
-	candidates := buildStatementNameCandidates()
+func TestBuildStatementNameItems(t *testing.T) {
+	items := buildStatementNameItems()
 
 	// Should have candidates (at least as many as defs with descriptions)
-	assert.Greater(t, len(candidates), 0)
+	assert.Greater(t, len(items), 0)
 
-	// Each candidate should have non-empty DisplayText and InsertText
-	for _, c := range candidates {
-		assert.NotEmpty(t, c.DisplayText, "DisplayText should not be empty")
-		assert.NotEmpty(t, c.InsertText, "InsertText should not be empty")
+	// Each item should have non-empty Value and Label
+	for _, item := range items {
+		assert.NotEmpty(t, item.Value, "Value should not be empty")
+		assert.NotEmpty(t, item.Label, "Label should not be empty")
 	}
 
 	// Verify specific well-known candidates exist
-	displayTexts := make(map[string]string)
-	for _, c := range candidates {
-		displayTexts[c.DisplayText] = c.InsertText
+	labelToValue := make(map[string]string)
+	for _, item := range items {
+		labelToValue[item.Label] = item.Value
 	}
 
 	// No-arg statement: full text, no trailing space
-	assert.Equal(t, "SHOW DATABASES", displayTexts["SHOW DATABASES"])
+	assert.Equal(t, "SHOW DATABASES", labelToValue["SHOW DATABASES"])
 
 	// Arg statement: keyword prefix with trailing space
-	assert.Equal(t, "USE ", displayTexts["USE <database> [ROLE <role>]"])
+	assert.Equal(t, "USE ", labelToValue["USE <database> [ROLE <role>]"])
 
 	// Multi-keyword prefix
-	assert.Equal(t, "SHOW COLUMNS FROM ", displayTexts["SHOW COLUMNS FROM <table_fqn>"])
+	assert.Equal(t, "SHOW COLUMNS FROM ", labelToValue["SHOW COLUMNS FROM <table_fqn>"])
 }
 
-func TestStatementNameInsertText(t *testing.T) {
+func TestToFzfItems(t *testing.T) {
+	input := []string{"alpha", "beta", "gamma"}
+	items := toFzfItems(input)
+
+	assert.Equal(t, len(input), len(items))
+	for i, item := range items {
+		assert.Equal(t, input[i], item.Value)
+		assert.Empty(t, item.Label, "Label should be empty for simple items")
+	}
+}
+
+func TestPrepareFzfOptions(t *testing.T) {
 	tests := []struct {
-		name        string
-		displayText string
-		want        string
+		name               string
+		candidates         []fzfItem
+		header             string
+		wantHasLabels      bool
+		wantDelimiterArg   bool
+		wantMultilineArgs  bool
+		wantFixedHeight    bool // true = fixed height (no ~), false = shrink height (~N)
+		wantFormattedCount int
 	}{
 		{
-			name:        "known no-arg statement",
-			displayText: "SHOW DATABASES",
-			want:        "SHOW DATABASES",
+			name: "simple candidates without labels",
+			candidates: []fzfItem{
+				{Value: "db1"},
+				{Value: "db2"},
+			},
+			header:             "",
+			wantHasLabels:      false,
+			wantDelimiterArg:   false,
+			wantMultilineArgs:  false,
+			wantFixedHeight:    false,
+			wantFormattedCount: 2,
 		},
 		{
-			name:        "known arg statement",
-			displayText: "USE <database> [ROLE <role>]",
-			want:        "USE ",
+			name: "candidates with labels",
+			candidates: []fzfItem{
+				{Value: "USE ", Label: "USE <database> [ROLE <role>]"},
+				{Value: "SHOW DATABASES", Label: "SHOW DATABASES"},
+			},
+			header:             "Statements",
+			wantHasLabels:      true,
+			wantDelimiterArg:   true,
+			wantMultilineArgs:  false,
+			wantFixedHeight:    false,
+			wantFormattedCount: 2,
 		},
 		{
-			name:        "unknown display text falls back to input",
-			displayText: "NONEXISTENT COMMAND",
-			want:        "NONEXISTENT COMMAND",
+			name: "multiline candidates use fixed height",
+			candidates: []fzfItem{
+				{Value: "op1", Label: "[DONE] CREATE TABLE t1(\n  col1 INT64\n)"},
+				{Value: "op2", Label: "[RUNNING] ALTER TABLE t2\n  ADD COLUMN c STRING(MAX)"},
+			},
+			header:             "Operations",
+			wantHasLabels:      true,
+			wantDelimiterArg:   true,
+			wantMultilineArgs:  true,
+			wantFixedHeight:    true,
+			wantFormattedCount: 2,
+		},
+		{
+			name: "mixed single and multiline",
+			candidates: []fzfItem{
+				{Value: "op1", Label: "[DONE] single line"},
+				{Value: "op2", Label: "[RUNNING] CREATE TABLE t1(\n  col1 INT64\n)"},
+			},
+			header:             "",
+			wantHasLabels:      true,
+			wantDelimiterArg:   true,
+			wantMultilineArgs:  true,
+			wantFixedHeight:    true,
+			wantFormattedCount: 2,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := statementNameInsertText(tt.displayText)
-			assert.Equal(t, tt.want, got)
+			p := prepareFzfOptions(tt.candidates, tt.header)
+
+			assert.Equal(t, tt.wantHasLabels, p.hasLabels)
+			assert.Equal(t, tt.wantFormattedCount, len(p.formattedLines))
+
+			// Check delimiter args presence.
+			hasDelimiter := false
+			hasWithNth := false
+			hasReadZero := false
+			hasMultiLine := false
+			hasGap := false
+			hasFixedHeight := false
+			for _, arg := range p.args {
+				if strings.HasPrefix(arg, "--delimiter=") {
+					hasDelimiter = true
+				}
+				if strings.HasPrefix(arg, "--with-nth=") {
+					hasWithNth = true
+				}
+				if arg == "--read0" {
+					hasReadZero = true
+				}
+				if arg == "--multi-line" {
+					hasMultiLine = true
+				}
+				if arg == "--gap" {
+					hasGap = true
+				}
+				if heightVal, ok := strings.CutPrefix(arg, "--height="); ok {
+					hasFixedHeight = !strings.HasPrefix(heightVal, "~")
+				}
+			}
+
+			assert.Equal(t, tt.wantDelimiterArg, hasDelimiter, "delimiter arg")
+			assert.Equal(t, tt.wantDelimiterArg, hasWithNth, "with-nth arg")
+			assert.Equal(t, tt.wantMultilineArgs, hasReadZero, "read0 arg")
+			assert.Equal(t, tt.wantMultilineArgs, hasMultiLine, "multi-line arg")
+			assert.Equal(t, tt.wantMultilineArgs, hasGap, "gap arg")
+			assert.Equal(t, tt.wantFixedHeight, hasFixedHeight, "fixed height")
+
+			// Verify formatted lines structure.
+			if tt.wantHasLabels {
+				for _, line := range p.formattedLines {
+					assert.Contains(t, line, fzfDelimiter, "label lines should contain delimiter")
+				}
+			}
 		})
 	}
 }
 
-func TestStatementNameDisplayTexts(t *testing.T) {
-	texts := statementNameDisplayTexts()
-	assert.Equal(t, len(statementNameCandidates), len(texts))
-	for i, c := range statementNameCandidates {
-		assert.Equal(t, c.DisplayText, texts[i])
+func TestPrepareFzfOptions_DynamicHeight(t *testing.T) {
+	// Verify height calculation for multiline items.
+	candidates := []fzfItem{
+		{Value: "op1", Label: "[DONE] line1\nline2\nline3"}, // 3 lines
+		{Value: "op2", Label: "[RUNNING] line1\nline2"},     // 2 lines
+	}
+
+	p := prepareFzfOptions(candidates, "Operations")
+
+	// Find the height arg.
+	var heightVal string
+	for _, arg := range p.args {
+		if v, ok := strings.CutPrefix(arg, "--height="); ok {
+			heightVal = v
+		}
+	}
+
+	// Expected: totalDisplayLines(5) + gaps(1) + extra(5: border(2)+prompt(1)+separator(1)+header(1))
+	// = 11, capped at min(11, 20) = 11
+	assert.Equal(t, "11", heightVal)
+}
+
+func TestPrepareFzfOptions_HeightCap(t *testing.T) {
+	// Many multiline items should cap at 20.
+	var candidates []fzfItem
+	for i := range 10 {
+		candidates = append(candidates, fzfItem{
+			Value: fmt.Sprintf("op%d", i),
+			Label: "[DONE] line1\nline2\nline3\nline4",
+		})
+	}
+
+	p := prepareFzfOptions(candidates, "Operations")
+
+	var heightVal string
+	for _, arg := range p.args {
+		if v, ok := strings.CutPrefix(arg, "--height="); ok {
+			heightVal = v
+		}
+	}
+
+	// totalDisplayLines(40) + gaps(9) + extra(5) = 54, capped at 20
+	assert.Equal(t, "20", heightVal)
+}
+
+func TestRunFzfFilter_SimpleMatch(t *testing.T) {
+	candidates := []fzfItem{
+		{Value: "alpha"},
+		{Value: "beta"},
+		{Value: "gamma"},
+		{Value: "alphabet"},
+	}
+
+	results := runFzfFilter(candidates, "alph", "")
+	assert.Contains(t, results, "alpha")
+	assert.Contains(t, results, "alphabet")
+	assert.NotContains(t, results, "beta")
+	assert.NotContains(t, results, "gamma")
+}
+
+func TestRunFzfFilter_LabelValueSeparation(t *testing.T) {
+	candidates := []fzfItem{
+		{Value: "op-123", Label: "[DONE] CREATE TABLE users"},
+		{Value: "op-456", Label: "[RUNNING] ALTER TABLE orders"},
+		{Value: "op-789", Label: "[ERROR] DROP TABLE temp"},
+	}
+
+	// Filter by label text, but results should be Values.
+	results := runFzfFilter(candidates, "CREATE", "Operations")
+	assert.Contains(t, results, "op-123")
+	assert.NotContains(t, results, "op-456")
+	assert.NotContains(t, results, "op-789")
+}
+
+func TestRunFzfFilter_StatementNames(t *testing.T) {
+	items := buildStatementNameItems()
+
+	// Filter for "SHOW DATABASES" — should match the statement and return its insert text.
+	results := runFzfFilter(items, "SHOW DATABASES", "Statements")
+	assert.Contains(t, results, "SHOW DATABASES", "should find the no-arg statement")
+}
+
+func TestExtractValue(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		hasLabels bool
+		want      string
+	}{
+		{
+			name:      "no labels",
+			line:      "alpha",
+			hasLabels: false,
+			want:      "alpha",
+		},
+		{
+			name:      "with labels",
+			line:      "op-123" + fzfDelimiter + "[DONE] CREATE TABLE",
+			hasLabels: true,
+			want:      "op-123",
+		},
+		{
+			name:      "with labels no delimiter in line",
+			line:      "alpha",
+			hasLabels: true,
+			want:      "alpha",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractValue(tt.line, tt.hasLabels)
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
 
@@ -523,7 +753,7 @@ func TestFuzzyCacheEntryValid(t *testing.T) {
 			entry: &fuzzyCacheEntry{
 				session:    session1,
 				expiresAt:  time.Now().Add(time.Minute),
-				candidates: []string{"db1"},
+				candidates: []fzfItem{{Value: "db1"}},
 			},
 			session: session1,
 			want:    true,
@@ -534,7 +764,7 @@ func TestFuzzyCacheEntryValid(t *testing.T) {
 				session:          session1,
 				expiresAt:        time.Now().Add(time.Minute),
 				schemaGeneration: 0,
-				candidates:       []string{"table1"},
+				candidates:       []fzfItem{{Value: "table1"}},
 			},
 			session:     session1,
 			checkSchema: true,

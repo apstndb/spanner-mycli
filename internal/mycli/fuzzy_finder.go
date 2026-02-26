@@ -26,6 +26,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/hymkor/go-multiline-ny"
@@ -41,7 +42,7 @@ const (
 
 // fuzzyCacheEntry holds cached completion candidates with expiry metadata.
 type fuzzyCacheEntry struct {
-	candidates       []string
+	candidates       []fzfItem
 	expiresAt        time.Time
 	session          *Session // session when cache was populated
 	schemaGeneration uint64   // schema generation when cache was populated
@@ -60,6 +61,22 @@ func (e *fuzzyCacheEntry) valid(session *Session, checkSchema bool) bool {
 		return false
 	}
 	return true
+}
+
+// fzfItem represents a fuzzy finder candidate with separate display and insert texts.
+// When Label is empty, Value is used for both display and insertion.
+type fzfItem struct {
+	Value string // inserted into buffer
+	Label string // displayed/searched in fzf; empty means use Value
+}
+
+// toFzfItems converts a plain string slice to fzfItems where Value == Label.
+func toFzfItems(ss []string) []fzfItem {
+	items := make([]fzfItem, len(ss))
+	for i, s := range ss {
+		items[i] = fzfItem{Value: s}
+	}
+	return items
 }
 
 // fuzzyFinderCommand implements readline.Command for the fuzzy finder feature.
@@ -121,11 +138,10 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	} else {
 		// Statement name completion: insert the fixed prefix text.
 		// No-arg statements (no trailing space) get a semicolon for immediate submit.
-		insertText := statementNameInsertText(chosen)
-		if strings.HasSuffix(insertText, " ") {
-			selected = insertText
+		if strings.HasSuffix(chosen, " ") {
+			selected = chosen
 		} else {
-			selected = insertText + ";"
+			selected = chosen + ";"
 		}
 	}
 
@@ -194,36 +210,6 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 	}
 }
 
-// statementNameCandidate holds the display and insert text for statement name completion.
-type statementNameCandidate struct {
-	DisplayText string // shown in fzf (e.g., "SHOW COLUMNS FROM <table_fqn>")
-	InsertText  string // inserted into buffer (e.g., "SHOW COLUMNS FROM ")
-}
-
-// statementNameCandidates is built at init time from clientSideStatementDefs.
-var statementNameCandidates []statementNameCandidate
-
-// statementNameInsertMap maps display text to insert text for statement name completion.
-// fzf returns the selected string (not an index), so we need this lookup.
-var statementNameInsertMap map[string]string
-
-func init() {
-	statementNameCandidates = buildStatementNameCandidates()
-	statementNameInsertMap = make(map[string]string, len(statementNameCandidates))
-	for _, c := range statementNameCandidates {
-		statementNameInsertMap[c.DisplayText] = c.InsertText
-	}
-}
-
-// statementNameInsertText returns the insert text for a given display text.
-// Falls back to the display text itself if not found in the map.
-func statementNameInsertText(displayText string) string {
-	if t, ok := statementNameInsertMap[displayText]; ok {
-		return t
-	}
-	return displayText
-}
-
 // completionHeader returns a header string for the fzf UI based on completion type.
 func completionHeader(ct fuzzyCompletionType) string {
 	switch ct {
@@ -237,20 +223,120 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Variable Values"
 	case fuzzyCompleteRole:
 		return "Database Roles"
+	case fuzzyCompleteOperation:
+		return "Operations"
 	default:
 		return "Statements"
 	}
 }
 
-// runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
-// Returns the selected string and true, or ("", false) if cancelled or no match.
-func runFzf(candidates []string, query string, header string) (string, bool) {
-	opts, err := fzf.ParseOptions(false, []string{
+// fzfDelimiter is the separator between Value and Label in fzf input lines.
+// Uses a non-printable control character (SOH) to avoid collision with actual data.
+const fzfDelimiter = "\x01"
+
+// fzfPrepared holds the output of prepareFzfOptions: the fzf arguments,
+// the formatted input lines, and whether Value/Label separation is active.
+type fzfPrepared struct {
+	args           []string
+	formattedLines []string
+	hasLabels      bool
+}
+
+// prepareFzfOptions is a pure function that deterministically computes fzf arguments
+// and formatted input lines from candidates. This enables unit testing without TTY.
+// The header parameter affects height calculation (adds 1 line if non-empty).
+func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
+	// Determine if any candidate needs display/insert separation.
+	hasLabels := false
+	for _, c := range candidates {
+		if c.Label != "" && c.Label != c.Value {
+			hasLabels = true
+			break
+		}
+	}
+
+	// Check if any candidate label contains newlines for multiline display.
+	// Also count total display lines for dynamic height calculation.
+	hasMultiline := false
+	totalDisplayLines := 0
+	for _, c := range candidates {
+		display := c.Label
+		if display == "" {
+			display = c.Value
+		}
+		lines := strings.Count(display, "\n") + 1
+		if lines > 1 {
+			hasMultiline = true
+		}
+		totalDisplayLines += lines
+	}
+
+	// For multiline items, use fixed height (shrink-to-fit ~N breaks multiline rendering).
+	// For single-line items, use shrink-to-fit ~N for compact display.
+	height := "~20"
+	if hasMultiline {
+		extra := 4 // border(2) + prompt(1) + separator(1)
+		if header != "" {
+			extra++
+		}
+		gaps := len(candidates) - 1 // --gap adds 1 line between items
+		h := min(totalDisplayLines+gaps+extra, 20)
+		height = fmt.Sprintf("%d", h)
+	}
+	fzfArgs := []string{
 		"--reverse", "--no-sort",
-		"--height=~20",
+		"--height=" + height,
 		"--border=rounded",
 		"--info=inline-right",
-	})
+	}
+	if hasLabels {
+		fzfArgs = append(fzfArgs, "--delimiter="+fzfDelimiter, "--with-nth=2..")
+	}
+	if hasMultiline {
+		fzfArgs = append(fzfArgs, "--read0", "--multi-line", "--gap")
+	}
+
+	// Build the formatted lines.
+	formattedLines := make([]string, len(candidates))
+	for i, c := range candidates {
+		if hasLabels {
+			label := c.Label
+			if label == "" {
+				label = c.Value
+			}
+			formattedLines[i] = c.Value + fzfDelimiter + label
+		} else {
+			formattedLines[i] = c.Value
+		}
+	}
+
+	return fzfPrepared{
+		args:           fzfArgs,
+		formattedLines: formattedLines,
+		hasLabels:      hasLabels,
+	}
+}
+
+// extractValue extracts the Value portion from a fzf output line.
+// When hasLabels is true, the line format is "Value\tLabel" and we extract the Value.
+// When hasLabels is false, the entire line is the Value.
+func extractValue(line string, hasLabels bool) string {
+	if hasLabels {
+		if v, _, ok := strings.Cut(line, fzfDelimiter); ok {
+			return v
+		}
+	}
+	return line
+}
+
+// runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
+// When candidates have separate Label and Value, fzf displays/searches the Label
+// but the returned string is the Value (for insertion into the buffer).
+// Returns the selected Value and true, or ("", false) if cancelled or no match.
+func runFzf(candidates []fzfItem, query string, header string) (string, bool) {
+	prepared := prepareFzfOptions(candidates, header)
+
+	opts, err := fzf.ParseOptions(false, prepared.args)
 	if err != nil {
 		slog.Debug("fuzzy finder: parse fzf options", "err", err)
 		return "", false
@@ -263,9 +349,9 @@ func runFzf(candidates []string, query string, header string) (string, bool) {
 	}
 	opts.ForceTtyIn = true
 
-	inputChan := make(chan string, len(candidates))
-	for _, c := range candidates {
-		inputChan <- c
+	inputChan := make(chan string, len(prepared.formattedLines))
+	for _, line := range prepared.formattedLines {
+		inputChan <- line
 	}
 	close(inputChan)
 	opts.Input = inputChan
@@ -281,34 +367,82 @@ func runFzf(candidates []string, query string, header string) (string, bool) {
 	if err != nil && code != fzf.ExitInterrupt && code != fzf.ExitNoMatch {
 		slog.Debug("fuzzy finder: fzf run error", "code", code, "err", err)
 	}
+
+	if selected {
+		result = extractValue(result, prepared.hasLabels)
+	}
+
 	return result, selected
 }
 
-// statementNameDisplayTexts returns the display texts for fzf.
-func statementNameDisplayTexts() []string {
-	texts := make([]string, len(statementNameCandidates))
-	for i, c := range statementNameCandidates {
-		texts[i] = c.DisplayText
+// runFzfFilter runs fzf in non-interactive --filter mode for testing.
+// It returns all matching Values (after Value/Label extraction).
+// This tests the full pipeline: formatting → fzf matching → result extraction.
+func runFzfFilter(candidates []fzfItem, filter string, header string) []string {
+	prepared := prepareFzfOptions(candidates, header)
+
+	// For filter mode, strip visual-only args and add --filter.
+	filterArgs := make([]string, 0, len(prepared.args)+1)
+	for _, arg := range prepared.args {
+		// Skip args that don't apply in non-interactive filter mode.
+		if strings.HasPrefix(arg, "--height") ||
+			strings.HasPrefix(arg, "--border") ||
+			strings.HasPrefix(arg, "--reverse") ||
+			strings.HasPrefix(arg, "--info") ||
+			strings.HasPrefix(arg, "--gap") {
+			continue
+		}
+		filterArgs = append(filterArgs, arg)
 	}
-	return texts
+	filterArgs = append(filterArgs, "--filter="+filter)
+
+	opts, err := fzf.ParseOptions(false, filterArgs)
+	if err != nil {
+		return nil
+	}
+	if header != "" {
+		opts.Header = []string{header}
+	}
+
+	inputChan := make(chan string, len(prepared.formattedLines))
+	for _, line := range prepared.formattedLines {
+		inputChan <- line
+	}
+	close(inputChan)
+	opts.Input = inputChan
+
+	var results []string
+	opts.Printer = func(s string) {
+		results = append(results, extractValue(s, prepared.hasLabels))
+	}
+
+	_, _ = fzf.Run(opts)
+	return results
 }
 
-// buildStatementNameCandidates builds the candidate list from all client-side statement defs.
-func buildStatementNameCandidates() []statementNameCandidate {
-	var candidates []statementNameCandidate
+// buildStatementNameItems builds fzfItem candidates from all client-side statement defs.
+func buildStatementNameItems() []fzfItem {
+	var items []fzfItem
 	for _, def := range clientSideStatementDefs {
 		for _, desc := range def.Descriptions {
 			if desc.Syntax == "" {
 				continue
 			}
 			insertText := extractFixedPrefix(desc.Syntax)
-			candidates = append(candidates, statementNameCandidate{
-				DisplayText: desc.Syntax,
-				InsertText:  insertText,
+			items = append(items, fzfItem{
+				Value: insertText,
+				Label: desc.Syntax,
 			})
 		}
 	}
-	return candidates
+	return items
+}
+
+// statementNameItems is built at init time from clientSideStatementDefs.
+var statementNameItems []fzfItem
+
+func init() {
+	statementNameItems = buildStatementNameItems()
 }
 
 // extractFixedPrefix walks words in a syntax string until it hits a placeholder
@@ -335,7 +469,7 @@ func extractFixedPrefix(syntax string) string {
 // requiresNetwork reports whether the completion type requires a network call.
 func requiresNetwork(ct fuzzyCompletionType) bool {
 	switch ct {
-	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole:
+	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation:
 		return true
 	default:
 		return false
@@ -353,7 +487,7 @@ func unwrapCustomVar(v Variable) Variable {
 }
 
 // getCachedCandidates returns cached candidates if the cache is valid, or nil.
-func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []string {
+func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []fzfItem {
 	session := f.cli.SessionHandler.GetSession()
 	switch ct {
 	case fuzzyCompleteDatabase:
@@ -369,7 +503,7 @@ func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []strin
 }
 
 // setCachedCandidates stores candidates in the appropriate cache.
-func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candidates []string) {
+func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candidates []fzfItem) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil {
 		return
@@ -389,11 +523,11 @@ func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candida
 }
 
 // resolveCandidates returns candidates for the given completion type.
-// For statement name completion (ct == 0), returns pre-built display texts.
+// For statement name completion (ct == 0), returns pre-built items.
 // For network-dependent types, checks cache first, then shows a loading indicator and fetches.
-func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]string, error) {
+func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]fzfItem, error) {
 	if ct == 0 {
-		return statementNameDisplayTexts(), nil
+		return statementNameItems, nil
 	}
 	if !requiresNetwork(ct) {
 		return f.fetchCandidates(ctx, ct, completionContext)
@@ -435,25 +569,27 @@ func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyComp
 }
 
 // fetchCandidates returns completion candidates for the given completion type.
-func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]string, error) {
+func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]fzfItem, error) {
 	switch ct {
 	case fuzzyCompleteDatabase:
 		return f.fetchDatabaseCandidates(ctx)
 	case fuzzyCompleteVariable:
-		return f.fetchVariableCandidates(), nil
+		return toFzfItems(f.fetchVariableCandidates()), nil
 	case fuzzyCompleteTable:
 		return f.fetchTableCandidates(ctx)
 	case fuzzyCompleteVariableValue:
-		return f.fetchVariableValueCandidates(completionContext), nil
+		return toFzfItems(f.fetchVariableValueCandidates(completionContext)), nil
 	case fuzzyCompleteRole:
 		return f.fetchRoleCandidates(ctx, completionContext)
+	case fuzzyCompleteOperation:
+		return f.fetchOperationCandidates(ctx)
 	default:
 		return nil, nil
 	}
 }
 
 // fetchDatabaseCandidates lists databases from the current instance.
-func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]string, error) {
+func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]fzfItem, error) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil || session.adminClient == nil {
 		return nil, nil
@@ -463,17 +599,17 @@ func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]str
 		Parent: session.InstancePath(),
 	})
 
-	var databases []string
+	var items []fzfItem
 	for db, err := range dbIter.All() {
 		if err != nil {
 			return nil, err
 		}
 		matched := extractDatabaseRe.FindStringSubmatch(db.GetName())
 		if len(matched) > 1 {
-			databases = append(databases, matched[1])
+			items = append(items, fzfItem{Value: matched[1]})
 		}
 	}
-	return databases, nil
+	return items, nil
 }
 
 // fetchVariableCandidates returns sorted system variable names from the registry.
@@ -513,7 +649,7 @@ func (f *fuzzyFinderCommand) fetchVariableValueCandidates(varName string) []stri
 var extractRoleRe = regexp.MustCompile(`databaseRoles/(.+)`)
 
 // fetchRoleCandidates lists database roles for the given database.
-func (f *fuzzyFinderCommand) fetchRoleCandidates(ctx context.Context, database string) ([]string, error) {
+func (f *fuzzyFinderCommand) fetchRoleCandidates(ctx context.Context, database string) ([]fzfItem, error) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil || session.adminClient == nil {
 		return nil, nil
@@ -524,23 +660,25 @@ func (f *fuzzyFinderCommand) fetchRoleCandidates(ctx context.Context, database s
 		Parent: dbPath,
 	})
 
-	var roles []string
+	var items []fzfItem
 	for role, err := range roleIter.All() {
 		if err != nil {
 			return nil, err
 		}
 		matched := extractRoleRe.FindStringSubmatch(role.GetName())
 		if len(matched) > 1 {
-			roles = append(roles, matched[1])
+			items = append(items, fzfItem{Value: matched[1]})
 		}
 	}
-	slices.Sort(roles)
-	return roles, nil
+	slices.SortFunc(items, func(a, b fzfItem) int {
+		return strings.Compare(a.Value, b.Value)
+	})
+	return items, nil
 }
 
 // fetchTableCandidates lists table names from INFORMATION_SCHEMA.TABLES.
 // Returns table names formatted as "schema.name" for non-default schemas, or just "name" for default schema.
-func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]string, error) {
+func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]fzfItem, error) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil || session.client == nil {
 		return nil, nil
@@ -553,7 +691,7 @@ func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]string
 	iter := session.client.Single().Query(ctx, stmt)
 	defer iter.Stop()
 
-	var tables []string
+	var items []fzfItem
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
@@ -569,10 +707,46 @@ func (f *fuzzyFinderCommand) fetchTableCandidates(ctx context.Context) ([]string
 		}
 
 		if schema == "" {
-			tables = append(tables, name)
+			items = append(items, fzfItem{Value: name})
 		} else {
-			tables = append(tables, schema+"."+name)
+			items = append(items, fzfItem{Value: schema + "." + name})
 		}
 	}
-	return tables, nil
+	return items, nil
+}
+
+// fetchOperationCandidates lists DDL operations from the current database.
+// Each candidate's Value is the operation ID (short form) and Label shows the DDL statements and status.
+func (f *fuzzyFinderCommand) fetchOperationCandidates(ctx context.Context) ([]fzfItem, error) {
+	session := f.cli.SessionHandler.GetSession()
+	if session == nil || session.adminClient == nil {
+		return nil, nil
+	}
+
+	var items []fzfItem
+	for op, err := range session.adminClient.ListOperations(ctx, &longrunningpb.ListOperationsRequest{
+		Name: session.DatabasePath() + "/operations",
+	}).All() {
+		if err != nil {
+			return nil, err
+		}
+
+		if op.GetMetadata().GetTypeUrl() != "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata" {
+			continue
+		}
+
+		var md databasepb.UpdateDatabaseDdlMetadata
+		if err := op.GetMetadata().UnmarshalTo(&md); err != nil {
+			continue
+		}
+
+		// Extract short operation ID from the full name.
+		parts := strings.Split(op.GetName(), "/")
+		opID := parts[len(parts)-1]
+
+		// Build label from DDL statements with trailing semicolons.
+		label := strings.Join(md.GetStatements(), ";\n") + ";"
+		items = append(items, fzfItem{Value: opID, Label: label})
+	}
+	return items, nil
 }
