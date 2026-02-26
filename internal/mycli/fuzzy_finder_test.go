@@ -302,6 +302,116 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    15,
 		},
+		// Argument completion: SHOW CREATE VIEW → view
+		{
+			name:               "SHOW CREATE VIEW with trailing space",
+			input:              "SHOW CREATE VIEW ",
+			wantCompletionType: fuzzyCompleteView,
+			wantArgPrefix:      "",
+			wantArgStartPos:    17,
+		},
+		{
+			name:               "SHOW CREATE VIEW with partial name",
+			input:              "SHOW CREATE VIEW My",
+			wantCompletionType: fuzzyCompleteView,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    17,
+		},
+		{
+			name:               "show create view lowercase",
+			input:              "show create view ",
+			wantCompletionType: fuzzyCompleteView,
+			wantArgPrefix:      "",
+			wantArgStartPos:    17,
+		},
+		// Argument completion: SHOW CREATE INDEX → index
+		{
+			name:               "SHOW CREATE INDEX with trailing space",
+			input:              "SHOW CREATE INDEX ",
+			wantCompletionType: fuzzyCompleteIndex,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "SHOW CREATE INDEX with partial name",
+			input:              "SHOW CREATE INDEX Idx",
+			wantCompletionType: fuzzyCompleteIndex,
+			wantArgPrefix:      "Idx",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "show create index lowercase",
+			input:              "show create index ",
+			wantCompletionType: fuzzyCompleteIndex,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
+		// Argument completion: SHOW CREATE CHANGE STREAM → change stream
+		{
+			name:               "SHOW CREATE CHANGE STREAM with trailing space",
+			input:              "SHOW CREATE CHANGE STREAM ",
+			wantCompletionType: fuzzyCompleteChangeStream,
+			wantArgPrefix:      "",
+			wantArgStartPos:    26,
+		},
+		{
+			name:               "SHOW CREATE CHANGE STREAM with partial name",
+			input:              "SHOW CREATE CHANGE STREAM My",
+			wantCompletionType: fuzzyCompleteChangeStream,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    26,
+		},
+		{
+			name:               "show create change stream lowercase",
+			input:              "show create change stream ",
+			wantCompletionType: fuzzyCompleteChangeStream,
+			wantArgPrefix:      "",
+			wantArgStartPos:    26,
+		},
+		// Argument completion: SHOW CREATE SEQUENCE → sequence
+		{
+			name:               "SHOW CREATE SEQUENCE with trailing space",
+			input:              "SHOW CREATE SEQUENCE ",
+			wantCompletionType: fuzzyCompleteSequence,
+			wantArgPrefix:      "",
+			wantArgStartPos:    21,
+		},
+		{
+			name:               "SHOW CREATE SEQUENCE with partial name",
+			input:              "SHOW CREATE SEQUENCE My",
+			wantCompletionType: fuzzyCompleteSequence,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    21,
+		},
+		{
+			name:               "show create sequence lowercase",
+			input:              "show create sequence ",
+			wantCompletionType: fuzzyCompleteSequence,
+			wantArgPrefix:      "",
+			wantArgStartPos:    21,
+		},
+		// Argument completion: SHOW CREATE MODEL → model
+		{
+			name:               "SHOW CREATE MODEL with trailing space",
+			input:              "SHOW CREATE MODEL ",
+			wantCompletionType: fuzzyCompleteModel,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "SHOW CREATE MODEL with partial name",
+			input:              "SHOW CREATE MODEL My",
+			wantCompletionType: fuzzyCompleteModel,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "show create model lowercase",
+			input:              "show create model ",
+			wantCompletionType: fuzzyCompleteModel,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
 		// Statement name completion (fallback)
 		{
 			name:               "USE without space falls through to statement name",
