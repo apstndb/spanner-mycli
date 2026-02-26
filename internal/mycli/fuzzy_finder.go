@@ -231,7 +231,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 }
 
 // fzfDelimiter is the separator between Value and Label in fzf input lines.
-const fzfDelimiter = "\t"
+// Uses a non-printable control character (SOH) to avoid collision with actual data.
+const fzfDelimiter = "\x01"
 
 // fzfPrepared holds the output of prepareFzfOptions: the fzf arguments,
 // the formatted input lines, and whether Value/Label separation is active.

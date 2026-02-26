@@ -692,7 +692,7 @@ func TestExtractValue(t *testing.T) {
 		},
 		{
 			name:      "with labels",
-			line:      "op-123\t[DONE] CREATE TABLE",
+			line:      "op-123" + fzfDelimiter + "[DONE] CREATE TABLE",
 			hasLabels: true,
 			want:      "op-123",
 		},
