@@ -49,6 +49,7 @@ const (
 	fuzzyCompleteSequence
 	fuzzyCompleteModel
 	fuzzyCompleteSchema
+	fuzzyCompleteParam
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -77,6 +78,8 @@ func (t fuzzyCompletionType) String() string {
 		return "model"
 	case fuzzyCompleteSchema:
 		return "schema"
+	case fuzzyCompleteParam:
+		return "param"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -940,6 +943,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\s+([^\s=]*)$`),
+			CompletionType: fuzzyCompleteParam,
+			Suffix:         " ",
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -964,6 +972,22 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &ShowParamsStatement{}, nil
 		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Unset query parameter`,
+				Syntax: `UNSET PARAM <name>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^UNSET\s+PARAM\s+(\S+)$`),
+		HandleSubmatch: func(matched []string) (Statement, error) {
+			return &UnsetParamStatement{Name: matched[1]}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*UNSET\s+PARAM\s+(\S*)$`),
+			CompletionType: fuzzyCompleteParam,
+		}},
 	},
 	// Mutation
 	{
