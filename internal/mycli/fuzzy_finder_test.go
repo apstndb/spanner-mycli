@@ -183,6 +183,42 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "Sin",
 			wantArgStartPos:    7,
 		},
+		// Argument completion: DUMP TABLES → table
+		{
+			name:               "DUMP TABLES with trailing space",
+			input:              "DUMP TABLES ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "DUMP TABLES with partial table",
+			input:              "DUMP TABLES Sin",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Sin",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "dump tables lowercase",
+			input:              "dump tables ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "DUMP TABLES second table after comma",
+			input:              "DUMP TABLES Singers, ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    21,
+		},
+		{
+			name:               "DUMP TABLES second table partial",
+			input:              "DUMP TABLES Singers, Al",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Al",
+			wantArgStartPos:    21,
+		},
 		// Argument completion: DROP DATABASE → database
 		{
 			name:               "DROP DATABASE with trailing space",
@@ -409,6 +445,28 @@ func TestDetectFuzzyContext(t *testing.T) {
 			name:               "show create model lowercase",
 			input:              "show create model ",
 			wantCompletionType: fuzzyCompleteModel,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
+		// Argument completion: SHOW CREATE TABLE → table
+		{
+			name:               "SHOW CREATE TABLE with trailing space",
+			input:              "SHOW CREATE TABLE ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "SHOW CREATE TABLE with partial name",
+			input:              "SHOW CREATE TABLE Sin",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "Sin",
+			wantArgStartPos:    18,
+		},
+		{
+			name:               "show create table lowercase",
+			input:              "show create table ",
+			wantCompletionType: fuzzyCompleteTable,
 			wantArgPrefix:      "",
 			wantArgStartPos:    18,
 		},
