@@ -48,6 +48,7 @@ const (
 	fuzzyCompleteChangeStream
 	fuzzyCompleteSequence
 	fuzzyCompleteModel
+	fuzzyCompleteSchema
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -74,6 +75,8 @@ func (t fuzzyCompletionType) String() string {
 		return "sequence"
 	case fuzzyCompleteModel:
 		return "model"
+	case fuzzyCompleteSchema:
+		return "schema"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -235,6 +238,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+MODEL\s+(\S*)$`),
 				CompletionType: fuzzyCompleteModel,
 			},
+			{
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+CREATE\s+SCHEMA\s+(\S*)$`),
+				CompletionType: fuzzyCompleteSchema,
+			},
 		},
 	},
 	{
@@ -249,6 +256,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		HandleSubmatch: func(matched []string) (Statement, error) {
 			return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+TABLES\s+(\S*)$`),
+			CompletionType: fuzzyCompleteSchema,
+		}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{

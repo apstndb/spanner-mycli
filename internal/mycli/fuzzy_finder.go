@@ -95,6 +95,7 @@ type fuzzyFinderCommand struct {
 	changeStreamCache *fuzzyCacheEntry
 	sequenceCache     *fuzzyCacheEntry
 	modelCache        *fuzzyCacheEntry
+	schemaCache       *fuzzyCacheEntry
 }
 
 func (f *fuzzyFinderCommand) String() string {
@@ -240,6 +241,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Sequences"
 	case fuzzyCompleteModel:
 		return "Models"
+	case fuzzyCompleteSchema:
+		return "Schemas"
 	default:
 		return "Statements"
 	}
@@ -485,7 +488,8 @@ func extractFixedPrefix(syntax string) string {
 func requiresNetwork(ct fuzzyCompletionType) bool {
 	switch ct {
 	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation,
-		fuzzyCompleteView, fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel:
+		fuzzyCompleteView, fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel,
+		fuzzyCompleteSchema:
 		return true
 	default:
 		return false
@@ -534,6 +538,10 @@ func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []fzfIt
 		if f.modelCache.valid(session, true) {
 			return f.modelCache.candidates
 		}
+	case fuzzyCompleteSchema:
+		if f.schemaCache.valid(session, true) {
+			return f.schemaCache.candidates
+		}
 	}
 	return nil
 }
@@ -565,6 +573,8 @@ func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candida
 		f.sequenceCache = entry
 	case fuzzyCompleteModel:
 		f.modelCache = entry
+	case fuzzyCompleteSchema:
+		f.schemaCache = entry
 	}
 }
 
@@ -639,6 +649,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchSequenceCandidates(ctx)
 	case fuzzyCompleteModel:
 		return f.fetchModelCandidates(ctx)
+	case fuzzyCompleteSchema:
+		return f.fetchSchemaCandidates(ctx)
 	default:
 		return nil, nil
 	}
@@ -809,6 +821,38 @@ func (f *fuzzyFinderCommand) fetchModelCandidates(ctx context.Context) ([]fzfIte
 	return f.fetchSchemaObjectCandidates(ctx,
 		`SELECT MODEL_SCHEMA, MODEL_NAME FROM INFORMATION_SCHEMA.MODELS WHERE MODEL_CATALOG = '' ORDER BY MODEL_SCHEMA, MODEL_NAME`,
 		"fetchModelCandidates")
+}
+
+// fetchSchemaCandidates lists schema names from INFORMATION_SCHEMA.SCHEMATA.
+func (f *fuzzyFinderCommand) fetchSchemaCandidates(ctx context.Context) ([]fzfItem, error) {
+	session := f.cli.SessionHandler.GetSession()
+	if session == nil || session.client == nil {
+		return nil, nil
+	}
+
+	iter := session.client.Single().Query(ctx, spanner.Statement{
+		SQL: `SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE CATALOG_NAME = '' ORDER BY SCHEMA_NAME`,
+	})
+	defer iter.Stop()
+
+	var items []fzfItem
+	for {
+		row, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("fetchSchemaCandidates: %w", err)
+		}
+
+		var name string
+		if err := row.Columns(&name); err != nil {
+			return nil, fmt.Errorf("fetchSchemaCandidates: %w", err)
+		}
+
+		items = append(items, fzfItem{Value: name})
+	}
+	return items, nil
 }
 
 // fetchOperationCandidates lists DDL operations from the current database.

@@ -470,6 +470,50 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    18,
 		},
+		// Argument completion: SHOW TABLES → schema
+		{
+			name:               "SHOW TABLES with trailing space",
+			input:              "SHOW TABLES ",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "SHOW TABLES with partial arg",
+			input:              "SHOW TABLES My",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "show tables lowercase",
+			input:              "show tables ",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
+		// Argument completion: SHOW CREATE SCHEMA → schema
+		{
+			name:               "SHOW CREATE SCHEMA with trailing space",
+			input:              "SHOW CREATE SCHEMA ",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "",
+			wantArgStartPos:    19,
+		},
+		{
+			name:               "SHOW CREATE SCHEMA with partial arg",
+			input:              "SHOW CREATE SCHEMA My",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "My",
+			wantArgStartPos:    19,
+		},
+		{
+			name:               "show create schema lowercase",
+			input:              "show create schema ",
+			wantCompletionType: fuzzyCompleteSchema,
+			wantArgPrefix:      "",
+			wantArgStartPos:    19,
+		},
 		// Statement name completion (fallback)
 		{
 			name:               "USE without space falls through to statement name",
