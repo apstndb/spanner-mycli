@@ -84,7 +84,11 @@ docs-update:
 	@echo "Updating help output for README.md..."
 	@mkdir -p tmp
 	@script -q tmp/help_output.txt sh -c "stty cols 200; go run . --help"
-	@sed -n '/Usage:/,$$p' tmp/help_output.txt | sed '1s/.*Usage:/Usage:/' > tmp/help_clean.txt
+	@sed -n '/Usage:/,$$p' tmp/help_output.txt | sed '1s/.*Usage:/Usage:/' > tmp/help_clean.txt; \
+	if [ ! -s tmp/help_clean.txt ]; then \
+		echo "ERROR: 'Usage:' not found in help output" >&2; \
+		exit 1; \
+	fi
 	@go run . --statement-help > tmp/statement_help.txt
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
