@@ -947,6 +947,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_STREAMING             | READ_WRITE | `"AUTO"`                                       |
 | CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
 | CLI_FUZZY_FINDER_KEY      | READ_WRITE | `"C_T"`                                        |
+| CLI_FUZZY_FINDER_OPTIONS  | READ_WRITE | `""`                                           |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
@@ -966,6 +967,10 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > - `FALSE` - Forces buffered mode for all formats (allows accurate column width calculation)
 >
 > For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
+
+> **Note**: `CLI_FUZZY_FINDER_OPTIONS` passes additional fzf options to the fuzzy finder. Options are appended after built-in defaults, so user options take precedence (last wins).
+> Built-in defaults: `--reverse`, `--no-sort`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`.
+> `--tmux` is not supported because the fuzzy finder runs fzf in-process via the Go library.
 
 ### Batch statements
 

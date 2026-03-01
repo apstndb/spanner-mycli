@@ -142,13 +142,14 @@ For testing best practices (table-driven tests, coverage comparison, test organi
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
 - **CRITICAL**: Never rewrite pushed commits without explicit permission
+- **Conflict resolution**: Use `git merge origin/main` (not rebase). This repo uses squash merge, so commit history cleanliness doesn't matter — merge is safer and preserves context.
 - Link PRs to issues: "Fixes #issue-number"
 - Check `git status` before committing
 
 ## Important Notes
 
 - **No backward compatibility required** - not used as an external library
-- **No future-proofing** - only implement what's needed now
+- **No future-proofing, but choose correct solutions** - don't build speculative features (plugin systems, unnecessary abstractions), but when a clearly correct solution exists at similar cost, prefer it over a known-incomplete alternative. When in doubt, present options to the user rather than automatically choosing the minimal path.
 - **Issue management**: All fixes go through PRs - never close issues manually
 - **License headers**: New files use "Copyright [year] apstndb"; files from spanner-cli keep "Copyright [year] Google LLC"
 

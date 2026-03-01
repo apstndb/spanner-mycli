@@ -141,4 +141,24 @@ TODO
   - Batching can improve performance when importing large datasets
   - The last batch may contain fewer rows than the batch size
 
+#### Interactive / Fuzzy Finder Variables
+
+##### CLI_FUZZY_FINDER_OPTIONS
+- **Type**: STRING
+- **Default**: (empty)
+- **Description**: Additional fzf options passed to the fuzzy finder
+- **Access**: Read/Write
+- **Usage**:
+  ```sql
+  SET CLI_FUZZY_FINDER_OPTIONS = '--color=dark';
+  SET CLI_FUZZY_FINDER_OPTIONS = '--no-select-1 --no-cycle';  -- Override defaults
+  SET CLI_FUZZY_FINDER_OPTIONS = '';  -- Reset to defaults only
+  ```
+- **Notes**:
+  - Options are appended after built-in defaults, so user options take precedence (last wins)
+  - Uses standard fzf option syntax (space-separated flags)
+  - Built-in defaults: `--reverse`, `--no-sort`, `--height`, `--border=rounded`, `--info=inline-right`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`
+  - Useful for customizing appearance (colors, layout) or behavior (sorting, preview)
+  - `--tmux` is **not supported** because the fuzzy finder runs fzf in-process via the Go library
+
 TODO: Document other CLI_* variables

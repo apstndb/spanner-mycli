@@ -151,6 +151,7 @@ type systemVariables struct {
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
 	FuzzyFinderKey            string // CLI_FUZZY_FINDER_KEY (empty = disabled)
+	FuzzyFinderOptions        string // CLI_FUZZY_FINDER_OPTIONS
 
 	// Streaming output configuration
 	StreamingMode    enums.StreamingMode // CLI_STREAMING

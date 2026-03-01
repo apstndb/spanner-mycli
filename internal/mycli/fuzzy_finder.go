@@ -31,6 +31,7 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/google/shlex"
 	"github.com/hymkor/go-multiline-ny"
 	fzf "github.com/junegunn/fzf/src"
 	"github.com/nyaosorg/go-readline-ny"
@@ -130,7 +131,7 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	// Terminal handoff: move cursor below editor, run fzf, then restore
 	rewind := f.editor.GotoEndLine()
 
-	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType))
+	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.FuzzyFinderOptions)
 
 	rewind()
 	B.RepaintLastLine()
@@ -311,6 +312,8 @@ func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
 		"--height=" + height,
 		"--border=rounded",
 		"--info=inline-right",
+		"--select-1", "--exit-0",
+		"--highlight-line", "--cycle",
 	}
 	if hasLabels {
 		fzfArgs = append(fzfArgs, "--delimiter="+fzfDelimiter, "--with-nth=2..")
@@ -355,11 +358,23 @@ func extractValue(line string, hasLabels bool) string {
 // runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
 // When candidates have separate Label and Value, fzf displays/searches the Label
 // but the returned string is the Value (for insertion into the buffer).
+// extraOptions is an optional string of additional fzf flags (from CLI_FUZZY_FINDER_OPTIONS)
+// that are appended after built-in defaults so user options take precedence.
 // Returns the selected Value and true, or ("", false) if cancelled or no match.
-func runFzf(candidates []fzfItem, query string, header string) (string, bool) {
+func runFzf(candidates []fzfItem, query string, header string, extraOptions string) (string, bool) {
 	prepared := prepareFzfOptions(candidates, header)
 
-	opts, err := fzf.ParseOptions(false, prepared.args)
+	args := prepared.args
+	if extraOptions != "" {
+		extra, err := shlex.Split(extraOptions)
+		if err != nil {
+			slog.Debug("fuzzy finder: parse extra options", "err", err)
+			return "", false
+		}
+		args = append(args, extra...)
+	}
+
+	opts, err := fzf.ParseOptions(false, args)
 	if err != nil {
 		slog.Debug("fuzzy finder: parse fzf options", "err", err)
 		return "", false
@@ -372,6 +387,10 @@ func runFzf(candidates []fzfItem, query string, header string) (string, bool) {
 	}
 	opts.ForceTtyIn = true
 
+	// Feed candidates via in-process Go channel.
+	// NOTE: This is incompatible with --tmux, which spawns an external fzf process
+	// that cannot read from a Go channel. With --tmux, the child process receives
+	// no input and exits immediately (especially with --exit-0).
 	inputChan := make(chan string, len(prepared.formattedLines))
 	for _, line := range prepared.formattedLines {
 		inputChan <- line
@@ -401,18 +420,31 @@ func runFzf(candidates []fzfItem, query string, header string) (string, bool) {
 // runFzfFilter runs fzf in non-interactive --filter mode for testing.
 // It returns all matching Values (after Value/Label extraction).
 // This tests the full pipeline: formatting → fzf matching → result extraction.
-func runFzfFilter(candidates []fzfItem, filter string, header string) []string {
+func runFzfFilter(candidates []fzfItem, filter string, header string, extraOptions string) []string {
 	prepared := prepareFzfOptions(candidates, header)
 
+	args := prepared.args
+	if extraOptions != "" {
+		extra, err := shlex.Split(extraOptions)
+		if err != nil {
+			return nil
+		}
+		args = append(args, extra...)
+	}
+
 	// For filter mode, strip visual-only args and add --filter.
-	filterArgs := make([]string, 0, len(prepared.args)+1)
-	for _, arg := range prepared.args {
+	filterArgs := make([]string, 0, len(args)+1)
+	for _, arg := range args {
 		// Skip args that don't apply in non-interactive filter mode.
 		if strings.HasPrefix(arg, "--height") ||
 			strings.HasPrefix(arg, "--border") ||
 			strings.HasPrefix(arg, "--reverse") ||
 			strings.HasPrefix(arg, "--info") ||
-			strings.HasPrefix(arg, "--gap") {
+			strings.HasPrefix(arg, "--gap") ||
+			strings.HasPrefix(arg, "--select-1") || strings.HasPrefix(arg, "--no-select-1") ||
+			strings.HasPrefix(arg, "--exit-0") || strings.HasPrefix(arg, "--no-exit-0") ||
+			strings.HasPrefix(arg, "--highlight-line") || strings.HasPrefix(arg, "--no-highlight-line") ||
+			strings.HasPrefix(arg, "--cycle") || strings.HasPrefix(arg, "--no-cycle") {
 			continue
 		}
 		filterArgs = append(filterArgs, arg)
