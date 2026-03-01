@@ -907,7 +907,7 @@ func TestRunFzfFilter_SimpleMatch(t *testing.T) {
 		{Value: "alphabet"},
 	}
 
-	results := runFzfFilter(candidates, "alph", "")
+	results := runFzfFilter(candidates, "alph", "", "")
 	assert.Contains(t, results, "alpha")
 	assert.Contains(t, results, "alphabet")
 	assert.NotContains(t, results, "beta")
@@ -922,7 +922,7 @@ func TestRunFzfFilter_LabelValueSeparation(t *testing.T) {
 	}
 
 	// Filter by label text, but results should be Values.
-	results := runFzfFilter(candidates, "CREATE", "Operations")
+	results := runFzfFilter(candidates, "CREATE", "Operations", "")
 	assert.Contains(t, results, "op-123")
 	assert.NotContains(t, results, "op-456")
 	assert.NotContains(t, results, "op-789")
@@ -932,8 +932,29 @@ func TestRunFzfFilter_StatementNames(t *testing.T) {
 	items := buildStatementNameItems()
 
 	// Filter for "SHOW DATABASES" — should match the statement and return its insert text.
-	results := runFzfFilter(items, "SHOW DATABASES", "Statements")
+	results := runFzfFilter(items, "SHOW DATABASES", "Statements", "")
 	assert.Contains(t, results, "SHOW DATABASES", "should find the no-arg statement")
+}
+
+func TestRunFzfFilter_ExtraOptions(t *testing.T) {
+	candidates := []fzfItem{
+		{Value: "alpha"},
+		{Value: "beta"},
+		{Value: "gamma"},
+		{Value: "alphabet"},
+	}
+
+	// Passing extra options should not break filtering.
+	results := runFzfFilter(candidates, "alph", "", "--no-sort")
+	assert.Contains(t, results, "alpha")
+	assert.Contains(t, results, "alphabet")
+	assert.NotContains(t, results, "beta")
+	assert.NotContains(t, results, "gamma")
+
+	// Empty extra options should work identically to no options.
+	results = runFzfFilter(candidates, "beta", "", "")
+	assert.Contains(t, results, "beta")
+	assert.NotContains(t, results, "alpha")
 }
 
 func TestExtractValue(t *testing.T) {
