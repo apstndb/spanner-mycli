@@ -142,6 +142,7 @@ For testing best practices (table-driven tests, coverage comparison, test organi
 ### Git Practices
 - **CRITICAL**: Always use `git add <specific-files>` (never `git add .` or `git add -A`)
 - **CRITICAL**: Never rewrite pushed commits without explicit permission
+- **Conflict resolution**: Use `git merge origin/main` (not rebase). This repo uses squash merge, so commit history cleanliness doesn't matter — merge is safer and preserves context.
 - Link PRs to issues: "Fixes #issue-number"
 - Check `git status` before committing
 
