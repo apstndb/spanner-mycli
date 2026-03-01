@@ -31,6 +31,7 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/google/shlex"
 	"github.com/hymkor/go-multiline-ny"
 	fzf "github.com/junegunn/fzf/src"
 	"github.com/nyaosorg/go-readline-ny"
@@ -365,7 +366,12 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 
 	args := prepared.args
 	if extraOptions != "" {
-		args = append(args, strings.Fields(extraOptions)...)
+		extra, err := shlex.Split(extraOptions)
+		if err != nil {
+			slog.Debug("fuzzy finder: parse extra options", "err", err)
+			return "", false
+		}
+		args = append(args, extra...)
 	}
 
 	opts, err := fzf.ParseOptions(false, args)
@@ -419,7 +425,11 @@ func runFzfFilter(candidates []fzfItem, filter string, header string, extraOptio
 
 	args := prepared.args
 	if extraOptions != "" {
-		args = append(args, strings.Fields(extraOptions)...)
+		extra, err := shlex.Split(extraOptions)
+		if err != nil {
+			return nil
+		}
+		args = append(args, extra...)
 	}
 
 	// For filter mode, strip visual-only args and add --filter.

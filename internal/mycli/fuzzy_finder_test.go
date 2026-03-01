@@ -955,6 +955,15 @@ func TestRunFzfFilter_ExtraOptions(t *testing.T) {
 	results = runFzfFilter(candidates, "beta", "", "")
 	assert.Contains(t, results, "beta")
 	assert.NotContains(t, results, "alpha")
+
+	// Quoted options should be parsed correctly (shlex).
+	results = runFzfFilter(candidates, "alph", "", "--no-sort --header='test header'")
+	assert.Contains(t, results, "alpha")
+	assert.Contains(t, results, "alphabet")
+
+	// Malformed quotes should return nil (shlex parse error).
+	results = runFzfFilter(candidates, "alph", "", "--header='unclosed")
+	assert.Nil(t, results)
 }
 
 func TestExtractValue(t *testing.T) {
