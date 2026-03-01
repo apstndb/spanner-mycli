@@ -27,9 +27,9 @@ git log ${LAST_TAG}..origin/main --oneline
 
 Parse PR numbers from the output (format: `... (#NNN)`). Use the first and last PR numbers to form the range.
 
-3. Analyze PRs for label classification:
+3. Analyze PRs for label classification. Replace `<FIRST_PR>` and `<LAST_PR>` with the PR numbers derived in step 2:
 ```bash
-go tool gh-helper releases analyze --pr-range ${FIRST_PR}-${LAST_PR}
+go tool gh-helper releases analyze --pr-range <FIRST_PR>-<LAST_PR>
 ```
 
 4. Review the analysis output for:
@@ -48,7 +48,7 @@ go tool gh-helper labels add ignore-for-release --items <PR_NUMBERS>
 
 6. Re-analyze to verify all PRs are properly labeled:
 ```bash
-go tool gh-helper releases analyze --pr-range ${FIRST_PR}-${LAST_PR}
+go tool gh-helper releases analyze --pr-range <FIRST_PR>-<LAST_PR>
 # Confirm: readyForRelease: true
 ```
 
