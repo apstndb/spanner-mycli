@@ -670,6 +670,22 @@ func TestParameterStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "UNSET PARAM removes a parameter",
+			stmtResults: []stmtResult{
+				srKeep("SET PARAM a = 1"),
+				srKeep("SET PARAM b = 2"),
+				srKeep("UNSET PARAM a"),
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
+						Rows:          sliceOf(toRow("b", "VALUE", "2")),
+					},
+				},
+			},
+		},
+		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
 			stmtResults: []stmtResult{
 				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),

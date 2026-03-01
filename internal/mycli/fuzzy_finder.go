@@ -29,9 +29,12 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/lox"
+	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/hymkor/go-multiline-ny"
 	fzf "github.com/junegunn/fzf/src"
 	"github.com/nyaosorg/go-readline-ny"
+	"github.com/samber/lo"
 	"google.golang.org/api/iterator"
 )
 
@@ -243,6 +246,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Models"
 	case fuzzyCompleteSchema:
 		return "Schemas"
+	case fuzzyCompleteParam:
+		return "Query Parameters"
 	default:
 		return "Statements"
 	}
@@ -651,6 +656,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchModelCandidates(ctx)
 	case fuzzyCompleteSchema:
 		return f.fetchSchemaCandidates(ctx)
+	case fuzzyCompleteParam:
+		return f.fetchParamCandidates(), nil
 	default:
 		return nil, nil
 	}
@@ -889,4 +896,30 @@ func (f *fuzzyFinderCommand) fetchOperationCandidates(ctx context.Context) ([]fz
 		items = append(items, fzfItem{Value: opID, Label: label})
 	}
 	return items, nil
+}
+
+// fetchParamCandidates returns query parameter names from the current session.
+// Each candidate's Value is the parameter name and Label shows "name [KIND] sql".
+func (f *fuzzyFinderCommand) fetchParamCandidates() []fzfItem {
+	sv := f.cli.SystemVariables
+	if sv == nil {
+		return nil
+	}
+
+	params := sv.Params
+	if len(params) == 0 {
+		return nil
+	}
+
+	names := slices.Sorted(maps.Keys(params))
+	items := make([]fzfItem, 0, len(names))
+	for _, name := range names {
+		v := params[name]
+		kind := lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE")
+		items = append(items, fzfItem{
+			Value: name,
+			Label: fmt.Sprintf("%s [%s] %s", name, kind, v.SQL()),
+		})
+	}
+	return items
 }

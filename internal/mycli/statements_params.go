@@ -3,6 +3,7 @@ package mycli
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 
@@ -34,6 +35,20 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 		Rows:          rows,
 		KeepVariables: true,
 	}, nil
+}
+
+type UnsetParamStatement struct {
+	Name string
+}
+
+func (s *UnsetParamStatement) isDetachedCompatible() {}
+
+func (s *UnsetParamStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if _, ok := session.systemVariables.Params[s.Name]; !ok {
+		return nil, fmt.Errorf("unknown parameter: %s", s.Name)
+	}
+	delete(session.systemVariables.Params, s.Name)
+	return &Result{KeepVariables: true}, nil
 }
 
 type SetParamTypeStatement struct {

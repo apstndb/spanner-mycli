@@ -514,6 +514,53 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    19,
 		},
+		// Argument completion: SET PARAM → param
+		{
+			name:               "SET PARAM with trailing space",
+			input:              "SET PARAM ",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "",
+			wantArgStartPos:    10,
+			wantSuffix:         " ",
+		},
+		{
+			name:               "SET PARAM with partial name",
+			input:              "SET PARAM my_p",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "my_p",
+			wantArgStartPos:    10,
+			wantSuffix:         " ",
+		},
+		{
+			name:               "set param lowercase",
+			input:              "set param ",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "",
+			wantArgStartPos:    10,
+			wantSuffix:         " ",
+		},
+		// Argument completion: UNSET PARAM → param
+		{
+			name:               "UNSET PARAM with trailing space",
+			input:              "UNSET PARAM ",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "UNSET PARAM with partial name",
+			input:              "UNSET PARAM my_p",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "my_p",
+			wantArgStartPos:    12,
+		},
+		{
+			name:               "unset param lowercase",
+			input:              "unset param ",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "",
+			wantArgStartPos:    12,
+		},
 		// Statement name completion (fallback)
 		{
 			name:               "USE without space falls through to statement name",
