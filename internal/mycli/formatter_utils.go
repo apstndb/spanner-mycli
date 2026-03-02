@@ -15,7 +15,7 @@ func createStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysV
 
 	// Special handling for table formats with preview (need screenWidth)
 	if mode == enums.DisplayModeTable || mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
-		previewSize := int(sysVars.TablePreviewRows)
+		previewSize := int(sysVars.Query.TablePreviewRows)
 		if previewSize < 0 {
 			previewSize = 0 // 0 means headers-only preview (stream all rows)
 		}

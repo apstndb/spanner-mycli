@@ -18,14 +18,20 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 
 	// Create a mock admin session without actual authentication
 	sysVars := &systemVariables{
-		Project:   "test-project",
-		Instance:  "test-instance",
-		Database:  "",
-		CLIFormat: enums.DisplayModeTable,
-		Verbose:   false,
-		ReadOnly:  false,
-		Prompt:    "spanner> ",
-		Params:    make(map[string]ast.Node),
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "",
+		},
+		Display: DisplayVars{
+			CLIFormat: enums.DisplayModeTable,
+			Verbose:   false,
+			Prompt:    "spanner> ",
+		},
+		Transaction: TransactionVars{
+			ReadOnly: false,
+		},
+		Params: make(map[string]ast.Node),
 	}
 
 	// Create a minimal admin session for testing

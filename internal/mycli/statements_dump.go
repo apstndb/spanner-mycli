@@ -59,12 +59,12 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	}
 	// TODO: Add proper PostgreSQL support. Currently the SQL export format depends on spanvalue.LiteralFormatConfig
 	// which generates Google SQL literals, not PostgreSQL-compatible ones.
-	if session.systemVariables.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
+	if session.systemVariables.Feature.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
 	outStream := session.systemVariables.StreamManager.GetWriter()
 	// Use streaming unless: output is nil/io.Discard (tests) or streaming explicitly disabled
-	if outStream != nil && outStream != io.Discard && session.systemVariables.StreamingMode != enums.StreamingModeFalse {
+	if outStream != nil && outStream != io.Discard && session.systemVariables.Query.StreamingMode != enums.StreamingModeFalse {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
 	}
 	return executeDumpBuffered(ctx, session, mode, specificTables)

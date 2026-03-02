@@ -98,13 +98,13 @@ var (
 // getTimeoutForStatement returns the appropriate timeout for the given statement type
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
 	// For partitioned DML, use longer default if no custom timeout is set
-	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.StatementTimeout == nil {
+	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.Query.StatementTimeout == nil {
 		return 24 * time.Hour // PDML default
 	}
 
 	// Use custom timeout if set, otherwise default
-	if s.systemVariables.StatementTimeout != nil {
-		return *s.systemVariables.StatementTimeout
+	if s.systemVariables.Query.StatementTimeout != nil {
+		return *s.systemVariables.Query.StatementTimeout
 	}
 
 	return 10 * time.Minute // default timeout
@@ -226,7 +226,7 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 // createSessionWithOpts creates a new session using current session's client options
 func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
 	// Create admin-only session if no database is specified
-	if sysVars.Database == "" {
+	if sysVars.Connection.Database == "" {
 		return NewAdminSession(ctx, sysVars, h.clientOpts...)
 	}
 
@@ -235,8 +235,8 @@ func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *sys
 
 func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
 	newSystemVariables := *h.systemVariables
-	newSystemVariables.Database = s.Database
-	newSystemVariables.Role = s.Role
+	newSystemVariables.Connection.Database = s.Database
+	newSystemVariables.Connection.Role = s.Role
 	// Clear the registry so it gets recreated with the new systemVariables instance
 	newSystemVariables.Registry = nil
 
@@ -268,8 +268,8 @@ func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (
 	newSystemVariables := *h.systemVariables
 
 	// Clear database and role to switch to detached mode
-	newSystemVariables.Database = ""
-	newSystemVariables.Role = ""
+	newSystemVariables.Connection.Database = ""
+	newSystemVariables.Connection.Role = ""
 	// Clear the registry so it gets recreated with the new systemVariables instance
 	newSystemVariables.Registry = nil
 
@@ -476,14 +476,14 @@ func logGrpcClientOptions() []option.ClientOption {
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
-	clientConfig.DatabaseRole = sysVars.Role
-	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+	clientConfig.DatabaseRole = sysVars.Connection.Role
+	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Insecure {
+	if sysVars.Connection.Insecure {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.LogGrpc {
+	if sysVars.Feature.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -513,14 +513,14 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	clientConfig := defaultClientConfig
-	clientConfig.DatabaseRole = sysVars.Role
-	clientConfig.DirectedReadOptions = sysVars.DirectedRead
+	clientConfig.DatabaseRole = sysVars.Connection.Role
+	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Insecure {
+	if sysVars.Connection.Insecure {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.LogGrpc {
+	if sysVars.Feature.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -549,7 +549,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	}
 	if !exists {
 		session.Close()
-		return nil, fmt.Errorf("unknown instance %q", sysVars.Instance)
+		return nil, fmt.Errorf("unknown instance %q", sysVars.Connection.Instance)
 	}
 
 	return session, nil
@@ -596,7 +596,7 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	}
 
 	// Construct database path directly to avoid modifying state before success
-	dbPath := databasePath(s.systemVariables.Project, s.systemVariables.Instance, databaseId)
+	dbPath := databasePath(s.systemVariables.Connection.Project, s.systemVariables.Connection.Instance, databaseId)
 	clientConfig := s.clientConfig
 
 	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
@@ -610,7 +610,7 @@ func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) erro
 	}
 
 	// Update state only after successful client creation
-	s.systemVariables.Database = databaseId
+	s.systemVariables.Connection.Database = databaseId
 	s.client = client
 	s.mode = DatabaseConnected
 
@@ -758,29 +758,29 @@ func (b *TransactionOptionsBuilder) Build() spanner.TransactionOptions {
 	// Resolve priority
 	priority := b.priority
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = b.session.systemVariables.RPCPriority
+		priority = b.session.systemVariables.Query.RPCPriority
 	}
 
 	// Resolve isolation level
 	isolationLevel := b.isolationLevel
 	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		isolationLevel = b.session.systemVariables.DefaultIsolationLevel
+		isolationLevel = b.session.systemVariables.Transaction.DefaultIsolationLevel
 	}
 
 	return spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: b.session.systemVariables.ReturnCommitStats, MaxCommitDelay: b.session.systemVariables.MaxCommitDelay},
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: b.session.systemVariables.Transaction.ReturnCommitStats, MaxCommitDelay: b.session.systemVariables.Transaction.MaxCommitDelay},
 		CommitPriority:              priority,
 		TransactionTag:              b.tag,
-		ExcludeTxnFromChangeStreams: b.session.systemVariables.ExcludeTxnFromChangeStreams,
+		ExcludeTxnFromChangeStreams: b.session.systemVariables.Transaction.ExcludeTxnFromChangeStreams,
 		IsolationLevel:              isolationLevel,
-		ReadLockMode:                b.session.systemVariables.ReadLockMode,
+		ReadLockMode:                b.session.systemVariables.Transaction.ReadLockMode,
 	}
 }
 
 // BuildPriority returns just the resolved priority.
 func (b *TransactionOptionsBuilder) BuildPriority() sppb.RequestOptions_Priority {
 	if b.priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		return b.session.systemVariables.RPCPriority
+		return b.session.systemVariables.Query.RPCPriority
 	}
 	return b.priority
 }
@@ -788,7 +788,7 @@ func (b *TransactionOptionsBuilder) BuildPriority() sppb.RequestOptions_Priority
 // BuildIsolationLevel returns just the resolved isolation level.
 func (b *TransactionOptionsBuilder) BuildIsolationLevel() sppb.TransactionOptions_IsolationLevel {
 	if b.isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		return b.session.systemVariables.DefaultIsolationLevel
+		return b.session.systemVariables.Transaction.DefaultIsolationLevel
 	}
 	return b.isolationLevel
 }
@@ -834,7 +834,7 @@ func (s *Session) DetermineTransactionLocked(ctx context.Context) (time.Time, er
 	isolationLevel := s.tc.attrs.isolationLevel
 
 	// Determine transaction type based on system variables
-	if s.systemVariables.ReadOnly {
+	if s.systemVariables.Transaction.ReadOnly {
 		// Start a read-only transaction with the pending transaction's priority
 		return s.BeginReadOnlyTransactionLocked(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
 	}
@@ -1018,8 +1018,8 @@ func (s *Session) resolveTimestampBound(typ timestampBoundType, staleness time.D
 	case readTimestamp:
 		tb = spanner.ReadTimestamp(timestamp)
 	default:
-		if s.systemVariables.ReadOnlyStaleness != nil {
-			tb = *s.systemVariables.ReadOnlyStaleness
+		if s.systemVariables.Query.ReadOnlyStaleness != nil {
+			tb = *s.systemVariables.Query.ReadOnlyStaleness
 		}
 	}
 	return tb
@@ -1178,7 +1178,7 @@ func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transacti
 // Using non-locked versions of methods like TransactionAttrs(), CurrentPriority(),
 // or QueryOptions() here will cause a deadlock. Always use the *Locked variants.
 func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	fc, err := decoder.FormatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(s.systemVariables.Internal.ProtoDescriptor, s.systemVariables.Display.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}
@@ -1187,7 +1187,7 @@ func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWr
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
-	s.systemVariables.RequestTag = ""
+	s.systemVariables.Transaction.RequestTag = ""
 
 	rows, stats, count, metadata, plan, err := consumeRowIterCollect(
 		tx.QueryWithOptions(ctx, stmt, opts),
@@ -1277,12 +1277,12 @@ func (s *Session) prepareQueryOptions(opts *spanner.QueryOptions) {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
 
-	opts.Options.OptimizerVersion = s.systemVariables.OptimizerVersion
-	opts.Options.OptimizerStatisticsPackage = s.systemVariables.OptimizerStatisticsPackage
-	opts.RequestTag = s.systemVariables.RequestTag
+	opts.Options.OptimizerVersion = s.systemVariables.Query.OptimizerVersion
+	opts.Options.OptimizerStatisticsPackage = s.systemVariables.Query.OptimizerStatisticsPackage
+	opts.RequestTag = s.systemVariables.Transaction.RequestTag
 
 	// Reset STATEMENT_TAG
-	s.systemVariables.RequestTag = ""
+	s.systemVariables.Transaction.RequestTag = ""
 }
 
 // tryQueryInTransaction attempts to execute a query within an existing transaction
@@ -1348,8 +1348,8 @@ func (s *Session) runSingleUseQuery(ctx context.Context, stmt spanner.Statement,
 	}
 
 	txn := s.client.Single()
-	if s.systemVariables.ReadOnlyStaleness != nil {
-		txn = txn.WithTimestampBound(*s.systemVariables.ReadOnlyStaleness)
+	if s.systemVariables.Query.ReadOnlyStaleness != nil {
+		txn = txn.WithTimestampBound(*s.systemVariables.Query.ReadOnlyStaleness)
 	}
 	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
@@ -1359,7 +1359,7 @@ func (s *Session) runSingleUseQuery(ctx context.Context, stmt spanner.Statement,
 func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64,
 	*sppb.ResultSetMetadata, *sppb.QueryPlan, error,
 ) {
-	fc, err := decoder.FormatConfigWithProto(s.systemVariables.ProtoDescriptor, s.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(s.systemVariables.Internal.ProtoDescriptor, s.systemVariables.Display.MultilineProtoText)
 	if err != nil {
 		return nil, nil, 0, nil, nil, err
 	}
@@ -1368,7 +1368,7 @@ func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implici
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
-	s.systemVariables.RequestTag = ""
+	s.systemVariables.Transaction.RequestTag = ""
 
 	var rows []Row
 	var stats map[string]any
@@ -1402,10 +1402,10 @@ func (s *Session) queryOptionsWithLock(mode *sppb.ExecuteSqlRequest_QueryMode) s
 	return spanner.QueryOptions{
 		Mode:       mode,
 		Priority:   s.currentPriorityWithLock(),
-		RequestTag: s.systemVariables.RequestTag,
+		RequestTag: s.systemVariables.Transaction.RequestTag,
 		Options: &sppb.ExecuteSqlRequest_QueryOptions{
-			OptimizerVersion:           s.systemVariables.OptimizerVersion,
-			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+			OptimizerVersion:           s.systemVariables.Query.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.Query.OptimizerStatisticsPackage,
 		},
 	}
 }
@@ -1420,10 +1420,10 @@ func (s *Session) queryOptionsLocked(mode *sppb.ExecuteSqlRequest_QueryMode) spa
 	return spanner.QueryOptions{
 		Mode:       mode,
 		Priority:   s.currentPriorityLocked(),
-		RequestTag: s.systemVariables.RequestTag,
+		RequestTag: s.systemVariables.Transaction.RequestTag,
 		Options: &sppb.ExecuteSqlRequest_QueryOptions{
-			OptimizerVersion:           s.systemVariables.OptimizerVersion,
-			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+			OptimizerVersion:           s.systemVariables.Query.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.Query.OptimizerStatisticsPackage,
 		},
 	}
 }
@@ -1591,7 +1591,7 @@ func (s *Session) currentPriorityWithLock() sppb.RequestOptions_Priority {
 	if attrs.mode != transactionModeUndetermined && attrs.mode != "" {
 		return attrs.priority
 	}
-	return s.systemVariables.RPCPriority
+	return s.systemVariables.Query.RPCPriority
 }
 
 // currentPriorityLocked returns the current priority without locking.
@@ -1605,17 +1605,17 @@ func (s *Session) currentPriorityLocked() sppb.RequestOptions_Priority {
 	if attrs.mode != transactionModeUndetermined && attrs.mode != "" {
 		return attrs.priority
 	}
-	return s.systemVariables.RPCPriority
+	return s.systemVariables.Query.RPCPriority
 }
 
 func (s *Session) buildQueryOptions(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
 	opts := spanner.QueryOptions{
 		Mode:       mode,
 		Priority:   s.currentPriorityWithLock(),
-		RequestTag: s.systemVariables.RequestTag,
+		RequestTag: s.systemVariables.Transaction.RequestTag,
 		Options: &sppb.ExecuteSqlRequest_QueryOptions{
-			OptimizerVersion:           s.systemVariables.OptimizerVersion,
-			OptimizerStatisticsPackage: s.systemVariables.OptimizerStatisticsPackage,
+			OptimizerVersion:           s.systemVariables.Query.OptimizerVersion,
+			OptimizerStatisticsPackage: s.systemVariables.Query.OptimizerStatisticsPackage,
 		},
 	}
 	return opts
@@ -1812,7 +1812,7 @@ func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
 var errReadOnly = errors.New("can't execute this statement in READONLY mode")
 
 func (s *Session) failStatementIfReadOnly() error {
-	if s.systemVariables.ReadOnly {
+	if s.systemVariables.Transaction.ReadOnly {
 		return errReadOnly
 	}
 
@@ -1872,7 +1872,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 }
 
 func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
-	tb := lo.FromPtrOr(s.systemVariables.ReadOnlyStaleness, spanner.StrongRead())
+	tb := lo.FromPtrOr(s.systemVariables.Query.ReadOnlyStaleness, spanner.StrongRead())
 
 	batchROTx, err := s.client.BatchReadOnlyTransaction(ctx, tb)
 	if err != nil {
@@ -1880,8 +1880,8 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 	}
 
 	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{
-		DataBoostEnabled: s.systemVariables.DataBoostEnabled,
-		Priority:         s.systemVariables.RPCPriority,
+		DataBoostEnabled: s.systemVariables.Query.DataBoostEnabled,
+		Priority:         s.systemVariables.Query.RPCPriority,
 	})
 	if err != nil {
 		batchROTx.Cleanup(ctx)
@@ -1894,17 +1894,17 @@ func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement)
 // createClientOptions creates client options based on credential and system variables
 func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
 	var opts []option.ClientOption
-	if sysVars.Host != "" && sysVars.Port != 0 {
+	if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
 		// Reconstruct the endpoint, adding brackets back for IPv6 addresses
-		endpoint := net.JoinHostPort(sysVars.Host, strconv.Itoa(sysVars.Port))
+		endpoint := net.JoinHostPort(sysVars.Connection.Host, strconv.Itoa(sysVars.Connection.Port))
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
 	switch {
-	case sysVars.WithoutAuthentication:
+	case sysVars.Connection.WithoutAuthentication:
 		opts = append(opts, option.WithoutAuthentication())
-	case sysVars.EnableADCPlus:
-		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.ImpersonateServiceAccount))
+	case sysVars.Connection.EnableADCPlus:
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.Connection.ImpersonateServiceAccount))
 		if err != nil {
 			return nil, err
 		}
@@ -1923,7 +1923,7 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	}
 
 	// Create admin-only session if no database is specified
-	if sysVars.Database == "" {
+	if sysVars.Connection.Database == "" {
 		return NewAdminSession(ctx, sysVars, opts...)
 	}
 

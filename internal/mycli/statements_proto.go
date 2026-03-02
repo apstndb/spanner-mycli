@@ -82,7 +82,7 @@ func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, de
 type ShowLocalProtoStatement struct{}
 
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	fds := session.systemVariables.ProtoDescriptor
+	fds := session.systemVariables.Internal.ProtoDescriptor
 
 	rows := slices.Collect(
 		scxiter.Map(

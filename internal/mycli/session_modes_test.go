@@ -11,9 +11,11 @@ func TestSessionModes(t *testing.T) {
 
 	t.Run("NewAdminSession creates detached session", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "", // no database for detached
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "", // no database for detached
+			},
 		}
 
 		session, err := NewAdminSession(ctx, sysVars)
@@ -36,9 +38,11 @@ func TestSessionModes(t *testing.T) {
 
 	t.Run("NewSession with database creates database-connected session", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "test-database",
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "test-database",
+			},
 		}
 
 		session, err := NewSession(ctx, sysVars)
@@ -61,9 +65,11 @@ func TestSessionModes(t *testing.T) {
 
 	t.Run("createSession creates admin session when database is empty", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "", // empty database should trigger detached mode
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "", // empty database should trigger detached mode
+			},
 		}
 
 		session, err := createSession(ctx, nil, sysVars)
@@ -79,9 +85,11 @@ func TestSessionModes(t *testing.T) {
 
 	t.Run("createSession creates database session when database is specified", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "test-database",
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "test-database",
+			},
 		}
 
 		session, err := createSession(ctx, nil, sysVars)
@@ -97,9 +105,11 @@ func TestSessionModes(t *testing.T) {
 
 	t.Run("ConnectToDatabase upgrades admin session", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "",
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "",
+			},
 		}
 
 		session, err := NewAdminSession(ctx, sysVars)
@@ -134,9 +144,11 @@ func TestDatabaseOperationValidation(t *testing.T) {
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
-		Project:  "test-project",
-		Instance: "test-instance",
-		Database: "",
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "",
+		},
 	}
 
 	session, err := NewAdminSession(ctx, sysVars)
@@ -172,9 +184,11 @@ func TestInstanceValidation(t *testing.T) {
 
 	t.Run("InstanceExists method works", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "test-instance",
-			Database: "",
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "",
+			},
 		}
 
 		session, err := NewAdminSession(ctx, sysVars)
@@ -196,9 +210,11 @@ func TestInstanceValidation(t *testing.T) {
 
 	t.Run("NewAdminSession validates instance exists", func(t *testing.T) {
 		sysVars := &systemVariables{
-			Project:  "test-project",
-			Instance: "definitely-non-existent-instance-12345",
-			Database: "",
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "definitely-non-existent-instance-12345",
+				Database: "",
+			},
 		}
 
 		session, err := NewAdminSession(ctx, sysVars)
@@ -218,9 +234,11 @@ func TestDetachedCompatibleStatements(t *testing.T) {
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
-		Project:  "test-project",
-		Instance: "test-instance",
-		Database: "",
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "",
+		},
 	}
 
 	session, err := NewAdminSession(ctx, sysVars)
@@ -280,9 +298,11 @@ func TestDatabaseConnectedSessionStatements(t *testing.T) {
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
-		Project:  "test-project",
-		Instance: "test-instance",
-		Database: "test-database",
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "test-database",
+		},
 	}
 
 	session, err := NewSession(ctx, sysVars)
@@ -319,9 +339,11 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 	ctx := context.Background()
 
 	sysVars := &systemVariables{
-		Project:  "test-project",
-		Instance: "test-instance",
-		Database: "",
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "",
+		},
 	}
 
 	session, err := NewAdminSession(ctx, sysVars)

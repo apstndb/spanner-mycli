@@ -88,11 +88,11 @@ type ExplainLastQueryStatement struct {
 }
 
 func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.systemVariables.LastQueryCache == nil {
+	if session.systemVariables.Internal.LastQueryCache == nil {
 		return nil, fmt.Errorf("last query cache missing because query not executed")
 	}
 
-	if session.systemVariables.LastQueryCache.QueryPlan == nil || len(session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
+	if session.systemVariables.Internal.LastQueryCache.QueryPlan == nil || len(session.systemVariables.Internal.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
 		return nil, fmt.Errorf("missing last query plan. This may happen if the Cloud Spanner Emulator is used, as it may not fully support EXPLAIN and EXPLAIN ANALYZE features")
 	}
 
@@ -100,12 +100,12 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 	var result *Result
 	if s.Analyze {
 		result, err = generateExplainAnalyzeResult(session.systemVariables,
-			session.systemVariables.LastQueryCache.QueryPlan,
-			session.systemVariables.LastQueryCache.QueryStats,
+			session.systemVariables.Internal.LastQueryCache.QueryPlan,
+			session.systemVariables.Internal.LastQueryCache.QueryStats,
 			s.Format, s.Width)
 	} else {
 		result, err = generateExplainResult(session.systemVariables,
-			session.systemVariables.LastQueryCache.QueryPlan, s.Format, s.Width)
+			session.systemVariables.Internal.LastQueryCache.QueryPlan, s.Format, s.Width)
 	}
 
 	if err != nil {
@@ -113,8 +113,8 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 	}
 
 	// Restore the appropriate timestamp from cache
-	result.ReadTimestamp = session.systemVariables.LastQueryCache.ReadTimestamp
-	result.CommitTimestamp = session.systemVariables.LastQueryCache.CommitTimestamp
+	result.ReadTimestamp = session.systemVariables.Internal.LastQueryCache.ReadTimestamp
+	result.CommitTimestamp = session.systemVariables.Internal.LastQueryCache.CommitTimestamp
 	return result, nil
 }
 
@@ -123,11 +123,11 @@ type ShowPlanNodeStatement struct {
 }
 
 func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.systemVariables.LastQueryCache == nil || session.systemVariables.LastQueryCache.QueryPlan == nil {
+	if session.systemVariables.Internal.LastQueryCache == nil || session.systemVariables.Internal.LastQueryCache.QueryPlan == nil {
 		return nil, errors.New("no query plan cached. Run query or EXPLAIN ANALYZE first")
 	}
 
-	planNodes := session.systemVariables.LastQueryCache.QueryPlan.GetPlanNodes()
+	planNodes := session.systemVariables.Internal.LastQueryCache.QueryPlan.GetPlanNodes()
 	if s.NodeID >= len(planNodes) {
 		return nil, fmt.Errorf("node with ID %d not found in the cached query plan", s.NodeID)
 	}
@@ -255,8 +255,8 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 }
 
 func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format enums.ExplainFormat, width int64) (*Result, error) {
-	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.ExplainFormat)
-	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
+	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
+	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
 	rows, predicates, err := processPlanWithoutStats(queryPlan, format, width)
 	if err != nil {
 		return nil, err
@@ -268,7 +268,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		AffectedRows: len(rows),
 		Rows:         rows,
 		Predicates:   predicates,
-		LintResults:  lox.IfOrEmptyF(sysVars.LintPlan, func() []string { return lintPlan(queryPlan) }),
+		LintResults:  lox.IfOrEmptyF(sysVars.Query.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
 	return result, nil
 }
@@ -306,7 +306,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		}
 	}
 
-	session.systemVariables.LastQueryCache = &LastQueryCache{
+	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
@@ -329,10 +329,10 @@ func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan
 func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, queryStats QueryStats,
 	format enums.ExplainFormat, width int64,
 ) (*Result, error) {
-	def := sysVars.ParsedAnalyzeColumns
-	inlines := sysVars.ParsedInlineStats
-	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.ExplainFormat)
-	width = lo.Ternary(width != 0, width, sysVars.ExplainWrapWidth)
+	def := sysVars.Display.ParsedAnalyzeColumns
+	inlines := sysVars.Display.ParsedInlineStats
+	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
+	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
 
 	rows, predicates, err := processPlan(plan, def, inlines, format, width)
 	if err != nil {
@@ -342,7 +342,7 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 	columnNames, columnAlign := explainAnalyzeHeader(def, width)
 
 	var lintResults []string
-	if sysVars.LintPlan {
+	if sysVars.Query.LintPlan {
 		lintResults = lintPlan(plan)
 	}
 
@@ -406,7 +406,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	result.CommitTimestamp = dmlResult.CommitResponse.CommitTs
 
 	// Update LastQueryCache to maintain consistency with other DML execution functions
-	session.systemVariables.LastQueryCache = &LastQueryCache{
+	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
 		QueryPlan:       dmlResult.Plan,
 		QueryStats:      queryStats,
 		CommitTimestamp: dmlResult.CommitResponse.CommitTs,

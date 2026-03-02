@@ -46,14 +46,14 @@ func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *span
 	tempVars := *session.systemVariables
 
 	// Set temporary values on the copy
-	tempVars.CLIFormat = format
-	tempVars.StreamingMode = streamingMode
+	tempVars.Display.CLIFormat = format
+	tempVars.Query.StreamingMode = streamingMode
 	if sqlTableName != "" {
-		tempVars.SQLTableName = sqlTableName
+		tempVars.Display.SQLTableName = sqlTableName
 	}
-	tempVars.SkipColumnNames = true
-	tempVars.SuppressResultLines = true
-	tempVars.EnableProgressBar = false
+	tempVars.Display.SkipColumnNames = true
+	tempVars.Display.SuppressResultLines = true
+	tempVars.Display.EnableProgressBar = false
 
 	// Execute with the transaction directly
 	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars)
@@ -76,7 +76,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	var usingSQLLiterals bool
 	var err error
 
-	switch sysVars.CLIFormat {
+	switch sysVars.Display.CLIFormat {
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		// Use SQL literal formatting for SQL export modes
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
@@ -85,7 +85,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 		err = nil
 
 		// Auto-detect table name if not explicitly set
-		if sysVars.SQLTableName == "" {
+		if sysVars.Display.SQLTableName == "" {
 			detectedTableName, detectionErr := format.ExtractTableNameFromQuery(sql)
 			if detectedTableName != "" {
 				// Create a copy of sysVars to use the detected table name for this execution only.
@@ -94,7 +94,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
 				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
 				tempVars := *sysVars
-				tempVars.SQLTableName = detectedTableName
+				tempVars.Display.SQLTableName = detectedTableName
 				sysVars = &tempVars
 				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
 			} else if detectionErr != nil {
@@ -105,7 +105,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	default:
 		// Use regular display formatting for other modes
 		// formatConfigWithProto handles custom proto descriptors if set
-		fc, err = decoder.FormatConfigWithProto(sysVars.ProtoDescriptor, sysVars.MultilineProtoText)
+		fc, err = decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
 		usingSQLLiterals = false
 	}
 
@@ -116,9 +116,9 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 func newMetrics(sysVars *systemVariables) *metrics.ExecutionMetrics {
 	m := &metrics.ExecutionMetrics{
 		QueryStartTime: time.Now(),
-		Profile:        sysVars.Profile,
+		Profile:        sysVars.Query.Profile,
 	}
-	if sysVars.Profile {
+	if sysVars.Query.Profile {
 		before := metrics.GetMemoryStats()
 		m.MemoryBefore = &before
 	}
@@ -128,7 +128,7 @@ func newMetrics(sysVars *systemVariables) *metrics.ExecutionMetrics {
 // finalizeMetrics completes metrics collection after query execution.
 func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 	m.CompletionTime = time.Now()
-	if sysVars.Profile {
+	if sysVars.Query.Profile {
 		after := metrics.GetMemoryStats()
 		m.MemoryAfter = &after
 	}
@@ -141,8 +141,8 @@ func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowI
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
-		"format", sysVars.CLIFormat,
-		"sqlTableName", sysVars.SQLTableName)
+		"format", sysVars.Display.CLIFormat,
+		"sqlTableName", sysVars.Display.SQLTableName)
 
 	var result *Result
 	var err error
@@ -178,7 +178,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	// Always use ExecuteSqlRequest_PROFILE mode to get execution statistics from Spanner.
 	opts := spanner.QueryOptions{
 		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
-		Priority: sysVars.RPCPriority,
+		Priority: sysVars.Query.RPCPriority,
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
@@ -214,8 +214,8 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	}
 
 	// Store the SQL table name if we're using SQL export format
-	if sysVars.CLIFormat.IsSQLExport() && sysVars.SQLTableName != "" {
-		result.SQLTableNameForExport = sysVars.SQLTableName
+	if sysVars.Display.CLIFormat.IsSQLExport() && sysVars.Display.SQLTableName != "" {
+		result.SQLTableNameForExport = sysVars.Display.SQLTableName
 	}
 
 	return result, nil
@@ -232,9 +232,9 @@ func decideExecutionMode(ctx context.Context, session *Session, fc *spanvalue.Fo
 
 	// Determine screen width based on system variables
 	screenWidth := math.MaxInt
-	if sysVars.AutoWrap {
-		if sysVars.FixedWidth != nil {
-			screenWidth = int(*sysVars.FixedWidth)
+	if sysVars.Display.AutoWrap {
+		if sysVars.Display.FixedWidth != nil {
+			screenWidth = int(*sysVars.Display.FixedWidth)
 		} else {
 			// Get terminal width from StreamManager
 			width, err := sysVars.StreamManager.GetTerminalWidth()
@@ -283,7 +283,7 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 		}
 	}
 
-	sysVars.LastQueryCache = &LastQueryCache{
+	sysVars.Internal.LastQueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
@@ -324,7 +324,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 // executeStreamingSQL processes query results in streaming mode.
 func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
-	slog.Debug("executeStreamingSQL called", "format", sysVars.CLIFormat)
+	slog.Debug("executeStreamingSQL called", "format", sysVars.Display.CLIFormat)
 
 	rowTransform := spannerRowToRow(fc)
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
@@ -353,7 +353,7 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
 	// Check if streaming should be used based on mode
 	shouldStream := false
-	switch sysVars.StreamingMode {
+	switch sysVars.Query.StreamingMode {
 	case enums.StreamingModeTrue:
 		// Always stream if format supports it
 		shouldStream = true
@@ -362,7 +362,7 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		return nil, nil
 	case enums.StreamingModeAuto:
 		// AUTO mode: decide based on format
-		switch sysVars.CLIFormat {
+		switch sysVars.Display.CLIFormat {
 		case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
 			// Table formats: buffer by default for accurate column widths
 			shouldStream = false
@@ -384,7 +384,7 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 	}
 
 	// Use the shared processor creation logic to avoid duplication
-	return createStreamingProcessorForMode(sysVars.CLIFormat, out, sysVars, screenWidth)
+	return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
 }
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
@@ -408,11 +408,11 @@ var replacerForProgress = strings.NewReplacer(
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
 		return &Result{
-			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
+			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.Feature.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
 		}, nil
 	}
 
-	b, err := proto.Marshal(session.systemVariables.ProtoDescriptor)
+	b, err := proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +427,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			p.Wait()
 		}
 	}
-	if session.systemVariables.EnableProgressBar {
+	if session.systemVariables.Display.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
 
 		for _, ddl := range ddls {
@@ -457,7 +457,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	// If async mode is enabled, return operation info immediately
 	// This allows the client to continue without waiting for the DDL operation to complete.
 	// In async DDL, errors are reported when polling, not immediately available.
-	if session.systemVariables.AsyncDDL {
+	if session.systemVariables.Feature.AsyncDDL {
 		session.IncrementSchemaGeneration()
 		return formatAsyncDdlResult(op)
 	}
@@ -511,7 +511,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 
 	lastCommitTS := lo.LastOrEmpty(metadata.CommitTimestamps).AsTime()
 	result := &Result{CommitTimestamp: lastCommitTS}
-	if session.systemVariables.EchoExecutedDDL {
+	if session.systemVariables.Feature.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
 		result.Rows = slices.Collect(hiter.Unify(
 			func(ddl string, v *timestamppb.Timestamp) Row {
@@ -550,7 +550,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 		// Get both transaction flags in a single lock acquisition
 		inTransaction, inReadWriteTransaction := session.GetTransactionFlagsWithLock()
 
-		if inReadWriteTransaction && session.systemVariables.AutoBatchDML {
+		if inReadWriteTransaction && session.systemVariables.Transaction.AutoBatchDML {
 			stmt, err := newStatement(sql, session.systemVariables.Params, false)
 			if err != nil {
 				return nil, err
@@ -561,7 +561,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 		if !inTransaction &&
 			!isInsert(sql) &&
-			session.systemVariables.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
+			session.systemVariables.Transaction.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
 			return executePDML(ctx, session, sql)
 		}
 
@@ -620,7 +620,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	session.systemVariables.LastQueryCache = &LastQueryCache{
+	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
 		QueryPlan:       result.Plan,
 		QueryStats:      queryStats,
 		CommitTimestamp: result.CommitResponse.CommitTs,
@@ -730,7 +730,7 @@ func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, er
 }
 
 func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, err := decoder.FormatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(session.systemVariables.Internal.ProtoDescriptor, session.systemVariables.Display.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +758,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	// This ensures optimal parallelism in containerized environments (Docker, Kubernetes) without manual configuration.
 	p := pool.NewWithResults[*partitionQueryResult]().
 		WithContext(ctx).
-		WithMaxGoroutines(cmp.Or(int(session.systemVariables.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
+		WithMaxGoroutines(cmp.Or(int(session.systemVariables.Query.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
 
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {

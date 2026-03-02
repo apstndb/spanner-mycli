@@ -57,9 +57,11 @@ func TestCli_displayResult(t *testing.T) {
 			// Create a Cli with our system variables
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				AutoWrap:      tt.autowrap,
-				FixedWidth:    tt.fixedWidth,
-				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
+				Display: DisplayVars{
+					AutoWrap:   tt.autowrap,
+					FixedWidth: tt.fixedWidth,
+					CLIFormat:  enums.DisplayModeTab, // Use TAB format for predictable output
+				},
 				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
@@ -68,9 +70,9 @@ func TestCli_displayResult(t *testing.T) {
 
 			// Calculate the expected size based on the same logic as displayResult
 			var expectedSize int
-			if cli.SystemVariables.AutoWrap {
-				if cli.SystemVariables.FixedWidth != nil {
-					expectedSize = int(*cli.SystemVariables.FixedWidth)
+			if cli.SystemVariables.Display.AutoWrap {
+				if cli.SystemVariables.Display.FixedWidth != nil {
+					expectedSize = int(*cli.SystemVariables.Display.FixedWidth)
 				} else {
 					// We can't test the terminal width detection in unit tests
 					expectedSize = math.MaxInt
@@ -133,12 +135,12 @@ func TestCLI_FIXED_WIDTH(t *testing.T) {
 			}
 
 			if !tt.err {
-				if tt.want == nil && sysVars.FixedWidth != nil {
-					t.Errorf("FixedWidth = %v, want nil", *sysVars.FixedWidth)
-				} else if tt.want != nil && sysVars.FixedWidth == nil {
+				if tt.want == nil && sysVars.Display.FixedWidth != nil {
+					t.Errorf("FixedWidth = %v, want nil", *sysVars.Display.FixedWidth)
+				} else if tt.want != nil && sysVars.Display.FixedWidth == nil {
 					t.Errorf("FixedWidth = nil, want %v", *tt.want)
-				} else if tt.want != nil && sysVars.FixedWidth != nil && *tt.want != *sysVars.FixedWidth {
-					t.Errorf("FixedWidth = %v, want %v", *sysVars.FixedWidth, *tt.want)
+				} else if tt.want != nil && sysVars.Display.FixedWidth != nil && *tt.want != *sysVars.Display.FixedWidth {
+					t.Errorf("FixedWidth = %v, want %v", *sysVars.Display.FixedWidth, *tt.want)
 				}
 
 				// Test Get

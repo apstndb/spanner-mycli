@@ -131,7 +131,7 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	// Terminal handoff: move cursor below editor, run fzf, then restore
 	rewind := f.editor.GotoEndLine()
 
-	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.FuzzyFinderOptions)
+	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.Feature.FuzzyFinderOptions)
 
 	rewind()
 	B.RepaintLastLine()

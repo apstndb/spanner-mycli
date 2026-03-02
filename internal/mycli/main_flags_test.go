@@ -121,14 +121,14 @@ func initSysVarsOrFail(t *testing.T, opts *spannerOptions) *systemVariables {
 // verifyConnectionParams checks common connection parameters
 func verifyConnectionParams(t *testing.T, sysVars *systemVariables, wantProject, wantInstance, wantDatabase string) {
 	t.Helper()
-	if sysVars.Project != wantProject {
-		t.Errorf("Project = %q, want %q", sysVars.Project, wantProject)
+	if sysVars.Connection.Project != wantProject {
+		t.Errorf("Project = %q, want %q", sysVars.Connection.Project, wantProject)
 	}
-	if sysVars.Instance != wantInstance {
-		t.Errorf("Instance = %q, want %q", sysVars.Instance, wantInstance)
+	if sysVars.Connection.Instance != wantInstance {
+		t.Errorf("Instance = %q, want %q", sysVars.Connection.Instance, wantInstance)
 	}
-	if sysVars.Database != wantDatabase {
-		t.Errorf("Database = %q, want %q", sysVars.Database, wantDatabase)
+	if sysVars.Connection.Database != wantDatabase {
+		t.Errorf("Database = %q, want %q", sysVars.Connection.Database, wantDatabase)
 	}
 }
 
@@ -773,16 +773,16 @@ priority = HIGH
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
+			assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Host != "" && sysVars.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
+			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
 			}
 			assertEqual(t, "Endpoint (constructed from Host:Port)", gotEndpoint, &tt.wantEndpoint)
-			assertEqual(t, "Role", sysVars.Role, &tt.wantRole)
-			assertEqual(t, "LogGrpc", sysVars.LogGrpc, &tt.wantLogGrpc)
-			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Role", sysVars.Connection.Role, &tt.wantRole)
+			assertEqual(t, "LogGrpc", sysVars.Feature.LogGrpc, &tt.wantLogGrpc)
+			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
 		})
 	}
 }
@@ -931,9 +931,9 @@ func TestFlagSpecialModes(t *testing.T) {
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
-			assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
-			assertEqual(t, "MCP", sysVars.MCP, &tt.wantMCP)
+			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
+			assertEqual(t, "MCP", sysVars.Feature.MCP, &tt.wantMCP)
 
 			// For CLI_FORMAT, we need to simulate what run() does
 			// Check if this test case has specified a desired CLI_FORMAT value
@@ -953,8 +953,8 @@ func TestFlagSpecialModes(t *testing.T) {
 					}
 				} else {
 					// CLI_FORMAT was set via --set, check it was applied
-					if sysVars.CLIFormat != tt.wantCLIFormat {
-						t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, tt.wantCLIFormat)
+					if sysVars.Display.CLIFormat != tt.wantCLIFormat {
+						t.Errorf("CLIFormat = %v, want %v", sysVars.Display.CLIFormat, tt.wantCLIFormat)
 					}
 				}
 			}
@@ -969,8 +969,8 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			if tt.name == "enable-partitioned-dml sets AUTOCOMMIT_DML_MODE" {
-				if sysVars.AutocommitDMLMode != enums.AutocommitDMLModePartitionedNonAtomic {
-					t.Errorf("AutocommitDMLMode = %v, want %v", sysVars.AutocommitDMLMode, enums.AutocommitDMLModePartitionedNonAtomic)
+				if sysVars.Transaction.AutocommitDMLMode != enums.AutocommitDMLModePartitionedNonAtomic {
+					t.Errorf("AutocommitDMLMode = %v, want %v", sysVars.Transaction.AutocommitDMLMode, enums.AutocommitDMLModePartitionedNonAtomic)
 				}
 			}
 		})
@@ -1200,7 +1200,7 @@ func TestSpecialFlags(t *testing.T) {
 			// If async flag is set, check it's propagated to system variables
 			if tt.wantAsync && err == nil {
 				sysVars := initSysVarsOrFail(t, &gopts.Spanner)
-				if !sysVars.AsyncDDL {
+				if !sysVars.Feature.AsyncDDL {
 					t.Errorf("AsyncDDL not set in system variables when --async flag is used")
 				}
 			}
@@ -1268,15 +1268,15 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 				if err == nil {
 					// Check timeout
 					if tt.wantTimeout != nil {
-						if sysVars.StatementTimeout == nil {
+						if sysVars.Query.StatementTimeout == nil {
 							t.Errorf("StatementTimeout = nil, want %v", *tt.wantTimeout)
-						} else if *sysVars.StatementTimeout != *tt.wantTimeout {
-							t.Errorf("StatementTimeout = %v, want %v", *sysVars.StatementTimeout, *tt.wantTimeout)
+						} else if *sysVars.Query.StatementTimeout != *tt.wantTimeout {
+							t.Errorf("StatementTimeout = %v, want %v", *sysVars.Query.StatementTimeout, *tt.wantTimeout)
 						}
 					}
 
 					// Check async
-					assertEqual(t, "AsyncDDL", sysVars.AsyncDDL, &tt.wantAsync)
+					assertEqual(t, "AsyncDDL", sysVars.Feature.AsyncDDL, &tt.wantAsync)
 				}
 			}
 
@@ -1354,8 +1354,8 @@ func TestOutputTemplateValidation(t *testing.T) {
 				if initErr != nil {
 					err = initErr
 				} else if tt.checkFile {
-					if sysVars.OutputTemplateFile != tt.wantFile {
-						t.Errorf("OutputTemplateFile = %q, want %q", sysVars.OutputTemplateFile, tt.wantFile)
+					if sysVars.Display.OutputTemplateFile != tt.wantFile {
+						t.Errorf("OutputTemplateFile = %q, want %q", sysVars.Display.OutputTemplateFile, tt.wantFile)
 					}
 				}
 			}
@@ -1745,8 +1745,8 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 				}
 			} else {
 				// If CLI_FORMAT was explicitly set, verify it
-				if sysVars.CLIFormat != tt.wantCLIFormat {
-					t.Errorf("CLIFormat = %v, want %v (explicitly set)", sysVars.CLIFormat, tt.wantCLIFormat)
+				if sysVars.Display.CLIFormat != tt.wantCLIFormat {
+					t.Errorf("CLIFormat = %v, want %v (explicitly set)", sysVars.Display.CLIFormat, tt.wantCLIFormat)
 				}
 			}
 		})
@@ -1931,14 +1931,14 @@ func TestComplexFlagInteractions(t *testing.T) {
 					if err == nil {
 						// Check results
 						verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-						if sysVars.Role != tt.wantRole {
-							t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
+						if sysVars.Connection.Role != tt.wantRole {
+							t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 						}
-						assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
-						assertEqual(t, "Verbose", sysVars.Verbose, &tt.wantVerbose)
-						assertEqual(t, "ReadOnly", sysVars.ReadOnly, &tt.wantReadOnly)
-						assertEqual(t, "RPCPriority", sysVars.RPCPriority, &tt.wantPriority)
-						if tt.wantStaleness && sysVars.ReadOnlyStaleness == nil {
+						assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+						assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
+						assertEqual(t, "ReadOnly", sysVars.Transaction.ReadOnly, &tt.wantReadOnly)
+						assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
+						if tt.wantStaleness && sysVars.Query.ReadOnlyStaleness == nil {
 							t.Errorf("ReadOnlyStaleness = nil, want non-nil")
 						}
 					}
@@ -2015,14 +2015,14 @@ func TestAliasFlagPrecedence(t *testing.T) {
 				t.Fatalf("initializeSystemVariables() error: %v", err)
 			}
 
-			if sysVars.Role != tt.wantRole {
-				t.Errorf("Role = %q, want %q", sysVars.Role, tt.wantRole)
+			if sysVars.Connection.Role != tt.wantRole {
+				t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 			}
-			assertEqual(t, "Insecure", sysVars.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Host != "" && sysVars.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Host, sysVars.Port)
+			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
 			}
 			if gotEndpoint != tt.wantEndpoint {
 				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
@@ -2096,10 +2096,10 @@ func TestHostPortFlags(t *testing.T) {
 				return
 			}
 
-			if sysVars.Host != tt.wantHost {
-				t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
+			if sysVars.Connection.Host != tt.wantHost {
+				t.Errorf("Host = %q, want %q", sysVars.Connection.Host, tt.wantHost)
 			}
-			assertEqual(t, "Port", sysVars.Port, &tt.wantPort)
+			assertEqual(t, "Port", sysVars.Connection.Port, &tt.wantPort)
 		})
 	}
 }

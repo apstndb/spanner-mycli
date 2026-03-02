@@ -346,7 +346,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = true
+		sysVars.Feature.SkipSystemCommand = true
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, io.Discard, io.Discard)
 		session := &Session{
 			systemVariables: &sysVars,
@@ -366,7 +366,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var output bytes.Buffer
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = false
+		sysVars.Feature.SkipSystemCommand = false
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
@@ -390,7 +390,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var output bytes.Buffer
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = false
+		sysVars.Feature.SkipSystemCommand = false
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
@@ -498,7 +498,7 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaults()
 			if tt.initialPrompt != "" {
-				sysVars.Prompt = tt.initialPrompt
+				sysVars.Display.Prompt = tt.initialPrompt
 			}
 			session := &Session{
 				systemVariables: &sysVars,
@@ -515,8 +515,8 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 				if result == nil {
 					t.Error("Execute() returned nil result")
 				}
-				if sysVars.Prompt != tt.expectedPrompt {
-					t.Errorf("Execute() prompt = %q, want %q", sysVars.Prompt, tt.expectedPrompt)
+				if sysVars.Display.Prompt != tt.expectedPrompt {
+					t.Errorf("Execute() prompt = %q, want %q", sysVars.Display.Prompt, tt.expectedPrompt)
 				}
 			}
 		})

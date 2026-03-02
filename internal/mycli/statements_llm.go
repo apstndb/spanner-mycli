@@ -50,7 +50,7 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 
-	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.VertexAIProject, session.systemVariables.VertexAIModel, s.Text)
+	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.Feature.VertexAIProject, session.systemVariables.Feature.VertexAIModel, s.Text)
 	if err != nil {
 		return nil, err
 	}

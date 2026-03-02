@@ -166,12 +166,16 @@ func TestMain(m *testing.M) {
 func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
 	options := defaultClientOptions(emulator)
 	sysVars := &systemVariables{
-		Project:          clients.ProjectID,
-		Instance:         clients.InstanceID,
-		Database:         clients.DatabaseID,
-		Params:           make(map[string]ast.Node),
-		RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		Connection: ConnectionVars{
+			Project:  clients.ProjectID,
+			Instance: clients.InstanceID,
+			Database: clients.DatabaseID,
+		},
+		Query: QueryVars{
+			RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		},
+		Params: make(map[string]ast.Node),
 	}
 	// Initialize StreamManager for tests
 	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
@@ -256,10 +260,14 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	// Create admin-only session
 	sysVars := &systemVariables{
-		Project:          clients.ProjectID,
-		Instance:         clients.InstanceID,
-		Database:         "",                      // No database for admin-only mode
-		StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		Connection: ConnectionVars{
+			Project:  clients.ProjectID,
+			Instance: clients.InstanceID,
+			Database: "", // No database for admin-only mode
+		},
+		Query: QueryVars{
+			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		},
 	}
 	// Initialize StreamManager for tests
 	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
@@ -1994,9 +2002,9 @@ func TestShowOperation(t *testing.T) {
 
 	// Test SHOW OPERATION with full operation name format
 	fullOpName := fmt.Sprintf("projects/%s/instances/%s/databases/%s/operations/%s",
-		session.systemVariables.Project,
-		session.systemVariables.Instance,
-		session.systemVariables.Database,
+		session.systemVariables.Connection.Project,
+		session.systemVariables.Connection.Instance,
+		session.systemVariables.Connection.Database,
 		operationID)
 
 	showOpFullStmt, err := BuildStatement(fmt.Sprintf("SHOW OPERATION '%s'", fullOpName))

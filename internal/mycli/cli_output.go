@@ -64,7 +64,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	slog.Debug("printTableData",
 		"columnCount", len(columnNames),
 		"rowCount", len(result.Rows),
-		"format", sysVars.CLIFormat)
+		"format", sysVars.Display.CLIFormat)
 
 	// Skip formatting only if there's no header at all (e.g., SET statements)
 	// Empty query results with columns should still output headers
@@ -73,7 +73,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	// Determine the display format to use
-	displayFormat := sysVars.CLIFormat
+	displayFormat := sysVars.Display.CLIFormat
 
 	// SQL export formats require values to be formatted as SQL literals for valid SQL generation.
 	// When HasSQLFormattedValues is false, the values are formatted for display (e.g., TIMESTAMP
@@ -81,9 +81,9 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Attempting to use display-formatted values in INSERT statements would generate invalid SQL.
 	// Therefore, we fall back to table format for safety.
 	// This affects metadata queries (SHOW CREATE TABLE, EXPLAIN) and DML with THEN RETURN.
-	if sysVars.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
+	if sysVars.Display.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
-			"requestedFormat", sysVars.CLIFormat,
+			"requestedFormat", sysVars.Display.CLIFormat,
 			"statementType", "non-SELECT/DML")
 		displayFormat = enums.DisplayModeTable // Fall back to table format
 	}
@@ -117,21 +117,21 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 
 	// Format and write the result
 	if err := formatter(out, result.Rows, columnNames, config, screenWidth); err != nil {
-		return fmt.Errorf("formatting failed for mode %v: %w", sysVars.CLIFormat, err)
+		return fmt.Errorf("formatting failed for mode %v: %w", sysVars.Display.CLIFormat, err)
 	}
 
 	return nil
 }
 
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) error {
-	if sysVars.MarkdownCodeblock {
+	if sysVars.Display.MarkdownCodeblock {
 		fmt.Fprintln(out, "```sql")
 	}
 
 	// Echo the input SQL if CLI_ECHO_INPUT is enabled
 	// This output is intentionally sent to 'out' (not TtyOutStream) so it's captured in tee files
 	// This provides complete context in logs showing which queries produced which results
-	if sysVars.EchoInput && input != "" {
+	if sysVars.Feature.EchoInput && input != "" {
 		fmt.Fprintln(out, input+";")
 	}
 
@@ -173,15 +173,15 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	}
 
 	// Only print result line if not suppressed
-	if !sysVars.SuppressResultLines && (sysVars.Verbose || result.ForceVerbose || interactive) {
-		fmt.Fprint(out, resultLine(sysVars.OutputTemplate, result, sysVars.Verbose || result.ForceVerbose))
+	if !sysVars.Display.SuppressResultLines && (sysVars.Display.Verbose || result.ForceVerbose || interactive) {
+		fmt.Fprint(out, resultLine(sysVars.Display.OutputTemplate, result, sysVars.Display.Verbose || result.ForceVerbose))
 	}
 
-	if sysVars.CLIFormat == enums.DisplayModeTableDetailComment {
+	if sysVars.Display.CLIFormat == enums.DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
 	}
 
-	if sysVars.MarkdownCodeblock {
+	if sysVars.Display.MarkdownCodeblock {
 		fmt.Fprintln(out, "```")
 	}
 

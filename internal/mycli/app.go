@@ -460,11 +460,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 		// Use values from sysVars (which includes defaults set in initializeSystemVariables)
 		emulatorOpts := []spanemuboost.Option{
-			spanemuboost.WithProjectID(sysVars.Project),
-			spanemuboost.WithInstanceID(sysVars.Instance),
-			spanemuboost.WithDatabaseID(sysVars.Database),
+			spanemuboost.WithProjectID(sysVars.Connection.Project),
+			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
+			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
 			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
-			spanemuboost.WithDatabaseDialect(sysVars.DatabaseDialect),
+			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
 		}
 
 		// In detached mode, only create instance without database
@@ -549,10 +549,10 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		// Always detect the actual platform the container is running on
 		// The --emulator-platform flag only controls what platform is requested,
 		// but we want to show the actual platform in CLI_EMULATOR_PLATFORM
-		sysVars.EmulatorPlatform = detectContainerPlatform(ctx, container)
+		sysVars.Connection.EmulatorPlatform = detectContainerPlatform(ctx, container)
 		slog.Debug("Detected container platform",
 			"requested", opts.EmulatorPlatform,
-			"actual", sysVars.EmulatorPlatform)
+			"actual", sysVars.Connection.EmulatorPlatform)
 
 		// Parse container URI into host and port
 		host, port, err := parseEndpoint(container.URI())
@@ -560,8 +560,8 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			// This should not happen with a valid URI from testcontainers, but handle defensively.
 			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", container.URI(), err)
 		}
-		sysVars.Host, sysVars.Port = host, port
-		sysVars.WithoutAuthentication = true
+		sysVars.Connection.Host, sysVars.Connection.Port = host, port
+		sysVars.Connection.WithoutAuthentication = true
 	}
 
 	// TTY detection has been moved to StreamManager.
@@ -617,7 +617,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 
 	switch {
 	case interactive:
-		sysVars.EnableProgressBar = true
+		sysVars.Display.EnableProgressBar = true
 		return cli.RunInteractive(ctx)
 	default:
 		return cli.RunBatch(ctx, input)
@@ -765,24 +765,24 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	// systemVariables is in its permanent location to avoid closure issues
 
 	// Override with command-line options (only when explicitly provided)
-	sysVars.Project = opts.ProjectId
-	sysVars.Instance = opts.InstanceId
-	sysVars.Database = determineInitialDatabase(opts)
-	sysVars.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
-	sysVars.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
+	sysVars.Connection.Project = opts.ProjectId
+	sysVars.Connection.Instance = opts.InstanceId
+	sysVars.Connection.Database = determineInitialDatabase(opts)
+	sysVars.Display.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
+	sysVars.Feature.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
 
 	// Override defaults only if explicitly provided
 	if opts.Prompt != nil {
-		sysVars.Prompt = *opts.Prompt
+		sysVars.Display.Prompt = *opts.Prompt
 	}
 	if opts.Prompt2 != nil {
-		sysVars.Prompt2 = *opts.Prompt2
+		sysVars.Display.Prompt2 = *opts.Prompt2
 	}
 	if opts.HistoryFile != nil {
-		sysVars.HistoryFile = *opts.HistoryFile
+		sysVars.Display.HistoryFile = *opts.HistoryFile
 	}
 	if opts.VertexAIModel != nil {
-		sysVars.VertexAIModel = *opts.VertexAIModel
+		sysVars.Feature.VertexAIModel = *opts.VertexAIModel
 	}
 
 	// Handle alias flags with precedence for non-hidden flags
@@ -790,7 +790,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	if opts.Role != "" && opts.DatabaseRole != "" {
 		slog.Warn("Both --role and --database-role are specified. Using --role (alias has lower precedence)")
 	}
-	sysVars.Role = cmp.Or(opts.Role, opts.DatabaseRole)
+	sysVars.Connection.Role = cmp.Or(opts.Role, opts.DatabaseRole)
 
 	// Handle --insecure/--skip-tls-verify aliases with proper precedence
 	if opts.Insecure != nil && opts.SkipTlsVerify != nil {
@@ -799,11 +799,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 
 	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
 	if opts.Insecure != nil {
-		sysVars.Insecure = *opts.Insecure
+		sysVars.Connection.Insecure = *opts.Insecure
 	} else if opts.SkipTlsVerify != nil {
-		sysVars.Insecure = *opts.SkipTlsVerify
+		sysVars.Connection.Insecure = *opts.SkipTlsVerify
 	} else {
-		sysVars.Insecure = false // default value
+		sysVars.Connection.Insecure = false // default value
 	}
 
 	// Handle --endpoint/--deployment-endpoint aliases with proper precedence
@@ -819,44 +819,44 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
 		}
-		sysVars.Host, sysVars.Port = host, port
+		sysVars.Connection.Host, sysVars.Connection.Port = host, port
 	} else if opts.Host != "" || opts.Port != 0 {
 		// Handle --host and --port flags
 		if opts.Port != 0 && opts.Host == "" {
 			// Only port specified: use localhost for emulator
-			sysVars.Host = "localhost"
-			sysVars.Port = opts.Port
+			sysVars.Connection.Host = "localhost"
+			sysVars.Connection.Port = opts.Port
 		} else if opts.Host != "" && opts.Port == 0 {
 			// Only host specified: use standard Spanner port
-			sysVars.Host = opts.Host
-			sysVars.Port = 443
+			sysVars.Connection.Host = opts.Host
+			sysVars.Connection.Port = 443
 		} else {
 			// Both specified
-			sysVars.Host = opts.Host
-			sysVars.Port = opts.Port
+			sysVars.Connection.Host = opts.Host
+			sysVars.Connection.Port = opts.Port
 		}
 	}
 	sysVars.Params = params
-	sysVars.LogGrpc = opts.LogGrpc
-	sysVars.LogLevel = l
-	sysVars.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
-	sysVars.VertexAIProject = opts.VertexAIProject
-	sysVars.AsyncDDL = opts.Async
+	sysVars.Feature.LogGrpc = opts.LogGrpc
+	sysVars.Feature.LogLevel = l
+	sysVars.Connection.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
+	sysVars.Feature.VertexAIProject = opts.VertexAIProject
+	sysVars.Feature.AsyncDDL = opts.Async
 
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command
 	if opts.SkipSystemCommand {
-		sysVars.SkipSystemCommand = true
+		sysVars.Feature.SkipSystemCommand = true
 	} else if opts.SystemCommand != nil {
 		// --system-command=OFF disables system commands
-		sysVars.SkipSystemCommand = *opts.SystemCommand == "OFF"
+		sysVars.Feature.SkipSystemCommand = *opts.SystemCommand == "OFF"
 	}
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
 
-	sysVars.SkipColumnNames = opts.SkipColumnNames
+	sysVars.Display.SkipColumnNames = opts.SkipColumnNames
 
 	// Handle quiet flag for suppressing result lines
-	sysVars.SuppressResultLines = opts.Quiet
+	sysVars.Display.SuppressResultLines = opts.Quiet
 
 	return &sysVars, nil
 }
@@ -884,7 +884,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	}
 
 	if opts.Strong {
-		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
+		sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
 	}
 
 	if opts.ReadTimestamp != "" {
@@ -892,7 +892,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
 		}
-		sysVars.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
+		sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
 
 	if opts.DatabaseDialect != "" {
@@ -953,7 +953,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid directed read option: %w", err)
 		}
-		sysVars.DirectedRead = directedRead
+		sysVars.Query.DirectedRead = directedRead
 	}
 
 	// Set streaming mode from flag (already validated by go-flags choices)
@@ -973,7 +973,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 			// The format has already been parsed from flags by getFormatFromOptions.
 			// We can set it directly on the struct to avoid converting it back to a string
 			// and then re-parsing it inside SetFromSimple.
-			sysVars.CLIFormat = formatMode
+			sysVars.Display.CLIFormat = formatMode
 		}
 	}
 	for k, v := range sets {
@@ -984,19 +984,19 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 
 	if opts.EmbeddedEmulator {
 		// When using embedded emulator, insecure connection is required
-		sysVars.Insecure = true
-		// sysVars.Endpoint and sysVars.WithoutAuthentication will be set in run() after emulator starts
+		sysVars.Connection.Insecure = true
+		// sysVars.Connection.Host/Port and sysVars.Connection.WithoutAuthentication will be set in run() after emulator starts
 
 		// Set default values for embedded emulator if not specified by user
-		if sysVars.Project == "" {
-			sysVars.Project = spanemuboost.DefaultProjectID
+		if sysVars.Connection.Project == "" {
+			sysVars.Connection.Project = spanemuboost.DefaultProjectID
 		}
-		if sysVars.Instance == "" {
-			sysVars.Instance = spanemuboost.DefaultInstanceID
+		if sysVars.Connection.Instance == "" {
+			sysVars.Connection.Instance = spanemuboost.DefaultInstanceID
 		}
 		// For database, respect --detached mode (empty database)
-		if sysVars.Database == "" && !opts.Detached {
-			sysVars.Database = spanemuboost.DefaultDatabaseID
+		if sysVars.Connection.Database == "" && !opts.Detached {
+			sysVars.Connection.Database = spanemuboost.DefaultDatabaseID
 		}
 	}
 

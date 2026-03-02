@@ -13,7 +13,7 @@ import (
 func TestProjectPath(t *testing.T) {
 	t.Parallel()
 	sv := &systemVariables{
-		Project: "test-project",
+		Connection: ConnectionVars{Project: "test-project"},
 	}
 
 	got := sv.ProjectPath()
