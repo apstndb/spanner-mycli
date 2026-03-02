@@ -591,6 +591,10 @@ func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWr
 	return s.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
 }
 
+func (s *Session) currentPriorityWithLock() sppb.RequestOptions_Priority {
+	return s.txn.currentPriorityWithLock()
+}
+
 // --- End of delegation methods ---
 
 func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
@@ -720,7 +724,7 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().
-		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.txn.currentPriorityWithLock()})
+		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriorityWithLock()})
 	defer iter.Stop()
 
 	_, err := iter.Next()
