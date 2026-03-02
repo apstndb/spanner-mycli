@@ -167,6 +167,9 @@ type systemVariables struct {
 	Feature     FeatureVars
 	Internal    InternalVars
 
+	// Params is intentionally top-level, not inside QueryVars.
+	// Unlike grouped fields which use VarHandler[T]/Registry, Params is a dynamic map
+	// managed via dedicated SET/UNSET PARAM statements (statements_params.go).
 	Params map[string]ast.Node
 
 	// link to session
