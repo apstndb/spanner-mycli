@@ -300,9 +300,9 @@ func BuildCLIStatement(stripped, raw string) (Statement, error) {
 	}
 
 	for _, cs := range clientSideStatementDefs {
-		if cs.Pattern.MatchString(trimmed) {
-			matches := cs.Pattern.FindStringSubmatch(trimmed)
-			stmt, err := cs.HandleSubmatch(matches)
+		// FindStringSubmatch returns nil on no match, so MatchString is unnecessary.
+		if matches := cs.Pattern.FindStringSubmatch(trimmed); matches != nil {
+			stmt, err := cs.HandleGroups(namedGroups(cs.Pattern, matches))
 			if err != nil {
 				return nil, err
 			}

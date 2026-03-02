@@ -106,12 +106,24 @@ type clientSideStatementDef struct {
 	// It must be matched on the whole statement without semicolon, and case-insensitive.
 	Pattern *regexp.Regexp
 
-	// HandleSubmatch holds a handler which converts the result of (*regexp.Regexp).FindStringSubmatch() to Statement.
-	HandleSubmatch func(matched []string) (Statement, error)
+	// HandleGroups holds a handler which converts named capture groups to Statement.
+	// Named groups are extracted from Pattern using namedGroups().
+	HandleGroups func(groups map[string]string) (Statement, error)
 
 	// Completion defines optional fuzzy argument completion for this statement.
 	// When non-nil, each entry's PrefixPattern is tried against partial input to detect argument completion.
 	Completion []fuzzyArgCompletion
+}
+
+// namedGroups extracts named capture groups from a regexp match into a map.
+func namedGroups(re *regexp.Regexp, match []string) map[string]string {
+	groups := make(map[string]string, len(match)-1)
+	for i, name := range re.SubexpNames() {
+		if i > 0 && name != "" {
+			groups[name] = match[i]
+		}
+	}
+	return groups
 }
 
 var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
@@ -145,9 +157,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `The role you set is used for accessing with [fine-grained access control](https://cloud.google.com/spanner/docs/fgac-about).`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^USE\s+([^\s]+)(?:\s+ROLE\s+(.+))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &UseStatement{Database: unquoteIdentifier(matched[1]), Role: unquoteIdentifier(matched[2])}, nil
+		Pattern: regexp.MustCompile(`(?is)^USE\s+(?P<database>[^\s]+)(?:\s+ROLE\s+(?P<role>.+))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &UseStatement{Database: unquoteIdentifier(groups["database"]), Role: unquoteIdentifier(groups["role"])}, nil
 		},
 		Completion: []fuzzyArgCompletion{
 			{
@@ -169,7 +181,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DETACH$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &DetachStatement{}, nil
 		},
 	},
@@ -181,9 +193,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `DROP DATABASE <database>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(matched[1])}, nil
+		Pattern: regexp.MustCompile(`(?is)^DROP\s+DATABASE\s+(?P<database>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &DropDatabaseStatement{DatabaseId: unquoteIdentifier(groups["database"])}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*DROP\s+DATABASE\s+(\S*)$`),
@@ -198,7 +210,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DATABASES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowDatabasesStatement{}, nil
 		},
 	},
@@ -210,10 +222,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SHOW CREATE <type> <fqn>`,
 			},
 		},
-		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(%s)\s+(.+)$`, schemaObjectsReStr)),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(matched[1], " "))
-			schema, name := extractSchemaAndName(unquoteIdentifier(matched[2]))
+		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(?P<type>%s)\s+(?P<fqn>.+)$`, schemaObjectsReStr)),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(groups["type"], " "))
+			schema, name := extractSchemaAndName(unquoteIdentifier(groups["fqn"]))
 			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
 		},
 		Completion: []fuzzyArgCompletion{
@@ -255,9 +267,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `If schema is not provided, the default schema is used`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(.+))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowTablesStatement{Schema: unquoteIdentifier(matched[1])}, nil
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(?P<schema>.+))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &ShowTablesStatement{Schema: unquoteIdentifier(groups["schema"])}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+TABLES\s+(\S*)$`),
@@ -271,9 +283,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(?P<table>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
 			return &ShowColumnsStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -288,9 +300,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(?P<table>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
 			return &ShowIndexStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -306,7 +318,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+DDLS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowDdlsStatement{}, nil
 		},
 	},
@@ -319,7 +331,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &DumpDatabaseStatement{}, nil
 		},
 	},
@@ -331,7 +343,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+SCHEMA$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &DumpSchemaStatement{}, nil
 		},
 	},
@@ -342,9 +354,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			tables := splitTableNames(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			tables := splitTableNames(groups["tables"])
 			return &DumpTablesStatement{Tables: tables}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -361,7 +373,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+SCHEMA\s+UPDATE\s+OPERATIONS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowSchemaUpdateOperations{}, nil
 		},
 	},
@@ -373,10 +385,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `Attach to and monitor a specific Long Running Operation by its operation ID or full operation name. ASYNC (default) returns current status, SYNC provides real-time monitoring (planned).`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(.+?)(?:\s+(SYNC|ASYNC))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			operationId := unquoteString(matched[1])
-			mode := strings.ToUpper(matched[2])
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+OPERATION\s+(?P<operation>.+?)(?:\s+(?P<mode>SYNC|ASYNC))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			operationId := unquoteString(groups["operation"])
+			mode := strings.ToUpper(groups["mode"])
 			if mode == "" {
 				mode = "ASYNC" // Default to ASYNC mode
 			}
@@ -395,9 +407,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^ADD\s+SPLIT\s+POINTS\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			points, err := parseAddSplitPointsBody(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^ADD\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			points, err := parseAddSplitPointsBody(groups["body"])
 			if err != nil {
 				return nil, err
 			}
@@ -414,9 +426,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: "DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^DROP\s+SPLIT\s+POINTS\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			points, err := parseDropSplitPointsBody(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^DROP\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			points, err := parseDropSplitPointsBody(groups["body"])
 			if err != nil {
 				return nil, err
 			}
@@ -434,7 +446,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+SPLIT\s+POINTS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowSplitPointsStatement{}, nil
 		},
 	},
@@ -447,7 +459,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LOCAL\s+PROTO$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowLocalProtoStatement{}, nil
 		},
 	},
@@ -459,7 +471,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+REMOTE\s+PROTO$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowRemoteProtoStatement{}, nil
 		},
 	},
@@ -471,8 +483,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return parseSyncProtoBundle(matched[1])
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return parseSyncProtoBundle(groups["args"])
 		},
 	},
 	// TRUNCATE TABLE
@@ -484,9 +496,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `Only rows are deleted. Note: Non-atomically because executed as a [partitioned DML statement](https://cloud.google.com/spanner/docs/dml-partitioned?hl=en).`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(matched[1]))
+		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(?P<table>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
 			return &TruncateTableStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -521,9 +533,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		// - (?P<query>.*|): optional query text or empty string
 		// - $: end of string
 		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)(?P<query>.*|)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isAnalyze := matched[1] != ""
-			options, err := parseExplainOptions(matched[2])
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			isAnalyze := groups["analyze"] != ""
+			options, err := parseExplainOptions(groups["options"])
 			if err != nil {
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
@@ -567,7 +579,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, err
 			}
 
-			query := matched[3]
+			query := groups["query"]
 			if hasLastOption && hasQueryOption {
 				if strings.TrimSpace(query) != "" {
 					return nil, fmt.Errorf(`invalid string after LAST QUERY: %q. Correct syntax: EXPLAIN [ANALYZE] [options] LAST QUERY`, query)
@@ -600,9 +612,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `Requires a preceding query or EXPLAIN ANALYZE.`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PLAN\s+NODE\s+(\d+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			nodeIDStr := matched[1]
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PLAN\s+NODE\s+(?P<node_id>\d+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			nodeIDStr := groups["node_id"]
 			nodeID, err := strconv.ParseInt(nodeIDStr, 10, 32)
 			if err != nil {
 				return nil, fmt.Errorf("invalid node ID: %q. Node ID must be an integer", nodeIDStr)
@@ -618,14 +630,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `DESCRIBE <sql>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isDML := stmtkind.IsDMLLexical(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^DESCRIBE\s+(?P<sql>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			isDML := stmtkind.IsDMLLexical(groups["sql"])
 			switch {
 			case isDML:
-				return &DescribeStatement{Statement: matched[1], IsDML: true}, nil
+				return &DescribeStatement{Statement: groups["sql"], IsDML: true}, nil
 			default:
-				return &DescribeStatement{Statement: matched[1]}, nil
+				return &DescribeStatement{Statement: groups["sql"]}, nil
 			}
 		},
 	},
@@ -638,9 +650,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `PARTITIONED {UPDATE|DELETE} ...`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^PARTITIONED\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &PartitionedDmlStatement{Dml: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^PARTITIONED\s+(?P<dml>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &PartitionedDmlStatement{Dml: groups["dml"]}, nil
 		},
 	},
 
@@ -652,9 +664,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `PARTITION <sql>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &PartitionStatement{SQL: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(?P<sql>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &PartitionStatement{SQL: groups["sql"]}, nil
 		},
 	},
 	{
@@ -664,9 +676,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `RUN PARTITIONED QUERY <sql>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &RunPartitionedQueryStatement{SQL: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITIONED\s+QUERY\s(?P<sql>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &RunPartitionedQueryStatement{SQL: groups["sql"]}, nil
 		},
 	},
 	{
@@ -680,9 +692,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				},
 			*/
 		},
-		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+('[^']*'|"[^"]*")$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &RunPartitionStatement{Token: unquoteString(matched[1])}, nil
+		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+(?P<token>'[^']*'|"[^"]*")$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &RunPartitionStatement{Token: unquoteString(groups["token"])}, nil
 		},
 	},
 	{
@@ -692,9 +704,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `TRY PARTITIONED QUERY <sql>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &TryPartitionedQueryStatement{SQL: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^TRY\s+PARTITIONED\s+QUERY\s(?P<sql>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &TryPartitionedQueryStatement{SQL: groups["sql"]}, nil
 		},
 	},
 	// Transaction
@@ -706,14 +718,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `(spanner-cli style);  See [Request Priority](#request-priority) for details on the priority.`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isolationLevel, err := parseIsolationLevel(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RW(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(?P<isolation>SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(?P<priority>HIGH|MEDIUM|LOW))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			isolationLevel, err := parseIsolationLevel(groups["isolation"])
 			if err != nil {
 				return nil, err
 			}
 
-			priority, err := parsePriority(matched[2])
+			priority, err := parsePriority(groups["priority"])
 			if err != nil {
 				return nil, err
 			}
@@ -729,20 +741,20 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "`<seconds>` and `<rfc3339_timestamp>` is used for stale read. `<rfc3339_timestamp>` must be quoted. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+([^\s]+))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		Pattern: regexp.MustCompile(`(?is)^BEGIN\s+RO(?:\s+TRANSACTION)?(?:\s+(?P<timestamp>[^\s]+))?(?:\s+PRIORITY\s+(?P<priority>HIGH|MEDIUM|LOW))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			stmt := &BeginRoStatement{
 				TimestampBoundType: timestampBoundUnspecified,
 			}
 
-			if matched[1] != "" {
-				if t, err := time.Parse(time.RFC3339Nano, unquoteString(matched[1])); err == nil {
+			if groups["timestamp"] != "" {
+				if t, err := time.Parse(time.RFC3339Nano, unquoteString(groups["timestamp"])); err == nil {
 					stmt = &BeginRoStatement{
 						TimestampBoundType: readTimestamp,
 						Timestamp:          t,
 					}
 				}
-				if i, err := strconv.Atoi(matched[1]); err == nil {
+				if i, err := strconv.Atoi(groups["timestamp"]); err == nil {
 					stmt = &BeginRoStatement{
 						TimestampBoundType: exactStaleness,
 						Staleness:          time.Duration(i) * time.Second,
@@ -750,7 +762,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				}
 			}
 
-			priority, err := parsePriority(matched[2])
+			priority, err := parsePriority(groups["priority"])
 			if err != nil {
 				return nil, err
 			}
@@ -767,14 +779,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "(Spanner JDBC driver style); It respects `READONLY` system variable. See [Request Priority](#request-priority) for details on the priority.",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(HIGH|MEDIUM|LOW))?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isolationLevel, err := parseIsolationLevel(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^BEGIN(?:\s+TRANSACTION)?(?:\s+ISOLATION\s+LEVEL\s+(?P<isolation>SERIALIZABLE|REPEATABLE\s+READ))?(?:\s+PRIORITY\s+(?P<priority>HIGH|MEDIUM|LOW))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			isolationLevel, err := parseIsolationLevel(groups["isolation"])
 			if err != nil {
 				return nil, err
 			}
 
-			priority, err := parsePriority(matched[2])
+			priority, err := parsePriority(groups["priority"])
 			if err != nil {
 				return nil, err
 			}
@@ -790,7 +802,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^COMMIT(?:\s+TRANSACTION)?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &CommitStatement{}, nil
 		},
 	},
@@ -803,7 +815,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^(?:ROLLBACK|CLOSE)(?:\s+TRANSACTION)?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &RollbackStatement{}, nil
 		},
 	},
@@ -815,9 +827,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `(Spanner JDBC driver style); Set transaction mode for the current transaction.`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			isReadOnly, err := parseTransaction(matched[1])
+		Pattern: regexp.MustCompile(`(?is)^SET\s+TRANSACTION\s+(?P<mode>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			isReadOnly, err := parseTransaction(groups["mode"])
 			if err != nil {
 				return nil, err
 			}
@@ -836,9 +848,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `START BATCH DML`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^START\s+BATCH\s+(DDL|DML)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(matched[1]) == "DDL", batchModeDDL, batchModeDML)}, nil
+		Pattern: regexp.MustCompile(`(?is)^START\s+BATCH\s+(?P<mode>DDL|DML)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &StartBatchStatement{Mode: lo.Ternary(strings.ToUpper(groups["mode"]) == "DDL", batchModeDDL, batchModeDML)}, nil
 		},
 	},
 	{
@@ -849,7 +861,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^RUN\s+BATCH$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &RunBatchStatement{}, nil
 		},
 	},
@@ -861,7 +873,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^ABORT\s+BATCH(?:\s+TRANSACTION)?$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &AbortBatchStatement{}, nil
 		},
 	},
@@ -873,9 +885,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SET <name> = <value>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s=]+)\s*=\s*(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetStatement{VarName: matched[1], Value: matched[2]}, nil
+		Pattern: regexp.MustCompile(`(?is)^SET\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetStatement{VarName: groups["name"], Value: groups["value"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{
 			{
@@ -898,9 +910,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SET <name> += <value>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+([^\s+=]+)\s*\+=\s*(\S.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetAddStatement{VarName: matched[1], Value: matched[2]}, nil
+		Pattern: regexp.MustCompile(`(?is)^SET\s+(?P<name>[^\s+=]+)\s*\+=\s*(?P<value>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetAddStatement{VarName: groups["name"], Value: groups["value"]}, nil
 		},
 	},
 	{
@@ -911,7 +923,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowVariablesStatement{}, nil
 		},
 	},
@@ -922,9 +934,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SHOW VARIABLE <name>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &ShowVariableStatement{VarName: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+VARIABLE\s+(?P<name>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &ShowVariableStatement{VarName: groups["name"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+VARIABLE\s+(\S*)$`),
@@ -939,9 +951,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SET PARAM <name> <type>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*([^=]*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetParamTypeStatement{Name: matched[1], Type: matched[2]}, nil
+		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*(?P<type>[^=]*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetParamTypeStatement{Name: groups["name"], Type: groups["type"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\s+([^\s=]*)$`),
@@ -956,9 +968,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SET PARAM <name> = <value>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+([^\s=]+)\s*=\s*(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &SetParamValueStatement{Name: matched[1], Value: matched[2]}, nil
+		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetParamValueStatement{Name: groups["name"], Value: groups["value"]}, nil
 		},
 	},
 	{
@@ -969,7 +981,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowParamsStatement{}, nil
 		},
 	},
@@ -980,9 +992,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `UNSET PARAM <name>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^UNSET\s+PARAM\s+(\S+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &UnsetParamStatement{Name: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^UNSET\s+PARAM\s+(?P<name>\S+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &UnsetParamStatement{Name: groups["name"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*UNSET\s+PARAM\s+(\S*)$`),
@@ -1001,9 +1013,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `MUTATE <table_fqn> DELETE ...`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(\S+)\s+(INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &MutateStatement{Table: unquoteIdentifier(matched[1]), Operation: matched[2], Body: matched[3]}, nil
+		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(?P<table>\S+)\s+(?P<operation>INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(?P<body>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &MutateStatement{Table: unquoteIdentifier(groups["table"]), Operation: groups["operation"], Body: groups["body"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*MUTATE\s+(\S*)$`),
@@ -1020,7 +1032,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowQueryProfilesStatement{}, nil
 		},
 	},
@@ -1032,9 +1044,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   `EARLY EXPERIMENTAL`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			fprint, err := strconv.ParseInt(strings.TrimSpace(matched[1]), 10, 64)
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+PROFILE\s+(?P<fingerprint>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			fprint, err := strconv.ParseInt(strings.TrimSpace(groups["fingerprint"]), 10, 64)
 			if err != nil {
 				return nil, err
 			}
@@ -1050,9 +1062,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 
-		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(.*)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &GeminiStatement{Text: unquoteString(matched[1])}, nil
+		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
 		},
 	},
 	// Cassandra interface
@@ -1064,9 +1076,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Note:   "EARLY EXPERIMENTAL",
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^CQL\s+(.+)$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
-			return &CQLStatement{CQL: matched[1]}, nil
+		Pattern: regexp.MustCompile(`(?is)^CQL\s+(?P<cql>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &CQLStatement{CQL: groups["cql"]}, nil
 		},
 	},
 	// CLI control
@@ -1078,7 +1090,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^HELP$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &HelpStatement{}, nil
 		},
 	},
@@ -1091,7 +1103,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &HelpVariablesStatement{}, nil
 		},
 	},
@@ -1103,13 +1115,13 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
-		HandleSubmatch: func(matched []string) (Statement, error) {
+		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ExitStatement{}, nil
 		},
 	},
 }
 
-// Helper functions for HandleSubmatch implementations
+// Helper functions for HandleGroups implementations
 
 func parseTransaction(s string) (isReadOnly bool, err error) {
 	if !transactionRe.MatchString(s) {
