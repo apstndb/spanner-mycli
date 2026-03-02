@@ -23,8 +23,8 @@ func setupMCPClientServer(t *testing.T, ctx context.Context, session *Session) (
 	var outputBuf strings.Builder
 
 	// Update the session's StatementTimeout for integration tests
-	session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
-	session.systemVariables.Verbose = true // Set Verbose to true to ensure result line is printed
+	session.systemVariables.Query.StatementTimeout = lo.ToPtr(1 * time.Hour)
+	session.systemVariables.Display.Verbose = true // Set Verbose to true to ensure result line is printed
 
 	// Update the session's StreamManager to use the output buffer
 	session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf)
@@ -226,15 +226,19 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		t.Fatalf("Failed to parse emulator URI: %v", err)
 	}
 	sysVarsNonExistent := systemVariables{
-		Project:               clients.ProjectID,  // Use real project
-		Instance:              clients.InstanceID, // Use real instance
-		Database:              "non-existent-database",
-		Params:                make(map[string]ast.Node),
-		RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-		Host:                  host,
-		Port:                  port,
-		WithoutAuthentication: true,
+		Connection: ConnectionVars{
+			Project:               clients.ProjectID,  // Use real project
+			Instance:              clients.InstanceID, // Use real instance
+			Database:              "non-existent-database",
+			Host:                  host,
+			Port:                  port,
+			WithoutAuthentication: true,
+		},
+		Query: QueryVars{
+			RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		},
+		Params: make(map[string]ast.Node),
 	}
 
 	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, defaultClientOptions(emulator)...)
@@ -429,23 +433,29 @@ func TestRunMCP(t *testing.T) {
 		defer teardown()
 
 		// Create CLI with different system variables (but make sure session has timeout too)
-		session.systemVariables.StatementTimeout = lo.ToPtr(1 * time.Hour)
+		session.systemVariables.Query.StatementTimeout = lo.ToPtr(1 * time.Hour)
 
 		var outputBuf strings.Builder
 		// Create a new system variables with modified values
 		modifiedSysVars := &systemVariables{
-			Project:               session.systemVariables.Project,
-			Instance:              session.systemVariables.Instance,
-			Database:              session.systemVariables.Database,
-			Params:                make(map[string]ast.Node),
-			RPCPriority:           sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-			Host:                  session.systemVariables.Host,
-			Port:                  session.systemVariables.Port,
-			WithoutAuthentication: session.systemVariables.WithoutAuthentication,
-			StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
-			AutoWrap:              true,                    // Set a different value
-			EnableHighlight:       true,                    // Set a different value
-			StreamManager:         streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
+			Connection: ConnectionVars{
+				Project:               session.systemVariables.Connection.Project,
+				Instance:              session.systemVariables.Connection.Instance,
+				Database:              session.systemVariables.Connection.Database,
+				Host:                  session.systemVariables.Connection.Host,
+				Port:                  session.systemVariables.Connection.Port,
+				WithoutAuthentication: session.systemVariables.Connection.WithoutAuthentication,
+			},
+			Display: DisplayVars{
+				AutoWrap:        true, // Set a different value
+				EnableHighlight: true, // Set a different value
+			},
+			Query: QueryVars{
+				RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+				StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+			},
+			Params:        make(map[string]ast.Node),
+			StreamManager: streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &outputBuf, &outputBuf),
 		}
 		cli := &Cli{
 			SessionHandler:  NewSessionHandler(session),

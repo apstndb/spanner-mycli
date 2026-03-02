@@ -92,55 +92,67 @@ func Test_initializeSystemVariables(t *testing.T) {
 				EnablePartitionedDML:      true,
 			},
 			want: systemVariables{
-				Project:                   "test-project",
-				Instance:                  "test-instance",
-				Database:                  "test-database",
-				Verbose:                   true,
-				Prompt:                    "my-prompt> ",
-				Prompt2:                   "my-prompt2> ",
-				HistoryFile:               "/path/to/history.txt",
-				Role:                      "test-role",
-				Host:                      "test-endpoint",
-				Port:                      443,
-				Insecure:                  true,
-				LogGrpc:                   true,
-				LogLevel:                  slog.LevelInfo,
-				ImpersonateServiceAccount: "test-sa@example.com",
-				VertexAIProject:           "vertex-project",
-				VertexAIModel:             "gemini-1.0-pro",
-				EnableADCPlus:             true,
-				ReturnCommitStats:         true,
-				AnalyzeColumns:            DefaultAnalyzeColumns,
-				ParsedAnalyzeColumns:      DefaultParsedAnalyzeColumns,
-				RPCPriority:               sppb.RequestOptions_PRIORITY_HIGH,
-				QueryMode:                 sppb.ExecuteSqlRequest_PLAN.Enum(),
-				ReadOnlyStaleness:         lo.ToPtr(spanner.StrongRead()),
-				DatabaseDialect:           databasepb.DatabaseDialect_POSTGRESQL,
-				AutocommitDMLMode:         enums.AutocommitDMLModePartitionedNonAtomic,
-				ProtoDescriptorFile:       []string{"testdata/protos/singer.proto"},
-				CLIFormat:                 enums.DisplayModeVertical,
-				ReadOnly:                  true,
-				DirectedRead: &sppb.DirectedReadOptions{
-					Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
-						IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
-							ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
-								{
-									Location: "us-east1",
-									Type:     sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY,
+				Connection: ConnectionVars{
+					Project:                   "test-project",
+					Instance:                  "test-instance",
+					Database:                  "test-database",
+					Role:                      "test-role",
+					Host:                      "test-endpoint",
+					Port:                      443,
+					Insecure:                  true,
+					ImpersonateServiceAccount: "test-sa@example.com",
+					EnableADCPlus:             true,
+				},
+				Display: DisplayVars{
+					Verbose:              true,
+					Prompt:               "my-prompt> ",
+					Prompt2:              "my-prompt2> ",
+					HistoryFile:          "/path/to/history.txt",
+					CLIFormat:            enums.DisplayModeVertical,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:       sppb.RequestOptions_PRIORITY_HIGH,
+					QueryMode:         sppb.ExecuteSqlRequest_PLAN.Enum(),
+					ReadOnlyStaleness: lo.ToPtr(spanner.StrongRead()),
+					DirectedRead: &sppb.DirectedReadOptions{
+						Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+							IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+								ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
+									{
+										Location: "us-east1",
+										Type:     sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY,
+									},
 								},
+								AutoFailoverDisabled: true,
 							},
-							AutoFailoverDisabled: true,
 						},
 					},
+					TablePreviewRows: 50,
 				},
-				OutputTemplateFile: "",
-				OutputTemplate:     defaultOutputFormat,
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+					AutocommitDMLMode: enums.AutocommitDMLModePartitionedNonAtomic,
+					ReadOnly:          true,
+				},
+				Feature: FeatureVars{
+					LogGrpc:         true,
+					LogLevel:        slog.LevelInfo,
+					VertexAIProject: "vertex-project",
+					VertexAIModel:   "gemini-1.0-pro",
+					DatabaseDialect: databasepb.DatabaseDialect_POSTGRESQL,
+					FuzzyFinderKey:  "C_T",
+				},
+				Internal: InternalVars{
+					ProtoDescriptorFile: []string{"testdata/protos/singer.proto"},
+				},
 				Params: map[string]ast.Node{
 					"p1": lo.Must(memefish.ParseExpr("", "'string_value'")),
 					"p2": lo.Must(memefish.ParseType("", "FLOAT64")),
 				},
-				FuzzyFinderKey:   "C_T",
-				TablePreviewRows: 50,
 			},
 			wantErr: false,
 		},
@@ -159,23 +171,33 @@ func Test_initializeSystemVariables(t *testing.T) {
 				ReadTimestamp: "2023-01-01T00:00:00Z",
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				Params:               make(map[string]ast.Node),
-				ReadOnlyStaleness:    lo.ToPtr(spanner.ReadTimestamp(lo.Must(time.Parse(time.RFC3339Nano, "2023-01-01T00:00:00Z")))),
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:       defaultPriority,
+					ReadOnlyStaleness: lo.ToPtr(spanner.ReadTimestamp(lo.Must(time.Parse(time.RFC3339Nano, "2023-01-01T00:00:00Z")))),
+					TablePreviewRows:  50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
+				Params: make(map[string]ast.Node),
 			},
 			wantErr: false,
 		},
@@ -201,23 +223,33 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Timeout: "30s",
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				Params:               make(map[string]ast.Node),
-				StatementTimeout:     lo.ToPtr(30 * time.Second),
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					StatementTimeout: lo.ToPtr(30 * time.Second),
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
+				Params: make(map[string]ast.Node),
 			},
 			wantErr: false,
 		},
@@ -228,22 +260,32 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Insecure:             true, // --insecure takes precedence
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Insecure:      true, // --insecure takes precedence
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -254,22 +296,32 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Insecure:             false, // --insecure takes precedence even when false
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Insecure:      false, // --insecure takes precedence even when false
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -279,22 +331,32 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Insecure:             true, // Uses skip-tls-verify value
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Insecure:      true, // Uses skip-tls-verify value
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -312,35 +374,45 @@ func Test_initializeSystemVariables(t *testing.T) {
 				DirectedRead: "invalid-option",
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				Params:               make(map[string]ast.Node),
-				DirectedRead: &sppb.DirectedReadOptions{
-					Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
-						IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
-							ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
-								{
-									Location: "invalid-option",
-									Type:     sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority: defaultPriority,
+					DirectedRead: &sppb.DirectedReadOptions{
+						Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+							IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+								ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
+									{
+										Location: "invalid-option",
+										Type:     sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED,
+									},
 								},
+								AutoFailoverDisabled: true,
 							},
-							AutoFailoverDisabled: true,
 						},
 					},
+					TablePreviewRows: 50,
 				},
-				CLIFormat:        enums.DisplayModeTable,
-				FuzzyFinderKey:   "C_T",
-				TablePreviewRows: 50,
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
+				Params: make(map[string]ast.Node),
 			},
 			wantErr: false,
 		},
@@ -372,25 +444,35 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Insecure:         lo.ToPtr(false), // should be overridden by embedded emulator
 			},
 			want: systemVariables{
-				Project:              "user-project",
-				Instance:             "user-instance",
-				Database:             "user-database",
-				Insecure:             true, // embedded emulator always sets this
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Project:       "user-project",
+					Instance:      "user-instance",
+					Database:      "user-database",
+					Insecure:      true, // embedded emulator always sets this
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -400,25 +482,35 @@ func Test_initializeSystemVariables(t *testing.T) {
 				EmbeddedEmulator: true,
 			},
 			want: systemVariables{
-				Project:              "emulator-project",  // Default value set in initializeSystemVariables
-				Instance:             "emulator-instance", // Default value set in initializeSystemVariables
-				Database:             "emulator-database", // Default value set in initializeSystemVariables
-				Insecure:             true,
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Project:       "emulator-project",  // Default value set in initializeSystemVariables
+					Instance:      "emulator-instance", // Default value set in initializeSystemVariables
+					Database:      "emulator-database", // Default value set in initializeSystemVariables
+					Insecure:      true,
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -429,25 +521,35 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Detached:         true,
 			},
 			want: systemVariables{
-				Project:              "emulator-project",  // Default set for emulator
-				Instance:             "emulator-instance", // Default set for emulator
-				Database:             "",                  // Empty - respects detached mode
-				Insecure:             true,
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					Project:       "emulator-project",  // Default set for emulator
+					Instance:      "emulator-instance", // Default set for emulator
+					Database:      "",                  // Empty - respects detached mode
+					Insecure:      true,
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -459,21 +561,31 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
-				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
+					ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -483,21 +595,31 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplate: "output_full.tmpl",
 			},
 			want: systemVariables{
-				Prompt:             defaultPrompt,
-				Prompt2:            defaultPrompt2,
-				HistoryFile:        defaultHistoryFile,
-				LogLevel:           slog.LevelWarn,
-				VertexAIModel:      defaultVertexAIModel,
-				EnableADCPlus:      true,
-				ReturnCommitStats:  true,
-				AnalyzeColumns:     DefaultAnalyzeColumns,
-				RPCPriority:        defaultPriority,
-				CLIFormat:          enums.DisplayModeTable,
-				OutputTemplateFile: "output_full.tmpl",
-				// OutputTemplate:       should be parsed from file, hard to compare directly
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:             defaultPrompt,
+					Prompt2:            defaultPrompt2,
+					HistoryFile:        defaultHistoryFile,
+					CLIFormat:          enums.DisplayModeTable,
+					AnalyzeColumns:     DefaultAnalyzeColumns,
+					OutputTemplateFile: "output_full.tmpl",
+					// OutputTemplate:       should be parsed from file, hard to compare directly
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -509,21 +631,31 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -535,21 +667,31 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Prompt:               defaultPrompt,
-				Prompt2:              defaultPrompt2,
-				HistoryFile:          defaultHistoryFile,
-				LogLevel:             slog.LevelWarn,
-				VertexAIModel:        defaultVertexAIModel,
-				EnableADCPlus:        true,
-				ReturnCommitStats:    true,
-				AnalyzeColumns:       DefaultAnalyzeColumns,
-				RPCPriority:          defaultPriority,
-				CLIFormat:            enums.DisplayModeTable,
-				OutputTemplateFile:   "",
-				OutputTemplate:       defaultOutputFormat,
-				ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-				FuzzyFinderKey:       "C_T",
-				TablePreviewRows:     50,
+				Connection: ConnectionVars{
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:       slog.LevelWarn,
+					VertexAIModel:  defaultVertexAIModel,
+					FuzzyFinderKey: "C_T",
+				},
 			},
 			wantErr: false,
 		},
@@ -581,8 +723,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// and those that are set later in run() (e.g., EnableProgressBar, CurrentSession, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ProtoDescriptor", "EnableProgressBar", "CurrentSession", "WithoutAuthentication", "Registry"), // Removed Params from here
-				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns"),
+				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "CurrentSession", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
 				cmpopts.EquateEmpty(), // Added EquateEmpty
@@ -632,8 +774,8 @@ func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
 	}
 
 	// Check that CLI_FORMAT was properly set
-	if sysVars.CLIFormat != enums.DisplayModeVertical {
-		t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, enums.DisplayModeVertical)
+	if sysVars.Display.CLIFormat != enums.DisplayModeVertical {
+		t.Errorf("CLIFormat = %v, want %v", sysVars.Display.CLIFormat, enums.DisplayModeVertical)
 	}
 }
 
@@ -641,36 +783,46 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	got := newSystemVariablesWithDefaults()
 
 	want := systemVariables{
-		ReturnCommitStats:    true,
-		RPCPriority:          defaultPriority,
-		CLIFormat:            enums.DisplayModeTable,
-		EnableADCPlus:        true,
-		AnalyzeColumns:       DefaultAnalyzeColumns,
-		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-		Prompt:               defaultPrompt,
-		Prompt2:              defaultPrompt2,
-		HistoryFile:          defaultHistoryFile,
-		VertexAIModel:        defaultVertexAIModel,
-		LogLevel:             slog.LevelWarn,
-		FuzzyFinderKey:       "C_T",
-		TablePreviewRows:     50,
-		Params:               make(map[string]ast.Node),
+		Connection: ConnectionVars{
+			EnableADCPlus: true,
+		},
+		Display: DisplayVars{
+			Prompt:               defaultPrompt,
+			Prompt2:              defaultPrompt2,
+			HistoryFile:          defaultHistoryFile,
+			CLIFormat:            enums.DisplayModeTable,
+			AnalyzeColumns:       DefaultAnalyzeColumns,
+			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+		},
+		Query: QueryVars{
+			RPCPriority:      defaultPriority,
+			TablePreviewRows: 50,
+		},
+		Transaction: TransactionVars{
+			ReturnCommitStats: true,
+		},
+		Feature: FeatureVars{
+			LogLevel:       slog.LevelWarn,
+			VertexAIModel:  defaultVertexAIModel,
+			FuzzyFinderKey: "C_T",
+		},
+		Params: make(map[string]ast.Node),
 	}
 
 	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
-		cmpopts.IgnoreFields(systemVariables{}, "OutputTemplate", "ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
+		cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Display.ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
 	}
 
 	// Separately check OutputTemplate is not nil
-	if got.OutputTemplate == nil {
+	if got.Display.OutputTemplate == nil {
 		t.Errorf("newSystemVariablesWithDefaults() OutputTemplate should not be nil")
 	}
 
 	// Separately check ParsedAnalyzeColumns is not nil
-	if got.ParsedAnalyzeColumns == nil {
+	if got.Display.ParsedAnalyzeColumns == nil {
 		t.Errorf("newSystemVariablesWithDefaults() ParsedAnalyzeColumns should not be nil")
 	}
 }
@@ -760,7 +912,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			opts: &spannerOptions{},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.LogLevel = slog.LevelWarn
+				sv.Feature.LogLevel = slog.LevelWarn
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -776,11 +928,11 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.Project = "test-project"
-				sv.Instance = "test-instance"
-				sv.Database = "test-database"
-				sv.Prompt = "custom> "
-				sv.LogLevel = slog.LevelInfo
+				sv.Connection.Project = "test-project"
+				sv.Connection.Instance = "test-instance"
+				sv.Connection.Database = "test-database"
+				sv.Display.Prompt = "custom> "
+				sv.Feature.LogLevel = slog.LevelInfo
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -792,8 +944,8 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.LogLevel = slog.LevelWarn
-				sv.SkipSystemCommand = true
+				sv.Feature.LogLevel = slog.LevelWarn
+				sv.Feature.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -805,8 +957,8 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.LogLevel = slog.LevelWarn
-				sv.SkipSystemCommand = true
+				sv.Feature.LogLevel = slog.LevelWarn
+				sv.Feature.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -818,8 +970,8 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.LogLevel = slog.LevelWarn
-				sv.SkipSystemCommand = false
+				sv.Feature.LogLevel = slog.LevelWarn
+				sv.Feature.SkipSystemCommand = false
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -832,8 +984,8 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			},
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
-				sv.LogLevel = slog.LevelWarn
-				sv.SkipSystemCommand = true
+				sv.Feature.LogLevel = slog.LevelWarn
+				sv.Feature.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -862,7 +1014,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 
 			// Compare key fields
 			if diff := cmp.Diff(test.want, *got,
-				cmpopts.IgnoreFields(systemVariables{}, "ParsedAnalyzeColumns", "OutputTemplate", "Registry"), // Ignore complex fields for this test
+				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {
 				t.Errorf("createSystemVariablesFromOptions() mismatch (-want +got):\n%s", diff)

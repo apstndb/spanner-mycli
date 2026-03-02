@@ -48,15 +48,15 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	merged := session.systemVariables.ListVariables()
 
 	// Special handling for COMMIT_RESPONSE
-	if session.systemVariables.CommitResponse != nil {
-		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.CommitTimestamp, "NULL")
-		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.CommitResponse.GetCommitStats().GetMutationCount(), 10)
+	if session.systemVariables.Transaction.CommitResponse != nil {
+		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.Transaction.CommitTimestamp, "NULL")
+		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.Transaction.CommitResponse.GetCommitStats().GetMutationCount(), 10)
 	}
 
 	// Special handling for CLI_DIRECT_READ
-	if session.systemVariables.DirectedRead != nil {
+	if session.systemVariables.Query.DirectedRead != nil {
 		values := scxiter.Join(scxiter.Map(
-			slices.Values(session.systemVariables.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+			slices.Values(session.systemVariables.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
 			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
 				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
 			},

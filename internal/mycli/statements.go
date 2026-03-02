@@ -66,16 +66,16 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 
-	qm := session.systemVariables.QueryMode
+	qm := session.systemVariables.Query.QueryMode
 	switch {
-	case session.systemVariables.TryPartitionQuery:
+	case session.systemVariables.Query.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0)
 	default:
-		if !inTransaction && session.systemVariables.AutoPartitionMode {
+		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
 		return executeSQL(ctx, session, s.Query)
@@ -94,11 +94,11 @@ func (DmlStatement) isMutationStatement() {}
 
 func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	switch {
-	case session.systemVariables.TryPartitionQuery:
+	case session.systemVariables.Query.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session)
-	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
+	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0)
-	case lo.FromPtr(session.systemVariables.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
+	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0)
 	default:
 		return bufferOrExecuteDML(ctx, session, s.Dml)
@@ -181,7 +181,7 @@ func (s *DropDatabaseStatement) isDetachedCompatible() {}
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
-		Database: databasePath(session.systemVariables.Project, session.systemVariables.Instance, s.DatabaseId),
+		Database: databasePath(session.systemVariables.Connection.Project, session.systemVariables.Connection.Instance, s.DatabaseId),
 	}); err != nil {
 		return nil, err
 	}
@@ -332,7 +332,7 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	// Extract operation description for progress bar
 	operationDesc := s.getOperationDescription(op)
 
-	if session.systemVariables.EnableProgressBar {
+	if session.systemVariables.Display.EnableProgressBar {
 		p = mpb.NewWithContext(ctx)
 		bar = p.AddBar(int64(100),
 			mpb.PrependDecorators(

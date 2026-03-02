@@ -76,7 +76,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.ExplainFormat, session.systemVariables.ExplainWrapWidth)
+		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth)
 		if err != nil {
 			return nil, err
 		}

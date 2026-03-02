@@ -58,7 +58,7 @@ func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result
 		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
 
-	if session.systemVariables.ReadOnly {
+	if session.systemVariables.Transaction.ReadOnly {
 		ts, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, s.Priority)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 
 	// Handle read-write transaction
 	result := &Result{}
-	if session.systemVariables.AutoBatchDML && session.currentBatch != nil {
+	if session.systemVariables.Transaction.AutoBatchDML && session.currentBatch != nil {
 		var err error
 		result, err = runBatch(ctx, session)
 		if err != nil {

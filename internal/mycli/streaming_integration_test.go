@@ -20,27 +20,27 @@ func TestStreamingFunctionsCompile(t *testing.T) {
 
 	// Basic functionality test
 	sysVars := &systemVariables{
-		StreamingMode: enums.StreamingModeFalse,
-		CLIFormat:     enums.DisplayModeTable,
+		Query:   QueryVars{StreamingMode: enums.StreamingModeFalse},
+		Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
 	}
 
 	if shouldUseStreaming(sysVars) {
 		t.Error("Streaming should be disabled when StreamingMode is FALSE")
 	}
 
-	sysVars.StreamingMode = enums.StreamingModeTrue
+	sysVars.Query.StreamingMode = enums.StreamingModeTrue
 	if !shouldUseStreaming(sysVars) {
 		t.Error("Streaming should be enabled when StreamingMode is TRUE")
 	}
 
 	// Test AUTO mode behavior
-	sysVars.StreamingMode = enums.StreamingModeAuto
-	sysVars.CLIFormat = enums.DisplayModeTable
+	sysVars.Query.StreamingMode = enums.StreamingModeAuto
+	sysVars.Display.CLIFormat = enums.DisplayModeTable
 	if shouldUseStreaming(sysVars) {
 		t.Error("AUTO mode should disable streaming for Table format")
 	}
 
-	sysVars.CLIFormat = enums.DisplayModeCSV
+	sysVars.Display.CLIFormat = enums.DisplayModeCSV
 	if !shouldUseStreaming(sysVars) {
 		t.Error("AUTO mode should enable streaming for CSV format")
 	}

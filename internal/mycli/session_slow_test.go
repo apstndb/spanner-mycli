@@ -96,12 +96,16 @@ func TestRequestPriority(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:          clients.ProjectID,
-				Instance:         clients.InstanceID,
-				Database:         clients.DatabaseID,
-				RPCPriority:      test.sessionPriority,
-				Role:             "role",
-				StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+				Connection: ConnectionVars{
+					Project:  clients.ProjectID,
+					Instance: clients.InstanceID,
+					Database: clients.DatabaseID,
+					Role:     "role",
+				},
+				Query: QueryVars{
+					RPCPriority:      test.sessionPriority,
+					StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+				},
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)
@@ -231,11 +235,17 @@ func TestIsolationLevel(t *testing.T) {
 			defer recorder.flush()
 
 			session, err := NewSession(ctx, &systemVariables{
-				Project:               clients.ProjectID,
-				Instance:              clients.InstanceID,
-				Database:              clients.DatabaseID,
-				DefaultIsolationLevel: test.defaultIsolationLevel,
-				StatementTimeout:      lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+				Connection: ConnectionVars{
+					Project:  clients.ProjectID,
+					Instance: clients.InstanceID,
+					Database: clients.DatabaseID,
+				},
+				Query: QueryVars{
+					StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+				},
+				Transaction: TransactionVars{
+					DefaultIsolationLevel: test.defaultIsolationLevel,
+				},
 			}, option.WithGRPCConn(conn))
 			if err != nil {
 				t.Fatalf("failed to create spanner-cli session: %v", err)

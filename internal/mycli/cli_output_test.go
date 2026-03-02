@@ -17,8 +17,10 @@ func runPrintTableData(t *testing.T, mode enums.DisplayMode, skipColNames bool, 
 	t.Helper()
 	var buf bytes.Buffer
 	sysVars := &systemVariables{
-		CLIFormat:       mode,
-		SkipColumnNames: skipColNames,
+		Display: DisplayVars{
+			CLIFormat:       mode,
+			SkipColumnNames: skipColNames,
+		},
 	}
 	err := printTableData(sysVars, 0, &buf, result)
 	return buf.String(), err
@@ -255,7 +257,7 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaultsForTest()
-			sysVars.CLIFormat = enums.DisplayModeTable
+			sysVars.Display.CLIFormat = enums.DisplayModeTable
 
 			err := sysVars.SetFromSimple("CLI_FORMAT", tt.setValue)
 
@@ -263,8 +265,8 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 				t.Errorf("Set() error = %v, wantError %v", err, tt.wantError)
 			}
 
-			if !tt.wantError && sysVars.CLIFormat != tt.wantMode {
-				t.Errorf("CLIFormat = %v, want %v", sysVars.CLIFormat, tt.wantMode)
+			if !tt.wantError && sysVars.Display.CLIFormat != tt.wantMode {
+				t.Errorf("CLIFormat = %v, want %v", sysVars.Display.CLIFormat, tt.wantMode)
 			}
 		})
 	}
@@ -290,7 +292,9 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.wantStr, func(t *testing.T) {
 			sysVars := &systemVariables{
-				CLIFormat: tt.mode,
+				Display: DisplayVars{
+					CLIFormat: tt.mode,
+				},
 			}
 
 			got, err := sysVars.Get("CLI_FORMAT")
@@ -572,9 +576,11 @@ func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
 			}
 
 			sysVars := &systemVariables{
-				CLIFormat:    tt.cliFormat,
-				SQLTableName: "TargetTable",
-				SQLBatchSize: 0,
+				Display: DisplayVars{
+					CLIFormat:    tt.cliFormat,
+					SQLTableName: "TargetTable",
+					SQLBatchSize: 0,
+				},
 			}
 
 			var buf bytes.Buffer
@@ -692,9 +698,9 @@ func TestSuppressResultLines(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaults()
-			sysVars.SuppressResultLines = tt.suppressResultLines
-			sysVars.Verbose = tt.verbose
-			sysVars.CLIFormat = enums.DisplayModeTable
+			sysVars.Display.SuppressResultLines = tt.suppressResultLines
+			sysVars.Display.Verbose = tt.verbose
+			sysVars.Display.CLIFormat = enums.DisplayModeTable
 
 			testResultLineSuppression(t, &sysVars, createTestResult(), tt.interactive, tt.expectedHasResult)
 		})
@@ -778,9 +784,9 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaults()
-			sysVars.SuppressResultLines = tt.suppressResultLines
-			sysVars.Verbose = tt.verbose
-			sysVars.CLIFormat = enums.DisplayModeTable
+			sysVars.Display.SuppressResultLines = tt.suppressResultLines
+			sysVars.Display.Verbose = tt.verbose
+			sysVars.Display.CLIFormat = enums.DisplayModeTable
 
 			testResultLineSuppression(t, &sysVars, tt.result, tt.interactive, tt.expectedHasResult)
 		})

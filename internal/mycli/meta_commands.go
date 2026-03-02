@@ -34,7 +34,7 @@ func (s *ShellMetaCommand) isMetaCommand() {}
 // Execute runs the shell command
 func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
 	// Check if system commands are disabled
-	if session.systemVariables.SkipSystemCommand {
+	if session.systemVariables.Feature.SkipSystemCommand {
 		return nil, errors.New("system commands are disabled")
 	}
 

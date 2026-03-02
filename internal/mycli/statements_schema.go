@@ -57,7 +57,7 @@ type ShowTablesStatement struct {
 }
 
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Database)
+	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Connection.Database)
 	stmt := spanner.Statement{
 		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias),
 		Params: map[string]any{"schema": s.Schema},
@@ -160,7 +160,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
 	}
 
-	fc, err := decoder.FormatConfigWithProto(session.systemVariables.ProtoDescriptor, session.systemVariables.MultilineProtoText)
+	fc, err := decoder.FormatConfigWithProto(session.systemVariables.Internal.ProtoDescriptor, session.systemVariables.Display.MultilineProtoText)
 	if err != nil {
 		return nil, err
 	}

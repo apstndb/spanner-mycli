@@ -25,7 +25,7 @@ func TestStreamingCSV(t *testing.T) {
 				{"2", "Bob", "25"},
 			},
 			sysVars: &systemVariables{
-				SkipColumnNames: false,
+				Display: DisplayVars{SkipColumnNames: false},
 			},
 			expected: "ID,Name,Age\n1,Alice,30\n2,Bob,25\n",
 		},
@@ -36,7 +36,7 @@ func TestStreamingCSV(t *testing.T) {
 				{"2", "Bob", "25"},
 			},
 			sysVars: &systemVariables{
-				SkipColumnNames: true,
+				Display: DisplayVars{SkipColumnNames: true},
 			},
 			expected: "1,Alice,30\n2,Bob,25\n",
 		},
@@ -87,7 +87,7 @@ func TestStreamingTab(t *testing.T) {
 
 	// Create streaming processor for TAB
 	sysVars := &systemVariables{
-		SkipColumnNames: false,
+		Display: DisplayVars{SkipColumnNames: false},
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeTab, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
@@ -175,7 +175,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 
 	columnNames := []string{"ID", "Name", "Age"}
 	sysVars := &systemVariables{
-		SkipColumnNames: false,
+		Display: DisplayVars{SkipColumnNames: false},
 	}
 
 	// Buffered output
@@ -188,7 +188,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 
 	// Streaming output
 	var bufStreaming bytes.Buffer
-	formatter := format.NewCSVFormatter(&bufStreaming, sysVars.SkipColumnNames)
+	formatter := format.NewCSVFormatter(&bufStreaming, sysVars.Display.SkipColumnNames)
 	err = formatter.InitFormat(columnNames, config, nil)
 	assert.NoError(t, err)
 
@@ -211,7 +211,7 @@ func TestStreamingHTML(t *testing.T) {
 
 	// Create streaming processor for HTML
 	sysVars := &systemVariables{
-		SkipColumnNames: false,
+		Display: DisplayVars{SkipColumnNames: false},
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeHTML, &buf, sysVars, 0)
 	assert.NotNil(t, processor)
@@ -254,7 +254,7 @@ func TestStreamingXML(t *testing.T) {
 
 	// Create streaming processor for XML
 	sysVars := &systemVariables{
-		SkipColumnNames: false,
+		Display: DisplayVars{SkipColumnNames: false},
 	}
 	processor := NewStreamingProcessorForMode(enums.DisplayModeXML, &buf, sysVars, 0)
 	assert.NotNil(t, processor)

@@ -164,7 +164,7 @@ func (r *VarRegistry) registerAll() {
 
 	// === Simple boolean variables (30+) ===
 	r.Register("READONLY", &CustomVar{
-		base: BoolVar(&sv.ReadOnly, "A boolean indicating whether or not the connection is in read-only mode"),
+		base: BoolVar(&sv.Transaction.ReadOnly, "A boolean indicating whether or not the connection is in read-only mode"),
 		customSetter: func(value string) error {
 			// Custom validation for READONLY
 			if sv.CurrentSession != nil &&
@@ -175,119 +175,119 @@ func (r *VarRegistry) registerAll() {
 			if err != nil {
 				return err
 			}
-			sv.ReadOnly = b
+			sv.Transaction.ReadOnly = b
 			return nil
 		},
 	})
 
-	r.Register("AUTO_PARTITION_MODE", BoolVar(&sv.AutoPartitionMode,
+	r.Register("AUTO_PARTITION_MODE", BoolVar(&sv.Query.AutoPartitionMode,
 		"A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed."))
-	r.Register("DATA_BOOST_ENABLED", BoolVar(&sv.DataBoostEnabled,
+	r.Register("DATA_BOOST_ENABLED", BoolVar(&sv.Query.DataBoostEnabled,
 		"A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false."))
-	r.Register("AUTO_BATCH_DML", BoolVar(&sv.AutoBatchDML,
+	r.Register("AUTO_BATCH_DML", BoolVar(&sv.Transaction.AutoBatchDML,
 		"A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false."))
-	r.Register("EXCLUDE_TXN_FROM_CHANGE_STREAMS", BoolVar(&sv.ExcludeTxnFromChangeStreams,
+	r.Register("EXCLUDE_TXN_FROM_CHANGE_STREAMS", BoolVar(&sv.Transaction.ExcludeTxnFromChangeStreams,
 		"Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true)."))
-	r.Register("RETURN_COMMIT_STATS", BoolVar(&sv.ReturnCommitStats,
+	r.Register("RETURN_COMMIT_STATS", BoolVar(&sv.Transaction.ReturnCommitStats,
 		"A property of type BOOL indicating whether statistics should be returned for transactions on this connection."))
-	r.Register("CLI_VERBOSE", BoolVar(&sv.Verbose, "Display verbose output."))
-	r.Register("CLI_PROFILE", BoolVar(&sv.Profile, "Enable performance profiling (memory and timing metrics)."))
-	r.Register("CLI_LINT_PLAN", BoolVar(&sv.LintPlan, "Enable query plan linting."))
-	r.Register("CLI_USE_PAGER", BoolVar(&sv.UsePager, "Enable pager for output."))
-	r.Register("CLI_AUTOWRAP", BoolVar(&sv.AutoWrap, "Enable automatic line wrapping."))
-	r.Register("CLI_ENABLE_HIGHLIGHT", BoolVar(&sv.EnableHighlight, "Enable syntax highlighting."))
-	r.Register("CLI_PROTOTEXT_MULTILINE", BoolVar(&sv.MultilineProtoText, "Enable multiline prototext output."))
-	r.Register("CLI_MARKDOWN_CODEBLOCK", BoolVar(&sv.MarkdownCodeblock, "Enable markdown codeblock output."))
-	r.Register("CLI_TRY_PARTITION_QUERY", BoolVar(&sv.TryPartitionQuery,
+	r.Register("CLI_VERBOSE", BoolVar(&sv.Display.Verbose, "Display verbose output."))
+	r.Register("CLI_PROFILE", BoolVar(&sv.Query.Profile, "Enable performance profiling (memory and timing metrics)."))
+	r.Register("CLI_LINT_PLAN", BoolVar(&sv.Query.LintPlan, "Enable query plan linting."))
+	r.Register("CLI_USE_PAGER", BoolVar(&sv.Display.UsePager, "Enable pager for output."))
+	r.Register("CLI_AUTOWRAP", BoolVar(&sv.Display.AutoWrap, "Enable automatic line wrapping."))
+	r.Register("CLI_ENABLE_HIGHLIGHT", BoolVar(&sv.Display.EnableHighlight, "Enable syntax highlighting."))
+	r.Register("CLI_PROTOTEXT_MULTILINE", BoolVar(&sv.Display.MultilineProtoText, "Enable multiline prototext output."))
+	r.Register("CLI_MARKDOWN_CODEBLOCK", BoolVar(&sv.Display.MarkdownCodeblock, "Enable markdown codeblock output."))
+	r.Register("CLI_TRY_PARTITION_QUERY", BoolVar(&sv.Query.TryPartitionQuery,
 		"A boolean indicating whether to test query for partition compatibility instead of executing it."))
-	r.Register("CLI_ECHO_EXECUTED_DDL", BoolVar(&sv.EchoExecutedDDL, "Echo executed DDL statements."))
-	r.Register("CLI_ECHO_INPUT", BoolVar(&sv.EchoInput, "Echo input statements."))
-	r.Register("CLI_AUTO_CONNECT_AFTER_CREATE", BoolVar(&sv.AutoConnectAfterCreate,
+	r.Register("CLI_ECHO_EXECUTED_DDL", BoolVar(&sv.Feature.EchoExecutedDDL, "Echo executed DDL statements."))
+	r.Register("CLI_ECHO_INPUT", BoolVar(&sv.Feature.EchoInput, "Echo input statements."))
+	r.Register("CLI_AUTO_CONNECT_AFTER_CREATE", BoolVar(&sv.Feature.AutoConnectAfterCreate,
 		"A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false."))
-	r.Register("CLI_ENABLE_PROGRESS_BAR", BoolVar(&sv.EnableProgressBar,
+	r.Register("CLI_ENABLE_PROGRESS_BAR", BoolVar(&sv.Display.EnableProgressBar,
 		"A boolean indicating whether to display progress bars during operations. The default is false."))
-	r.Register("CLI_ASYNC_DDL", BoolVar(&sv.AsyncDDL,
+	r.Register("CLI_ASYNC_DDL", BoolVar(&sv.Feature.AsyncDDL,
 		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))
-	r.Register("CLI_SKIP_SYSTEM_COMMAND", BoolVar(&sv.SkipSystemCommand,
+	r.Register("CLI_SKIP_SYSTEM_COMMAND", BoolVar(&sv.Feature.SkipSystemCommand,
 		"Controls whether system commands are disabled."))
-	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.SkipColumnNames,
+	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.Display.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
-	r.Register("CLI_FUZZY_FINDER_KEY", StringVar(&sv.FuzzyFinderKey,
+	r.Register("CLI_FUZZY_FINDER_KEY", StringVar(&sv.Feature.FuzzyFinderKey,
 		"Key binding for fuzzy finder. Uses go-readline-ny key names (e.g., C_T, M_F, F1). Set to empty string to disable. The default is C_T (Ctrl+T)."))
-	r.Register("CLI_FUZZY_FINDER_OPTIONS", StringVar(&sv.FuzzyFinderOptions,
+	r.Register("CLI_FUZZY_FINDER_OPTIONS", StringVar(&sv.Feature.FuzzyFinderOptions,
 		"Additional fzf options passed to the fuzzy finder. Appended after built-in defaults, so user options take precedence. Example: --color=dark --no-select-1"))
-	r.Register("CLI_STREAMING", StreamingModeVar(&sv.StreamingMode,
+	r.Register("CLI_STREAMING", StreamingModeVar(&sv.Query.StreamingMode,
 		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
 
 	// === String variables (15+) ===
-	r.Register("OPTIMIZER_VERSION", StringVar(&sv.OptimizerVersion,
+	r.Register("OPTIMIZER_VERSION", StringVar(&sv.Query.OptimizerVersion,
 		"A property of type STRING indicating the optimizer version. The version is either an integer string or LATEST."))
-	r.Register("OPTIMIZER_STATISTICS_PACKAGE", StringVar(&sv.OptimizerStatisticsPackage,
+	r.Register("OPTIMIZER_STATISTICS_PACKAGE", StringVar(&sv.Query.OptimizerStatisticsPackage,
 		"A property of type STRING indicating the current optimizer statistics package that is used by this connection."))
-	r.Register("TRANSACTION_TAG", StringVar(&sv.TransactionTag,
+	r.Register("TRANSACTION_TAG", StringVar(&sv.Transaction.TransactionTag,
 		"A property of type STRING that contains the transaction tag for the next transaction."))
-	r.Register("STATEMENT_TAG", StringVar(&sv.RequestTag,
+	r.Register("STATEMENT_TAG", StringVar(&sv.Transaction.RequestTag,
 		"A property of type STRING that contains the request tag for the next statement."))
-	r.Register("CLI_PROJECT", StringVar(&sv.Project, "GCP Project ID.").AsReadOnly())
-	r.Register("CLI_INSTANCE", StringVar(&sv.Instance, "Cloud Spanner instance ID.").AsReadOnly())
-	r.Register("CLI_DATABASE", StringVar(&sv.Database, "Cloud Spanner database ID.").AsReadOnly())
-	r.Register("CLI_PROMPT", StringVar(&sv.Prompt, "Custom prompt for spanner-mycli."))
+	r.Register("CLI_PROJECT", StringVar(&sv.Connection.Project, "GCP Project ID.").AsReadOnly())
+	r.Register("CLI_INSTANCE", StringVar(&sv.Connection.Instance, "Cloud Spanner instance ID.").AsReadOnly())
+	r.Register("CLI_DATABASE", StringVar(&sv.Connection.Database, "Cloud Spanner database ID.").AsReadOnly())
+	r.Register("CLI_PROMPT", StringVar(&sv.Display.Prompt, "Custom prompt for spanner-mycli."))
 	r.Register("CLI_PROMPT2", &CustomVar{
-		base: StringVar(&sv.Prompt2, "Custom continuation prompt for spanner-mycli."),
+		base: StringVar(&sv.Display.Prompt2, "Custom continuation prompt for spanner-mycli."),
 		customSetter: func(value string) error {
 			if value == "" {
 				return fmt.Errorf("CLI_PROMPT2 cannot be empty")
 			}
-			sv.Prompt2 = value
+			sv.Display.Prompt2 = value
 			return nil
 		},
 	})
-	r.Register("CLI_HISTORY_FILE", StringVar(&sv.HistoryFile, "Path to the history file.").AsReadOnly())
-	r.Register("CLI_VERTEXAI_PROJECT", StringVar(&sv.VertexAIProject, "Vertex AI project for natural language features."))
-	r.Register("CLI_VERTEXAI_MODEL", StringVar(&sv.VertexAIModel, "Vertex AI model for natural language features."))
-	r.Register("CLI_ROLE", StringVar(&sv.Role, "Cloud Spanner database role.").AsReadOnly())
-	r.Register("CLI_HOST", StringVar(&sv.Host, "Host on which Spanner server is located").AsReadOnly())
-	r.Register("CLI_EMULATOR_PLATFORM", StringVar(&sv.EmulatorPlatform, "Container platform used by embedded emulator.").AsReadOnly())
-	r.Register("CLI_IMPERSONATE_SERVICE_ACCOUNT", StringVar(&sv.ImpersonateServiceAccount, "Service account to impersonate.").AsReadOnly())
+	r.Register("CLI_HISTORY_FILE", StringVar(&sv.Display.HistoryFile, "Path to the history file.").AsReadOnly())
+	r.Register("CLI_VERTEXAI_PROJECT", StringVar(&sv.Feature.VertexAIProject, "Vertex AI project for natural language features."))
+	r.Register("CLI_VERTEXAI_MODEL", StringVar(&sv.Feature.VertexAIModel, "Vertex AI model for natural language features."))
+	r.Register("CLI_ROLE", StringVar(&sv.Connection.Role, "Cloud Spanner database role.").AsReadOnly())
+	r.Register("CLI_HOST", StringVar(&sv.Connection.Host, "Host on which Spanner server is located").AsReadOnly())
+	r.Register("CLI_EMULATOR_PLATFORM", StringVar(&sv.Connection.EmulatorPlatform, "Container platform used by embedded emulator.").AsReadOnly())
+	r.Register("CLI_IMPERSONATE_SERVICE_ACCOUNT", StringVar(&sv.Connection.ImpersonateServiceAccount, "Service account to impersonate.").AsReadOnly())
 
 	// === Integer variables (10+) ===
-	r.Register("MAX_PARTITIONED_PARALLELISM", IntVar(&sv.MaxPartitionedParallelism,
+	r.Register("MAX_PARTITIONED_PARALLELISM", IntVar(&sv.Query.MaxPartitionedParallelism,
 		"A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY"))
-	r.Register("CLI_TAB_WIDTH", IntVar(&sv.TabWidth, "Tab width. It is used for expanding tabs."))
-	r.Register("CLI_EXPLAIN_WRAP_WIDTH", IntVar(&sv.ExplainWrapWidth,
+	r.Register("CLI_TAB_WIDTH", IntVar(&sv.Display.TabWidth, "Tab width. It is used for expanding tabs."))
+	r.Register("CLI_EXPLAIN_WRAP_WIDTH", IntVar(&sv.Display.ExplainWrapWidth,
 		"Controls query plan wrap width. It effects only operators column contents"))
-	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.TablePreviewRows,
+	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.Query.TablePreviewRows,
 		"Number of rows to preview for table width calculation in streaming mode. 0 means use header widths only. Positive values use that many rows for preview (default: 50). -1 means collect all rows (non-streaming)."))
-	r.Register("CLI_SQL_TABLE_NAME", StringVar(&sv.SQLTableName,
+	r.Register("CLI_SQL_TABLE_NAME", StringVar(&sv.Display.SQLTableName,
 		"Table name for generated SQL statements. Required for SQL export formats. Supports both simple names (e.g., 'Users') and schema-qualified names (e.g., 'myschema.Users')."))
-	r.Register("CLI_SQL_BATCH_SIZE", IntVar(&sv.SQLBatchSize,
+	r.Register("CLI_SQL_BATCH_SIZE", IntVar(&sv.Display.SQLBatchSize,
 		"Number of VALUES per INSERT statement for SQL export. 0 (default): single-row INSERT statements. 2+: multi-row INSERT with up to N rows per statement."))
-	r.Register("CLI_SUPPRESS_RESULT_LINES", BoolVar(&sv.SuppressResultLines,
+	r.Register("CLI_SUPPRESS_RESULT_LINES", BoolVar(&sv.Display.SuppressResultLines,
 		"Suppress result lines like 'rows in set' for clean output. Useful for scripting and dump operations."))
 	r.Register("CLI_PORT", &IntGetterVar{
-		getter:      func() int64 { return int64(sv.Port) },
+		getter:      func() int64 { return int64(sv.Connection.Port) },
 		description: "Port number for connections.",
 	})
 
 	// === Nullable types (5+) ===
-	r.Register("MAX_COMMIT_DELAY", NullableDurationVar(&sv.MaxCommitDelay,
+	r.Register("MAX_COMMIT_DELAY", NullableDurationVar(&sv.Transaction.MaxCommitDelay,
 		"The amount of latency this request is configured to incur in order to improve throughput. You can specify it as duration between 0 and 500ms.").
 		WithValidator(durationValidator(durationPtr(0), durationPtr(500*time.Millisecond))))
-	r.Register("STATEMENT_TIMEOUT", NullableDurationVar(&sv.StatementTimeout,
+	r.Register("STATEMENT_TIMEOUT", NullableDurationVar(&sv.Query.StatementTimeout,
 		"A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). Default is 10m.").
 		WithValidator(durationValidator(durationPtr(0), nil)))
-	r.Register("CLI_FIXED_WIDTH", NullableIntVar(&sv.FixedWidth,
+	r.Register("CLI_FIXED_WIDTH", NullableIntVar(&sv.Display.FixedWidth,
 		"If set, limits output width to the specified number of characters. NULL means automatic width detection."))
 
 	// === Proto Enum types (5) ===
-	r.Register("RPC_PRIORITY", RPCPriorityVar(&sv.RPCPriority,
+	r.Register("RPC_PRIORITY", RPCPriorityVar(&sv.Query.RPCPriority,
 		"A property of type STRING indicating the relative priority for Spanner requests. The priority acts as a hint to the Spanner scheduler and doesn't guarantee order of execution."))
-	r.Register("DEFAULT_ISOLATION_LEVEL", IsolationLevelVar(&sv.DefaultIsolationLevel,
+	r.Register("DEFAULT_ISOLATION_LEVEL", IsolationLevelVar(&sv.Transaction.DefaultIsolationLevel,
 		"The transaction isolation level that is used by default for read/write transactions."))
-	r.Register("READ_LOCK_MODE", ReadLockModeVar(&sv.ReadLockMode,
+	r.Register("READ_LOCK_MODE", ReadLockModeVar(&sv.Transaction.ReadLockMode,
 		"The read lock mode for read/write transactions. OPTIMISTIC uses optimistic concurrency control; PESSIMISTIC uses pessimistic locking. Default is UNSPECIFIED (server default)."))
 
-	r.Register("CLI_DATABASE_DIALECT", DatabaseDialectVar(&sv.DatabaseDialect,
+	r.Register("CLI_DATABASE_DIALECT", DatabaseDialectVar(&sv.Feature.DatabaseDialect,
 		"Database dialect for the session."))
 	r.Register("CLI_QUERY_MODE", &CustomVar{
 		base: QueryModeVar(func() *sppb.ExecuteSqlRequest_QueryMode {
@@ -297,50 +297,50 @@ func (r *VarRegistry) registerAll() {
 			return &mode
 		}(), "Query execution mode."),
 		customGetter: func() (string, error) {
-			if sv.QueryMode == nil {
+			if sv.Query.QueryMode == nil {
 				return "NULL", nil
 			}
-			mode := *sv.QueryMode
+			mode := *sv.Query.QueryMode
 			return QueryModeVar(&mode, "").Get()
 		},
 		customSetter: func(value string) error {
 			if strings.EqualFold(value, "NULL") {
-				sv.QueryMode = nil
+				sv.Query.QueryMode = nil
 				return nil
 			}
-			if sv.QueryMode == nil {
-				sv.QueryMode = new(sppb.ExecuteSqlRequest_QueryMode)
+			if sv.Query.QueryMode == nil {
+				sv.Query.QueryMode = new(sppb.ExecuteSqlRequest_QueryMode)
 			}
-			mode := *sv.QueryMode
+			mode := *sv.Query.QueryMode
 			err := QueryModeVar(&mode, "").Set(value)
 			if err != nil {
 				return err
 			}
-			*sv.QueryMode = mode
+			*sv.Query.QueryMode = mode
 			return nil
 		},
 	})
 
 	// === Custom enum types (4+) ===
-	r.Register("AUTOCOMMIT_DML_MODE", AutocommitDMLModeVar(&sv.AutocommitDMLMode,
+	r.Register("AUTOCOMMIT_DML_MODE", AutocommitDMLModeVar(&sv.Transaction.AutocommitDMLMode,
 		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements."))
-	r.Register("CLI_FORMAT", DisplayModeVar(&sv.CLIFormat,
+	r.Register("CLI_FORMAT", DisplayModeVar(&sv.Display.CLIFormat,
 		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values)."))
-	r.Register("CLI_PARSE_MODE", ParseModeVar(&sv.BuildStatementMode,
+	r.Register("CLI_PARSE_MODE", ParseModeVar(&sv.Query.BuildStatementMode,
 		"Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED"))
 	r.Register("CLI_EXPLAIN_FORMAT", &CustomVar{
-		base: ExplainFormatVar(&sv.ExplainFormat,
+		base: ExplainFormatVar(&sv.Display.ExplainFormat,
 			"Controls query plan notation. CURRENT(default): new notation, TRADITIONAL: spanner-cli compatible notation, COMPACT: compact notation."),
 		customSetter: func(value string) error {
 			if value == "" {
-				sv.ExplainFormat = enums.ExplainFormatUnspecified
+				sv.Display.ExplainFormat = enums.ExplainFormatUnspecified
 				return nil
 			}
-			return ExplainFormatVar(&sv.ExplainFormat, "").Set(value)
+			return ExplainFormatVar(&sv.Display.ExplainFormat, "").Set(value)
 		},
 	})
 	r.Register("CLI_LOG_LEVEL", &LogLevelVar{
-		ptr:         &sv.LogLevel,
+		ptr:         &sv.Feature.LogLevel,
 		description: "Log level for the CLI.",
 	})
 
@@ -353,43 +353,43 @@ func (r *VarRegistry) registerAll() {
 		return "NULL"
 	}, "Current terminal width. Returns NULL if not connected to a terminal."))
 	r.Register("READ_TIMESTAMP", &TimestampVar{
-		ptr:         &sv.ReadTimestamp,
+		ptr:         &sv.Query.ReadTimestamp,
 		description: "The read timestamp of the most recent read-only transaction.",
 	})
 	r.Register("COMMIT_TIMESTAMP", &TimestampVar{
-		ptr:         &sv.CommitTimestamp,
+		ptr:         &sv.Transaction.CommitTimestamp,
 		description: "The commit timestamp of the last read-write transaction that Spanner committed.",
 	})
 
 	// === Complex variables (10+) ===
 	r.Register("READ_ONLY_STALENESS", &TimestampBoundVar{
-		ptr:         &sv.ReadOnlyStaleness,
+		ptr:         &sv.Query.ReadOnlyStaleness,
 		description: "A property of type STRING for read-only transactions with flexible staleness.",
 	})
 
 	protoDescVar := &ProtoDescriptorVar{
-		filesPtr:      &sv.ProtoDescriptorFile,
-		descriptorPtr: &sv.ProtoDescriptor,
+		filesPtr:      &sv.Internal.ProtoDescriptorFile,
+		descriptorPtr: &sv.Internal.ProtoDescriptor,
 		description:   "Comma-separated list of proto descriptor files. Supports ADD to append files.",
 	}
 	r.RegisterWithAdd("CLI_PROTO_DESCRIPTOR_FILE", protoDescVar, protoDescVar.Add)
 
 	r.Register("CLI_ENDPOINT", &EndpointVar{
-		hostPtr:     &sv.Host,
-		portPtr:     &sv.Port,
+		hostPtr:     &sv.Connection.Host,
+		portPtr:     &sv.Connection.Port,
 		description: "Host and port for connections (host:port format).",
 	})
 
 	r.Register("CLI_OUTPUT_TEMPLATE_FILE", &CustomVar{
-		base: StringVar(&sv.OutputTemplateFile, "Go text/template for formatting the output of the CLI."),
+		base: StringVar(&sv.Display.OutputTemplateFile, "Go text/template for formatting the output of the CLI."),
 		customGetter: func() (string, error) {
-			return sv.OutputTemplateFile, nil
+			return sv.Display.OutputTemplateFile, nil
 		},
 		customSetter: func(value string) error {
 			// Parse and set template
 			if value == "" || strings.EqualFold(value, "NULL") {
-				sv.OutputTemplateFile = ""
-				sv.OutputTemplate = nil
+				sv.Display.OutputTemplateFile = ""
+				sv.Display.OutputTemplate = nil
 				return nil
 			}
 
@@ -397,35 +397,35 @@ func (r *VarRegistry) registerAll() {
 			if err != nil {
 				return err
 			}
-			sv.OutputTemplateFile = value
-			sv.OutputTemplate = tmpl
+			sv.Display.OutputTemplateFile = value
+			sv.Display.OutputTemplate = tmpl
 			return nil
 		},
 	})
 
 	r.Register("CLI_ANALYZE_COLUMNS", &TemplateVar{
-		stringPtr: &sv.AnalyzeColumns,
-		parsedPtr: &sv.ParsedAnalyzeColumns,
+		stringPtr: &sv.Display.AnalyzeColumns,
+		parsedPtr: &sv.Display.ParsedAnalyzeColumns,
 		parseFunc: func(value string) error {
 			parsed, err := parseAnalyzeColumns(value)
 			if err != nil {
 				return err
 			}
-			sv.ParsedAnalyzeColumns = parsed
+			sv.Display.ParsedAnalyzeColumns = parsed
 			return nil
 		},
 		description: "Go template for analyzing column data.",
 	})
 
 	r.Register("CLI_INLINE_STATS", &TemplateVar{
-		stringPtr: &sv.InlineStats,
-		parsedPtr: &sv.ParsedInlineStats,
+		stringPtr: &sv.Display.InlineStats,
+		parsedPtr: &sv.Display.ParsedInlineStats,
 		parseFunc: func(value string) error {
 			parsed, err := parseInlineStats(value)
 			if err != nil {
 				return err
 			}
-			sv.ParsedInlineStats = parsed
+			sv.Display.ParsedInlineStats = parsed
 			return nil
 		},
 		description: "<name>:<template>, ...",
@@ -437,7 +437,7 @@ func (r *VarRegistry) registerAll() {
 	// This pattern of checking CurrentSession != nil is repeated for variables that
 	// must be set before session creation.
 	r.Register("CLI_ENABLE_ADC_PLUS", &CustomVar{
-		base: BoolVar(&sv.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
+		base: BoolVar(&sv.Connection.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
 		customSetter: func(value string) error {
 			if sv.CurrentSession != nil {
 				return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
@@ -446,14 +446,14 @@ func (r *VarRegistry) registerAll() {
 			if err != nil {
 				return err
 			}
-			sv.EnableADCPlus = b
+			sv.Connection.EnableADCPlus = b
 			return nil
 		},
 	})
 
-	r.Register("CLI_MCP", BoolVar(&sv.MCP, "A read-only boolean indicating whether the connection is running as an MCP server.").AsReadOnly())
-	r.Register("CLI_INSECURE", BoolVar(&sv.Insecure, "Skip TLS certificate verification (insecure).").AsReadOnly())
-	r.Register("CLI_LOG_GRPC", BoolVar(&sv.LogGrpc, "Enable gRPC logging.").AsReadOnly())
+	r.Register("CLI_MCP", BoolVar(&sv.Feature.MCP, "A read-only boolean indicating whether the connection is running as an MCP server.").AsReadOnly())
+	r.Register("CLI_INSECURE", BoolVar(&sv.Connection.Insecure, "Skip TLS certificate verification (insecure).").AsReadOnly())
+	r.Register("CLI_LOG_GRPC", BoolVar(&sv.Feature.LogGrpc, "Enable gRPC logging.").AsReadOnly())
 
 	// === Unimplemented variables ===
 	r.Register("AUTOCOMMIT", &UnimplementedVar{

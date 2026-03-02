@@ -138,11 +138,11 @@ CREATE TABLE DestTable (
 			t.Logf("Source table row count: %v", countResult.Rows)
 
 			// Set up system variables for SQL export
-			session.systemVariables.CLIFormat = tt.exportMode
-			session.systemVariables.SQLTableName = tt.tableName
-			session.systemVariables.SQLBatchSize = tt.batchSize
+			session.systemVariables.Display.CLIFormat = tt.exportMode
+			session.systemVariables.Display.SQLTableName = tt.tableName
+			session.systemVariables.Display.SQLBatchSize = tt.batchSize
 			// Force buffered mode for testing
-			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
 			// Execute the query - with SQL format set, it should use proper SQL literal formatting
 			stmt, err := BuildStatement(tt.query)
@@ -266,10 +266,10 @@ CREATE TABLE ComplexDest (
 	defer teardown()
 
 	// Export with SQL_INSERT
-	session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-	session.systemVariables.SQLTableName = "ComplexDest"
-	session.systemVariables.SQLBatchSize = 0
-	session.systemVariables.StreamingMode = enums.StreamingModeFalse // Force buffered mode
+	session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
+	session.systemVariables.Display.SQLTableName = "ComplexDest"
+	session.systemVariables.Display.SQLBatchSize = 0
+	session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse // Force buffered mode
 
 	stmt, err := BuildStatement("SELECT * FROM ComplexSource ORDER BY id")
 	if err != nil {
@@ -449,10 +449,10 @@ CREATE TABLE TestTable (
 			defer teardown()
 
 			// Set up system variables for SQL export with STREAMING mode
-			session.systemVariables.CLIFormat = tt.exportMode
-			session.systemVariables.SQLTableName = tt.tableName
-			session.systemVariables.SQLBatchSize = tt.batchSize
-			session.systemVariables.StreamingMode = enums.StreamingModeTrue // Force streaming mode
+			session.systemVariables.Display.CLIFormat = tt.exportMode
+			session.systemVariables.Display.SQLTableName = tt.tableName
+			session.systemVariables.Display.SQLBatchSize = tt.batchSize
+			session.systemVariables.Query.StreamingMode = enums.StreamingModeTrue // Force streaming mode
 
 			// Set up a buffer to capture streaming output
 			var buf bytes.Buffer
@@ -588,10 +588,10 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up for SQL export
-			session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-			session.systemVariables.SQLTableName = "TargetTable"
-			session.systemVariables.SQLBatchSize = 0
-			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+			session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
+			session.systemVariables.Display.SQLTableName = "TargetTable"
+			session.systemVariables.Display.SQLBatchSize = 0
+			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
 			stmt, err := BuildStatement(tc.query)
 			if err != nil {
@@ -663,10 +663,10 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 
 	// Also test streaming mode
 	t.Run("Streaming mode with unnamed columns", func(t *testing.T) {
-		session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-		session.systemVariables.SQLTableName = "StreamTarget"
-		session.systemVariables.SQLBatchSize = 0
-		session.systemVariables.StreamingMode = enums.StreamingModeTrue
+		session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
+		session.systemVariables.Display.SQLTableName = "StreamTarget"
+		session.systemVariables.Display.SQLBatchSize = 0
+		session.systemVariables.Query.StreamingMode = enums.StreamingModeTrue
 
 		// Set up StreamManager for streaming
 		var buf bytes.Buffer
@@ -706,10 +706,10 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 
 	// Test streaming mode with properly named columns
 	t.Run("Streaming mode with named columns", func(t *testing.T) {
-		session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-		session.systemVariables.SQLTableName = "StreamTarget"
-		session.systemVariables.SQLBatchSize = 0
-		session.systemVariables.StreamingMode = enums.StreamingModeTrue
+		session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
+		session.systemVariables.Display.SQLTableName = "StreamTarget"
+		session.systemVariables.Display.SQLBatchSize = 0
+		session.systemVariables.Query.StreamingMode = enums.StreamingModeTrue
 
 		// Set up StreamManager for streaming
 		var buf bytes.Buffer
@@ -867,10 +867,10 @@ CREATE TABLE TestTable (
 
 			// Set up system variables for SQL export
 			// DO NOT set SQLTableName - we want to test auto-detection
-			session.systemVariables.CLIFormat = tt.exportMode
-			session.systemVariables.SQLTableName = "" // Explicitly empty for auto-detection
-			session.systemVariables.SQLBatchSize = 0
-			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+			session.systemVariables.Display.CLIFormat = tt.exportMode
+			session.systemVariables.Display.SQLTableName = "" // Explicitly empty for auto-detection
+			session.systemVariables.Display.SQLBatchSize = 0
+			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
 			t.Logf("Testing: %s", tt.description)
 			t.Logf("Query: %s", tt.query)
@@ -1024,10 +1024,10 @@ func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
 	for _, tc := range complexQueries {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up for SQL export without table name
-			session.systemVariables.CLIFormat = enums.DisplayModeSQLInsert
-			session.systemVariables.SQLTableName = "" // Empty for auto-detection attempt
-			session.systemVariables.SQLBatchSize = 0
-			session.systemVariables.StreamingMode = enums.StreamingModeFalse
+			session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
+			session.systemVariables.Display.SQLTableName = "" // Empty for auto-detection attempt
+			session.systemVariables.Display.SQLBatchSize = 0
+			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
 			t.Logf("Testing: %s", tc.desc)
 			t.Logf("Query: %s", tc.query)
@@ -1058,7 +1058,7 @@ func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
 			}
 
 			// Now test with explicit table name - should work
-			session.systemVariables.SQLTableName = "ExportTable"
+			session.systemVariables.Display.SQLTableName = "ExportTable"
 
 			// Re-execute with explicit table name
 			result, err = stmt.Execute(ctx, session)

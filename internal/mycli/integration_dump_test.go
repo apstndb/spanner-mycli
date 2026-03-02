@@ -166,10 +166,10 @@ func TestDumpStatements(t *testing.T) {
 			}
 
 			// Verify settings were restored
-			if session.systemVariables.CLIFormat == enums.DisplayModeSQLInsert {
+			if session.systemVariables.Display.CLIFormat == enums.DisplayModeSQLInsert {
 				t.Errorf("CLIFormat should be restored after DUMP")
 			}
-			if session.systemVariables.SuppressResultLines {
+			if session.systemVariables.Display.SuppressResultLines {
 				t.Errorf("SuppressResultLines should be restored after DUMP")
 			}
 		})

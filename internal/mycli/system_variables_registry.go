@@ -140,23 +140,23 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 	// This behavior is maintained for java-spanner compatibility where SHOW VARIABLE
 	// COMMIT_RESPONSE returns both values as a result set.
 	if upperName == "COMMIT_RESPONSE" {
-		if sv.CommitResponse == nil {
+		if sv.Transaction.CommitResponse == nil {
 			return nil, errIgnored
 		}
 		return map[string]string{
-			"COMMIT_TIMESTAMP": formatTimestamp(sv.CommitTimestamp, "NULL"),
-			"MUTATION_COUNT":   strconv.FormatInt(sv.CommitResponse.GetCommitStats().GetMutationCount(), 10),
+			"COMMIT_TIMESTAMP": formatTimestamp(sv.Transaction.CommitTimestamp, "NULL"),
+			"MUTATION_COUNT":   strconv.FormatInt(sv.Transaction.CommitResponse.GetCommitStats().GetMutationCount(), 10),
 		}, nil
 	}
 
 	// Special case for CLI_DIRECT_READ (complex proto type not in registry)
 	if upperName == "CLI_DIRECT_READ" {
-		if sv.DirectedRead == nil {
+		if sv.Query.DirectedRead == nil {
 			return nil, errIgnored
 		}
 		// Format DirectedRead for display
 		values := xiter.Join(xiter.Map(
-			slices.Values(sv.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
+			slices.Values(sv.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
 			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
 				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
 			},

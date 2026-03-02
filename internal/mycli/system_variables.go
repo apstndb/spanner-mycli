@@ -46,147 +46,151 @@ type LastQueryCache struct {
 	CommitTimestamp time.Time
 }
 
-// systemVariables holds configuration state for spanner-mycli sessions.
-// IMPORTANT: This struct is designed to be read-only after creation for session safety.
-// SessionHandler depends on this read-only property when creating new sessions with
-// modified copies of systemVariables (e.g., for USE/DETACH operations).
-type systemVariables struct {
-	// java-spanner compatible
-	AutoPartitionMode           bool                         // AUTO_PARTITION_MODE
-	RPCPriority                 sppb.RequestOptions_Priority // RPC_PRIORITY
-	ReadOnlyStaleness           *spanner.TimestampBound      // READ_ONLY_STALENESS
-	ReadTimestamp               time.Time                    // READ_TIMESTAMP
-	OptimizerVersion            string                       // OPTIMIZER_VERSION
-	OptimizerStatisticsPackage  string                       // OPTIMIZER_STATISTICS_PACKAGE
-	CommitResponse              *sppb.CommitResponse         // COMMIT_RESPONSE
-	CommitTimestamp             time.Time                    // COMMIT_TIMESTAMP
-	TransactionTag              string                       // TRANSACTION_TAG
-	RequestTag                  string                       // STATEMENT_TAG
-	ReadOnly                    bool                         // READONLY
-	DataBoostEnabled            bool                         // DATA_BOOST_ENABLED
-	AutoBatchDML                bool                         // AUTO_BATCH_DML
-	ExcludeTxnFromChangeStreams bool                         // EXCLUDE_TXN_FROM_CHANGE_STREAMS
-	MaxCommitDelay              *time.Duration               // MAX_COMMIT_DELAY
-	MaxPartitionedParallelism   int64                        // MAX_PARTITIONED_PARALLELISM
-	AutocommitDMLMode           enums.AutocommitDMLMode      // AUTOCOMMIT_DML_MODE
-	StatementTimeout            *time.Duration               // STATEMENT_TIMEOUT
-	ReturnCommitStats           bool                         // RETURN_COMMIT_STATS
-
-	DefaultIsolationLevel sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
-	ReadLockMode          sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
-
-	// CLI_* variables
-
-	CLIFormat   enums.DisplayMode // CLI_FORMAT
-	Project     string            // CLI_PROJECT
-	Instance    string            // CLI_INSTANCE
-	Database    string            // CLI_DATABASE
-	Verbose     bool              // CLI_VERBOSE
-	Profile     bool              // CLI_PROFILE - enables performance profiling (memory, timing)
-	Prompt      string            // CLI_PROMPT
-	Prompt2     string            // CLI_PROMPT2
-	HistoryFile string            // CLI_HISTORY_FILE
-
-	DirectedRead *sppb.DirectedReadOptions // CLI_DIRECT_READ
-
-	ProtoDescriptorFile []string        // CLI_PROTO_DESCRIPTOR_FILE
-	BuildStatementMode  enums.ParseMode // CLI_PARSE_MODE
-	Insecure            bool            // CLI_INSECURE
-	LogGrpc             bool            // CLI_LOG_GRPC
-	LintPlan            bool            // CLI_LINT_PLAN
-	UsePager            bool            // CLI_USE_PAGER
-	AutoWrap            bool            // CLI_AUTOWRAP
-	FixedWidth          *int64          // CLI_FIXED_WIDTH
-	EnableHighlight     bool            // CLI_ENABLE_HIGHLIGHT
-	MultilineProtoText  bool            // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock   bool            // CLI_MARKDOWN_CODEBLOCK
-
-	QueryMode         *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
-	TryPartitionQuery bool                              // CLI_TRY_PARTITION_QUERY
-
-	VertexAIProject    string                     // CLI_VERTEXAI_PROJECT
-	VertexAIModel      string                     // CLI_VERTEXAI_MODEL
-	DatabaseDialect    databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
-	EchoExecutedDDL    bool                       // CLI_ECHO_EXECUTED_DDL
-	Role               string                     // CLI_ROLE
-	EchoInput          bool                       // CLI_ECHO_INPUT
-	Host               string                     // CLI_HOST
-	Port               int                        // CLI_PORT
-	EmulatorPlatform   string                     // CLI_EMULATOR_PLATFORM
-	OutputTemplateFile string                     // Not exposed as system variable
-	TabWidth           int64                      // CLI_TAB_WIDTH
-	LogLevel           slog.Level                 // CLI_LOG_LEVEL
-
-	AnalyzeColumns string // CLI_ANALYZE_COLUMNS
-	InlineStats    string // CLI_INLINE_STATS
-
-	ExplainFormat          enums.ExplainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth       int64               // CLI_EXPLAIN_WRAP_WIDTH
-	AutoConnectAfterCreate bool                // CLI_AUTO_CONNECT_AFTER_CREATE
-
-	// They are internal variables and hidden from system variable statements
-	ProtoDescriptor      *descriptorpb.FileDescriptorSet
-	ParsedAnalyzeColumns []columnRenderDef
-	ParsedInlineStats    []inlineStatsDef
-	OutputTemplate       *template.Template
-	LastQueryCache       *LastQueryCache
-
-	WithoutAuthentication bool
-	Params                map[string]ast.Node
-
-	// link to session
-	CurrentSession *Session
-
-	// TtyOutStream has been moved to StreamManager.
-	// Use StreamManager.GetTtyStream() instead.
-
-	// StreamManager manages tee output functionality
-	StreamManager *streamio.StreamManager
-
-	EnableProgressBar         bool   // CLI_ENABLE_PROGRESS_BAR
+// ConnectionVars holds connection-related configuration.
+type ConnectionVars struct {
+	Project                   string // CLI_PROJECT
+	Instance                  string // CLI_INSTANCE
+	Database                  string // CLI_DATABASE
+	Role                      string // CLI_ROLE
+	Host                      string // CLI_HOST
+	Port                      int    // CLI_PORT
+	Insecure                  bool   // CLI_INSECURE
+	WithoutAuthentication     bool
 	ImpersonateServiceAccount string // CLI_IMPERSONATE_SERVICE_ACCOUNT
 	EnableADCPlus             bool   // CLI_ENABLE_ADC_PLUS
-	MCP                       bool   // CLI_MCP
-	AsyncDDL                  bool   // CLI_ASYNC_DDL
-	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
-	SkipColumnNames           bool   // CLI_SKIP_COLUMN_NAMES
-	FuzzyFinderKey            string // CLI_FUZZY_FINDER_KEY (empty = disabled)
-	FuzzyFinderOptions        string // CLI_FUZZY_FINDER_OPTIONS
+	EmulatorPlatform          string // CLI_EMULATOR_PLATFORM
+}
 
-	// Streaming output configuration
-	StreamingMode    enums.StreamingMode // CLI_STREAMING
-	TablePreviewRows int64               // CLI_TABLE_PREVIEW_ROWS
+// DisplayVars holds display and output formatting configuration.
+type DisplayVars struct {
+	CLIFormat            enums.DisplayMode   // CLI_FORMAT
+	Verbose              bool                // CLI_VERBOSE
+	Prompt               string              // CLI_PROMPT
+	Prompt2              string              // CLI_PROMPT2
+	HistoryFile          string              // CLI_HISTORY_FILE
+	TabWidth             int64               // CLI_TAB_WIDTH
+	EnableHighlight      bool                // CLI_ENABLE_HIGHLIGHT
+	UsePager             bool                // CLI_USE_PAGER
+	AutoWrap             bool                // CLI_AUTOWRAP
+	FixedWidth           *int64              // CLI_FIXED_WIDTH
+	MultilineProtoText   bool                // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock    bool                // CLI_MARKDOWN_CODEBLOCK
+	SkipColumnNames      bool                // CLI_SKIP_COLUMN_NAMES
+	SuppressResultLines  bool                // CLI_SUPPRESS_RESULT_LINES
+	ExplainFormat        enums.ExplainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth     int64               // CLI_EXPLAIN_WRAP_WIDTH
+	OutputTemplateFile   string              // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
+	OutputTemplate       *template.Template
+	AnalyzeColumns       string // CLI_ANALYZE_COLUMNS
+	ParsedAnalyzeColumns []columnRenderDef
+	InlineStats          string // CLI_INLINE_STATS
+	ParsedInlineStats    []inlineStatsDef
+	SQLTableName         string // CLI_SQL_TABLE_NAME
+	SQLBatchSize         int64  // CLI_SQL_BATCH_SIZE
+	EnableProgressBar    bool   // CLI_ENABLE_PROGRESS_BAR
+}
 
-	// SQL export configuration
-	SQLTableName string // CLI_SQL_TABLE_NAME
-	SQLBatchSize int64  // CLI_SQL_BATCH_SIZE
+// QueryVars holds query execution configuration.
+type QueryVars struct {
+	StatementTimeout           *time.Duration                    // STATEMENT_TIMEOUT
+	RPCPriority                sppb.RequestOptions_Priority      // RPC_PRIORITY
+	ReadOnlyStaleness          *spanner.TimestampBound           // READ_ONLY_STALENESS
+	ReadTimestamp              time.Time                         // READ_TIMESTAMP
+	OptimizerVersion           string                            // OPTIMIZER_VERSION
+	OptimizerStatisticsPackage string                            // OPTIMIZER_STATISTICS_PACKAGE
+	AutoPartitionMode          bool                              // AUTO_PARTITION_MODE
+	DataBoostEnabled           bool                              // DATA_BOOST_ENABLED
+	MaxPartitionedParallelism  int64                             // MAX_PARTITIONED_PARALLELISM
+	QueryMode                  *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
+	TryPartitionQuery          bool                              // CLI_TRY_PARTITION_QUERY
+	DirectedRead               *sppb.DirectedReadOptions         // CLI_DIRECT_READ
+	StreamingMode              enums.StreamingMode               // CLI_STREAMING
+	TablePreviewRows           int64                             // CLI_TABLE_PREVIEW_ROWS
+	BuildStatementMode         enums.ParseMode                   // CLI_PARSE_MODE
+	Profile                    bool                              // CLI_PROFILE
+	LintPlan                   bool                              // CLI_LINT_PLAN
+}
 
-	// Result output configuration
-	SuppressResultLines bool // CLI_SUPPRESS_RESULT_LINES
-
-	// Registry holds the system variable registry
-	Registry *VarRegistry
-
-	// Computed variables (handled by registry)
-	// CLI_VERSION - computed
-	// CLI_CURRENT_WIDTH - computed
-	// CLI_ENDPOINT - computed getter/setter
-	// CLI_OUTPUT_TEMPLATE_FILE - computed getter/setter
+// TransactionVars holds transaction-related configuration.
+type TransactionVars struct {
+	TransactionTag              string                                         // TRANSACTION_TAG
+	RequestTag                  string                                         // STATEMENT_TAG
+	ReadOnly                    bool                                           // READONLY
+	ExcludeTxnFromChangeStreams bool                                           // EXCLUDE_TXN_FROM_CHANGE_STREAMS
+	MaxCommitDelay              *time.Duration                                 // MAX_COMMIT_DELAY
+	AutoBatchDML                bool                                           // AUTO_BATCH_DML
+	AutocommitDMLMode           enums.AutocommitDMLMode                        // AUTOCOMMIT_DML_MODE
+	ReturnCommitStats           bool                                           // RETURN_COMMIT_STATS
+	CommitResponse              *sppb.CommitResponse                           // COMMIT_RESPONSE
+	CommitTimestamp             time.Time                                      // COMMIT_TIMESTAMP
+	DefaultIsolationLevel       sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
+	ReadLockMode                sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
 
 	// Unimplemented variables (kept for compatibility)
 	Autocommit            bool // AUTOCOMMIT (unimplemented)
 	RetryAbortsInternally bool // RETRY_ABORTS_INTERNALLY (unimplemented)
 }
 
+// FeatureVars holds feature flags and experimental configuration.
+type FeatureVars struct {
+	FuzzyFinderKey         string                     // CLI_FUZZY_FINDER_KEY (empty = disabled)
+	FuzzyFinderOptions     string                     // CLI_FUZZY_FINDER_OPTIONS
+	MCP                    bool                       // CLI_MCP
+	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
+	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
+	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
+	EchoInput              bool                       // CLI_ECHO_INPUT
+	AsyncDDL               bool                       // CLI_ASYNC_DDL
+	SkipSystemCommand      bool                       // CLI_SKIP_SYSTEM_COMMAND
+	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
+	LogGrpc                bool                       // CLI_LOG_GRPC
+	LogLevel               slog.Level                 // CLI_LOG_LEVEL
+	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
+}
+
+// InternalVars holds internal state not directly exposed as system variables.
+type InternalVars struct {
+	ProtoDescriptorFile []string // CLI_PROTO_DESCRIPTOR_FILE
+	ProtoDescriptor     *descriptorpb.FileDescriptorSet
+	LastQueryCache      *LastQueryCache
+}
+
+// systemVariables holds configuration state for spanner-mycli sessions.
+// IMPORTANT: This struct is designed to be read-only after creation for session safety.
+// SessionHandler depends on this read-only property when creating new sessions with
+// modified copies of systemVariables (e.g., for USE/DETACH operations).
+type systemVariables struct {
+	Connection  ConnectionVars
+	Display     DisplayVars
+	Query       QueryVars
+	Transaction TransactionVars
+	Feature     FeatureVars
+	Internal    InternalVars
+
+	// Params is intentionally top-level, not inside QueryVars.
+	// Unlike grouped fields which use VarHandler[T]/Registry, Params is a dynamic map
+	// managed via dedicated SET/UNSET PARAM statements (statements_params.go).
+	Params map[string]ast.Node
+
+	// link to session
+	CurrentSession *Session
+
+	// StreamManager manages tee output functionality
+	StreamManager *streamio.StreamManager
+
+	// Registry holds the system variable registry
+	Registry *VarRegistry
+}
+
 // toFormatConfig converts the formatter-relevant fields of systemVariables into a format.FormatConfig.
 func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 	return format.FormatConfig{
-		TabWidth:        int(sv.TabWidth),
-		Verbose:         sv.Verbose,
-		SkipColumnNames: sv.SkipColumnNames,
-		SQLTableName:    sv.SQLTableName,
-		SQLBatchSize:    sv.SQLBatchSize,
-		PreviewRows:     sv.TablePreviewRows,
+		TabWidth:        int(sv.Display.TabWidth),
+		Verbose:         sv.Display.Verbose,
+		SkipColumnNames: sv.Display.SkipColumnNames,
+		SQLTableName:    sv.Display.SQLTableName,
+		SQLBatchSize:    sv.Display.SQLBatchSize,
+		PreviewRows:     sv.Query.TablePreviewRows,
 	}
 }
 
@@ -235,43 +239,46 @@ func databasePath(projectID, instanceID, databaseID string) string {
 }
 
 func (sv *systemVariables) InstancePath() string {
-	return instancePath(sv.Project, sv.Instance)
+	return instancePath(sv.Connection.Project, sv.Connection.Instance)
 }
 
 func (sv *systemVariables) DatabasePath() string {
-	return databasePath(sv.Project, sv.Instance, sv.Database)
+	return databasePath(sv.Connection.Project, sv.Connection.Instance, sv.Connection.Database)
 }
 
 func (sv *systemVariables) ProjectPath() string {
-	return projectPath(sv.Project)
+	return projectPath(sv.Connection.Project)
 }
 
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
-		// Java-spanner compatible defaults
-		ReturnCommitStats: true,
-		RPCPriority:       defaultPriority,
-
-		// CLI defaults
-		CLIFormat:            enums.DisplayModeTable, // Default to TABLE format
-		EnableADCPlus:        true,
-		AnalyzeColumns:       DefaultAnalyzeColumns,
-		ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-		Prompt:               defaultPrompt,
-		Prompt2:              defaultPrompt2,
-		HistoryFile:          defaultHistoryFile,
-		VertexAIModel:        defaultVertexAIModel,
-		OutputTemplate:       defaultOutputFormat,
-		LogLevel:             slog.LevelWarn,
-
-		// Interactive defaults
-		FuzzyFinderKey: "C_T",
-
-		// Streaming defaults
-		StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
-		TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
+		Connection: ConnectionVars{
+			EnableADCPlus: true,
+		},
+		Display: DisplayVars{
+			CLIFormat:            enums.DisplayModeTable, // Default to TABLE format
+			AnalyzeColumns:       DefaultAnalyzeColumns,
+			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+			Prompt:               defaultPrompt,
+			Prompt2:              defaultPrompt2,
+			HistoryFile:          defaultHistoryFile,
+			OutputTemplate:       defaultOutputFormat,
+		},
+		Query: QueryVars{
+			RPCPriority:      defaultPriority,
+			StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
+			TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
+		},
+		Transaction: TransactionVars{
+			ReturnCommitStats: true,
+		},
+		Feature: FeatureVars{
+			VertexAIModel:  defaultVertexAIModel,
+			LogLevel:       slog.LevelWarn,
+			FuzzyFinderKey: "C_T",
+		},
 
 		// Initialize empty maps to avoid nil
 		Params: make(map[string]ast.Node),
@@ -385,8 +392,8 @@ func parseTimeString(s string) (time.Time, error) {
 var defaultOutputFormat = template.Must(template.New("").Funcs(sproutFuncMap()).Parse(outputTemplateStr))
 
 func setDefaultOutputTemplate(sysVars *systemVariables) {
-	sysVars.OutputTemplateFile = ""
-	sysVars.OutputTemplate = defaultOutputFormat
+	sysVars.Display.OutputTemplateFile = ""
+	sysVars.Display.OutputTemplate = defaultOutputFormat
 }
 
 func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
@@ -400,8 +407,8 @@ func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
 		return err
 	}
 
-	sysVars.OutputTemplateFile = filename
-	sysVars.OutputTemplate = tmpl
+	sysVars.Display.OutputTemplateFile = filename
+	sysVars.Display.OutputTemplate = tmpl
 	return nil
 }
 

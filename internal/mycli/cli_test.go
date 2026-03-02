@@ -181,7 +181,7 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTable: simple table",
 				sysVars: &systemVariables{
-					CLIFormat: enums.DisplayModeTable,
+					Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
 				},
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
@@ -202,7 +202,7 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTableComment: simple table",
 				sysVars: &systemVariables{
-					CLIFormat: enums.DisplayModeTableComment,
+					Display: DisplayVars{CLIFormat: enums.DisplayModeTableComment},
 				},
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
@@ -223,10 +223,12 @@ func TestPrintResult(t *testing.T) {
 			{
 				desc: "DisplayModeTableCommentDetail, echo, verbose, markdown",
 				sysVars: &systemVariables{
-					CLIFormat:         enums.DisplayModeTableDetailComment,
-					EchoInput:         true,
-					Verbose:           true,
-					MarkdownCodeblock: true,
+					Display: DisplayVars{
+						CLIFormat:         enums.DisplayModeTableDetailComment,
+						Verbose:           true,
+						MarkdownCodeblock: true,
+					},
+					Feature: FeatureVars{EchoInput: true},
 				},
 				input: "SELECT foo, bar\nFROM input",
 				result: &Result{
@@ -252,8 +254,10 @@ Empty set
 			{
 				desc: "DisplayModeTable: most preceding column name",
 				sysVars: &systemVariables{
-					CLIFormat: enums.DisplayModeTable,
-					Verbose:   true,
+					Display: DisplayVars{
+						CLIFormat: enums.DisplayModeTable,
+						Verbose:   true,
+					},
 				},
 				screenWidth: 20,
 				result: &Result{
@@ -281,8 +285,10 @@ Empty set
 			{
 				desc: "DisplayModeTable: also respect column type",
 				sysVars: &systemVariables{
-					CLIFormat: enums.DisplayModeTable,
-					Verbose:   true,
+					Display: DisplayVars{
+						CLIFormat: enums.DisplayModeTable,
+						Verbose:   true,
+					},
 				},
 				screenWidth: 19,
 				result: &Result{
@@ -310,8 +316,10 @@ Empty set
 			{
 				desc: "DisplayModeTable: also respect column value",
 				sysVars: &systemVariables{
-					CLIFormat: enums.DisplayModeTable,
-					Verbose:   true,
+					Display: DisplayVars{
+						CLIFormat: enums.DisplayModeTable,
+						Verbose:   true,
+					},
 				},
 				screenWidth: 25,
 				result: &Result{
@@ -362,7 +370,7 @@ Empty set
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeVertical}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeVertical}}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -391,7 +399,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab}}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -415,7 +423,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -442,7 +450,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}}, math.MaxInt, out, result, false, "")
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -798,9 +806,11 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "basic variable substitution",
 			prompt: "Project: %p, Instance: %i, Database: %d",
 			sysVars: &systemVariables{
-				Project:  "test-project",
-				Instance: "test-instance",
-				Database: "test-database",
+				Connection: ConnectionVars{
+					Project:  "test-project",
+					Instance: "test-instance",
+					Database: "test-database",
+				},
 			},
 			session: &Session{
 				mode: DatabaseConnected,
@@ -844,7 +854,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "custom system variable",
 			prompt: "Format: %{CLI_FORMAT}",
 			sysVars: &systemVariables{
-				CLIFormat: enums.DisplayModeTable,
+				Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
 			},
 			want: "Format: TABLE",
 		},
@@ -867,7 +877,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "database name - when in admin-only mode shows *detached*",
 			prompt: "spanner:%d%t> ",
 			sysVars: &systemVariables{
-				Database: "",
+				Connection: ConnectionVars{Database: ""},
 			},
 			session: &Session{
 				mode: Detached,
@@ -878,7 +888,7 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "database name - when connected to database shows database name",
 			prompt: "spanner:%d%t> ",
 			sysVars: &systemVariables{
-				Database: "test-database",
+				Connection: ConnectionVars{Database: "test-database"},
 			},
 			session: &Session{
 				mode: DatabaseConnected,
@@ -899,9 +909,11 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			desc:   "mixed valid and invalid percent sequences",
 			prompt: "%p %z %i %q %d",
 			sysVars: &systemVariables{
-				Project:  "proj",
-				Instance: "inst",
-				Database: "db",
+				Connection: ConnectionVars{
+					Project:  "proj",
+					Instance: "inst",
+					Database: "db",
+				},
 			},
 			session: &Session{
 				mode: DatabaseConnected,
@@ -964,7 +976,9 @@ func TestRenderPlanTree(t *testing.T) {
 		{
 			desc: "PROFILE with ParsedAnalyzeColumns",
 			sysVars: &systemVariables{
-				ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Rows:{{.Rows.Total}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}")),
+				Display: DisplayVars{
+					ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Rows:{{.Rows.Total}},Scanned:{{.ScannedRows.Total}},Filtered:{{.FilteredRows.Total}}")),
+				},
 			},
 			resultSetStats: lo.Must(protojsonUnmarshal[sppb.ResultSetStats, *sppb.ResultSetStats](dcaStatsJSON)),
 			want: `+-----+-------------------------------------------------------------------------------------------+------+---------+----------+
@@ -1252,7 +1266,7 @@ func TestCli_handleSpecialStatements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			sysVars := &systemVariables{Database: tt.currentDB}
+			sysVars := &systemVariables{Connection: ConnectionVars{Database: tt.currentDB}}
 			outBuf := &bytes.Buffer{}
 			errBuf := &bytes.Buffer{}
 
@@ -1322,8 +1336,10 @@ func TestCli_PrintResult(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				UsePager:      tt.usePager,
-				CLIFormat:     enums.DisplayModeTab, // Use TAB format for predictable output
+				Display: DisplayVars{
+					UsePager:  tt.usePager,
+					CLIFormat: enums.DisplayModeTab, // Use TAB format for predictable output
+				},
 				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			cli := &Cli{
@@ -1432,7 +1448,7 @@ func TestCli_parseStatement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			cli := &Cli{
-				SystemVariables: &systemVariables{BuildStatementMode: enums.ParseModeFallback},
+				SystemVariables: &systemVariables{Query: QueryVars{BuildStatementMode: enums.ParseModeFallback}},
 			}
 			got, err := cli.parseStatement(tt.input)
 
@@ -1552,9 +1568,9 @@ func TestCli_executeSourceFile(t *testing.T) {
 			// Setup session and CLI
 			outBuf := &bytes.Buffer{}
 			sysVars := &systemVariables{
-				BuildStatementMode: enums.ParseModeFallback,
-				CLIFormat:          enums.DisplayModeTab,
-				StreamManager:      streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+				Query:         QueryVars{BuildStatementMode: enums.ParseModeFallback},
+				Display:       DisplayVars{CLIFormat: enums.DisplayModeTab},
+				StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 			}
 			session := &Session{systemVariables: sysVars}
 

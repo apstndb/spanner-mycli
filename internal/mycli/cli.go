@@ -106,7 +106,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 		if exists {
 			fmt.Fprintf(c.GetWriter(), "Connected.\n")
 		} else {
-			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Connection.Database)))
 		}
 	} else {
 		fmt.Fprintf(c.GetWriter(), "Connected in detached mode.\n")
@@ -122,7 +122,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 
 	for {
 		// Reset everytime to reflect system variable
-		setLineEditor(ed, c.SystemVariables.EnableHighlight)
+		setLineEditor(ed, c.SystemVariables.Display.EnableHighlight)
 
 		input, err := c.readInputLine(ctx, ed)
 		if err != nil {
@@ -190,7 +190,7 @@ func (c *Cli) parseStatement(input *inputStatement) (Statement, error) {
 	if IsMetaCommand(input.statement) {
 		return ParseMetaCommand(input.statement)
 	}
-	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.BuildStatementMode)
+	return BuildStatementWithCommentsWithMode(input.statementWithoutComments, input.statement, c.SystemVariables.Query.BuildStatementMode)
 }
 
 // handleSpecialStatements handles special client-side statements.
@@ -215,7 +215,7 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 
 	// Handle DropDatabaseStatement
 	if s, ok := stmt.(*DropDatabaseStatement); ok {
-		if c.SystemVariables.Database == s.DatabaseId {
+		if c.SystemVariables.Connection.Database == s.DatabaseId {
 			c.PrintInteractiveError(
 				fmt.Errorf("database %q is currently used, it can not be dropped", s.DatabaseId),
 			)
@@ -248,17 +248,17 @@ func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, i
 
 func (c *Cli) updateSystemVariables(result *Result) {
 	// Update timestamps - both ReadTimestamp and CommitTimestamp are now separate fields
-	c.SystemVariables.ReadTimestamp = result.ReadTimestamp
-	c.SystemVariables.CommitTimestamp = result.CommitTimestamp
+	c.SystemVariables.Query.ReadTimestamp = result.ReadTimestamp
+	c.SystemVariables.Transaction.CommitTimestamp = result.CommitTimestamp
 
 	if result.CommitStats != nil {
 		var ts *timestamppb.Timestamp
 		if !result.CommitTimestamp.IsZero() {
 			ts = timestamppb.New(result.CommitTimestamp)
 		}
-		c.SystemVariables.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
+		c.SystemVariables.Transaction.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
 	} else {
-		c.SystemVariables.CommitResponse = nil
+		c.SystemVariables.Transaction.CommitResponse = nil
 	}
 }
 
@@ -275,7 +275,7 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 	// "meta commands are not supported in batch mode". This means nested sourcing
 	// (i.e., having \. commands within a sourced file) is not possible by design.
 	// Meta-commands are only processed in the interactive mode's main loop.
-	stmts, err := buildCommands(string(contents), c.SystemVariables.BuildStatementMode)
+	stmts, err := buildCommands(string(contents), c.SystemVariables.Query.BuildStatementMode)
 	if err != nil {
 		return fmt.Errorf("failed to parse SQL from file %s: %w", filePath, err)
 	}
@@ -308,7 +308,7 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 }
 
 func (c *Cli) RunBatch(ctx context.Context, input string) error {
-	stmts, err := buildCommands(input, c.SystemVariables.BuildStatementMode)
+	stmts, err := buildCommands(input, c.SystemVariables.Query.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return NewExitCodeError(exitCodeError)
@@ -379,7 +379,7 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 
 	ostream := w
 	var cmd *exec.Cmd
-	if c.SystemVariables.UsePager {
+	if c.SystemVariables.Display.UsePager {
 		pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
 
 		split, err := shellquote.Split(pagerpath)
@@ -470,14 +470,14 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 		case "%n":
 			return "\n"
 		case "%p":
-			return sysVars.Project
+			return sysVars.Connection.Project
 		case "%i":
-			return sysVars.Instance
+			return sysVars.Connection.Instance
 		case "%d":
 			if c.SessionHandler.IsDetached() {
 				return "*detached*"
 			}
-			return sysVars.Database
+			return sysVars.Connection.Database
 		case "%t":
 			switch {
 			case c.SessionHandler.InReadWriteTransaction():
@@ -686,10 +686,10 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 	}
 
 	size := math.MaxInt
-	if c.SystemVariables.AutoWrap {
-		if c.SystemVariables.FixedWidth != nil {
+	if c.SystemVariables.Display.AutoWrap {
+		if c.SystemVariables.Display.FixedWidth != nil {
 			// Use fixed width if set
-			size = int(*c.SystemVariables.FixedWidth)
+			size = int(*c.SystemVariables.Display.FixedWidth)
 		} else {
 			// Otherwise get terminal width
 			width, err := c.GetTerminalSizeWithTty(w)

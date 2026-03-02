@@ -127,8 +127,8 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 		return nil, nil, err
 	}
 
-	if c.SystemVariables.FuzzyFinderKey != "" {
-		if keyCode, ok := keys.NameToCode[keys.NormalizeName(c.SystemVariables.FuzzyFinderKey)]; ok {
+	if c.SystemVariables.Feature.FuzzyFinderKey != "" {
+		if keyCode, ok := keys.NameToCode[keys.NormalizeName(c.SystemVariables.Feature.FuzzyFinderKey)]; ok {
 			fuzzyCmd := &fuzzyFinderCommand{cli: c}
 			err = ed.BindKey(keyCode, fuzzyCmd)
 			if err != nil {
@@ -136,11 +136,11 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 			}
 		} else {
 			slog.Warn("unknown key name for CLI_FUZZY_FINDER_KEY, fuzzy finder disabled",
-				"key", c.SystemVariables.FuzzyFinderKey)
+				"key", c.SystemVariables.Feature.FuzzyFinderKey)
 		}
 	}
 
-	history, err := setupHistory(ed, c.SystemVariables.HistoryFile)
+	history, err := setupHistory(ed, c.SystemVariables.Display.HistoryFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -162,12 +162,12 @@ func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {
 
 	ed.SetPrompt(PS1PS2FuncToPromptFunc(
 		func() string {
-			return c.getInterpolatedPrompt(c.SystemVariables.Prompt)
+			return c.getInterpolatedPrompt(c.SystemVariables.Display.Prompt)
 		},
 		func(ps1 string) string {
-			prompt2, _ := strings.CutPrefix(c.SystemVariables.Prompt2, "%P")
+			prompt2, _ := strings.CutPrefix(c.SystemVariables.Display.Prompt2, "%P")
 			interpolatedPrompt2 := c.getInterpolatedPrompt(prompt2)
-			return generatePS2Prompt(ps1, c.SystemVariables.Prompt2, interpolatedPrompt2)
+			return generatePS2Prompt(ps1, c.SystemVariables.Display.Prompt2, interpolatedPrompt2)
 		}))
 
 	return ed, history, nil

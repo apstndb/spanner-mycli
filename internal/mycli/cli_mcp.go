@@ -150,7 +150,7 @@ func (c *Cli) RunMCP(ctx context.Context) error {
 	}
 
 	if !exists {
-		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Database)))
+		return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Connection.Database)))
 	}
 
 	server := createMCPServer(c)

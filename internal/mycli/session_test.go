@@ -109,7 +109,7 @@ func TestSession_TransactionMode(t *testing.T) {
 
 func TestSession_FailStatementIfReadOnly(t *testing.T) {
 	t.Parallel()
-	s := &Session{systemVariables: &systemVariables{ReadOnly: true}}
+	s := &Session{systemVariables: &systemVariables{Transaction: TransactionVars{ReadOnly: true}}}
 	err := s.failStatementIfReadOnly()
 	if err == nil {
 		t.Errorf("failStatementIfReadOnly should return an error when ReadOnly is true")
@@ -118,7 +118,7 @@ func TestSession_FailStatementIfReadOnly(t *testing.T) {
 		t.Errorf("failStatementIfReadOnly should return specific error, got %v", err)
 	}
 
-	s = &Session{systemVariables: &systemVariables{ReadOnly: false}}
+	s = &Session{systemVariables: &systemVariables{Transaction: TransactionVars{ReadOnly: false}}}
 	err = s.failStatementIfReadOnly()
 	if err != nil {
 		t.Errorf("failStatementIfReadOnly should not return an error when ReadOnly is false")

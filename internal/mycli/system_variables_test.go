@@ -158,38 +158,51 @@ func newTestSysVars() *sysVarsBuilder {
 }
 
 func (b *sysVarsBuilder) withReadTimestamp(t time.Time) *sysVarsBuilder {
-	b.sv.ReadTimestamp = t
+	b.sv.Query.ReadTimestamp = t
 	return b
 }
 
 func (b *sysVarsBuilder) withCommitTimestamp(t time.Time) *sysVarsBuilder {
-	b.sv.CommitTimestamp = t
+	b.sv.Transaction.CommitTimestamp = t
 	return b
 }
 
 func (b *sysVarsBuilder) withCommitResponse(r *sppb.CommitResponse) *sysVarsBuilder {
-	b.sv.CommitResponse = r
+	b.sv.Transaction.CommitResponse = r
 	return b
 }
 
-func (b *sysVarsBuilder) withProject(p string) *sysVarsBuilder     { b.sv.Project = p; return b }
-func (b *sysVarsBuilder) withInstance(i string) *sysVarsBuilder    { b.sv.Instance = i; return b }
-func (b *sysVarsBuilder) withDatabase(d string) *sysVarsBuilder    { b.sv.Database = d; return b }
-func (b *sysVarsBuilder) withHistoryFile(f string) *sysVarsBuilder { b.sv.HistoryFile = f; return b }
-func (b *sysVarsBuilder) withHost(h string) *sysVarsBuilder        { b.sv.Host = h; return b }
-func (b *sysVarsBuilder) withPort(p int) *sysVarsBuilder           { b.sv.Port = p; return b }
-func (b *sysVarsBuilder) withRole(r string) *sysVarsBuilder        { b.sv.Role = r; return b }
-func (b *sysVarsBuilder) withInsecure(i bool) *sysVarsBuilder      { b.sv.Insecure = i; return b }
-func (b *sysVarsBuilder) withLogGrpc(l bool) *sysVarsBuilder       { b.sv.LogGrpc = l; return b }
-func (b *sysVarsBuilder) withMCP(m bool) *sysVarsBuilder           { b.sv.MCP = m; return b }
+func (b *sysVarsBuilder) withProject(p string) *sysVarsBuilder { b.sv.Connection.Project = p; return b }
+
+func (b *sysVarsBuilder) withInstance(i string) *sysVarsBuilder {
+	b.sv.Connection.Instance = i
+	return b
+}
+
+func (b *sysVarsBuilder) withDatabase(d string) *sysVarsBuilder {
+	b.sv.Connection.Database = d
+	return b
+}
+
+func (b *sysVarsBuilder) withHistoryFile(f string) *sysVarsBuilder {
+	b.sv.Display.HistoryFile = f
+	return b
+}
+
+func (b *sysVarsBuilder) withHost(h string) *sysVarsBuilder   { b.sv.Connection.Host = h; return b }
+func (b *sysVarsBuilder) withPort(p int) *sysVarsBuilder      { b.sv.Connection.Port = p; return b }
+func (b *sysVarsBuilder) withRole(r string) *sysVarsBuilder   { b.sv.Connection.Role = r; return b }
+func (b *sysVarsBuilder) withInsecure(i bool) *sysVarsBuilder { b.sv.Connection.Insecure = i; return b }
+func (b *sysVarsBuilder) withLogGrpc(l bool) *sysVarsBuilder  { b.sv.Feature.LogGrpc = l; return b }
+func (b *sysVarsBuilder) withMCP(m bool) *sysVarsBuilder      { b.sv.Feature.MCP = m; return b }
 
 func (b *sysVarsBuilder) withImpersonateServiceAccount(a string) *sysVarsBuilder {
-	b.sv.ImpersonateServiceAccount = a
+	b.sv.Connection.ImpersonateServiceAccount = a
 	return b
 }
 
 func (b *sysVarsBuilder) withDirectedRead(d *sppb.DirectedReadOptions) *sysVarsBuilder {
-	b.sv.DirectedRead = d
+	b.sv.Query.DirectedRead = d
 	return b
 }
 
@@ -419,13 +432,13 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 				// Verify descriptors were loaded
 				if test.verifyDescriptor {
-					if sysVars.ProtoDescriptor == nil {
+					if sysVars.Internal.ProtoDescriptor == nil {
 						t.Errorf("Expected ProtoDescriptor to be set")
 					}
-					if sysVars.ProtoDescriptor.GetFile() == nil {
+					if sysVars.Internal.ProtoDescriptor.GetFile() == nil {
 						t.Errorf("Expected FileDescriptorSet to contain files")
 					}
-					if len(sysVars.ProtoDescriptor.GetFile()) == 0 {
+					if len(sysVars.Internal.ProtoDescriptor.GetFile()) == 0 {
 						t.Errorf("Expected at least one file descriptor")
 					}
 				}
@@ -489,11 +502,11 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 				if err != nil {
 					return
 				}
-				if sysVars.Host != tt.wantHost {
-					t.Errorf("Host = %q, want %q", sysVars.Host, tt.wantHost)
+				if sysVars.Connection.Host != tt.wantHost {
+					t.Errorf("Host = %q, want %q", sysVars.Connection.Host, tt.wantHost)
 				}
-				if sysVars.Port != tt.wantPort {
-					t.Errorf("Port = %d, want %d", sysVars.Port, tt.wantPort)
+				if sysVars.Connection.Port != tt.wantPort {
+					t.Errorf("Port = %d, want %d", sysVars.Connection.Port, tt.wantPort)
 				}
 			})
 		}
@@ -528,10 +541,10 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 					return
 				}
 
-				if sysVars.StatementTimeout == nil || *sysVars.StatementTimeout != test.want {
+				if sysVars.Query.StatementTimeout == nil || *sysVars.Query.StatementTimeout != test.want {
 					var got time.Duration
-					if sysVars.StatementTimeout != nil {
-						got = *sysVars.StatementTimeout
+					if sysVars.Query.StatementTimeout != nil {
+						got = *sysVars.Query.StatementTimeout
 					}
 					t.Errorf("expected StatementTimeout %v, got %v", test.want, got)
 				}
@@ -579,8 +592,8 @@ func TestSystemVariables_BooleanTypes(t *testing.T) {
 				sysVars := newSystemVariablesWithDefaultsForTest()
 				err := sysVars.SetFromSimple("CLI_SKIP_COLUMN_NAMES", tt.value)
 				assertError(t, err, tt.errorMsg)
-				if err == nil && sysVars.SkipColumnNames != tt.want {
-					t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.SkipColumnNames)
+				if err == nil && sysVars.Display.SkipColumnNames != tt.want {
+					t.Errorf("expected SkipColumnNames to be %v, got %v", tt.want, sysVars.Display.SkipColumnNames)
 				}
 			})
 		}
@@ -613,8 +626,8 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 				err := sysVars.SetFromSimple("DEFAULT_ISOLATION_LEVEL", test.value)
 				assertNoError(t, err)
 
-				if sysVars.DefaultIsolationLevel != test.want {
-					t.Errorf("DefaultIsolationLevel should be %v, but %v", test.want, sysVars.DefaultIsolationLevel)
+				if sysVars.Transaction.DefaultIsolationLevel != test.want {
+					t.Errorf("DefaultIsolationLevel should be %v, but %v", test.want, sysVars.Transaction.DefaultIsolationLevel)
 				}
 			})
 		}
@@ -648,8 +661,8 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 					return
 				}
 				assertNoError(t, err)
-				if sysVars.ReadLockMode != test.want {
-					t.Errorf("ReadLockMode should be %v, but %v", test.want, sysVars.ReadLockMode)
+				if sysVars.Transaction.ReadLockMode != test.want {
+					t.Errorf("ReadLockMode should be %v, but %v", test.want, sysVars.Transaction.ReadLockMode)
 				}
 			})
 		}
