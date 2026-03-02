@@ -68,20 +68,20 @@ func TestTransactionAttrs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
+			tm := &TransactionManager{
 				tc: tt.setupTC(),
 			}
 
-			attrs := s.TransactionAttrsWithLock()
+			attrs := tm.TransactionAttrsWithLock()
 			if attrs.mode != tt.wantMode {
 				t.Errorf("TransactionAttrs().mode = %v, want %v", attrs.mode, tt.wantMode)
 			}
 
-			// Verify that modifying the returned attrs doesn't affect the session
+			// Verify that modifying the returned attrs doesn't affect the manager
 			attrs.mode = "modified"
-			actualAttrs := s.TransactionAttrsWithLock()
+			actualAttrs := tm.TransactionAttrsWithLock()
 			if actualAttrs.mode == "modified" {
-				t.Error("modifying returned attrs affected the session state")
+				t.Error("modifying returned attrs affected the manager state")
 			}
 		})
 	}
@@ -89,7 +89,7 @@ func TestTransactionAttrs(t *testing.T) {
 
 func TestClearTransactionContext(t *testing.T) {
 	t.Parallel()
-	s := &Session{
+	tm := &TransactionManager{
 		tc: &transactionContext{
 			attrs: transactionAttributes{
 				mode: transactionModeReadWrite,
@@ -99,26 +99,26 @@ func TestClearTransactionContext(t *testing.T) {
 	}
 
 	// Verify transaction exists
-	if !s.InTransaction() {
+	if !tm.InTransaction() {
 		t.Error("expected transaction to exist before clear")
 	}
 
 	// Clear the transaction
-	s.clearTransactionContext()
+	tm.clearTransactionContext()
 
 	// Verify transaction is cleared
-	if s.InTransaction() {
+	if tm.InTransaction() {
 		t.Error("expected transaction to be cleared")
 	}
 
 	// Verify tc is nil
-	if s.tc != nil {
+	if tm.tc != nil {
 		t.Error("expected tc to be nil after clear")
 	}
 
 	// Verify multiple clears are safe
-	s.clearTransactionContext()
-	if s.tc != nil {
+	tm.clearTransactionContext()
+	if tm.tc != nil {
 		t.Error("expected tc to remain nil after second clear")
 	}
 }
@@ -181,20 +181,20 @@ func TestTransactionStateHelpers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
+			tm := &TransactionManager{
 				tc: tt.setupTC(),
 			}
 
-			if got := s.InTransaction(); got != tt.wantInTransaction {
+			if got := tm.InTransaction(); got != tt.wantInTransaction {
 				t.Errorf("InTransaction() = %v, want %v", got, tt.wantInTransaction)
 			}
-			if got := s.InReadWriteTransaction(); got != tt.wantInReadWrite {
+			if got := tm.InReadWriteTransaction(); got != tt.wantInReadWrite {
 				t.Errorf("InReadWriteTransaction() = %v, want %v", got, tt.wantInReadWrite)
 			}
-			if got := s.InReadOnlyTransaction(); got != tt.wantInReadOnly {
+			if got := tm.InReadOnlyTransaction(); got != tt.wantInReadOnly {
 				t.Errorf("InReadOnlyTransaction() = %v, want %v", got, tt.wantInReadOnly)
 			}
-			if got := s.InPendingTransaction(); got != tt.wantInPending {
+			if got := tm.InPendingTransaction(); got != tt.wantInPending {
 				t.Errorf("InPendingTransaction() = %v, want %v", got, tt.wantInPending)
 			}
 		})
@@ -267,19 +267,19 @@ func TestTransactionHelperErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
+			tm := &TransactionManager{
 				tc: tt.setupTC(),
 			}
 
 			var err error
 			switch tt.testType {
 			case "readwrite":
-				err = s.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+				err = tm.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 					t.Fatal("function should not be called")
 					return nil
 				})
 			case "readonly":
-				err = s.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
+				err = tm.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
 					t.Fatal("function should not be called")
 					return nil
 				})
@@ -337,12 +337,12 @@ func TestTransactionValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
+			tm := &TransactionManager{
 				tc: tt.setupTC(),
 			}
 
 			// Test validation through TransitTransaction which now handles validation
-			err := s.TransitTransaction(context.Background(), func(tc *transactionContext) (*transactionContext, error) {
+			err := tm.TransitTransaction(context.Background(), func(tc *transactionContext) (*transactionContext, error) {
 				// Check if we can start a new transaction
 				if tc != nil && (tc.attrs.mode == transactionModeReadWrite || tc.attrs.mode == transactionModeReadOnly) {
 					return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
