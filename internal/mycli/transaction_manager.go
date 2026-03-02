@@ -582,9 +582,9 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		heartbeatFunc: tm.startHeartbeat,
 	}
 
+	// Heartbeat will be started by EnableHeartbeat() after the first operation.
+	// For implicit transactions, they commit immediately so heartbeat isn't needed.
 	return nil
-	// Heartbeat will be started by EnableHeartbeat() after the first operation
-	// For implicit transactions, they commit immediately so heartbeat isn't needed
 }
 
 // BeginReadWriteTransaction starts read-write transaction.
