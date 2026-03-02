@@ -85,23 +85,23 @@ func TestParseDirectedReadOption(t *testing.T) {
 
 func TestSession_TransactionMode(t *testing.T) {
 	t.Parallel()
-	s := &Session{}
+	s := &Session{txn: &TransactionManager{}}
 
 	if got := s.TransactionMode(); got != transactionModeUndetermined {
 		t.Errorf("New session should have undetermined transaction mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
+	s.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
 	if got := s.TransactionMode(); got != transactionModeReadWrite {
 		t.Errorf("Session with read-write transaction should return read-write mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}}
+	s.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}}
 	if got := s.TransactionMode(); got != transactionModeReadOnly {
 		t.Errorf("Session with read-only transaction should return read-only mode, got %v", got)
 	}
 
-	s.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModePending}}
+	s.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModePending}}
 	if got := s.TransactionMode(); got != transactionModePending {
 		t.Errorf("Session with pending transaction should return pending mode, got %v", got)
 	}

@@ -1017,9 +1017,9 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		// TRANSACTION_TAG needs active transaction
 		t.Run("TRANSACTION_TAG", func(t *testing.T) {
 			t.Parallel()
-			sysVars := newTestSysVars().withSession(&Session{tc: &transactionContext{
+			sysVars := newTestSysVars().withSession(&Session{txn: &TransactionManager{tc: &transactionContext{
 				attrs: transactionAttributes{mode: transactionModePending},
-			}}).build()
+			}}}).build()
 			testSpecialVariable(t, setFunc, "TRANSACTION_TAG", "TRANSACTION_TAG", "test-tag", sysVars,
 				singletonMap("TRANSACTION_TAG", "test-tag"))
 		})
