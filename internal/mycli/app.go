@@ -861,127 +861,94 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	return &sysVars, nil
 }
 
-// initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
-// It extracts the logic for setting default values and applying flag values.
-func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
-	// Create basic system variables from options
-	sysVars, err := createSystemVariablesFromOptions(opts)
-	if err != nil {
-		return nil, err
-	}
+// optionMapping maps a CLI option value to a system variable via SetFromSimple.
+type optionMapping struct {
+	varName  string
+	value    string
+	flagName string
+}
 
-	// initialize default value
-	if err := sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns); err != nil {
-		return nil, fmt.Errorf("parse error: %w", err)
+// applyOptionMappings applies a slice of option-to-system-variable mappings.
+// Empty values are skipped.
+func applyOptionMappings(sysVars *systemVariables, mappings []optionMapping) error {
+	for _, m := range mappings {
+		if m.value == "" {
+			continue
+		}
+		if err := sysVars.SetFromSimple(m.varName, m.value); err != nil {
+			return fmt.Errorf("invalid value of %s: %v: %w", m.flagName, m.value, err)
+		}
 	}
+	return nil
+}
 
+func applyOutputTemplate(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.OutputTemplate == "" {
 		setDefaultOutputTemplate(sysVars)
 	} else {
 		if err := setOutputTemplateFile(sysVars, opts.OutputTemplate); err != nil {
-			return nil, fmt.Errorf("parse error of output template: %w", err)
+			return fmt.Errorf("parse error of output template: %w", err)
 		}
 	}
+	return nil
+}
 
+func applyStalenessOptions(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.Strong {
 		sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
 	}
-
 	if opts.ReadTimestamp != "" {
 		ts, err := time.Parse(time.RFC3339Nano, opts.ReadTimestamp)
 		if err != nil {
-			return nil, fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
+			return fmt.Errorf("error on parsing --read-timestamp=%v: %w", opts.ReadTimestamp, err)
 		}
 		sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(ts))
 	}
+	return nil
+}
 
-	if opts.DatabaseDialect != "" {
-		if err := sysVars.SetFromSimple("CLI_DATABASE_DIALECT", opts.DatabaseDialect); err != nil {
-			return nil, fmt.Errorf("invalid value of --database-dialect: %v: %w", opts.DatabaseDialect, err)
-		}
-	}
-
-	if opts.EnablePartitionedDML {
-		if err := sysVars.SetFromSimple("AUTOCOMMIT_DML_MODE", "PARTITIONED_NON_ATOMIC"); err != nil {
-			return nil, fmt.Errorf("unknown error on --enable-partitioned-dml: %w", err)
-		}
-	}
-
-	if opts.Timeout != "" {
-		// Validate timeout format before setting system variable for better error reporting
-		_, err := time.ParseDuration(opts.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
-		}
-		if err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
-			return nil, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
-		}
-	}
-
+func applyProtoDescriptors(sysVars *systemVariables, opts *spannerOptions) error {
 	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
 	for _, s := range ss {
 		if err := sysVars.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			return nil, fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
+			return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
 		}
 	}
+	return nil
+}
 
-	if opts.Priority != "" {
-		if err := sysVars.SetFromSimple("RPC_PRIORITY", opts.Priority); err != nil {
-			return nil, fmt.Errorf("invalid value of --priority: %v: %w", opts.Priority, err)
-		}
-	} else {
-		// Only set default if not already set via registry
-		if err := sysVars.SetFromSimple("RPC_PRIORITY", "MEDIUM"); err != nil {
-			return nil, fmt.Errorf("failed to set default RPC_PRIORITY: %w", err)
-		}
-	}
-
-	if opts.QueryMode != "" {
-		if err := sysVars.SetFromSimple("CLI_QUERY_MODE", opts.QueryMode); err != nil {
-			return nil, fmt.Errorf("invalid value of --query-mode: %v: %w", opts.QueryMode, err)
-		}
-	}
-
-	if opts.TryPartitionQuery {
-		if err := sysVars.SetFromSimple("CLI_TRY_PARTITION_QUERY", "TRUE"); err != nil {
-			return nil, fmt.Errorf("failed to set CLI_TRY_PARTITION_QUERY: %w", err)
-		}
-	}
-
+func applyDirectedRead(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.DirectedRead != "" {
 		directedRead, err := parseDirectedReadOption(opts.DirectedRead)
 		if err != nil {
-			return nil, fmt.Errorf("invalid directed read option: %w", err)
+			return fmt.Errorf("invalid directed read option: %w", err)
 		}
 		sysVars.Query.DirectedRead = directedRead
 	}
+	return nil
+}
 
-	// Set streaming mode from flag (already validated by go-flags choices)
-	if opts.Streaming != "" && opts.Streaming != "AUTO" {
-		if err := sysVars.SetFromSimple("CLI_STREAMING", opts.Streaming); err != nil {
-			return nil, fmt.Errorf("failed to set CLI_STREAMING: %w", err)
-		}
-	}
-	// If not set or set to AUTO, defaults to AUTO (format-dependent behavior)
-
+func applyFormatAndSetOptions(sysVars *systemVariables, opts *spannerOptions) error {
 	// Set CLI_FORMAT defaults based on flags before processing --set
 	// This allows --set CLI_FORMAT=X to override these defaults
 	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		formatMode := getFormatFromOptions(opts)
 		if formatMode != enums.DisplayModeUnspecified {
-			// The format has already been parsed from flags by getFormatFromOptions.
-			// We can set it directly on the struct to avoid converting it back to a string
-			// and then re-parsing it inside SetFromSimple.
+			// Set directly on the struct to avoid converting back to string
+			// and re-parsing inside SetFromSimple.
 			sysVars.Display.CLIFormat = formatMode
 		}
 	}
 	for k, v := range sets {
 		if err := sysVars.SetFromSimple(k, v); err != nil {
-			return nil, fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
+			return fmt.Errorf("failed to set system variable. name: %v, value: %v: %w", k, v, err)
 		}
 	}
+	return nil
+}
 
+func applyEmbeddedEmulatorDefaults(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.EmbeddedEmulator {
 		// When using embedded emulator, insecure connection is required
 		sysVars.Connection.Insecure = true
@@ -997,6 +964,44 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		// For database, respect --detached mode (empty database)
 		if sysVars.Connection.Database == "" && !opts.Detached {
 			sysVars.Connection.Database = spanemuboost.DefaultDatabaseID
+		}
+	}
+	return nil
+}
+
+// initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
+// It extracts the logic for setting default values and applying flag values.
+func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
+	sysVars, err := createSystemVariablesFromOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// DefaultAnalyzeColumns is a hardcoded constant that cannot fail.
+	lo.Must0(sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns))
+
+	if err := applyOptionMappings(sysVars, []optionMapping{
+		{"CLI_DATABASE_DIALECT", opts.DatabaseDialect, "--database-dialect"},
+		{"AUTOCOMMIT_DML_MODE", lo.Ternary(opts.EnablePartitionedDML, "PARTITIONED_NON_ATOMIC", ""), "--enable-partitioned-dml"},
+		{"STATEMENT_TIMEOUT", opts.Timeout, "--timeout"},
+		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
+		{"CLI_QUERY_MODE", opts.QueryMode, "--query-mode"},
+		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
+		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
+	}); err != nil {
+		return nil, err
+	}
+
+	for _, apply := range []func(*systemVariables, *spannerOptions) error{
+		applyOutputTemplate,
+		applyStalenessOptions,
+		applyProtoDescriptors,
+		applyDirectedRead,
+		applyFormatAndSetOptions,
+		applyEmbeddedEmulatorDefaults,
+	} {
+		if err := apply(sysVars, opts); err != nil {
+			return nil, err
 		}
 	}
 
