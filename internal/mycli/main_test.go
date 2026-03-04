@@ -720,10 +720,10 @@ func Test_initializeSystemVariables(t *testing.T) {
 
 			// Use cmp.Diff for comparison, ignoring unexported fields and specific fields
 			// that are hard to compare directly (e.g., *template.Template, *descriptorpb.FileDescriptorSet)
-			// and those that are set later in run() (e.g., EnableProgressBar, CurrentSession, WithoutAuthentication)
+			// and those that are set later in run() (e.g., EnableProgressBar, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "CurrentSession", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
@@ -811,6 +811,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 
 	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
+		cmpopts.IgnoreUnexported(systemVariables{}),
 		cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Display.ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
@@ -1014,6 +1015,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 
 			// Compare key fields
 			if diff := cmp.Diff(test.want, *got,
+				cmpopts.IgnoreUnexported(systemVariables{}),
 				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {

@@ -290,7 +290,7 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 		txn:             NewTransactionManager(client, sysVars, clientConfig),
 		systemVariables: sysVars,
 	}
-	sysVars.CurrentSession = session
+	sysVars.inTransaction = session.InTransaction
 
 	return session, nil
 }
@@ -324,7 +324,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 		txn:             NewTransactionManager(nil, sysVars, clientConfig),
 		systemVariables: sysVars,
 	}
-	sysVars.CurrentSession = session
+	sysVars.inTransaction = session.InTransaction
 
 	// Validate instance exists
 	exists, err := session.InstanceExists()

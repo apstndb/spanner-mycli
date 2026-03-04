@@ -172,8 +172,9 @@ type systemVariables struct {
 	// managed via dedicated SET/UNSET PARAM statements (statements_params.go).
 	Params map[string]ast.Node
 
-	// link to session
-	CurrentSession *Session
+	// inTransaction reports whether there is an active transaction.
+	// nil means no session has been created yet.
+	inTransaction func() bool
 
 	// StreamManager manages tee output functionality
 	StreamManager *streamio.StreamManager
