@@ -167,8 +167,7 @@ func (r *VarRegistry) registerAll() {
 		base: BoolVar(&sv.Transaction.ReadOnly, "A boolean indicating whether or not the connection is in read-only mode"),
 		customSetter: func(value string) error {
 			// Custom validation for READONLY
-			if sv.CurrentSession != nil &&
-				(sv.CurrentSession.InReadOnlyTransaction() || sv.CurrentSession.InReadWriteTransaction()) {
+			if sv.inTransaction != nil && sv.inTransaction() {
 				return errSetterInTransaction
 			}
 			b, err := strconv.ParseBool(value)
@@ -432,14 +431,13 @@ func (r *VarRegistry) registerAll() {
 	})
 
 	// CLI_ENABLE_ADC_PLUS is a session-init-only variable.
-	// Currently implemented using a custom setter, but could use native support
+	// Currently implemented using a custom setter that checks inTransaction != nil
+	// to detect whether a session has been created. Could use native support
 	// for session-init-only behavior if added to VarHandler (see TODO in var_handler.go).
-	// This pattern of checking CurrentSession != nil is repeated for variables that
-	// must be set before session creation.
 	r.Register("CLI_ENABLE_ADC_PLUS", &CustomVar{
 		base: BoolVar(&sv.Connection.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
 		customSetter: func(value string) error {
-			if sv.CurrentSession != nil {
+			if sv.inTransaction != nil {
 				return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
 			}
 			b, err := strconv.ParseBool(value)

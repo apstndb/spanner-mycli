@@ -206,8 +206,7 @@ func (b *sysVarsBuilder) withDirectedRead(d *sppb.DirectedReadOptions) *sysVarsB
 	return b
 }
 
-func (b *sysVarsBuilder) withSession(s *Session) *sysVarsBuilder { b.sv.CurrentSession = s; return b }
-func (b *sysVarsBuilder) build() *systemVariables                { return b.sv }
+func (b *sysVarsBuilder) build() *systemVariables { return b.sv }
 
 // Proto Descriptor File Tests (Array/List Variables)
 
@@ -808,7 +807,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 		// - setName: The variable name to use in Set operation (may differ in case for testing)
 		// - setValue: The value to set
 		// - hasSession: Whether a session exists (if true, Set should fail for CLI_ENABLE_ADC_PLUS)
-		// - hasClient: Whether the session has a client (for testing detached sessions)
 		// - expectedError: Expected error message (empty if no error expected)
 		// - expectedValue: Expected value after the operation
 
@@ -818,7 +816,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 			setName       string
 			setValue      string
 			hasSession    bool
-			hasClient     bool
 			expectedError string
 			expectedValue string
 		}{
@@ -847,7 +844,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setName:       "CLI_ENABLE_ADC_PLUS",
 				setValue:      "false",
 				hasSession:    true,
-				hasClient:     true,
 				expectedError: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 				expectedValue: "TRUE", // Should remain at default value
 			},
@@ -859,7 +855,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setName:       "cli_enable_adc_plus",
 				setValue:      "false",
 				hasSession:    true,
-				hasClient:     true,
 				expectedError: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 				expectedValue: "TRUE",
 			},
@@ -869,19 +864,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setName:       "Cli_Enable_Adc_Plus",
 				setValue:      "false",
 				hasSession:    true,
-				hasClient:     true,
-				expectedError: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
-				expectedValue: "TRUE",
-			},
-
-			// Test detached session (session without client) also enforces restriction
-			{
-				desc:          "restriction applies to detached session",
-				varName:       "CLI_ENABLE_ADC_PLUS",
-				setName:       "CLI_ENABLE_ADC_PLUS",
-				setValue:      "false",
-				hasSession:    true,
-				hasClient:     false, // Detached session
 				expectedError: "CLI_ENABLE_ADC_PLUS cannot be changed after session creation",
 				expectedValue: "TRUE",
 			},
@@ -893,7 +875,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setName:       "CLI_ASYNC_DDL",
 				setValue:      "true",
 				hasSession:    true,
-				hasClient:     true,
 				expectedValue: "TRUE",
 			},
 			{
@@ -902,7 +883,6 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				setName:       "CLI_VERBOSE",
 				setValue:      "true",
 				hasSession:    true,
-				hasClient:     true,
 				expectedValue: "TRUE",
 			},
 		}
@@ -914,12 +894,9 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 				// Start with default values
 				sv := newSystemVariablesWithDefaultsForTest()
 
-				// Create session if needed
+				// Set inTransaction callback if session is needed
 				if tt.hasSession {
-					sv.CurrentSession = &Session{}
-					if tt.hasClient {
-						sv.CurrentSession.client = &spanner.Client{} // Mock client
-					}
+					sv.inTransaction = func() bool { return false }
 				}
 
 				// Attempt to set the variable
@@ -1014,12 +991,9 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 				singletonMap("CLI_ENDPOINT", "localhost:9010"))
 		})
 
-		// TRANSACTION_TAG needs active transaction
 		t.Run("TRANSACTION_TAG", func(t *testing.T) {
 			t.Parallel()
-			sysVars := newTestSysVars().withSession(&Session{txn: &TransactionManager{tc: &transactionContext{
-				attrs: transactionAttributes{mode: transactionModePending},
-			}}}).build()
+			sysVars := newTestSysVars().build()
 			testSpecialVariable(t, setFunc, "TRANSACTION_TAG", "TRANSACTION_TAG", "test-tag", sysVars,
 				singletonMap("TRANSACTION_TAG", "test-tag"))
 		})
