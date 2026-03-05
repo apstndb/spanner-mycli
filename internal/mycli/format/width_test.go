@@ -47,11 +47,18 @@ func TestMaxWithIdx(t *testing.T) {
 			fallback: math.MinInt,
 		},
 		{
-			name:     "all same",
+			name:     "all same with equal fallback",
 			input:    []int{5, 5, 5},
 			wantIdx:  -1,
 			wantVal:  5,
 			fallback: 5,
+		},
+		{
+			name:     "all same with smaller fallback",
+			input:    []int{5, 5, 5},
+			wantIdx:  0,
+			wantVal:  5,
+			fallback: 0,
 		},
 		{
 			name:     "empty seq",
@@ -66,6 +73,16 @@ func TestMaxWithIdx(t *testing.T) {
 			wantIdx:  1,
 			wantVal:  -1,
 			fallback: math.MinInt,
+		},
+		{
+			// When fallback > all elements, no element satisfies f(val) < f(v),
+			// so the fallback "wins". This is acceptable because production callers
+			// always use math.MinInt as fallback (see width.go and maxIndex).
+			name:     "all negative with positive fallback returns fallback",
+			input:    []int{-5, -2, -8},
+			wantIdx:  -1,
+			wantVal:  0,
+			fallback: 0,
 		},
 	}
 
@@ -144,11 +161,14 @@ func TestAdjustToSum(t *testing.T) {
 			wantRemains: 0,
 		},
 		{
-			name:        "exceeds limit clips largest",
+			// adjustToSum clips all values to successively smaller unique thresholds
+			// until sum <= limit. Here: [5,3,10] -> clip to 5 -> [5,3,5]=13 > 10,
+			// clip to 3 -> [3,3,3]=9 <= 10, remains=1.
+			name:        "exceeds limit clips to fit",
 			limit:       10,
 			vs:          []int{5, 3, 10},
-			wantWidths:  []int{5, 3, 5},
-			wantRemains: 10 - 13, // might be negative before redistribute
+			wantWidths:  []int{3, 3, 3},
+			wantRemains: 1,
 		},
 	}
 
@@ -156,23 +176,11 @@ func TestAdjustToSum(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			gotWidths, gotRemains := adjustToSum(tt.limit, tt.vs)
-			if tt.wantRemains >= 0 {
-				// Only check when we expect non-negative remains
-				if diff := cmp.Diff(tt.wantWidths, gotWidths); diff != "" {
-					t.Errorf("widths mismatch (-want +got):\n%s", diff)
-				}
-				if gotRemains != tt.wantRemains {
-					t.Errorf("remains = %d, want %d", gotRemains, tt.wantRemains)
-				}
-			} else {
-				// For exceeds-limit case, just verify total <= limit
-				total := 0
-				for _, w := range gotWidths {
-					total += w
-				}
-				if total > tt.limit {
-					t.Errorf("total width %d exceeds limit %d", total, tt.limit)
-				}
+			if diff := cmp.Diff(tt.wantWidths, gotWidths); diff != "" {
+				t.Errorf("widths mismatch (-want +got):\n%s", diff)
+			}
+			if gotRemains != tt.wantRemains {
+				t.Errorf("remains = %d, want %d", gotRemains, tt.wantRemains)
 			}
 		})
 	}
