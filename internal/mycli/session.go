@@ -96,7 +96,7 @@ type Session struct {
 	txn             *TransactionManager // transaction lifecycle + query execution
 	systemVariables *systemVariables
 
-	currentBatch Statement
+	batch BatchManager
 
 	// schemaGeneration is incremented after DDL execution to signal
 	// that schema-dependent caches (e.g., fuzzy completion table list) are stale.
@@ -799,23 +799,6 @@ func (s *Session) failStatementIfReadOnly() error {
 	return nil
 }
 
-func extractBatchInfo(stmt Statement) *BatchInfo {
-	switch s := stmt.(type) {
-	case *BulkDdlStatement:
-		return &BatchInfo{
-			Mode: batchModeDDL,
-			Size: len(s.Ddls),
-		}
-	case *BatchDMLStatement:
-		return &BatchInfo{
-			Mode: batchModeDML,
-			Size: len(s.DMLs),
-		}
-	default:
-		return nil
-	}
-}
-
 // ExecuteStatement executes stmt.
 // If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
 func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result *Result, err error) {
@@ -831,7 +814,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 
 	defer func() {
 		if result != nil {
-			result.BatchInfo = extractBatchInfo(s.currentBatch)
+			result.BatchInfo = s.batch.Info()
 		}
 	}()
 	if _, ok := stmt.(MutationStatement); ok {

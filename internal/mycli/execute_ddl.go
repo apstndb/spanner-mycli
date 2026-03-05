@@ -22,7 +22,7 @@ import (
 )
 
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
-	switch b := session.currentBatch.(type) {
+	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
 		return nil, errors.New("there is active batch DML")
 	case *BulkDdlStatement:

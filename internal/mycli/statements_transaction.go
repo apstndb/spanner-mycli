@@ -146,7 +146,7 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 
 	// Handle read-write transaction
 	result := &Result{}
-	if session.systemVariables.Transaction.AutoBatchDML && session.currentBatch != nil {
+	if session.systemVariables.Transaction.AutoBatchDML && session.batch.IsActive() {
 		var err error
 		result, err = runBatch(ctx, session)
 		if err != nil {

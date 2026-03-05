@@ -114,29 +114,44 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 	}
 }
 
+// queryExecution bundles the parameters for the query execution pipeline,
+// avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
+type queryExecution struct {
+	Session      *Session
+	Iter         *spanner.RowIterator
+	ReadOnlyTxn  *spanner.ReadOnlyTransaction
+	FormatConfig *spanvalue.FormatConfig
+	SQL          string
+	SysVars      *systemVariables
+	Metrics      *metrics.ExecutionMetrics
+	SQLLiterals  bool
+	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
+}
+
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
-func executeAndCollect(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, sysVars *systemVariables, m *metrics.ExecutionMetrics, usingSQLLiterals bool) (*Result, error) {
-	useStreaming, processor := decideExecutionMode(sysVars)
-	m.IsStreaming = useStreaming
+func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error) {
+	useStreaming, processor := decideExecutionMode(qe.SysVars)
+	qe.Metrics.IsStreaming = useStreaming
+	qe.Processor = processor
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
-		"format", sysVars.Display.CLIFormat,
-		"sqlTableName", sysVars.Display.SQLTableName)
+		"format", qe.SysVars.Display.CLIFormat,
+		"sqlTableName", qe.SysVars.Display.SQLTableName)
 
 	var result *Result
 	var err error
 	if useStreaming {
-		result, err = executeWithStreaming(ctx, session, iter, roTxn, fc, processor, m, usingSQLLiterals, sysVars)
+		result, err = executeWithStreaming(ctx, qe)
 	} else {
-		result, err = executeWithBuffering(ctx, session, iter, roTxn, fc, sql, m, usingSQLLiterals, sysVars)
+		result, err = executeWithBuffering(ctx, qe)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	finalizeMetrics(m, sysVars)
-	result.Metrics = m
+	finalizeMetrics(qe.Metrics, qe.SysVars)
+	result.Metrics = qe.Metrics
 	return result, nil
 }
 
@@ -162,7 +177,16 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
-	return executeAndCollect(ctx, session, iter, txn, fc, sql, sysVars, m, usingSQLLiterals)
+	return executeAndCollect(ctx, &queryExecution{
+		Session:      session,
+		Iter:         iter,
+		ReadOnlyTxn:  txn,
+		FormatConfig: fc,
+		SQL:          sql,
+		SysVars:      sysVars,
+		Metrics:      m,
+		SQLLiterals:  usingSQLLiterals,
+	})
 }
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
@@ -181,7 +205,16 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
 
-	result, err := executeAndCollect(ctx, session, iter, roTxn, fc, sql, sysVars, m, usingSQLLiterals)
+	result, err := executeAndCollect(ctx, &queryExecution{
+		Session:      session,
+		Iter:         iter,
+		ReadOnlyTxn:  roTxn,
+		FormatConfig: fc,
+		SQL:          sql,
+		SysVars:      sysVars,
+		Metrics:      m,
+		SQLLiterals:  usingSQLLiterals,
+	})
 	if err != nil {
 		// Handle aborted transaction
 		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
@@ -233,7 +266,7 @@ func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor) {
 }
 
 // executeWithStreaming executes the query using streaming mode.
-func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+func executeWithStreaming(ctx context.Context, qe *queryExecution) (*Result, error) {
 	// Collect memory stats if debug logging is enabled
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		metrics.LogMemoryStats("Before streaming")
@@ -241,7 +274,7 @@ func executeWithStreaming(ctx context.Context, session *Session, iter *spanner.R
 	}
 
 	slog.Debug("Using streaming mode", "startTime", time.Now().Format(time.RFC3339Nano))
-	return executeStreamingSQL(ctx, session, iter, roTxn, fc, processor, m, usingSQLLiterals, sysVars)
+	return executeStreamingSQL(ctx, qe)
 }
 
 // finalizeQueryResult parses query stats, extracts the read timestamp, and updates the query cache.
@@ -272,7 +305,7 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 }
 
 // executeWithBuffering executes the query using buffered mode.
-func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, sql string, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
+func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, error) {
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		metrics.LogMemoryStats("Before buffered")
 		defer metrics.LogMemoryStats("After buffered")
@@ -280,7 +313,7 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(iter, spannerRowToRow(fc), m)
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, spannerRowToRow(qe.FormatConfig), qe.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -293,22 +326,22 @@ func executeWithBuffering(ctx context.Context, session *Session, iter *spanner.R
 		Rows:                  rows,
 		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:          len(rows),
-		HasSQLFormattedValues: usingSQLLiterals,
+		HasSQLFormattedValues: qe.SQLLiterals,
 	}
 
-	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, m); err != nil {
+	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 // executeStreamingSQL processes query results in streaming mode.
-func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.RowIterator, roTxn *spanner.ReadOnlyTransaction, fc *spanvalue.FormatConfig, processor RowProcessor, m *metrics.ExecutionMetrics, usingSQLLiterals bool, sysVars *systemVariables) (*Result, error) {
-	slog.Debug("executeStreamingSQL called", "format", sysVars.Display.CLIFormat)
+func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, error) {
+	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
-	rowTransform := spannerRowToRow(fc)
+	rowTransform := spannerRowToRow(qe.FormatConfig)
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
-	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(iter, processor, rowTransform, sysVars, m)
+	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(qe.Iter, qe.Processor, rowTransform, qe.SysVars, qe.Metrics)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
 	if err != nil {
 		return nil, err
@@ -319,10 +352,10 @@ func executeStreamingSQL(ctx context.Context, session *Session, iter *spanner.Ro
 		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:          int(rowCount),
 		Streamed:              true,
-		HasSQLFormattedValues: usingSQLLiterals,
+		HasSQLFormattedValues: qe.SQLLiterals,
 	}
 
-	if err := finalizeQueryResult(result, stats, roTxn, plan, sysVars, m); err != nil {
+	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
 		return nil, err
 	}
 	return result, nil

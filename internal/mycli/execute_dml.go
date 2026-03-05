@@ -24,7 +24,7 @@ func isInsert(sql string) bool {
 }
 
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
-	switch b := session.currentBatch.(type) {
+	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
 		stmt, err := newStatement(sql, session.systemVariables.Params, false)
 		if err != nil {
@@ -44,7 +44,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			if err != nil {
 				return nil, err
 			}
-			session.currentBatch = &BatchDMLStatement{DMLs: []spanner.Statement{stmt}}
+			session.batch.SetCurrent(&BatchDMLStatement{DMLs: []spanner.Statement{stmt}})
 			return &Result{}, nil
 		}
 

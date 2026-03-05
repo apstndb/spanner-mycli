@@ -600,26 +600,16 @@ type StartBatchStatement struct {
 }
 
 func (s *StartBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.currentBatch != nil {
-		return nil, fmt.Errorf("already in batch, you should execute ABORT BATCH")
+	if err := session.batch.Start(s.Mode); err != nil {
+		return nil, err
 	}
-
-	switch s.Mode {
-	case batchModeDDL:
-		session.currentBatch = &BulkDdlStatement{}
-	case batchModeDML:
-		session.currentBatch = &BatchDMLStatement{}
-	default:
-		return nil, fmt.Errorf("unknown batchMode: %v", s.Mode)
-	}
-
 	return &Result{KeepVariables: true}, nil
 }
 
 type AbortBatchStatement struct{}
 
 func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	session.currentBatch = nil
+	session.batch.Abort()
 	return &Result{KeepVariables: true}, nil
 }
 
@@ -630,12 +620,10 @@ func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Res
 }
 
 func runBatch(ctx context.Context, session *Session) (*Result, error) {
-	if session.currentBatch == nil {
-		return nil, errors.New("no active batch")
+	batch, err := session.batch.TakeForExecution()
+	if err != nil {
+		return nil, err
 	}
-
-	batch := session.currentBatch
-	session.currentBatch = nil
 
 	result, err := session.ExecuteStatement(ctx, batch)
 	if err != nil {
