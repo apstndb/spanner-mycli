@@ -326,12 +326,10 @@ func TestParseServerTime(t *testing.T) {
 func TestGetMemoryStats(t *testing.T) {
 	t.Parallel()
 
-	stats := GetMemoryStats()
-	// Just verify it doesn't panic and returns reasonable values
-	// SysMB should be > 0 for any running Go process
-	if stats.SysMB == 0 {
-		t.Error("SysMB should be > 0")
-	}
+	// Smoke test to verify GetMemoryStats doesn't panic.
+	// No assertions on values since SysMB uses integer division (m.Sys / 1024 / 1024)
+	// which could be 0 in minimal container environments.
+	_ = GetMemoryStats()
 }
 
 func durationPtr(d time.Duration) *time.Duration {
