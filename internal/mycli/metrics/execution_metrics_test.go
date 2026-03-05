@@ -232,6 +232,20 @@ func TestTotalAllocatedMB(t *testing.T) {
 			want: 50,
 		},
 		{
+			name: "no before stats",
+			m: ExecutionMetrics{
+				MemoryAfter: &MemoryStats{TotalAllocMB: 150},
+			},
+			want: -1,
+		},
+		{
+			name: "no after stats",
+			m: ExecutionMetrics{
+				MemoryBefore: &MemoryStats{TotalAllocMB: 100},
+			},
+			want: -1,
+		},
+		{
 			name: "no stats",
 			m:    ExecutionMetrics{},
 			want: -1,
@@ -264,6 +278,20 @@ func TestGCCount(t *testing.T) {
 				MemoryAfter:  &MemoryStats{NumGC: 8},
 			},
 			want: 3,
+		},
+		{
+			name: "no before stats",
+			m: ExecutionMetrics{
+				MemoryAfter: &MemoryStats{NumGC: 8},
+			},
+			want: -1,
+		},
+		{
+			name: "no after stats",
+			m: ExecutionMetrics{
+				MemoryBefore: &MemoryStats{NumGC: 5},
+			},
+			want: -1,
 		},
 		{
 			name: "no stats",
