@@ -1001,6 +1001,94 @@ func TestExtractValue(t *testing.T) {
 	}
 }
 
+func TestSQLSkeletonItems(t *testing.T) {
+	noArgStatements := map[string]bool{
+		"ANALYZE":           true,
+		"DROP PROTO BUNDLE": true,
+	}
+
+	for i, item := range sqlSkeletonItems {
+		assert.NotEmpty(t, item.Value, "item[%d] Value should not be empty", i)
+		assert.NotEmpty(t, item.Label, "item[%d] Label should not be empty", i)
+
+		// Value should end with space (has args) or be a no-arg statement.
+		if !strings.HasSuffix(item.Value, " ") {
+			assert.True(t, noArgStatements[item.Value],
+				"item[%d] Value %q should end with space or be a known no-arg statement", i, item.Value)
+		}
+
+		// Label should start with the first keyword of Value.
+		firstKeyword := strings.Fields(item.Value)[0]
+		assert.True(t, strings.HasPrefix(item.Label, firstKeyword),
+			"item[%d] Label %q should start with keyword %q", i, item.Label, firstKeyword)
+	}
+}
+
+func TestSQLSkeletonItemsNoDuplicateWithClientSide(t *testing.T) {
+	clientValues := make(map[string]bool)
+	for _, item := range buildStatementNameItems() {
+		clientValues[item.Value] = true
+	}
+
+	for _, item := range sqlSkeletonItems {
+		assert.False(t, clientValues[item.Value],
+			"skeleton Value %q duplicates a client-side statement", item.Value)
+	}
+}
+
+func TestStatementNameItemsIncludesSQLSkeletons(t *testing.T) {
+	// statementNameItems should contain both client-side and SQL skeleton items.
+	valueSet := make(map[string]bool)
+	for _, item := range statementNameItems {
+		valueSet[item.Value] = true
+	}
+
+	// Client-side items should be present.
+	assert.True(t, valueSet["USE "], "should contain client-side USE statement")
+	assert.True(t, valueSet["SHOW DATABASES"], "should contain client-side SHOW DATABASES")
+
+	// SQL skeleton items should be present.
+	assert.True(t, valueSet["SELECT "], "should contain SQL skeleton SELECT")
+	assert.True(t, valueSet["INSERT INTO "], "should contain SQL skeleton INSERT INTO")
+	assert.True(t, valueSet["CREATE TABLE "], "should contain SQL skeleton CREATE TABLE")
+	assert.True(t, valueSet["UPDATE "], "should contain SQL skeleton UPDATE")
+	assert.True(t, valueSet["DELETE FROM "], "should contain SQL skeleton DELETE FROM")
+	assert.True(t, valueSet["ANALYZE"], "should contain SQL skeleton ANALYZE (no-arg)")
+}
+
+func TestRunFzfFilter_SQLSkeletons(t *testing.T) {
+	tests := []struct {
+		name       string
+		filter     string
+		wantValues []string
+	}{
+		{
+			name:       "SELECT matches skeleton",
+			filter:     "SELECT",
+			wantValues: []string{"SELECT ", "SELECT * FROM "},
+		},
+		{
+			name:       "CREATE TABLE matches skeleton",
+			filter:     "CREATE TABLE",
+			wantValues: []string{"CREATE TABLE ", "CREATE TABLE IF NOT EXISTS "},
+		},
+		{
+			name:       "INSERT matches skeleton",
+			filter:     "INSERT INTO",
+			wantValues: []string{"INSERT INTO "},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := runFzfFilter(statementNameItems, tt.filter, "Statements", "")
+			for _, want := range tt.wantValues {
+				assert.Contains(t, results, want)
+			}
+		})
+	}
+}
+
 func TestFuzzyCacheEntryValid(t *testing.T) {
 	session1 := &Session{}
 	session2 := &Session{}
