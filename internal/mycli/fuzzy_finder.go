@@ -493,11 +493,95 @@ func buildStatementNameItems() []fzfItem {
 	return items
 }
 
-// statementNameItems is built at init time from clientSideStatementDefs.
+// sqlSkeletonItems provides fuzzy completion candidates for standard SQL statements
+// (SELECT, INSERT, CREATE TABLE, etc.) that are forwarded directly to Spanner
+// and thus not covered by clientSideStatementDefs.
+var sqlSkeletonItems = []fzfItem{
+	// Query
+	{Value: "SELECT ", Label: "SELECT <columns> FROM <table> WHERE <condition>"},
+	{Value: "SELECT * FROM ", Label: "SELECT * FROM <table>"},
+	{Value: "WITH ", Label: "WITH <cte> AS (<query>) SELECT ..."},
+	// DML
+	{Value: "INSERT INTO ", Label: "INSERT INTO <table> (<columns>) VALUES (<values>)"},
+	{Value: "INSERT OR UPDATE INTO ", Label: "INSERT OR UPDATE INTO <table> (<columns>) VALUES (<values>)"},
+	{Value: "INSERT OR IGNORE INTO ", Label: "INSERT OR IGNORE INTO <table> (<columns>) VALUES (<values>)"},
+	{Value: "UPDATE ", Label: "UPDATE <table> SET <column> = <value> WHERE <condition>"},
+	{Value: "DELETE FROM ", Label: "DELETE FROM <table> WHERE <condition>"},
+	// DDL - Database
+	{Value: "CREATE DATABASE ", Label: "CREATE DATABASE <name>"},
+	{Value: "ALTER DATABASE ", Label: "ALTER DATABASE <name> SET OPTIONS (...)"},
+	// DDL - Schema
+	{Value: "CREATE SCHEMA ", Label: "CREATE SCHEMA <name>"},
+	{Value: "DROP SCHEMA ", Label: "DROP SCHEMA <name>"},
+	// DDL - Table
+	{Value: "CREATE TABLE ", Label: "CREATE TABLE <name> (<columns>) PRIMARY KEY (<pk>)"},
+	{Value: "CREATE TABLE IF NOT EXISTS ", Label: "CREATE TABLE IF NOT EXISTS <name> (<columns>) PRIMARY KEY (<pk>)"},
+	{Value: "ALTER TABLE ", Label: "ALTER TABLE <table> ADD COLUMN <column> <type>"},
+	{Value: "DROP TABLE ", Label: "DROP TABLE <table>"},
+	{Value: "RENAME TABLE ", Label: "RENAME TABLE <old> TO <new>"},
+	// DDL - Index
+	{Value: "CREATE INDEX ", Label: "CREATE INDEX <name> ON <table> (<columns>)"},
+	{Value: "CREATE UNIQUE INDEX ", Label: "CREATE UNIQUE INDEX <name> ON <table> (<columns>)"},
+	{Value: "CREATE NULL_FILTERED INDEX ", Label: "CREATE NULL_FILTERED INDEX <name> ON <table> (<columns>)"},
+	{Value: "ALTER INDEX ", Label: "ALTER INDEX <name> ADD STORED COLUMN <column>"},
+	{Value: "DROP INDEX ", Label: "DROP INDEX <name>"},
+	// DDL - Search Index
+	{Value: "CREATE SEARCH INDEX ", Label: "CREATE SEARCH INDEX <name> ON <table> (<columns>)"},
+	{Value: "ALTER SEARCH INDEX ", Label: "ALTER SEARCH INDEX <name> ADD STORED COLUMN <column>"},
+	{Value: "DROP SEARCH INDEX ", Label: "DROP SEARCH INDEX <name>"},
+	// DDL - View
+	{Value: "CREATE VIEW ", Label: "CREATE VIEW <name> SQL SECURITY INVOKER AS <query>"},
+	{Value: "CREATE OR REPLACE VIEW ", Label: "CREATE OR REPLACE VIEW <name> SQL SECURITY INVOKER AS <query>"},
+	{Value: "DROP VIEW ", Label: "DROP VIEW <name>"},
+	// DDL - Change Stream
+	{Value: "CREATE CHANGE STREAM ", Label: "CREATE CHANGE STREAM <name> FOR <target>"},
+	{Value: "ALTER CHANGE STREAM ", Label: "ALTER CHANGE STREAM <name> SET ..."},
+	{Value: "DROP CHANGE STREAM ", Label: "DROP CHANGE STREAM <name>"},
+	// DDL - Sequence
+	{Value: "CREATE SEQUENCE ", Label: "CREATE SEQUENCE <name> OPTIONS (sequence_kind='bit_reversed_positive')"},
+	{Value: "ALTER SEQUENCE ", Label: "ALTER SEQUENCE <name> SET OPTIONS (...)"},
+	{Value: "DROP SEQUENCE ", Label: "DROP SEQUENCE <name>"},
+	// DDL - Role / Access Control
+	{Value: "CREATE ROLE ", Label: "CREATE ROLE <name>"},
+	{Value: "DROP ROLE ", Label: "DROP ROLE <name>"},
+	{Value: "GRANT ", Label: "GRANT <privilege> ON TABLE <table> TO ROLE <role>"},
+	{Value: "REVOKE ", Label: "REVOKE <privilege> ON TABLE <table> FROM ROLE <role>"},
+	// DDL - Model
+	{Value: "CREATE MODEL ", Label: "CREATE MODEL <name> INPUT (...) OUTPUT (...) REMOTE OPTIONS (...)"},
+	{Value: "CREATE OR REPLACE MODEL ", Label: "CREATE OR REPLACE MODEL <name> INPUT (...) OUTPUT (...) REMOTE OPTIONS (...)"},
+	{Value: "ALTER MODEL ", Label: "ALTER MODEL <name> SET OPTIONS (...)"},
+	{Value: "DROP MODEL ", Label: "DROP MODEL <name>"},
+	// DDL - Statistics
+	{Value: "ALTER STATISTICS ", Label: "ALTER STATISTICS <package> SET OPTIONS (...)"},
+	{Value: "ANALYZE", Label: "ANALYZE"},
+	// DDL - Vector Index
+	{Value: "CREATE VECTOR INDEX ", Label: "CREATE VECTOR INDEX <name> ON <table> (<column>) OPTIONS (...)"},
+	{Value: "ALTER VECTOR INDEX ", Label: "ALTER VECTOR INDEX <name> ..."},
+	{Value: "DROP VECTOR INDEX ", Label: "DROP VECTOR INDEX <name>"},
+	// DDL - Property Graph
+	{Value: "CREATE PROPERTY GRAPH ", Label: "CREATE PROPERTY GRAPH <name> NODE TABLES (...) EDGE TABLES (...)"},
+	{Value: "DROP PROPERTY GRAPH ", Label: "DROP PROPERTY GRAPH <name>"},
+	// DDL - Proto Bundle
+	{Value: "CREATE PROTO BUNDLE ", Label: "CREATE PROTO BUNDLE (<proto_types>)"},
+	{Value: "ALTER PROTO BUNDLE ", Label: "ALTER PROTO BUNDLE INSERT|UPDATE|DELETE (<proto_types>)"},
+	{Value: "DROP PROTO BUNDLE", Label: "DROP PROTO BUNDLE"},
+	// DDL - Locality Group
+	{Value: "CREATE LOCALITY GROUP ", Label: "CREATE LOCALITY GROUP <name> ..."},
+	{Value: "ALTER LOCALITY GROUP ", Label: "ALTER LOCALITY GROUP <name> ..."},
+	{Value: "DROP LOCALITY GROUP ", Label: "DROP LOCALITY GROUP <name>"},
+	// DDL - Placement
+	{Value: "CREATE PLACEMENT ", Label: "CREATE PLACEMENT <name> ..."},
+	{Value: "DROP PLACEMENT ", Label: "DROP PLACEMENT <name>"},
+	// Procedural / Other
+	{Value: "CALL ", Label: "CALL <procedure>(<args>)"},
+	{Value: "GRAPH ", Label: "GRAPH <property_graph> MATCH ..."},
+}
+
+// statementNameItems is built at init time from clientSideStatementDefs and sqlSkeletonItems.
 var statementNameItems []fzfItem
 
 func init() {
-	statementNameItems = buildStatementNameItems()
+	statementNameItems = append(buildStatementNameItems(), sqlSkeletonItems...)
 }
 
 // extractFixedPrefix walks words in a syntax string until it hits a placeholder
