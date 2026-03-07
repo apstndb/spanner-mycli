@@ -151,7 +151,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	defer func() { _ = emu.Close() }()
+	defer func() {
+		if err := emu.Close(); err != nil {
+			slog.Error("failed to close emulator container in TestMain", "error", err)
+		}
+	}()
 
 	emulator = emu
 
