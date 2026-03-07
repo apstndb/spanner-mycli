@@ -123,8 +123,7 @@ CREATE TABLE DestTable (
 			}
 
 			// Each test gets its own database
-			_, session, teardown := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, insertDMLs)
-			defer teardown()
+			_, session := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, insertDMLs)
 
 			// Verify source data exists
 			countStmt, err := BuildStatement("SELECT COUNT(*) FROM SourceTable")
@@ -262,8 +261,7 @@ CREATE TABLE ComplexDest (
 		(1, [1, 2, 3], JSON '{"key": "value"}', b'hello', NUMERIC '123.456'),
 		(2, [], JSON 'null', NULL, NULL)`
 
-	_, session, teardown := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, []string{insertDML})
-	defer teardown()
+	_, session := initializeWithRandomDB(t, []string{sourceDDL, destDDL}, []string{insertDML})
 
 	// Export with SQL_INSERT
 	session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
@@ -445,8 +443,7 @@ CREATE TABLE TestTable (
 				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
 			}
 
-			_, session, teardown := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
-			defer teardown()
+			_, session := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
 
 			// Set up system variables for SQL export with STREAMING mode
 			session.systemVariables.Display.CLIFormat = tt.exportMode
@@ -543,8 +540,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 	ddl := `CREATE TABLE TestTable (id INT64 NOT NULL, name STRING(100)) PRIMARY KEY (id)`
 	insertDML := `INSERT INTO TestTable (id, name) VALUES (1, 'Alice'), (2, 'Bob')`
 
-	_, session, teardown := initializeWithRandomDB(t, []string{ddl}, []string{insertDML})
-	defer teardown()
+	_, session := initializeWithRandomDB(t, []string{ddl}, []string{insertDML})
 
 	// Test cases with unnamed columns
 	testCases := []struct {
@@ -862,8 +858,7 @@ CREATE TABLE TestTable (
 				`INSERT INTO TestTable (id, name, value) VALUES (3, 'Charlie', 300.0)`,
 			}
 
-			_, session, teardown := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
-			defer teardown()
+			_, session := initializeWithRandomDB(t, []string{ddl}, insertDMLs)
 
 			// Set up system variables for SQL export
 			// DO NOT set SQLTableName - we want to test auto-detection
@@ -985,8 +980,7 @@ func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
 		`INSERT INTO Orders (id, user_id, amount) VALUES (1, 1, 100.0), (2, 1, 200.0), (3, 2, 150.0)`,
 	}
 
-	_, session, teardown := initializeWithRandomDB(t, ddls, insertDMLs)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, ddls, insertDMLs)
 
 	// Test cases that should NOT auto-detect
 	complexQueries := []struct {

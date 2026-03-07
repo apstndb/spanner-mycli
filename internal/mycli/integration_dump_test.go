@@ -20,8 +20,7 @@ func TestDumpStatements(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	// Create test tables with INTERLEAVE relationship
 	setupDDL := []string{
@@ -183,8 +182,7 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	stmt := &DumpTablesStatement{Tables: []string{"NonExistentTable"}}
 	_, err := stmt.Execute(ctx, session)
@@ -203,8 +201,7 @@ func TestDumpEmptyDatabase(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	stmt := &DumpDatabaseStatement{}
 	result, err := stmt.Execute(ctx, session)
@@ -234,8 +231,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	// Create test table with data
 	ddl := `CREATE TABLE StreamTest (
@@ -303,8 +299,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	// Create tables with foreign key relationships
 	setupDDL := []string{
@@ -409,8 +404,7 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	// Create tables with both INTERLEAVE and FK relationships
 	setupDDL := []string{
@@ -524,8 +518,7 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, session, teardown := initializeWithRandomDB(t, nil, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, nil, nil)
 
 	// Create test table with generated columns and reserved word column names
 	ddl := `CREATE TABLE Users (

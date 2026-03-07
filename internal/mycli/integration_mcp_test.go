@@ -389,8 +389,7 @@ func TestRunMCP(t *testing.T) {
 			defer cancel()
 
 			// Initialize database for each test case
-			_, session, teardown := initializeWithRandomDB(t, tt.ddls, tt.dmls)
-			defer teardown()
+			_, session := initializeWithRandomDB(t, tt.ddls, tt.dmls)
 
 			// Test the execute_statement tool functionality
 			testExecuteStatementTool(t, ctx, session, tt.statement, tt.wantOutput, tt.wantError)
@@ -401,8 +400,7 @@ func TestRunMCP(t *testing.T) {
 	t.Run("database exists validation", func(t *testing.T) {
 		t.Parallel()
 		// Test with existing database
-		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-		defer teardown()
+		_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 		testDatabaseExistence(t, session, true)
 	})
@@ -410,8 +408,7 @@ func TestRunMCP(t *testing.T) {
 	// Test MCP client-server setup
 	t.Run("mcp client-server setup", func(t *testing.T) {
 		t.Parallel()
-		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-		defer teardown()
+		_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 		defer cancel()
@@ -425,8 +422,7 @@ func TestRunMCP(t *testing.T) {
 	// Test server creation with different CLI configurations
 	t.Run("server creation with different CLI configurations", func(t *testing.T) {
 		t.Parallel()
-		_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-		defer teardown()
+		_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 		// Create CLI with different system variables (but make sure session has timeout too)
 		session.systemVariables.Query.StatementTimeout = lo.ToPtr(1 * time.Hour)
