@@ -52,7 +52,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	"github.com/apstndb/spantype/typector"
-	tcspanner "github.com/testcontainers/testcontainers-go/modules/gcloud/spanner"
 )
 
 type testTableSchema struct {
@@ -131,7 +130,7 @@ func dmlResult(n int) *Result {
 	return &Result{AffectedRows: n, IsExecutedDML: true}
 }
 
-var emulator *tcspanner.Container
+var emulator *spanemuboost.Emulator
 
 func TestMain(m *testing.M) {
 	// Clear Spanner-related environment variables that could interfere with tests.
@@ -147,7 +146,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	emu, teardown, err := spanemuboost.NewEmulator(context.Background(),
+	emu, err := spanemuboost.RunEmulator(context.Background(),
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)
 	if err != nil {
@@ -156,14 +155,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	defer teardown()
+	defer emu.Close()
 
 	emulator = emu
 
 	os.Exit(m.Run())
 }
 
-func initializeSession(ctx context.Context, emulator *tcspanner.Container, clients *spanemuboost.Clients) (session *Session, err error) {
+func initializeSession(ctx context.Context, emulator *spanemuboost.Emulator, clients *spanemuboost.Clients) (session *Session, err error) {
 	options := defaultClientOptions(emulator)
 	sysVars := &systemVariables{
 		Connection: ConnectionVars{
@@ -224,21 +223,17 @@ func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clien
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
 
-	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator, options...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	clients = spanemuboost.SetupClients(t, emulator, options...)
 
+	var err error
 	session, err = initializeSession(ctx, emulator, clients)
 	if err != nil {
-		clientsTeardown()
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
 
-	return clients, session, func() {
-		session.Close()
-		clientsTeardown()
-	}
+	t.Cleanup(session.Close)
+
+	return clients, session, func() {}
 }
 
 // initializeAdminSession creates an admin-only session without a database connection.
@@ -250,13 +245,10 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	// Admin-only mode: create instance without database
 	// Always use instance-level isolation for all tests
-	clients, clientsTeardown, err := spanemuboost.NewClients(ctx, emulator,
+	clients = spanemuboost.SetupClients(t, emulator,
 		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// Create admin-only session
 	sysVars := &systemVariables{
@@ -274,22 +266,20 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 	// Initialize the registry
 	sysVars.ensureRegistry()
 
+	var err error
 	session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulator)...)
 	if err != nil {
-		clientsTeardown()
 		t.Fatalf("failed to create admin session: err=%s", err)
 	}
 
-	return clients, session, func() {
-		session.Close()
-		clientsTeardown()
-	}
+	t.Cleanup(session.Close)
+
+	return clients, session, func() {}
 }
 
-// spannerContainer is a global variable but it receives explicitly.
-func defaultClientOptions(spannerContainer *tcspanner.Container) []option.ClientOption {
+func defaultClientOptions(emu *spanemuboost.Emulator) []option.ClientOption {
 	return sliceOf(
-		option.WithEndpoint(spannerContainer.URI()),
+		option.WithEndpoint(emu.URI()),
 		option.WithoutAuthentication(),
 		internaloption.SkipDialSettingsValidation(),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),

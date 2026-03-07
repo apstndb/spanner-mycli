@@ -15,7 +15,7 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
-	github.com/apstndb/spanemuboost v0.2.17
+	github.com/apstndb/spanemuboost v0.3.0
 	github.com/apstndb/spannerplan v0.1.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.8
@@ -28,6 +28,7 @@ require (
 	github.com/goccy/go-yaml v1.18.0
 	github.com/gocql/gocql v1.7.0
 	github.com/google/go-cmp v0.7.0
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/googleapis/go-spanner-cassandra v0.5.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/hymkor/go-multiline-ny v0.22.4
@@ -109,7 +110,6 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/jsonschema-go v0.2.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect

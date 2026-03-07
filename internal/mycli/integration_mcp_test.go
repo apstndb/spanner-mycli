@@ -214,11 +214,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	// First, create a real instance to test non-existent database
-	clients, teardown, err := spanemuboost.NewClients(ctx, emulator, spanemuboost.WithRandomInstanceID())
-	if err != nil {
-		t.Fatalf("Failed to create test clients: %v", err)
-	}
-	defer teardown()
+	clients := spanemuboost.SetupClients(t, emulator, spanemuboost.WithRandomInstanceID())
 
 	// Create system variables with non-existent database in an existing instance
 	host, port, err := parseEndpoint(emulator.URI())
