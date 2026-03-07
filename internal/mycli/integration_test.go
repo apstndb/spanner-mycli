@@ -151,7 +151,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	defer emu.Close()
+	defer func() { _ = emu.Close() }()
 
 	emulator = emu
 
@@ -272,7 +272,6 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	return clients, session, func() {}
 }
-
 
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()

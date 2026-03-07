@@ -257,7 +257,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
 		}
-		defer emu.Close()
+		defer func() { _ = emu.Close() }()
 
 		// Always detect the actual platform the container is running on
 		// The --emulator-platform flag only controls what platform is requested,
