@@ -34,9 +34,6 @@ import (
 	"github.com/apstndb/spanemuboost"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
-	"google.golang.org/api/option/internaloption"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -47,7 +44,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 
@@ -163,7 +159,7 @@ func TestMain(m *testing.M) {
 }
 
 func initializeSession(ctx context.Context, emulator *spanemuboost.Emulator, clients *spanemuboost.Clients) (session *Session, err error) {
-	options := defaultClientOptions(emulator)
+	options := emulator.ClientOptions()
 	sysVars := &systemVariables{
 		Connection: ConnectionVars{
 			Project:  clients.ProjectID,
@@ -267,7 +263,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 	sysVars.ensureRegistry()
 
 	var err error
-	session, err = NewAdminSession(ctx, sysVars, defaultClientOptions(emulator)...)
+	session, err = NewAdminSession(ctx, sysVars, emulator.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("failed to create admin session: err=%s", err)
 	}
@@ -277,14 +273,6 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 	return clients, session, func() {}
 }
 
-func defaultClientOptions(emu *spanemuboost.Emulator) []option.ClientOption {
-	return sliceOf(
-		option.WithEndpoint(emu.URI()),
-		option.WithoutAuthentication(),
-		internaloption.SkipDialSettingsValidation(),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-	)
-}
 
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()

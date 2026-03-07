@@ -237,7 +237,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		Params: make(map[string]ast.Node),
 	}
 
-	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, defaultClientOptions(emulator)...)
+	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, emulator.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("Failed to create session for non-existent database test: %v", err)
 	}
