@@ -19,8 +19,7 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	tests := []struct {
 		name        string
@@ -147,8 +146,7 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	// Start a read-write transaction
 	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
@@ -189,8 +187,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	// Start a read-write transaction
 	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
@@ -269,8 +266,7 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true)"))
-	defer teardown()
+	_, session := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true)"))
 
 	// Start a read-write transaction
 	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
@@ -325,8 +321,7 @@ func TestTransactionStateTransitionsIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, session, teardown := initializeWithRandomDB(t, testTableDDLs, nil)
-	defer teardown()
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	// Test state transitions with real transactions
 	// 1. Initially no transaction

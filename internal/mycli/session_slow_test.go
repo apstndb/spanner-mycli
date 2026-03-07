@@ -35,17 +35,13 @@ func TestRequestPriority(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients, teardown, err := spanemuboost.NewClients(ctx, emulator,
+	clients := spanemuboost.SetupClients(t, emulator,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
-	if err != nil {
-		t.Fatalf("failed to create clients: %v", err)
-	}
-	defer teardown()
 	_ = clients // clients not directly used, but ensures proper setup
 
 	var recorder requestRecorder
@@ -168,17 +164,13 @@ func TestIsolationLevel(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients, teardown, err := spanemuboost.NewClients(ctx, emulator,
+	clients := spanemuboost.SetupClients(t, emulator,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
-	if err != nil {
-		t.Fatalf("failed to create clients: %v", err)
-	}
-	defer teardown()
 	_ = clients // clients not directly used, but ensures proper setup
 
 	var recorder requestRecorder
