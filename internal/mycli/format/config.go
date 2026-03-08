@@ -77,7 +77,12 @@ type StyledCell struct {
 	Style string // ANSI SGR sequence, e.g. "\033[32m" for green, "\033[1m" for bold
 }
 
-func (c StyledCell) Format() string         { return c.Style + c.Text + ansiReset }
+func (c StyledCell) Format() string {
+	if c.Style == "" {
+		return c.Text
+	}
+	return c.Style + c.Text + ansiReset
+}
 func (c StyledCell) RawText() string        { return c.Text }
 func (c StyledCell) WithText(s string) Cell { return StyledCell{Text: s, Style: c.Style} }
 

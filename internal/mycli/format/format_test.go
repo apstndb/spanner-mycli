@@ -761,12 +761,12 @@ func TestStyledCell(t *testing.T) {
 		}
 	})
 
-	t.Run("empty Style degrades to plain text with reset", func(t *testing.T) {
+	t.Run("empty Style returns plain text without ANSI codes", func(t *testing.T) {
 		t.Parallel()
 		c := StyledCell{Text: "hello", Style: ""}
 		got := c.Format()
-		// Empty style still appends ansiReset — not ideal but harmless.
-		want := "hello\033[0m"
+		// Empty style should not emit any ANSI codes.
+		want := "hello"
 		if got != want {
 			t.Errorf("Format() = %q, want %q", got, want)
 		}
