@@ -375,6 +375,31 @@ func (r *VarRegistry) registerAll() {
 	}
 	r.RegisterWithAdd("CLI_PROTO_DESCRIPTOR_FILE", protoDescVar, protoDescVar.Add)
 
+	r.Register("CLI_TYPE_STYLES", &CustomVar{
+		base: StringVar(&sv.Display.TypeStylesRaw,
+			"Type-based ANSI styling for query results. Format: colon-separated TYPE=STYLE pairs (e.g., 'STRING=green:INT64=bold:NULL=dim'). "+
+				"Supports named colors (red, green, yellow, blue, magenta, cyan, white, black), "+
+				"attributes (bold, dim, italic, underline, reverse, strikethrough), "+
+				"and raw SGR numbers (e.g., 38;5;214 for 256-color). "+
+				"NULL key overrides the default dim style for NULL values. Empty string disables type styling."),
+		customGetter: func() (string, error) {
+			return sv.Display.TypeStylesRaw, nil
+		},
+		customSetter: func(value string) error {
+			if strings.EqualFold(value, "NULL") {
+				value = ""
+			}
+			config, err := parseTypeStyles(value)
+			if err != nil {
+				return err
+			}
+			sv.Display.TypeStylesRaw = value
+			sv.typeStyles = config.typeStyles
+			sv.nullStyle = config.nullStyle
+			return nil
+		},
+	})
+
 	r.Register("CLI_ENDPOINT", &EndpointVar{
 		hostPtr:     &sv.Connection.Host,
 		portPtr:     &sv.Connection.Port,

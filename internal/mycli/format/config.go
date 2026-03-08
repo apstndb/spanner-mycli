@@ -6,7 +6,7 @@ import (
 
 // Cell is the interface for a single formatted cell.
 // The format package is agnostic to the concrete type — it only calls these methods.
-// Concrete adapters (PlainCell, NullCell, etc.) implement styling logic.
+// Concrete adapters (PlainCell, StyledCell) implement styling logic.
 //
 // Cell also satisfies tw.Formatter (via Format()), enabling per-cell styling
 // when passed to tablewriter.
@@ -38,25 +38,10 @@ func (c PlainCell) Format() string         { return c.Text }
 func (c PlainCell) RawText() string        { return c.Text }
 func (c PlainCell) WithText(s string) Cell { return PlainCell{Text: s} }
 
-// NullCell renders NULL values with ANSI dim styling in table output.
-// RawText() returns the plain text for non-table formats (CSV, XML, etc.).
-// In the styled path, wrapRowStyled handles SGR carry-over across line breaks,
-// so Format() only needs to wrap the entire text — no per-line logic needed.
-type NullCell struct {
-	Text string
-}
-
-const (
-	ansiDim   = "\033[2m"
-	ansiReset = "\033[0m"
-)
-
-func (c NullCell) Format() string         { return ansiDim + c.Text + ansiReset }
-func (c NullCell) RawText() string        { return c.Text }
-func (c NullCell) WithText(s string) Cell { return NullCell{Text: s} }
+const ansiReset = "\033[0m"
 
 // StyledCell renders values with a configurable ANSI SGR sequence.
-// Used for type-based styling (e.g., STRING → green, INT64 → bold).
+// Used for type-based styling (e.g., STRING → green, INT64 → bold, NULL → dim).
 // The Style field holds an ANSI SGR sequence (e.g., "\033[32m" for green).
 // In the styled path, wrapRowStyled handles SGR carry-over across line breaks,
 // so Format() only needs to wrap the entire text — no per-line logic needed.
