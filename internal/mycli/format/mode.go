@@ -23,3 +23,28 @@ const (
 func (m Mode) IsTableMode() bool {
 	return m == ModeTable || m == ModeTableComment || m == ModeTableDetailComment
 }
+
+// ValueFormatMode specifies how row values should be formatted before being
+// passed to a formatter. This allows formatters to declare their value formatting
+// requirements, decoupling the value formatting decision from mode-name checks
+// in execute_sql.go.
+type ValueFormatMode int
+
+const (
+	// DisplayValues formats values for human display (e.g., NULL as "NULL" text,
+	// timestamps in readable format). This is the default for built-in modes.
+	DisplayValues ValueFormatMode = iota
+
+	// SQLLiteralValues formats values as valid SQL literals (e.g., NULL keyword,
+	// strings quoted, bytes as hex). Used by SQL export modes.
+	SQLLiteralValues
+)
+
+// ValueFormatModeFor returns the ValueFormatMode declared for the given Mode.
+// Built-in modes return DisplayValues. Registered modes return their declared value.
+func ValueFormatModeFor(mode Mode) ValueFormatMode {
+	if vfm, ok := lookupValueFormatMode(mode); ok {
+		return vfm
+	}
+	return DisplayValues
+}

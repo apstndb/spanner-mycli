@@ -75,13 +75,11 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Determine the display format to use
 	displayFormat := sysVars.Display.CLIFormat
 
-	// SQL export formats require values to be formatted as SQL literals for valid SQL generation.
-	// When HasSQLFormattedValues is false, the values are formatted for display (e.g., TIMESTAMP
-	// as "2024-01-01T00:00:00Z" instead of TIMESTAMP "2024-01-01T00:00:00Z").
-	// Attempting to use display-formatted values in INSERT statements would generate invalid SQL.
-	// Therefore, we fall back to table format for safety.
+	// Modes that require SQL literal values (e.g., SQL_INSERT) must fall back to table format
+	// when values were not formatted as SQL literals (HasSQLFormattedValues is false).
 	// This affects metadata queries (SHOW CREATE TABLE, EXPLAIN) and DML with THEN RETURN.
-	if sysVars.Display.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
+	fmtMode := format.Mode(displayFormat.String())
+	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && !result.HasSQLFormattedValues {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
 			"requestedFormat", sysVars.Display.CLIFormat,
 			"statementType", "non-SELECT/DML")
@@ -91,13 +89,13 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Build FormatConfig from systemVariables
 	config := sysVars.toFormatConfig()
 
+	// Recompute fmtMode after potential fallback above
+	fmtMode = format.Mode(displayFormat.String())
+
 	// For SQL export, resolve the table name from Result if available
-	if displayFormat.IsSQLExport() && result.SQLTableNameForExport != "" {
+	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && result.SQLTableNameForExport != "" {
 		config.SQLTableName = result.SQLTableNameForExport
 	}
-
-	// Convert enums.DisplayMode to format.Mode for the format package
-	fmtMode := format.Mode(displayFormat.String())
 
 	// Create the appropriate formatter based on the display mode
 	formatter, err := format.NewFormatter(fmtMode)

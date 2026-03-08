@@ -130,6 +130,29 @@ func TestNewStreamingFormatter_RegisteredMode(t *testing.T) {
 	}
 }
 
+func TestValueFormatModeFor(t *testing.T) {
+	t.Parallel()
+
+	// Built-in modes should return DisplayValues
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
+		if got := ValueFormatModeFor(mode); got != DisplayValues {
+			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
+		}
+	}
+
+	// Unknown mode should return DisplayValues
+	if got := ValueFormatModeFor(Mode("NONEXISTENT")); got != DisplayValues {
+		t.Errorf("ValueFormatModeFor(NONEXISTENT) = %d, want DisplayValues", got)
+	}
+
+	// Registered mode with SQLLiteralValues
+	testMode := Mode("TEST_SQL_LITERAL")
+	RegisterValueFormatMode(SQLLiteralValues, testMode)
+	if got := ValueFormatModeFor(testMode); got != SQLLiteralValues {
+		t.Errorf("ValueFormatModeFor(%s) = %d, want SQLLiteralValues", testMode, got)
+	}
+}
+
 func TestExecuteWithFormatter_EmptyColumns(t *testing.T) {
 	t.Parallel()
 

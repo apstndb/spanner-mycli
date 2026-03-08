@@ -33,11 +33,7 @@ const (
 func init() {
 	format.RegisterFormatFunc(newFormatSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
 	format.RegisterStreamingFormatter(newStreamingFormatterSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
-}
-
-// IsSQLExportMode returns true if the mode is one of the SQL export modes.
-func IsSQLExportMode(mode format.Mode) bool {
-	return mode == ModeSQLInsert || mode == ModeSQLInsertOrIgnore || mode == ModeSQLInsertOrUpdate
+	format.RegisterValueFormatMode(format.SQLLiteralValues, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
 }
 
 // newFormatSQL is the FormatFuncFactory for SQL export modes.

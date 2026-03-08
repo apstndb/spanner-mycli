@@ -13,6 +13,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
@@ -49,20 +50,21 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 }
 
 // prepareFormatConfig determines the appropriate format configuration based on the display mode.
-// It returns the format config, whether SQL literals are being used, and the potentially modified sysVars.
+// It returns the format config, the value format mode used, and the potentially modified sysVars.
 // This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
-func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, bool, *systemVariables, error) {
-	var fc *spanvalue.FormatConfig
-	var usingSQLLiterals bool
-	var err error
+//
+// Instead of switching on specific mode names, this function queries the registry
+// for the ValueFormatMode declared by the formatter. This keeps execute_sql.go
+// decoupled from individual format implementations.
+func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, format.ValueFormatMode, *systemVariables, error) {
+	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
+	vfm := format.ValueFormatModeFor(fmtMode)
 
-	switch sysVars.Display.CLIFormat {
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		// Use SQL literal formatting for SQL export modes
+	switch vfm {
+	case format.SQLLiteralValues:
+		// Use SQL literal formatting for modes that declared SQLLiteralValues
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
-		fc = spanvalue.LiteralFormatConfig
-		usingSQLLiterals = true
-		err = nil
+		fc := spanvalue.LiteralFormatConfig
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
@@ -82,14 +84,14 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
 			}
 		}
+
+		return fc, vfm, sysVars, nil
 	default:
 		// Use regular display formatting for other modes
 		// formatConfigWithProto handles custom proto descriptors if set
-		fc, err = decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
-		usingSQLLiterals = false
+		fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
+		return fc, vfm, sysVars, err
 	}
-
-	return fc, usingSQLLiterals, sysVars, err
 }
 
 // newMetrics creates and initializes execution metrics from system variables.
@@ -117,15 +119,15 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 // queryExecution bundles the parameters for the query execution pipeline,
 // avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
 type queryExecution struct {
-	Session      *Session
-	Iter         *spanner.RowIterator
-	ReadOnlyTxn  *spanner.ReadOnlyTransaction
-	FormatConfig *spanvalue.FormatConfig
-	SQL          string
-	SysVars      *systemVariables
-	Metrics      *metrics.ExecutionMetrics
-	SQLLiterals  bool
-	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
+	Session        *Session
+	Iter           *spanner.RowIterator
+	ReadOnlyTxn    *spanner.ReadOnlyTransaction
+	FormatConfig   *spanvalue.FormatConfig
+	SQL            string
+	SysVars        *systemVariables
+	Metrics        *metrics.ExecutionMetrics
+	ValueFmtMode   format.ValueFormatMode
+	Processor      RowProcessor // set by executeAndCollect after decideExecutionMode
 }
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
@@ -160,7 +162,7 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
 	m := newMetrics(sysVars)
 
-	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
+	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +187,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 		SQL:          sql,
 		SysVars:      sysVars,
 		Metrics:      m,
-		SQLLiterals:  usingSQLLiterals,
+		ValueFmtMode: vfm,
 	})
 }
 
@@ -193,7 +195,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
 	m := newMetrics(sysVars)
 
-	fc, usingSQLLiterals, sysVars, err := prepareFormatConfig(sql, sysVars)
+	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +215,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		SQL:          sql,
 		SysVars:      sysVars,
 		Metrics:      m,
-		SQLLiterals:  usingSQLLiterals,
+		ValueFmtMode: vfm,
 	})
 	if err != nil {
 		// Handle aborted transaction
@@ -226,8 +228,8 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	// Store the SQL table name if we're using SQL export format
-	if sysVars.Display.CLIFormat.IsSQLExport() && sysVars.Display.SQLTableName != "" {
+	// Store the SQL table name if we're using a format that requires SQL literals
+	if vfm == format.SQLLiteralValues && sysVars.Display.SQLTableName != "" {
 		result.SQLTableNameForExport = sysVars.Display.SQLTableName
 	}
 
@@ -326,7 +328,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 		Rows:                  rows,
 		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:          len(rows),
-		HasSQLFormattedValues: qe.SQLLiterals,
+		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
@@ -352,7 +354,7 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:          int(rowCount),
 		Streamed:              true,
-		HasSQLFormattedValues: qe.SQLLiterals,
+		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {

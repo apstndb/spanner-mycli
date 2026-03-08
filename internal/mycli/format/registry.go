@@ -18,6 +18,7 @@ var (
 	registryMu           sync.RWMutex
 	formatFuncRegistry   = map[Mode]FormatFuncFactory{}
 	streamingFmtRegistry = map[Mode]StreamingFormatterFactory{}
+	valueFormatRegistry  = map[Mode]ValueFormatMode{}
 )
 
 // RegisterFormatFunc registers a FormatFuncFactory for the given modes.
@@ -42,6 +43,17 @@ func RegisterStreamingFormatter(factory StreamingFormatterFactory, modes ...Mode
 	}
 }
 
+// RegisterValueFormatMode declares the ValueFormatMode required by the given modes.
+// Formatters call this during init() to declare their value formatting requirements.
+// Modes that don't register default to DisplayValues.
+func RegisterValueFormatMode(vfm ValueFormatMode, modes ...Mode) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	for _, mode := range modes {
+		valueFormatRegistry[mode] = vfm
+	}
+}
+
 // lookupFormatFunc looks up a registered FormatFuncFactory for the given mode.
 func lookupFormatFunc(mode Mode) (FormatFuncFactory, bool) {
 	registryMu.RLock()
@@ -56,6 +68,14 @@ func lookupStreamingFormatter(mode Mode) (StreamingFormatterFactory, bool) {
 	defer registryMu.RUnlock()
 	f, ok := streamingFmtRegistry[mode]
 	return f, ok
+}
+
+// lookupValueFormatMode looks up the registered ValueFormatMode for the given mode.
+func lookupValueFormatMode(mode Mode) (ValueFormatMode, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	vfm, ok := valueFormatRegistry[mode]
+	return vfm, ok
 }
 
 // errUnsupportedMode returns a formatted error for unsupported modes.
