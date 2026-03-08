@@ -8,9 +8,8 @@ import (
 	"math"
 	"slices"
 
-	"github.com/apstndb/go-runewidthex"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
-	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
@@ -128,7 +127,7 @@ func MaxByWithIdx[O cmp.Ordered, E any](fallback E, f func(E) O, seq iter.Seq[E]
 	return idx, val
 }
 
-type widthCalculator struct{ Condition *runewidthex.Condition }
+type widthCalculator struct{ Condition *tabwrap.Condition }
 
 func (wc *widthCalculator) StringWidth(s string) int {
 	return wc.Condition.StringWidth(s)
@@ -242,7 +241,7 @@ func (wc WidthCount) Length() int { return wc.width }
 func (wc WidthCount) Count() int { return wc.count }
 
 func adjustByHeader(headers []string, availableWidth int) []int {
-	nameWidths := slices.Collect(hiter.Map(runewidth.StringWidth, slices.Values(headers)))
+	nameWidths := slices.Collect(hiter.Map(tabwrap.StringWidth, slices.Values(headers)))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 

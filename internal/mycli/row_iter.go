@@ -95,7 +95,10 @@ func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*
 	return results, stats, count, metadata, plan, err
 }
 
-func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, error) {
+// spannerRowToRow converts a Spanner row to a format.Row with appropriate Cell types.
+// typeStyles maps Spanner type codes to ANSI SGR sequences; nil or empty means
+// all non-NULL values use PlainCell (the default behavior).
+func spannerRowToRow(fc *spanvalue.FormatConfig, typeStyles map[sppb.TypeCode]string) func(row *spanner.Row) (Row, error) {
 	return func(row *spanner.Row) (Row, error) {
 		result := make(Row, row.Size())
 		for i := range row.Size() {
@@ -109,9 +112,14 @@ func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, er
 				return nil, err
 			}
 
-			// Use NullCell for top-level NULL values to enable styled rendering
+			// Cell type is chosen by value/type semantics.
+			// NULL overrides type styling. Type→style mapping determines StyledCell.
+			// The rendering layer (FormatConfig.Styled) decides whether to call
+			// Format() (styled) or RawText() (plain).
 			if _, isNull := gcv.Value.GetKind().(*structpb.Value_NullValue); isNull {
 				result[i] = format.NullCell{Text: text}
+			} else if style, ok := typeStyles[gcv.Type.GetCode()]; ok {
+				result[i] = format.StyledCell{Text: text, Style: style}
 			} else {
 				result[i] = format.PlainCell{Text: text}
 			}

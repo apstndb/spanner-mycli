@@ -714,6 +714,219 @@ func TestNullCell(t *testing.T) {
 	})
 }
 
+func TestStyledCell(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Format wraps text with SGR sequence", func(t *testing.T) {
+		t.Parallel()
+		c := StyledCell{Text: "hello", Style: "\033[32m"}
+		got := c.Format()
+		want := "\033[32mhello\033[0m"
+		if got != want {
+			t.Errorf("Format() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("Format with bold style", func(t *testing.T) {
+		t.Parallel()
+		c := StyledCell{Text: "bold", Style: "\033[1m"}
+		got := c.Format()
+		want := "\033[1mbold\033[0m"
+		if got != want {
+			t.Errorf("Format() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("RawText returns plain text", func(t *testing.T) {
+		t.Parallel()
+		c := StyledCell{Text: "hello", Style: "\033[32m"}
+		if got := c.RawText(); got != "hello" {
+			t.Errorf("RawText() = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("WithText preserves StyledCell type and Style", func(t *testing.T) {
+		t.Parallel()
+		c := StyledCell{Text: "original", Style: "\033[32m"}
+		c2 := c.WithText("wrapped")
+		sc, ok := c2.(StyledCell)
+		if !ok {
+			t.Fatalf("WithText returned %T, want StyledCell", c2)
+		}
+		if sc.Style != "\033[32m" {
+			t.Errorf("WithText().Style = %q, want %q", sc.Style, "\033[32m")
+		}
+		if got := c2.RawText(); got != "wrapped" {
+			t.Errorf("WithText().RawText() = %q, want %q", got, "wrapped")
+		}
+	})
+
+	t.Run("empty Style degrades to plain text with reset", func(t *testing.T) {
+		t.Parallel()
+		c := StyledCell{Text: "hello", Style: ""}
+		got := c.Format()
+		// Empty style still appends ansiReset — not ideal but harmless.
+		want := "hello\033[0m"
+		if got != want {
+			t.Errorf("Format() = %q, want %q", got, want)
+		}
+		// RawText is always clean
+		if got := c.RawText(); got != "hello" {
+			t.Errorf("RawText() = %q, want %q", got, "hello")
+		}
+	})
+}
+
+func TestStyledCellInNonTableFormats(t *testing.T) {
+	t.Parallel()
+
+	// Verify all non-table formatters use RawText() — no ANSI codes in output
+	rows := []Row{
+		{PlainCell{Text: "1"}, StyledCell{Text: "styled", Style: "\033[32m"}},
+	}
+	columns := []string{"id", "value"}
+
+	tests := []struct {
+		name     string
+		formatFn func(io.Writer, []Row, []string, FormatConfig, int) error
+	}{
+		{"csv", formatCSV},
+		{"tab", formatTab},
+		{"vertical", formatVertical},
+		{"html", formatHTML},
+		{"xml", formatXML},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			err := tt.formatFn(&buf, rows, columns, FormatConfig{}, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			output := buf.String()
+			if strings.Contains(output, "\033") {
+				t.Errorf("%s output should not contain ANSI codes, got:\n%s", tt.name, output)
+			}
+			if !strings.Contains(output, "styled") {
+				t.Errorf("%s output should contain text 'styled', got:\n%s", tt.name, output)
+			}
+		})
+	}
+}
+
+func TestStyledCellInTable(t *testing.T) {
+	t.Parallel()
+
+	rows := []Row{
+		{PlainCell{Text: "1"}, StyledCell{Text: "hello", Style: "\033[32m"}},
+		{PlainCell{Text: "2"}, StyledCell{Text: "world", Style: "\033[32m"}},
+	}
+	columns := []string{"id", "value"}
+
+	t.Run("styled output includes ANSI codes", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 80, ModeTable)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		output := buf.String()
+		if !strings.Contains(output, "\033[32m") {
+			t.Error("expected ANSI green code in styled output")
+		}
+		verifyTableAlignment(t, output)
+	})
+
+	t.Run("unstyled output has no ANSI codes", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: false}, 80, ModeTable)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		output := buf.String()
+		if strings.Contains(output, "\033[") {
+			t.Error("expected no ANSI codes in unstyled output")
+		}
+		if !strings.Contains(output, "hello") {
+			t.Error("expected plain text in output")
+		}
+		verifyTableAlignment(t, output)
+	})
+}
+
+func TestStyledCellWrappedStyled(t *testing.T) {
+	t.Parallel()
+
+	// Use a narrow screen to force StyledCell text to wrap.
+	// This verifies SGR carry-over: each wrapped line should have styling.
+	rows := []Row{
+		{PlainCell{Text: "1"}, StyledCell{Text: "long styled text", Style: "\033[32m"}},
+	}
+	columns := []string{"id", "data"}
+
+	var buf bytes.Buffer
+	err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 20, ModeTable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	t.Logf("Table output:\n%s", output)
+
+	// Each data line with styled text should have both open and close SGR
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		if strings.Contains(line, "\033[32m") {
+			if !strings.Contains(line, "\033[0m") {
+				t.Errorf("line has style without reset: %q", line)
+			}
+		}
+	}
+
+	verifyTableAlignment(t, output)
+}
+
+func TestNullCellWrappedStyled(t *testing.T) {
+	t.Parallel()
+
+	// Use a narrow screen to force NullCell text to wrap.
+	// This verifies SGR carry-over: each wrapped line should have dim styling.
+	rows := []Row{
+		{PlainCell{Text: "1"}, NullCell{Text: "NULL value"}},
+	}
+	columns := []string{"id", "data"}
+
+	var buf bytes.Buffer
+	// screenWidth=20 forces "NULL value" to wrap
+	err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 20, ModeTable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	t.Logf("Table output:\n%s", output)
+
+	// Each visible line containing NULL/value text should have ANSI dim codes
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		// Data lines containing dim text should have both open and close
+		if strings.Contains(line, "\033[2m") {
+			if !strings.Contains(line, "\033[0m") {
+				t.Errorf("line has dim without reset: %q", line)
+			}
+		}
+	}
+
+	verifyTableAlignment(t, output)
+}
+
 func TestNullCellInTable(t *testing.T) {
 	t.Parallel()
 

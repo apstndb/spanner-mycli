@@ -2475,8 +2475,8 @@ github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff h1:qcDUJzSKYWPlv8KyEHThTJpMyg/z4iMjCTpWxKWyCrA=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff/go.mod h1:klldr+wegB1KZME56IMyXEbpWdlnpstoHwJLXiHs6o8=
-github.com/apstndb/go-runewidthex v0.1.0 h1:BTROSb06XZLb4hz5PC5i+3o/BBNhXS5QW6a6S/f1NTU=
-github.com/apstndb/go-runewidthex v0.1.0/go.mod h1:i5+ICpKj4bQDXUypcMP2oHkoXjj59jC5Cshcb9Bb6fE=
+github.com/apstndb/go-tabwrap v0.1.1 h1:TVIqUiRGey0k9zAQEVVoVN1lLBefkn2RrYiXZU4nznA=
+github.com/apstndb/go-tabwrap v0.1.1/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb/JBF3wY3HuDM6cB5Y0AzGkXbmVzQ87J1vU=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba/go.mod h1:adI+0n+0AY1J+qhb7UbW3HjsUD15JCQPIih7FHLcrI4=
 github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae h1:dM4EYL52u6aQh97R2agNDukCYhPs4aSDdkSZkvVvcf8=
@@ -2526,12 +2526,10 @@ github.com/chzyer/readline v1.5.0/go.mod h1:x22KAscuvRqlLoK9CsoYsmxoXZMMFVyOl86c
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/chzyer/test v0.0.0-20210722231415-061457976a23/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
-github.com/clipperhouse/displaywidth v0.6.2 h1:ZDpTkFfpHOKte4RG5O/BOyf3ysnvFswpyYrV7z2uAKo=
-github.com/clipperhouse/displaywidth v0.6.2/go.mod h1:R+kHuzaYWFkTm7xoMmK1lFydbci4X2CicfbGstSGg0o=
-github.com/clipperhouse/stringish v0.1.1 h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=
-github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEXNWYXQgCt4hdOzA=
-github.com/clipperhouse/uax29/v2 v2.3.0 h1:SNdx9DVUqMoBuBoW3iLOj4FQv3dN5mDtuqwuhIGpJy4=
-github.com/clipperhouse/uax29/v2 v2.3.0/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
+github.com/clipperhouse/displaywidth v0.11.0 h1:lBc6kY44VFw+TDx4I8opi/EtL9m20WSEFgwIwO+UVM8=
+github.com/clipperhouse/displaywidth v0.11.0/go.mod h1:bkrFNkf81G8HyVqmKGxsPufD3JhNl3dSqnGhOoSD/o0=
+github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
+github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cloudspannerecosystem/memefish v0.6.2 h1:0R6C8KdJLLbL3aYk/rzWrwvE+bPRMqj/2MNlNvAzIPo=
 github.com/cloudspannerecosystem/memefish v0.6.2/go.mod h1:mVw0xBxy0yOgm990BuR0+nqP8J+yBAAf7N/2uL69rBU=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/apstndb/go-runewidthex"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -226,14 +226,16 @@ func (f *TableStreamingFormatter) FinishFormat() error {
 	return nil
 }
 
+// newCondition creates a tabwrap.Condition from the formatter's config.
+func (f *TableStreamingFormatter) newCondition() *tabwrap.Condition {
+	return &tabwrap.Condition{TabWidth: cmp.Or(f.config.TabWidth, 4)}
+}
+
 // calculateWidths calculates optimal column widths based on preview rows.
 // columns are the plain column names, headersForWidth are the headers used for width calculation
 // (may include verbose type information).
 func (f *TableStreamingFormatter) calculateWidths(columns []string, headersForWidth []string, previewRows []Row) {
-	rw := runewidthex.NewCondition()
-	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
-
-	wc := &widthCalculator{Condition: rw}
+	wc := &widthCalculator{Condition: f.newCondition()}
 	f.widths = CalculateWidth(columns, headersForWidth, wc, f.screenWidth, previewRows)
 }
 
@@ -243,9 +245,7 @@ func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 		return headers
 	}
 
-	rw := runewidthex.NewCondition()
-	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
-
+	rw := f.newCondition()
 	return slices.Collect(hiter.Unify(
 		rw.Wrap,
 		hiter.Pairs(slices.Values(headers), slices.Values(f.widths))))
@@ -257,8 +257,9 @@ func (f *TableStreamingFormatter) wrapRow(row Row) Row {
 		return row
 	}
 
-	rw := runewidthex.NewCondition()
-	rw.TabWidth = cmp.Or(f.config.TabWidth, 4)
-
+	rw := f.newCondition()
+	if f.config.Styled {
+		return wrapRowStyled(row, f.widths, rw)
+	}
 	return wrapRowPreserving(row, f.widths, rw)
 }

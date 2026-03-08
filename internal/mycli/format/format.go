@@ -9,7 +9,7 @@ import (
 	"io"
 	"slices"
 
-	"github.com/apstndb/go-runewidthex"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter/tw"
 )
@@ -72,10 +72,37 @@ func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatCon
 	return ExecuteWithFormatter(NewXMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
 
+// wrapRowStyled wraps styled (ANSI-coded) cell text with ControlSequences-aware Wrap.
+// SGR state is carried across line breaks, so each output line is independently styled.
+// The result is PlainCell containing pre-styled text — no further Format() needed.
+func wrapRowStyled(row Row, widths []int, rw *tabwrap.Condition) Row {
+	if len(widths) == 0 {
+		return row
+	}
+	rwCSI := &tabwrap.Condition{
+		TabWidth:         rw.TabWidth,
+		EastAsianWidth:   rw.EastAsianWidth,
+		ControlSequences: true,
+	}
+	// Wrap the styled (Format()) text with ANSI-aware wrapping.
+	// The result is a PlainCell containing pre-styled text with SGR carry-over,
+	// so writeRowInternal's Formatters() path calls Format() which returns text as-is.
+	styledTexts := make([]string, len(row))
+	for i, c := range row {
+		styledTexts[i] = c.Format()
+	}
+	result := make(Row, len(row))
+	for i, text := range styledTexts {
+		wrapped := rwCSI.Wrap(text, widths[i])
+		result[i] = PlainCell{Text: wrapped}
+	}
+	return result
+}
+
 // wrapRowPreserving wraps row text to calculated widths while preserving Cell metadata.
 // This is the key function that enables per-cell styling through the width-wrapping step:
 // the wrapped text replaces the original, but the Cell adapter type is preserved via WithText().
-func wrapRowPreserving(row Row, widths []int, rw *runewidthex.Condition) Row {
+func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
 	if len(widths) == 0 {
 		return row
 	}

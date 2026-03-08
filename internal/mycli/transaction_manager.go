@@ -841,7 +841,7 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 
 	rows, stats, count, metadata, plan, err := consumeRowIterCollect(
 		tx.QueryWithOptions(ctx, stmt, opts),
-		spannerRowToRow(fc),
+		spannerRowToRow(fc, tm.sysVars.typeStyles),
 	)
 	if err != nil {
 		return nil, err
@@ -1030,7 +1030,7 @@ func (tm *TransactionManager) RunUpdate(ctx context.Context, stmt spanner.Statem
 		var err error
 		rows, stats, count, metadata, plan, err = consumeRowIterCollect(
 			txn.QueryWithOptions(ctx, stmt, opts),
-			spannerRowToRow(fc),
+			spannerRowToRow(fc, tm.sysVars.typeStyles),
 		)
 		// Enable heartbeat after any operation (success or failure)
 		// Even failed operations start the abort countdown

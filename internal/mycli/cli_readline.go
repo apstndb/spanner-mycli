@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/nyaosorg/go-readline-ny"
 	"github.com/nyaosorg/go-readline-ny/keys"
@@ -107,7 +107,7 @@ func shouldSubmitStatement(statements []inputStatement, err error) (shouldSubmit
 func generatePS2Prompt(ps1 string, ps2Template string, ps2Interpolated string) string {
 	lastLineOfPrompt := lo.LastOrEmpty(strings.Split(ps1, "\n"))
 	_, needPadding := strings.CutPrefix(ps2Template, "%P")
-	return lo.Ternary(needPadding, runewidth.FillLeft(ps2Interpolated, runewidth.StringWidth(lastLineOfPrompt)), ps2Interpolated)
+	return lo.Ternary(needPadding, tabwrap.FillLeft(ps2Interpolated, tabwrap.StringWidth(lastLineOfPrompt)), ps2Interpolated)
 }
 
 func initializeMultilineEditor(c *Cli) (*multiline.Editor, History, error) {

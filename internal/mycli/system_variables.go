@@ -182,6 +182,11 @@ type systemVariables struct {
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
+
+	// typeStyles maps Spanner type codes to ANSI SGR sequences for styled output.
+	// When nil or empty, all non-NULL values use PlainCell (default behavior).
+	// Not yet exposed as a system variable — set programmatically for testing.
+	typeStyles map[sppb.TypeCode]string
 }
 
 // toFormatConfig converts the formatter-relevant fields of systemVariables into a format.FormatConfig.

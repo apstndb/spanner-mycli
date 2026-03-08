@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/apstndb/go-runewidthex"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -290,5 +290,5 @@ func sliceToSeq[E any](s []E) func(func(E) bool) {
 }
 
 func newTestWidthCalculator() *widthCalculator {
-	return &widthCalculator{Condition: runewidthex.NewCondition()}
+	return &widthCalculator{Condition: tabwrap.NewCondition()}
 }

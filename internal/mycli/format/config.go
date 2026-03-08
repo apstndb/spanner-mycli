@@ -67,6 +67,20 @@ func (c NullCell) Format() string {
 func (c NullCell) RawText() string        { return c.Text }
 func (c NullCell) WithText(s string) Cell { return NullCell{Text: s} }
 
+// StyledCell renders values with a configurable ANSI SGR sequence.
+// Used for type-based styling (e.g., STRING → green, INT64 → bold).
+// The Style field holds an ANSI SGR sequence (e.g., "\033[32m" for green).
+// In the styled path, wrapRowStyled handles SGR carry-over across line breaks,
+// so Format() only needs to wrap the entire text — no per-line logic needed.
+type StyledCell struct {
+	Text  string
+	Style string // ANSI SGR sequence, e.g. "\033[32m" for green, "\033[1m" for bold
+}
+
+func (c StyledCell) Format() string         { return c.Style + c.Text + ansiReset }
+func (c StyledCell) RawText() string        { return c.Text }
+func (c StyledCell) WithText(s string) Cell { return StyledCell{Text: s, Style: c.Style} }
+
 // StringsToRow converts a slice of strings to a Row of PlainCell.
 // Used by client-side statements and tests that construct rows from plain strings.
 func StringsToRow(ss ...string) Row {
