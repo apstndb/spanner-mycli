@@ -119,15 +119,15 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 // queryExecution bundles the parameters for the query execution pipeline,
 // avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
 type queryExecution struct {
-	Session        *Session
-	Iter           *spanner.RowIterator
-	ReadOnlyTxn    *spanner.ReadOnlyTransaction
-	FormatConfig   *spanvalue.FormatConfig
-	SQL            string
-	SysVars        *systemVariables
-	Metrics        *metrics.ExecutionMetrics
-	ValueFmtMode   format.ValueFormatMode
-	Processor      RowProcessor // set by executeAndCollect after decideExecutionMode
+	Session      *Session
+	Iter         *spanner.RowIterator
+	ReadOnlyTxn  *spanner.ReadOnlyTransaction
+	FormatConfig *spanvalue.FormatConfig
+	SQL          string
+	SysVars      *systemVariables
+	Metrics      *metrics.ExecutionMetrics
+	ValueFmtMode format.ValueFormatMode
+	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
 }
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
