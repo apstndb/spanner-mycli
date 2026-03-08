@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -15,22 +14,20 @@ func TestNewFormatter(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mode    enums.DisplayMode
+		mode    Mode
 		wantErr bool
 	}{
-		{name: "unspecified", mode: enums.DisplayModeUnspecified},
-		{name: "table", mode: enums.DisplayModeTable},
-		{name: "table_comment", mode: enums.DisplayModeTableComment},
-		{name: "table_detail_comment", mode: enums.DisplayModeTableDetailComment},
-		{name: "vertical", mode: enums.DisplayModeVertical},
-		{name: "tab", mode: enums.DisplayModeTab},
-		{name: "csv", mode: enums.DisplayModeCSV},
-		{name: "html", mode: enums.DisplayModeHTML},
-		{name: "xml", mode: enums.DisplayModeXML},
-		{name: "sql_insert", mode: enums.DisplayModeSQLInsert},
-		{name: "sql_insert_or_ignore", mode: enums.DisplayModeSQLInsertOrIgnore},
-		{name: "sql_insert_or_update", mode: enums.DisplayModeSQLInsertOrUpdate},
-		{name: "invalid", mode: enums.DisplayMode(999), wantErr: true},
+		{name: "unspecified", mode: "UNSPECIFIED"},
+		{name: "empty", mode: ""},
+		{name: "table", mode: ModeTable},
+		{name: "table_comment", mode: ModeTableComment},
+		{name: "table_detail_comment", mode: ModeTableDetailComment},
+		{name: "vertical", mode: ModeVertical},
+		{name: "tab", mode: ModeTab},
+		{name: "csv", mode: ModeCSV},
+		{name: "html", mode: ModeHTML},
+		{name: "xml", mode: ModeXML},
+		{name: "invalid", mode: Mode("NONEXISTENT"), wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -58,34 +55,21 @@ func TestNewStreamingFormatter(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mode    enums.DisplayMode
+		mode    Mode
 		config  FormatConfig
 		out     io.Writer
 		wantErr bool
 	}{
-		{name: "csv", mode: enums.DisplayModeCSV, out: io.Discard},
-		{name: "tab", mode: enums.DisplayModeTab, out: io.Discard},
-		{name: "vertical", mode: enums.DisplayModeVertical, out: io.Discard},
-		{name: "html", mode: enums.DisplayModeHTML, out: io.Discard},
-		{name: "xml", mode: enums.DisplayModeXML, out: io.Discard},
-		{
-			name:   "sql_insert",
-			mode:   enums.DisplayModeSQLInsert,
-			config: FormatConfig{SQLTableName: "Users"},
-			out:    io.Discard,
-		},
-		{
-			name:    "sql_insert_no_table",
-			mode:    enums.DisplayModeSQLInsert,
-			config:  FormatConfig{},
-			out:     io.Discard,
-			wantErr: true,
-		},
+		{name: "csv", mode: ModeCSV, out: io.Discard},
+		{name: "tab", mode: ModeTab, out: io.Discard},
+		{name: "vertical", mode: ModeVertical, out: io.Discard},
+		{name: "html", mode: ModeHTML, out: io.Discard},
+		{name: "xml", mode: ModeXML, out: io.Discard},
 		// Table formats with io.Discard are allowed (for isStreamingSupported check)
-		{name: "table_discard", mode: enums.DisplayModeTable, out: io.Discard},
+		{name: "table_discard", mode: ModeTable, out: io.Discard},
 		// Table formats with real writer require screenWidth
-		{name: "table_real_writer", mode: enums.DisplayModeTable, out: &bytes.Buffer{}, wantErr: true},
-		{name: "invalid", mode: enums.DisplayMode(999), out: io.Discard, wantErr: true},
+		{name: "table_real_writer", mode: ModeTable, out: &bytes.Buffer{}, wantErr: true},
+		{name: "invalid", mode: Mode("NONEXISTENT"), out: io.Discard, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -105,6 +89,44 @@ func TestNewStreamingFormatter(t *testing.T) {
 				t.Error("expected non-nil StreamingFormatter")
 			}
 		})
+	}
+}
+
+func TestNewFormatter_RegisteredMode(t *testing.T) {
+	t.Parallel()
+
+	// Register a custom mode
+	testMode := Mode("TEST_CUSTOM")
+	RegisterFormatFunc(func(mode Mode) (FormatFunc, error) {
+		return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+			return nil
+		}, nil
+	}, testMode)
+
+	fn, err := NewFormatter(testMode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fn == nil {
+		t.Error("expected non-nil FormatFunc from registered mode")
+	}
+}
+
+func TestNewStreamingFormatter_RegisteredMode(t *testing.T) {
+	t.Parallel()
+
+	// Register a custom streaming mode
+	testMode := Mode("TEST_STREAMING_CUSTOM")
+	RegisterStreamingFormatter(func(mode Mode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
+		return NewCSVFormatter(out, false), nil
+	}, testMode)
+
+	sf, err := NewStreamingFormatter(testMode, io.Discard, FormatConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sf == nil {
+		t.Error("expected non-nil StreamingFormatter from registered mode")
 	}
 }
 
@@ -524,7 +546,7 @@ func TestWriteTable(t *testing.T) {
 		name        string
 		columns     []string
 		rows        []Row
-		mode        enums.DisplayMode
+		mode        Mode
 		screenWidth int
 		config      FormatConfig
 		wantContain []string
@@ -533,7 +555,7 @@ func TestWriteTable(t *testing.T) {
 			name:        "basic table",
 			columns:     []string{"id", "name"},
 			rows:        []Row{{"1", "Alice"}},
-			mode:        enums.DisplayModeTable,
+			mode:        ModeTable,
 			screenWidth: 80,
 			wantContain: []string{"id", "name", "1", "Alice", "+"},
 		},
@@ -541,7 +563,7 @@ func TestWriteTable(t *testing.T) {
 			name:        "empty rows no render",
 			columns:     []string{"id"},
 			rows:        nil,
-			mode:        enums.DisplayModeTable,
+			mode:        ModeTable,
 			screenWidth: 80,
 			wantContain: nil,
 		},
@@ -549,7 +571,7 @@ func TestWriteTable(t *testing.T) {
 			name:        "table comment mode",
 			columns:     []string{"id"},
 			rows:        []Row{{"1"}},
-			mode:        enums.DisplayModeTableComment,
+			mode:        ModeTableComment,
 			screenWidth: 80,
 			wantContain: []string{"/*", "*/"},
 		},
@@ -557,7 +579,7 @@ func TestWriteTable(t *testing.T) {
 			name:        "skip column names",
 			columns:     []string{"id", "name"},
 			rows:        []Row{{"1", "Alice"}},
-			mode:        enums.DisplayModeTable,
+			mode:        ModeTable,
 			screenWidth: 80,
 			config:      FormatConfig{SkipColumnNames: true},
 			wantContain: []string{"1", "Alice"},
@@ -589,7 +611,7 @@ func TestWriteTableDetailComment(t *testing.T) {
 	columns := []string{"id"}
 	rows := []Row{{"1"}}
 
-	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, enums.DisplayModeTableDetailComment)
+	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTableDetailComment)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -611,7 +633,7 @@ func TestWriteTableSanitizesCommentClosure(t *testing.T) {
 	columns := []string{"data"}
 	rows := []Row{{"value with */ inside"}}
 
-	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, enums.DisplayModeTableComment)
+	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTableComment)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
@@ -209,7 +209,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 				var buf bytes.Buffer
 				config := session.systemVariables.toFormatConfig()
 				config.SQLTableName = table
-				if err := format.FormatSQL(enums.DisplayModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
+				if err := formatsql.FormatSQL(formatsql.ModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
 					return fmt.Errorf("failed to format SQL for table %s: %w", table, err)
 				}
 				if buf.Len() > 0 {

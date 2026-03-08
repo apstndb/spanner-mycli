@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/apstndb/go-runewidthex"
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
@@ -45,7 +44,7 @@ func writeBuffered(out io.Writer, buildFunc func(out io.Writer) error) error {
 // formatTable formats output as an ASCII table.
 // verboseNames provides the verbose header names (with type info) when Verbose is true.
 // columnAlign provides per-column alignment for special statements like EXPLAIN.
-func formatTable(mode enums.DisplayMode) FormatFunc {
+func formatTable(mode Mode) FormatFunc {
 	return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
 		return writeBuffered(out, func(out io.Writer) error {
 			return WriteTable(out, rows, columnNames, config, screenWidth, mode)
@@ -66,19 +65,19 @@ type TableParams struct {
 // WriteTable writes the table to the provided writer.
 // verboseNames and columnAlign are passed separately because they are specific to table formatting
 // and not available in the generic FormatConfig.
-func WriteTable(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode enums.DisplayMode) error {
+func WriteTable(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode Mode) error {
 	return WriteTableWithParams(w, rows, columnNames, config, screenWidth, mode, TableParams{})
 }
 
 // WriteTableWithParams writes the table with additional table-specific parameters.
-func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode enums.DisplayMode, params TableParams) error {
+func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode Mode, params TableParams) error {
 	rw := runewidthex.NewCondition()
 	rw.TabWidth = cmp.Or(config.TabWidth, 4)
 
 	// For comment modes, we need to manipulate the output, so use a buffer
 	var tableBuf strings.Builder
 	tableWriter := w
-	if mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
+	if mode == ModeTableComment || mode == ModeTableDetailComment {
 		tableWriter = &tableBuf
 	}
 
@@ -139,14 +138,14 @@ func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config 
 	}
 
 	// Handle comment mode transformations
-	if mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
+	if mode == ModeTableComment || mode == ModeTableDetailComment {
 		s := strings.TrimSpace(tableBuf.String())
 		// Sanitize */ in table content to prevent premature SQL comment closure.
 		s = strings.ReplaceAll(s, "*/", "* /")
 		s = strings.ReplaceAll(s, "\n", "\n ")
 		s = topLeftRe.ReplaceAllLiteralString(s, "/*")
 
-		if mode == enums.DisplayModeTableComment {
+		if mode == ModeTableComment {
 			s = bottomRightRe.ReplaceAllLiteralString(s, "*/")
 		}
 
@@ -187,26 +186,30 @@ func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatCon
 }
 
 // NewFormatter creates a new formatter function based on the display mode.
-func NewFormatter(mode enums.DisplayMode) (FormatFunc, error) {
+// Built-in modes (TABLE, CSV, etc.) are handled directly.
+// Custom modes are looked up in the registry (see RegisterFormatFunc).
+func NewFormatter(mode Mode) (FormatFunc, error) {
 	switch mode {
-	case enums.DisplayModeUnspecified:
-		return formatTable(enums.DisplayModeTable), nil
-	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+	case "UNSPECIFIED", "":
+		return formatTable(ModeTable), nil
+	case ModeTable, ModeTableComment, ModeTableDetailComment:
 		return formatTable(mode), nil
-	case enums.DisplayModeVertical:
+	case ModeVertical:
 		return formatVertical, nil
-	case enums.DisplayModeTab:
+	case ModeTab:
 		return formatTab, nil
-	case enums.DisplayModeCSV:
+	case ModeCSV:
 		return formatCSV, nil
-	case enums.DisplayModeHTML:
+	case ModeHTML:
 		return formatHTML, nil
-	case enums.DisplayModeXML:
+	case ModeXML:
 		return formatXML, nil
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		return FormatSQL(mode), nil
 	default:
-		return nil, fmt.Errorf("unsupported display mode: %v", mode)
+		// Look up in registry for custom modes
+		if factory, ok := lookupFormatFunc(mode); ok {
+			return factory(mode)
+		}
+		return nil, errUnsupportedMode("display", mode)
 	}
 }
 
@@ -233,21 +236,20 @@ func ExecuteWithFormatter(formatter StreamingFormatter, rows []Row, columnNames 
 // NewStreamingFormatter creates a streaming formatter for the given display mode.
 // Note: Table formats (Table, TableComment, TableDetailComment) require screenWidth
 // and should be created with NewTableStreamingFormatter directly by the caller.
-func NewStreamingFormatter(mode enums.DisplayMode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
+// Built-in modes are handled directly. Custom modes are looked up in the registry.
+func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
 	switch mode {
-	case enums.DisplayModeCSV:
+	case ModeCSV:
 		return NewCSVFormatter(out, config.SkipColumnNames), nil
-	case enums.DisplayModeTab:
+	case ModeTab:
 		return NewTabFormatter(out, config.SkipColumnNames), nil
-	case enums.DisplayModeVertical:
+	case ModeVertical:
 		return NewVerticalFormatter(out), nil
-	case enums.DisplayModeHTML:
+	case ModeHTML:
 		return NewHTMLFormatter(out, config.SkipColumnNames), nil
-	case enums.DisplayModeXML:
+	case ModeXML:
 		return NewXMLFormatter(out, config.SkipColumnNames), nil
-	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		return NewSQLStreamingFormatter(out, config, mode)
-	case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
+	case ModeTable, ModeTableComment, ModeTableDetailComment:
 		// Table formats need screenWidth, so they must be created by the caller
 		// Return a dummy formatter for isStreamingSupported check
 		if out == io.Discard {
@@ -255,6 +257,10 @@ func NewStreamingFormatter(mode enums.DisplayMode, out io.Writer, config FormatC
 		}
 		return nil, fmt.Errorf("table formats require screenWidth - use NewTableStreamingFormatter directly")
 	default:
-		return nil, fmt.Errorf("unsupported streaming format: %v", mode)
+		// Look up in registry for custom modes
+		if factory, ok := lookupStreamingFormatter(mode); ok {
+			return factory(mode, out, config)
+		}
+		return nil, errUnsupportedMode("streaming", mode)
 	}
 }

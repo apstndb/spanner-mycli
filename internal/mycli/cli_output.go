@@ -96,18 +96,21 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		config.SQLTableName = result.SQLTableNameForExport
 	}
 
+	// Convert enums.DisplayMode to format.Mode for the format package
+	fmtMode := format.Mode(displayFormat.String())
+
 	// Create the appropriate formatter based on the display mode
-	formatter, err := format.NewFormatter(displayFormat)
+	formatter, err := format.NewFormatter(fmtMode)
 	if err != nil {
 		return fmt.Errorf("failed to create formatter: %w", err)
 	}
 
 	// For table mode, pass verbose headers and column align via WriteTableWithParams
-	if displayFormat == enums.DisplayModeUnspecified || displayFormat == enums.DisplayModeTable || displayFormat == enums.DisplayModeTableComment || displayFormat == enums.DisplayModeTableDetailComment {
+	if fmtMode.IsTableMode() || fmtMode == "UNSPECIFIED" {
 		verboseHeaders := renderTableHeader(result.TableHeader, true)
-		tableMode := displayFormat
-		if tableMode == enums.DisplayModeUnspecified {
-			tableMode = enums.DisplayModeTable
+		tableMode := fmtMode
+		if tableMode == "UNSPECIFIED" {
+			tableMode = format.ModeTable
 		}
 		return format.WriteTableWithParams(out, result.Rows, columnNames, config, screenWidth, tableMode, format.TableParams{
 			VerboseHeaders: verboseHeaders,

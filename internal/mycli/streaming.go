@@ -183,7 +183,8 @@ func shouldUseStreaming(sysVars *systemVariables) bool {
 
 // isStreamingSupported checks if a specific display mode supports streaming.
 func isStreamingSupported(mode enums.DisplayMode) bool {
-	_, err := format.NewStreamingFormatter(mode, io.Discard, format.FormatConfig{})
+	fmtMode := format.Mode(mode.String())
+	_, err := format.NewStreamingFormatter(fmtMode, io.Discard, format.FormatConfig{})
 	return err == nil
 }
 

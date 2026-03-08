@@ -13,7 +13,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
-	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"google.golang.org/grpc/codes"
@@ -66,7 +66,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
-			detectedTableName, detectionErr := format.ExtractTableNameFromQuery(sql)
+			detectedTableName, detectionErr := formatsql.ExtractTableNameFromQuery(sql)
 			if detectedTableName != "" {
 				// Create a copy of sysVars to use the detected table name for this execution only.
 				// This is important for:

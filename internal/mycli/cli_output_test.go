@@ -398,9 +398,9 @@ func TestFormatHelpers(t *testing.T) {
 		})
 	}
 
-	htmlFormatter, _ := format.NewFormatter(enums.DisplayModeHTML)
-	xmlFormatter, _ := format.NewFormatter(enums.DisplayModeXML)
-	csvFormatter, _ := format.NewFormatter(enums.DisplayModeCSV)
+	htmlFormatter, _ := format.NewFormatter(format.ModeHTML)
+	xmlFormatter, _ := format.NewFormatter(format.ModeXML)
+	csvFormatter, _ := format.NewFormatter(format.ModeCSV)
 	testEmptyFormatter(t, "formatHTML", htmlFormatter)
 	testEmptyFormatter(t, "formatXML", xmlFormatter)
 	testEmptyFormatter(t, "formatCSV", csvFormatter)
