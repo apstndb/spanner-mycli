@@ -34,9 +34,9 @@ import (
 
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/kballard/go-shellquote"
-	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -490,7 +490,7 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 				return ""
 			}
 		case "%R":
-			return runewidth.FillLeft(
+			return tabwrap.FillLeft(
 				lo.CoalesceOrEmpty(strings.ReplaceAll(c.waitingStatus, "*/", "/*"), "-"), 3)
 		default:
 			// Check if it's a system variable pattern %{...}

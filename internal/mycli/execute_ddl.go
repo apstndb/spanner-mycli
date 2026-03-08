@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
-	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
@@ -68,7 +68,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			bar := p.AddBar(int64(100),
 				mpb.PrependDecorators(
 					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(runewidth.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
+					decor.Name(tabwrap.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
 					decor.Percentage(decor.WCSyncSpace),
 					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 				mpb.BarRemoveOnComplete(),

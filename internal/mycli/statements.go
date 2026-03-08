@@ -29,6 +29,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
@@ -38,7 +39,6 @@ import (
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/gocql/gocql"
 	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
-	"github.com/mattn/go-runewidth"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -337,7 +337,7 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		bar = p.AddBar(int64(100),
 			mpb.PrependDecorators(
 				decor.Spinner(nil, decor.WCSyncSpaceR),
-				decor.Name(runewidth.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
+				decor.Name(tabwrap.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
 				decor.Percentage(decor.WCSyncSpace),
 				decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
 			mpb.BarRemoveOnComplete(),

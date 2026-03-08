@@ -167,7 +167,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 
 	iter, _ := session.RunQuery(ctx, stmt)
 
-	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+	rows, _, _, metadata, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc, session.systemVariables.typeStyles))
 	if err != nil {
 		return nil, err
 	}

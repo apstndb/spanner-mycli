@@ -11,7 +11,7 @@ require (
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.1.1
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
-	github.com/apstndb/go-runewidthex v0.1.0
+	github.com/apstndb/go-tabwrap v0.1.1
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
@@ -36,7 +36,6 @@ require (
 	github.com/junegunn/fzf v0.68.0
 	github.com/k0kubun/pp/v3 v3.5.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/mattn/go-runewidth v0.0.19
 	github.com/modelcontextprotocol/go-sdk v0.3.0
 	github.com/ngicks/go-iterator-helper v0.0.21
 	github.com/nyaosorg/go-readline-ny v1.14.1
@@ -82,9 +81,8 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charlievieth/fastwalk v1.0.14 // indirect
-	github.com/clipperhouse/displaywidth v0.6.2 // indirect
-	github.com/clipperhouse/stringish v0.1.1 // indirect
-	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
+	github.com/clipperhouse/displaywidth v0.11.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20250501225837-2ac532fd4443 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -128,6 +126,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect

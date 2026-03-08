@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/mattn/go-runewidth"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/samber/lo"
 )
@@ -99,7 +99,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 		slog.Debug("MCP response sent",
 			"output_length", len(sb.String()),
 			"duration", time.Since(start),
-			"output_preview", runewidth.Truncate(sb.String(), 100, "..."))
+			"output_preview", tabwrap.Truncate(sb.String(), 100, "..."))
 
 		return result, nil, nil
 	}

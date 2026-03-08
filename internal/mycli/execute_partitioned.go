@@ -45,7 +45,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {
 			iter := batchROTx.Execute(ctx, partition)
-			rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc))
+			rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc, session.systemVariables.typeStyles))
 			if err != nil {
 				return nil, err
 			}

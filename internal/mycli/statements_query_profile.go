@@ -12,12 +12,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	"github.com/k0kubun/pp/v3"
-	"github.com/mattn/go-runewidth"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -88,11 +88,11 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 		tree := strings.Join(slices.Collect(hiter.Map(
 			func(r Row) string {
-				return runewidth.FillLeft(r[0].RawText() /* ID */, maxIDLength) + " | " + r[1].RawText() /* Plan */
+				return tabwrap.FillLeft(r[0].RawText() /* ID */, maxIDLength) + " | " + r[1].RawText() /* Plan */
 			},
 			slices.Values(rows))), "\n")
 
-		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+runewidth.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
+		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+tabwrap.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
 			lox.IfOrEmpty(len(predicates) > 0, "\nPredicates:\n"+strings.Join(predicates, "\n"))+"\n"+
 			formatStats(row)))
 	}
