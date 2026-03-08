@@ -127,6 +127,7 @@ type spannerOptions struct {
 	Output          string  `long:"output" short:"o" description:"Redirect output to file (file only, no screen output)" default-mask:"-"`
 	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
 	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
+	Color           string  `long:"color" description:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
 	Quiet           bool    `long:"quiet" short:"q" description:"Suppress result lines like 'rows in set' for clean output" default-mask:"-"`
 }
 
@@ -515,6 +516,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		{"CLI_QUERY_MODE", opts.QueryMode, "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
 		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
+		{"CLI_STYLED_OUTPUT", lo.Ternary(opts.Color != "" && opts.Color != "AUTO", opts.Color, ""), "--color"},
 	}); err != nil {
 		return nil, err
 	}

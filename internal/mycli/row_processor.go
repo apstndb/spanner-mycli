@@ -24,56 +24,6 @@ type RowProcessor interface {
 	Finish(stats QueryStats, rowCount int64) error
 }
 
-// BufferedProcessor collects all rows in memory before formatting.
-// This is the traditional approach used by spanner-mycli.
-type BufferedProcessor struct {
-	rows        []Row
-	metadata    *sppb.ResultSetMetadata
-	sysVars     *systemVariables
-	formatter   format.FormatFunc
-	out         io.Writer
-	screenWidth int
-	result      *Result // Accumulates the complete result
-}
-
-// NewBufferedProcessor creates a processor that collects all rows before formatting.
-func NewBufferedProcessor(formatter format.FormatFunc, out io.Writer, screenWidth int) *BufferedProcessor {
-	return &BufferedProcessor{
-		formatter:   formatter,
-		out:         out,
-		screenWidth: screenWidth,
-		rows:        []Row{},
-		result:      &Result{},
-	}
-}
-
-// Init initializes the buffered processor with metadata.
-func (p *BufferedProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *systemVariables) error {
-	p.metadata = metadata
-	p.sysVars = sysVars
-	p.result.TableHeader = toTableHeader(metadata.GetRowType().GetFields())
-	return nil
-}
-
-// ProcessRow adds a row to the buffer.
-func (p *BufferedProcessor) ProcessRow(row Row) error {
-	p.rows = append(p.rows, row)
-	return nil
-}
-
-// Finish formats and outputs all collected rows.
-func (p *BufferedProcessor) Finish(stats QueryStats, rowCount int64) error {
-	p.result.Rows = p.rows
-	p.result.Stats = stats
-	p.result.AffectedRows = len(p.rows)
-
-	// Extract column names and construct FormatConfig for formatting
-	columnNames := extractTableColumnNames(p.result.TableHeader)
-	config := p.sysVars.toFormatConfig()
-
-	return p.formatter(p.out, p.result.Rows, columnNames, config, p.screenWidth)
-}
-
 // StreamingProcessor processes rows immediately as they arrive.
 // This reduces memory usage and improves Time To First Byte for large result sets.
 type StreamingProcessor struct {

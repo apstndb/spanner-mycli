@@ -66,7 +66,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	rows := slices.SortedFunc(
 		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
-		func(lhs, rhs Row) int { return cmp.Compare(lhs[0], rhs[0]) /* name */ })
+		func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* name */ })
 
 	return &Result{
 		TableHeader:   toTableHeader("name", "value"),
@@ -166,7 +166,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 	})
 
 	rows := slices.SortedFunc(hiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
-		return strings.Compare(lhs[0], rhs[0])
+		return strings.Compare(lhs[0].RawText(), rhs[0].RawText())
 	})
 
 	return &Result{

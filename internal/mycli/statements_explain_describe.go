@@ -442,7 +442,7 @@ func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlin
 
 			rowStrs = append(rowStrs, c)
 		}
-		rows = append(rows, rowStrs)
+		rows = append(rows, toRow(rowStrs...))
 
 		var prefix string
 		for i, predicate := range row.Predicates {

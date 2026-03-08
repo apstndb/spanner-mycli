@@ -36,6 +36,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 
 	"google.golang.org/protobuf/testing/protocmp"
@@ -276,6 +277,12 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	return clients, session
 }
+
+// p creates a PlainCell for test expectations.
+func p(text string) format.PlainCell { return format.PlainCell{Text: text} }
+
+// n creates a NullCell for test expectations (used for actual Spanner NULL values).
+func n(text string) format.NullCell { return format.NullCell{Text: text} }
 
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()
@@ -574,6 +581,7 @@ type paramCase struct {
 	input  string
 	output string
 	typ    *sppb.Type
+	isNull bool // When true, expected Cell is NullCell instead of PlainCell
 }
 
 // paramCasesToStmtResults converts a slice of paramCase to a slice of stmtResult.
@@ -593,7 +601,11 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 		result = append(result, srKeep(fmt.Sprintf("SET PARAM %s = %s", s.name, s.input)))
 		selectParts = append(selectParts, fmt.Sprintf("@%s AS `%s`", s.name, s.name))
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
-		row = append(row, s.output)
+		if s.isNull {
+			row = append(row, format.NullCell{Text: s.output})
+		} else {
+			row = append(row, format.PlainCell{Text: s.output})
+		}
 	}
 
 	result = append(result, stmtResult{
@@ -613,22 +625,22 @@ func TestParameterStatements(t *testing.T) {
 		{
 			desc: "query parameters",
 			stmtResults: paramCasesToStmtResults([]paramCase{
-				{"b", "true", "true", typector.CodeToSimpleType(sppb.TypeCode_BOOL)},
-				{"bs", `b"foo"`, "Zm9v", typector.CodeToSimpleType(sppb.TypeCode_BYTES)},
-				{"i64", "1", "1", typector.CodeToSimpleType(sppb.TypeCode_INT64)},
-				{"f64", "1.0", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64)},
-				{"f32", "CAST(1.0 AS FLOAT32)", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32)},
-				{"n", `NUMERIC "1"`, "1", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC)},
-				{"s", `"foo"`, "foo", typector.CodeToSimpleType(sppb.TypeCode_STRING)},
-				{"js", `JSON "{}"`, "{}", typector.CodeToSimpleType(sppb.TypeCode_JSON)},
-				{"ts", `TIMESTAMP "2000-01-01T00:00:00Z"`, "2000-01-01T00:00:00Z", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP)},
-				{"ival_single", "INTERVAL 3 DAY", "P3D", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
-				{"ival_range", `INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, "P3Y4M5DT6H7M8.999999999S", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
+				{"b", "true", "true", typector.CodeToSimpleType(sppb.TypeCode_BOOL), false},
+				{"bs", `b"foo"`, "Zm9v", typector.CodeToSimpleType(sppb.TypeCode_BYTES), false},
+				{"i64", "1", "1", typector.CodeToSimpleType(sppb.TypeCode_INT64), false},
+				{"f64", "1.0", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64), false},
+				{"f32", "CAST(1.0 AS FLOAT32)", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32), false},
+				{"n", `NUMERIC "1"`, "1", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC), false},
+				{"s", `"foo"`, "foo", typector.CodeToSimpleType(sppb.TypeCode_STRING), false},
+				{"js", `JSON "{}"`, "{}", typector.CodeToSimpleType(sppb.TypeCode_JSON), false},
+				{"ts", `TIMESTAMP "2000-01-01T00:00:00Z"`, "2000-01-01T00:00:00Z", typector.CodeToSimpleType(sppb.TypeCode_TIMESTAMP), false},
+				{"ival_single", "INTERVAL 3 DAY", "P3D", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL), false},
+				{"ival_range", `INTERVAL "3-4 5 6:7:8.999999999" YEAR TO SECOND`, "P3Y4M5DT6H7M8.999999999S", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL), false},
 				// UUID type is not yet supported by the emulator, so we comment it out until it is supported.
-				// {"u", `CAST("f703e11e-b175-46b0-8e04-3723bd71ff62" AS UUID)`, "f703e11e-b175-46b0-8e04-3723bd71ff62", typector.CodeToSimpleType(sppb.TypeCode_UUID)},
-				{"a_b", "[true]", "[true]", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL)},
-				{"n_b", "CAST(NULL AS BOOL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_BOOL)},
-				{"n_ival", "CAST(NULL AS INTERVAL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL)},
+				// {"u", `CAST("f703e11e-b175-46b0-8e04-3723bd71ff62" AS UUID)`, "f703e11e-b175-46b0-8e04-3723bd71ff62", typector.CodeToSimpleType(sppb.TypeCode_UUID), false},
+				{"a_b", "[true]", "[true]", typector.ElemCodeToArrayType(sppb.TypeCode_BOOL), false},
+				{"n_b", "CAST(NULL AS BOOL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_BOOL), true},
+				{"n_ival", "CAST(NULL AS INTERVAL)", "NULL", typector.CodeToSimpleType(sppb.TypeCode_INTERVAL), true},
 			}),
 		},
 		{
@@ -1032,7 +1044,7 @@ func TestBatchStatements(t *testing.T) {
 					IsExecutedDML: true,
 					AffectedRows:  1,
 					TableHeader:   toTableHeader("DML", "Rows"),
-					Rows:          sliceOf(Row{"INSERT INTO TestTable (id, active) VALUES (2,	false)", "1"}), // tab is pass-through
+					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2,	false)", "1")), // tab is pass-through
 				}},
 				{"SELECT * FROM TestTable ORDER BY id", &Result{
 					AffectedRows: 2,
@@ -1762,8 +1774,8 @@ func TestShowColumns(t *testing.T) {
 	compareResult(t, result, &Result{
 		TableHeader: toTableHeader("Field", "Type", "NULL", "Key", "Key_Order", "Options"),
 		Rows: sliceOf(
-			toRow("id", "INT64", "NO", "PRIMARY_KEY", "ASC", "NULL"),
-			toRow("active", "BOOL", "NO", "NULL", "NULL", "NULL"),
+			Row{p("id"), p("INT64"), p("NO"), p("PRIMARY_KEY"), p("ASC"), n("NULL")},
+			Row{p("active"), p("BOOL"), p("NO"), n("NULL"), n("NULL"), n("NULL")},
 		),
 		AffectedRows: 2,
 	})
@@ -1792,7 +1804,7 @@ func TestShowIndexes(t *testing.T) {
 	compareResult(t, result, &Result{
 		TableHeader: toTableHeader("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"),
 		Rows: sliceOf(
-			toRow("tbl", "", "PRIMARY_KEY", "PRIMARY_KEY", "true", "false", "NULL"),
+			Row{p("tbl"), p(""), p("PRIMARY_KEY"), p("PRIMARY_KEY"), p("true"), p("false"), n("NULL")},
 		),
 		AffectedRows: 1,
 	})
@@ -1902,9 +1914,9 @@ func TestShowOperation(t *testing.T) {
 	var foundOp bool
 	for _, row := range result.Rows {
 		// Assuming DDL statement is in the second column (index 1) and operation ID in the first (index 0)
-		if len(row) > 1 && strings.Contains(row[1], "CREATE TABLE TestShowOperationTable") {
-			if len(row[0]) > 0 {
-				operationID = row[0]
+		if len(row) > 1 && strings.Contains(row[1].RawText(), "CREATE TABLE TestShowOperationTable") {
+			if len(row[0].RawText()) > 0 {
+				operationID = row[0].RawText()
 				foundOp = true
 				break
 			}
@@ -1945,13 +1957,13 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Verify the operation ID matches what we requested
-	if len(opResult.Rows[0]) > 0 && opResult.Rows[0][0] != operationID {
-		t.Errorf("Expected operation ID %s, got %s", operationID, opResult.Rows[0][0])
+	if len(opResult.Rows[0]) > 0 && opResult.Rows[0][0].RawText() != operationID {
+		t.Errorf("Expected operation ID %s, got %s", operationID, opResult.Rows[0][0].RawText())
 	}
 
 	// Verify the statement contains our DDL
 	if len(opResult.Rows[0]) > 1 {
-		statement := opResult.Rows[0][1]
+		statement := opResult.Rows[0][1].RawText()
 		if !strings.Contains(statement, "CREATE TABLE TestShowOperationTable") {
 			t.Errorf("Expected statement to contain CREATE TABLE TestShowOperationTable, got: %s", statement)
 		}
@@ -1959,7 +1971,7 @@ func TestShowOperation(t *testing.T) {
 
 	// Verify the operation is done (DDL should complete quickly in emulator)
 	if len(opResult.Rows[0]) > 2 {
-		done := opResult.Rows[0][2]
+		done := opResult.Rows[0][2].RawText()
 		if done != "true" {
 			t.Logf("Note: Operation is not done yet: %s (this may be expected for slow operations)", done)
 		}

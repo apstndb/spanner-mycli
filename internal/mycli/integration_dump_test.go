@@ -123,7 +123,7 @@ func TestDumpStatements(t *testing.T) {
 			var output strings.Builder
 			for _, row := range result.Rows {
 				if len(row) > 0 {
-					output.WriteString(row[0])
+					output.WriteString(row[0].RawText())
 					output.WriteString("\n")
 				}
 			}
@@ -214,7 +214,7 @@ func TestDumpEmptyDatabase(t *testing.T) {
 
 	hasHeader := false
 	for _, row := range result.Rows {
-		if len(row) > 0 && strings.Contains(row[0], "-- Database DDL exported by spanner-mycli") {
+		if len(row) > 0 && strings.Contains(row[0].RawText(), "-- Database DDL exported by spanner-mycli") {
 			hasHeader = true
 			break
 		}
@@ -362,7 +362,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	var output strings.Builder
 	for _, row := range result.Rows {
 		if len(row) > 0 {
-			output.WriteString(row[0])
+			output.WriteString(row[0].RawText())
 			output.WriteString("\n")
 		}
 	}
@@ -479,7 +479,7 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 	var output strings.Builder
 	for _, row := range result.Rows {
 		if len(row) > 0 {
-			output.WriteString(row[0])
+			output.WriteString(row[0].RawText())
 			output.WriteString("\n")
 		}
 	}
@@ -562,9 +562,9 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	// It should NOT include: FullName, SearchTokens, ComputedValue (all generated columns)
 	// Note: The formatter only quotes identifiers when necessary (e.g., reserved words like "Order")
 	expectedRows := []Row{
-		{"-- Data for table Users"},
-		{"INSERT INTO Users (UserId, FirstName, LastName, `Order`, CreatedAt) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"},
-		{""},
+		toRow("-- Data for table Users"),
+		toRow("INSERT INTO Users (UserId, FirstName, LastName, `Order`, CreatedAt) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"),
+		toRow(""),
 	}
 
 	if diff := cmp.Diff(expectedRows, result.Rows); diff != "" {

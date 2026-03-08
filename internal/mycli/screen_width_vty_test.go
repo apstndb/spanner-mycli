@@ -106,7 +106,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termHeight: 30,
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"value"}},
+				Rows:        []Row{toRow("value")},
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -119,7 +119,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termHeight: 30,
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"value"}},
+				Rows:        []Row{toRow("value")},
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -132,7 +132,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termHeight: 30,
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"value"}},
+				Rows:        []Row{toRow("value")},
 			},
 			interactive: false,
 			input:       "SELECT 'value'",

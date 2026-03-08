@@ -699,10 +699,11 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 			break
 		}
 
-		var row Row
+		var rowStrs []string
 		for _, value := range rd.Values {
-			row = append(row, fmt.Sprint(reflect.Indirect(reflect.ValueOf(value)).Interface()))
+			rowStrs = append(rowStrs, fmt.Sprint(reflect.Indirect(reflect.ValueOf(value)).Interface()))
 		}
+		row := toRow(rowStrs...)
 		rows = append(rows, row)
 	}
 

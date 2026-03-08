@@ -41,7 +41,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	if result.IsDirectOutput {
 		for _, row := range result.Rows {
 			if len(row) > 0 {
-				fmt.Fprintln(out, row[0])
+				fmt.Fprintln(out, row[0].RawText())
 			}
 		}
 		return nil
@@ -75,13 +75,11 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Determine the display format to use
 	displayFormat := sysVars.Display.CLIFormat
 
-	// SQL export formats require values to be formatted as SQL literals for valid SQL generation.
-	// When HasSQLFormattedValues is false, the values are formatted for display (e.g., TIMESTAMP
-	// as "2024-01-01T00:00:00Z" instead of TIMESTAMP "2024-01-01T00:00:00Z").
-	// Attempting to use display-formatted values in INSERT statements would generate invalid SQL.
-	// Therefore, we fall back to table format for safety.
+	// Modes that require SQL literal values (e.g., SQL_INSERT) must fall back to table format
+	// when values were not formatted as SQL literals (HasSQLFormattedValues is false).
 	// This affects metadata queries (SHOW CREATE TABLE, EXPLAIN) and DML with THEN RETURN.
-	if sysVars.Display.CLIFormat.IsSQLExport() && !result.HasSQLFormattedValues {
+	fmtMode := format.Mode(displayFormat.String())
+	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && !result.HasSQLFormattedValues {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
 			"requestedFormat", sysVars.Display.CLIFormat,
 			"statementType", "non-SELECT/DML")
@@ -91,23 +89,26 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	// Build FormatConfig from systemVariables
 	config := sysVars.toFormatConfig()
 
+	// Recompute fmtMode after potential fallback above
+	fmtMode = format.Mode(displayFormat.String())
+
 	// For SQL export, resolve the table name from Result if available
-	if displayFormat.IsSQLExport() && result.SQLTableNameForExport != "" {
+	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && result.SQLTableNameForExport != "" {
 		config.SQLTableName = result.SQLTableNameForExport
 	}
 
 	// Create the appropriate formatter based on the display mode
-	formatter, err := format.NewFormatter(displayFormat)
+	formatter, err := format.NewFormatter(fmtMode)
 	if err != nil {
 		return fmt.Errorf("failed to create formatter: %w", err)
 	}
 
 	// For table mode, pass verbose headers and column align via WriteTableWithParams
-	if displayFormat == enums.DisplayModeUnspecified || displayFormat == enums.DisplayModeTable || displayFormat == enums.DisplayModeTableComment || displayFormat == enums.DisplayModeTableDetailComment {
+	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
 		verboseHeaders := renderTableHeader(result.TableHeader, true)
-		tableMode := displayFormat
-		if tableMode == enums.DisplayModeUnspecified {
-			tableMode = enums.DisplayModeTable
+		tableMode := fmtMode
+		if tableMode == format.ModeUnspecified {
+			tableMode = format.ModeTable
 		}
 		return format.WriteTableWithParams(out, result.Rows, columnNames, config, screenWidth, tableMode, format.TableParams{
 			VerboseHeaders: verboseHeaders,

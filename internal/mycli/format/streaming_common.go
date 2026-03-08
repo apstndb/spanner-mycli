@@ -51,7 +51,7 @@ func (f *CSVFormatter) WriteRow(row Row) error {
 		return fmt.Errorf("CSV formatter not initialized")
 	}
 
-	if err := f.writer.Write(row); err != nil {
+	if err := f.writer.Write(Texts(row)); err != nil {
 		return fmt.Errorf("failed to write CSV row: %w", err)
 	}
 
@@ -114,7 +114,7 @@ func (f *TabFormatter) WriteRow(row Row) error {
 		return fmt.Errorf("TAB formatter not initialized")
 	}
 
-	if _, err := fmt.Fprintln(f.out, strings.Join(row, "\t")); err != nil {
+	if _, err := fmt.Fprintln(f.out, strings.Join(Texts(row), "\t")); err != nil {
 		return fmt.Errorf("failed to write TAB row: %w", err)
 	}
 
@@ -183,11 +183,13 @@ func (f *VerticalFormatter) WriteRow(row Row) error {
 
 	// Print each column
 	for i, value := range row {
-		columnName := f.columns[i]
-		if i >= len(f.columns) {
+		var columnName string
+		if i < len(f.columns) {
+			columnName = f.columns[i]
+		} else {
 			columnName = fmt.Sprintf("Column_%d", i+1)
 		}
-		if _, err := fmt.Fprintf(f.out, f.format, columnName, value); err != nil {
+		if _, err := fmt.Fprintf(f.out, f.format, columnName, value.RawText()); err != nil {
 			return err
 		}
 	}

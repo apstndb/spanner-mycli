@@ -6,10 +6,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/go-json-experiment/json"
 	"github.com/ngicks/go-iterator-helper/hiter"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
@@ -95,10 +97,25 @@ func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*
 
 func spannerRowToRow(fc *spanvalue.FormatConfig) func(row *spanner.Row) (Row, error) {
 	return func(row *spanner.Row) (Row, error) {
-		columns, err := fc.FormatRow(row)
-		if err != nil {
-			return Row{}, err
+		result := make(Row, row.Size())
+		for i := range row.Size() {
+			var gcv spanner.GenericColumnValue
+			if err := row.Column(i, &gcv); err != nil {
+				return nil, err
+			}
+
+			text, err := fc.FormatToplevelColumn(gcv)
+			if err != nil {
+				return nil, err
+			}
+
+			// Use NullCell for top-level NULL values to enable styled rendering
+			if _, isNull := gcv.Value.GetKind().(*structpb.Value_NullValue); isNull {
+				result[i] = format.NullCell{Text: text}
+			} else {
+				result[i] = format.PlainCell{Text: text}
+			}
 		}
-		return toRow(columns...), nil
+		return result, nil
 	}
 }

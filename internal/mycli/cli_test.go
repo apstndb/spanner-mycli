@@ -186,8 +186,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
-						{"1", "2"},
-						{"3", "4"},
+						toRow("1", "2"),
+						toRow("3", "4"),
 					},
 				},
 				want: strings.TrimPrefix(`
@@ -207,8 +207,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
-						{"1", "2"},
-						{"3", "4"},
+						toRow("1", "2"),
+						toRow("3", "4"),
 					},
 				},
 				want: strings.TrimPrefix(`
@@ -234,8 +234,8 @@ func TestPrintResult(t *testing.T) {
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
-						{"1", "2"},
-						{"3", "4"},
+						toRow("1", "2"),
+						toRow("3", "4"),
 					},
 				},
 				want: "```sql" + `
@@ -1324,7 +1324,7 @@ func TestCli_PrintResult(t *testing.T) {
 			usePager: false,
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"foo"}},
+				Rows:        []Row{toRow("foo")},
 			},
 			interactive: false,
 			input:       "SELECT 'foo'",

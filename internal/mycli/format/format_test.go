@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -15,22 +14,20 @@ func TestNewFormatter(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mode    enums.DisplayMode
+		mode    Mode
 		wantErr bool
 	}{
-		{name: "unspecified", mode: enums.DisplayModeUnspecified},
-		{name: "table", mode: enums.DisplayModeTable},
-		{name: "table_comment", mode: enums.DisplayModeTableComment},
-		{name: "table_detail_comment", mode: enums.DisplayModeTableDetailComment},
-		{name: "vertical", mode: enums.DisplayModeVertical},
-		{name: "tab", mode: enums.DisplayModeTab},
-		{name: "csv", mode: enums.DisplayModeCSV},
-		{name: "html", mode: enums.DisplayModeHTML},
-		{name: "xml", mode: enums.DisplayModeXML},
-		{name: "sql_insert", mode: enums.DisplayModeSQLInsert},
-		{name: "sql_insert_or_ignore", mode: enums.DisplayModeSQLInsertOrIgnore},
-		{name: "sql_insert_or_update", mode: enums.DisplayModeSQLInsertOrUpdate},
-		{name: "invalid", mode: enums.DisplayMode(999), wantErr: true},
+		{name: "unspecified", mode: "UNSPECIFIED"},
+		{name: "empty", mode: ""},
+		{name: "table", mode: ModeTable},
+		{name: "table_comment", mode: ModeTableComment},
+		{name: "table_detail_comment", mode: ModeTableDetailComment},
+		{name: "vertical", mode: ModeVertical},
+		{name: "tab", mode: ModeTab},
+		{name: "csv", mode: ModeCSV},
+		{name: "html", mode: ModeHTML},
+		{name: "xml", mode: ModeXML},
+		{name: "invalid", mode: Mode("NONEXISTENT"), wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -58,34 +55,21 @@ func TestNewStreamingFormatter(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mode    enums.DisplayMode
+		mode    Mode
 		config  FormatConfig
 		out     io.Writer
 		wantErr bool
 	}{
-		{name: "csv", mode: enums.DisplayModeCSV, out: io.Discard},
-		{name: "tab", mode: enums.DisplayModeTab, out: io.Discard},
-		{name: "vertical", mode: enums.DisplayModeVertical, out: io.Discard},
-		{name: "html", mode: enums.DisplayModeHTML, out: io.Discard},
-		{name: "xml", mode: enums.DisplayModeXML, out: io.Discard},
-		{
-			name:   "sql_insert",
-			mode:   enums.DisplayModeSQLInsert,
-			config: FormatConfig{SQLTableName: "Users"},
-			out:    io.Discard,
-		},
-		{
-			name:    "sql_insert_no_table",
-			mode:    enums.DisplayModeSQLInsert,
-			config:  FormatConfig{},
-			out:     io.Discard,
-			wantErr: true,
-		},
+		{name: "csv", mode: ModeCSV, out: io.Discard},
+		{name: "tab", mode: ModeTab, out: io.Discard},
+		{name: "vertical", mode: ModeVertical, out: io.Discard},
+		{name: "html", mode: ModeHTML, out: io.Discard},
+		{name: "xml", mode: ModeXML, out: io.Discard},
 		// Table formats with io.Discard are allowed (for isStreamingSupported check)
-		{name: "table_discard", mode: enums.DisplayModeTable, out: io.Discard},
+		{name: "table_discard", mode: ModeTable, out: io.Discard},
 		// Table formats with real writer require screenWidth
-		{name: "table_real_writer", mode: enums.DisplayModeTable, out: &bytes.Buffer{}, wantErr: true},
-		{name: "invalid", mode: enums.DisplayMode(999), out: io.Discard, wantErr: true},
+		{name: "table_real_writer", mode: ModeTable, out: &bytes.Buffer{}, wantErr: true},
+		{name: "invalid", mode: Mode("NONEXISTENT"), out: io.Discard, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +92,68 @@ func TestNewStreamingFormatter(t *testing.T) {
 	}
 }
 
+func TestNewFormatter_RegisteredMode(t *testing.T) {
+	// No t.Parallel(): mutates global registry
+	testMode := Mode("TEST_CUSTOM")
+	RegisterFormatFunc(func(mode Mode) (FormatFunc, error) {
+		return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+			return nil
+		}, nil
+	}, testMode)
+	t.Cleanup(func() { unregisterFormatFunc(testMode) })
+
+	fn, err := NewFormatter(testMode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fn == nil {
+		t.Error("expected non-nil FormatFunc from registered mode")
+	}
+}
+
+func TestNewStreamingFormatter_RegisteredMode(t *testing.T) {
+	// No t.Parallel(): mutates global registry
+
+	// Register a custom streaming mode
+	testMode := Mode("TEST_STREAMING_CUSTOM")
+	RegisterStreamingFormatter(func(mode Mode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
+		return NewCSVFormatter(out, false), nil
+	}, testMode)
+	t.Cleanup(func() { unregisterStreamingFormatter(testMode) })
+
+	sf, err := NewStreamingFormatter(testMode, io.Discard, FormatConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sf == nil {
+		t.Error("expected non-nil StreamingFormatter from registered mode")
+	}
+}
+
+func TestValueFormatModeFor(t *testing.T) {
+	// No t.Parallel(): mutates global registry
+
+	// Built-in modes should return DisplayValues
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
+		if got := ValueFormatModeFor(mode); got != DisplayValues {
+			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
+		}
+	}
+
+	// Unknown mode should return DisplayValues
+	if got := ValueFormatModeFor(Mode("NONEXISTENT")); got != DisplayValues {
+		t.Errorf("ValueFormatModeFor(NONEXISTENT) = %d, want DisplayValues", got)
+	}
+
+	// Registered mode with SQLLiteralValues
+	testMode := Mode("TEST_SQL_LITERAL")
+	RegisterValueFormatMode(SQLLiteralValues, testMode)
+	t.Cleanup(func() { unregisterValueFormatMode(testMode) })
+	if got := ValueFormatModeFor(testMode); got != SQLLiteralValues {
+		t.Errorf("ValueFormatModeFor(%s) = %d, want SQLLiteralValues", testMode, got)
+	}
+}
+
 func TestExecuteWithFormatter_EmptyColumns(t *testing.T) {
 	t.Parallel()
 
@@ -122,7 +168,7 @@ func TestExecuteWithFormatter_CSVOutput(t *testing.T) {
 
 	var buf bytes.Buffer
 	columns := []string{"id", "name"}
-	rows := []Row{{"1", "Alice"}, {"2", "Bob"}}
+	rows := []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")}
 
 	err := ExecuteWithFormatter(NewCSVFormatter(&buf, false), rows, columns, FormatConfig{})
 	if err != nil {
@@ -148,20 +194,20 @@ func TestFormatCSV(t *testing.T) {
 		{
 			name:    "basic",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}, {"2", "Bob"}},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
 			want:    "id,name\n1,Alice\n2,Bob\n",
 		},
 		{
 			name:        "skip headers",
 			columns:     []string{"id", "name"},
-			rows:        []Row{{"1", "Alice"}},
+			rows:        []Row{StringsToRow("1", "Alice")},
 			skipHeaders: true,
 			want:        "1,Alice\n",
 		},
 		{
 			name:    "special characters",
 			columns: []string{"col"},
-			rows:    []Row{{"value with, comma"}, {"value with \"quotes\""}},
+			rows:    []Row{StringsToRow("value with, comma"), StringsToRow("value with \"quotes\"")},
 			want:    "col\n\"value with, comma\"\n\"value with \"\"quotes\"\"\"\n",
 		},
 		{
@@ -201,13 +247,13 @@ func TestFormatTab(t *testing.T) {
 		{
 			name:    "basic",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}, {"2", "Bob"}},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
 			want:    "id\tname\n1\tAlice\n2\tBob\n",
 		},
 		{
 			name:        "skip headers",
 			columns:     []string{"id", "name"},
-			rows:        []Row{{"1", "Alice"}},
+			rows:        []Row{StringsToRow("1", "Alice")},
 			skipHeaders: true,
 			want:        "1\tAlice\n",
 		},
@@ -247,7 +293,7 @@ func TestFormatVertical(t *testing.T) {
 		{
 			name:    "single row",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}},
+			rows:    []Row{StringsToRow("1", "Alice")},
 			want: "*************************** 1. row ***************************\n" +
 				"  id: 1\n" +
 				"name: Alice\n",
@@ -255,7 +301,7 @@ func TestFormatVertical(t *testing.T) {
 		{
 			name:    "multiple rows",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}, {"2", "Bob"}},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
 			want: "*************************** 1. row ***************************\n" +
 				"  id: 1\n" +
 				"name: Alice\n" +
@@ -299,20 +345,20 @@ func TestFormatHTML(t *testing.T) {
 		{
 			name:    "basic",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}},
+			rows:    []Row{StringsToRow("1", "Alice")},
 			want:    "<TABLE BORDER='1'><TR><TH>id</TH><TH>name</TH></TR><TR><TD>1</TD><TD>Alice</TD></TR></TABLE>\n",
 		},
 		{
 			name:        "skip headers",
 			columns:     []string{"id"},
-			rows:        []Row{{"1"}},
+			rows:        []Row{StringsToRow("1")},
 			skipHeaders: true,
 			want:        "<TABLE BORDER='1'><TR><TD>1</TD></TR></TABLE>\n",
 		},
 		{
 			name:    "html escaping",
 			columns: []string{"col"},
-			rows:    []Row{{"<b>bold</b>"}},
+			rows:    []Row{StringsToRow("<b>bold</b>")},
 			want:    "<TABLE BORDER='1'><TR><TH>col</TH></TR><TR><TD>&lt;b&gt;bold&lt;/b&gt;</TD></TR></TABLE>\n",
 		},
 		{
@@ -352,7 +398,7 @@ func TestFormatXML(t *testing.T) {
 		{
 			name:    "basic",
 			columns: []string{"id", "name"},
-			rows:    []Row{{"1", "Alice"}},
+			rows:    []Row{StringsToRow("1", "Alice")},
 			want: `<?xml version='1.0'?>` + "\n" +
 				`<resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
 				`<header><field>id</field><field>name</field></header>` +
@@ -362,7 +408,7 @@ func TestFormatXML(t *testing.T) {
 		{
 			name:        "skip headers",
 			columns:     []string{"id"},
-			rows:        []Row{{"1"}},
+			rows:        []Row{StringsToRow("1")},
 			skipHeaders: true,
 			want: `<?xml version='1.0'?>` + "\n" +
 				`<resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
@@ -372,7 +418,7 @@ func TestFormatXML(t *testing.T) {
 		{
 			name:    "xml escaping",
 			columns: []string{"col"},
-			rows:    []Row{{"<tag>&value</tag>"}},
+			rows:    []Row{StringsToRow("<tag>&value</tag>")},
 			want: `<?xml version='1.0'?>` + "\n" +
 				`<resultset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
 				`<header><field>col</field></header>` +
@@ -431,7 +477,7 @@ func TestCSVFormatterLifecycle(t *testing.T) {
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewCSVFormatter(io.Discard, false)
-		err := f.WriteRow(Row{"1"})
+		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
 		}
@@ -471,7 +517,7 @@ func TestTabFormatterLifecycle(t *testing.T) {
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewTabFormatter(io.Discard, false)
-		err := f.WriteRow(Row{"1"})
+		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
 		}
@@ -484,7 +530,7 @@ func TestVerticalFormatterLifecycle(t *testing.T) {
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewVerticalFormatter(io.Discard)
-		err := f.WriteRow(Row{"1"})
+		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
 		}
@@ -497,7 +543,7 @@ func TestHTMLFormatterLifecycle(t *testing.T) {
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewHTMLFormatter(io.Discard, false)
-		err := f.WriteRow(Row{"1"})
+		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
 		}
@@ -510,7 +556,7 @@ func TestXMLFormatterLifecycle(t *testing.T) {
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewXMLFormatter(io.Discard, false)
-		err := f.WriteRow(Row{"1"})
+		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
 		}
@@ -524,7 +570,7 @@ func TestWriteTable(t *testing.T) {
 		name        string
 		columns     []string
 		rows        []Row
-		mode        enums.DisplayMode
+		mode        Mode
 		screenWidth int
 		config      FormatConfig
 		wantContain []string
@@ -532,8 +578,8 @@ func TestWriteTable(t *testing.T) {
 		{
 			name:        "basic table",
 			columns:     []string{"id", "name"},
-			rows:        []Row{{"1", "Alice"}},
-			mode:        enums.DisplayModeTable,
+			rows:        []Row{StringsToRow("1", "Alice")},
+			mode:        ModeTable,
 			screenWidth: 80,
 			wantContain: []string{"id", "name", "1", "Alice", "+"},
 		},
@@ -541,23 +587,23 @@ func TestWriteTable(t *testing.T) {
 			name:        "empty rows no render",
 			columns:     []string{"id"},
 			rows:        nil,
-			mode:        enums.DisplayModeTable,
+			mode:        ModeTable,
 			screenWidth: 80,
 			wantContain: nil,
 		},
 		{
 			name:        "table comment mode",
 			columns:     []string{"id"},
-			rows:        []Row{{"1"}},
-			mode:        enums.DisplayModeTableComment,
+			rows:        []Row{StringsToRow("1")},
+			mode:        ModeTableComment,
 			screenWidth: 80,
 			wantContain: []string{"/*", "*/"},
 		},
 		{
 			name:        "skip column names",
 			columns:     []string{"id", "name"},
-			rows:        []Row{{"1", "Alice"}},
-			mode:        enums.DisplayModeTable,
+			rows:        []Row{StringsToRow("1", "Alice")},
+			mode:        ModeTable,
 			screenWidth: 80,
 			config:      FormatConfig{SkipColumnNames: true},
 			wantContain: []string{"1", "Alice"},
@@ -587,9 +633,9 @@ func TestWriteTableDetailComment(t *testing.T) {
 
 	var buf bytes.Buffer
 	columns := []string{"id"}
-	rows := []Row{{"1"}}
+	rows := []Row{StringsToRow("1")}
 
-	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, enums.DisplayModeTableDetailComment)
+	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTableDetailComment)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -609,9 +655,9 @@ func TestWriteTableSanitizesCommentClosure(t *testing.T) {
 
 	var buf bytes.Buffer
 	columns := []string{"data"}
-	rows := []Row{{"value with */ inside"}}
+	rows := []Row{StringsToRow("value with */ inside")}
 
-	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, enums.DisplayModeTableComment)
+	err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTableComment)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -621,5 +667,192 @@ func TestWriteTableSanitizesCommentClosure(t *testing.T) {
 	if strings.Count(output, "*/") != 1 {
 		t.Errorf("expected exactly 1 */ (table closure), got %d in:\n%s",
 			strings.Count(output, "*/"), output)
+	}
+}
+
+func TestNullCell(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Format adds ANSI dim", func(t *testing.T) {
+		t.Parallel()
+		c := NullCell{Text: "NULL"}
+		got := c.Format()
+		want := "\033[2mNULL\033[0m"
+		if got != want {
+			t.Errorf("Format() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("Format applies ANSI dim per line for wrapped text", func(t *testing.T) {
+		t.Parallel()
+		c := NullCell{Text: "NU\nLL"}
+		got := c.Format()
+		want := "\033[2mNU\033[0m\n\033[2mLL\033[0m"
+		if got != want {
+			t.Errorf("Format() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("RawText returns plain text", func(t *testing.T) {
+		t.Parallel()
+		c := NullCell{Text: "NULL"}
+		if got := c.RawText(); got != "NULL" {
+			t.Errorf("RawText() = %q, want %q", got, "NULL")
+		}
+	})
+
+	t.Run("WithText preserves NullCell type", func(t *testing.T) {
+		t.Parallel()
+		c := NullCell{Text: "NULL"}
+		c2 := c.WithText("wrapped")
+		if _, ok := c2.(NullCell); !ok {
+			t.Errorf("WithText returned %T, want NullCell", c2)
+		}
+		if got := c2.RawText(); got != "wrapped" {
+			t.Errorf("WithText().RawText() = %q, want %q", got, "wrapped")
+		}
+	})
+}
+
+func TestNullCellInTable(t *testing.T) {
+	t.Parallel()
+
+	// Mix NullCell and PlainCell in the same table
+	rows := []Row{
+		{PlainCell{Text: "1"}, PlainCell{Text: "Alice"}, NullCell{Text: "NULL"}},
+		{PlainCell{Text: "2"}, NullCell{Text: "NULL"}, PlainCell{Text: "active"}},
+		{PlainCell{Text: "3"}, PlainCell{Text: "Charlie"}, PlainCell{Text: "inactive"}},
+	}
+	columns := []string{"id", "name", "status"}
+
+	t.Run("styled", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 80, ModeTable)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		t.Logf("Table output:\n%s", output)
+
+		// Verify ANSI codes are present
+		if !strings.Contains(output, "\033[2m") {
+			t.Error("expected ANSI dim code in output")
+		}
+		if !strings.Contains(output, "\033[0m") {
+			t.Error("expected ANSI reset code in output")
+		}
+
+		verifyTableAlignment(t, output)
+	})
+
+	t.Run("unstyled", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: false}, 80, ModeTable)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		t.Logf("Table output:\n%s", output)
+
+		// Verify NO ANSI codes in output
+		if strings.Contains(output, "\033[") {
+			t.Error("expected no ANSI codes in unstyled output")
+		}
+		// Verify NULL text is still present
+		if !strings.Contains(output, "NULL") {
+			t.Error("expected NULL text in output")
+		}
+
+		verifyTableAlignment(t, output)
+	})
+}
+
+// verifyTableAlignment checks that all data lines in a table have consistent column separators.
+func verifyTableAlignment(t *testing.T, output string) {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var dataLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "|") {
+			dataLines = append(dataLines, line)
+		}
+	}
+	if len(dataLines) < 2 {
+		t.Fatalf("expected at least 2 data lines (header + rows), got %d", len(dataLines))
+	}
+
+	expectedPipes := strings.Count(dataLines[0], "|")
+	for i, line := range dataLines[1:] {
+		if got := strings.Count(line, "|"); got != expectedPipes {
+			t.Errorf("line %d has %d pipes, want %d (alignment broken)\nline: %s", i+1, got, expectedPipes, line)
+		}
+	}
+}
+
+func TestNullCellInNonTableFormats(t *testing.T) {
+	t.Parallel()
+
+	// Verify all non-table formatters use RawText() — no ANSI codes in output
+	rows := []Row{
+		{PlainCell{Text: "1"}, NullCell{Text: "NULL"}},
+	}
+	columns := []string{"id", "value"}
+
+	tests := []struct {
+		name      string
+		formatFn  func(io.Writer, []Row, []string, FormatConfig, int) error
+		wantNoESC bool
+	}{
+		{"tab", formatTab, true},
+		{"vertical", formatVertical, true},
+		{"html", formatHTML, true},
+		{"xml", formatXML, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			err := tt.formatFn(&buf, rows, columns, FormatConfig{}, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			output := buf.String()
+			if strings.Contains(output, "\033") {
+				t.Errorf("%s output should not contain ANSI codes, got:\n%s", tt.name, output)
+			}
+			if !strings.Contains(output, "NULL") {
+				t.Errorf("%s output should contain NULL text, got:\n%s", tt.name, output)
+			}
+		})
+	}
+}
+
+func TestNullCellInCSV(t *testing.T) {
+	t.Parallel()
+
+	// Verify that CSV uses RawText() — no ANSI codes in output
+	rows := []Row{
+		{PlainCell{Text: "1"}, NullCell{Text: "NULL"}},
+	}
+	columns := []string{"id", "value"}
+
+	var buf bytes.Buffer
+	err := formatCSV(&buf, rows, columns, FormatConfig{}, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "\033") {
+		t.Errorf("CSV output should not contain ANSI codes, got:\n%s", output)
+	}
+	want := "id,value\n1,NULL\n"
+	if output != want {
+		t.Errorf("got:\n%s\nwant:\n%s", output, want)
 	}
 }

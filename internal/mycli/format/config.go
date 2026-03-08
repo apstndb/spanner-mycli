@@ -1,10 +1,111 @@
 package format
 
-import "io"
+import (
+	"io"
+	"strings"
+)
 
-// Row is a type alias for a row of string values.
-// Using a type alias (not a new type) ensures zero breaking change at call sites.
-type Row = []string
+// Cell is the interface for a single formatted cell.
+// The format package is agnostic to the concrete type — it only calls these methods.
+// Concrete adapters (PlainCell, NullCell, etc.) implement styling logic.
+//
+// Cell also satisfies tw.Formatter (via Format()), enabling per-cell styling
+// when passed to tablewriter.
+type Cell interface {
+	// Format returns styled text for display (may include ANSI codes).
+	// Called by tablewriter via tw.Formatter interface when FormatConfig.Styled is true.
+	// When Styled is false, callers should use RawText() instead.
+	Format() string
+
+	// RawText returns plain text without styling.
+	// Used by non-table formatters (CSV, XML, etc.) that must not contain ANSI codes.
+	RawText() string
+
+	// WithText creates a new Cell with replaced text but preserved styling behavior.
+	// Used by table formatters after width-wrapping to carry styling through.
+	WithText(text string) Cell
+}
+
+// Row is a slice of Cell representing one row of formatted data.
+type Row = []Cell
+
+// PlainCell is the simplest Cell implementation — no styling.
+// Used by client-side statements (SHOW, DESCRIBE, DUMP) and tests.
+type PlainCell struct {
+	Text string
+}
+
+func (c PlainCell) Format() string         { return c.Text }
+func (c PlainCell) RawText() string        { return c.Text }
+func (c PlainCell) WithText(s string) Cell { return PlainCell{Text: s} }
+
+// NullCell renders NULL values with ANSI dim styling in table output.
+// RawText() returns the plain text for non-table formats (CSV, XML, etc.).
+//
+// Format() applies ANSI dim to each line independently, so that multi-line
+// wrapped text (e.g., when column is narrower than "NULL") renders correctly
+// in tablewriter which splits cell content by newline for sub-row rendering.
+type NullCell struct {
+	Text string
+}
+
+const (
+	ansiDim   = "\033[2m"
+	ansiReset = "\033[0m"
+)
+
+func (c NullCell) Format() string {
+	if !strings.Contains(c.Text, "\n") {
+		return ansiDim + c.Text + ansiReset
+	}
+	lines := strings.Split(c.Text, "\n")
+	for i, line := range lines {
+		lines[i] = ansiDim + line + ansiReset
+	}
+	return strings.Join(lines, "\n")
+}
+func (c NullCell) RawText() string        { return c.Text }
+func (c NullCell) WithText(s string) Cell { return NullCell{Text: s} }
+
+// StringsToRow converts a slice of strings to a Row of PlainCell.
+// Used by client-side statements and tests that construct rows from plain strings.
+func StringsToRow(ss ...string) Row {
+	row := make(Row, len(ss))
+	for i, s := range ss {
+		row[i] = PlainCell{Text: s}
+	}
+	return row
+}
+
+// Texts extracts the raw text from each Cell, returning a plain string slice.
+// Used when a formatter needs to pass values to APIs that only accept []string.
+func Texts(row Row) []string {
+	ss := make([]string, len(row))
+	for i, c := range row {
+		ss[i] = c.RawText()
+	}
+	return ss
+}
+
+// Formatters converts a Row to []any for tablewriter per-cell formatting.
+// Each Cell implements tw.Formatter, so tablewriter calls Format() per cell.
+func Formatters(row Row) []any {
+	fs := make([]any, len(row))
+	for i, c := range row {
+		fs[i] = c
+	}
+	return fs
+}
+
+// toAnySlice converts []string to []any.
+// Used to pass plain text to tablewriter without triggering tw.Formatter.
+func toAnySlice(ss []string) []any {
+	result := make([]any, len(ss))
+	for i, s := range ss {
+		result[i] = s
+	}
+	return result
+}
 
 // FormatConfig holds configuration values needed by formatters.
 // This replaces the dependency on *systemVariables, exposing only the fields
@@ -16,6 +117,7 @@ type FormatConfig struct {
 	SQLTableName    string
 	SQLBatchSize    int64
 	PreviewRows     int64
+	Styled          bool // When true, table output uses Cell.Format() (may include ANSI codes). When false, uses RawText().
 }
 
 // FormatFunc is a function type that formats and writes result data.

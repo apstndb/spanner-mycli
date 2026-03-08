@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
@@ -188,7 +188,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 
 			// Skip tables with no writable columns (e.g., all generated columns)
 			if len(columns) == 0 {
-				result.Rows = append(result.Rows, Row{fmt.Sprintf("-- Skipping table %s (no writable columns)", table)})
+				result.Rows = append(result.Rows, toRow(fmt.Sprintf("-- Skipping table %s (no writable columns)", table)))
 				continue
 			}
 
@@ -203,24 +203,24 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			}
 
 			// Format the result for buffered output
-			result.Rows = append(result.Rows, Row{fmt.Sprintf("-- Data for table %s", table)})
+			result.Rows = append(result.Rows, toRow(fmt.Sprintf("-- Data for table %s", table)))
 
 			if len(dataResult.Rows) > 0 {
 				var buf bytes.Buffer
 				config := session.systemVariables.toFormatConfig()
 				config.SQLTableName = table
-				if err := format.FormatSQL(enums.DisplayModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
+				if err := formatsql.FormatSQL(formatsql.ModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
 					return fmt.Errorf("failed to format SQL for table %s: %w", table, err)
 				}
 				if buf.Len() > 0 {
 					for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-						result.Rows = append(result.Rows, Row{line})
+						result.Rows = append(result.Rows, toRow(line))
 					}
 				}
 			}
 
 			if dataResult.AffectedRows > 0 {
-				result.Rows = append(result.Rows, Row{""})
+				result.Rows = append(result.Rows, toRow(""))
 			}
 
 			result.AffectedRows += dataResult.AffectedRows
@@ -238,7 +238,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 func writeResultRows(out io.Writer, rows []Row) error {
 	for _, row := range rows {
 		if len(row) > 0 {
-			if _, err := fmt.Fprintln(out, row[0]); err != nil {
+			if _, err := fmt.Fprintln(out, row[0].RawText()); err != nil {
 				return err
 			}
 		}
@@ -324,13 +324,13 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	}
 
 	result := &Result{Rows: make([]Row, 0, len(ddl.Statements)+2)}
-	result.Rows = append(result.Rows, Row{"-- Database DDL exported by spanner-mycli"}, Row{""})
+	result.Rows = append(result.Rows, toRow("-- Database DDL exported by spanner-mycli"), toRow(""))
 
 	for _, stmt := range ddl.Statements {
 		if !strings.HasSuffix(stmt, ";") {
 			stmt += ";"
 		}
-		result.Rows = append(result.Rows, Row{stmt}, Row{""})
+		result.Rows = append(result.Rows, toRow(stmt), toRow(""))
 	}
 
 	return result, nil

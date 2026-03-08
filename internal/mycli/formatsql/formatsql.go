@@ -1,29 +1,50 @@
-// Package format implements SQL export formatting for query results.
+// Package formatsql implements SQL export formatting for query results.
 // It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
 // that can be used for database migration, backup/restore, and test data generation.
 //
+// This package registers its formatters with the format package's registry,
+// allowing it to be used as a plugin without the format package depending on memefish.
+//
 // Current Design Constraints:
 // - Values are expected to be pre-formatted as SQL literals using spanvalue.LiteralFormatConfig
-// - The formatter receives []string (Row) rather than raw *spanner.Row data
+// - The formatter receives []Cell (Row) but uses RawText() to extract plain string values
 // - Format decision is made early in execute_sql.go, not at formatting time
 //
-// Future Improvements:
-// - Consider passing raw *spanner.Row to formatters for late-binding format decisions
-// - This would allow formatters to choose appropriate FormatConfig based on their needs
-// - Would enable format-specific optimizations and better separation of concerns
-//
 // The implementation uses memefish's ast.Path for correct identifier handling.
-package format
+package formatsql
 
 import (
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
+
+// SQL export mode constants matching enums.DisplayMode string values.
+const (
+	ModeSQLInsert         format.Mode = "SQL_INSERT"
+	ModeSQLInsertOrIgnore format.Mode = "SQL_INSERT_OR_IGNORE"
+	ModeSQLInsertOrUpdate format.Mode = "SQL_INSERT_OR_UPDATE"
+)
+
+func init() {
+	format.RegisterFormatFunc(newFormatSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
+	format.RegisterStreamingFormatter(newStreamingFormatterSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
+	format.RegisterValueFormatMode(format.SQLLiteralValues, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
+}
+
+// newFormatSQL is the FormatFuncFactory for SQL export modes.
+func newFormatSQL(mode format.Mode) (format.FormatFunc, error) {
+	return FormatSQL(mode), nil
+}
+
+// newStreamingFormatterSQL is the StreamingFormatterFactory for SQL export modes.
+func newStreamingFormatterSQL(mode format.Mode, out io.Writer, config format.FormatConfig) (format.StreamingFormatter, error) {
+	return NewSQLStreamingFormatter(out, config, mode)
+}
 
 // ExtractTableNameFromQuery attempts to extract a table name from a simple SELECT query.
 // It supports simple SELECT patterns including:
@@ -202,7 +223,7 @@ func ExtractTableNameFromQuery(sql string) (string, error) {
 // The formatter buffers rows when batchSize > 1 to generate multi-row INSERTs.
 type SQLFormatter struct {
 	out         io.Writer
-	mode        enums.DisplayMode
+	mode        format.Mode
 	tablePath   *ast.Path // Parsed table name (may include schema)
 	columnNames []string
 	batchSize   int        // 0 or 1: single-row INSERTs, 2+: multi-row INSERTs
@@ -210,7 +231,7 @@ type SQLFormatter struct {
 }
 
 // NewSQLFormatter creates a new SQL formatter for streaming output.
-func NewSQLFormatter(out io.Writer, mode enums.DisplayMode, tableName string, batchSize int64) (*SQLFormatter, error) {
+func NewSQLFormatter(out io.Writer, mode format.Mode, tableName string, batchSize int64) (*SQLFormatter, error) {
 	if batchSize < 0 {
 		return nil, fmt.Errorf("CLI_SQL_BATCH_SIZE cannot be negative: %d", batchSize)
 	}
@@ -323,11 +344,11 @@ func (f *SQLFormatter) flushBatch() error {
 	// Determine the INSERT clause based on mode
 	var insertClause string
 	switch f.mode {
-	case enums.DisplayModeSQLInsert:
+	case ModeSQLInsert:
 		insertClause = "INSERT"
-	case enums.DisplayModeSQLInsertOrIgnore:
+	case ModeSQLInsertOrIgnore:
 		insertClause = "INSERT OR IGNORE"
-	case enums.DisplayModeSQLInsertOrUpdate:
+	case ModeSQLInsertOrUpdate:
 		insertClause = "INSERT OR UPDATE"
 	default:
 		return fmt.Errorf("unsupported SQL mode: %v", f.mode)
@@ -392,7 +413,7 @@ type SQLStreamingFormatter struct {
 }
 
 // NewSQLStreamingFormatter creates a new streaming SQL formatter.
-func NewSQLStreamingFormatter(out io.Writer, config FormatConfig, mode enums.DisplayMode) (*SQLStreamingFormatter, error) {
+func NewSQLStreamingFormatter(out io.Writer, config format.FormatConfig, mode format.Mode) (*SQLStreamingFormatter, error) {
 	if config.SQLTableName == "" {
 		return nil, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
 			"Options:\n" +
@@ -413,17 +434,17 @@ func NewSQLStreamingFormatter(out io.Writer, config FormatConfig, mode enums.Dis
 }
 
 // InitFormat initializes the formatter with column information.
-func (s *SQLStreamingFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
+func (s *SQLStreamingFormatter) InitFormat(columnNames []string, config format.FormatConfig, previewRows []format.Row) error {
 	s.initialized = true
 	return s.formatter.WriteHeader(columnNames)
 }
 
 // WriteRow outputs a single row.
-func (s *SQLStreamingFormatter) WriteRow(row Row) error {
+func (s *SQLStreamingFormatter) WriteRow(row format.Row) error {
 	if !s.initialized {
 		return fmt.Errorf("header not processed before row")
 	}
-	return s.formatter.WriteRow(row)
+	return s.formatter.WriteRow(format.Texts(row))
 }
 
 // FinishFormat completes the SQL export.
@@ -432,8 +453,8 @@ func (s *SQLStreamingFormatter) FinishFormat() error {
 }
 
 // FormatSQL is the non-streaming formatter for SQL export.
-func FormatSQL(mode enums.DisplayMode) FormatFunc {
-	return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+func FormatSQL(mode format.Mode) format.FormatFunc {
+	return func(out io.Writer, rows []format.Row, columnNames []string, config format.FormatConfig, screenWidth int) error {
 		tableName := config.SQLTableName
 
 		if tableName == "" {
@@ -456,7 +477,7 @@ func FormatSQL(mode enums.DisplayMode) FormatFunc {
 
 		// Write all rows
 		for _, row := range rows {
-			if err := formatter.WriteRow(row); err != nil {
+			if err := formatter.WriteRow(format.Texts(row)); err != nil {
 				return err
 			}
 		}

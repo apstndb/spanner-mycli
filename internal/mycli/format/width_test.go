@@ -238,13 +238,13 @@ func TestCalculateWidth(t *testing.T) {
 		{
 			name:        "basic",
 			columns:     []string{"id", "name"},
-			rows:        []Row{{"1", "Alice"}, {"2", "Bob"}},
+			rows:        []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
 			screenWidth: 80,
 		},
 		{
 			name:        "wide data",
 			columns:     []string{"id", "description"},
-			rows:        []Row{{"1", "A very long description that might need wrapping"}},
+			rows:        []Row{StringsToRow("1", "A very long description that might need wrapping")},
 			screenWidth: 40,
 		},
 		{
@@ -252,6 +252,12 @@ func TestCalculateWidth(t *testing.T) {
 			columns:     []string{"id", "name"},
 			rows:        nil,
 			screenWidth: 80,
+		},
+		{
+			name:        "narrow screen with short headers",
+			columns:     []string{"id", "x"},
+			rows:        []Row{StringsToRow("1", "NULL")},
+			screenWidth: 20,
 		},
 	}
 
@@ -264,8 +270,8 @@ func TestCalculateWidth(t *testing.T) {
 				t.Errorf("len(widths) = %d, want %d", len(widths), len(tt.columns))
 			}
 			for i, w := range widths {
-				if w <= 0 {
-					t.Errorf("width[%d] = %d, expected > 0", i, w)
+				if w < minColumnWidth {
+					t.Errorf("width[%d] = %d, expected >= %d (minColumnWidth)", i, w, minColumnWidth)
 				}
 			}
 		})

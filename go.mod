@@ -40,7 +40,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v0.3.0
 	github.com/ngicks/go-iterator-helper v0.0.21
 	github.com/nyaosorg/go-readline-ny v1.14.1
-	github.com/olekukonko/tablewriter v1.0.9
+	github.com/olekukonko/tablewriter v1.1.3
 	github.com/samber/lo v1.51.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/spf13/afero v1.14.0
@@ -82,7 +82,9 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charlievieth/fastwalk v1.0.14 // indirect
-	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	github.com/clipperhouse/displaywidth v0.6.2 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20250501225837-2ac532fd4443 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -138,9 +140,9 @@ require (
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/nyaosorg/go-ttyadapter v0.3.0 // indirect
-	github.com/olekukonko/cat v0.0.0-20250817074551-3280053e4e00 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.1.0 // indirect
-	github.com/olekukonko/ll v0.1.0 // indirect
+	github.com/olekukonko/ll v0.1.4-0.20260115111900-9e59c2286df0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pascaldekloe/name v1.0.0 // indirect

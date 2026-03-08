@@ -225,11 +225,11 @@ type Result struct {
 	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
 }
 
-// Row is a row of string values. It is a type alias for format.Row (= []string).
+// Row is a type alias for format.Row (= []Cell).
 type Row = format.Row
 
 func toRow(vs ...string) Row {
-	return vs
+	return format.StringsToRow(vs...)
 }
 
 func sliceOf[V any](vs ...V) []V {
