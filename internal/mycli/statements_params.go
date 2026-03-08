@@ -28,7 +28,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
 			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
 		}),
-		func(lhs, rhs Row) int { return cmp.Compare(lhs[0], rhs[0]) /* parameter name */ })
+		func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* parameter name */ })
 
 	return &Result{
 		TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),

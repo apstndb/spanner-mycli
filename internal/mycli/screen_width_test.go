@@ -29,7 +29,7 @@ func TestCli_displayResult(t *testing.T) {
 			fixedWidth: nil,
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"value"}},
+				Rows:        []Row{toRow("value")},
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -41,7 +41,7 @@ func TestCli_displayResult(t *testing.T) {
 			fixedWidth: int64Ptr(80),
 			result: &Result{
 				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{{"value"}},
+				Rows:        []Row{toRow("value")},
 			},
 			interactive: false,
 			input:       "SELECT 'value'",

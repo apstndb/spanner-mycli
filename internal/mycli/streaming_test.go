@@ -21,8 +21,8 @@ func TestStreamingCSV(t *testing.T) {
 		{
 			name: "basic CSV with headers",
 			rows: []Row{
-				{"1", "Alice", "30"},
-				{"2", "Bob", "25"},
+				toRow("1", "Alice", "30"),
+				toRow("2", "Bob", "25"),
 			},
 			sysVars: &systemVariables{
 				Display: DisplayVars{SkipColumnNames: false},
@@ -32,8 +32,8 @@ func TestStreamingCSV(t *testing.T) {
 		{
 			name: "CSV without headers",
 			rows: []Row{
-				{"1", "Alice", "30"},
-				{"2", "Bob", "25"},
+				toRow("1", "Alice", "30"),
+				toRow("2", "Bob", "25"),
 			},
 			sysVars: &systemVariables{
 				Display: DisplayVars{SkipColumnNames: true},
@@ -108,8 +108,8 @@ func TestStreamingTab(t *testing.T) {
 
 	// Process rows
 	rows := []Row{
-		{"1", "Alice"},
-		{"2", "Bob"},
+		toRow("1", "Alice"),
+		toRow("2", "Bob"),
 	}
 
 	for _, row := range rows {
@@ -150,7 +150,7 @@ func TestStreamingVertical(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Process one row
-	err = processor.ProcessRow(Row{"1", "Alice"})
+	err = processor.ProcessRow(toRow("1", "Alice"))
 	assert.NoError(t, err)
 
 	// Finish processing
@@ -168,9 +168,9 @@ func TestBufferedVsStreaming(t *testing.T) {
 	t.Parallel()
 	// Test that buffered and streaming produce identical output for CSV
 	rows := []Row{
-		{"1", "Alice", "30"},
-		{"2", "Bob", "25"},
-		{"3", "Charlie", "35"},
+		toRow("1", "Alice", "30"),
+		toRow("2", "Bob", "25"),
+		toRow("3", "Charlie", "35"),
 	}
 
 	columnNames := []string{"ID", "Name", "Age"}
@@ -181,7 +181,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 	// Buffered output
 	var bufBuffered bytes.Buffer
 	config := sysVars.toFormatConfig()
-	csvFormatter, err := format.NewFormatter(enums.DisplayModeCSV)
+	csvFormatter, err := format.NewFormatter(format.ModeCSV)
 	assert.NoError(t, err)
 	err = csvFormatter(&bufBuffered, rows, columnNames, config, 0)
 	assert.NoError(t, err)
@@ -231,7 +231,7 @@ func TestStreamingHTML(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Process row with special characters
-	err = processor.ProcessRow(Row{"1", "Alice & Bob <test>"})
+	err = processor.ProcessRow(toRow("1", "Alice & Bob <test>"))
 	assert.NoError(t, err)
 
 	// Finish processing
@@ -274,7 +274,7 @@ func TestStreamingXML(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Process row
-	err = processor.ProcessRow(Row{"1", "Alice"})
+	err = processor.ProcessRow(toRow("1", "Alice"))
 	assert.NoError(t, err)
 
 	// Finish processing

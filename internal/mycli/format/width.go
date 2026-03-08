@@ -16,12 +16,16 @@ import (
 	"github.com/samber/lo"
 )
 
+// minColumnWidth is the minimum width for any column.
+// Prevents very short columns from splitting common short values (NULL, true, false, etc.).
+const minColumnWidth = 4
+
 // CalculateWidth calculates optimal column widths for table rendering.
 // columnNames are the plain column names, verboseHeaders are optionally
 // the verbose header strings (with type info, may contain newlines).
 // Both are used for width calculation.
 func CalculateWidth(columnNames []string, verboseHeaders []string, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	return calculateOptimalWidth(wc, screenWidth, columnNames, slices.Concat([]Row{verboseHeaders}, rows))
+	return calculateOptimalWidth(wc, screenWidth, columnNames, slices.Concat([]Row{StringsToRow(verboseHeaders...)}, rows))
 }
 
 func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {
@@ -41,6 +45,12 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 
 	adjustedWidths := adjustByHeader(header, termWidthWithoutOverhead)
 
+	// Enforce minimum column width for readability.
+	// Ensures short values like "NULL", "true", numbers are not split across lines.
+	for i := range adjustedWidths {
+		adjustedWidths[i] = max(adjustedWidths[i], minColumnWidth)
+	}
+
 	slog.Debug("adjustByName", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
 
 	var transposedRows [][]string
@@ -48,9 +58,9 @@ func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string
 		transposedRows = append(transposedRows, slices.Collect(
 			hiter.Map(
 				func(in Row) string {
-					return lo.Must(lo.Nth(in, columnIdx)) // columnIdx represents the index of the column in the row
+					return lo.Must(lo.Nth(in, columnIdx)).RawText() // columnIdx represents the index of the column in the row
 				},
-				hiter.Concat(hiter.Once(Row(header)), slices.Values(rows)),
+				hiter.Concat(hiter.Once(StringsToRow(header...)), slices.Values(rows)),
 			)))
 	}
 

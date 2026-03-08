@@ -35,6 +35,7 @@ import (
 	"github.com/samber/lo"
 	"golang.org/x/term"
 
+	_ "github.com/apstndb/spanner-mycli/internal/mycli/formatsql" // Register SQL export formatters
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 

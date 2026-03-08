@@ -73,7 +73,7 @@ func (f *HTMLFormatter) WriteRow(row Row) error {
 		return err
 	}
 	for _, col := range row {
-		if _, err := fmt.Fprintf(f.out, "<TD>%s</TD>", html.EscapeString(col)); err != nil {
+		if _, err := fmt.Fprintf(f.out, "<TD>%s</TD>", html.EscapeString(col.RawText())); err != nil {
 			return err
 		}
 	}
@@ -167,7 +167,7 @@ func (f *XMLFormatter) WriteRow(row Row) error {
 
 	// Write fields
 	for _, value := range row {
-		if _, err := fmt.Fprintf(f.out, "<field>%s</field>", xmlEscape(value)); err != nil {
+		if _, err := fmt.Fprintf(f.out, "<field>%s</field>", xmlEscape(value.RawText())); err != nil {
 			return err
 		}
 	}

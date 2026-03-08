@@ -217,6 +217,8 @@ func (r *VarRegistry) registerAll() {
 		"Additional fzf options passed to the fuzzy finder. Appended after built-in defaults, so user options take precedence. Example: --color=dark --no-select-1"))
 	r.Register("CLI_STREAMING", StreamingModeVar(&sv.Query.StreamingMode,
 		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
+	r.Register("CLI_STYLED_OUTPUT", StyledModeVar(&sv.Display.StyledOutput,
+		"Controls ANSI styling in table output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled). Default is AUTO."))
 
 	// === String variables (15+) ===
 	r.Register("OPTIMIZER_VERSION", StringVar(&sv.Query.OptimizerVersion,

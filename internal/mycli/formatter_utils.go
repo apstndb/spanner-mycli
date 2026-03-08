@@ -13,18 +13,21 @@ import (
 func createStreamingProcessorForMode(mode enums.DisplayMode, out io.Writer, sysVars *systemVariables, screenWidth int) (RowProcessor, error) {
 	config := sysVars.toFormatConfig()
 
+	// Convert enums.DisplayMode to format.Mode
+	fmtMode := format.Mode(mode.String())
+
 	// Special handling for table formats with preview (need screenWidth)
-	if mode == enums.DisplayModeTable || mode == enums.DisplayModeTableComment || mode == enums.DisplayModeTableDetailComment {
+	if fmtMode.IsTableMode() {
 		previewSize := int(sysVars.Query.TablePreviewRows)
 		if previewSize < 0 {
 			previewSize = 0 // 0 means headers-only preview (stream all rows)
 		}
-		tableFormatter := format.NewTableStreamingFormatter(out, config, screenWidth, previewSize)
+		tableFormatter := format.NewTableStreamingFormatter(out, config, screenWidth, previewSize, fmtMode)
 		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
 	}
 
 	// For non-table formats, use unified creation
-	formatter, err := format.NewStreamingFormatter(mode, out, config)
+	formatter, err := format.NewStreamingFormatter(fmtMode, out, config)
 	if err != nil {
 		return nil, err
 	}

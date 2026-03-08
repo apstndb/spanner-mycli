@@ -85,9 +85,10 @@ type DisplayVars struct {
 	ParsedAnalyzeColumns []columnRenderDef
 	InlineStats          string // CLI_INLINE_STATS
 	ParsedInlineStats    []inlineStatsDef
-	SQLTableName         string // CLI_SQL_TABLE_NAME
-	SQLBatchSize         int64  // CLI_SQL_BATCH_SIZE
-	EnableProgressBar    bool   // CLI_ENABLE_PROGRESS_BAR
+	SQLTableName         string           // CLI_SQL_TABLE_NAME
+	SQLBatchSize         int64            // CLI_SQL_BATCH_SIZE
+	EnableProgressBar    bool             // CLI_ENABLE_PROGRESS_BAR
+	StyledOutput         enums.StyledMode // CLI_STYLED_OUTPUT
 }
 
 // QueryVars holds query execution configuration.
@@ -185,6 +186,16 @@ type systemVariables struct {
 
 // toFormatConfig converts the formatter-relevant fields of systemVariables into a format.FormatConfig.
 func (sv *systemVariables) toFormatConfig() format.FormatConfig {
+	var styled bool
+	switch sv.Display.StyledOutput {
+	case enums.StyledModeTrue:
+		styled = true
+	case enums.StyledModeFalse:
+		styled = false
+	default: // StyledModeAuto
+		styled = sv.StreamManager != nil && sv.StreamManager.IsTerminal()
+	}
+
 	return format.FormatConfig{
 		TabWidth:        int(sv.Display.TabWidth),
 		Verbose:         sv.Display.Verbose,
@@ -192,6 +203,7 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		SQLTableName:    sv.Display.SQLTableName,
 		SQLBatchSize:    sv.Display.SQLBatchSize,
 		PreviewRows:     sv.Query.TablePreviewRows,
+		Styled:          styled,
 	}
 }
 

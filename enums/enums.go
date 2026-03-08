@@ -65,6 +65,17 @@ const (
 	StreamingModeFalse                      // Never stream
 )
 
+// StyledMode represents the ANSI styling mode for output.
+//
+//go:generate go tool enumer -type=StyledMode -trimprefix=StyledMode -transform=snake_upper
+type StyledMode int
+
+const (
+	StyledModeAuto  StyledMode = iota // Style if output is a TTY
+	StyledModeTrue                    // Always use ANSI styling
+	StyledModeFalse                   // Never use ANSI styling
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

@@ -66,8 +66,8 @@ func TestPrintTableDataHTML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("num", "str", "bool"),
 				Rows: []Row{
-					{"1", "test", "true"},
-					{"2", "data", "false"},
+					toRow("1", "test", "true"),
+					toRow("2", "data", "false"),
 				},
 			},
 			wantOutput: `<TABLE BORDER='1'><TR><TH>num</TH><TH>str</TH><TH>bool</TH></TR><TR><TD>1</TD><TD>test</TD><TD>true</TD></TR><TR><TD>2</TD><TD>data</TD><TD>false</TD></TR></TABLE>
@@ -78,8 +78,8 @@ func TestPrintTableDataHTML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("xml_chars", "quote", "ampersand"),
 				Rows: []Row{
-					{"<tag>", "\"quotes\"", "A&B"},
-					{"<script>alert('xss')</script>", "'single'", "C&D"},
+					toRow("<tag>", "\"quotes\"", "A&B"),
+					toRow("<script>alert('xss')</script>", "'single'", "C&D"),
 				},
 			},
 			wantContains: []string{
@@ -96,7 +96,7 @@ func TestPrintTableDataHTML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("col1", "col2"),
 				Rows: []Row{
-					{"val1", "val2"},
+					toRow("val1", "val2"),
 				},
 			},
 			skipColNames: true,
@@ -146,8 +146,8 @@ func TestPrintTableDataXML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("num", "str", "bool"),
 				Rows: []Row{
-					{"1", "test", "true"},
-					{"2", "data", "false"},
+					toRow("1", "test", "true"),
+					toRow("2", "data", "false"),
 				},
 			},
 			wantContains: []string{
@@ -176,8 +176,8 @@ func TestPrintTableDataXML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("xml_chars", "quote", "ampersand"),
 				Rows: []Row{
-					{"<tag>", "\"quotes\"", "A&B"},
-					{"<script>alert('xss')</script>", "'single'", "C&D"},
+					toRow("<tag>", "\"quotes\"", "A&B"),
+					toRow("<script>alert('xss')</script>", "'single'", "C&D"),
 				},
 			},
 			wantContains: []string{
@@ -194,7 +194,7 @@ func TestPrintTableDataXML(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("col1", "col2"),
 				Rows: []Row{
-					{"val1", "val2"},
+					toRow("val1", "val2"),
 				},
 			},
 			skipColNames: true,
@@ -343,7 +343,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			mode: enums.DisplayModeHTML,
 			result: &Result{
 				TableHeader: nil,
-				Rows:        []Row{{"data"}},
+				Rows:        []Row{toRow("data")},
 			},
 			wantOutput: false,
 			wantError:  false, // Now we skip formatting for empty results
@@ -354,8 +354,8 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("列1", "列2"),
 				Rows: []Row{
-					{"データ1", "データ2"},
-					{"🌟", "🌙"},
+					toRow("データ1", "データ2"),
+					toRow("🌟", "🌙"),
 				},
 			},
 			wantOutput: true,
@@ -398,9 +398,9 @@ func TestFormatHelpers(t *testing.T) {
 		})
 	}
 
-	htmlFormatter, _ := format.NewFormatter(enums.DisplayModeHTML)
-	xmlFormatter, _ := format.NewFormatter(enums.DisplayModeXML)
-	csvFormatter, _ := format.NewFormatter(enums.DisplayModeCSV)
+	htmlFormatter, _ := format.NewFormatter(format.ModeHTML)
+	xmlFormatter, _ := format.NewFormatter(format.ModeXML)
+	csvFormatter, _ := format.NewFormatter(format.ModeCSV)
 	testEmptyFormatter(t, "formatHTML", htmlFormatter)
 	testEmptyFormatter(t, "formatXML", xmlFormatter)
 	testEmptyFormatter(t, "formatCSV", csvFormatter)
@@ -410,11 +410,11 @@ func TestFormatHelpers(t *testing.T) {
 		columns := []string{"id", "name", "value"}
 		rows := make([]Row, 100)
 		for i := range rows {
-			rows[i] = Row{
+			rows[i] = toRow(
 				strings.Repeat("a", 100),
 				strings.Repeat("b", 100),
 				strings.Repeat("c", 100),
-			}
+			)
 		}
 
 		var buf bytes.Buffer
@@ -446,8 +446,8 @@ func TestPrintTableDataCSV(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("num", "str", "bool"),
 				Rows: []Row{
-					{"1", "test", "true"},
-					{"2", "data", "false"},
+					toRow("1", "test", "true"),
+					toRow("2", "data", "false"),
 				},
 			},
 			wantOutput: heredoc.Doc(`
@@ -461,9 +461,9 @@ func TestPrintTableDataCSV(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("name", "description", "value"),
 				Rows: []Row{
-					{"John, Jr.", "Says \"Hello\"", "100"},
-					{"Jane\nDoe", "Has,comma", "$50"},
-					{"Bob", "Normal text", "75"},
+					toRow("John, Jr.", "Says \"Hello\"", "100"),
+					toRow("Jane\nDoe", "Has,comma", "$50"),
+					toRow("Bob", "Normal text", "75"),
 				},
 			},
 			wantOutput: heredoc.Doc(`
@@ -479,8 +479,8 @@ func TestPrintTableDataCSV(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("col1", "col2"),
 				Rows: []Row{
-					{"val1", "val2"},
-					{"val3", "val4"},
+					toRow("val1", "val2"),
+					toRow("val3", "val4"),
 				},
 			},
 			skipColNames: true,
@@ -503,9 +503,9 @@ func TestPrintTableDataCSV(t *testing.T) {
 			result: &Result{
 				TableHeader: toTableHeader("text"),
 				Rows: []Row{
-					{"Line 1\nLine 2"},
-					{"\"Quoted\""},
-					{"Normal"},
+					toRow("Line 1\nLine 2"),
+					toRow("\"Quoted\""),
+					toRow("Normal"),
 				},
 			},
 			wantOutput: heredoc.Doc(`
@@ -571,7 +571,7 @@ func TestSQLExportFallbackForNonDataStatements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := &Result{
 				TableHeader:           toTableHeader("Name", "DDL"),
-				Rows:                  []Row{{"TestTable", "CREATE TABLE TestTable (id INT64)"}},
+				Rows:                  []Row{toRow("TestTable", "CREATE TABLE TestTable (id INT64)")},
 				HasSQLFormattedValues: tt.hasSQLFormatted,
 			}
 
@@ -642,8 +642,8 @@ func TestSuppressResultLines(t *testing.T) {
 	createTestResult := func() *Result {
 		return &Result{
 			Rows: []Row{
-				{"value1", "value2"},
-				{"value3", "value4"},
+				toRow("value1", "value2"),
+				toRow("value3", "value4"),
 			},
 			TableHeader:  toTableHeader("Column1", "Column2"),
 			AffectedRows: 2,

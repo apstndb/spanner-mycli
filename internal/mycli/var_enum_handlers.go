@@ -259,3 +259,11 @@ func StreamingModeVar(ptr *enums.StreamingMode, desc string) *EnumVar[enums.Stre
 		description: desc,
 	}
 }
+
+func StyledModeVar(ptr *enums.StyledMode, desc string) *EnumVar[enums.StyledMode] {
+	return &EnumVar[enums.StyledMode]{
+		ptr:         ptr,
+		values:      enumerValues(enums.StyledModeValues()),
+		description: desc,
+	}
+}

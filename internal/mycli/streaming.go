@@ -111,7 +111,7 @@ func rowIterToSeq(
 // This unified function handles both buffered and streaming modes through the same interface.
 // If metrics is non-nil, timing information will be collected during processing.
 //
-// Design Note: Currently rowTransform converts *spanner.Row to []string (Row) immediately.
+// Design Note: Currently rowTransform converts *spanner.Row to []Cell (Row) immediately.
 // This early conversion limits flexibility as formatters cannot make format-specific decisions.
 // A future improvement would be to pass raw *spanner.Row through the processor interface,
 // allowing each formatter to apply its own FormatConfig. This would require:
@@ -183,7 +183,8 @@ func shouldUseStreaming(sysVars *systemVariables) bool {
 
 // isStreamingSupported checks if a specific display mode supports streaming.
 func isStreamingSupported(mode enums.DisplayMode) bool {
-	_, err := format.NewStreamingFormatter(mode, io.Discard, format.FormatConfig{})
+	fmtMode := format.Mode(mode.String())
+	_, err := format.NewStreamingFormatter(fmtMode, io.Discard, format.FormatConfig{})
 	return err == nil
 }
 
