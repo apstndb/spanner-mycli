@@ -683,11 +683,12 @@ func TestNullCell(t *testing.T) {
 		}
 	})
 
-	t.Run("Format applies ANSI dim per line for wrapped text", func(t *testing.T) {
+	t.Run("Format wraps entire multiline text with dim", func(t *testing.T) {
 		t.Parallel()
 		c := NullCell{Text: "NU\nLL"}
 		got := c.Format()
-		want := "\033[2mNU\033[0m\n\033[2mLL\033[0m"
+		// wrapRowStyled handles per-line SGR carry-over, so Format() just wraps the whole text.
+		want := "\033[2mNU\nLL\033[0m"
 		if got != want {
 			t.Errorf("Format() = %q, want %q", got, want)
 		}
