@@ -948,6 +948,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
 | CLI_FUZZY_FINDER_KEY      | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS  | READ_WRITE | `""`                                           |
+| CLI_TYPE_STYLES           | READ_WRITE | `"NULL=dim"`                                   |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
@@ -971,6 +972,15 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > **Note**: `CLI_FUZZY_FINDER_OPTIONS` passes additional fzf options to the fuzzy finder. Options are appended after built-in defaults, so user options take precedence (last wins).
 > Built-in defaults: `--reverse`, `--no-sort`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`.
 > `--tmux` is not supported because the fuzzy finder runs fzf in-process via the Go library.
+
+> **Note**: `CLI_TYPE_STYLES` configures ANSI styling for query result values based on their Spanner type. Format: colon-separated `TYPE=STYLE` pairs.
+> - Named colors/attributes: `red`, `green`, `bold`, `dim`, `italic`, `underline`, etc.
+> - Raw SGR numbers: `38;5;214` (256-color), `38;2;R;G;B` (truecolor)
+> - Combined: `bold;green`
+> - Supported types: `BOOL`, `INT64`, `FLOAT32`, `FLOAT64`, `NUMERIC`, `STRING`, `BYTES`, `JSON`, `DATE`, `TIMESTAMP`, `ARRAY`, `STRUCT`, `PROTO`, `ENUM`, `INTERVAL`, `UUID`, `NULL`
+> - Example: `SET CLI_TYPE_STYLES = 'STRING=green:INT64=cyan:NULL=dim';`
+> - Set to empty string to disable all type styling.
+> - See [docs/system_variables.md](docs/system_variables.md) for full reference.
 
 ### Batch statements
 
