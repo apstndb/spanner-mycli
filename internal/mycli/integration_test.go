@@ -141,6 +141,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	if err := lazyEmu.Close(); err != nil { // no-op if no test used the emulator
 		slog.Error("failed to close emulator container in TestMain", "error", err)
+		if code == 0 {
+			code = 1
+		}
 	}
 	os.Exit(code)
 }
