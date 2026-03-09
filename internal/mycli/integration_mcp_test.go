@@ -214,10 +214,10 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	// First, create a real instance to test non-existent database
-	clients := spanemuboost.SetupClients(t, emulator, spanemuboost.WithRandomInstanceID())
+	clients := spanemuboost.SetupClients(t, lazyEmu, spanemuboost.WithRandomInstanceID())
 
 	// Create system variables with non-existent database in an existing instance
-	host, port, err := parseEndpoint(emulator.URI())
+	host, port, err := parseEndpoint(clients.URI())
 	if err != nil {
 		t.Fatalf("Failed to parse emulator URI: %v", err)
 	}
@@ -237,7 +237,7 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 		Params: make(map[string]ast.Node),
 	}
 
-	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, emulator.ClientOptions()...)
+	sessionNonExistent, err := NewSession(ctx, &sysVarsNonExistent, clients.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("Failed to create session for non-existent database test: %v", err)
 	}
