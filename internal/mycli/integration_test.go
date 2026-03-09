@@ -19,10 +19,8 @@ package mycli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -136,16 +134,8 @@ func TestMain(m *testing.M) {
 	_ = os.Unsetenv("SPANNER_PROJECT_ID")
 	_ = os.Unsetenv("SPANNER_INSTANCE_ID")
 	_ = os.Unsetenv("SPANNER_DATABASE_ID")
-	flag.Parse()
 
-	code := m.Run()
-	if err := lazyEmu.Close(); err != nil { // no-op if no test used the emulator
-		slog.Error("failed to close emulator container in TestMain", "error", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	os.Exit(code)
+	lazyEmu.TestMain(m)
 }
 
 func initializeSession(ctx context.Context, clients *spanemuboost.Clients) (session *Session, err error) {
