@@ -89,6 +89,7 @@ type DisplayVars struct {
 	SQLBatchSize         int64            // CLI_SQL_BATCH_SIZE
 	EnableProgressBar    bool             // CLI_ENABLE_PROGRESS_BAR
 	StyledOutput         enums.StyledMode // CLI_STYLED_OUTPUT
+	TypeStylesRaw        string           // CLI_TYPE_STYLES (raw string, parsed into systemVariables.typeStyles/nullStyle)
 }
 
 // QueryVars holds query execution configuration.
@@ -185,8 +186,12 @@ type systemVariables struct {
 
 	// typeStyles maps Spanner type codes to ANSI SGR sequences for styled output.
 	// When nil or empty, all non-NULL values use PlainCell (default behavior).
-	// Not yet exposed as a system variable — set programmatically for testing.
+	// Populated by parsing CLI_TYPE_STYLES system variable.
 	typeStyles map[sppb.TypeCode]string
+
+	// nullStyle is the ANSI SGR sequence for NULL values.
+	// Empty string means no styling. Populated by the NULL key in CLI_TYPE_STYLES.
+	nullStyle string
 }
 
 // toFormatConfig converts the formatter-relevant fields of systemVariables into a format.FormatConfig.
@@ -283,6 +288,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 			Prompt2:              defaultPrompt2,
 			HistoryFile:          defaultHistoryFile,
 			OutputTemplate:       defaultOutputFormat,
+			TypeStylesRaw:        defaultTypeStyles,
 		},
 		Query: QueryVars{
 			RPCPriority:      defaultPriority,
@@ -300,6 +306,12 @@ func newSystemVariablesWithDefaults() systemVariables {
 
 		// Initialize empty maps to avoid nil
 		Params: make(map[string]ast.Node),
+	}
+
+	// Parse the default type styles to populate typeStyles/nullStyle
+	if config, err := parseTypeStyles(sv.Display.TypeStylesRaw); err == nil {
+		sv.typeStyles = config.typeStyles
+		sv.nullStyle = config.nullStyle
 	}
 
 	// Don't initialize registry here - it will be done after the struct is assigned

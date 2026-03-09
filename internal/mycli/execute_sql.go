@@ -315,7 +315,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles), qe.Metrics)
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle), qe.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +341,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, error) {
 	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
-	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles)
+	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
 	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(qe.Iter, qe.Processor, rowTransform, qe.SysVars, qe.Metrics)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)

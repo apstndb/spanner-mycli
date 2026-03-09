@@ -670,50 +670,8 @@ func TestWriteTableSanitizesCommentClosure(t *testing.T) {
 	}
 }
 
-func TestNullCell(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Format adds ANSI dim", func(t *testing.T) {
-		t.Parallel()
-		c := NullCell{Text: "NULL"}
-		got := c.Format()
-		want := "\033[2mNULL\033[0m"
-		if got != want {
-			t.Errorf("Format() = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("Format wraps entire multiline text with dim", func(t *testing.T) {
-		t.Parallel()
-		c := NullCell{Text: "NU\nLL"}
-		got := c.Format()
-		// wrapRowStyled handles per-line SGR carry-over, so Format() just wraps the whole text.
-		want := "\033[2mNU\nLL\033[0m"
-		if got != want {
-			t.Errorf("Format() = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("RawText returns plain text", func(t *testing.T) {
-		t.Parallel()
-		c := NullCell{Text: "NULL"}
-		if got := c.RawText(); got != "NULL" {
-			t.Errorf("RawText() = %q, want %q", got, "NULL")
-		}
-	})
-
-	t.Run("WithText preserves NullCell type", func(t *testing.T) {
-		t.Parallel()
-		c := NullCell{Text: "NULL"}
-		c2 := c.WithText("wrapped")
-		if _, ok := c2.(NullCell); !ok {
-			t.Errorf("WithText returned %T, want NullCell", c2)
-		}
-		if got := c2.RawText(); got != "wrapped" {
-			t.Errorf("WithText().RawText() = %q, want %q", got, "wrapped")
-		}
-	})
-}
+// NullCell was removed — NULL values now use StyledCell with dim style.
+// The equivalent tests are covered by TestStyledCell.
 
 func TestStyledCell(t *testing.T) {
 	t.Parallel()
@@ -892,13 +850,13 @@ func TestStyledCellWrappedStyled(t *testing.T) {
 	verifyTableAlignment(t, output)
 }
 
-func TestNullCellWrappedStyled(t *testing.T) {
+func TestNullStyledWrappedStyled(t *testing.T) {
 	t.Parallel()
 
-	// Use a narrow screen to force NullCell text to wrap.
+	// Use a narrow screen to force NULL styled text to wrap.
 	// This verifies SGR carry-over: each wrapped line should have dim styling.
 	rows := []Row{
-		{PlainCell{Text: "1"}, NullCell{Text: "NULL value"}},
+		{PlainCell{Text: "1"}, StyledCell{Text: "NULL value", Style: "\033[2m"}},
 	}
 	columns := []string{"id", "data"}
 
@@ -928,13 +886,13 @@ func TestNullCellWrappedStyled(t *testing.T) {
 	verifyTableAlignment(t, output)
 }
 
-func TestNullCellInTable(t *testing.T) {
+func TestNullStyledInTable(t *testing.T) {
 	t.Parallel()
 
-	// Mix NullCell and PlainCell in the same table
+	// Mix NULL styled and PlainCell in the same table
 	rows := []Row{
-		{PlainCell{Text: "1"}, PlainCell{Text: "Alice"}, NullCell{Text: "NULL"}},
-		{PlainCell{Text: "2"}, NullCell{Text: "NULL"}, PlainCell{Text: "active"}},
+		{PlainCell{Text: "1"}, PlainCell{Text: "Alice"}, StyledCell{Text: "NULL", Style: "\033[2m"}},
+		{PlainCell{Text: "2"}, StyledCell{Text: "NULL", Style: "\033[2m"}, PlainCell{Text: "active"}},
 		{PlainCell{Text: "3"}, PlainCell{Text: "Charlie"}, PlainCell{Text: "inactive"}},
 	}
 	columns := []string{"id", "name", "status"}
@@ -1007,12 +965,12 @@ func verifyTableAlignment(t *testing.T, output string) {
 	}
 }
 
-func TestNullCellInNonTableFormats(t *testing.T) {
+func TestNullStyledInNonTableFormats(t *testing.T) {
 	t.Parallel()
 
 	// Verify all non-table formatters use RawText() — no ANSI codes in output
 	rows := []Row{
-		{PlainCell{Text: "1"}, NullCell{Text: "NULL"}},
+		{PlainCell{Text: "1"}, StyledCell{Text: "NULL", Style: "\033[2m"}},
 	}
 	columns := []string{"id", "value"}
 
@@ -1046,12 +1004,12 @@ func TestNullCellInNonTableFormats(t *testing.T) {
 	}
 }
 
-func TestNullCellInCSV(t *testing.T) {
+func TestNullStyledInCSV(t *testing.T) {
 	t.Parallel()
 
 	// Verify that CSV uses RawText() — no ANSI codes in output
 	rows := []Row{
-		{PlainCell{Text: "1"}, NullCell{Text: "NULL"}},
+		{PlainCell{Text: "1"}, StyledCell{Text: "NULL", Style: "\033[2m"}},
 	}
 	columns := []string{"id", "value"}
 

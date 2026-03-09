@@ -161,4 +161,42 @@ TODO
   - Useful for customizing appearance (colors, layout) or behavior (sorting, preview)
   - `--tmux` is **not supported** because the fuzzy finder runs fzf in-process via the Go library
 
+##### CLI_TYPE_STYLES
+- **Type**: STRING
+- **Default**: `"NULL=dim"`
+- **Description**: Configures ANSI styling for query result values based on their Spanner type
+- **Access**: Read/Write
+- **Format**: Colon-separated `TYPE=STYLE` pairs (e.g., `"STRING=green:INT64=bold:NULL=dim"`)
+- **Usage**:
+  ```sql
+  -- Color strings green and integers bold
+  SET CLI_TYPE_STYLES = 'STRING=green:INT64=bold';
+
+  -- Use 256-color for timestamps
+  SET CLI_TYPE_STYLES = 'TIMESTAMP=38;5;214';
+
+  -- Combine attributes: bold green
+  SET CLI_TYPE_STYLES = 'STRING=bold;green';
+
+  -- Disable all type styling
+  SET CLI_TYPE_STYLES = '';
+
+  -- Check current setting
+  SHOW CLI_TYPE_STYLES;
+  ```
+- **Supported Types**:
+  `BOOL`, `INT64`, `FLOAT32`, `FLOAT64`, `NUMERIC`, `STRING`, `BYTES`, `JSON`, `DATE`, `TIMESTAMP`, `ARRAY`, `STRUCT`, `PROTO`, `ENUM`, `INTERVAL`, `UUID`, `NULL`
+- **Style Values**:
+  - **Named colors**: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`
+  - **Named attributes**: `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `hidden`, `strikethrough`
+  - **Raw SGR numbers**: Any valid SGR parameter number (e.g., `31` for red, `38;5;214` for 256-color, `38;2;255;128;0` for truecolor)
+  - **Combined**: Semicolon-separated (e.g., `bold;green` produces `\033[1;32m`)
+- **Notes**:
+  - Type names are case-insensitive (`string=green` works)
+  - `NULL` is a special pseudo-type that styles NULL values regardless of their column type
+  - When `CLI_TYPE_STYLES` is empty, no type-based styling is applied
+  - The default `"NULL=dim"` renders NULL values in dim (faint) text
+  - Styling only applies when output supports ANSI escape codes (interactive terminal with styled formats)
+  - Inspired by `LS_COLORS`, `GCC_COLORS`, and `JQ_COLORS` environment variable patterns
+
 TODO: Document other CLI_* variables

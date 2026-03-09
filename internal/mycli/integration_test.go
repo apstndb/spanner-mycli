@@ -171,11 +171,19 @@ func initializeSession(ctx context.Context, emulator *spanemuboost.Emulator, cli
 			Instance: clients.InstanceID,
 			Database: clients.DatabaseID,
 		},
+		Display: DisplayVars{
+			TypeStylesRaw: defaultTypeStyles,
+		},
 		Query: QueryVars{
 			RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		},
 		Params: make(map[string]ast.Node),
+	}
+	// Parse the default type styles to populate typeStyles/nullStyle
+	if config, err := parseTypeStyles(sysVars.Display.TypeStylesRaw); err == nil {
+		sysVars.typeStyles = config.typeStyles
+		sysVars.nullStyle = config.nullStyle
 	}
 	// Initialize StreamManager for tests
 	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
@@ -258,9 +266,17 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 			Instance: clients.InstanceID,
 			Database: "", // No database for admin-only mode
 		},
+		Display: DisplayVars{
+			TypeStylesRaw: defaultTypeStyles,
+		},
 		Query: QueryVars{
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		},
+	}
+	// Parse the default type styles to populate typeStyles/nullStyle
+	if config, err := parseTypeStyles(sysVars.Display.TypeStylesRaw); err == nil {
+		sysVars.typeStyles = config.typeStyles
+		sysVars.nullStyle = config.nullStyle
 	}
 	// Initialize StreamManager for tests
 	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
@@ -281,8 +297,11 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 // p creates a PlainCell for test expectations.
 func p(text string) format.PlainCell { return format.PlainCell{Text: text} }
 
-// n creates a NullCell for test expectations (used for actual Spanner NULL values).
-func n(text string) format.NullCell { return format.NullCell{Text: text} }
+// n creates a StyledCell with dim style for test expectations (used for actual Spanner NULL values).
+// The dim style matches the default CLI_TYPE_STYLES="NULL=dim".
+func n(text string) format.StyledCell {
+	return format.StyledCell{Text: text, Style: "\033[2m"}
+}
 
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()
@@ -581,7 +600,7 @@ type paramCase struct {
 	input  string
 	output string
 	typ    *sppb.Type
-	isNull bool // When true, expected Cell is NullCell instead of PlainCell
+	isNull bool // When true, expected Cell is StyledCell with dim style instead of PlainCell
 }
 
 // paramCasesToStmtResults converts a slice of paramCase to a slice of stmtResult.
@@ -602,7 +621,7 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 		selectParts = append(selectParts, fmt.Sprintf("@%s AS `%s`", s.name, s.name))
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
 		if s.isNull {
-			row = append(row, format.NullCell{Text: s.output})
+			row = append(row, format.StyledCell{Text: s.output, Style: "\033[2m"})
 		} else {
 			row = append(row, format.PlainCell{Text: s.output})
 		}
