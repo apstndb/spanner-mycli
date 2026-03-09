@@ -35,15 +35,13 @@ func TestRequestPriority(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients := spanemuboost.SetupClients(t, emulator,
+	clients := spanemuboost.SetupClients(t, lazyEmu,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
-	_ = clients // clients not directly used, but ensures proper setup
-
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
 	opts := []grpc.DialOption{
@@ -52,7 +50,7 @@ func TestRequestPriority(t *testing.T) {
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
 
-	conn, err := grpc.NewClient(emulator.URI(), opts...)
+	conn, err := grpc.NewClient(clients.URI(), opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
@@ -164,15 +162,13 @@ func TestIsolationLevel(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients := spanemuboost.SetupClients(t, emulator,
+	clients := spanemuboost.SetupClients(t, lazyEmu,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),
 		spanemuboost.EnableAutoConfig(),
 		spanemuboost.WithSetupDDLs(sliceOf("CREATE TABLE t1 (Id INT64) PRIMARY KEY (Id)")),
 	)
-	_ = clients // clients not directly used, but ensures proper setup
-
 	var recorder requestRecorder
 	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
 	opts := []grpc.DialOption{
@@ -181,7 +177,7 @@ func TestIsolationLevel(t *testing.T) {
 		grpc.WithStreamInterceptor(streamInterceptor),
 	}
 
-	conn, err := grpc.NewClient(emulator.URI(), opts...)
+	conn, err := grpc.NewClient(clients.URI(), opts...)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}

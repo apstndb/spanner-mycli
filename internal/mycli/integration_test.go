@@ -127,7 +127,7 @@ func dmlResult(n int) *Result {
 	return &Result{AffectedRows: n, IsExecutedDML: true}
 }
 
-var emulator *spanemuboost.Emulator
+var lazyEmu = spanemuboost.NewLazyEmulator(spanemuboost.EnableInstanceAutoConfigOnly())
 
 func TestMain(m *testing.M) {
 	// Clear Spanner-related environment variables that could interfere with tests.
@@ -138,33 +138,15 @@ func TestMain(m *testing.M) {
 	_ = os.Unsetenv("SPANNER_DATABASE_ID")
 	flag.Parse()
 
-	// Skip emulator setup in short mode
-	if testing.Short() {
-		os.Exit(m.Run())
+	code := m.Run()
+	if err := lazyEmu.Close(); err != nil { // no-op if no test used the emulator
+		slog.Error("failed to close emulator container in TestMain", "error", err)
 	}
-
-	emu, err := spanemuboost.RunEmulator(context.Background(),
-		spanemuboost.EnableInstanceAutoConfigOnly(),
-	)
-	if err != nil {
-		// testing.M doesn't have output method
-		slog.Error("failed to create emulator", "err", err)
-		os.Exit(1)
-	}
-
-	defer func() {
-		if err := emu.Close(); err != nil {
-			slog.Error("failed to close emulator container in TestMain", "error", err)
-		}
-	}()
-
-	emulator = emu
-
-	os.Exit(m.Run())
+	os.Exit(code)
 }
 
-func initializeSession(ctx context.Context, emulator *spanemuboost.Emulator, clients *spanemuboost.Clients) (session *Session, err error) {
-	options := emulator.ClientOptions()
+func initializeSession(ctx context.Context, clients *spanemuboost.Clients) (session *Session, err error) {
+	options := clients.ClientOptions()
 	sysVars := &systemVariables{
 		Connection: ConnectionVars{
 			Project:  clients.ProjectID,
@@ -232,10 +214,10 @@ func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clien
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
 
-	clients = spanemuboost.SetupClients(t, emulator, options...)
+	clients = spanemuboost.SetupClients(t, lazyEmu, options...)
 
 	var err error
-	session, err = initializeSession(ctx, emulator, clients)
+	session, err = initializeSession(ctx, clients)
 	if err != nil {
 		t.Fatalf("failed to create test session: err=%s", err)
 	}
@@ -254,7 +236,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	// Admin-only mode: create instance without database
 	// Always use instance-level isolation for all tests
-	clients = spanemuboost.SetupClients(t, emulator,
+	clients = spanemuboost.SetupClients(t, lazyEmu,
 		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)
@@ -284,7 +266,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 	sysVars.ensureRegistry()
 
 	var err error
-	session, err = NewAdminSession(ctx, sysVars, emulator.ClientOptions()...)
+	session, err = NewAdminSession(ctx, sysVars, clients.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("failed to create admin session: err=%s", err)
 	}
