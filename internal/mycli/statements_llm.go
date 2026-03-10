@@ -93,7 +93,7 @@ func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([]
 func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, model, s string) (*output, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:     project,
-		Location:    "us-central1",
+		Location:    "global",
 		Backend:     genai.BackendVertexAI,
 		HTTPOptions: genai.HTTPOptions{APIVersion: "v1"},
 	})

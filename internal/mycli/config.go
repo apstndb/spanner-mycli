@@ -103,7 +103,7 @@ type spannerOptions struct {
 	Strong                    bool              `long:"strong" description:"Perform a strong query." default-mask:"-"`
 	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp." default-mask:"-"`
 	VertexAIProject           string            `long:"vertexai-project" description:"Vertex AI project" ini-name:"vertexai_project" default-mask:"-"`
-	VertexAIModel             *string           `long:"vertexai-model" description:"Vertex AI model" ini-name:"vertexai_model" default-mask:"gemini-2.0-flash"`
+	VertexAIModel             *string           `long:"vertexai-model" description:"Vertex AI model" ini-name:"vertexai_model" default-mask:"gemini-3-flash-preview"`
 	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL" default-mask:"-"`
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email" default-mask:"-"`
 	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
