@@ -40,11 +40,12 @@ import (
 )
 
 const (
-	defaultPrompt         = "spanner%t> "
-	defaultPrompt2        = "%P%R> "
-	defaultHistoryFile    = "/tmp/spanner_mycli_readline.tmp"
-	defaultVertexAIModel  = "gemini-3-flash-preview"
-	DefaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
+	defaultPrompt           = "spanner%t> "
+	defaultPrompt2          = "%P%R> "
+	defaultHistoryFile      = "/tmp/spanner_mycli_readline.tmp"
+	defaultVertexAIModel    = "gemini-3-flash-preview"
+	defaultVertexAILocation = "global"
+	DefaultAnalyzeColumns   = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
 
 var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDefs(DefaultAnalyzeColumns))

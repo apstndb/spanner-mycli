@@ -50,7 +50,7 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return nil, err
 	}
 
-	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.Feature.VertexAIProject, session.systemVariables.Feature.VertexAIModel, s.Text)
+	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.Feature.VertexAIProject, session.systemVariables.Feature.VertexAILocation, session.systemVariables.Feature.VertexAIModel, s.Text)
 	if err != nil {
 		return nil, err
 	}
@@ -90,10 +90,10 @@ func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([]
 	return files, err
 }
 
-func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, model, s string) (*output, error) {
+func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, location, model, s string) (*output, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:     project,
-		Location:    "global",
+		Location:    location,
 		Backend:     genai.BackendVertexAI,
 		HTTPOptions: genai.HTTPOptions{APIVersion: "v1"},
 	})
