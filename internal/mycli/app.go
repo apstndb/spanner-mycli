@@ -43,7 +43,7 @@ const (
 	defaultPrompt         = "spanner%t> "
 	defaultPrompt2        = "%P%R> "
 	defaultHistoryFile    = "/tmp/spanner_mycli_readline.tmp"
-	defaultVertexAIModel  = "gemini-2.0-flash"
+	defaultVertexAIModel  = "gemini-3-flash-preview"
 	DefaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
 

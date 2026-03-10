@@ -152,7 +152,7 @@ spanner:
       --strong                                            Perform a strong query.
       --read-timestamp=                                   Perform a query at the given timestamp.
       --vertexai-project=                                 Vertex AI project
-      --vertexai-model=                                   Vertex AI model (default: gemini-2.0-flash)
+      --vertexai-model=                                   Vertex AI model (default: gemini-3-flash-preview)
       --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
