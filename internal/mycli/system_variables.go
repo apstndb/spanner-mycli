@@ -140,6 +140,7 @@ type FeatureVars struct {
 	MCP                    bool                       // CLI_MCP
 	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
+	VertexAILocation       string                     // CLI_VERTEXAI_LOCATION
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
@@ -299,9 +300,10 @@ func newSystemVariablesWithDefaults() systemVariables {
 			ReturnCommitStats: true,
 		},
 		Feature: FeatureVars{
-			VertexAIModel:  defaultVertexAIModel,
-			LogLevel:       slog.LevelWarn,
-			FuzzyFinderKey: "C_T",
+			VertexAIModel:    defaultVertexAIModel,
+			VertexAILocation: defaultVertexAILocation,
+			LogLevel:         slog.LevelWarn,
+			FuzzyFinderKey:   "C_T",
 		},
 
 		// Initialize empty maps to avoid nil

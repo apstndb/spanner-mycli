@@ -104,6 +104,7 @@ type spannerOptions struct {
 	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp." default-mask:"-"`
 	VertexAIProject           string            `long:"vertexai-project" description:"Vertex AI project" ini-name:"vertexai_project" default-mask:"-"`
 	VertexAIModel             *string           `long:"vertexai-model" description:"Vertex AI model" ini-name:"vertexai_model" default-mask:"gemini-3-flash-preview"`
+	VertexAILocation          *string           `long:"vertexai-location" description:"Vertex AI location" ini-name:"vertexai_location" default-mask:"global"`
 	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL" default-mask:"-"`
 	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email" default-mask:"-"`
 	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
@@ -311,6 +312,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	}
 	if opts.VertexAIModel != nil {
 		sysVars.Feature.VertexAIModel = *opts.VertexAIModel
+	}
+	if opts.VertexAILocation != nil {
+		sysVars.Feature.VertexAILocation = *opts.VertexAILocation
 	}
 
 	// Handle alias flags with precedence for non-hidden flags

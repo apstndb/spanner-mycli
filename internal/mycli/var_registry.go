@@ -246,6 +246,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_HISTORY_FILE", StringVar(&sv.Display.HistoryFile, "Path to the history file.").AsReadOnly())
 	r.Register("CLI_VERTEXAI_PROJECT", StringVar(&sv.Feature.VertexAIProject, "Vertex AI project for natural language features."))
 	r.Register("CLI_VERTEXAI_MODEL", StringVar(&sv.Feature.VertexAIModel, "Vertex AI model for natural language features."))
+	r.Register("CLI_VERTEXAI_LOCATION", StringVar(&sv.Feature.VertexAILocation, "Vertex AI location for natural language features."))
 	r.Register("CLI_ROLE", StringVar(&sv.Connection.Role, "Cloud Spanner database role.").AsReadOnly())
 	r.Register("CLI_HOST", StringVar(&sv.Connection.Host, "Host on which Spanner server is located").AsReadOnly())
 	r.Register("CLI_EMULATOR_PLATFORM", StringVar(&sv.Connection.EmulatorPlatform, "Container platform used by embedded emulator.").AsReadOnly())
