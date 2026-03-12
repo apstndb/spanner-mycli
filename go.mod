@@ -16,6 +16,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
 	github.com/apstndb/spanemuboost v0.3.4
+	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.3
 	github.com/apstndb/spantype v0.3.8
 	github.com/apstndb/spanvalue v0.1.8
@@ -36,7 +37,7 @@ require (
 	github.com/junegunn/fzf v0.68.0
 	github.com/k0kubun/pp/v3 v3.5.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.4
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/ngicks/go-iterator-helper v0.0.21
 	github.com/nyaosorg/go-readline-ny v1.14.1

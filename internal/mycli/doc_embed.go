@@ -1,15 +1,11 @@
 package mycli
 
 import (
-	"embed"
 	"fmt"
 	"strings"
+
+	spannerdocs "github.com/apstndb/spanner-docs-embed"
 )
-
-//go:generate go run ./gen_compressed_docs.go
-
-//go:embed official_docs/*.zst
-var compressedDocs embed.FS
 
 // docInfo describes a known Spanner reference document.
 type docInfo struct {
@@ -116,13 +112,13 @@ var docCatalog = []docInfo{
 }
 
 // loadEmbeddedDocs loads all pre-compressed embedded docs into the cache.
-// It iterates docCatalog directly and reads the corresponding .zst file for each entry.
+// It iterates docCatalog directly and reads the corresponding .zst file from spanner-docs-embed.
 func loadEmbeddedDocs(cache *docCache) error {
 	for _, doc := range docCatalog {
-		path := "official_docs/" + docEmbedBase(doc.Name) + ".zst"
-		data, err := compressedDocs.ReadFile(path)
+		base := docEmbedBase(doc.Name)
+		data, err := spannerdocs.ReadCompressed(base)
 		if err != nil {
-			return fmt.Errorf("read embedded %s: %w", path, err)
+			return fmt.Errorf("read embedded %s: %w", base, err)
 		}
 		cache.LoadCompressed(doc.Name, data)
 	}
