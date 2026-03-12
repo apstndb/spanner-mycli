@@ -1,0 +1,355 @@
+package mycli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"golang.org/x/time/rate"
+)
+
+func TestNormalizeDocName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{
+			input: "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+		},
+		{
+			input: "docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+		},
+		{
+			input: "https://docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+		},
+		{
+			input: "http://docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeDocName(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeDocName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// writeJSON is a test helper that encodes v as JSON to w and fails the test on error.
+func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Fatalf("writeJSON: %v", err)
+	}
+}
+
+func newTestDevKnowledgeClient(t *testing.T, handler http.HandlerFunc) (*devKnowledgeClient, string) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return &devKnowledgeClient{
+		baseURL: server.URL,
+		apiKey:  "test-api-key",
+		client:  server.Client(),
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}, server.URL
+}
+
+func newTestDocSearcher(t *testing.T, handler http.HandlerFunc) *devKnowledgeDocSearcher {
+	t.Helper()
+	client, _ := newTestDevKnowledgeClient(t, handler)
+	return &devKnowledgeDocSearcher{client: client}
+}
+
+func TestDevKnowledgeClient_DoGet_APIKeyHeader(t *testing.T) {
+	var gotHeader string
+	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("x-goog-api-key")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	})
+
+	_, err := client.doGet(context.Background(), serverURL+"/test")
+	if err != nil {
+		t.Fatalf("doGet failed: %v", err)
+	}
+	if gotHeader != "test-api-key" {
+		t.Errorf("API key header = %q, want %q", gotHeader, "test-api-key")
+	}
+}
+
+func TestDevKnowledgeClient_DoGet_RetryOn429(t *testing.T) {
+	attempts := 0
+	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":429,"message":"rate limited"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+
+	body, err := client.doGet(context.Background(), serverURL+"/test")
+	if err != nil {
+		t.Fatalf("doGet failed: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if result["ok"] != true {
+		t.Errorf("expected ok:true, got %v", result)
+	}
+}
+
+func TestDevKnowledgeClient_DoGet_MaxRetriesExceeded(t *testing.T) {
+	attempts := 0
+	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":429,"message":"rate limited"}}`))
+	})
+
+	_, err := client.doGet(context.Background(), serverURL+"/test")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// After maxRetries (3) attempts with 429, the last one is returned as an API error
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+	var apiErr *devKnowledgeAPIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected devKnowledgeAPIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != 429 {
+		t.Errorf("error code = %d, want 429", apiErr.Code)
+	}
+}
+
+func TestDevKnowledgeClient_DoGet_APIError(t *testing.T) {
+	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"status":"NOT_FOUND","message":"document not found"}}`))
+	})
+
+	_, err := client.doGet(context.Background(), serverURL+"/test")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var apiErr *devKnowledgeAPIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected devKnowledgeAPIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != 404 {
+		t.Errorf("error code = %d, want 404", apiErr.Code)
+	}
+	if apiErr.Status != "NOT_FOUND" {
+		t.Errorf("error status = %q, want %q", apiErr.Status, "NOT_FOUND")
+	}
+}
+
+func TestDevKnowledgeAPIError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *devKnowledgeAPIError
+		want string
+	}{
+		{
+			name: "with status",
+			err:  &devKnowledgeAPIError{Code: 404, Status: "NOT_FOUND", Message: "doc not found"},
+			want: "API error 404 (NOT_FOUND): doc not found",
+		},
+		{
+			name: "without status",
+			err:  &devKnowledgeAPIError{Code: 500, Message: "internal error"},
+			want: "HTTP 500: internal error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDevKnowledgeDocSearcher_Search(t *testing.T) {
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/documents:searchDocumentChunks" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		query := r.URL.Query().Get("query")
+		if query != "spanner GQL" {
+			t.Errorf("query = %q, want %q", query, "spanner GQL")
+		}
+		writeJSON(t, w, map[string]any{
+			"results": []map[string]any{
+				{"parent": "documents/docs.cloud.google.com/spanner/docs/graph", "id": "chunk1", "content": "Graph query language docs"},
+			},
+		})
+	})
+
+	results, err := searcher.Search(context.Background(), "spanner GQL")
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Name != "documents/docs.cloud.google.com/spanner/docs/graph" {
+		t.Errorf("result name = %q", results[0].Name)
+	}
+	if results[0].Snippet != "Graph query language docs" {
+		t.Errorf("result snippet = %q", results[0].Snippet)
+	}
+}
+
+func TestDevKnowledgeDocSearcher_GetDocument(t *testing.T) {
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax"
+		if r.URL.Path != wantPath {
+			t.Errorf("path = %q, want %q", r.URL.Path, wantPath)
+		}
+		writeJSON(t, w, map[string]any{
+			"content": "# Query Syntax\nSELECT ...",
+		})
+	})
+
+	content, err := searcher.GetDocument(context.Background(), "https://docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax")
+	if err != nil {
+		t.Fatalf("GetDocument failed: %v", err)
+	}
+	if content != "# Query Syntax\nSELECT ..." {
+		t.Errorf("content = %q", content)
+	}
+}
+
+func TestDevKnowledgeDocSearcher_BatchGetDocuments_Success(t *testing.T) {
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/documents:batchGet" {
+			t.Errorf("path = %q, want /documents:batchGet", r.URL.Path)
+		}
+		names := r.URL.Query()["names"]
+		if len(names) != 2 {
+			t.Errorf("got %d names, want 2", len(names))
+		}
+		writeJSON(t, w, map[string]any{
+			"documents": []map[string]any{
+				{"name": names[0], "content": "content1"},
+				{"name": names[1], "content": "content2"},
+			},
+		})
+	})
+
+	docs, err := searcher.BatchGetDocuments(context.Background(), []string{
+		"docs.cloud.google.com/spanner/docs/ref1",
+		"docs.cloud.google.com/spanner/docs/ref2",
+	})
+	if err != nil {
+		t.Fatalf("BatchGetDocuments failed: %v", err)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("got %d docs, want 2", len(docs))
+	}
+}
+
+func TestDevKnowledgeDocSearcher_BatchGetDocuments_DoesNotMutateInput(t *testing.T) {
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"documents": []map[string]any{
+				{"name": "documents/docs.cloud.google.com/spanner/docs/ref1", "content": "c1"},
+			},
+		})
+	})
+
+	input := []string{"docs.cloud.google.com/spanner/docs/ref1"}
+	inputCopy := make([]string, len(input))
+	copy(inputCopy, input)
+
+	_, err := searcher.BatchGetDocuments(context.Background(), input)
+	if err != nil {
+		t.Fatalf("BatchGetDocuments failed: %v", err)
+	}
+
+	for i, v := range input {
+		if v != inputCopy[i] {
+			t.Errorf("input[%d] was mutated: got %q, want %q", i, v, inputCopy[i])
+		}
+	}
+}
+
+func TestDevKnowledgeDocSearcher_BatchGetDocuments_FallbackOnBatchError(t *testing.T) {
+	callCount := 0
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if r.URL.Path == "/documents:batchGet" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"invalid name"}}`))
+			return
+		}
+		writeJSON(t, w, map[string]any{
+			"content": "individual content",
+		})
+	})
+
+	docs, err := searcher.BatchGetDocuments(context.Background(), []string{
+		"documents/docs.cloud.google.com/spanner/docs/ref1",
+	})
+	if err != nil {
+		t.Fatalf("BatchGetDocuments failed: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("got %d docs, want 1 (from individual fallback)", len(docs))
+	}
+	if callCount < 2 {
+		t.Errorf("expected at least 2 calls (batch + individual), got %d", callCount)
+	}
+}
+
+func TestDevKnowledgeDocSearcher_Search_SnippetTruncation(t *testing.T) {
+	longContent := make([]byte, 400)
+	for i := range longContent {
+		longContent[i] = 'a'
+	}
+
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"results": []map[string]any{
+				{"parent": "documents/test", "id": "1", "content": string(longContent)},
+			},
+		})
+	})
+
+	results, err := searcher.Search(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	// 300 chars + "..."
+	if len(results[0].Snippet) != 303 {
+		t.Errorf("snippet length = %d, want 303", len(results[0].Snippet))
+	}
+}

@@ -36,6 +36,7 @@ require (
 	github.com/junegunn/fzf v0.68.0
 	github.com/k0kubun/pp/v3 v3.5.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
+	github.com/klauspost/compress v1.18.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/ngicks/go-iterator-helper v0.0.21
 	github.com/nyaosorg/go-readline-ny v1.14.1
@@ -49,6 +50,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.10.2
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.39.0
+	golang.org/x/time v0.14.0
 	google.golang.org/api v0.256.0
 	google.golang.org/genai v1.47.0
 	google.golang.org/grpc v1.76.0
@@ -120,7 +122,6 @@ require (
 	github.com/itchyny/gojq v0.12.17 // indirect
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/junegunn/go-shellwords v0.0.0-20250127100254-2aa3b3277741 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20250821153705-5981dea3221d // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
@@ -182,7 +183,6 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/genproto v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251111163417-95abcf5c77ba // indirect
