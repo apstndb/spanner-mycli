@@ -427,8 +427,14 @@ func (d *devKnowledgeDocSearcher) fetchIndividual(ctx context.Context, names []s
 func normalizeDocName(name string) string {
 	name = strings.TrimPrefix(name, "https://")
 	name = strings.TrimPrefix(name, "http://")
-	if !strings.HasPrefix(name, "documents/") {
+	switch {
+	case strings.HasPrefix(name, "documents/"):
+		// Already fully qualified
+	case strings.HasPrefix(name, "docs.cloud.google.com/"):
 		name = "documents/" + name
+	default:
+		// Short form like "reference/standard-sql/query-syntax" — prepend full prefix
+		name = docPrefix + name
 	}
 	return name
 }

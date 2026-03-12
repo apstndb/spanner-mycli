@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -104,9 +103,7 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 type ShowRemoteProtoStatement struct{}
 
 func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
+	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}

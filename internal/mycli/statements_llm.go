@@ -47,9 +47,7 @@ type GeminiStatement struct {
 }
 
 func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
+	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}

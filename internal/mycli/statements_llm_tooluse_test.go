@@ -32,6 +32,14 @@ func TestNormalizeDocName(t *testing.T) {
 			input: "http://docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
 			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
 		},
+		{
+			input: "reference/standard-sql/query-syntax",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax",
+		},
+		{
+			input: "reference/standard-sql/graph-query-statements",
+			want:  "documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/graph-query-statements",
+		},
 	}
 
 	for _, tt := range tests {
