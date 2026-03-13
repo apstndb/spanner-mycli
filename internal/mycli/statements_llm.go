@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 	"google.golang.org/genai"
@@ -47,10 +48,14 @@ type GeminiStatement struct {
 }
 
 func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	totalStart := time.Now()
+
+	ddlStart := time.Now()
 	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("GEMINI timing: GetDatabaseDdlCached", "elapsed", time.Since(ddlStart))
 
 	project := session.systemVariables.Feature.VertexAIProject
 	location := session.systemVariables.Feature.VertexAILocation
@@ -79,6 +84,7 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 		slog.Debug("No API key set, using embedded docs only")
 	}
 
+	cacheStart := time.Now()
 	cache, err := newDocCache(cacheOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create doc cache: %w", err)
@@ -88,11 +94,15 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err := loadEmbeddedDocs(cache); err != nil {
 		return nil, fmt.Errorf("load embedded docs: %w", err)
 	}
+	slog.Debug("GEMINI timing: docCache creation + loadEmbeddedDocs", "elapsed", time.Since(cacheStart))
 
+	composeStart := time.Now()
 	composed, err := geminiComposeQueryWithTools(ctx, resp, project, location, model, s.Text, cache, apiKey != "")
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("GEMINI timing: geminiComposeQueryWithTools total", "elapsed", time.Since(composeStart))
+	slog.Debug("GEMINI timing: Execute total", "elapsed", time.Since(totalStart))
 
 	return &Result{
 		PreInput: composed.Statement.Text,
@@ -132,6 +142,7 @@ Here is the prototext of File Proto Descriptors:
 // geminiComposeQueryWithTools uses Gemini's function calling to dynamically
 // fetch and search documentation via the docCache.
 func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, location, model, s string, cache *docCache, hasAPI bool) (*output, error) {
+	clientStart := time.Now()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:     project,
 		Location:    location,
@@ -141,6 +152,7 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("GEMINI timing: genai.NewClient", "elapsed", time.Since(clientStart))
 
 	var fds descriptorpb.FileDescriptorSet
 	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
@@ -157,20 +169,26 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 
 	tools := buildToolDeclarations(hasAPI)
 
+	phase1Start := time.Now()
 	for round := range maxToolCallRounds {
+		roundStart := time.Now()
 		result, err := client.Models.GenerateContent(ctx, model, history, &genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
 				Parts: []*genai.Part{genai.NewPartFromText(toolPrompt)},
 			},
 			Tools: tools,
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingLevel: genai.ThinkingLevelMinimal,
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("tool-use round %d: %w", round, err)
 		}
+		apiElapsed := time.Since(roundStart)
 
 		functionCalls := result.FunctionCalls()
 		if len(functionCalls) == 0 {
-			slog.Debug("Tool-use phase complete", "rounds", round+1)
+			slog.Debug("GEMINI timing: Phase 1 complete", "rounds", round+1, "total_elapsed", time.Since(phase1Start), "last_api_call", apiElapsed)
 			break
 		}
 
@@ -181,12 +199,14 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 			})
 		}
 
+		toolStart := time.Now()
 		var responseParts []*genai.Part
 		for _, fc := range functionCalls {
 			slog.Debug("Gemini tool call", "function", fc.Name, "args", fc.Args)
 			response := executeToolCall(ctx, fc, cache)
 			responseParts = append(responseParts, genai.NewPartFromFunctionResponse(fc.Name, response))
 		}
+		slog.Debug("GEMINI timing: Phase 1 round", "round", round, "api_call", apiElapsed, "tool_exec", time.Since(toolStart), "functions", len(functionCalls))
 
 		history = append(history, &genai.Content{
 			Role:  "user",
@@ -195,11 +215,17 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 	}
 
 	// Phase 2: Generate structured output using context from Phase 1
-	return genaischema.GenerateObjectContent[*output](ctx, client, model,
+	phase2Start := time.Now()
+	result, err := genaischema.GenerateObjectContent[*output](ctx, client, model,
 		history,
 		&genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
 				Parts: []*genai.Part{genai.NewPartFromText(basePrompt)},
 			},
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingLevel: genai.ThinkingLevelLow,
+			},
 		})
+	slog.Debug("GEMINI timing: Phase 2 (structured output)", "elapsed", time.Since(phase2Start))
+	return result, err
 }
