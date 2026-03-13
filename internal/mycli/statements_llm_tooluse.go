@@ -37,42 +37,47 @@ const docPrefix = "documents/docs.cloud.google.com/spanner/docs/"
 // --- Tool declarations ---
 
 // Cache tools (always available):
-//   get_cached_document      - retrieve from local cache
-//   search_cached_documents  - grep-like search over cache
+//   get_cached_document      - retrieve one or more docs from local cache (batch)
+//   search_cached_documents  - keyword search over cache (multi-query)
 //
 // API tools (only when API key is set):
-//   search_developer_docs          - semantic search via Developer Knowledge API
-//   get_developer_document         - fetch single doc from API → cache
-//   batch_get_developer_documents  - batch fetch from API → cache
+//   search_developer_docs    - semantic search via Developer Knowledge API (multi-query)
+//   get_developer_document   - fetch one or more docs from API → cache (batch)
 
 func buildToolDeclarations(hasAPI bool) []*genai.Tool {
 	decls := []*genai.FunctionDeclaration{
 		{
 			Name:        "get_cached_document",
-			Description: "Retrieve a document from the local cache. Returns cached content (may be from embedded docs or previously fetched). Use document names from the available documents list.",
+			Description: "Retrieve one or more documents from the local cache. Returns cached content (may be from embedded docs or previously fetched). Use document names from the available documents list.",
 			Parameters: &genai.Schema{
 				Type: "OBJECT",
 				Properties: map[string]*genai.Schema{
-					"name": {
-						Type:        "STRING",
-						Description: "The document name (e.g., 'documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/graph-query-statements')",
+					"names": {
+						Type:        "ARRAY",
+						Description: "List of document names to retrieve (e.g., ['documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/graph-query-statements'])",
+						Items: &genai.Schema{
+							Type: "STRING",
+						},
 					},
 				},
-				Required: []string{"name"},
+				Required: []string{"names"},
 			},
 		},
 		{
 			Name:        "search_cached_documents",
-			Description: "Search locally cached documents by keyword. Returns matching document names and snippets. All query words must appear in the document (case-insensitive).",
+			Description: "Search locally cached documents by keyword(s). Accepts multiple queries; returns matching document names and snippets for each query. All query words must appear in the document (case-insensitive).",
 			Parameters: &genai.Schema{
 				Type: "OBJECT",
 				Properties: map[string]*genai.Schema{
-					"query": {
-						Type:        "STRING",
-						Description: "Space-separated keywords to search for (e.g., 'graph pattern matching')",
+					"queries": {
+						Type:        "ARRAY",
+						Description: "List of space-separated keyword queries (e.g., ['graph pattern matching', 'aggregate functions'])",
+						Items: &genai.Schema{
+							Type: "STRING",
+						},
 					},
 				},
-				Required: []string{"query"},
+				Required: []string{"queries"},
 			},
 		},
 	}
@@ -81,41 +86,30 @@ func buildToolDeclarations(hasAPI bool) []*genai.Tool {
 		decls = append(decls,
 			&genai.FunctionDeclaration{
 				Name:        "search_developer_docs",
-				Description: "Search Google developer documentation using semantic search. Returns relevant document names and snippets. Use this to discover documents not in the local cache.",
+				Description: "Search Google developer documentation using semantic search. Accepts multiple queries; returns relevant document names and snippets for each query. Use this to discover documents not in the local cache.",
 				Parameters: &genai.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*genai.Schema{
-						"query": {
-							Type:        "STRING",
-							Description: "Search query (e.g., 'Spanner GQL graph pattern matching', 'GoogleSQL aggregate functions')",
+						"queries": {
+							Type:        "ARRAY",
+							Description: "List of search queries (e.g., ['Spanner GQL graph pattern matching', 'GoogleSQL aggregate functions'])",
+							Items: &genai.Schema{
+								Type: "STRING",
+							},
 						},
 					},
-					Required: []string{"query"},
+					Required: []string{"queries"},
 				},
 			},
 			&genai.FunctionDeclaration{
 				Name:        "get_developer_document",
-				Description: "Fetch a document from the Developer Knowledge API. The result is cached for future use. Use for documents not in the local cache.",
-				Parameters: &genai.Schema{
-					Type: "OBJECT",
-					Properties: map[string]*genai.Schema{
-						"name": {
-							Type:        "STRING",
-							Description: "The document name",
-						},
-					},
-					Required: []string{"name"},
-				},
-			},
-			&genai.FunctionDeclaration{
-				Name:        "batch_get_developer_documents",
-				Description: "Fetch multiple documents from the Developer Knowledge API in a single call (up to 20). Results are cached. Only fetches documents not already fresh in cache.",
+				Description: "Fetch one or more documents from the Developer Knowledge API. Results are cached for future use. Use for documents not in the local cache.",
 				Parameters: &genai.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*genai.Schema{
 						"names": {
 							Type:        "ARRAY",
-							Description: "List of document names to retrieve",
+							Description: "List of document names to retrieve (up to 20). Uses batch API when possible.",
 							Items: &genai.Schema{
 								Type: "STRING",
 							},
@@ -133,15 +127,18 @@ func buildToolDeclarations(hasAPI bool) []*genai.Tool {
 // buildToolGuidance adds tool-use instructions to the system prompt.
 func buildToolGuidance(cache *docCache, hasAPI bool) string {
 	var b strings.Builder
-	b.WriteString("\n\nIMPORTANT: Before composing the query, use the available tools to look up relevant documentation.\n")
+	b.WriteString("\n\nIMPORTANT: You MUST use the available tools to look up relevant documentation before composing any query.\n")
+	b.WriteString("Do NOT skip tool use. Always fetch at least the most relevant document(s) for the query topic.\n")
+
+	b.WriteString("IMPORTANT: All tools accept arrays/lists to reduce round trips. Batch multiple operations per call.\n")
 
 	if hasAPI {
-		b.WriteString("Use batch_get_developer_documents to efficiently fetch multiple documents in one call.\n")
-		b.WriteString("Use search_developer_docs for broader semantic searches.\n")
+		b.WriteString("Use get_developer_document with multiple names to fetch several documents at once.\n")
+		b.WriteString("Use search_developer_docs with multiple queries for broader semantic searches.\n")
 	}
 
-	b.WriteString("Use get_cached_document to retrieve documents from the local cache.\n")
-	b.WriteString("Use search_cached_documents to search cached documents by keyword.\n")
+	b.WriteString("Use get_cached_document with multiple names to retrieve several documents from the local cache.\n")
+	b.WriteString("Use search_cached_documents with multiple queries to search cached documents by keyword.\n")
 	b.WriteString("Documents marked [cached] can be retrieved immediately with get_cached_document.\n")
 
 	b.WriteString("\nAvailable Spanner reference documents (use full name with \"" + docPrefix + "\" prefix):\n")
@@ -150,59 +147,78 @@ func buildToolGuidance(cache *docCache, hasAPI bool) string {
 	return b.String()
 }
 
+// argsToStringSlice extracts a string slice from a function call argument.
+func argsToStringSlice(args map[string]any, key string) []string {
+	raw, _ := args[key].([]any)
+	result := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
 // executeToolCall dispatches a function call to the appropriate handler.
 func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCache) map[string]any {
 	switch fc.Name {
 	case "get_cached_document":
-		name, _ := fc.Args["name"].(string)
-		content, ok := cache.Get(ctx, name)
-		if !ok {
-			return map[string]any{"error": "document not found in cache: " + name}
+		names := argsToStringSlice(fc.Args, "names")
+		documents := make(map[string]any, len(names))
+		for _, name := range names {
+			content, ok := cache.Get(ctx, name)
+			if ok {
+				documents[name] = content
+			} else {
+				documents[name] = map[string]any{"error": "not found in cache"}
+			}
 		}
-		return map[string]any{"content": content}
+		return map[string]any{"documents": documents, "count": len(names)}
 
 	case "search_cached_documents":
-		query, _ := fc.Args["query"].(string)
-		results := cache.Search(query)
-		items := make([]map[string]any, len(results))
-		for i, r := range results {
-			items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
-		}
-		return map[string]any{"results": items, "count": len(items)}
-
-	case "search_developer_docs":
-		query, _ := fc.Args["query"].(string)
-		results, ok := cache.APISearch(ctx, query)
-		if !ok {
-			// Fallback to local search if API is unavailable
-			localResults := cache.Search(query)
-			items := make([]map[string]any, len(localResults))
-			for i, r := range localResults {
+		queries := argsToStringSlice(fc.Args, "queries")
+		queryResults := make(map[string]any, len(queries))
+		for _, query := range queries {
+			results := cache.Search(query)
+			items := make([]map[string]any, len(results))
+			for i, r := range results {
 				items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
 			}
-			return map[string]any{"results": items, "count": len(items), "source": "local_cache"}
+			queryResults[query] = map[string]any{"results": items, "count": len(items)}
 		}
-		items := make([]map[string]any, len(results))
-		for i, r := range results {
-			items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
+		return map[string]any{"query_results": queryResults}
+
+	case "search_developer_docs":
+		queries := argsToStringSlice(fc.Args, "queries")
+		queryResults := make(map[string]any, len(queries))
+		for _, query := range queries {
+			results, ok := cache.APISearch(ctx, query)
+			if !ok {
+				// Fallback to local search if API is unavailable
+				localResults := cache.Search(query)
+				items := make([]map[string]any, len(localResults))
+				for i, r := range localResults {
+					items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
+				}
+				queryResults[query] = map[string]any{"results": items, "count": len(items), "source": "local_cache"}
+				continue
+			}
+			items := make([]map[string]any, len(results))
+			for i, r := range results {
+				items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
+			}
+			queryResults[query] = map[string]any{"results": items, "count": len(items)}
 		}
-		return map[string]any{"results": items, "count": len(items)}
+		return map[string]any{"query_results": queryResults}
 
 	case "get_developer_document":
-		name, _ := fc.Args["name"].(string)
-		content, ok := cache.Get(ctx, name)
-		if !ok {
-			return map[string]any{"error": "failed to fetch document: " + name}
-		}
-		return map[string]any{"content": content}
-
-	case "batch_get_developer_documents":
-		namesRaw, _ := fc.Args["names"].([]any)
-		names := make([]string, 0, len(namesRaw))
-		for _, n := range namesRaw {
-			if s, ok := n.(string); ok {
-				names = append(names, s)
+		names := argsToStringSlice(fc.Args, "names")
+		if len(names) == 1 {
+			content, ok := cache.Get(ctx, names[0])
+			if !ok {
+				return map[string]any{"error": "failed to fetch document: " + names[0]}
 			}
+			return map[string]any{"documents": map[string]string{names[0]: content}, "count": 1}
 		}
 		docs := cache.BatchGet(ctx, names)
 		docResults := make(map[string]string, len(docs))
@@ -286,7 +302,11 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 				}
 			}
 			slog.Debug("Rate limited, retrying", "attempt", attempt, "wait", wait)
-			time.Sleep(wait)
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			backoff *= 2
 			continue
 		}

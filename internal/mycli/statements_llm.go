@@ -62,11 +62,10 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	model := session.systemVariables.Feature.VertexAIModel
 
 	// Build the doc cache with embedded docs
-	cacheOpts := []docCacheOption{}
+	var cacheOpts []docCacheOption
 	apiKey := devKnowledgeAPIKey()
-	var apiClient *devKnowledgeClient
 	if apiKey != "" {
-		apiClient = newDevKnowledgeClient(apiKey)
+		apiClient := newDevKnowledgeClient(apiKey)
 		searcher := &devKnowledgeDocSearcher{client: apiClient}
 		cacheOpts = append(cacheOpts,
 			withDocFetcher(func(ctx context.Context, name string) (string, error) {
@@ -212,6 +211,10 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 			Role:  "user",
 			Parts: responseParts,
 		})
+
+		if round == maxToolCallRounds-1 {
+			slog.Debug("GEMINI timing: Phase 1 exhausted all rounds", "rounds", maxToolCallRounds, "total_elapsed", time.Since(phase1Start))
+		}
 	}
 
 	// Phase 2: Generate structured output using context from Phase 1
