@@ -472,6 +472,9 @@ func (d *devKnowledgeDocSearcher) fetchIndividual(ctx context.Context, names []s
 		})
 	}
 	wg.Wait()
+	if len(results) == 0 && len(names) > 0 {
+		return nil, errors.New("all individual document fetches failed in fallback")
+	}
 	return results, nil
 }
 
