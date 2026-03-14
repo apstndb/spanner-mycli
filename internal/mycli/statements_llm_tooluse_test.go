@@ -439,29 +439,52 @@ func TestDevKnowledgeDocSearcher_BatchGetDocuments_FallbackOnBatchError(t *testi
 
 func TestDevKnowledgeDocSearcher_Search_SnippetTruncation(t *testing.T) {
 	t.Parallel()
-	longContent := make([]byte, 400)
-	for i := range longContent {
-		longContent[i] = 'a'
+
+	tests := []struct {
+		name      string
+		content   string
+		wantRunes int // expected rune count including "..."
+	}{
+		{
+			name:      "ASCII truncation",
+			content:   strings.Repeat("a", 400),
+			wantRunes: 303, // 300 + len("...")
+		},
+		{
+			name:      "multibyte UTF-8 truncation",
+			content:   strings.Repeat("あ", 400), // 3 bytes each
+			wantRunes: 303,                      // 300 runes + "..."
+		},
+		{
+			name:      "short content not truncated",
+			content:   strings.Repeat("x", 100),
+			wantRunes: 100,
+		},
 	}
 
-	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, map[string]any{
-			"results": []map[string]any{
-				{"parent": "documents/test", "id": "1", "content": string(longContent)},
-			},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(t, w, map[string]any{
+					"results": []map[string]any{
+						{"parent": "documents/test", "id": "1", "content": tt.content},
+					},
+				})
+			})
+
+			results, err := searcher.Search(context.Background(), "test")
+			if err != nil {
+				t.Fatalf("Search failed: %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("got %d results, want 1", len(results))
+			}
+			gotRunes := len([]rune(results[0].Snippet))
+			if gotRunes != tt.wantRunes {
+				t.Errorf("snippet rune count = %d, want %d", gotRunes, tt.wantRunes)
+			}
 		})
-	})
-
-	results, err := searcher.Search(context.Background(), "test")
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("got %d results, want 1", len(results))
-	}
-	// 300 chars + "..."
-	if len(results[0].Snippet) != 303 {
-		t.Errorf("snippet length = %d, want 303", len(results[0].Snippet))
 	}
 }
 
