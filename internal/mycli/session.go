@@ -24,6 +24,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -101,6 +102,16 @@ type Session struct {
 	// schemaGeneration is incremented after DDL execution to signal
 	// that schema-dependent caches (e.g., fuzzy completion table list) are stale.
 	schemaGeneration uint64
+
+	// ddlCache caches the GetDatabaseDdl response to avoid redundant RPCs.
+	// Invalidated on schemaGeneration change (DDL execution) and TTL expiry.
+	ddlCache ddlCacheEntry
+
+	// docCache caches Spanner reference documents across GEMINI invocations.
+	// Lazily initialized on first GEMINI call; closed when session closes.
+	// Protected by docCacheMu per .gemini/styleguide.md §Concurrency.
+	docCacheMu sync.Mutex
+	docCache   *docCache
 
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
@@ -597,10 +608,95 @@ func (s *Session) currentPriorityWithLock() sppb.RequestOptions_Priority {
 
 // --- End of delegation methods ---
 
-func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
+// ddlCacheEntry stores a cached GetDatabaseDdl response.
+type ddlCacheEntry struct {
+	mu               sync.Mutex
+	response         *adminpb.GetDatabaseDdlResponse
+	fetchedAt        time.Time
+	schemaGeneration uint64
+	nowFunc          func() time.Time // for testing; defaults to time.Now
+}
+
+// now returns the current time, using nowFunc if set or time.Now otherwise.
+func (c *ddlCacheEntry) now() time.Time {
+	if c.nowFunc != nil {
+		return c.nowFunc()
+	}
+	return time.Now()
+}
+
+const ddlCacheTTL = 30 * time.Second
+
+// GetDatabaseDdlCached returns the cached DDL response, fetching from the API
+// only when the cache is stale (TTL expired or schema generation changed).
+func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+	s.ddlCache.mu.Lock()
+	defer s.ddlCache.mu.Unlock()
+
+	gen := s.SchemaGeneration()
+
+	now := s.ddlCache.now()
+	if s.ddlCache.response != nil &&
+		s.ddlCache.schemaGeneration == gen &&
+		now.Sub(s.ddlCache.fetchedAt) < ddlCacheTTL {
+		return s.ddlCache.response, nil
+	}
+
 	resp, err := s.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
 		Database: s.DatabasePath(),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.ddlCache.response = resp
+	s.ddlCache.fetchedAt = now
+	s.ddlCache.schemaGeneration = gen
+	return resp, nil
+}
+
+// getOrCreateDocCache returns the session-scoped docCache, creating it on
+// first call. The cache persists across GEMINI invocations so that API-fetched
+// documents are reused. Closed when the session closes.
+// The check-then-act is protected by docCacheMu (see .gemini/styleguide.md §Concurrency).
+func (s *Session) getOrCreateDocCache(apiKey string) (*docCache, error) {
+	s.docCacheMu.Lock()
+	defer s.docCacheMu.Unlock()
+
+	if s.docCache != nil {
+		return s.docCache, nil
+	}
+
+	var opts []docCacheOption
+	if apiKey != "" {
+		apiClient := newDevKnowledgeClient(apiKey)
+		searcher := &devKnowledgeDocSearcher{client: apiClient}
+		opts = append(opts,
+			withDocFetcher(searcher.GetDocument),
+			withDocBatchFetcher(searcher.BatchGetDocuments),
+			withDocAPISearcher(searcher.Search),
+		)
+		slog.Debug("Developer Knowledge API enabled for documentation")
+	} else {
+		slog.Debug("No API key set, using embedded docs only")
+	}
+
+	cache, err := newDocCache(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create doc cache: %w", err)
+	}
+
+	if err := loadEmbeddedDocs(cache); err != nil {
+		cache.Close()
+		return nil, fmt.Errorf("load embedded docs: %w", err)
+	}
+
+	s.docCache = cache
+	return cache, nil
+}
+
+func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
+	resp, err := s.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -632,6 +728,13 @@ func (s *Session) Close() {
 
 	if s.cqlSession != nil {
 		s.cqlSession.Close()
+	}
+
+	s.docCacheMu.Lock()
+	dc := s.docCache
+	s.docCacheMu.Unlock()
+	if dc != nil {
+		dc.Close()
 	}
 
 	// No need to close tee file here as it's managed by StreamManager

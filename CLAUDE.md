@@ -150,6 +150,7 @@ For testing best practices (table-driven tests, coverage comparison, test organi
 
 - **No backward compatibility required** - not used as an external library
 - **No future-proofing, but choose correct solutions** - don't build speculative features (plugin systems, unnecessary abstractions), but when a clearly correct solution exists at similar cost, prefer it over a known-incomplete alternative. When in doubt, present options to the user rather than automatically choosing the minimal path.
+- **Follow `.gemini/styleguide.md`** - the Gemini style guide defines concurrency, testing, and security guidelines that apply to both reviews and implementation. In particular, check-then-act patterns must be atomic (§Concurrency), and I/O under lock is acceptable for infrequent CLI operations.
 - **Issue management**: All fixes go through PRs - never close issues manually
 - **License headers**: New files use "Copyright [year] apstndb"; files from spanner-cli keep "Copyright [year] Google LLC"
 
