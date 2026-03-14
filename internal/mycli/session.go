@@ -662,15 +662,9 @@ func (s *Session) getOrCreateDocCache(apiKey string) (*docCache, error) {
 		apiClient := newDevKnowledgeClient(apiKey)
 		searcher := &devKnowledgeDocSearcher{client: apiClient}
 		opts = append(opts,
-			withDocFetcher(func(ctx context.Context, name string) (string, error) {
-				return searcher.GetDocument(ctx, name)
-			}),
-			withDocBatchFetcher(func(ctx context.Context, names []string) ([]DocResult, error) {
-				return searcher.BatchGetDocuments(ctx, names)
-			}),
-			withDocAPISearcher(func(ctx context.Context, query string) ([]DocSearchResult, error) {
-				return searcher.Search(ctx, query)
-			}),
+			withDocFetcher(searcher.GetDocument),
+			withDocBatchFetcher(searcher.BatchGetDocuments),
+			withDocAPISearcher(searcher.Search),
 		)
 		slog.Debug("Developer Knowledge API enabled for documentation")
 	} else {
