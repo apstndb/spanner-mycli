@@ -168,7 +168,7 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 
 		if len(result.Candidates) > 0 {
 			history = append(history, &genai.Content{
-				Role:  "model",
+				Role:  genai.RoleModel,
 				Parts: result.Candidates[0].Content.Parts,
 			})
 		}
@@ -183,7 +183,7 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 		slog.Debug("GEMINI timing: Phase 1 round", "round", round, "api_call", apiElapsed, "tool_exec", time.Since(toolStart), "functions", len(functionCalls))
 
 		history = append(history, &genai.Content{
-			Role:  "user",
+			Role:  genai.RoleUser,
 			Parts: responseParts,
 		})
 
