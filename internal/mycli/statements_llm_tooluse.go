@@ -165,16 +165,22 @@ func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCach
 	switch fc.Name {
 	case "get_cached_document":
 		names := argsToStringSlice(fc.Args, "names")
+		docs := cache.BatchGet(ctx, names)
+
+		fetched := make(map[string]string, len(docs))
+		for _, doc := range docs {
+			fetched[doc.Name] = doc.Content
+		}
+
 		documents := make(map[string]any, len(names))
 		for _, name := range names {
-			content, ok := cache.Get(ctx, name)
-			if ok {
+			if content, ok := fetched[normalizeDocName(name)]; ok {
 				documents[name] = content
 			} else {
 				documents[name] = map[string]any{"error": "not found in cache"}
 			}
 		}
-		return map[string]any{"documents": documents, "count": len(names)}
+		return map[string]any{"documents": documents, "count": len(fetched)}
 
 	case "search_cached_documents":
 		queries := argsToStringSlice(fc.Args, "queries")
