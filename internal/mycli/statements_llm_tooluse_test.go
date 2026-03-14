@@ -39,6 +39,7 @@ func TestDevKnowledgeAPIKey(t *testing.T) {
 }
 
 func TestBuildToolDeclarations(t *testing.T) {
+	t.Parallel()
 	toolNames := func(tools []*genai.Tool) []string {
 		var names []string
 		for _, tool := range tools {
@@ -70,6 +71,7 @@ func TestBuildToolDeclarations(t *testing.T) {
 }
 
 func TestBuildToolGuidance(t *testing.T) {
+	t.Parallel()
 	cache, err := newDocCache()
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +103,7 @@ func TestBuildToolGuidance(t *testing.T) {
 }
 
 func TestNormalizeDocName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -168,6 +171,7 @@ func newTestDocSearcher(t *testing.T, handler http.HandlerFunc) *devKnowledgeDoc
 }
 
 func TestDevKnowledgeClient_DoGet_APIKeyHeader(t *testing.T) {
+	t.Parallel()
 	var gotHeader string
 	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("x-goog-api-key")
@@ -185,6 +189,7 @@ func TestDevKnowledgeClient_DoGet_APIKeyHeader(t *testing.T) {
 }
 
 func TestDevKnowledgeClient_DoGet_RetryOn429(t *testing.T) {
+	t.Parallel()
 	attempts := 0
 	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
 		attempts++
@@ -216,6 +221,7 @@ func TestDevKnowledgeClient_DoGet_RetryOn429(t *testing.T) {
 }
 
 func TestDevKnowledgeClient_DoGet_MaxRetriesExceeded(t *testing.T) {
+	t.Parallel()
 	attempts := 0
 	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
 		attempts++
@@ -242,6 +248,7 @@ func TestDevKnowledgeClient_DoGet_MaxRetriesExceeded(t *testing.T) {
 }
 
 func TestDevKnowledgeClient_DoGet_APIError(t *testing.T) {
+	t.Parallel()
 	client, serverURL := newTestDevKnowledgeClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"error":{"code":404,"status":"NOT_FOUND","message":"document not found"}}`))
@@ -265,6 +272,7 @@ func TestDevKnowledgeClient_DoGet_APIError(t *testing.T) {
 }
 
 func TestDevKnowledgeAPIError_Error(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  *devKnowledgeAPIError
@@ -292,6 +300,7 @@ func TestDevKnowledgeAPIError_Error(t *testing.T) {
 }
 
 func TestDevKnowledgeDocSearcher_Search(t *testing.T) {
+	t.Parallel()
 	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/documents:searchDocumentChunks" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -323,6 +332,7 @@ func TestDevKnowledgeDocSearcher_Search(t *testing.T) {
 }
 
 func TestDevKnowledgeDocSearcher_GetDocument(t *testing.T) {
+	t.Parallel()
 	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/documents/docs.cloud.google.com/spanner/docs/reference/standard-sql/query-syntax"
 		if r.URL.Path != wantPath {
@@ -343,6 +353,7 @@ func TestDevKnowledgeDocSearcher_GetDocument(t *testing.T) {
 }
 
 func TestDevKnowledgeDocSearcher_BatchGetDocuments_Success(t *testing.T) {
+	t.Parallel()
 	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/documents:batchGet" {
 			t.Errorf("path = %q, want /documents:batchGet", r.URL.Path)
@@ -372,6 +383,7 @@ func TestDevKnowledgeDocSearcher_BatchGetDocuments_Success(t *testing.T) {
 }
 
 func TestDevKnowledgeDocSearcher_BatchGetDocuments_DoesNotMutateInput(t *testing.T) {
+	t.Parallel()
 	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, map[string]any{
 			"documents": []map[string]any{
@@ -397,6 +409,7 @@ func TestDevKnowledgeDocSearcher_BatchGetDocuments_DoesNotMutateInput(t *testing
 }
 
 func TestDevKnowledgeDocSearcher_BatchGetDocuments_FallbackOnBatchError(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -425,6 +438,7 @@ func TestDevKnowledgeDocSearcher_BatchGetDocuments_FallbackOnBatchError(t *testi
 }
 
 func TestDevKnowledgeDocSearcher_Search_SnippetTruncation(t *testing.T) {
+	t.Parallel()
 	longContent := make([]byte, 400)
 	for i := range longContent {
 		longContent[i] = 'a'
