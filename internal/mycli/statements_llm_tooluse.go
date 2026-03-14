@@ -362,8 +362,8 @@ func (d *devKnowledgeDocSearcher) Search(ctx context.Context, query string) ([]D
 	results := make([]DocSearchResult, len(resp.Results))
 	for i, r := range resp.Results {
 		snippet := r.Content
-		if len(snippet) > 300 {
-			snippet = snippet[:300] + "..."
+		if runes := []rune(snippet); len(runes) > 300 {
+			snippet = string(runes[:300]) + "..."
 		}
 		results[i] = DocSearchResult{Name: r.Parent, Snippet: snippet}
 	}
