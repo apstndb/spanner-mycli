@@ -614,6 +614,15 @@ type ddlCacheEntry struct {
 	response         *adminpb.GetDatabaseDdlResponse
 	fetchedAt        time.Time
 	schemaGeneration uint64
+	nowFunc          func() time.Time // for testing; defaults to time.Now
+}
+
+// now returns the current time, using nowFunc if set or time.Now otherwise.
+func (c *ddlCacheEntry) now() time.Time {
+	if c.nowFunc != nil {
+		return c.nowFunc()
+	}
+	return time.Now()
 }
 
 const ddlCacheTTL = 30 * time.Second
@@ -626,9 +635,10 @@ func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabas
 
 	gen := s.SchemaGeneration()
 
+	now := s.ddlCache.now()
 	if s.ddlCache.response != nil &&
 		s.ddlCache.schemaGeneration == gen &&
-		time.Since(s.ddlCache.fetchedAt) < ddlCacheTTL {
+		now.Sub(s.ddlCache.fetchedAt) < ddlCacheTTL {
 		return s.ddlCache.response, nil
 	}
 
@@ -640,7 +650,7 @@ func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabas
 	}
 
 	s.ddlCache.response = resp
-	s.ddlCache.fetchedAt = time.Now()
+	s.ddlCache.fetchedAt = now
 	s.ddlCache.schemaGeneration = gen
 	return resp, nil
 }
