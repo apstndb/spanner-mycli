@@ -2,6 +2,8 @@ package mycli
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	spannerdocs "github.com/apstndb/spanner-docs-embed"
@@ -159,7 +161,7 @@ func formatDocCatalog(cache *docCache) string {
 	// List any extra cached documents not in the catalog (fetched during session)
 	if len(cachedNames) > 0 {
 		b.WriteString("\nAdditional cached documents:\n")
-		for name := range cachedNames {
+		for _, name := range slices.Sorted(maps.Keys(cachedNames)) {
 			shortName := strings.TrimPrefix(name, docPrefix)
 			b.WriteString("- " + shortName + " [cached]\n")
 		}
