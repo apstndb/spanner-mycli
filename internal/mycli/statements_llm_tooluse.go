@@ -299,13 +299,10 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 			return nil, err
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-
+		// Check for retriable 429 before reading body to avoid unnecessary I/O.
 		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries-1 {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 			wait := backoff
 			if v := resp.Header.Get("Retry-After"); v != "" {
 				if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
@@ -320,6 +317,12 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 			}
 			backoff *= 2
 			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
 		}
 
 		if resp.StatusCode != http.StatusOK {
