@@ -342,32 +342,33 @@ func (c *docCache) Names() []string {
 }
 
 // extractSnippet extracts a text snippet around the first occurrence of term.
+// Uses rune-based slicing to avoid splitting multi-byte characters.
 func extractSnippet(content, term string, maxLen int) string {
+	runes := []rune(content)
+	runeLen := len(runes)
+
 	lower := strings.ToLower(content)
 	term = strings.ToLower(term)
 	idx := strings.Index(lower, term)
+
 	if idx < 0 {
-		if len(content) > maxLen {
-			return content[:maxLen] + "..."
+		if runeLen > maxLen {
+			return string(runes[:maxLen]) + "..."
 		}
 		return content
 	}
 
-	// Center the snippet around the match
-	start := idx - maxLen/2
-	if start < 0 {
-		start = 0
-	}
-	end := start + maxLen
-	if end > len(content) {
-		end = len(content)
-	}
+	// Center the snippet around the match.
+	// Convert byte offset to rune offset for safe slicing.
+	runeIdx := len([]rune(content[:idx]))
+	start := max(runeIdx-maxLen/2, 0)
+	end := min(start+maxLen, runeLen)
 
-	snippet := content[start:end]
+	snippet := string(runes[start:end])
 	if start > 0 {
 		snippet = "..." + snippet
 	}
-	if end < len(content) {
+	if end < runeLen {
 		snippet = snippet + "..."
 	}
 	return snippet

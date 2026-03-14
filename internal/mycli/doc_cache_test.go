@@ -424,48 +424,53 @@ func TestDocCache_CompressionRoundtrip(t *testing.T) {
 
 func TestExtractSnippet(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		desc    string
-		content string
-		term    string
-		maxLen  int
-		wantLen int // approximate
-	}{
-		{
-			desc:    "short content",
-			content: "hello world",
-			term:    "hello",
-			maxLen:  300,
-			wantLen: 11,
-		},
-		{
-			desc:    "term not found",
-			content: "some content",
-			term:    "missing",
-			maxLen:  5,
-			wantLen: 8, // "some ..."
-		},
-		{
-			desc:    "long content centered",
-			content: string(make([]byte, 1000)) + "TARGET" + string(make([]byte, 1000)),
-			term:    "TARGET",
-			maxLen:  100,
-		},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			result := extractSnippet(tt.content, tt.term, tt.maxLen)
-			if tt.wantLen > 0 && len(result) != tt.wantLen {
-				t.Errorf("snippet length = %d, want %d; snippet = %q", len(result), tt.wantLen, result)
+	t.Run("short content unchanged", func(t *testing.T) {
+		t.Parallel()
+		result := extractSnippet("hello world", "hello", 300)
+		if result != "hello world" {
+			t.Errorf("got %q, want %q", result, "hello world")
+		}
+	})
+
+	t.Run("term not found truncates from start", func(t *testing.T) {
+		t.Parallel()
+		result := extractSnippet("some content here", "missing", 8)
+		if !strings.HasSuffix(result, "...") {
+			t.Errorf("expected ellipsis suffix, got %q", result)
+		}
+		// 8 runes + "..." = "some con..."
+		runes := []rune(strings.TrimSuffix(result, "..."))
+		if len(runes) > 8 {
+			t.Errorf("rune count = %d, want <= 8; snippet = %q", len(runes), result)
+		}
+	})
+
+	t.Run("long content centered around match", func(t *testing.T) {
+		t.Parallel()
+		padding := strings.Repeat("x", 500)
+		content := padding + "TARGET" + padding
+		result := extractSnippet(content, "TARGET", 100)
+		if !strings.Contains(result, "TARGET") {
+			t.Errorf("snippet should contain TARGET: %q", result)
+		}
+		if !strings.HasPrefix(result, "...") {
+			t.Error("expected leading ellipsis for centered snippet")
+		}
+	})
+
+	t.Run("UTF-8 safe truncation", func(t *testing.T) {
+		t.Parallel()
+		// Japanese text should not be split mid-rune
+		content := strings.Repeat("あ", 200)
+		result := extractSnippet(content, "あ", 20)
+		// Every rune in the result should be valid
+		for i, r := range result {
+			if r == '\uFFFD' {
+				t.Errorf("invalid rune at position %d in %q", i, result)
 			}
-			// Snippet should not exceed maxLen + ellipsis overhead significantly
-			if len(result) > tt.maxLen+10 {
-				t.Errorf("snippet too long: %d > %d+10", len(result), tt.maxLen)
-			}
-		})
-	}
+		}
+	})
 }
 
 func TestDocCategory(t *testing.T) {
