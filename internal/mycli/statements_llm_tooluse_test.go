@@ -6,10 +6,99 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"golang.org/x/time/rate"
+	"google.golang.org/genai"
 )
+
+func TestDevKnowledgeAPIKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		devKey    string
+		googleKey string
+		want      string
+	}{
+		{name: "prefers DEVELOPERKNOWLEDGE_API_KEY", devKey: "dev-key", googleKey: "google-key", want: "dev-key"},
+		{name: "falls back to GOOGLE_API_KEY", devKey: "", googleKey: "google-key", want: "google-key"},
+		{name: "no keys set", devKey: "", googleKey: "", want: ""},
+		{name: "only DEVELOPERKNOWLEDGE_API_KEY", devKey: "dev-key", googleKey: "", want: "dev-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DEVELOPERKNOWLEDGE_API_KEY", tt.devKey)
+			t.Setenv("GOOGLE_API_KEY", tt.googleKey)
+			if got := devKnowledgeAPIKey(); got != tt.want {
+				t.Errorf("devKnowledgeAPIKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildToolDeclarations(t *testing.T) {
+	toolNames := func(tools []*genai.Tool) []string {
+		var names []string
+		for _, tool := range tools {
+			for _, decl := range tool.FunctionDeclarations {
+				names = append(names, decl.Name)
+			}
+		}
+		slices.Sort(names)
+		return names
+	}
+
+	t.Run("without API", func(t *testing.T) {
+		tools := buildToolDeclarations(false)
+		names := toolNames(tools)
+		want := []string{"get_cached_document", "search_cached_documents"}
+		if !slices.Equal(names, want) {
+			t.Errorf("tool names = %v, want %v", names, want)
+		}
+	})
+
+	t.Run("with API", func(t *testing.T) {
+		tools := buildToolDeclarations(true)
+		names := toolNames(tools)
+		want := []string{"get_cached_document", "get_developer_document", "search_cached_documents", "search_developer_docs"}
+		if !slices.Equal(names, want) {
+			t.Errorf("tool names = %v, want %v", names, want)
+		}
+	})
+}
+
+func TestBuildToolGuidance(t *testing.T) {
+	cache, err := newDocCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+
+	t.Run("without API", func(t *testing.T) {
+		guidance := buildToolGuidance(cache, false)
+		if !strings.Contains(guidance, "MUST use the available tools") {
+			t.Error("missing tool-use requirement")
+		}
+		if strings.Contains(guidance, "get_developer_document") {
+			t.Error("should not mention API tools when hasAPI=false")
+		}
+		if !strings.Contains(guidance, "get_cached_document") {
+			t.Error("should mention cache tools")
+		}
+	})
+
+	t.Run("with API", func(t *testing.T) {
+		guidance := buildToolGuidance(cache, true)
+		if !strings.Contains(guidance, "get_developer_document") {
+			t.Error("should mention API tools when hasAPI=true")
+		}
+		if !strings.Contains(guidance, "search_developer_docs") {
+			t.Error("should mention API search tool when hasAPI=true")
+		}
+	})
+}
 
 func TestNormalizeDocName(t *testing.T) {
 	tests := []struct {
