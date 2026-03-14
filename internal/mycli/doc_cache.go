@@ -143,6 +143,11 @@ func (c *docCache) LoadContent(name, content string) {
 func (c *docCache) Put(name, content string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.putLocked(name, content)
+}
+
+// putLocked stores a document without acquiring the lock. Caller must hold c.mu.
+func (c *docCache) putLocked(name, content string) {
 	c.entries[name] = docCacheEntry{
 		data:      c.compress(content),
 		fetchedAt: c.nowFunc(),
@@ -152,13 +157,15 @@ func (c *docCache) Put(name, content string) {
 // Get retrieves a document from the cache with TTL-based revalidation.
 // If the entry is stale and a fetch function is available, it attempts to refresh.
 // Stale content is returned if refresh fails.
+// The entire operation is atomic: the lock is held during API fetch to prevent
+// concurrent check-then-act races (see .gemini/styleguide.md §Concurrency).
 func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 	name = normalizeDocName(name)
 
-	c.mu.RLock()
-	entry, exists := c.entries[name]
-	c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
+	entry, exists := c.entries[name]
 	if exists && c.isFresh(entry) {
 		content, err := c.decompress(entry.data)
 		if err != nil {
@@ -168,11 +175,12 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 		return content, true
 	}
 
-	// Stale or missing — try API refresh if available
+	// Stale or missing — try API refresh if available.
+	// Network I/O under lock is acceptable for infrequent CLI operations.
 	if c.fetch != nil {
 		content, err := c.fetch(ctx, name)
 		if err == nil {
-			c.Put(name, content)
+			c.putLocked(name, content)
 			return content, true
 		}
 		slog.Debug("API refresh failed, using stale cache", "name", name, "error", err)
@@ -191,13 +199,17 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 }
 
 // BatchGet retrieves multiple documents, fetching only missing/stale ones from the API.
+// The entire operation is atomic: the lock is held during API fetch to prevent
+// concurrent check-then-act races (see .gemini/styleguide.md §Concurrency).
 func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	var results []DocResult
 	var toFetch []string
 	staleEntries := make(map[string]docCacheEntry)
 
 	// Classify each name: fresh hit, stale, or miss
-	c.mu.RLock()
 	for _, name := range names {
 		name = normalizeDocName(name)
 		entry, exists := c.entries[name]
@@ -213,19 +225,19 @@ func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
 			staleEntries[name] = entry
 		}
 	}
-	c.mu.RUnlock()
 
 	if len(toFetch) == 0 {
 		return results
 	}
 
-	// Try batch fetch for stale/missing entries
+	// Try batch fetch for stale/missing entries.
+	// Network I/O under lock is acceptable for infrequent CLI operations.
 	if c.batchFetch != nil {
 		fetched, err := c.batchFetch(ctx, toFetch)
 		if err == nil {
 			fetchedSet := make(map[string]bool, len(fetched))
 			for _, doc := range fetched {
-				c.Put(doc.Name, doc.Content)
+				c.putLocked(doc.Name, doc.Content)
 				results = append(results, doc)
 				fetchedSet[doc.Name] = true
 			}
@@ -250,7 +262,7 @@ func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
 		if c.fetch != nil {
 			content, err := c.fetch(ctx, name)
 			if err == nil {
-				c.Put(name, content)
+				c.putLocked(name, content)
 				results = append(results, DocResult{Name: name, Content: content})
 				continue
 			}
