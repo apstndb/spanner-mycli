@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -446,15 +447,25 @@ func (d *devKnowledgeDocSearcher) fetchBatchGet(ctx context.Context, names []str
 }
 
 func (d *devKnowledgeDocSearcher) fetchIndividual(ctx context.Context, names []string) ([]DocResult, error) {
-	var results []DocResult
+	var (
+		mu      sync.Mutex
+		results []DocResult
+		wg      sync.WaitGroup
+	)
+
 	for _, name := range names {
-		content, err := d.GetDocument(ctx, name)
-		if err != nil {
-			slog.Debug("get_document failed in fallback", "name", name, "error", err)
-			continue
-		}
-		results = append(results, DocResult{Name: name, Content: content})
+		wg.Go(func() {
+			content, err := d.GetDocument(ctx, name)
+			if err != nil {
+				slog.Debug("get_document failed in fallback", "name", name, "error", err)
+				return
+			}
+			mu.Lock()
+			results = append(results, DocResult{Name: name, Content: content})
+			mu.Unlock()
+		})
 	}
+	wg.Wait()
 	return results, nil
 }
 
