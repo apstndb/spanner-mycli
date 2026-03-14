@@ -730,8 +730,11 @@ func (s *Session) Close() {
 		s.cqlSession.Close()
 	}
 
-	if s.docCache != nil {
-		s.docCache.Close()
+	s.docCacheMu.Lock()
+	dc := s.docCache
+	s.docCacheMu.Unlock()
+	if dc != nil {
+		dc.Close()
 	}
 
 	// No need to close tee file here as it's managed by StreamManager
