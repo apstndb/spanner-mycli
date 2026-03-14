@@ -109,7 +109,9 @@ type Session struct {
 
 	// docCache caches Spanner reference documents across GEMINI invocations.
 	// Lazily initialized on first GEMINI call; closed when session closes.
-	docCache *docCache
+	// Protected by docCacheMu per .gemini/styleguide.md §Concurrency.
+	docCacheMu sync.Mutex
+	docCache   *docCache
 
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
@@ -646,7 +648,11 @@ func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabas
 // getOrCreateDocCache returns the session-scoped docCache, creating it on
 // first call. The cache persists across GEMINI invocations so that API-fetched
 // documents are reused. Closed when the session closes.
+// The check-then-act is protected by docCacheMu (see .gemini/styleguide.md §Concurrency).
 func (s *Session) getOrCreateDocCache(apiKey string) (*docCache, error) {
+	s.docCacheMu.Lock()
+	defer s.docCacheMu.Unlock()
+
 	if s.docCache != nil {
 		return s.docCache, nil
 	}
