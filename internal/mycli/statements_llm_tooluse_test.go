@@ -450,3 +450,104 @@ func TestDevKnowledgeDocSearcher_Search_SnippetTruncation(t *testing.T) {
 		t.Errorf("snippet length = %d, want 303", len(results[0].Snippet))
 	}
 }
+
+func TestExecuteToolCall_GetCachedDocument(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t)
+	c.Put("documents/docs.cloud.google.com/spanner/docs/ref/doc1", "content1")
+
+	resp := executeToolCall(context.Background(), &genai.FunctionCall{
+		Name: "get_cached_document",
+		Args: map[string]any{
+			"names": []any{"documents/docs.cloud.google.com/spanner/docs/ref/doc1", "documents/missing"},
+		},
+	}, c)
+
+	docs, ok := resp["documents"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected documents map, got %T", resp["documents"])
+	}
+	if docs["documents/docs.cloud.google.com/spanner/docs/ref/doc1"] != "content1" {
+		t.Errorf("expected content1, got %v", docs["documents/docs.cloud.google.com/spanner/docs/ref/doc1"])
+	}
+	// Missing doc should have error
+	errMap, ok := docs["documents/missing"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error map for missing doc, got %T", docs["documents/missing"])
+	}
+	if errMap["error"] != "not found in cache" {
+		t.Errorf("expected 'not found in cache', got %v", errMap["error"])
+	}
+}
+
+func TestExecuteToolCall_SearchCachedDocuments(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t)
+	c.Put("documents/doc1", "Cloud Spanner GQL graph patterns")
+	c.Put("documents/doc2", "Unrelated content")
+
+	resp := executeToolCall(context.Background(), &genai.FunctionCall{
+		Name: "search_cached_documents",
+		Args: map[string]any{
+			"queries": []any{"spanner GQL"},
+		},
+	}, c)
+
+	queryResults, ok := resp["query_results"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected query_results map, got %T", resp["query_results"])
+	}
+	qr, ok := queryResults["spanner GQL"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected query result map, got %T", queryResults["spanner GQL"])
+	}
+	count, _ := qr["count"].(int)
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+}
+
+func TestExecuteToolCall_UnknownFunction(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t)
+
+	resp := executeToolCall(context.Background(), &genai.FunctionCall{
+		Name: "nonexistent_tool",
+		Args: map[string]any{},
+	}, c)
+
+	errMsg, ok := resp["error"].(string)
+	if !ok {
+		t.Fatalf("expected error string, got %T", resp["error"])
+	}
+	if !strings.Contains(errMsg, "nonexistent_tool") {
+		t.Errorf("error should mention function name: %q", errMsg)
+	}
+}
+
+func TestExecuteToolCall_SearchDeveloperDocs_FallbackToLocal(t *testing.T) {
+	t.Parallel()
+	// Cache without API searcher — should fall back to local search
+	c := newTestCache(t)
+	c.Put("documents/doc1", "Spanner query syntax reference")
+
+	resp := executeToolCall(context.Background(), &genai.FunctionCall{
+		Name: "search_developer_docs",
+		Args: map[string]any{
+			"queries": []any{"spanner query"},
+		},
+	}, c)
+
+	queryResults, ok := resp["query_results"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected query_results map, got %T", resp["query_results"])
+	}
+	qr, ok := queryResults["spanner query"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected query result, got %T", queryResults["spanner query"])
+	}
+	// Should indicate local_cache fallback
+	if qr["source"] != "local_cache" {
+		t.Errorf("expected source=local_cache, got %v", qr["source"])
+	}
+}
