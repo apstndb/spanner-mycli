@@ -283,6 +283,8 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 		}
 		req.Header.Set("x-goog-api-key", c.apiKey)
 
+		// Network errors are not retried: doc fetching is best-effort
+		// (stale cache + embedded docs as fallback).
 		resp, err := c.client.Do(req)
 		if err != nil {
 			return nil, err
@@ -327,7 +329,7 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 
 		return body, nil
 	}
-	return nil, fmt.Errorf("exceeded max retries")
+	return nil, fmt.Errorf("unreachable: exceeded max retries") // required by compiler
 }
 
 // devKnowledgeDocSearcher implements document operations using the Developer Knowledge REST API.
