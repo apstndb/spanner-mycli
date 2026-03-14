@@ -301,7 +301,7 @@ func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, 
 
 		// Check for retriable 429 before reading body to avoid unnecessary I/O.
 		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries-1 {
-			io.Copy(io.Discard, resp.Body)
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			wait := backoff
 			if v := resp.Header.Get("Retry-After"); v != "" {
