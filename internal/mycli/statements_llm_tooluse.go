@@ -160,37 +160,48 @@ func argsToStringSlice(args map[string]any, key string) []string {
 	return result
 }
 
+// searchResultsToItems converts DocSearchResults to the map format expected by the LLM.
+func searchResultsToItems(results []DocSearchResult) []map[string]any {
+	items := make([]map[string]any, len(results))
+	for i, r := range results {
+		items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
+	}
+	return items
+}
+
+// batchGetToResponse performs a BatchGet and formats the results as a tool response,
+// reporting per-name status so the LLM knows which documents were fetched and which failed.
+func batchGetToResponse(ctx context.Context, cache *docCache, names []string, errMsg string) map[string]any {
+	docs := cache.BatchGet(ctx, names)
+
+	fetched := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		fetched[doc.Name] = doc.Content
+	}
+
+	documents := make(map[string]any, len(names))
+	for _, name := range names {
+		if content, ok := fetched[normalizeDocName(name)]; ok {
+			documents[name] = content
+		} else {
+			documents[name] = map[string]any{"error": errMsg}
+		}
+	}
+	return map[string]any{"documents": documents, "count": len(fetched)}
+}
+
 // executeToolCall dispatches a function call to the appropriate handler.
 func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCache) map[string]any {
 	switch fc.Name {
 	case "get_cached_document":
 		names := argsToStringSlice(fc.Args, "names")
-		docs := cache.BatchGet(ctx, names)
-
-		fetched := make(map[string]string, len(docs))
-		for _, doc := range docs {
-			fetched[doc.Name] = doc.Content
-		}
-
-		documents := make(map[string]any, len(names))
-		for _, name := range names {
-			if content, ok := fetched[normalizeDocName(name)]; ok {
-				documents[name] = content
-			} else {
-				documents[name] = map[string]any{"error": "not found in cache"}
-			}
-		}
-		return map[string]any{"documents": documents, "count": len(fetched)}
+		return batchGetToResponse(ctx, cache, names, "not found in cache")
 
 	case "search_cached_documents":
 		queries := argsToStringSlice(fc.Args, "queries")
 		queryResults := make(map[string]any, len(queries))
 		for _, query := range queries {
-			results := cache.Search(query)
-			items := make([]map[string]any, len(results))
-			for i, r := range results {
-				items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
-			}
+			items := searchResultsToItems(cache.Search(query))
 			queryResults[query] = map[string]any{"results": items, "count": len(items)}
 		}
 		return map[string]any{"query_results": queryResults}
@@ -202,46 +213,18 @@ func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCach
 			results, ok := cache.APISearch(ctx, query)
 			if !ok {
 				// Fallback to local search if API is unavailable
-				localResults := cache.Search(query)
-				items := make([]map[string]any, len(localResults))
-				for i, r := range localResults {
-					items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
-				}
+				items := searchResultsToItems(cache.Search(query))
 				queryResults[query] = map[string]any{"results": items, "count": len(items), "source": "local_cache"}
 				continue
 			}
-			items := make([]map[string]any, len(results))
-			for i, r := range results {
-				items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
-			}
+			items := searchResultsToItems(results)
 			queryResults[query] = map[string]any{"results": items, "count": len(items)}
 		}
 		return map[string]any{"query_results": queryResults}
 
 	case "get_developer_document":
 		names := argsToStringSlice(fc.Args, "names")
-		if len(names) == 1 {
-			content, ok := cache.Get(ctx, names[0])
-			if !ok {
-				return map[string]any{"error": "failed to fetch document: " + names[0]}
-			}
-			return map[string]any{"documents": map[string]any{names[0]: content}, "count": 1}
-		}
-		docs := cache.BatchGet(ctx, names)
-		fetched := make(map[string]string, len(docs))
-		for _, doc := range docs {
-			fetched[doc.Name] = doc.Content
-		}
-		// Report status for every requested name so the LLM knows which failed.
-		docResults := make(map[string]any, len(names))
-		for _, name := range names {
-			if content, ok := fetched[normalizeDocName(name)]; ok {
-				docResults[name] = content
-			} else {
-				docResults[name] = map[string]any{"error": "failed to fetch document"}
-			}
-		}
-		return map[string]any{"documents": docResults, "count": len(fetched)}
+		return batchGetToResponse(ctx, cache, names, "failed to fetch document")
 
 	default:
 		return map[string]any{"error": fmt.Sprintf("unknown function: %s", fc.Name)}
