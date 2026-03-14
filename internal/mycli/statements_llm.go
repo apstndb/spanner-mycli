@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
 	"google.golang.org/genai"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -78,16 +76,19 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	slog.Debug("GEMINI timing: geminiComposeQueryWithTools total", "elapsed", time.Since(composeStart))
 	slog.Debug("GEMINI timing: Execute total", "elapsed", time.Since(totalStart))
 
+	var rows []Row
+	if composed.ErrorDescription != "" {
+		rows = append(rows, toRow("errorDescription", composed.ErrorDescription))
+	}
+	rows = append(rows,
+		toRow("text", composed.Statement.Text),
+		toRow("semanticDescription", composed.Statement.SemanticDescription),
+		toRow("syntaxDescription", composed.Statement.SyntaxDescription),
+	)
+
 	return &Result{
-		PreInput: composed.Statement.Text,
-		Rows: slices.Concat(
-			lo.Ternary(composed.ErrorDescription != "",
-				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
-				nil),
-			sliceOf(
-				toRow("text", composed.Statement.Text),
-				toRow("semanticDescription", composed.Statement.SemanticDescription),
-				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
+		PreInput:    composed.Statement.Text,
+		Rows:        rows,
 		TableHeader: toTableHeader("Column", "Value"),
 	}, nil
 }
