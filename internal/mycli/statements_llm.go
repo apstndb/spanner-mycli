@@ -61,39 +61,14 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Resul
 	location := session.systemVariables.Feature.VertexAILocation
 	model := session.systemVariables.Feature.VertexAIModel
 
-	// Build the doc cache with embedded docs
-	var cacheOpts []docCacheOption
-	apiKey := devKnowledgeAPIKey()
-	if apiKey != "" {
-		apiClient := newDevKnowledgeClient(apiKey)
-		searcher := &devKnowledgeDocSearcher{client: apiClient}
-		cacheOpts = append(cacheOpts,
-			withDocFetcher(func(ctx context.Context, name string) (string, error) {
-				return searcher.GetDocument(ctx, name)
-			}),
-			withDocBatchFetcher(func(ctx context.Context, names []string) ([]DocResult, error) {
-				return searcher.BatchGetDocuments(ctx, names)
-			}),
-			withDocAPISearcher(func(ctx context.Context, query string) ([]DocSearchResult, error) {
-				return searcher.Search(ctx, query)
-			}),
-		)
-		slog.Debug("Developer Knowledge API enabled for documentation")
-	} else {
-		slog.Debug("No API key set, using embedded docs only")
-	}
-
+	// Initialize session-scoped doc cache on first GEMINI call.
 	cacheStart := time.Now()
-	cache, err := newDocCache(cacheOpts...)
+	apiKey := devKnowledgeAPIKey()
+	cache, err := session.getOrCreateDocCache(apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("create doc cache: %w", err)
+		return nil, err
 	}
-	defer cache.Close()
-
-	if err := loadEmbeddedDocs(cache); err != nil {
-		return nil, fmt.Errorf("load embedded docs: %w", err)
-	}
-	slog.Debug("GEMINI timing: docCache creation + loadEmbeddedDocs", "elapsed", time.Since(cacheStart))
+	slog.Debug("GEMINI timing: getOrCreateDocCache", "elapsed", time.Since(cacheStart))
 
 	composeStart := time.Now()
 	composed, err := geminiComposeQueryWithTools(ctx, resp, project, location, model, s.Text, cache, apiKey != "")

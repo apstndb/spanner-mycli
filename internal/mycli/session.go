@@ -107,6 +107,10 @@ type Session struct {
 	// Invalidated on schemaGeneration change (DDL execution) and TTL expiry.
 	ddlCache ddlCacheEntry
 
+	// docCache caches Spanner reference documents across GEMINI invocations.
+	// Lazily initialized on first GEMINI call; closed when session closes.
+	docCache *docCache
+
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
@@ -639,6 +643,48 @@ func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabas
 	return resp, nil
 }
 
+// getOrCreateDocCache returns the session-scoped docCache, creating it on
+// first call. The cache persists across GEMINI invocations so that API-fetched
+// documents are reused. Closed when the session closes.
+func (s *Session) getOrCreateDocCache(apiKey string) (*docCache, error) {
+	if s.docCache != nil {
+		return s.docCache, nil
+	}
+
+	var opts []docCacheOption
+	if apiKey != "" {
+		apiClient := newDevKnowledgeClient(apiKey)
+		searcher := &devKnowledgeDocSearcher{client: apiClient}
+		opts = append(opts,
+			withDocFetcher(func(ctx context.Context, name string) (string, error) {
+				return searcher.GetDocument(ctx, name)
+			}),
+			withDocBatchFetcher(func(ctx context.Context, names []string) ([]DocResult, error) {
+				return searcher.BatchGetDocuments(ctx, names)
+			}),
+			withDocAPISearcher(func(ctx context.Context, query string) ([]DocSearchResult, error) {
+				return searcher.Search(ctx, query)
+			}),
+		)
+		slog.Debug("Developer Knowledge API enabled for documentation")
+	} else {
+		slog.Debug("No API key set, using embedded docs only")
+	}
+
+	cache, err := newDocCache(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create doc cache: %w", err)
+	}
+
+	if err := loadEmbeddedDocs(cache); err != nil {
+		cache.Close()
+		return nil, fmt.Errorf("load embedded docs: %w", err)
+	}
+
+	s.docCache = cache
+	return cache, nil
+}
+
 func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
 	resp, err := s.GetDatabaseDdlCached(ctx)
 	if err != nil {
@@ -672,6 +718,10 @@ func (s *Session) Close() {
 
 	if s.cqlSession != nil {
 		s.cqlSession.Close()
+	}
+
+	if s.docCache != nil {
+		s.docCache.Close()
 	}
 
 	// No need to close tee file here as it's managed by StreamManager
