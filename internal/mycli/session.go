@@ -615,10 +615,10 @@ const ddlCacheTTL = 30 * time.Second
 // GetDatabaseDdlCached returns the cached DDL response, fetching from the API
 // only when the cache is stale (TTL expired or schema generation changed).
 func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
-	gen := s.SchemaGeneration()
-
 	s.ddlCache.mu.Lock()
 	defer s.ddlCache.mu.Unlock()
+
+	gen := s.SchemaGeneration()
 
 	if s.ddlCache.response != nil &&
 		s.ddlCache.schemaGeneration == gen &&
