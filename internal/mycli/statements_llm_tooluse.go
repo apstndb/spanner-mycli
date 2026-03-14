@@ -218,14 +218,23 @@ func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCach
 			if !ok {
 				return map[string]any{"error": "failed to fetch document: " + names[0]}
 			}
-			return map[string]any{"documents": map[string]string{names[0]: content}, "count": 1}
+			return map[string]any{"documents": map[string]any{names[0]: content}, "count": 1}
 		}
 		docs := cache.BatchGet(ctx, names)
-		docResults := make(map[string]string, len(docs))
+		fetched := make(map[string]string, len(docs))
 		for _, doc := range docs {
-			docResults[doc.Name] = doc.Content
+			fetched[doc.Name] = doc.Content
 		}
-		return map[string]any{"documents": docResults, "count": len(docs)}
+		// Report status for every requested name so the LLM knows which failed.
+		docResults := make(map[string]any, len(names))
+		for _, name := range names {
+			if content, ok := fetched[normalizeDocName(name)]; ok {
+				docResults[name] = content
+			} else {
+				docResults[name] = map[string]any{"error": "failed to fetch document"}
+			}
+		}
+		return map[string]any{"documents": docResults, "count": len(fetched)}
 
 	default:
 		return map[string]any{"error": fmt.Sprintf("unknown function: %s", fc.Name)}
