@@ -2,19 +2,16 @@ package mycli
 
 import (
 	"context"
-	"embed"
 	"fmt"
-	"io/fs"
-	"slices"
+	"log/slog"
+	"os"
 	"strings"
-
-	"github.com/samber/lo"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
-
-	"google.golang.org/protobuf/encoding/prototext"
+	"time"
 
 	"google.golang.org/genai"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 
@@ -35,62 +32,92 @@ type statement struct {
 	SemanticDescription string `json:"semanticDescription" description:"Description of text in semantics. Must describe how the request is achieved" required:"true"`
 }
 
-//go:embed official_docs/*
-var docs embed.FS
+// devKnowledgeAPIKey returns the API key for Developer Knowledge API,
+// preferring DEVELOPERKNOWLEDGE_API_KEY over GOOGLE_API_KEY.
+func devKnowledgeAPIKey() string {
+	if v := os.Getenv("DEVELOPERKNOWLEDGE_API_KEY"); v != "" {
+		return v
+	}
+	return os.Getenv("GOOGLE_API_KEY")
+}
 
 type GeminiStatement struct {
 	Text string
 }
 
 func (s *GeminiStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
-	if err != nil {
-		return nil, err
-	}
+	totalStart := time.Now()
 
-	composed, err := geminiComposeQuery(ctx, resp, session.systemVariables.Feature.VertexAIProject, session.systemVariables.Feature.VertexAILocation, session.systemVariables.Feature.VertexAIModel, s.Text)
+	ddlStart := time.Now()
+	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("GEMINI timing: GetDatabaseDdlCached", "elapsed", time.Since(ddlStart))
+
+	project := session.systemVariables.Feature.VertexAIProject
+	location := session.systemVariables.Feature.VertexAILocation
+	model := session.systemVariables.Feature.VertexAIModel
+
+	// Initialize session-scoped doc cache on first GEMINI call.
+	cacheStart := time.Now()
+	apiKey := devKnowledgeAPIKey()
+	cache, err := session.getOrCreateDocCache(apiKey)
+	if err != nil {
+		return nil, err
+	}
+	slog.Debug("GEMINI timing: getOrCreateDocCache", "elapsed", time.Since(cacheStart))
+
+	composeStart := time.Now()
+	composed, err := geminiComposeQueryWithTools(ctx, resp, project, location, model, s.Text, cache, apiKey != "")
+	if err != nil {
+		return nil, err
+	}
+	slog.Debug("GEMINI timing: geminiComposeQueryWithTools total", "elapsed", time.Since(composeStart))
+	slog.Debug("GEMINI timing: Execute total", "elapsed", time.Since(totalStart))
+
+	var rows []Row
+	if composed.ErrorDescription != "" {
+		rows = append(rows, toRow("errorDescription", composed.ErrorDescription))
+	}
+	rows = append(rows,
+		toRow("text", composed.Statement.Text),
+		toRow("semanticDescription", composed.Statement.SemanticDescription),
+		toRow("syntaxDescription", composed.Statement.SyntaxDescription),
+	)
 
 	return &Result{
-		PreInput: composed.Statement.Text,
-		Rows: slices.Concat(
-			lo.Ternary(composed.ErrorDescription != "",
-				sliceOf(toRow("errorDescription", composed.ErrorDescription)),
-				nil),
-			sliceOf(
-				toRow("text", composed.Statement.Text),
-				toRow("semanticDescription", composed.Statement.SemanticDescription),
-				toRow("syntaxDescription", composed.Statement.SyntaxDescription))),
+		PreInput:    composed.Statement.Text,
+		Rows:        rows,
 		TableHeader: toTableHeader("Column", "Value"),
 	}, nil
 }
 
-func readFiles(fsys fs.FS, root string, pred func(string, fs.DirEntry) bool) ([][]byte, error) {
-	var files [][]byte
-	err := fs.WalkDir(fsys, root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+// geminiSystemPrompt builds the system prompt with DDL and proto descriptors.
+func geminiSystemPrompt(resp *adminpb.GetDatabaseDdlResponse, fds *descriptorpb.FileDescriptorSet) string {
+	return `You are a Cloud Spanner query composer. Your task is to compose valid queries based on the user's request.
 
-		if !pred(path, d) {
-			return nil
-		}
-		b, err := docs.ReadFile(path)
-		if err != nil {
-			return err
-		}
+Rules:
+- Answer in valid Spanner GoogleSQL syntax or valid Spanner Graph GQL syntax.
+- Prefer SQL query rather than GQL query unless GQL is explicitly requested.
+- GoogleSQL syntax is not PostgreSQL syntax.
+- GQL requires output column names.
+- GQL is neither GraphQL nor Cypher.
+- If outputting GQL, double-check DDL definitions to ensure edge directions are correct.
+- The output must be terminated with a semicolon.
+- NULL_FILTERED indexes can be dropped using DROP INDEX, not DROP NULL_FILTERED INDEX.
 
-		files = append(files, b)
-		return nil
-	})
-	return files, err
+Here is the database DDL:
+` + "```\n" + strings.Join(resp.GetStatements(), ";\n") + ";\n```" + `
+
+Here is the prototext of File Proto Descriptors:
+` + "```\n" + prototext.Format(fds) + "```"
 }
 
-func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, location, model, s string) (*output, error) {
+// geminiComposeQueryWithTools uses Gemini's function calling to dynamically
+// fetch and search documentation via the docCache.
+func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, location, model, s string, cache *docCache, hasAPI bool) (*output, error) {
+	clientStart := time.Now()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:     project,
 		Location:    location,
@@ -100,46 +127,84 @@ func geminiComposeQuery(ctx context.Context, resp *adminpb.GetDatabaseDdlRespons
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("GEMINI timing: genai.NewClient", "elapsed", time.Since(clientStart))
 
 	var fds descriptorpb.FileDescriptorSet
-	err = proto.Unmarshal(resp.GetProtoDescriptors(), &fds)
-	if err != nil {
+	if err := proto.Unmarshal(resp.GetProtoDescriptors(), &fds); err != nil {
 		return nil, err
 	}
 
-	fileContents, err := readFiles(docs, "official_docs", func(path string, d fs.DirEntry) bool {
-		return !d.IsDir() && strings.HasSuffix(path, ".md") && !strings.HasSuffix(path, "README.md")
-	})
-	if err != nil {
-		return nil, err
+	basePrompt := geminiSystemPrompt(resp, &fds)
+	toolPrompt := basePrompt + buildToolGuidance(cache, hasAPI)
+
+	// Phase 1: Tool-use loop to gather documentation context
+	history := []*genai.Content{
+		{Role: genai.RoleUser, Parts: []*genai.Part{genai.NewPartFromText(s)}},
 	}
 
-	parts := sliceOf(genai.NewPartFromText(s))
-	for _, content := range fileContents {
-		parts = append(parts, genai.NewPartFromBytes(content, "text/markdown"))
-	}
+	tools := buildToolDeclarations(hasAPI)
 
-	systemPrompt := `
-Answer in valid Spanner GoogleSQL syntax or valid Spanner Graph GQL syntax.
-Prefer SQL query rather than GQL query unless GQL is explicitly requested.
-GoogleSQL syntax is not PostgreSQL syntax.
-Remember GQL requires output column names.
-Remember GQL is neither of GraphQL nor other graph query languages like Cypher.
-If you are outputting GQL, you should double-check your DDL definitions to ensure that the edge directions are correct.
-The output must be valid query.
-The output must be terminated with terminating semicolon.
-NULL_FILTERED indexes can be dropped using DROP INDEX statement, not DROP NULL_FILTERED INDEX statement.
-Here is the DDL.
-` +
-		fmt.Sprintf("```\n%v\n```", strings.Join(resp.GetStatements(), ";\n")+";") + `
-Here is the prototext of File Proto Descriptors.
-` + fmt.Sprintf("```\n%v\n```", prototext.Format(&fds))
-
-	return genaischema.GenerateObjectContent[*output](ctx, client, model,
-		[]*genai.Content{{Role: genai.RoleUser, Parts: parts}},
-		&genai.GenerateContentConfig{
+	phase1Start := time.Now()
+	for round := range maxToolCallRounds {
+		roundStart := time.Now()
+		result, err := client.Models.GenerateContent(ctx, model, history, &genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
-				Parts: sliceOf(genai.NewPartFromText(systemPrompt)),
+				Parts: []*genai.Part{genai.NewPartFromText(toolPrompt)},
+			},
+			Tools: tools,
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingLevel: genai.ThinkingLevelMinimal,
 			},
 		})
+		if err != nil {
+			return nil, fmt.Errorf("tool-use round %d: %w", round, err)
+		}
+		apiElapsed := time.Since(roundStart)
+
+		functionCalls := result.FunctionCalls()
+		if len(functionCalls) == 0 {
+			slog.Debug("GEMINI timing: Phase 1 complete", "rounds", round+1, "total_elapsed", time.Since(phase1Start), "last_api_call", apiElapsed)
+			break
+		}
+
+		if len(result.Candidates) > 0 {
+			history = append(history, &genai.Content{
+				Role:  genai.RoleModel,
+				Parts: result.Candidates[0].Content.Parts,
+			})
+		}
+
+		toolStart := time.Now()
+		var responseParts []*genai.Part
+		for _, fc := range functionCalls {
+			slog.Debug("Gemini tool call", "function", fc.Name, "args", fc.Args)
+			response := executeToolCall(ctx, fc, cache)
+			responseParts = append(responseParts, genai.NewPartFromFunctionResponse(fc.Name, response))
+		}
+		slog.Debug("GEMINI timing: Phase 1 round", "round", round, "api_call", apiElapsed, "tool_exec", time.Since(toolStart), "functions", len(functionCalls))
+
+		history = append(history, &genai.Content{
+			Role:  genai.RoleUser,
+			Parts: responseParts,
+		})
+
+		if round == maxToolCallRounds-1 {
+			slog.Debug("GEMINI timing: Phase 1 exhausted all rounds", "rounds", maxToolCallRounds, "total_elapsed", time.Since(phase1Start))
+		}
+	}
+
+	// Phase 2: Generate structured output using context from Phase 1
+	phase2Start := time.Now()
+	result, err := genaischema.GenerateObjectContent[*output](ctx, client, model,
+		history,
+		&genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Parts: []*genai.Part{genai.NewPartFromText(basePrompt)},
+			},
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingLevel: genai.ThinkingLevelLow,
+			},
+		})
+	slog.Debug("GEMINI timing: Phase 2 (structured output)", "elapsed", time.Since(phase2Start))
+	return result, err
 }

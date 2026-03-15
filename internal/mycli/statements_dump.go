@@ -316,9 +316,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 
 // exportDDL exports database DDL statements
 func exportDDL(ctx context.Context, session *Session) (*Result, error) {
-	ddl, err := session.adminClient.GetDatabaseDdl(ctx, &dbadminpb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
+	ddl, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}

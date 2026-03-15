@@ -1,1 +1,0 @@
-This directory contains ZetaSQL official docs to be read by GenAI.

@@ -1979,6 +1979,8 @@ You can use `GEMINI` statement by setting `vertexai_project` in config file.
 vertexai_project = example-project
 ```
 
+Built-in Spanner reference docs are always available. Setting `DEVELOPERKNOWLEDGE_API_KEY` or `GOOGLE_API_KEY` enables dynamic documentation lookup via the Developer Knowledge API for more comprehensive coverage.
+
 The generated query is automatically filled in the prompt.
 
 ```

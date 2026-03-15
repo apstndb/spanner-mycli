@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/ngicks/go-iterator-helper/hiter"
@@ -23,9 +22,7 @@ type ShowCreateStatement struct {
 }
 
 func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	ddlResponse, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
+	ddlResponse, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -130,9 +127,7 @@ WHERE
 type ShowDdlsStatement struct{}
 
 func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	resp, err := session.adminClient.GetDatabaseDdl(ctx, &databasepb.GetDatabaseDdlRequest{
-		Database: session.DatabasePath(),
-	})
+	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}
