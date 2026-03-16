@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/spanner"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -666,6 +667,40 @@ func TestSystemVariables_EnumTypes(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("WidthStrategy", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			value       string
+			want        enums.WidthStrategy
+			expectError bool
+		}{
+			{value: "GREEDY_FREQUENCY", want: enums.WidthStrategyGreedyFrequency},
+			{value: "greedy_frequency", want: enums.WidthStrategyGreedyFrequency},
+			{value: "PROPORTIONAL", want: enums.WidthStrategyProportional},
+			{value: "proportional", want: enums.WidthStrategyProportional},
+			{value: "MARGINAL_COST", want: enums.WidthStrategyMarginalCost},
+			{value: "marginal_cost", want: enums.WidthStrategyMarginalCost},
+			{value: "INVALID_STRATEGY", expectError: true},
+		}
+		for _, test := range tests {
+			t.Run(test.value, func(t *testing.T) {
+				t.Parallel()
+				sysVars := newSystemVariablesWithDefaultsForTest()
+				err := sysVars.SetFromSimple("CLI_WIDTH_STRATEGY", test.value)
+				if test.expectError {
+					if err == nil {
+						t.Errorf("expected error for value %q, but got none", test.value)
+					}
+					return
+				}
+				assertNoError(t, err)
+				if sysVars.Display.WidthStrategy != test.want {
+					t.Errorf("WidthStrategy should be %v, but %v", test.want, sysVars.Display.WidthStrategy)
+				}
+			})
+		}
+	})
 }
 
 // Time and Duration Variable Tests
@@ -967,6 +1002,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_DATABASE_DIALECT":         "GOOGLE_STANDARD_SQL",
 			"CLI_QUERY_MODE":               "PROFILE",
 			"CLI_EXPLAIN_FORMAT":           "CURRENT",
+			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
 		}
 		for name, value := range stringTests {
 			t.Run(name, func(t *testing.T) {
