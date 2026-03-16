@@ -76,6 +76,17 @@ const (
 	StyledModeFalse                   // Never use ANSI styling
 )
 
+// WidthStrategy represents the column width allocation algorithm.
+//
+//go:generate go tool enumer -type=WidthStrategy -trimprefix=WidthStrategy -transform=snake_upper
+type WidthStrategy int
+
+const (
+	WidthStrategyGreedyFrequency WidthStrategy = iota // Default: frequency-based greedy expansion
+	WidthStrategyProportional                         // Proportional allocation based on natural width
+	WidthStrategyMarginalCost                         // Marginal cost minimization via max-heap
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

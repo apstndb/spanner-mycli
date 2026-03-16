@@ -236,7 +236,7 @@ func (f *TableStreamingFormatter) newCondition() *tabwrap.Condition {
 // (may include verbose type information).
 func (f *TableStreamingFormatter) calculateWidths(columns []string, headersForWidth []string, previewRows []Row) {
 	wc := &widthCalculator{Condition: f.newCondition()}
-	f.widths = CalculateWidth(columns, headersForWidth, wc, f.screenWidth, previewRows)
+	f.widths = CalculateWidthWithStrategy(f.config.WidthStrategy, columns, headersForWidth, wc, f.screenWidth, previewRows)
 }
 
 // wrapHeaders wraps headers according to calculated widths.

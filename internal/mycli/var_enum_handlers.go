@@ -267,3 +267,12 @@ func StyledModeVar(ptr *enums.StyledMode, desc string) *EnumVar[enums.StyledMode
 		description: desc,
 	}
 }
+
+// WidthStrategyVar creates an enum handler for WidthStrategy
+func WidthStrategyVar(ptr *enums.WidthStrategy, desc string) *EnumVar[enums.WidthStrategy] {
+	return &EnumVar[enums.WidthStrategy]{
+		ptr:         ptr,
+		values:      enumerValues(enums.WidthStrategyValues()),
+		description: desc,
+	}
+}

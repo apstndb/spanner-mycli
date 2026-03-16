@@ -219,6 +219,8 @@ func (r *VarRegistry) registerAll() {
 		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
 	r.Register("CLI_STYLED_OUTPUT", StyledModeVar(&sv.Display.StyledOutput,
 		"Controls ANSI styling in table output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled). Default is AUTO."))
+	r.Register("CLI_WIDTH_STRATEGY", WidthStrategyVar(&sv.Display.WidthStrategy,
+		"Controls column width allocation algorithm: GREEDY_FREQUENCY (default, frequency-based greedy), PROPORTIONAL (proportional to natural width), MARGINAL_COST (wrap-line minimization via max-heap)."))
 
 	// === String variables (15+) ===
 	r.Register("OPTIMIZER_VERSION", StringVar(&sv.Query.OptimizerVersion,

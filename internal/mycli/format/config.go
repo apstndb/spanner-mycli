@@ -2,6 +2,8 @@ package format
 
 import (
 	"io"
+
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // Cell is the interface for a single formatted cell.
@@ -109,7 +111,8 @@ type FormatConfig struct {
 	SQLTableName    string
 	SQLBatchSize    int64
 	PreviewRows     int64
-	Styled          bool // When true, table output uses Cell.Format() (may include ANSI codes). When false, uses RawText().
+	Styled          bool                // When true, table output uses Cell.Format() (may include ANSI codes). When false, uses RawText().
+	WidthStrategy   enums.WidthStrategy // Column width allocation algorithm. Zero value = GreedyFrequency (default).
 }
 
 // FormatFunc is a function type that formats and writes result data.
