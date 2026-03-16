@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
@@ -182,4 +183,39 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
 	return adjustWidths
+}
+
+// wrapLinesForWidth counts how many visual lines a string occupies at the given column width.
+// Used by MarginalCostStrategy and tests. Returns at least 1.
+func wrapLinesForWidth(wc *widthCalculator, s string, colWidth int) int {
+	if colWidth <= 0 {
+		return 1
+	}
+	total := 0
+	for line := range splitLines(s) {
+		w := wc.StringWidth(line)
+		if w <= colWidth {
+			total++
+		} else {
+			total += (w + colWidth - 1) / colWidth
+		}
+	}
+	return max(total, 1)
+}
+
+// splitLines splits s on newlines, returning an iterator.
+func splitLines(s string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for {
+			i := strings.IndexByte(s, '\n')
+			if i < 0 {
+				yield(s)
+				return
+			}
+			if !yield(s[:i]) {
+				return
+			}
+			s = s[i+1:]
+		}
+	}
 }

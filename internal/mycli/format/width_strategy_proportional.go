@@ -17,7 +17,6 @@ package format
 import (
 	"slices"
 
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
 )
 
@@ -92,49 +91,4 @@ func (ProportionalStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 	}
 
 	return adjustedWidths
-}
-
-// wrapLinesForWidth counts how many visual lines a string occupies at the given column width.
-// Used by MarginalCostStrategy. Returns at least 1.
-func wrapLinesForWidth(wc *widthCalculator, s string, colWidth int) int {
-	if colWidth <= 0 {
-		return 1
-	}
-	lines := slices.Collect(hiter.Map(
-		func(line string) int {
-			w := wc.StringWidth(line)
-			if w <= colWidth {
-				return 1
-			}
-			return (w + colWidth - 1) / colWidth
-		},
-		splitLines(s),
-	))
-	return max(lo.Sum(lines), 1)
-}
-
-// splitLines splits s on newlines, returning an iterator.
-func splitLines(s string) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for {
-			i := indexOf(s, '\n')
-			if i < 0 {
-				yield(s)
-				return
-			}
-			if !yield(s[:i]) {
-				return
-			}
-			s = s[i+1:]
-		}
-	}
-}
-
-func indexOf(s string, b byte) int {
-	for i := range len(s) {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
 }
