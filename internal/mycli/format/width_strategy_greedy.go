@@ -17,7 +17,6 @@ package format
 import (
 	"fmt"
 	"log/slog"
-	"math"
 	"slices"
 
 	"github.com/ngicks/go-iterator-helper/hiter"
@@ -32,8 +31,15 @@ type GreedyFrequencyStrategy struct{}
 func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWidth int,
 	headers []string, rows []Row, _ []ColumnHint,
 ) []int {
+	sumWidths := func(ws []int) int {
+		total := 0
+		for _, w := range ws {
+			total += w
+		}
+		return total
+	}
 	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
-		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
+		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-sumWidths(adjustedWidths), adjustedWidths)
 	}
 
 	adjustedWidths := adjustByHeader(headers, availableWidth)
@@ -45,15 +51,17 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 
 	slog.Debug("adjustByName", "info", formatIntermediate(availableWidth, adjustedWidths))
 
-	var transposedRows [][]string
+	transposedRows := make([][]string, len(headers))
+	headerRow := StringsToRow(headers...)
 	for columnIdx := range len(headers) {
-		transposedRows = append(transposedRows, slices.Collect(
-			hiter.Map(
-				func(in Row) string {
-					return lo.Must(lo.Nth(in, columnIdx)).RawText()
-				},
-				hiter.Concat(hiter.Once(StringsToRow(headers...)), slices.Values(rows)),
-			)))
+		col := make([]string, 0, 1+len(rows))
+		col = append(col, headerRow[columnIdx].RawText())
+		for _, row := range rows {
+			if columnIdx < len(row) {
+				col = append(col, row[columnIdx].RawText())
+			}
+		}
+		transposedRows[columnIdx] = col
 	}
 
 	widthCounts := wc.calculateWidthCounts(adjustedWidths, transposedRows)
@@ -67,7 +75,7 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 			slices.Values(widthCounts))
 
 		// find the largest count idx within available width
-		idx, target := wc.maxIndex(availableWidth-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
+		idx, target := wc.maxIndex(availableWidth-sumWidths(adjustedWidths), adjustedWidths, firstCounts)
 		if idx < 0 || target.Count() < 1 {
 			break
 		}
@@ -81,23 +89,24 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 	slog.Debug("semi final", "info", formatIntermediate(availableWidth, adjustedWidths))
 
 	// Add rest to the longest shortage column.
-	// NOTE: When all columns fit within their allocated width (no remaining
-	// widthCounts), idx will be -1 and the remainder is not distributed.
-	// This matches the original calculateOptimalWidth behavior. Improving this
-	// to always use the full available width is left for a future refactor.
-	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
-		return hiter.Max(hiter.Map(WidthCount.Length, slices.Values(item)))
-	})
-
-	idx, _ := MaxWithIdx(math.MinInt, hiter.Unify(
-		func(longestWidth, adjustedWidth int) int {
-			return longestWidth - adjustedWidth
-		},
-		hiter.Pairs(slices.Values(longestWidths), slices.Values(adjustedWidths))))
-
-	if idx != -1 {
-		adjustedWidths[idx] += availableWidth - lo.Sum(adjustedWidths)
+	// Fall back to column 0 when all columns fit (no remaining widthCounts).
+	longestWidths := make([]int, len(headers))
+	for i, wcs := range widthCounts {
+		for _, wc := range wcs {
+			longestWidths[i] = max(longestWidths[i], wc.Length())
+		}
 	}
+
+	bestIdx := 0
+	bestShortage := longestWidths[0] - adjustedWidths[0]
+	for i := 1; i < len(headers); i++ {
+		shortage := longestWidths[i] - adjustedWidths[i]
+		if shortage > bestShortage {
+			bestShortage = shortage
+			bestIdx = i
+		}
+	}
+	adjustedWidths[bestIdx] += availableWidth - sumWidths(adjustedWidths)
 
 	slog.Debug("final", "info", formatIntermediate(availableWidth, adjustedWidths))
 

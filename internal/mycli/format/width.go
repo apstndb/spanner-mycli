@@ -75,15 +75,6 @@ func (wc *widthCalculator) maxWidth(s string) int {
 		stringsiter.SplitFunc(s, 0, stringsiter.CutNewLine)))
 }
 
-func clipToMax[S interface{ ~[]E }, E cmp.Ordered](s S, maxValue E) iter.Seq[E] {
-	return hiter.Map(
-		func(in E) E {
-			return min(in, maxValue)
-		},
-		slices.Values(s),
-	)
-}
-
 func asc[T cmp.Ordered](left, right T) int {
 	switch {
 	case left < right:
@@ -106,19 +97,29 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 		return vs, remains
 	}
 
+	// Build sorted unique thresholds (descending) once.
+	rev := slices.SortedFunc(slices.Values(lo.Uniq(vs)), desc)
+
 	curVs := vs
-	for i := 1; ; i++ {
-		rev := slices.SortedFunc(slices.Values(lo.Uniq(vs)), desc)
-		v, ok := hiter.Nth(i, slices.Values(rev))
-		if !ok {
-			break
+	for i := 1; i < len(rev); i++ {
+		threshold := rev[i]
+		clipped := make([]int, len(vs))
+		total := 0
+		for j, v := range vs {
+			clipped[j] = min(v, threshold)
+			total += clipped[j]
 		}
-		curVs = slices.Collect(clipToMax(vs, v))
-		if lo.Sum(curVs) <= limit {
+		curVs = clipped
+		if total <= limit {
 			break
 		}
 	}
-	return curVs, limit - lo.Sum(curVs)
+
+	total := 0
+	for _, v := range curVs {
+		total += v
+	}
+	return curVs, limit - total
 }
 
 var invalidWidthCount = WidthCount{
