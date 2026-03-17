@@ -76,17 +76,21 @@ func (ProportionalStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 			}
 		}
 
-		// Assign leftover to column with largest remaining deficit.
+		// Assign leftover (from integer division rounding) to the column with
+		// the largest remaining deficit. If all columns have reached their
+		// natural width, fall back to the first column to ensure the full
+		// available width is always used.
 		leftover := remaining - distributed
-		if leftover > 0 {
+		if leftover > 0 && numCols > 0 {
 			remainingDeficits := make([]int, numCols)
 			for i := range numCols {
 				remainingDeficits[i] = naturalWidths[i] - adjustedWidths[i]
 			}
 			idx, _ := MaxWithIdx(0, slices.Values(remainingDeficits))
-			if idx >= 0 {
-				adjustedWidths[idx] += leftover
+			if idx < 0 {
+				idx = 0
 			}
+			adjustedWidths[idx] += leftover
 		}
 	}
 

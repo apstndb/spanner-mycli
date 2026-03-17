@@ -81,6 +81,10 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 	slog.Debug("semi final", "info", formatIntermediate(availableWidth, adjustedWidths))
 
 	// Add rest to the longest shortage column.
+	// NOTE: When all columns fit within their allocated width (no remaining
+	// widthCounts), idx will be -1 and the remainder is not distributed.
+	// This matches the original calculateOptimalWidth behavior. Improving this
+	// to always use the full available width is left for a future refactor.
 	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
 		return hiter.Max(hiter.Map(WidthCount.Length, slices.Values(item)))
 	})
