@@ -46,7 +46,6 @@ func BenchmarkWidthStrategies(b *testing.B) {
 	for _, size := range sizes {
 		headers, rows := generateRows(size.rows, size.cols)
 		hints := make([]ColumnHint, size.cols)
-		allRows := append([]Row{StringsToRow(headers...)}, rows...)
 
 		for _, ws := range enums.WidthStrategyValues() {
 			strategy := NewWidthStrategy(ws)
@@ -59,7 +58,7 @@ func BenchmarkWidthStrategies(b *testing.B) {
 
 				b.ResetTimer()
 				for range b.N {
-					strategy.CalculateWidths(wc, availableWidth, headers, allRows, hints)
+					strategy.CalculateWidths(wc, availableWidth, headers, rows, hints)
 				}
 			})
 		}
