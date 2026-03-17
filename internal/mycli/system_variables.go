@@ -85,11 +85,12 @@ type DisplayVars struct {
 	ParsedAnalyzeColumns []columnRenderDef
 	InlineStats          string // CLI_INLINE_STATS
 	ParsedInlineStats    []inlineStatsDef
-	SQLTableName         string           // CLI_SQL_TABLE_NAME
-	SQLBatchSize         int64            // CLI_SQL_BATCH_SIZE
-	EnableProgressBar    bool             // CLI_ENABLE_PROGRESS_BAR
-	StyledOutput         enums.StyledMode // CLI_STYLED_OUTPUT
-	TypeStylesRaw        string           // CLI_TYPE_STYLES (raw string, parsed into systemVariables.typeStyles/nullStyle)
+	SQLTableName         string              // CLI_SQL_TABLE_NAME
+	SQLBatchSize         int64               // CLI_SQL_BATCH_SIZE
+	EnableProgressBar    bool                // CLI_ENABLE_PROGRESS_BAR
+	StyledOutput         enums.StyledMode    // CLI_STYLED_OUTPUT
+	WidthStrategy        enums.WidthStrategy // CLI_WIDTH_STRATEGY
+	TypeStylesRaw        string              // CLI_TYPE_STYLES (raw string, parsed into systemVariables.typeStyles/nullStyle)
 }
 
 // QueryVars holds query execution configuration.
@@ -215,6 +216,7 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		SQLBatchSize:    sv.Display.SQLBatchSize,
 		PreviewRows:     sv.Query.TablePreviewRows,
 		Styled:          styled,
+		WidthStrategy:   sv.Display.WidthStrategy,
 	}
 }
 

@@ -2,14 +2,15 @@ package format
 
 import (
 	"cmp"
-	"fmt"
 	"iter"
 	"log/slog"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
@@ -19,92 +20,27 @@ import (
 // Prevents very short columns from splitting common short values (NULL, true, false, etc.).
 const minColumnWidth = 4
 
-// CalculateWidth calculates optimal column widths for table rendering.
-// columnNames are the plain column names, verboseHeaders are optionally
-// the verbose header strings (with type info, may contain newlines).
-// Both are used for width calculation.
+// CalculateWidth calculates optimal column widths for table rendering using the default
+// GreedyFrequencyStrategy. columnNames are the plain column names, verboseHeaders are
+// optionally the verbose header strings (with type info, may contain newlines).
 func CalculateWidth(columnNames []string, verboseHeaders []string, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	return calculateOptimalWidth(wc, screenWidth, columnNames, slices.Concat([]Row{StringsToRow(verboseHeaders...)}, rows))
+	return CalculateWidthWithStrategy(enums.WidthStrategyGreedyFrequency, columnNames, verboseHeaders, wc, screenWidth, rows)
 }
 
-func calculateOptimalWidth(wc *widthCalculator, screenWidth int, header []string, rows []Row) []int {
+// CalculateWidthWithStrategy calculates optimal column widths using the specified strategy.
+// verboseHeaders are passed as the headers parameter so that strategies count them exactly once.
+func CalculateWidthWithStrategy(ws enums.WidthStrategy, columnNames []string, verboseHeaders []string, wc *widthCalculator, screenWidth int, rows []Row) []int {
 	// table overhead is:
 	// len(`|  |`) +
 	// len(` | `) * len(columns) - 1
-	overheadWidth := 4 + 3*(len(header)-1)
+	overheadWidth := 4 + 3*(len(columnNames)-1)
+	availableWidth := screenWidth - overheadWidth
 
-	// don't mutate
-	termWidthWithoutOverhead := screenWidth - overheadWidth
+	slog.Debug("screen width info", "screenWidth", screenWidth, "availableWidth", availableWidth)
 
-	slog.Debug("screen width info", "screenWidth", screenWidth, "remainsWidth", termWidthWithoutOverhead)
-
-	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
-		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
-	}
-
-	adjustedWidths := adjustByHeader(header, termWidthWithoutOverhead)
-
-	// Enforce minimum column width for readability.
-	// Ensures short values like "NULL", "true", numbers are not split across lines.
-	for i := range adjustedWidths {
-		adjustedWidths[i] = max(adjustedWidths[i], minColumnWidth)
-	}
-
-	slog.Debug("adjustByName", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-
-	var transposedRows [][]string
-	for columnIdx := range len(header) {
-		transposedRows = append(transposedRows, slices.Collect(
-			hiter.Map(
-				func(in Row) string {
-					return lo.Must(lo.Nth(in, columnIdx)).RawText() // columnIdx represents the index of the column in the row
-				},
-				hiter.Concat(hiter.Once(StringsToRow(header...)), slices.Values(rows)),
-			)))
-	}
-
-	widthCounts := wc.calculateWidthCounts(adjustedWidths, transposedRows)
-	for {
-		slog.Debug("widthCounts", "counts", widthCounts)
-
-		firstCounts := hiter.Map(
-			func(wcs []WidthCount) WidthCount {
-				return lo.FirstOr(wcs, invalidWidthCount)
-			},
-			slices.Values(widthCounts))
-
-		// find the largest count idx within available width
-		idx, target := wc.maxIndex(termWidthWithoutOverhead-lo.Sum(adjustedWidths), adjustedWidths, firstCounts)
-		if idx < 0 || target.Count() < 1 {
-			break
-		}
-
-		widthCounts[idx] = widthCounts[idx][1:]
-		adjustedWidths[idx] = target.Length()
-
-		slog.Debug("adjusting", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-	}
-
-	slog.Debug("semi final", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-
-	// Add rest to the longest shortage column.
-	longestWidths := lo.Map(widthCounts, func(item []WidthCount, _ int) int {
-		return hiter.Max(hiter.Map(WidthCount.Length, slices.Values(item)))
-	})
-
-	idx, _ := MaxWithIdx(math.MinInt, hiter.Unify(
-		func(longestWidth, adjustedWidth int) int {
-			return longestWidth - adjustedWidth
-		},
-		hiter.Pairs(slices.Values(longestWidths), slices.Values(adjustedWidths))))
-
-	if idx != -1 {
-		adjustedWidths[idx] += termWidthWithoutOverhead - lo.Sum(adjustedWidths)
-	}
-
-	slog.Debug("final", "info", formatIntermediate(termWidthWithoutOverhead, adjustedWidths))
-
-	return adjustedWidths
+	hints := make([]ColumnHint, len(columnNames))
+	strategy := NewWidthStrategy(ws)
+	return strategy.CalculateWidths(wc, availableWidth, verboseHeaders, rows, hints)
 }
 
 // MaxWithIdx returns the index and value of the maximum element in seq.
@@ -246,4 +182,39 @@ func adjustByHeader(headers []string, availableWidth int) []int {
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
 	return adjustWidths
+}
+
+// wrapLinesForWidth counts how many visual lines a string occupies at the given column width.
+// Used by MarginalCostStrategy and tests. Returns at least 1.
+func wrapLinesForWidth(wc *widthCalculator, s string, colWidth int) int {
+	if colWidth <= 0 {
+		return 1
+	}
+	total := 0
+	for line := range splitLines(s) {
+		w := wc.StringWidth(line)
+		if w <= colWidth {
+			total++
+		} else {
+			total += (w + colWidth - 1) / colWidth
+		}
+	}
+	return max(total, 1)
+}
+
+// splitLines splits s on newlines, returning an iterator.
+func splitLines(s string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for {
+			i := strings.IndexByte(s, '\n')
+			if i < 0 {
+				yield(s)
+				return
+			}
+			if !yield(s[:i]) {
+				return
+			}
+			s = s[i+1:]
+		}
+	}
 }
