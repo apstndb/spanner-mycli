@@ -31,6 +31,10 @@ type GreedyFrequencyStrategy struct{}
 func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWidth int,
 	headers []string, rows []Row, _ []ColumnHint,
 ) []int {
+	if len(headers) == 0 {
+		return []int{}
+	}
+
 	sumWidths := func(ws []int) int {
 		total := 0
 		for _, w := range ws {
