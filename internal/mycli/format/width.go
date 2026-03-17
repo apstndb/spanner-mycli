@@ -28,9 +28,8 @@ func CalculateWidth(columnNames []string, verboseHeaders []string, wc *widthCalc
 }
 
 // CalculateWidthWithStrategy calculates optimal column widths using the specified strategy.
+// verboseHeaders are passed as the headers parameter so that strategies count them exactly once.
 func CalculateWidthWithStrategy(ws enums.WidthStrategy, columnNames []string, verboseHeaders []string, wc *widthCalculator, screenWidth int, rows []Row) []int {
-	allRows := slices.Concat([]Row{StringsToRow(verboseHeaders...)}, rows)
-
 	// table overhead is:
 	// len(`|  |`) +
 	// len(` | `) * len(columns) - 1
@@ -41,7 +40,7 @@ func CalculateWidthWithStrategy(ws enums.WidthStrategy, columnNames []string, ve
 
 	hints := make([]ColumnHint, len(columnNames))
 	strategy := NewWidthStrategy(ws)
-	return strategy.CalculateWidths(wc, availableWidth, columnNames, allRows, hints)
+	return strategy.CalculateWidths(wc, availableWidth, verboseHeaders, rows, hints)
 }
 
 // MaxWithIdx returns the index and value of the maximum element in seq.
