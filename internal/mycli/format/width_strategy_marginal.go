@@ -92,7 +92,7 @@ func (MarginalCostStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 	}
 
 	// Distribute any leftover to the column with most remaining wrap-lines.
-	if remaining > 0 {
+	if remaining > 0 && numCols > 0 {
 		maxIdx := 0
 		maxWrap := currentWrapLines[0]
 		for i := 1; i < numCols; i++ {
