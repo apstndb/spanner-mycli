@@ -64,22 +64,24 @@ func (ProportionalStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 
 	// Distribute remaining space proportionally to deficit.
 	remaining := availableWidth - lo.Sum(adjustedWidths)
-	if remaining > 0 && totalDeficit > 0 {
+	if remaining > 0 {
 		distributed := 0
-		for i := range numCols {
-			if deficits[i] > 0 {
-				share := remaining * deficits[i] / totalDeficit
-				// Don't exceed the natural width.
-				share = min(share, deficits[i])
-				adjustedWidths[i] += share
-				distributed += share
+		if totalDeficit > 0 {
+			for i := range numCols {
+				if deficits[i] > 0 {
+					share := remaining * deficits[i] / totalDeficit
+					// Don't exceed the natural width.
+					share = min(share, deficits[i])
+					adjustedWidths[i] += share
+					distributed += share
+				}
 			}
 		}
 
-		// Assign leftover (from integer division rounding) to the column with
-		// the largest remaining deficit. If all columns have reached their
-		// natural width, fall back to the first column to ensure the full
-		// available width is always used.
+		// Assign leftover (from integer division rounding, or all of remaining
+		// if totalDeficit was 0) to the column with the largest remaining
+		// deficit. Fall back to column 0 to ensure the full available width
+		// is always used.
 		leftover := remaining - distributed
 		if leftover > 0 && numCols > 0 {
 			remainingDeficits := make([]int, numCols)

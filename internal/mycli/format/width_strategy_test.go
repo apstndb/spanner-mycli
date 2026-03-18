@@ -186,6 +186,78 @@ func TestWrapLinesForWidth(t *testing.T) {
 	}
 }
 
+// TestGreedyFrequencyStrategy_ShortRows ensures GreedyFrequencyStrategy
+// handles rows shorter than headers without panicking.
+func TestGreedyFrequencyStrategy_ShortRows(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+	strategy := GreedyFrequencyStrategy{}
+
+	headers := []string{"id", "name", "description"}
+	rows := []Row{
+		StringsToRow("1", "Alice"), // only 2 columns, header has 3
+		StringsToRow("2"),          // only 1 column
+	}
+
+	widths := strategy.CalculateWidths(wc, 60, headers, rows, make([]ColumnHint, 3))
+	if len(widths) != 3 {
+		t.Fatalf("len(widths) = %d, want 3", len(widths))
+	}
+	for i, w := range widths {
+		if w < minColumnWidth {
+			t.Errorf("widths[%d] = %d, want >= %d", i, w, minColumnWidth)
+		}
+	}
+}
+
+// TestProportionalStrategy_ZeroDeficit ensures ProportionalStrategy uses the
+// full available width even when all columns already fit (totalDeficit == 0).
+func TestProportionalStrategy_ZeroDeficit(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+	strategy := ProportionalStrategy{}
+
+	// Very short data with large available width — all columns fit easily.
+	headers := []string{"a", "b"}
+	rows := []Row{StringsToRow("1", "2")}
+
+	availableWidth := 80
+	widths := strategy.CalculateWidths(wc, availableWidth, headers, rows, make([]ColumnHint, 2))
+
+	totalWidth := 0
+	for _, w := range widths {
+		totalWidth += w
+	}
+	if totalWidth != availableWidth {
+		t.Errorf("total width = %d, want %d (full available width)", totalWidth, availableWidth)
+	}
+}
+
+// TestGreedyFrequencyStrategy_FullWidth ensures GreedyFrequencyStrategy uses
+// the full available width even when all columns fit.
+func TestGreedyFrequencyStrategy_FullWidth(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+	strategy := GreedyFrequencyStrategy{}
+
+	headers := []string{"a", "b"}
+	rows := []Row{StringsToRow("1", "2")}
+
+	availableWidth := 80
+	widths := strategy.CalculateWidths(wc, availableWidth, headers, rows, make([]ColumnHint, 2))
+
+	totalWidth := 0
+	for _, w := range widths {
+		totalWidth += w
+	}
+	if totalWidth != availableWidth {
+		t.Errorf("total width = %d, want %d (full available width)", totalWidth, availableWidth)
+	}
+}
+
 // TestStrategyMinColumnWidth ensures all strategies respect minColumnWidth.
 func TestStrategyMinColumnWidth(t *testing.T) {
 	t.Parallel()
