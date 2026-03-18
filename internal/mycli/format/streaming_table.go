@@ -162,6 +162,7 @@ func (f *TableStreamingFormatter) WriteRow(row Row) error {
 // writeRowInternal writes a row to the table.
 func (f *TableStreamingFormatter) writeRowInternal(row Row) error {
 	f.hasRows = true
+	row = visualizeTabsInRow(row, f.newCondition(), f.config.Styled)
 	wrappedRow := f.wrapRow(row)
 
 	// When Styled is true, pass cells as tw.Formatter so tablewriter calls Format() (with ANSI codes).

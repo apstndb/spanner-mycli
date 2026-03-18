@@ -11,7 +11,7 @@ require (
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
-	github.com/apstndb/go-tabwrap v0.1.1
+	github.com/apstndb/go-tabwrap v0.1.2
 	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.5.0
