@@ -88,13 +88,14 @@ func TestVisualizeTab(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cond := newTestCondition(tt.tabWidth)
-			gotPlain, gotStyled := visualizeTab(tt.text, cond)
+			gotPlain := visualizeTab(tt.text, cond, false)
 
 			if diff := cmp.Diff(tt.wantPlain, gotPlain); diff != "" {
 				t.Errorf("plain mismatch (-want +got):\n%s", diff)
 			}
 
 			// Styled version should have the same visible content when ANSI codes are stripped.
+			gotStyled := visualizeTab(tt.text, cond, true)
 			stripped := stripANSI(gotStyled)
 			if diff := cmp.Diff(tt.wantPlain, stripped); diff != "" {
 				t.Errorf("styled (stripped) mismatch (-want +got):\n%s", diff)
@@ -130,7 +131,7 @@ func TestVisualizeTab_WidthPreserved(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cond := newTestCondition(tt.tabWidth)
-			plain, _ := visualizeTab(tt.text, cond)
+			plain := visualizeTab(tt.text, cond, false)
 
 			origWidth := cond.StringWidth(tt.text)
 			vizWidth := cond.StringWidth(plain)
@@ -189,9 +190,9 @@ func TestVisualizeTabsInRow_Styled_PlainCell(t *testing.T) {
 
 	got := visualizeTabsInRow(row, cond, true)
 
-	vc, ok := got[0].(tabVisualizedCell)
+	vc, ok := got[0].(*tabVisualizedCell)
 	if !ok {
-		t.Fatalf("expected tabVisualizedCell, got %T", got[0])
+		t.Fatalf("expected *tabVisualizedCell, got %T", got[0])
 	}
 	if vc.cellStyle != "" {
 		t.Errorf("expected empty cellStyle for PlainCell, got %q", vc.cellStyle)
@@ -209,9 +210,9 @@ func TestVisualizeTabsInRow_Styled_StyledCell(t *testing.T) {
 
 	got := visualizeTabsInRow(row, cond, true)
 
-	vc, ok := got[0].(tabVisualizedCell)
+	vc, ok := got[0].(*tabVisualizedCell)
 	if !ok {
-		t.Fatalf("expected tabVisualizedCell, got %T", got[0])
+		t.Fatalf("expected *tabVisualizedCell, got %T", got[0])
 	}
 	if vc.cellStyle != "\033[32m" {
 		t.Errorf("cellStyle = %q, want %q", vc.cellStyle, "\033[32m")
@@ -234,15 +235,12 @@ func TestVisualizeTabsInRow_Styled_StyledCell(t *testing.T) {
 func TestTabVisualizedCell_WithText(t *testing.T) {
 	t.Parallel()
 
-	vc := tabVisualizedCell{plain: "abc→def", styled: "abc\033[2m→\033[22mdef", cellStyle: "\033[32m"}
+	vc := &tabVisualizedCell{styled: "abc\033[2m→\033[22mdef", cellStyle: "\033[32m"}
 	got := vc.WithText("abc→def")
 
-	tc, ok := got.(tabVisualizedCell)
+	tc, ok := got.(*tabVisualizedCell)
 	if !ok {
-		t.Fatalf("WithText should return tabVisualizedCell, got %T", got)
-	}
-	if tc.plain != "abc→def" {
-		t.Errorf("plain = %q, want %q", tc.plain, "abc→def")
+		t.Fatalf("WithText should return *tabVisualizedCell, got %T", got)
 	}
 	if tc.cellStyle != "\033[32m" {
 		t.Errorf("cellStyle = %q, want %q", tc.cellStyle, "\033[32m")
@@ -250,6 +248,28 @@ func TestTabVisualizedCell_WithText(t *testing.T) {
 	// Styled should have dim arrows re-applied.
 	if !strings.Contains(tc.styled, "\033[2m→\033[22m") {
 		t.Errorf("styled should contain dim arrow, got %q", tc.styled)
+	}
+	// RawText (plain) should be lazily derived without ANSI codes.
+	if tc.RawText() != "abc→def" {
+		t.Errorf("RawText() = %q, want %q", tc.RawText(), "abc→def")
+	}
+}
+
+func TestTabVisualizedCell_RawText_Cached(t *testing.T) {
+	t.Parallel()
+
+	vc := &tabVisualizedCell{styled: "abc\033[2m→\033[22mdef"}
+
+	// First call should derive and cache plain.
+	got1 := vc.RawText()
+	if got1 != "abc→def" {
+		t.Errorf("RawText() = %q, want %q", got1, "abc→def")
+	}
+
+	// Second call should return the same cached value.
+	got2 := vc.RawText()
+	if got1 != got2 {
+		t.Errorf("RawText() not stable: %q vs %q", got1, got2)
 	}
 }
 
@@ -302,26 +322,4 @@ func TestWriteTable_WithTabs(t *testing.T) {
 		}
 		verifyTableAlignment(t, output)
 	})
-}
-
-// stripANSI removes ANSI escape sequences from a string.
-func stripANSI(s string) string {
-	var b strings.Builder
-	i := 0
-	for i < len(s) {
-		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
-			// Skip until 'm' (end of SGR sequence).
-			j := i + 2
-			for j < len(s) && s[j] != 'm' {
-				j++
-			}
-			if j < len(s) {
-				i = j + 1
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
 }
