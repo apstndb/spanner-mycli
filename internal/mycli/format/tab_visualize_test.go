@@ -189,9 +189,9 @@ func TestVisualizeTabsInRow_Styled_PlainCell(t *testing.T) {
 
 	got := visualizeTabsInRow(row, cond, true)
 
-	vc, ok := got[0].(visualizedCell)
+	vc, ok := got[0].(tabVisualizedCell)
 	if !ok {
-		t.Fatalf("expected visualizedCell, got %T", got[0])
+		t.Fatalf("expected tabVisualizedCell, got %T", got[0])
 	}
 	if vc.cellStyle != "" {
 		t.Errorf("expected empty cellStyle for PlainCell, got %q", vc.cellStyle)
@@ -209,9 +209,9 @@ func TestVisualizeTabsInRow_Styled_StyledCell(t *testing.T) {
 
 	got := visualizeTabsInRow(row, cond, true)
 
-	vc, ok := got[0].(visualizedCell)
+	vc, ok := got[0].(tabVisualizedCell)
 	if !ok {
-		t.Fatalf("expected visualizedCell, got %T", got[0])
+		t.Fatalf("expected tabVisualizedCell, got %T", got[0])
 	}
 	if vc.cellStyle != "\033[32m" {
 		t.Errorf("cellStyle = %q, want %q", vc.cellStyle, "\033[32m")
@@ -231,18 +231,25 @@ func TestVisualizeTabsInRow_Styled_StyledCell(t *testing.T) {
 	}
 }
 
-func TestVisualizedCell_WithText(t *testing.T) {
+func TestTabVisualizedCell_WithText(t *testing.T) {
 	t.Parallel()
 
-	vc := visualizedCell{plain: "abc→def", styled: "abc\033[2m→\033[22mdef", cellStyle: "\033[32m"}
-	got := vc.WithText("wrapped")
+	vc := tabVisualizedCell{plain: "abc→def", styled: "abc\033[2m→\033[22mdef", cellStyle: "\033[32m"}
+	got := vc.WithText("abc→def")
 
-	pc, ok := got.(PlainCell)
+	tc, ok := got.(tabVisualizedCell)
 	if !ok {
-		t.Fatalf("WithText should return PlainCell, got %T", got)
+		t.Fatalf("WithText should return tabVisualizedCell, got %T", got)
 	}
-	if pc.Text != "wrapped" {
-		t.Errorf("WithText().Text = %q, want %q", pc.Text, "wrapped")
+	if tc.plain != "abc→def" {
+		t.Errorf("plain = %q, want %q", tc.plain, "abc→def")
+	}
+	if tc.cellStyle != "\033[32m" {
+		t.Errorf("cellStyle = %q, want %q", tc.cellStyle, "\033[32m")
+	}
+	// Styled should have dim arrows re-applied.
+	if !strings.Contains(tc.styled, "\033[2m→\033[22m") {
+		t.Errorf("styled should contain dim arrow, got %q", tc.styled)
 	}
 }
 
