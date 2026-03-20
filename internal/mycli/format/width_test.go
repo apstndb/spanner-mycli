@@ -292,3 +292,69 @@ func sliceToSeq[E any](s []E) func(func(E) bool) {
 func newTestWidthCalculator() *widthCalculator {
 	return &widthCalculator{Condition: tabwrap.NewCondition()}
 }
+
+func TestNoWrapCell(t *testing.T) {
+	t.Parallel()
+
+	inner := StyledCell{Text: "NULL", Style: "\033[2m"}
+	cell := NoWrapCell{Cell: inner}
+
+	if cell.Format() != inner.Format() {
+		t.Errorf("Format() = %q, want %q", cell.Format(), inner.Format())
+	}
+	if cell.RawText() != "NULL" {
+		t.Errorf("RawText() = %q, want %q", cell.RawText(), "NULL")
+	}
+	if !IsNoWrap(cell) {
+		t.Error("IsNoWrap(NoWrapCell) = false, want true")
+	}
+	if IsNoWrap(inner) {
+		t.Error("IsNoWrap(StyledCell) = true, want false")
+	}
+
+	// WithText preserves NoWrap wrapping.
+	replaced := cell.WithText("replaced")
+	if !IsNoWrap(replaced) {
+		t.Error("WithText result should be NoWrapCell")
+	}
+	if replaced.RawText() != "replaced" {
+		t.Errorf("WithText().RawText() = %q, want %q", replaced.RawText(), "replaced")
+	}
+}
+
+func TestDeriveColumnHints(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+
+	rows := []Row{
+		{NoWrapCell{Cell: PlainCell{Text: "NULL"}}, PlainCell{Text: "Alice"}},
+		{NoWrapCell{Cell: PlainCell{Text: "NULL"}}, PlainCell{Text: "Bob"}},
+		{PlainCell{Text: "hello"}, NoWrapCell{Cell: PlainCell{Text: "false"}}},
+	}
+	hints := deriveColumnHints(wc, 2, rows)
+
+	if hints[0].PreferredMinWidth != 4 {
+		t.Errorf("hints[0].PreferredMinWidth = %d, want 4 (width of NULL)", hints[0].PreferredMinWidth)
+	}
+	if hints[1].PreferredMinWidth != 5 {
+		t.Errorf("hints[1].PreferredMinWidth = %d, want 5 (width of false)", hints[1].PreferredMinWidth)
+	}
+}
+
+func TestDeriveColumnHintsNoNoWrap(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+
+	rows := []Row{
+		{PlainCell{Text: "hello"}, PlainCell{Text: "world"}},
+	}
+	hints := deriveColumnHints(wc, 2, rows)
+
+	for i, h := range hints {
+		if h.PreferredMinWidth != 0 {
+			t.Errorf("hints[%d].PreferredMinWidth = %d, want 0 (no NoWrapCells)", i, h.PreferredMinWidth)
+		}
+	}
+}

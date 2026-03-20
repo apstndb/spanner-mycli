@@ -28,7 +28,7 @@ import (
 type MarginalCostStrategy struct{}
 
 func (MarginalCostStrategy) CalculateWidths(wc *widthCalculator, availableWidth int,
-	headers []string, rows []Row, _ []ColumnHint,
+	headers []string, rows []Row, hints []ColumnHint,
 ) []int {
 	numCols := len(headers)
 
@@ -45,11 +45,9 @@ func (MarginalCostStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 		}
 	}
 
-	// Start with header-proportional allocation + minColumnWidth floor.
+	// Start with header-proportional allocation + preferred/min width floor.
 	adjustedWidths := adjustByHeader(headers, availableWidth)
-	for i := range adjustedWidths {
-		adjustedWidths[i] = max(adjustedWidths[i], minColumnWidth)
-	}
+	applyColumnFloors(adjustedWidths, hints, availableWidth)
 
 	remaining := availableWidth - lo.Sum(adjustedWidths)
 	if remaining <= 0 {

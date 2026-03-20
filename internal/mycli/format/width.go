@@ -16,9 +16,9 @@ import (
 	"github.com/samber/lo"
 )
 
-// minColumnWidth is the minimum width for any column.
-// Prevents very short columns from splitting common short values (NULL, true, false, etc.).
-const minColumnWidth = 4
+// minColumnWidth is the hard minimum width for any column.
+// The meaningful minimum is now data-driven via NoWrapCell and PreferredMinWidth.
+const minColumnWidth = 1
 
 // CalculateWidth calculates optimal column widths for table rendering using the default
 // GreedyFrequencyStrategy. columnNames are the plain column names, verboseHeaders are
@@ -38,9 +38,51 @@ func CalculateWidthWithStrategy(ws enums.WidthStrategy, columnNames []string, ve
 
 	slog.Debug("screen width info", "screenWidth", screenWidth, "availableWidth", availableWidth)
 
-	hints := make([]ColumnHint, len(columnNames))
+	hints := deriveColumnHints(wc, len(columnNames), rows)
 	strategy := NewWidthStrategy(ws)
 	return strategy.CalculateWidths(wc, availableWidth, verboseHeaders, rows, hints)
+}
+
+// deriveColumnHints scans rows and computes PreferredMinWidth per column
+// from NoWrapCell instances. The preferred min width is the maximum width
+// among all NoWrapCell values in that column.
+func deriveColumnHints(wc *widthCalculator, numCols int, rows []Row) []ColumnHint {
+	hints := make([]ColumnHint, numCols)
+	for _, row := range rows {
+		for i, cell := range row {
+			if i >= numCols {
+				break
+			}
+			if IsNoWrap(cell) {
+				w := wc.maxWidth(cell.RawText())
+				hints[i].PreferredMinWidth = max(hints[i].PreferredMinWidth, w)
+			}
+		}
+	}
+	return hints
+}
+
+// applyColumnFloors applies per-column minimum widths using hints.
+// When budget allows, it uses PreferredMinWidth from hints (soft constraint).
+// When the total would exceed availableWidth, it falls back to minColumnWidth only.
+func applyColumnFloors(widths []int, hints []ColumnHint, availableWidth int) {
+	origWidths := slices.Clone(widths)
+
+	for i := range widths {
+		preferred := minColumnWidth
+		if i < len(hints) {
+			preferred = max(preferred, hints[i].PreferredMinWidth)
+		}
+		widths[i] = max(widths[i], preferred)
+	}
+
+	// Soft degradation: if preferred mins exceed budget, fall back to hard minimum only.
+	if lo.Sum(widths) > availableWidth {
+		copy(widths, origWidths)
+		for i := range widths {
+			widths[i] = max(widths[i], minColumnWidth)
+		}
+	}
 }
 
 // MaxWithIdx returns the index and value of the maximum element in seq.

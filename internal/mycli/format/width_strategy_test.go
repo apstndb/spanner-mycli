@@ -280,3 +280,61 @@ func TestStrategyMinColumnWidth(t *testing.T) {
 		})
 	}
 }
+
+// TestStrategyRespectsPreferredMinWidth ensures all strategies respect PreferredMinWidth
+// from hints when space allows.
+func TestStrategyRespectsPreferredMinWidth(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+	headers := []string{"a", "b"}
+	rows := []Row{
+		{NoWrapCell{Cell: PlainCell{Text: "NULL"}}, PlainCell{Text: "x"}},
+	}
+	// hints[0] has PreferredMinWidth=4 (NULL), hints[1] has 0 (no NoWrap)
+	hints := []ColumnHint{{PreferredMinWidth: 4}, {}}
+
+	for _, ws := range enums.WidthStrategyValues() {
+		t.Run(ws.String(), func(t *testing.T) {
+			t.Parallel()
+			s := NewWidthStrategy(ws)
+			// Wide screen: enough space to satisfy preferred min
+			widths := s.CalculateWidths(wc, 40, headers, rows, hints)
+			if widths[0] < 4 {
+				t.Errorf("widths[0] = %d, want >= 4 (PreferredMinWidth for NULL)", widths[0])
+			}
+		})
+	}
+}
+
+// TestStrategyGracefulDegradation ensures strategies degrade gracefully
+// when screen is too narrow to satisfy PreferredMinWidth for all columns.
+func TestStrategyGracefulDegradation(t *testing.T) {
+	t.Parallel()
+
+	wc := newTestWidthCalculator()
+	headers := []string{"a", "b", "c", "d", "e"}
+	rows := []Row{StringsToRow("x", "y", "z", "w", "v")}
+	// All columns want 5 chars (total=25), but we only give 10.
+	hints := []ColumnHint{
+		{PreferredMinWidth: 5},
+		{PreferredMinWidth: 5},
+		{PreferredMinWidth: 5},
+		{PreferredMinWidth: 5},
+		{PreferredMinWidth: 5},
+	}
+
+	for _, ws := range enums.WidthStrategyValues() {
+		t.Run(ws.String(), func(t *testing.T) {
+			t.Parallel()
+			s := NewWidthStrategy(ws)
+			widths := s.CalculateWidths(wc, 10, headers, rows, hints)
+			for i, w := range widths {
+				// Hard floor is minColumnWidth=1, should not panic or go below.
+				if w < minColumnWidth {
+					t.Errorf("widths[%d] = %d, want >= %d", i, w, minColumnWidth)
+				}
+			}
+		})
+	}
+}

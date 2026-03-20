@@ -272,10 +272,11 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 // p creates a PlainCell for test expectations.
 func p(text string) format.PlainCell { return format.PlainCell{Text: text} }
 
-// n creates a StyledCell with dim style for test expectations (used for actual Spanner NULL values).
+// n creates a NoWrapCell wrapping a StyledCell with dim style for test expectations
+// (used for actual Spanner NULL values).
 // The dim style matches the default CLI_TYPE_STYLES="NULL=dim".
-func n(text string) format.StyledCell {
-	return format.StyledCell{Text: text, Style: "\033[2m"}
+func n(text string) format.NoWrapCell {
+	return format.NoWrapCell{Cell: format.StyledCell{Text: text, Style: "\033[2m"}}
 }
 
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
@@ -596,7 +597,7 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 		selectParts = append(selectParts, fmt.Sprintf("@%s AS `%s`", s.name, s.name))
 		fields = append(fields, typector.NameTypeToStructTypeField(s.name, s.typ))
 		if s.isNull {
-			row = append(row, format.StyledCell{Text: s.output, Style: "\033[2m"})
+			row = append(row, format.NoWrapCell{Cell: format.StyledCell{Text: s.output, Style: "\033[2m"}})
 		} else {
 			row = append(row, format.PlainCell{Text: s.output})
 		}
