@@ -61,6 +61,21 @@ func (c StyledCell) Format() string {
 func (c StyledCell) RawText() string        { return c.Text }
 func (c StyledCell) WithText(s string) Cell { return StyledCell{Text: s, Style: c.Style} }
 
+// NoWrapCell wraps any Cell to indicate its content should preferably not be wrapped.
+// Strategies use this to compute PreferredMinWidth per column so that short values
+// like NULL, true, false are kept intact when space allows.
+type NoWrapCell struct {
+	Cell
+}
+
+func (c NoWrapCell) WithText(s string) Cell { return NoWrapCell{Cell: c.Cell.WithText(s)} }
+
+// IsNoWrap reports whether c is a NoWrapCell.
+func IsNoWrap(c Cell) bool {
+	_, ok := c.(NoWrapCell)
+	return ok
+}
+
 // StringsToRow converts a slice of strings to a Row of PlainCell.
 // Used by client-side statements and tests that construct rows from plain strings.
 func StringsToRow(ss ...string) Row {

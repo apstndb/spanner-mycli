@@ -18,7 +18,10 @@ import "github.com/apstndb/spanner-mycli/enums"
 
 // ColumnHint carries per-column metadata that strategies can use for allocation.
 type ColumnHint struct {
-	NoWrap bool // Reserved for #567: if true, the column should not be wrapped.
+	// PreferredMinWidth is the width needed to avoid wrapping all NoWrap cells
+	// in this column. Strategies should try to satisfy this but may go below
+	// if space is tight.
+	PreferredMinWidth int
 }
 
 // WidthStrategy defines the interface for pluggable column width algorithms.

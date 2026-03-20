@@ -118,7 +118,7 @@ func spannerRowToRow(fc *spanvalue.FormatConfig, typeStyles map[sppb.TypeCode]st
 			// The rendering layer (FormatConfig.Styled) decides whether to call
 			// Format() (styled) or RawText() (plain).
 			if _, isNull := gcv.Value.GetKind().(*structpb.Value_NullValue); isNull {
-				result[i] = format.StyledCell{Text: text, Style: nullStyle}
+				result[i] = format.NoWrapCell{Cell: format.StyledCell{Text: text, Style: nullStyle}}
 			} else if style, ok := typeStyles[gcv.Type.GetCode()]; ok {
 				result[i] = format.StyledCell{Text: text, Style: style}
 			} else {

@@ -30,7 +30,7 @@ import (
 type GreedyFrequencyStrategy struct{}
 
 func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWidth int,
-	headers []string, rows []Row, _ []ColumnHint,
+	headers []string, rows []Row, hints []ColumnHint,
 ) []int {
 	formatIntermediate := func(remainsWidth int, adjustedWidths []int) string {
 		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-lo.Sum(adjustedWidths), adjustedWidths)
@@ -38,10 +38,7 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 
 	adjustedWidths := adjustByHeader(headers, availableWidth)
 
-	// Enforce minimum column width for readability.
-	for i := range adjustedWidths {
-		adjustedWidths[i] = max(adjustedWidths[i], minColumnWidth)
-	}
+	applyColumnFloors(adjustedWidths, hints, availableWidth)
 
 	slog.Debug("adjustByName", "info", formatIntermediate(availableWidth, adjustedWidths))
 
