@@ -170,6 +170,15 @@ func TestAdjustToSum(t *testing.T) {
 			wantWidths:  []int{3, 3, 3},
 			wantRemains: 1,
 		},
+		{
+			// When minimum unique threshold × numCols still exceeds limit,
+			// fall back to equal distribution with floor of 1.
+			name:        "many columns overflow falls back to equal distribution",
+			limit:       19,
+			vs:          []int{13, 12, 10, 11, 16, 14, 9, 11, 12, 12, 9, 21, 9, 13, 11, 19, 13, 28, 23, 23},
+			wantWidths:  []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			wantRemains: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -259,6 +268,19 @@ func TestCalculateWidth(t *testing.T) {
 			rows:        []Row{StringsToRow("1", "NULL")},
 			screenWidth: 20,
 		},
+		{
+			name: "many columns like INFORMATION_SCHEMA.COLUMNS",
+			columns: []string{
+				"TABLE_CATALOG", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME",
+				"ORDINAL_POSITION", "COLUMN_DEFAULT", "DATA_TYPE", "IS_NULLABLE",
+				"SPANNER_TYPE", "IS_GENERATED", "IS_HIDDEN", "GENERATION_EXPRESSION",
+				"IS_STORED", "SPANNER_STATE", "IS_IDENTITY", "IDENTITY_GENERATION",
+				"IDENTITY_KIND", "IDENTITY_START_WITH_COUNTER", "IDENTITY_SKIP_RANGE_MIN",
+				"IDENTITY_SKIP_RANGE_MAX",
+			},
+			rows:        []Row{StringsToRow("", "INFORMATION_SCHEMA", "COLUMNS", "TABLE_CATALOG", "1", "NULL", "NULL", "NO", "STRING(MAX)", "NEVER", "false", "NULL", "NULL", "NULL", "NO", "NULL", "NULL", "NULL", "NULL", "NULL")},
+			screenWidth: 120,
+		},
 	}
 
 	for _, tt := range tests {
@@ -273,6 +295,17 @@ func TestCalculateWidth(t *testing.T) {
 				if w < minColumnWidth {
 					t.Errorf("width[%d] = %d, expected >= %d (minColumnWidth)", i, w, minColumnWidth)
 				}
+			}
+			// Total column widths + overhead should not exceed screenWidth unless
+			// overflow is unavoidable (numCols × minColumnWidth + overhead > screenWidth).
+			overheadWidth := 4 + 3*(len(tt.columns)-1)
+			totalWidth := overheadWidth
+			for _, w := range widths {
+				totalWidth += w
+			}
+			minTableWidth := overheadWidth + len(tt.columns)*minColumnWidth
+			if totalWidth > tt.screenWidth && totalWidth > minTableWidth {
+				t.Errorf("total table width %d exceeds screenWidth %d and minTableWidth %d (widths=%v)", totalWidth, tt.screenWidth, minTableWidth, widths)
 			}
 		})
 	}

@@ -139,13 +139,18 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 		return vs, remains
 	}
 
+	n := len(vs)
+	if n == 0 {
+		return vs, limit
+	}
+
 	// Build sorted unique thresholds (descending) once.
 	rev := slices.SortedFunc(slices.Values(lo.Uniq(vs)), desc)
 
 	curVs := vs
 	for i := 1; i < len(rev); i++ {
 		threshold := rev[i]
-		clipped := make([]int, len(vs))
+		clipped := make([]int, n)
 		total := 0
 		for j, v := range vs {
 			clipped[j] = min(v, threshold)
@@ -161,6 +166,30 @@ func adjustToSum(limit int, vs []int) ([]int, int) {
 	for _, v := range curVs {
 		total += v
 	}
+
+	// If threshold clipping was insufficient (many columns with large headers),
+	// fall back to equal distribution. Each element is at least 1 to avoid
+	// zero-width columns that bypass wrapping.
+	if total > limit {
+		base := max(limit/n, 1)
+		curVs = make([]int, n)
+		for i := range curVs {
+			curVs[i] = base
+		}
+		// Distribute remainder among first columns.
+		if base*n < limit {
+			extra := limit - base*n
+			for i := range extra {
+				curVs[i]++
+			}
+		}
+		total = 0
+		for _, v := range curVs {
+			total += v
+		}
+		return curVs, max(limit-total, 0)
+	}
+
 	return curVs, limit - total
 }
 
