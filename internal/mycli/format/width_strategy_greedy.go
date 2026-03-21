@@ -98,16 +98,19 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 		}
 	}
 
-	bestIdx := 0
-	bestShortage := longestWidths[0] - adjustedWidths[0]
-	for i := 1; i < len(headers); i++ {
-		shortage := longestWidths[i] - adjustedWidths[i]
-		if shortage > bestShortage {
-			bestShortage = shortage
-			bestIdx = i
+	remainder := availableWidth - sumWidths(adjustedWidths)
+	if remainder > 0 {
+		bestIdx := 0
+		bestShortage := longestWidths[0] - adjustedWidths[0]
+		for i := 1; i < len(headers); i++ {
+			shortage := longestWidths[i] - adjustedWidths[i]
+			if shortage > bestShortage {
+				bestShortage = shortage
+				bestIdx = i
+			}
 		}
+		adjustedWidths[bestIdx] += remainder
 	}
-	adjustedWidths[bestIdx] += availableWidth - sumWidths(adjustedWidths)
 
 	slog.Debug("final", "info", formatIntermediate(availableWidth, adjustedWidths))
 
