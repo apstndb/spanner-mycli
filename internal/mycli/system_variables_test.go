@@ -966,6 +966,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
 			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
 			"CLI_ENABLE_PROGRESS_BAR", "CLI_ENABLE_ADC_PLUS", "CLI_ASYNC_DDL",
+			"CLI_TAB_VISUALIZE",
 		}
 		for _, name := range boolVars {
 			t.Run(name, func(t *testing.T) {

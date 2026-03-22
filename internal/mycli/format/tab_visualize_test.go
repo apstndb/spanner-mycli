@@ -276,13 +276,30 @@ func TestTabVisualizedCell_RawText_Cached(t *testing.T) {
 func TestWriteTable_WithTabs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("unstyled", func(t *testing.T) {
+	t.Run("disabled_by_default", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		rows := []Row{StringsToRow("abc\tdef", "no tabs")}
 		columns := []string{"data", "other"}
 
 		err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTable)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		if strings.Contains(output, "→") {
+			t.Error("output should not contain arrow when TabVisualize is false")
+		}
+	})
+
+	t.Run("unstyled", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		rows := []Row{StringsToRow("abc\tdef", "no tabs")}
+		columns := []string{"data", "other"}
+
+		err := WriteTable(&buf, rows, columns, FormatConfig{TabVisualize: true}, 80, ModeTable)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -307,7 +324,7 @@ func TestWriteTable_WithTabs(t *testing.T) {
 		rows := []Row{{StyledCell{Text: "abc\tdef", Style: "\033[32m"}, PlainCell{Text: "ok"}}}
 		columns := []string{"data", "other"}
 
-		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 80, ModeTable)
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true, TabVisualize: true}, 80, ModeTable)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

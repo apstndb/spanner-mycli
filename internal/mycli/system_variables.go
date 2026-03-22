@@ -69,6 +69,7 @@ type DisplayVars struct {
 	Prompt2              string              // CLI_PROMPT2
 	HistoryFile          string              // CLI_HISTORY_FILE
 	TabWidth             int64               // CLI_TAB_WIDTH
+	TabVisualize         bool                // CLI_TAB_VISUALIZE
 	EnableHighlight      bool                // CLI_ENABLE_HIGHLIGHT
 	UsePager             bool                // CLI_USE_PAGER
 	AutoWrap             bool                // CLI_AUTOWRAP
@@ -217,6 +218,7 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		PreviewRows:     sv.Query.TablePreviewRows,
 		Styled:          styled,
 		WidthStrategy:   sv.Display.WidthStrategy,
+		TabVisualize:    sv.Display.TabVisualize,
 	}
 }
 

@@ -209,6 +209,7 @@ func (r *VarRegistry) registerAll() {
 		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))
 	r.Register("CLI_SKIP_SYSTEM_COMMAND", BoolVar(&sv.Feature.SkipSystemCommand,
 		"Controls whether system commands are disabled."))
+	r.Register("CLI_TAB_VISUALIZE", BoolVar(&sv.Display.TabVisualize, "Visualize tab characters with arrow symbol in table output."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.Display.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
 	r.Register("CLI_FUZZY_FINDER_KEY", StringVar(&sv.Feature.FuzzyFinderKey,
