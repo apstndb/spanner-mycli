@@ -199,4 +199,23 @@ TODO
   - Styling only applies when output supports ANSI escape codes (interactive terminal with styled formats)
   - Inspired by `LS_COLORS`, `GCC_COLORS`, and `JQ_COLORS` environment variable patterns
 
+##### CLI_WIDTH_STRATEGY
+- **Type**: ENUM
+- **Default**: GREEDY_FREQUENCY
+- **Description**: Column width allocation algorithm for table output
+- **Access**: Read/Write
+- **Valid Values**:
+  - `GREEDY_FREQUENCY` - Frequency-based greedy expansion (default, original algorithm)
+  - `PROPORTIONAL` - Allocate proportional to each column's natural width
+  - `MARGINAL_COST` - Minimize total wrap-lines via max-heap (optimal for wrap minimization)
+- **Usage**:
+  ```sql
+  SET CLI_WIDTH_STRATEGY = 'MARGINAL_COST';
+  SELECT * FROM large_table;  -- Uses wrap-minimizing allocation
+  ```
+- **Notes**:
+  - Only affects table formats with autowrap enabled (`CLI_AUTOWRAP = TRUE`)
+  - `GREEDY_FREQUENCY` matches the behavior of previous versions
+  - `MARGINAL_COST` produces the fewest wrapped lines but may allocate narrower columns to infrequent wide values
+
 TODO: Document other CLI_* variables
