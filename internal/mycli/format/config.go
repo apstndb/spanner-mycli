@@ -128,6 +128,7 @@ type FormatConfig struct {
 	PreviewRows     int64
 	Styled          bool                // When true, table output uses Cell.Format() (may include ANSI codes). When false, uses RawText().
 	WidthStrategy   enums.WidthStrategy // Column width allocation algorithm. Zero value = GreedyFrequency (default).
+	TabVisualize    bool                // When true, visualize tab characters with → symbol in table output.
 }
 
 // FormatFunc is a function type that formats and writes result data.

@@ -258,6 +258,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("MAX_PARTITIONED_PARALLELISM", IntVar(&sv.Query.MaxPartitionedParallelism,
 		"A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY"))
 	r.Register("CLI_TAB_WIDTH", IntVar(&sv.Display.TabWidth, "Tab width. It is used for expanding tabs."))
+	r.Register("CLI_TAB_VISUALIZE", BoolVar(&sv.Display.TabVisualize, "Visualize tab characters with arrow symbol in table output."))
 	r.Register("CLI_EXPLAIN_WRAP_WIDTH", IntVar(&sv.Display.ExplainWrapWidth,
 		"Controls query plan wrap width. It effects only operators column contents"))
 	r.Register("CLI_TABLE_PREVIEW_ROWS", IntVar(&sv.Query.TablePreviewRows,

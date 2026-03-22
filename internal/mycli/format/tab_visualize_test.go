@@ -282,7 +282,7 @@ func TestWriteTable_WithTabs(t *testing.T) {
 		rows := []Row{StringsToRow("abc\tdef", "no tabs")}
 		columns := []string{"data", "other"}
 
-		err := WriteTable(&buf, rows, columns, FormatConfig{}, 80, ModeTable)
+		err := WriteTable(&buf, rows, columns, FormatConfig{TabVisualize: true}, 80, ModeTable)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -307,7 +307,7 @@ func TestWriteTable_WithTabs(t *testing.T) {
 		rows := []Row{{StyledCell{Text: "abc\tdef", Style: "\033[32m"}, PlainCell{Text: "ok"}}}
 		columns := []string{"data", "other"}
 
-		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 80, ModeTable)
+		err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true, TabVisualize: true}, 80, ModeTable)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
