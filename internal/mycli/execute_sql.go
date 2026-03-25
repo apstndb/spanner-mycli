@@ -86,6 +86,9 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 		}
 
 		return fc, vfm, sysVars, nil
+	case format.JSONValues:
+		// Use JSON formatting: each value becomes a valid JSON fragment
+		return decoder.JSONFormatConfig(), vfm, sysVars, nil
 	default:
 		// Use regular display formatting for other modes
 		// formatConfigWithProto handles custom proto descriptors if set
@@ -315,7 +318,11 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle), qe.Metrics)
+	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
+	if qe.ValueFmtMode == format.JSONValues {
+		rowTransform = withRawJSONMarker(rowTransform)
+	}
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, rowTransform, qe.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +349,9 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
 	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
+	if qe.ValueFmtMode == format.JSONValues {
+		rowTransform = withRawJSONMarker(rowTransform)
+	}
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
 	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(qe.Iter, qe.Processor, rowTransform, qe.SysVars, qe.Metrics)
 	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)

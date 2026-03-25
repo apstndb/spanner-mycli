@@ -22,10 +22,13 @@ import (
 )
 
 // JSONLFormatter provides JSONL (JSON Lines) formatting logic.
-// Each row is output as a single JSON object with column names as keys
-// and all values as JSON strings. The jsontext.Encoder writes a newline
-// after each top-level JSON value, producing valid JSONL output.
-// Column order is preserved (unlike encoding/json with map[string]string).
+// Each row is output as a single JSON object with column names as keys.
+// The jsontext.Encoder writes a newline after each top-level JSON value,
+// producing valid JSONL output. Column order is preserved.
+//
+// When cells are RawJSONCell, their text is written as raw JSON values
+// (e.g., ARRAY as JSON array, INT64 as JSON number).
+// Otherwise, values are output as JSON strings (fallback for client-side statements).
 type JSONLFormatter struct {
 	enc         *jsontext.Encoder
 	columns     []string
@@ -72,7 +75,7 @@ func (f *JSONLFormatter) WriteRow(row Row) error {
 			return fmt.Errorf("failed to write JSONL key: %w", err)
 		}
 
-		if err := f.enc.WriteToken(jsontext.String(cell.RawText())); err != nil {
+		if err := f.writeValue(cell); err != nil {
 			return fmt.Errorf("failed to write JSONL value: %w", err)
 		}
 	}
@@ -82,6 +85,16 @@ func (f *JSONLFormatter) WriteRow(row Row) error {
 	}
 
 	return nil
+}
+
+// writeValue writes a cell's value to the encoder.
+// RawJSONCell text is written as raw JSON values (the text is valid JSON).
+// Other cells are written as quoted JSON strings.
+func (f *JSONLFormatter) writeValue(cell Cell) error {
+	if IsRawJSON(cell) {
+		return f.enc.WriteValue(jsontext.Value(cell.RawText()))
+	}
+	return f.enc.WriteToken(jsontext.String(cell.RawText()))
 }
 
 // FinishFormat completes JSONL output.
