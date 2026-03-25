@@ -128,3 +128,19 @@ func spannerRowToRow(fc *spanvalue.FormatConfig, typeStyles map[sppb.TypeCode]st
 		return result, nil
 	}
 }
+
+// withRawJSONMarker wraps a row transform to mark each cell as RawJSONCell.
+// This signals to JSON-aware formatters that cell text is valid JSON
+// (produced by a JSON-specific spanvalue.FormatConfig).
+func withRawJSONMarker(base func(*spanner.Row) (Row, error)) func(*spanner.Row) (Row, error) {
+	return func(row *spanner.Row) (Row, error) {
+		result, err := base(row)
+		if err != nil {
+			return nil, err
+		}
+		for i := range result {
+			result[i] = format.RawJSONCell{Cell: result[i]}
+		}
+		return result, nil
+	}
+}

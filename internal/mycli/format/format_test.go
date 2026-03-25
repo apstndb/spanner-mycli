@@ -136,10 +136,15 @@ func TestValueFormatModeFor(t *testing.T) {
 	// No t.Parallel(): mutates global registry
 
 	// Built-in modes should return DisplayValues
-	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML, ModeJSONL} {
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
 		if got := ValueFormatModeFor(mode); got != DisplayValues {
 			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
 		}
+	}
+
+	// JSONL should return JSONValues
+	if got := ValueFormatModeFor(ModeJSONL); got != JSONValues {
+		t.Errorf("ValueFormatModeFor(JSONL) = %d, want JSONValues", got)
 	}
 
 	// Unknown mode should return DisplayValues
@@ -483,6 +488,27 @@ func TestFormatJSONL(t *testing.T) {
 			columns: []string{"data"},
 			rows:    []Row{StringsToRow("line1\nline2")},
 			want:    `{"data":"line1\nline2"}` + "\n",
+		},
+		{
+			name:    "RawJSONCell with typed values",
+			columns: []string{"id", "name", "active", "tags"},
+			rows: []Row{
+				{
+					RawJSONCell{Cell: PlainCell{Text: "42"}},
+					RawJSONCell{Cell: PlainCell{Text: `"Alice"`}},
+					RawJSONCell{Cell: PlainCell{Text: "true"}},
+					RawJSONCell{Cell: PlainCell{Text: `["a","b"]`}},
+				},
+			},
+			want: `{"id":42,"name":"Alice","active":true,"tags":["a","b"]}` + "\n",
+		},
+		{
+			name:    "RawJSONCell with null",
+			columns: []string{"val"},
+			rows: []Row{
+				{RawJSONCell{Cell: PlainCell{Text: "null"}}},
+			},
+			want: `{"val":null}` + "\n",
 		},
 	}
 

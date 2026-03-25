@@ -40,11 +40,19 @@ const (
 	// SQLLiteralValues formats values as valid SQL literals (e.g., NULL keyword,
 	// strings quoted, bytes as hex). Used by SQL export modes.
 	SQLLiteralValues
+
+	// JSONValues formats values as valid JSON (e.g., NULL as null, INT64 as number,
+	// ARRAY as JSON array). Used by JSONL format.
+	JSONValues
 )
 
 // ValueFormatModeFor returns the ValueFormatMode declared for the given Mode.
-// Built-in modes return DisplayValues. Registered modes return their declared value.
+// Built-in modes return DisplayValues (except JSONL which returns JSONValues).
+// Registered modes return their declared value.
 func ValueFormatModeFor(mode Mode) ValueFormatMode {
+	if mode == ModeJSONL {
+		return JSONValues
+	}
 	if vfm, ok := lookupValueFormatMode(mode); ok {
 		return vfm
 	}
