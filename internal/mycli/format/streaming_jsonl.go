@@ -23,9 +23,11 @@ import (
 
 // JSONLFormatter provides JSONL (JSON Lines) formatting logic.
 // Each row is output as a single JSON object with column names as keys
-// and all values as JSON strings.
+// and all values as JSON strings. The jsontext.Encoder writes a newline
+// after each top-level JSON value, producing valid JSONL output.
+// Column order is preserved (unlike encoding/json with map[string]string).
 type JSONLFormatter struct {
-	out         io.Writer
+	enc         *jsontext.Encoder
 	columns     []string
 	initialized bool
 }
@@ -33,7 +35,7 @@ type JSONLFormatter struct {
 // NewJSONLFormatter creates a new JSONL formatter.
 func NewJSONLFormatter(out io.Writer) *JSONLFormatter {
 	return &JSONLFormatter{
-		out: out,
+		enc: jsontext.NewEncoder(out),
 	}
 }
 
@@ -54,8 +56,7 @@ func (f *JSONLFormatter) WriteRow(row Row) error {
 		return fmt.Errorf("JSONL formatter not initialized")
 	}
 
-	enc := jsontext.NewEncoder(f.out)
-	if err := enc.WriteToken(jsontext.BeginObject); err != nil {
+	if err := f.enc.WriteToken(jsontext.BeginObject); err != nil {
 		return fmt.Errorf("failed to write JSONL row: %w", err)
 	}
 
@@ -67,16 +68,16 @@ func (f *JSONLFormatter) WriteRow(row Row) error {
 			columnName = fmt.Sprintf("Column_%d", i+1)
 		}
 
-		if err := enc.WriteToken(jsontext.String(columnName)); err != nil {
+		if err := f.enc.WriteToken(jsontext.String(columnName)); err != nil {
 			return fmt.Errorf("failed to write JSONL key: %w", err)
 		}
 
-		if err := enc.WriteToken(jsontext.String(cell.RawText())); err != nil {
+		if err := f.enc.WriteToken(jsontext.String(cell.RawText())); err != nil {
 			return fmt.Errorf("failed to write JSONL value: %w", err)
 		}
 	}
 
-	if err := enc.WriteToken(jsontext.EndObject); err != nil {
+	if err := f.enc.WriteToken(jsontext.EndObject); err != nil {
 		return fmt.Errorf("failed to write JSONL row: %w", err)
 	}
 
