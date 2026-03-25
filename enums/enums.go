@@ -15,6 +15,7 @@ const (
 	DisplayModeHTML
 	DisplayModeXML
 	DisplayModeCSV
+	DisplayModeJSONL
 	DisplayModeSQLInsert
 	DisplayModeSQLInsertOrIgnore
 	DisplayModeSQLInsertOrUpdate

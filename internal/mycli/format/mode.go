@@ -18,6 +18,7 @@ const (
 	ModeHTML               Mode = "HTML"
 	ModeXML                Mode = "XML"
 	ModeCSV                Mode = "CSV"
+	ModeJSONL              Mode = "JSONL"
 )
 
 // IsTableMode returns true if the mode is one of the table display modes.

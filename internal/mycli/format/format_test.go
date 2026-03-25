@@ -25,6 +25,7 @@ func TestNewFormatter(t *testing.T) {
 		{name: "vertical", mode: ModeVertical},
 		{name: "tab", mode: ModeTab},
 		{name: "csv", mode: ModeCSV},
+		{name: "jsonl", mode: ModeJSONL},
 		{name: "html", mode: ModeHTML},
 		{name: "xml", mode: ModeXML},
 		{name: "invalid", mode: Mode("NONEXISTENT"), wantErr: true},
@@ -65,6 +66,7 @@ func TestNewStreamingFormatter(t *testing.T) {
 		{name: "vertical", mode: ModeVertical, out: io.Discard},
 		{name: "html", mode: ModeHTML, out: io.Discard},
 		{name: "xml", mode: ModeXML, out: io.Discard},
+		{name: "jsonl", mode: ModeJSONL, out: io.Discard},
 		// Table formats with io.Discard are allowed (for isStreamingSupported check)
 		{name: "table_discard", mode: ModeTable, out: io.Discard},
 		// Table formats with real writer require screenWidth
@@ -134,7 +136,7 @@ func TestValueFormatModeFor(t *testing.T) {
 	// No t.Parallel(): mutates global registry
 
 	// Built-in modes should return DisplayValues
-	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML, ModeJSONL} {
 		if got := ValueFormatModeFor(mode); got != DisplayValues {
 			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
 		}
@@ -443,6 +445,62 @@ func TestFormatXML(t *testing.T) {
 	}
 }
 
+func TestFormatJSONL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		columns []string
+		rows    []Row
+		want    string
+	}{
+		{
+			name:    "basic",
+			columns: []string{"id", "name"},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
+			want:    `{"id":"1","name":"Alice"}` + "\n" + `{"id":"2","name":"Bob"}` + "\n",
+		},
+		{
+			name:    "special characters",
+			columns: []string{"col"},
+			rows:    []Row{StringsToRow("value with \"quotes\""), StringsToRow("value with, comma")},
+			want:    `{"col":"value with \"quotes\""}` + "\n" + `{"col":"value with, comma"}` + "\n",
+		},
+		{
+			name:    "empty rows",
+			columns: []string{"id"},
+			rows:    nil,
+			want:    "",
+		},
+		{
+			name:    "complex spanner type",
+			columns: []string{"SPANNER_TYPE"},
+			rows:    []Row{StringsToRow(`ARRAY<STRUCT<COLUMN STRING(MAX), LOCK_MODE STRING(MAX)>>`)},
+			want:    `{"SPANNER_TYPE":"ARRAY<STRUCT<COLUMN STRING(MAX), LOCK_MODE STRING(MAX)>>"}` + "\n",
+		},
+		{
+			name:    "newline in value",
+			columns: []string{"data"},
+			rows:    []Row{StringsToRow("line1\nline2")},
+			want:    `{"data":"line1\nline2"}` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			err := formatJSONL(&buf, tt.rows, tt.columns, FormatConfig{}, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
+				t.Errorf("output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestXMLEscape(t *testing.T) {
 	t.Parallel()
 
@@ -559,6 +617,41 @@ func TestXMLFormatterLifecycle(t *testing.T) {
 		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
+		}
+	})
+}
+
+func TestJSONLFormatterLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write before init", func(t *testing.T) {
+		t.Parallel()
+		f := NewJSONLFormatter(io.Discard)
+		err := f.WriteRow(StringsToRow("1"))
+		if err == nil {
+			t.Error("expected error writing before init")
+		}
+	})
+
+	t.Run("double init is noop", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		f := NewJSONLFormatter(&buf)
+		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
+			t.Fatalf("first init: %v", err)
+		}
+		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
+			t.Fatalf("second init: %v", err)
+		}
+		if err := f.WriteRow(StringsToRow("1")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := f.FinishFormat(); err != nil {
+			t.Fatalf("finish: %v", err)
+		}
+		want := `{"id":"1"}` + "\n"
+		if diff := cmp.Diff(want, buf.String()); diff != "" {
+			t.Errorf("output mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
