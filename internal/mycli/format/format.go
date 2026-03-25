@@ -72,6 +72,11 @@ func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatCon
 	return ExecuteWithFormatter(NewXMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
 
+// formatJSONL formats output as JSON Lines (one JSON object per row).
+func formatJSONL(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewJSONLFormatter(out), rows, columnNames, config)
+}
+
 // wrapRowStyled wraps styled (ANSI-coded) cell text with ControlSequences-aware Wrap.
 // SGR state is carried across line breaks, so each output line is independently styled.
 // The result is PlainCell containing pre-styled text — no further Format() needed.
@@ -139,6 +144,8 @@ func NewFormatter(mode Mode) (FormatFunc, error) {
 		return formatHTML, nil
 	case ModeXML:
 		return formatXML, nil
+	case ModeJSONL:
+		return formatJSONL, nil
 	default:
 		// Look up in registry for custom modes
 		if factory, ok := lookupFormatFunc(mode); ok {
@@ -186,6 +193,8 @@ func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (Strea
 		return NewHTMLFormatter(out, config.SkipColumnNames), nil
 	case ModeXML:
 		return NewXMLFormatter(out, config.SkipColumnNames), nil
+	case ModeJSONL:
+		return NewJSONLFormatter(out), nil
 	case ModeTable, ModeTableComment, ModeTableDetailComment:
 		// Table formats need screenWidth, so they must be created by the caller
 		// Return a dummy formatter for isStreamingSupported check

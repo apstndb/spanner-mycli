@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _DisplayModeName = "UNSPECIFIEDTABLETABLE_COMMENTTABLE_DETAIL_COMMENTVERTICALTABHTMLXMLCSVSQL_INSERTSQL_INSERT_OR_IGNORESQL_INSERT_OR_UPDATE"
+const _DisplayModeName = "UNSPECIFIEDTABLETABLE_COMMENTTABLE_DETAIL_COMMENTVERTICALTABHTMLXMLCSVJSONLSQL_INSERTSQL_INSERT_OR_IGNORESQL_INSERT_OR_UPDATE"
 
-var _DisplayModeIndex = [...]uint8{0, 11, 16, 29, 49, 57, 60, 64, 67, 70, 80, 100, 120}
+var _DisplayModeIndex = [...]uint8{0, 11, 16, 29, 49, 57, 60, 64, 67, 70, 75, 85, 105, 125}
 
-const _DisplayModeLowerName = "unspecifiedtabletable_commenttable_detail_commentverticaltabhtmlxmlcsvsql_insertsql_insert_or_ignoresql_insert_or_update"
+const _DisplayModeLowerName = "unspecifiedtabletable_commenttable_detail_commentverticaltabhtmlxmlcsvjsonlsql_insertsql_insert_or_ignoresql_insert_or_update"
 
 func (i DisplayMode) String() string {
 	if i < 0 || i >= DisplayMode(len(_DisplayModeIndex)-1) {
@@ -33,12 +33,13 @@ func _DisplayModeNoOp() {
 	_ = x[DisplayModeHTML-(6)]
 	_ = x[DisplayModeXML-(7)]
 	_ = x[DisplayModeCSV-(8)]
-	_ = x[DisplayModeSQLInsert-(9)]
-	_ = x[DisplayModeSQLInsertOrIgnore-(10)]
-	_ = x[DisplayModeSQLInsertOrUpdate-(11)]
+	_ = x[DisplayModeJSONL-(9)]
+	_ = x[DisplayModeSQLInsert-(10)]
+	_ = x[DisplayModeSQLInsertOrIgnore-(11)]
+	_ = x[DisplayModeSQLInsertOrUpdate-(12)]
 }
 
-var _DisplayModeValues = []DisplayMode{DisplayModeUnspecified, DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment, DisplayModeVertical, DisplayModeTab, DisplayModeHTML, DisplayModeXML, DisplayModeCSV, DisplayModeSQLInsert, DisplayModeSQLInsertOrIgnore, DisplayModeSQLInsertOrUpdate}
+var _DisplayModeValues = []DisplayMode{DisplayModeUnspecified, DisplayModeTable, DisplayModeTableComment, DisplayModeTableDetailComment, DisplayModeVertical, DisplayModeTab, DisplayModeHTML, DisplayModeXML, DisplayModeCSV, DisplayModeJSONL, DisplayModeSQLInsert, DisplayModeSQLInsertOrIgnore, DisplayModeSQLInsertOrUpdate}
 
 var _DisplayModeNameToValueMap = map[string]DisplayMode{
 	_DisplayModeName[0:11]:         DisplayModeUnspecified,
@@ -59,12 +60,14 @@ var _DisplayModeNameToValueMap = map[string]DisplayMode{
 	_DisplayModeLowerName[64:67]:   DisplayModeXML,
 	_DisplayModeName[67:70]:        DisplayModeCSV,
 	_DisplayModeLowerName[67:70]:   DisplayModeCSV,
-	_DisplayModeName[70:80]:        DisplayModeSQLInsert,
-	_DisplayModeLowerName[70:80]:   DisplayModeSQLInsert,
-	_DisplayModeName[80:100]:       DisplayModeSQLInsertOrIgnore,
-	_DisplayModeLowerName[80:100]:  DisplayModeSQLInsertOrIgnore,
-	_DisplayModeName[100:120]:      DisplayModeSQLInsertOrUpdate,
-	_DisplayModeLowerName[100:120]: DisplayModeSQLInsertOrUpdate,
+	_DisplayModeName[70:75]:        DisplayModeJSONL,
+	_DisplayModeLowerName[70:75]:   DisplayModeJSONL,
+	_DisplayModeName[75:85]:        DisplayModeSQLInsert,
+	_DisplayModeLowerName[75:85]:   DisplayModeSQLInsert,
+	_DisplayModeName[85:105]:       DisplayModeSQLInsertOrIgnore,
+	_DisplayModeLowerName[85:105]:  DisplayModeSQLInsertOrIgnore,
+	_DisplayModeName[105:125]:      DisplayModeSQLInsertOrUpdate,
+	_DisplayModeLowerName[105:125]: DisplayModeSQLInsertOrUpdate,
 }
 
 var _DisplayModeNames = []string{
@@ -77,9 +80,10 @@ var _DisplayModeNames = []string{
 	_DisplayModeName[60:64],
 	_DisplayModeName[64:67],
 	_DisplayModeName[67:70],
-	_DisplayModeName[70:80],
-	_DisplayModeName[80:100],
-	_DisplayModeName[100:120],
+	_DisplayModeName[70:75],
+	_DisplayModeName[75:85],
+	_DisplayModeName[85:105],
+	_DisplayModeName[105:125],
 }
 
 // DisplayModeString retrieves an enum value from the enum constants string name.

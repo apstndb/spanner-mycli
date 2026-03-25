@@ -382,6 +382,7 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 			// Table formats: buffer by default for accurate column widths
 			shouldStream = false
 		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML,
+			enums.DisplayModeJSONL,
 			enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 			// Other formats: stream by default for better performance
 			shouldStream = true
