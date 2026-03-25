@@ -349,7 +349,7 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
 	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
-	if qe.SysVars.Display.CLIFormat == enums.DisplayModeJSONL {
+	if qe.ValueFmtMode == format.JSONValues {
 		rowTransform = withRawJSONMarker(rowTransform)
 	}
 	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
