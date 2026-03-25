@@ -319,7 +319,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
 	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
-	if qe.SysVars.Display.CLIFormat == enums.DisplayModeJSONL {
+	if qe.ValueFmtMode == format.JSONValues {
 		rowTransform = withRawJSONMarker(rowTransform)
 	}
 	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, rowTransform, qe.Metrics)

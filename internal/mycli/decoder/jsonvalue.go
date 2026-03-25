@@ -16,7 +16,6 @@ package decoder
 
 import (
 	"encoding/json"
-	"math"
 	"strconv"
 	"strings"
 
@@ -75,53 +74,33 @@ func formatJSONStructParen(typ *sppb.Type, _ bool, fieldStrings []string) string
 
 // formatJSONSimpleValue handles all non-ARRAY, non-STRUCT types for JSON output.
 // It never returns ErrFallthrough, so it handles every simple type.
+//
+// For most types, structpb.Value.MarshalJSON() produces the correct JSON representation
+// (BOOL→true/false, FLOAT→number, STRING→"quoted", NULL→null, NaN/Inf→"NaN"/"Infinity").
+// Only INT64 and JSON columns need special handling:
+//   - INT64: Spanner encodes as StringValue("42"), MarshalJSON() would produce "42" (quoted),
+//     but we want 42 (unquoted number).
+//   - JSON: Spanner encodes as StringValue('{"key":"value"}'), MarshalJSON() would produce
+//     escaped quoted string, but we want the raw JSON value passed through.
 func formatJSONSimpleValue(_ spanvalue.Formatter, value spanner.GenericColumnValue, _ bool) (string, error) {
 	val := value.Value
-	typ := value.Type
 
-	// Handle NULL
 	if _, isNull := val.GetKind().(*structpb.Value_NullValue); isNull {
 		return "null", nil
 	}
 
-	switch typ.GetCode() {
-	case sppb.TypeCode_BOOL:
-		if val.GetBoolValue() {
-			return "true", nil
-		}
-		return "false", nil
-
-	case sppb.TypeCode_INT64:
-		// Spanner encodes INT64 as string in proto; the string IS a valid JSON number
-		return val.GetStringValue(), nil
-
-	case sppb.TypeCode_FLOAT32, sppb.TypeCode_FLOAT64:
-		switch v := val.GetKind().(type) {
-		case *structpb.Value_NumberValue:
-			f := v.NumberValue
-			if math.IsNaN(f) || math.IsInf(f, 0) {
-				// JSON doesn't support NaN/Inf; quote as string
-				b, _ := json.Marshal(strconv.FormatFloat(f, 'g', -1, 64))
-				return string(b), nil
-			}
-			return strconv.FormatFloat(f, 'f', -1, 64), nil
-		case *structpb.Value_StringValue:
-			// "NaN", "Infinity", "-Infinity" - quote as JSON string
-			b, _ := json.Marshal(v.StringValue)
-			return string(b), nil
-		default:
-			b, _ := json.Marshal(val.GetStringValue())
-			return string(b), nil
-		}
-
-	case sppb.TypeCode_JSON:
-		// JSON column value is already valid JSON - pass through as-is
+	switch value.Type.GetCode() {
+	case sppb.TypeCode_INT64, sppb.TypeCode_JSON:
+		// INT64: StringValue is already a valid JSON number
+		// JSON column: StringValue is already valid JSON
 		return val.GetStringValue(), nil
 
 	default:
-		// STRING, BYTES, TIMESTAMP, DATE, NUMERIC, ENUM, PROTO, INTERVAL, UUID
-		// All are string values in the proto; quote as JSON strings
-		b, _ := json.Marshal(val.GetStringValue())
+		// For all other types, structpb.Value's JSON marshaling matches our needs
+		b, err := val.MarshalJSON()
+		if err != nil {
+			return "", err
+		}
 		return string(b), nil
 	}
 }
