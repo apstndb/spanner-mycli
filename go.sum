@@ -2475,8 +2475,6 @@ github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff h1:qcDUJzSKYWPlv8KyEHThTJpMyg/z4iMjCTpWxKWyCrA=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff/go.mod h1:klldr+wegB1KZME56IMyXEbpWdlnpstoHwJLXiHs6o8=
-github.com/apstndb/go-tabwrap v0.1.1 h1:TVIqUiRGey0k9zAQEVVoVN1lLBefkn2RrYiXZU4nznA=
-github.com/apstndb/go-tabwrap v0.1.1/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
 github.com/apstndb/go-tabwrap v0.1.2 h1:75C3WtTcn4NBw7sM29zWpQzgrwH77lGKj0OC72OBZfo=
 github.com/apstndb/go-tabwrap v0.1.2/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb/JBF3wY3HuDM6cB5Y0AzGkXbmVzQ87J1vU=
@@ -2493,10 +2491,10 @@ github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6/go.mod h1:Enpmw/D11tME865ROYDQzoHSIo9V8uCgWdu+fxA7n2M=
 github.com/apstndb/spannerplan v0.1.3 h1:nFzTEvRL4yMzQeFdtWp3V0VaUidNA/o3T7HyIYIGk/U=
 github.com/apstndb/spannerplan v0.1.3/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
-github.com/apstndb/spantype v0.3.8 h1:xy43Cclc2Hz6SL+3tZYuozOqJv6AML4Mv8cASgYo1O0=
-github.com/apstndb/spantype v0.3.8/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.1.8 h1:3XNS1vggTdJ5hN2hiuOEn7ApKkLfvHXZLWHqiSBuhC4=
-github.com/apstndb/spanvalue v0.1.8/go.mod h1:5bsrzbQvYj8MqXkdtMOmo+60dh7w8axlNw18fpPKxQo=
+github.com/apstndb/spantype v0.3.9 h1:RGBzu9PoQgyzHINp5DL5qOcCxDhhbc/gxedp0o8cLLY=
+github.com/apstndb/spantype v0.3.9/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
+github.com/apstndb/spanvalue v0.1.9 h1:/KImo9AXexYkB9oL8vQSU3urrJ+nwEDtp7Vd0pZB6qE=
+github.com/apstndb/spanvalue v0.1.9/go.mod h1:5bsrzbQvYj8MqXkdtMOmo+60dh7w8axlNw18fpPKxQo=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 h1:aTufxpgGiMiSQ/yoJzWsX7G7DCpvGOaDFtEYiE7QNmA=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6/go.mod h1:kIPoI1ZQRmOP9hVdFSFjPGwOPVEOSpAEIFgG09dK+7Y=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
