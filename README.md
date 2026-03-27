@@ -44,7 +44,8 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
   * Support `--host` and `--port` flags as first-class options
   * Support `--deployment-endpoint` as an alias for `--endpoint`
-  * Support `--html`, `--xml`, and `--csv` output format options with proper escaping (security-enhanced compared to reference implementation)
+  * Support `--html`, `--xml`, `--csv`, and `--format=jsonl` output format options with proper escaping (security-enhanced compared to reference implementation)
+  * JSONL format produces type-aware JSON: INT64 as numbers, BOOL as booleans, ARRAY as JSON arrays, STRUCT as JSON objects
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
@@ -124,7 +125,7 @@ spanner:
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
       --csv                                               Display output in CSV format.
-      --format=                                           Output format (table, tab, vertical, html, xml, csv)
+      --format=                                           Output format (table, tab, vertical, html, xml, csv, jsonl)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
