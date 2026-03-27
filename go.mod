@@ -18,8 +18,8 @@ require (
 	github.com/apstndb/spanemuboost v0.3.4
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.3
-	github.com/apstndb/spantype v0.3.8
-	github.com/apstndb/spanvalue v0.1.8
+	github.com/apstndb/spantype v0.3.9
+	github.com/apstndb/spanvalue v0.1.9
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
