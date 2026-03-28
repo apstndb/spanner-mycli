@@ -44,8 +44,8 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Support `--skip-column-names` flag to suppress column headers in output (useful for scripting)
   * Support `--host` and `--port` flags as first-class options
   * Support `--deployment-endpoint` as an alias for `--endpoint`
-  * Support `--html`, `--xml`, `--csv`, and `--format=jsonl` output format options with proper escaping (security-enhanced compared to reference implementation)
-  * JSONL format produces type-aware JSON: INT64/ENUM as numbers, BOOL as booleans, ARRAY as JSON arrays, STRUCT as JSON objects, NULL as null
+  * Support `--html`, `--xml`, and `--csv` output format options with proper escaping (security-enhanced compared to reference implementation)
+  * Support `--format=jsonl` for type-aware JSON Lines output: INT64/ENUM as numbers, BOOL as booleans, ARRAY as JSON arrays, STRUCT as JSON objects, NULL as null
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
