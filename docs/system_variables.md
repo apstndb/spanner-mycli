@@ -54,6 +54,7 @@ TODO
   - `HTML` - HTML table format
   - `XML` - XML format
   - `CSV` - Comma-separated values (RFC 4180 compliant)
+  - `JSONL` - JSON Lines (one JSON object per row with type-aware values)
   - `SQL_INSERT` - INSERT statements
   - `SQL_INSERT_OR_IGNORE` - INSERT OR IGNORE statements
   - `SQL_INSERT_OR_UPDATE` - INSERT OR UPDATE statements
@@ -70,7 +71,10 @@ TODO
   
   SET CLI_FORMAT = 'CSV';
   SELECT * FROM users;  -- Output as CSV (comma-separated values)
-  
+
+  SET CLI_FORMAT = 'JSONL';
+  SELECT * FROM users;  -- Output as JSON Lines (one JSON object per row)
+
   SET CLI_FORMAT = 'TABLE_DETAIL_COMMENT';
   SELECT * FROM users;  -- Output as table with execution stats, all wrapped in /* */ comments
   ```
@@ -78,10 +82,12 @@ TODO
   - Can be set via `--html` flag (sets to HTML format)
   - Can be set via `--xml` flag (sets to XML format)
   - Can be set via `--csv` flag (sets to CSV format)
+  - Can be set via `--format=jsonl` flag (sets to JSONL format)
   - Can be set via `--table` flag (sets to TABLE format in batch mode)
   - HTML and XML formats are compatible with Google Cloud Spanner CLI
   - All special characters are properly escaped in HTML, XML, and CSV formats for security
   - CSV format follows RFC 4180 standard with automatic escaping of commas, quotes, and newlines
+  - JSONL format produces type-aware JSON: INT64/ENUM as numbers, BOOL as booleans, ARRAY as JSON arrays, STRUCT as JSON objects, NULL as null
   - The format affects how query results are displayed, not how they are executed
   - `TABLE_DETAIL_COMMENT` is particularly useful with `CLI_ECHO_INPUT=TRUE` and `CLI_MARKDOWN_CODEBLOCK=TRUE` for documentation
 
