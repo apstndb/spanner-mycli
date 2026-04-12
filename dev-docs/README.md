@@ -80,10 +80,11 @@ When adding new documentation:
 2. Update this README.md with navigation if adding new files
 3. Ensure cross-references are accurate
 4. Follow existing formatting and structure patterns
-5. Remember: Implementation details belong here, not in CLAUDE.md
+5. Remember: Implementation details belong here, not in AGENTS.md
 
 ## Related Documentation
 
-- [CLAUDE.md](../CLAUDE.md) - Essential guidelines only (keep minimal)
+- [AGENTS.md](../AGENTS.md) - Shared repository guidance for coding agents
+- [CLAUDE.md](../CLAUDE.md) - Minimal Claude Code stub that references `@AGENTS.md`
 - [User Documentation](../docs/) - End-user facing documentation
 - [README.md](../README.md) - Project overview and quick start

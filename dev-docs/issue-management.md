@@ -110,7 +110,7 @@ spanner-mycli uses a systematic labeling approach to categorize and prioritize i
 
 **📖 Documentation Labels**
 - `docs-user` - User-facing documentation (README.md, docs/)
-- `docs-dev` - Developer/internal documentation (dev-docs/, CLAUDE.md)
+- `docs-dev` - Developer/internal documentation (dev-docs/, AGENTS.md, CLAUDE.md)
 
 #### **Labeling Best Practices**
 
@@ -613,7 +613,7 @@ Pull requests should be labeled according to the repository's automatic release 
 - `bug` - Categorized in "Bug Fixes" section  
 - `enhancement` - Categorized in "New Features" section
 - `ignore-for-release` - Excluded from release notes entirely
-  - **Use for**: dev-docs updates (including CLAUDE.md), internal tooling changes
+  - **Use for**: dev-docs updates (including AGENTS.md or the CLAUDE.md stub), internal tooling changes
   - **Criteria**: Changes that don't affect spanner-mycli functionality
   - **Note**: User-facing documentation (README.md, docs/) MUST NOT have this label
 
