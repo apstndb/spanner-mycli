@@ -49,10 +49,10 @@ make test-quick               # Quick tests during development
 make fmt                      # Format code
 
 # Development tools (Go tool directive, managed via go.mod)
-go tool gh-helper reviews fetch [PR]                    # Fetch review data
-go tool gh-helper reviews fetch [PR] --unresolved-only  # Only unresolved threads
-go tool gh-helper reviews wait [PR]                     # Wait for reviews + checks
-go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve
+go tool gh-helper reviews fetch <PR>                    # Fetch review data
+go tool gh-helper reviews fetch <PR> --unresolved-only  # Only unresolved threads
+go tool gh-helper reviews wait <PR>                     # Wait for reviews + checks
+go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --resolve
 go tool gh-helper issues show <N> --include-sub         # Show issue with sub-issues
 go tool gh-helper issues edit <N> --parent <P>          # Link as sub-issue
 go tool gh-helper labels add bug,enhancement --items 254,267
