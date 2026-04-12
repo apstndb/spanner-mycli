@@ -40,7 +40,7 @@ Brief description of what this PR does and why.
 ### Discoveries
 - Pattern/architecture/testing insights worth preserving
 
-### CLAUDE.md Integration Candidates
+### AGENTS.md Integration Candidates
 - Patterns or rules to add to project docs
 
 ## Test Plan
