@@ -2485,6 +2485,8 @@ github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKR
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.5.0 h1:WaWD0Wp3Yw1BZwyvT4bIf2XsXAA+vq9ZNxUKXXV/vZQ=
 github.com/apstndb/memebridge v0.5.0/go.mod h1:fPrWYKcg5/eaavD6RovT9qeq8K7bDhgLKOcGhqg6zo4=
+github.com/apstndb/ptyhelp v0.1.0 h1:WDV+Wsl9A4SJxW04Tl/qgS7+R7zWVs2iooRVnwmAE/0=
+github.com/apstndb/ptyhelp v0.1.0/go.mod h1:VI4NWnhDSERhK66XstA0Ju0K8EuKbz8TX87iH/lNCm0=
 github.com/apstndb/spanemuboost v0.3.4 h1:0sP11pSdCJv+pOods08pmjE7zCwqOoSef14h1NCjpe4=
 github.com/apstndb/spanemuboost v0.3.4/go.mod h1:uNXjl80HX4S8hK68HCobxRrNEBLhzE+EVxkwOGuwdRM=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l0QJZRVSRwBXTxaMMAjrmF0kQDjXlCM0bwTCo5Gs=
@@ -2497,6 +2499,8 @@ github.com/apstndb/spanvalue v0.1.9 h1:/KImo9AXexYkB9oL8vQSU3urrJ+nwEDtp7Vd0pZB6
 github.com/apstndb/spanvalue v0.1.9/go.mod h1:5bsrzbQvYj8MqXkdtMOmo+60dh7w8axlNw18fpPKxQo=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 h1:aTufxpgGiMiSQ/yoJzWsX7G7DCpvGOaDFtEYiE7QNmA=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6/go.mod h1:kIPoI1ZQRmOP9hVdFSFjPGwOPVEOSpAEIFgG09dK+7Y=
+github.com/aymanbagabas/go-pty v0.2.2 h1:YZREB4eSj+1xdbbItIokX0ekjjeifgJOA+ZvxU4/WM8=
+github.com/aymanbagabas/go-pty v0.2.2/go.mod h1:gfvlwH+0U66BCwxJREjJaAOEs9H1OFf3YFjI9WSiZ04=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932/go.mod h1:NOuUCSz6Q9T7+igc/hlvDOUdtWKryOrtFyIVABv/p7k=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=
@@ -3095,6 +3099,8 @@ github.com/tklauser/go-sysconf v0.3.15 h1:VE89k0criAymJ/Os65CSn1IXaol+1wrsFHEB8O
 github.com/tklauser/go-sysconf v0.3.15/go.mod h1:Dmjwr6tYFIseJw7a3dRLJfsHAMXZ3nEnL/aZY+0IuI4=
 github.com/tklauser/numcpus v0.10.0 h1:18njr6LDBk1zuna922MgdjQuJFjrdppsZG60sHGfjso=
 github.com/tklauser/numcpus v0.10.0/go.mod h1:BiTKazU708GQTYF4mB+cmlpT2Is1gLk7XVuEeem8LsQ=
+github.com/u-root/u-root v0.11.0 h1:6gCZLOeRyevw7gbTwMj3fKxnr9+yHFlgF3N7udUVNO8=
+github.com/u-root/u-root v0.11.0/go.mod h1:DBkDtiZyONk9hzVEdB/PWI9B4TxDkElWlVTHseglrZY=
 github.com/vbauerster/mpb/v8 v8.10.2 h1:2uBykSHAYHekE11YvJhKxYmLATKHAGorZwFlyNw4hHM=
 github.com/vbauerster/mpb/v8 v8.10.2/go.mod h1:+Ja4P92E3/CorSZgfDtK46D7AVbDqmBQRTmyTqPElo0=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=

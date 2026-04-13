@@ -80,7 +80,9 @@ require (
 	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
+	github.com/apstndb/ptyhelp v0.1.0 // indirect
 	github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 // indirect
+	github.com/aymanbagabas/go-pty v0.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charlievieth/fastwalk v1.0.14 // indirect
@@ -162,6 +164,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
+	github.com/u-root/u-root v0.11.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
@@ -195,5 +198,6 @@ require (
 tool (
 	github.com/apstndb/gh-dev-tools/gh-helper
 	github.com/apstndb/github-schema-go/cmd/github-schema
+	github.com/apstndb/ptyhelp
 	github.com/dmarkham/enumer
 )
