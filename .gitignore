@@ -7,21 +7,23 @@ dist/
 credentials.json
 
 # System files - safe to delete anywhere
-.DS_Store     # macOS system file
+.DS_Store
 
 # IDE and tool directories - DO NOT delete in main workspace, safe to delete ONLY in phantom worktrees
-.idea         # JetBrains IDE settings
-.claude       # Claude Code session data
-!.claude/settings.json  # Exception: project-wide Claude Code settings (team shared)
+.idea/
+.claude/
+!.claude/settings.json
 
 # Cache and temporary files - safe to delete anywhere
-.cache/       # Application cache directory
-tmp/          # Development temporary files (e.g., help output generation)
-.tmp/         # Temporary directory for cloning external repos (hidden from go test)
+.cache/
+tmp/
+.tmp/
+.worktrees/
 
-# Configuration files with secrets - may contain sensitive connection info, check before deleting
+# Local configuration files with secrets or machine-specific settings
+.env
+.mcp.json
 .*.cnf
-
 
 # Phantom worktree notes - temporary development notes, safe to delete anywhere
 .notes.md
