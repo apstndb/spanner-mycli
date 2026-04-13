@@ -83,7 +83,7 @@ docs-update:
 	@echo "Updating help output for README.md..."
 	@mkdir -p tmp
 	@go tool ptyhelp -cols 200 -o tmp/help_clean.txt -target-file README.md -marker readme-help -- go run . --help
-	@for f in tmp/help_clean.txt README.md; do tmp=$$(mktemp); awk '{ sub(/\r$$/, ""); print }' "$$f" > "$$tmp" && mv "$$tmp" "$$f"; done
+	@for f in tmp/help_clean.txt README.md; do tmp="$$f.tmp"; awk '{ sub(/\r$$/, ""); print }' "$$f" > "$$tmp" && cat "$$tmp" > "$$f" && rm "$$tmp" || { rm -f "$$tmp"; exit 1; }; done
 	@go run . --statement-help > tmp/statement_help.txt
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
