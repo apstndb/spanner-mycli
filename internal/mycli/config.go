@@ -73,7 +73,7 @@ type spannerOptions struct {
 	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
 	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
 	CSV                       bool              `long:"csv" description:"Display output in CSV format." default-mask:"-"`
-	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv)" default-mask:"-"`
+	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv, jsonl)" default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
@@ -84,7 +84,7 @@ type spannerOptions struct {
 	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)" default-mask:"-"`
 	Host                      string            `long:"host" description:"Host on which Spanner server is located" default-mask:"-"`
 	Port                      int               `long:"port" description:"Port number for Spanner connection" default-mask:"-"`
-	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
+	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replica_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
 	SQL                       string            `long:"sql" hidden:"true" description:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility" default-mask:"-"`
 	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
 	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64" default-mask:"-"`

@@ -1,0 +1,32 @@
+name: README sync
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  readme-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install tools
+        run: go install tool
+
+      - name: Regenerate README help
+        run: make docs-update
+
+      - name: Check README is up to date
+        run: git diff --exit-code -- README.md

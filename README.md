@@ -117,10 +117,12 @@ Usage:
 spanner:
   -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
   -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
-  -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used. [$SPANNER_DATABASE_ID]
+  -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used.
+                                                          [$SPANNER_DATABASE_ID]
       --detached                                          Start in detached mode, ignoring database env var/flag
   -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
-  -f, --file=                                             Execute SQL statement from file and quit. --source is an alias.
+  -f, --file=                                             Execute SQL statement from file and quit. --source is an
+                                                          alias.
   -t, --table                                             Display output in table format for batch mode.
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
@@ -130,21 +132,33 @@ spanner:
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
       --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
-      --history=                                          Set the history file to the specified path (default: /tmp/spanner_mycli_readline.tmp)
+      --history=                                          Set the history file to the specified path (default:
+                                                          /tmp/spanner_mycli_readline.tmp)
       --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
       --role=                                             Use the specific database role. --database-role is an alias.
       --endpoint=                                         Set the Spanner API endpoint (host:port)
       --host=                                             Host on which Spanner server is located
       --port=                                             Port number for Spanner connection
-      --directed-read=                                    Directed read option (replica_location:replica_type). The replicat_type is optional and either READ_ONLY or READ_WRITE
-      --set=                                              Set system variables e.g. --set=name1=value1 --set=name2=value2
-      --param=                                            Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'" --param=p2=FLOAT64
-      --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message.
-      --insecure                                          Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias.
-      --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured.
+      --directed-read=                                    Directed read option (replica_location:replica_type). The
+                                                          replica_type is optional and either READ_ONLY or READ_WRITE
+      --set=                                              Set system variables e.g. --set=name1=value1
+                                                          --set=name2=value2
+      --param=                                            Set query parameters, it can be literal or
+                                                          type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'"
+                                                          --param=p2=FLOAT64
+      --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized
+                                                          google.protobuf.FileDescriptorSet message.
+      --insecure                                          Skip TLS verification and permit plaintext gRPC.
+                                                          --skip-tls-verify is an alias.
+      --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance,
+                                                          --database, --endpoint, --insecure will be automatically
+                                                          configured.
       --emulator-image=                                   container image for --embedded-emulator
-      --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
-      --sample-database=                                  Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator.
+      --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for
+                                                          embedded emulator
+      --sample-database=                                  Initialize emulator with built-in sample (e.g. fingraph,
+                                                          singers, banking) or path to metadata.json file. Requires
+                                                          --embedded-emulator.
       --list-samples                                      List available sample databases and exit
       --output-template=                                  Filepath of output template. (EXPERIMENTAL)
       --log-level=
@@ -158,18 +172,24 @@ spanner:
       --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
       --impersonate-service-account=                      Impersonate service account email
       --version                                           Show version string.
-      --enable-partitioned-dml                            Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --enable-partitioned-dml                            Partitioned DML as default
+                                                          (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
       --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
-      --async                                             Return immediately, without waiting for the operation in progress to complete
-      --try-partition-query                               Test whether the query can be executed as partition query without execution
+      --async                                             Return immediately, without waiting for the operation in
+                                                          progress to complete
+      --try-partition-query                               Test whether the query can be executed as partition query
+                                                          without execution
       --mcp                                               Run as MCP server
       --skip-system-command                               Do not allow system commands
       --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
-      --tee=                                              Append a copy of output to the specified file (both screen and file)
+      --tee=                                              Append a copy of output to the specified file (both screen
+                                                          and file)
   -o, --output=                                           Redirect output to file (file only, no screen output)
       --skip-column-names                                 Suppress column headers in output
-      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream) (default: AUTO)
-      --color=[AUTO|TRUE|FALSE]                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled) (default: AUTO)
+      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE
+                                                          (always stream), FALSE (never stream) (default: AUTO)
+      --color=[AUTO|TRUE|FALSE]                           ANSI styling in output: AUTO (styled if TTY), TRUE (always
+                                                          styled), FALSE (never styled) (default: AUTO)
   -q, --quiet                                             Suppress result lines like 'rows in set' for clean output
 
 Help Options:
