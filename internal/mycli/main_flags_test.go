@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +12,10 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanemuboost"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 )
 
@@ -94,9 +93,7 @@ func checkError(t *testing.T, err error, errContains string) {
 
 // parseAndValidate parses command-line arguments and validates Spanner options
 func parseAndValidate(args []string) (*globalOptions, error) {
-	var gopts globalOptions
-	parser := flags.NewParser(&gopts, flags.Default)
-	_, err := parser.ParseArgs(args)
+	gopts, err := parseTestFlags(args)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +103,19 @@ func parseAndValidate(args []string) (*globalOptions, error) {
 	}
 
 	return &gopts, nil
+}
+
+func parseTestFlags(args []string, configFiles ...string) (globalOptions, error) {
+	gopts, _, err := parseFlagsArgs(args, "built from source", configFiles, io.Discard, io.Discard)
+	return gopts, err
+}
+
+func isHelpRequested(err error) bool {
+	return errors.Is(err, helpRequestedError{})
+}
+
+func isVersionRequested(err error) bool {
+	return errors.Is(err, versionRequestedError{})
 }
 
 // initSysVarsOrFail initializes system variables and fails the test on error
@@ -347,12 +357,12 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid query-mode value",
 			args:        withRequiredFlags("--query-mode", "INVALID"),
-			errContains: "Invalid value `INVALID' for option `--query-mode'",
+			errContains: "invalid value of --query-mode",
 		},
 		{
 			name:        "invalid database-dialect value",
 			args:        withRequiredFlags("--database-dialect", "INVALID"),
-			errContains: "Invalid value `INVALID' for option `--database-dialect'",
+			errContains: "invalid value of --database-dialect",
 		},
 
 		// Format validation
@@ -404,7 +414,7 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid param format",
 			args:        withRequiredFlags("--param", "invalid syntax"),
-			errContains: "error on parsing --param",
+			errContains: "--param: expected \"<key>=<value>\"",
 		},
 		{
 			name: "valid param with string value",
@@ -611,12 +621,11 @@ func TestFlagSystemVariablePrecedence(t *testing.T) {
 		{
 			name: "Config file values with CLI overrides",
 			args: []string{"--project", "cli-project"},
-			configContent: `[spanner]
-project = config-project
-instance = config-instance
-database = config-database
-endpoint = config-endpoint:443
-role = config-role
+			configContent: `project = "config-project"
+instance = "config-instance"
+database = "config-database"
+endpoint = "config-endpoint:443"
+role = "config-role"
 log-grpc = true
 insecure = true
 `,
@@ -713,11 +722,10 @@ insecure = true
 				"SPANNER_INSTANCE_ID": "env-instance",
 				"SPANNER_DATABASE_ID": "env-database",
 			},
-			configContent: `[spanner]
-project = config-project
-instance = config-instance
-database = config-database
-priority = HIGH
+			configContent: `project = "config-project"
+instance = "config-instance"
+database = "config-database"
+priority = "HIGH"
 `,
 			wantProject:  "env-project",                    // env overrides config
 			wantInstance: "env-instance",                   // env overrides config
@@ -733,39 +741,22 @@ priority = HIGH
 				t.Setenv(k, v)
 			}
 
-			// For config file tests, we need to handle parsing differently
-			var gopts globalOptions
+			var (
+				gopts globalOptions
+				err   error
+			)
 			if tt.configContent != "" {
 				tmpDir := t.TempDir()
-				configFile := filepath.Join(tmpDir, cnfFileName)
+				configFile := filepath.Join(tmpDir, configFileName)
 				if err := os.WriteFile(configFile, []byte(tt.configContent), 0o644); err != nil {
 					t.Fatalf("Failed to create config file: %v", err)
 				}
-
-				// Initialize with defaults like parseFlags does
-				gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
-
-				// Process config file directly by calling the INI parser
-				// to avoid changing the global current working directory (os.Chdir).
-				configParser := flags.NewParser(&gopts, flags.Default)
-				iniParser := flags.NewIniParser(configParser)
-				if err := iniParser.ParseFile(configFile); err != nil {
-					t.Fatalf("Failed to read config file: %v", err)
-				}
-
-				// Then parse command line args
-				flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash|flags.HelpFlag)
-				_, err := flagParser.ParseArgs(tt.args)
-				if err != nil {
-					t.Fatalf("Failed to parse flags: %v", err)
-				}
+				gopts, err = parseTestFlags(tt.args, configFile)
 			} else {
-				// For non-config tests, just parse args
-				parser := flags.NewParser(&gopts, flags.Default)
-				_, err := parser.ParseArgs(tt.args)
-				if err != nil {
-					t.Fatalf("Failed to parse flags: %v", err)
-				}
+				gopts, err = parseTestFlags(tt.args)
+			}
+			if err != nil {
+				t.Fatalf("Failed to parse flags: %v", err)
 			}
 
 			// Initialize system variables
@@ -1175,9 +1166,7 @@ func TestSpecialFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 
 			if err == nil && !gopts.Spanner.StatementHelp {
 				// Skip validation for --statement-help as it's handled before validation in run()
@@ -1252,9 +1241,7 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
@@ -1341,9 +1328,7 @@ func TestOutputTemplateValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 
 			if err == nil {
 				err = ValidateSpannerOptions(&gopts.Spanner)
@@ -1707,9 +1692,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			if err != nil {
 				t.Fatalf("Failed to parse flags: %v", err)
 			}
@@ -1786,20 +1769,15 @@ func TestHelpAndVersionFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
-
+			var stdout bytes.Buffer
+			_, _, err := parseFlagsArgs(tt.args, "built from source", nil, &stdout, io.Discard)
 			if tt.wantHelp {
-				if err == nil || !flags.WroteHelp(err) {
+				if !isHelpRequested(err) {
 					t.Errorf("Expected help to be written, but got err = %v", err)
 				}
 			} else if tt.wantVersion {
-				if err != nil {
-					t.Errorf("Unexpected error parsing version flag: %v", err)
-				}
-				if !gopts.Spanner.Version {
-					t.Errorf("Version flag not set")
+				if !isVersionRequested(err) {
+					t.Errorf("Expected version to be written, but got err = %v", err)
 				}
 			}
 		})
@@ -1915,9 +1893,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			wantErr := tt.errContains != ""
 			if err != nil && !wantErr {
 				t.Fatalf("Failed to parse flags: %v", err)
@@ -2003,9 +1979,7 @@ func TestAliasFlagPrecedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			if err != nil {
 				t.Fatalf("ParseArgs() error: %v", err)
 			}
@@ -2081,9 +2055,7 @@ func TestHostPortFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			if err != nil {
 				t.Fatalf("ParseArgs() error: %v", err)
 			}
@@ -2126,9 +2098,7 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			if err != nil {
 				t.Fatalf("ParseArgs() error: %v", err)
 			}
@@ -2189,9 +2159,7 @@ func TestEmulatorPlatformFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gopts globalOptions
-			parser := flags.NewParser(&gopts, flags.Default)
-			_, err := parser.ParseArgs(tt.args)
+			gopts, err := parseTestFlags(tt.args)
 			if err != nil {
 				t.Fatalf("ParseArgs() error: %v", err)
 			}

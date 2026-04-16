@@ -31,10 +31,11 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/alecthomas/kong"
+	kongtoml "github.com/alecthomas/kong-toml"
 	"github.com/apstndb/spanemuboost"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 	"golang.org/x/term"
 	"spheric.cloud/xiter"
@@ -43,13 +44,9 @@ import (
 )
 
 type globalOptions struct {
-	Spanner spannerOptions `group:"spanner"`
+	Spanner spannerOptions `embed:""`
 }
 
-// We can't use `default` because spanner-mycli uses multiple flags.NewParser() to process config files and flags.
-// All fields use `default-mask:"-"` to prevent struct field values from appearing in help output.
-// This is necessary because go-flags displays any non-zero struct field values as defaults in help text.
-//
 // Alias flags handling:
 // Some flags have hidden aliases for compatibility with other tools:
 // - --sql is an alias of --execute (gcloud spanner databases execute-sql compatibility)
@@ -60,76 +57,102 @@ type globalOptions struct {
 // Precedence behavior:
 // - For string flags (role/database-role, endpoint/deployment-endpoint): Non-hidden flag takes precedence when both are non-empty
 // - For boolean flags (insecure/skip-tls-verify): Non-hidden flag takes precedence when both are set
-// This precedence behavior may override normal flag/env/ini precedence.
+// This precedence behavior may override normal flag/env/TOML precedence.
+type helpRequestedError struct{}
+
+func (helpRequestedError) Error() string { return "help requested" }
+
+type versionRequestedError struct{}
+
+func (versionRequestedError) Error() string { return "version requested" }
+
+type showHelpFlag bool
+
+func (h showHelpFlag) BeforeReset(ctx *kong.Context) error {
+	if err := ctx.PrintUsage(false); err != nil {
+		return err
+	}
+	return helpRequestedError{}
+}
+
+type showVersionFlag bool
+
+func (v showVersionFlag) BeforeReset(app *kong.Kong, vars kong.Vars) error {
+	fmt.Fprintln(app.Stdout, vars["version"])
+	fmt.Fprintln(app.Stdout, vars["installFrom"])
+	return versionRequestedError{}
+}
+
 type spannerOptions struct {
-	ProjectId                 string            `long:"project" short:"p" env:"SPANNER_PROJECT_ID" default-mask:"-" description:"(required) GCP Project ID."`
-	InstanceId                string            `long:"instance" short:"i" env:"SPANNER_INSTANCE_ID" default-mask:"-" description:"(required) Cloud Spanner Instance ID"`
-	DatabaseId                string            `long:"database" short:"d" env:"SPANNER_DATABASE_ID" default-mask:"-" description:"Cloud Spanner Database ID. Optional when --detached is used."`
-	Detached                  bool              `long:"detached" description:"Start in detached mode, ignoring database env var/flag" default-mask:"-"`
-	Execute                   string            `long:"execute" short:"e" description:"Execute SQL statement and quit. --sql is an alias." default-mask:"-"`
-	File                      string            `long:"file" short:"f" description:"Execute SQL statement from file and quit. --source is an alias." default-mask:"-"`
-	Source                    string            `long:"source" hidden:"true" description:"Hidden alias of --file for Google Cloud Spanner CLI compatibility" default-mask:"-"`
-	Table                     bool              `long:"table" short:"t" description:"Display output in table format for batch mode." default-mask:"-"`
-	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
-	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
-	CSV                       bool              `long:"csv" description:"Display output in CSV format." default-mask:"-"`
-	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv, jsonl)" default-mask:"-"`
-	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
-	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
-	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
-	Prompt2                   *string           `long:"prompt2" description:"Set the prompt2 to the specified format" default-mask:"%P%R> "`
-	HistoryFile               *string           `long:"history" description:"Set the history file to the specified path" default-mask:"/tmp/spanner_mycli_readline.tmp"`
-	Priority                  string            `long:"priority" description:"Set default request priority (HIGH|MEDIUM|LOW)" default-mask:"-"`
-	Role                      string            `long:"role" description:"Use the specific database role. --database-role is an alias." default-mask:"-"`
-	Endpoint                  string            `long:"endpoint" description:"Set the Spanner API endpoint (host:port)" default-mask:"-"`
-	Host                      string            `long:"host" description:"Host on which Spanner server is located" default-mask:"-"`
-	Port                      int               `long:"port" description:"Port number for Spanner connection" default-mask:"-"`
-	DirectedRead              string            `long:"directed-read" description:"Directed read option (replica_location:replica_type). The replica_type is optional and either READ_ONLY or READ_WRITE" default-mask:"-"`
-	SQL                       string            `long:"sql" hidden:"true" description:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility" default-mask:"-"`
-	Set                       map[string]string `long:"set" key-value-delimiter:"=" description:"Set system variables e.g. --set=name1=value1 --set=name2=value2" default-mask:"-"`
-	Param                     map[string]string `long:"param" key-value-delimiter:"=" description:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64" default-mask:"-"`
-	ProtoDescriptorFile       string            `long:"proto-descriptor-file" description:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message." default-mask:"-"`
-	Insecure                  *bool             `long:"insecure" description:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias." default-mask:"-"`
-	SkipTlsVerify             *bool             `long:"skip-tls-verify" description:"Hidden alias of --insecure from original spanner-cli" hidden:"true" default-mask:"-"`
-	EmbeddedEmulator          bool              `long:"embedded-emulator" description:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured." default-mask:"-"`
-	EmulatorImage             string            `long:"emulator-image" description:"container image for --embedded-emulator" default-mask:"-"`
-	EmulatorPlatform          string            `long:"emulator-platform" description:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator" default-mask:"-"`
-	SampleDatabase            string            `long:"sample-database" description:"Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator." default-mask:"-"`
-	ListSamples               bool              `long:"list-samples" description:"List available sample databases and exit" default-mask:"-"`
-	OutputTemplate            string            `long:"output-template" description:"Filepath of output template. (EXPERIMENTAL)" default-mask:"-"`
-	LogLevel                  string            `long:"log-level" default-mask:"-"`
-	LogGrpc                   bool              `long:"log-grpc" description:"Show gRPC logs" default-mask:"-"`
-	QueryMode                 string            `long:"query-mode" description:"Mode in which the query must be processed." choice:"NORMAL" choice:"PLAN" choice:"PROFILE" default-mask:"-"`
-	Strong                    bool              `long:"strong" description:"Perform a strong query." default-mask:"-"`
-	ReadTimestamp             string            `long:"read-timestamp" description:"Perform a query at the given timestamp." default-mask:"-"`
-	VertexAIProject           string            `long:"vertexai-project" description:"Vertex AI project" ini-name:"vertexai_project" default-mask:"-"`
-	VertexAIModel             *string           `long:"vertexai-model" description:"Vertex AI model" ini-name:"vertexai_model" default-mask:"gemini-3-flash-preview"`
-	VertexAILocation          *string           `long:"vertexai-location" description:"Vertex AI location" ini-name:"vertexai_location" default-mask:"global"`
-	DatabaseDialect           string            `long:"database-dialect" description:"The SQL dialect of the Cloud Spanner Database." choice:"POSTGRESQL" choice:"GOOGLE_STANDARD_SQL" default-mask:"-"`
-	ImpersonateServiceAccount string            `long:"impersonate-service-account" description:"Impersonate service account email" default-mask:"-"`
-	Version                   bool              `long:"version" description:"Show version string." default-mask:"-"`
-	StatementHelp             bool              `long:"statement-help" description:"Show statement help." hidden:"true" default-mask:"-"`
-	DatabaseRole              string            `long:"database-role" description:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility" hidden:"true" default-mask:"-"`
-	DeploymentEndpoint        string            `long:"deployment-endpoint" hidden:"true" description:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility" default-mask:"-"`
-	EnablePartitionedDML      bool              `long:"enable-partitioned-dml" description:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)" default-mask:"-"`
-	Timeout                   string            `long:"timeout" description:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
-	Async                     bool              `long:"async" description:"Return immediately, without waiting for the operation in progress to complete" default-mask:"-"`
-	TryPartitionQuery         bool              `long:"try-partition-query" description:"Test whether the query can be executed as partition query without execution" default-mask:"-"`
-	MCP                       bool              `long:"mcp" description:"Run as MCP server" default-mask:"-"`
+	ProjectId                 string            `name:"project" short:"p" env:"SPANNER_PROJECT_ID" help:"(required) GCP Project ID."`
+	InstanceId                string            `name:"instance" short:"i" env:"SPANNER_INSTANCE_ID" help:"(required) Cloud Spanner Instance ID"`
+	DatabaseId                string            `name:"database" short:"d" env:"SPANNER_DATABASE_ID" help:"Cloud Spanner Database ID. Optional when --detached is used."`
+	Detached                  bool              `name:"detached" help:"Start in detached mode, ignoring database env var/flag"`
+	Execute                   string            `name:"execute" short:"e" help:"Execute SQL statement and quit. --sql is an alias."`
+	File                      string            `name:"file" short:"f" help:"Execute SQL statement from file and quit. --source is an alias."`
+	Source                    string            `name:"source" hidden:"" help:"Hidden alias of --file for Google Cloud Spanner CLI compatibility"`
+	Table                     bool              `name:"table" short:"t" help:"Display output in table format for batch mode."`
+	HTML                      bool              `name:"html" help:"Display output in HTML format."`
+	XML                       bool              `name:"xml" help:"Display output in XML format."`
+	CSV                       bool              `name:"csv" help:"Display output in CSV format."`
+	Format                    string            `name:"format" help:"Output format (table, tab, vertical, html, xml, csv, jsonl)"`
+	Verbose                   bool              `name:"verbose" short:"v" help:"Display verbose output."`
+	Credential                string            `name:"credential" help:"Use the specific credential file"`
+	Prompt                    *string           `name:"prompt" help:"Set the prompt to the specified format"`
+	Prompt2                   *string           `name:"prompt2" help:"Set the prompt2 to the specified format"`
+	HistoryFile               *string           `name:"history" help:"Set the history file to the specified path"`
+	Priority                  string            `name:"priority" help:"Set default request priority (HIGH|MEDIUM|LOW)"`
+	Role                      string            `name:"role" help:"Use the specific database role. --database-role is an alias."`
+	Endpoint                  string            `name:"endpoint" help:"Set the Spanner API endpoint (host:port)"`
+	Host                      string            `name:"host" help:"Host on which Spanner server is located"`
+	Port                      int               `name:"port" help:"Port number for Spanner connection"`
+	DirectedRead              string            `name:"directed-read" help:"Directed read option (replica_location:replica_type). The replica_type is optional and either READ_ONLY or READ_WRITE"`
+	SQL                       string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
+	Set                       map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	Param                     map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
+	ProtoDescriptorFile       string            `name:"proto-descriptor-file" help:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
+	Insecure                  *bool             `name:"insecure" help:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
+	SkipTlsVerify             *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
+	EmbeddedEmulator          bool              `name:"embedded-emulator" help:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmulatorImage             string            `name:"emulator-image" help:"container image for --embedded-emulator"`
+	EmulatorPlatform          string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator"`
+	SampleDatabase            string            `name:"sample-database" help:"Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator."`
+	ListSamples               bool              `name:"list-samples" help:"List available sample databases and exit"`
+	OutputTemplate            string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
+	LogLevel                  string            `name:"log-level"`
+	LogGrpc                   bool              `name:"log-grpc" help:"Show gRPC logs"`
+	QueryMode                 string            `name:"query-mode" help:"Mode in which the query must be processed."`
+	Strong                    bool              `name:"strong" help:"Perform a strong query."`
+	ReadTimestamp             string            `name:"read-timestamp" help:"Perform a query at the given timestamp."`
+	VertexAIProject           string            `name:"vertexai-project" help:"Vertex AI project"`
+	VertexAIModel             *string           `name:"vertexai-model" help:"Vertex AI model"`
+	VertexAILocation          *string           `name:"vertexai-location" help:"Vertex AI location"`
+	DatabaseDialect           string            `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database."`
+	ImpersonateServiceAccount string            `name:"impersonate-service-account" help:"Impersonate service account email"`
+	Help                      showHelpFlag      `name:"help" short:"h" help:"Show this help message and exit."`
+	Version                   showVersionFlag   `name:"version" help:"Show version string."`
+	StatementHelp             bool              `name:"statement-help" hidden:"" help:"Show statement help."`
+	DatabaseRole              string            `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
+	DeploymentEndpoint        string            `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
+	EnablePartitionedDML      bool              `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
+	Timeout                   string            `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	Async                     bool              `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
+	TryPartitionQuery         bool              `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
+	MCP                       bool              `name:"mcp" help:"Run as MCP server"`
 	// SkipSystemCommand is kept for compatibility with official Spanner CLI.
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
-	SkipSystemCommand bool `long:"skip-system-command" description:"Do not allow system commands" default-mask:"-"`
+	SkipSystemCommand bool `name:"skip-system-command" help:"Do not allow system commands"`
 	// SystemCommand provides an alternative way to control system command execution.
 	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
 	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
-	SystemCommand   *string `long:"system-command" description:"Enable or disable system commands (ON/OFF)" choice:"ON" choice:"OFF" default-mask:"ON"`
-	Tee             string  `long:"tee" description:"Append a copy of output to the specified file (both screen and file)" default-mask:"-"`
-	Output          string  `long:"output" short:"o" description:"Redirect output to file (file only, no screen output)" default-mask:"-"`
-	SkipColumnNames bool    `long:"skip-column-names" description:"Suppress column headers in output" default-mask:"-"`
-	Streaming       string  `long:"streaming" description:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
-	Color           string  `long:"color" description:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" choice:"AUTO" choice:"TRUE" choice:"FALSE" default:"AUTO"`
-	Quiet           bool    `long:"quiet" short:"q" description:"Suppress result lines like 'rows in set' for clean output" default-mask:"-"`
+	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF)" enum:"ON,OFF"`
+	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
+	Output          string  `name:"output" short:"o" help:"Redirect output to file (file only, no screen output)"`
+	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`
+	Streaming       string  `name:"streaming" help:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
+	Color           string  `name:"color" help:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
+	Quiet           bool    `name:"quiet" short:"q" help:"Suppress result lines like 'rows in set' for clean output"`
 }
 
 // determineInitialDatabase determines the initial database based on CLI flags and environment
@@ -541,52 +564,92 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	return sysVars, nil
 }
 
-func parseFlags() (globalOptions, *flags.Parser, error) {
-	// Initialize globalOptions with default values that should appear in help text.
-	// go-flags uses struct field values as defaults when displaying help.
-	// This is why we set EmulatorImage here instead of using default-mask.
-	var gopts globalOptions
-	gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
-
-	// process config files at first
-	configFileParser := flags.NewParser(&gopts, flags.Default)
-
-	if err := readConfigFile(configFileParser); err != nil {
-		return globalOptions{}, nil, fmt.Errorf("invalid config file format: %w", err)
-	}
-
-	// then, process environment variables and command line options
-	// use another parser to process environment variables with higher precedence than configuration files
-	flagParser := flags.NewParser(&gopts, flags.PrintErrors|flags.PassDoubleDash|flags.HelpFlag)
-
-	_, err := flagParser.Parse()
-	return gopts, flagParser, err
+func parseFlags(installFrom string) (globalOptions, *kong.Kong, error) {
+	return parseFlagsArgs(os.Args[1:], installFrom, defaultConfigFiles(), os.Stdout, os.Stderr)
 }
 
-const cnfFileName = ".spanner_mycli.cnf"
+func parseFlagsArgs(args []string, installFrom string, configFiles []string, stdout, stderr io.Writer) (globalOptions, *kong.Kong, error) {
+	gopts := newGlobalOptions()
+	parser, err := newFlagParser(&gopts, installFrom, configFiles, stdout, stderr)
+	if err != nil {
+		return globalOptions{}, nil, err
+	}
+	_, err = parser.Parse(args)
+	if err == nil {
+		applyEnvOverrides(&gopts.Spanner, args)
+	}
+	return gopts, parser, err
+}
 
-func readConfigFile(parser *flags.Parser) error {
-	var cnfFiles []string
+func newGlobalOptions() globalOptions {
+	var gopts globalOptions
+	gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
+	return gopts
+}
+
+const configFileName = ".spanner_mycli.toml"
+
+func applyEnvOverrides(opts *spannerOptions, args []string) {
+	if !hasCLIFlag(args, "--project", "-p") {
+		if value, ok := os.LookupEnv("SPANNER_PROJECT_ID"); ok {
+			opts.ProjectId = value
+		}
+	}
+	if !hasCLIFlag(args, "--instance", "-i") {
+		if value, ok := os.LookupEnv("SPANNER_INSTANCE_ID"); ok {
+			opts.InstanceId = value
+		}
+	}
+	if !hasCLIFlag(args, "--database", "-d") {
+		if value, ok := os.LookupEnv("SPANNER_DATABASE_ID"); ok {
+			opts.DatabaseId = value
+		}
+	}
+}
+
+func hasCLIFlag(args []string, longFlag, shortFlag string) bool {
+	for _, arg := range args {
+		if arg == longFlag || arg == shortFlag {
+			return true
+		}
+		if strings.HasPrefix(arg, longFlag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultConfigFiles() []string {
+	var files []string
 	if currentUser, err := user.Current(); err == nil {
-		cnfFiles = append(cnfFiles, filepath.Join(currentUser.HomeDir, cnfFileName))
+		files = append(files, filepath.Join(currentUser.HomeDir, configFileName))
 	}
 
 	cwd, _ := os.Getwd() // ignore err
-	cwdCnfFile := filepath.Join(cwd, cnfFileName)
-	cnfFiles = append(cnfFiles, cwdCnfFile)
+	files = append(files, filepath.Join(cwd, configFileName))
+	return files
+}
 
-	iniParser := flags.NewIniParser(parser)
-	for _, cnfFile := range cnfFiles {
-		// skip if missing
-		if _, err := os.Stat(cnfFile); err != nil {
-			continue
-		}
-		if err := iniParser.ParseFile(cnfFile); err != nil {
-			return err
-		}
+func newFlagParser(gopts *globalOptions, installFrom string, configFiles []string, stdout, stderr io.Writer) (*kong.Kong, error) {
+	options := []kong.Option{
+		kong.Name("spanner-mycli"),
+		kong.NoDefaultHelp(),
+		kong.Writers(stdout, stderr),
+		kong.Vars{
+			"version":     getVersion(),
+			"installFrom": installFrom,
+		},
 	}
 
-	return nil
+	if len(configFiles) > 0 {
+		options = append(options, kong.Configuration(kongtoml.Loader, configFiles...))
+	}
+
+	parser, err := kong.New(gopts, options...)
+	if err != nil {
+		return nil, fmt.Errorf("build CLI parser: %w", err)
+	}
+	return parser, nil
 }
 
 func readCredentialFile(filepath string) ([]byte, error) {
@@ -602,7 +665,7 @@ func readCredentialFile(filepath string) ([]byte, error) {
 // and returns the input string, interactive flag, and any error
 func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
 	// Handle alias flags - aliases have lower precedence
-	// Note: This precedence may override normal flag/env/ini precedence
+	// Note: This precedence may override normal flag/env/TOML precedence
 	if opts.Execute != "" && opts.SQL != "" {
 		slog.Warn("Both --execute and --sql are specified. Using --execute (alias has lower precedence)")
 	}
