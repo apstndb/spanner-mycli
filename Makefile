@@ -82,7 +82,7 @@ all-quick: fmt test-quick lint
 docs-update:
 	@echo "Updating help output for README.md..."
 	@mkdir -p tmp
-	@go tool ptyhelp patch -file README.md -marker readme-help -cols 92 -o tmp/help_clean.txt -normalize-eol=lf -- go run . --help
+	@go tool ptyhelp patch -file README.md -marker readme-help -cols 120 -o tmp/help_clean.txt -normalize-eol=lf -- go run . --help
 	@go run . --statement-help > tmp/statement_help.txt
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
