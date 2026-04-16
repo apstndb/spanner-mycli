@@ -73,7 +73,7 @@ type spannerOptions struct {
 	HTML                      bool              `long:"html" description:"Display output in HTML format." default-mask:"-"`
 	XML                       bool              `long:"xml" description:"Display output in XML format." default-mask:"-"`
 	CSV                       bool              `long:"csv" description:"Display output in CSV format." default-mask:"-"`
-	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv)" default-mask:"-"`
+	Format                    string            `long:"format" description:"Output format (table, tab, vertical, html, xml, csv, jsonl)" default-mask:"-"`
 	Verbose                   bool              `long:"verbose" short:"v" description:"Display verbose output." default-mask:"-"`
 	Credential                string            `long:"credential" description:"Use the specific credential file" default-mask:"-"`
 	Prompt                    *string           `long:"prompt" description:"Set the prompt to the specified format" default-mask:"spanner%t> "`
