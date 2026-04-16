@@ -125,7 +125,7 @@ spanner:
       --html                                              Display output in HTML format.
       --xml                                               Display output in XML format.
       --csv                                               Display output in CSV format.
-      --format=                                           Output format (table, tab, vertical, html, xml, csv, jsonl)
+      --format=                                           Output format (table, tab, vertical, html, xml, csv)
   -v, --verbose                                           Display verbose output.
       --credential=                                       Use the specific credential file
       --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
