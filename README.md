@@ -718,6 +718,7 @@ spanner> SELECT """
 This tool supports a TOML configuration file called `.spanner_mycli.toml`.
 The config files are loaded from `~/.spanner_mycli.toml` and `./.spanner_mycli.toml`.
 In the config file, you can set default option values for command line options.
+Hyphenated flags use underscore TOML keys, for example `vertexai_project` for `--vertexai-project`.
 
 Example:
 

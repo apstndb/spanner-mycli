@@ -69,6 +69,8 @@ func (versionRequestedError) Error() string { return "version requested" }
 type showHelpFlag bool
 
 func (h showHelpFlag) BeforeReset(ctx *kong.Context) error {
+	// Kong's PrintUsage(false) renders the full help text; only PrintUsage(true)
+	// emits the one-line summary.
 	if err := ctx.PrintUsage(false); err != nil {
 		return err
 	}
@@ -84,9 +86,9 @@ func (v showVersionFlag) BeforeReset(app *kong.Kong, vars kong.Vars) error {
 }
 
 type spannerOptions struct {
-	ProjectId                 string            `name:"project" short:"p" env:"SPANNER_PROJECT_ID" help:"(required) GCP Project ID."`
-	InstanceId                string            `name:"instance" short:"i" env:"SPANNER_INSTANCE_ID" help:"(required) Cloud Spanner Instance ID"`
-	DatabaseId                string            `name:"database" short:"d" env:"SPANNER_DATABASE_ID" help:"Cloud Spanner Database ID. Optional when --detached is used."`
+	ProjectId                 string            `name:"project" short:"p" help:"(required) GCP Project ID ($SPANNER_PROJECT_ID)."`
+	InstanceId                string            `name:"instance" short:"i" help:"(required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)"`
+	DatabaseId                string            `name:"database" short:"d" help:"Cloud Spanner Database ID. Optional when --detached is used ($SPANNER_DATABASE_ID)."`
 	Detached                  bool              `name:"detached" help:"Start in detached mode, ignoring database env var/flag"`
 	Execute                   string            `name:"execute" short:"e" help:"Execute SQL statement and quit. --sql is an alias."`
 	File                      string            `name:"file" short:"f" help:"Execute SQL statement from file and quit. --source is an alias."`
@@ -575,9 +577,6 @@ func parseFlagsArgs(args []string, installFrom string, configFiles []string, std
 		return globalOptions{}, nil, err
 	}
 	_, err = parser.Parse(args)
-	if err == nil {
-		applyEnvOverrides(&gopts.Spanner, args)
-	}
 	return gopts, parser, err
 }
 
@@ -588,36 +587,6 @@ func newGlobalOptions() globalOptions {
 }
 
 const configFileName = ".spanner_mycli.toml"
-
-func applyEnvOverrides(opts *spannerOptions, args []string) {
-	if !hasCLIFlag(args, "--project", "-p") {
-		if value, ok := os.LookupEnv("SPANNER_PROJECT_ID"); ok {
-			opts.ProjectId = value
-		}
-	}
-	if !hasCLIFlag(args, "--instance", "-i") {
-		if value, ok := os.LookupEnv("SPANNER_INSTANCE_ID"); ok {
-			opts.InstanceId = value
-		}
-	}
-	if !hasCLIFlag(args, "--database", "-d") {
-		if value, ok := os.LookupEnv("SPANNER_DATABASE_ID"); ok {
-			opts.DatabaseId = value
-		}
-	}
-}
-
-func hasCLIFlag(args []string, longFlag, shortFlag string) bool {
-	for _, arg := range args {
-		if arg == longFlag || arg == shortFlag {
-			return true
-		}
-		if strings.HasPrefix(arg, longFlag+"=") {
-			return true
-		}
-	}
-	return false
-}
 
 func defaultConfigFiles() []string {
 	var files []string
@@ -644,12 +613,33 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 	if len(configFiles) > 0 {
 		options = append(options, kong.Configuration(kongtoml.Loader, configFiles...))
 	}
+	options = append(options, kong.Resolvers(spannerConnectionEnvResolver()))
 
 	parser, err := kong.New(gopts, options...)
 	if err != nil {
 		return nil, fmt.Errorf("build CLI parser: %w", err)
 	}
 	return parser, nil
+}
+
+func spannerConnectionEnvResolver() kong.Resolver {
+	envByFlagName := map[string]string{
+		"project":  "SPANNER_PROJECT_ID",
+		"instance": "SPANNER_INSTANCE_ID",
+		"database": "SPANNER_DATABASE_ID",
+	}
+
+	return kong.ResolverFunc(func(context *kong.Context, parent *kong.Path, flag *kong.Flag) (any, error) {
+		envName, ok := envByFlagName[flag.Name]
+		if !ok {
+			return nil, nil
+		}
+		value, ok := os.LookupEnv(envName)
+		if !ok {
+			return nil, nil
+		}
+		return value, nil
+	})
 }
 
 func readCredentialFile(filepath string) ([]byte, error) {

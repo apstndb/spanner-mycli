@@ -446,15 +446,15 @@ make lint
 
 #### Kong Configuration Notes
 
-**Discovery**: config-file defaults are resolved from TOML after model construction, while `env:"..."` defaults are applied before configuration-file resolvers.
+**Discovery**: config-file defaults are resolved through Kong resolvers, and resolver order determines precedence.
 
 - **Precedence target**: preserve `CLI > env > config > defaults`
-- **Implementation note**: apply explicit environment overrides after parse so TOML does not shadow `SPANNER_*` connection settings
+- **Implementation note**: register a dedicated `SPANNER_*` resolver after the TOML resolver so environment values outrank config without re-parsing argv
 - **Testing Requirement**: Help text output verification important when modifying flag parsing logic
 
 ```go
 type Options struct {
-    Project string `long:"project" env:"SPANNER_PROJECT_ID" default-mask:"-"`
+    Project string `name:"project" help:"GCP Project ID ($SPANNER_PROJECT_ID)."`
 }
 ```
 

@@ -263,7 +263,7 @@ CREATE TABLE test2 (id INT64) PRIMARY KEY (id);
 
 ### Multi-Stage Validation Architecture
 The flag validation happens in three distinct stages:
-1. **Parsing Stage** (`parseFlags()`) - Basic syntax validation by kong
+1. **Parsing Stage** (`parseFlags(installFrom)`) - Basic syntax validation by kong
 2. **Business Logic Validation** (`ValidateSpannerOptions()`) - Mutual exclusivity, required fields
 3. **System Variable Initialization** (`initializeSystemVariables()`) - Value format validation, type conversions
 
