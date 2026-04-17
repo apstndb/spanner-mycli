@@ -126,7 +126,7 @@ Details: [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/iss
 ## Quick Reference
 
 ### Configuration
-- **Config file**: `.spanner_mycli.cnf` (home dir, then current dir)
+- **Config file**: `.spanner_mycli.toml` (home dir, then current dir)
 - **Environment**: `SPANNER_PROJECT_ID`, `SPANNER_INSTANCE_ID`, `SPANNER_DATABASE_ID`
 
 ### Testing

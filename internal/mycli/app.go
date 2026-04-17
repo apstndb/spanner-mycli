@@ -27,8 +27,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/alecthomas/kong"
 	"github.com/apstndb/spanemuboost"
-	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
@@ -95,18 +95,18 @@ func SetLogLevel(logLevel string) (slog.Level, error) {
 func Main(version, installFrom string) {
 	buildVersion = version
 
-	gopts, parser, err := parseFlags()
+	gopts, parser, err := parseFlags(installFrom)
 
-	if flags.WroteHelp(err) {
+	if errors.Is(err, helpRequestedError{}) || errors.Is(err, versionRequestedError{}) {
 		// exit successfully
 		return
 	} else if err != nil {
-		parser.WriteHelp(os.Stderr)
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) {
+			writeUsageTo(parseErr.Context, parser, os.Stderr)
+		}
 		fmt.Fprintf(os.Stderr, "Invalid options: %v\n", err)
 		os.Exit(exitCodeError)
-		return
-	} else if gopts.Spanner.Version {
-		fmt.Printf("%v\n%v\n", getVersion(), installFrom)
 		return
 	}
 
@@ -124,6 +124,20 @@ func Main(version, installFrom string) {
 		return
 	}
 	os.Exit(exitCodeSuccess)
+}
+
+func writeUsageTo(ctx *kong.Context, _ *kong.Kong, w io.Writer) {
+	if ctx == nil {
+		return
+	}
+	stdout := ctx.Stdout
+	ctx.Stdout = w
+	defer func() {
+		ctx.Stdout = stdout
+	}()
+	if err := ctx.PrintUsage(false); err != nil {
+		slog.Error("failed to print usage", "error", err)
+	}
 }
 
 // run executes the main functionality of the application.

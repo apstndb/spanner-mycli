@@ -111,89 +111,77 @@ https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 
 <!-- readme-help begin -->
 ```text
-Usage:
-  spanner-mycli [OPTIONS]
+Usage: spanner-mycli [flags]
 
-spanner:
-  -p, --project=                                          (required) GCP Project ID. [$SPANNER_PROJECT_ID]
-  -i, --instance=                                         (required) Cloud Spanner Instance ID [$SPANNER_INSTANCE_ID]
-  -d, --database=                                         Cloud Spanner Database ID. Optional when --detached is used.
-                                                          [$SPANNER_DATABASE_ID]
-      --detached                                          Start in detached mode, ignoring database env var/flag
-  -e, --execute=                                          Execute SQL statement and quit. --sql is an alias.
-  -f, --file=                                             Execute SQL statement from file and quit. --source is an
-                                                          alias.
-  -t, --table                                             Display output in table format for batch mode.
-      --html                                              Display output in HTML format.
-      --xml                                               Display output in XML format.
-      --csv                                               Display output in CSV format.
-      --format=                                           Output format (table, tab, vertical, html, xml, csv, jsonl)
-  -v, --verbose                                           Display verbose output.
-      --credential=                                       Use the specific credential file
-      --prompt=                                           Set the prompt to the specified format (default: spanner%t> )
-      --prompt2=                                          Set the prompt2 to the specified format (default: %P%R> )
-      --history=                                          Set the history file to the specified path (default:
-                                                          /tmp/spanner_mycli_readline.tmp)
-      --priority=                                         Set default request priority (HIGH|MEDIUM|LOW)
-      --role=                                             Use the specific database role. --database-role is an alias.
-      --endpoint=                                         Set the Spanner API endpoint (host:port)
-      --host=                                             Host on which Spanner server is located
-      --port=                                             Port number for Spanner connection
-      --directed-read=                                    Directed read option (replica_location:replica_type). The
-                                                          replica_type is optional and either READ_ONLY or READ_WRITE
-      --set=                                              Set system variables e.g. --set=name1=value1
-                                                          --set=name2=value2
-      --param=                                            Set query parameters, it can be literal or
-                                                          type(EXPLAIN/DESCRIBE only) e.g. --param="p1='string_value'"
-                                                          --param=p2=FLOAT64
-      --proto-descriptor-file=                            Path of a file that contains a protobuf-serialized
-                                                          google.protobuf.FileDescriptorSet message.
-      --insecure                                          Skip TLS verification and permit plaintext gRPC.
-                                                          --skip-tls-verify is an alias.
-      --embedded-emulator                                 Use embedded Cloud Spanner Emulator. --project, --instance,
-                                                          --database, --endpoint, --insecure will be automatically
-                                                          configured.
-      --emulator-image=                                   container image for --embedded-emulator
-      --emulator-platform=                                Container platform (e.g. linux/amd64, linux/arm64) for
-                                                          embedded emulator
-      --sample-database=                                  Initialize emulator with built-in sample (e.g. fingraph,
-                                                          singers, banking) or path to metadata.json file. Requires
-                                                          --embedded-emulator.
-      --list-samples                                      List available sample databases and exit
-      --output-template=                                  Filepath of output template. (EXPERIMENTAL)
-      --log-level=
-      --log-grpc                                          Show gRPC logs
-      --query-mode=[NORMAL|PLAN|PROFILE]                  Mode in which the query must be processed.
-      --strong                                            Perform a strong query.
-      --read-timestamp=                                   Perform a query at the given timestamp.
-      --vertexai-project=                                 Vertex AI project
-      --vertexai-model=                                   Vertex AI model (default: gemini-3-flash-preview)
-      --vertexai-location=                                Vertex AI location (default: global)
-      --database-dialect=[POSTGRESQL|GOOGLE_STANDARD_SQL] The SQL dialect of the Cloud Spanner Database.
-      --impersonate-service-account=                      Impersonate service account email
-      --version                                           Show version string.
-      --enable-partitioned-dml                            Partitioned DML as default
-                                                          (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
-      --timeout=                                          Statement timeout (e.g., '10s', '5m', '1h') (default: 10m)
-      --async                                             Return immediately, without waiting for the operation in
-                                                          progress to complete
-      --try-partition-query                               Test whether the query can be executed as partition query
-                                                          without execution
-      --mcp                                               Run as MCP server
-      --skip-system-command                               Do not allow system commands
-      --system-command=[ON|OFF]                           Enable or disable system commands (ON/OFF) (default: ON)
-      --tee=                                              Append a copy of output to the specified file (both screen
-                                                          and file)
-  -o, --output=                                           Redirect output to file (file only, no screen output)
-      --skip-column-names                                 Suppress column headers in output
-      --streaming=[AUTO|TRUE|FALSE]                       Streaming output mode: AUTO (format-dependent default), TRUE
-                                                          (always stream), FALSE (never stream) (default: AUTO)
-      --color=[AUTO|TRUE|FALSE]                           ANSI styling in output: AUTO (styled if TTY), TRUE (always
-                                                          styled), FALSE (never styled) (default: AUTO)
-  -q, --quiet                                             Suppress result lines like 'rows in set' for clean output
-
-Help Options:
-  -h, --help                                              Show this help message
+Flags:
+  -p, --project=STRING                         (required) GCP Project ID ($SPANNER_PROJECT_ID).
+  -i, --instance=STRING                        (required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)
+  -d, --database=STRING                        Cloud Spanner Database ID. Optional when --detached is used
+                                               ($SPANNER_DATABASE_ID).
+      --detached                               Start in detached mode, ignoring database env var/flag
+  -e, --execute=STRING                         Execute SQL statement and quit. --sql is an alias.
+  -f, --file=STRING                            Execute SQL statement from file and quit. --source is an alias.
+  -t, --table                                  Display output in table format for batch mode.
+      --html                                   Display output in HTML format.
+      --xml                                    Display output in XML format.
+      --csv                                    Display output in CSV format.
+      --format=STRING                          Output format (table, tab, vertical, html, xml, csv, jsonl)
+  -v, --verbose                                Display verbose output.
+      --credential=STRING                      Use the specific credential file
+      --prompt=PROMPT                          Set the prompt to the specified format
+      --prompt2=PROMPT2                        Set the prompt2 to the specified format
+      --history=HISTORY                        Set the history file to the specified path
+      --priority=STRING                        Set default request priority (HIGH|MEDIUM|LOW)
+      --role=STRING                            Use the specific database role. --database-role is an alias.
+      --endpoint=STRING                        Set the Spanner API endpoint (host:port)
+      --host=STRING                            Host on which Spanner server is located
+      --port=INT                               Port number for Spanner connection
+      --directed-read=STRING                   Directed read option (replica_location:replica_type). The replica_type is
+                                               optional and either READ_ONLY or READ_WRITE
+      --set=KEY=VALUE                          Set system variables e.g. --set=name1=value1 --set=name2=value2
+      --param=KEY=VALUE                        Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only)
+                                               e.g. --param="p1='string_value'" --param=p2=FLOAT64
+      --proto-descriptor-file=STRING           Path of a file that contains a protobuf-serialized
+                                               google.protobuf.FileDescriptorSet message.
+      --insecure                               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an
+                                               alias.
+      --embedded-emulator                      Use embedded Cloud Spanner Emulator. --project, --instance, --database,
+                                               --endpoint, --insecure will be automatically configured.
+      --emulator-image=STRING                  container image for --embedded-emulator
+      --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
+      --sample-database=STRING                 Initialize emulator with built-in sample (e.g. fingraph, singers,
+                                               banking) or path to metadata.json file. Requires --embedded-emulator.
+      --list-samples                           List available sample databases and exit
+      --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
+      --log-level=STRING
+      --log-grpc                               Show gRPC logs
+      --query-mode=STRING                      Mode in which the query must be processed.
+      --strong                                 Perform a strong query.
+      --read-timestamp=STRING                  Perform a query at the given timestamp.
+      --vertexai-project=STRING                Vertex AI project
+      --vertexai-model=VERTEXAI-MODEL          Vertex AI model
+      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location
+      --database-dialect=STRING                The SQL dialect of the Cloud Spanner Database.
+      --impersonate-service-account=STRING     Impersonate service account email
+  -h, --help                                   Show this help message and exit.
+      --version                                Show version string.
+      --enable-partitioned-dml                 Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --timeout="10m"                          Statement timeout (e.g., '10s', '5m', '1h')
+      --async                                  Return immediately, without waiting for the operation in progress to
+                                               complete
+      --try-partition-query                    Test whether the query can be executed as partition query without
+                                               execution
+      --mcp                                    Run as MCP server
+      --skip-system-command                    Do not allow system commands
+      --system-command=SYSTEM-COMMAND          Enable or disable system commands (ON/OFF)
+      --tee=STRING                             Append a copy of output to the specified file (both screen and file)
+  -o, --output=STRING                          Redirect output to file (file only, no screen output)
+      --skip-column-names                      Suppress column headers in output
+      --streaming="AUTO"                       Streaming output mode: AUTO (format-dependent default), TRUE (always
+                                               stream), FALSE (never stream)
+      --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
+                                               FALSE (never styled)
+  -q, --quiet                                  Suppress result lines like 'rows in set' for clean output
 ```
 <!-- readme-help end -->
 
@@ -727,16 +715,16 @@ spanner> SELECT """
 ```
 ## Config file
 
-This tool supports a configuration file called `spanner_mycli.cnf`, similar to `my.cnf`.  
-The config file path must be `~/.spanner_mycli.cnf`.
+This tool supports a TOML configuration file called `.spanner_mycli.toml`.
+The config files are loaded from `~/.spanner_mycli.toml` and `./.spanner_mycli.toml`.
 In the config file, you can set default option values for command line options.
+Hyphenated flags use underscore TOML keys, for example `vertexai_project` for `--vertexai-project`.
 
 Example:
 
-```conf
-[spanner]
-project = myproject
-instance = myinstance
+```toml
+project = "myproject"
+instance = "myinstance"
 prompt = "[%p:%i:%d]%t> "
 ```
 
@@ -744,8 +732,8 @@ prompt = "[%p:%i:%d]%t> "
 
 1. Command line flags(highest)
 2. Environment variables
-3. `.spanner_mycli.cnf` in current directory
-4. `.spanner_mycli.cnf` in home directory(lowest)
+3. `.spanner_mycli.toml` in current directory
+4. `.spanner_mycli.toml` in home directory(lowest)
 
 ## Request Priority
 
@@ -1997,9 +1985,8 @@ spanner> PARTITION SELECT * FROM Singers;
 
 You can use `GEMINI` statement by setting `vertexai_project` in config file.
 
-```:.spanner_mycli.cnf
-[spanner]
-vertexai_project = example-project
+```toml
+vertexai_project = "example-project"
 ```
 
 Built-in Spanner reference docs are always available. Setting `DEVELOPERKNOWLEDGE_API_KEY` or `GOOGLE_API_KEY` enables dynamic documentation lookup via the Developer Knowledge API for more comprehensive coverage.
@@ -2113,7 +2100,7 @@ In principle, spanner-mycli accepts the same input as spanner-cli, but some comp
   - Rationale: `\G` is not compatible with [GoogleSQL lexical structure](https://cloud.google.com/spanner/docs/reference/standard-sql/lexical) and [memefish](https://github.com/cloudspannerecosystem/memefish).
 - `\` is no longer used for prompt expansions.
   - Use `%` instead.
-  - Rationale: `\` is needed to be escaped in ini files of [jassevdk/go-flags](https://github.com/jessevdk/go-flags).
+  - Rationale: `%` works consistently in prompts and TOML configuration files.
 - The default format of `EXPLAIN` and `EXPLAIN ANALYZE` has been changed.
 
 ### Tab character handling

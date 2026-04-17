@@ -8,6 +8,8 @@ require (
 	cloud.google.com/go/spanner v1.87.0
 	cloud.google.com/go/storage v1.56.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/alecthomas/kong v1.15.0
+	github.com/alecthomas/kong-toml v0.4.0
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
@@ -33,7 +35,6 @@ require (
 	github.com/googleapis/go-spanner-cassandra v0.5.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/hymkor/go-multiline-ny v0.22.4
-	github.com/jessevdk/go-flags v1.6.1
 	github.com/junegunn/fzf v0.68.0
 	github.com/k0kubun/pp/v3 v3.5.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -149,6 +150,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pascaldekloe/name v1.0.0 // indirect
+	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

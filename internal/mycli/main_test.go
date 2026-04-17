@@ -16,7 +16,6 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/jessevdk/go-flags"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -779,9 +778,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
 	t.Parallel()
 	// Test the specific case of using --set flag to set CLI_FORMAT
-	var gopts globalOptions
-	parser := flags.NewParser(&gopts, flags.Default)
-
 	args := []string{
 		"--project", "p",
 		"--instance", "i",
@@ -790,7 +786,7 @@ func TestInitializeSystemVariablesWithSetFlag(t *testing.T) {
 		"--set", "CLI_FORMAT=VERTICAL",
 	}
 
-	_, err := parser.ParseArgs(args)
+	gopts, _, err := parseFlagsArgs(args, "built from source", nil, io.Discard, io.Discard)
 	if err != nil {
 		t.Fatalf("Failed to parse args: %v", err)
 	}

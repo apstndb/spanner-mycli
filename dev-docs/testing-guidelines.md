@@ -314,7 +314,7 @@ When testing CLI flags, consider the following patterns implemented in `main_fla
 #### Multi-Stage Validation
 ```go
 // Flags are validated at different stages:
-// 1. Parsing (go-flags)
+// 1. Parsing (kong)
 // 2. ValidateSpannerOptions()
 // 3. initializeSystemVariables()
 

@@ -371,25 +371,19 @@ See `session_transaction_helpers_test.go` and `session_transaction_helpers_integ
 
 1. Command-line flags
 2. Environment variables
-3. Configuration files (`.spanner_mycli.cnf`)
+3. Configuration files (`.spanner_mycli.toml`)
 4. System defaults
 
 ### Configuration File
 
-**Config file**: `.spanner_mycli.cnf` (searched in home directory, then current directory)
+**Config file**: `.spanner_mycli.toml` (searched in home directory, then current directory)
 
 ### Configuration File Format
 
-```ini
-[default]
-project = myproject
-instance = myinstance
-database = mydatabase
-
-[profile_name]
-project = other-project
-instance = other-instance
-database = other-database
+```toml
+project = "myproject"
+instance = "myinstance"
+database = "mydatabase"
 ```
 
 ### Environment Variables
@@ -443,24 +437,24 @@ make lint
 
 - **Cloud Spanner SDK**: `cloud.google.com/go/spanner` - Primary Spanner client
 - **SQL Parser**: `github.com/cloudspannerecosystem/memefish` - GoogleSQL parsing
-- **CLI Framework**: `github.com/jessevdk/go-flags` - Command-line argument parsing
+- **CLI Framework**: `github.com/alecthomas/kong` - Command-line argument parsing
 - **Terminal Interface**: `github.com/nyaosorg/go-readline-ny` - Interactive input
 - **Table Output**: `github.com/olekukonko/tablewriter` - Formatted table display
 - **GenAI**: `google.golang.org/genai` - AI functionality integration
 
 ### Dependency Behavior Notes
 
-#### go-flags Library (Issue #251 Insights)
+#### Kong Configuration Notes
 
-**Discovery**: go-flags library uses struct field values as defaults in help text, not just `default` tags
+**Discovery**: config-file defaults are resolved through Kong resolvers, and resolver order determines precedence.
 
-- **Default Display Control**: Use `default-mask:"-"` struct tag to hide config/env values from help text defaults
-- **Architecture Pattern**: Avoid creating multiple parser instances with shared structs to prevent config value leakage into help display
+- **Precedence target**: preserve `CLI > env > config > defaults`
+- **Implementation note**: register a dedicated `SPANNER_*` resolver after the TOML resolver so environment values outrank config without re-parsing argv
 - **Testing Requirement**: Help text output verification important when modifying flag parsing logic
 
 ```go
 type Options struct {
-    Project string `long:"project" env:"SPANNER_PROJECT_ID" default-mask:"-"`
+    Project string `name:"project" help:"GCP Project ID ($SPANNER_PROJECT_ID)."`
 }
 ```
 
