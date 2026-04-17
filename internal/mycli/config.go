@@ -68,6 +68,8 @@ func (versionRequestedError) Error() string { return "version requested" }
 
 type showHelpFlag bool
 
+// BeforeReset runs for matched flags in Kong's traced path, which lets help
+// and version exit cleanly before defaults and resolvers are applied.
 func (h showHelpFlag) BeforeReset(ctx *kong.Context) error {
 	// Kong's PrintUsage(false) renders the full help text; only PrintUsage(true)
 	// emits the one-line summary.
@@ -613,6 +615,8 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 	if len(configFiles) > 0 {
 		options = append(options, kong.Configuration(kongtoml.Loader, configFiles...))
 	}
+	// Context.Resolve keeps the last non-nil resolver result, so appending the
+	// SPANNER_* resolver after TOML preserves CLI > env > config precedence.
 	options = append(options, kong.Resolvers(spannerConnectionEnvResolver()))
 
 	parser, err := kong.New(gopts, options...)

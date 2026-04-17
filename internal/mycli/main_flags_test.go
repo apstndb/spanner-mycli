@@ -110,6 +110,60 @@ func parseTestFlags(args []string, configFiles ...string) (globalOptions, error)
 	return gopts, err
 }
 
+func TestParseFlagsConfigDiscovery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("missing config files are ignored", func(t *testing.T) {
+		t.Parallel()
+
+		missingHome := filepath.Join(t.TempDir(), "missing-home.toml")
+		missingCwd := filepath.Join(t.TempDir(), "missing-cwd.toml")
+
+		gopts, err := parseTestFlags(withRequiredFlags(), missingHome, missingCwd)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		if err := ValidateSpannerOptions(&gopts.Spanner); err != nil {
+			t.Fatalf("ValidateSpannerOptions() error = %v", err)
+		}
+	})
+
+	t.Run("later config file overrides earlier config file", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		homeConfig := filepath.Join(tmpDir, "home.toml")
+		cwdConfig := filepath.Join(tmpDir, "cwd.toml")
+
+		if err := os.WriteFile(homeConfig, []byte(`project = "home-project"
+instance = "home-instance"
+database = "home-database"
+`), 0o644); err != nil {
+			t.Fatalf("write home config: %v", err)
+		}
+		if err := os.WriteFile(cwdConfig, []byte(`project = "cwd-project"
+database = "cwd-database"
+`), 0o644); err != nil {
+			t.Fatalf("write cwd config: %v", err)
+		}
+
+		gopts, err := parseTestFlags(nil, homeConfig, cwdConfig)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+
+		if gopts.Spanner.ProjectId != "cwd-project" {
+			t.Fatalf("ProjectId = %q, want %q", gopts.Spanner.ProjectId, "cwd-project")
+		}
+		if gopts.Spanner.InstanceId != "home-instance" {
+			t.Fatalf("InstanceId = %q, want %q", gopts.Spanner.InstanceId, "home-instance")
+		}
+		if gopts.Spanner.DatabaseId != "cwd-database" {
+			t.Fatalf("DatabaseId = %q, want %q", gopts.Spanner.DatabaseId, "cwd-database")
+		}
+	})
+}
+
 func isHelpRequested(err error) bool {
 	return errors.Is(err, helpRequestedError{})
 }

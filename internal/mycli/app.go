@@ -126,14 +126,14 @@ func Main(version, installFrom string) {
 	os.Exit(exitCodeSuccess)
 }
 
-func writeUsageTo(ctx *kong.Context, parser *kong.Kong, w io.Writer) {
-	if ctx == nil || parser == nil {
+func writeUsageTo(ctx *kong.Context, _ *kong.Kong, w io.Writer) {
+	if ctx == nil {
 		return
 	}
-	stdout := parser.Stdout
-	parser.Stdout = w
+	stdout := ctx.Stdout
+	ctx.Stdout = w
 	defer func() {
-		parser.Stdout = stdout
+		ctx.Stdout = stdout
 	}()
 	if err := ctx.PrintUsage(false); err != nil {
 		slog.Error("failed to print usage", "error", err)
