@@ -63,6 +63,10 @@ func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
 }
 
+func normalizeWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // ptr returns a pointer to the given string
 func ptr(s string) *string {
 	return &s
@@ -1836,6 +1840,79 @@ func TestHelpAndVersionFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHelpOutputDocumentsDefaultsAndConfigKeys(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	_, _, err := parseFlagsArgs([]string{"--help"}, "built from source", nil, &stdout, io.Discard)
+	if !isHelpRequested(err) {
+		t.Fatalf("Expected help to be written, but got err = %v", err)
+	}
+
+	helpOutput := normalizeWhitespace(stdout.String())
+	for _, want := range []string{
+		"default: spanner%t> ",
+		"default: %P%R> ",
+		"default: /tmp/spanner_mycli_readline.tmp",
+		"Allowed values: NORMAL, PLAN, PROFILE.",
+		"default: gemini-3-flash-preview",
+		"default: global",
+		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL.",
+		"Default: ON.",
+	} {
+		if !strings.Contains(helpOutput, want) {
+			t.Errorf("help output does not contain %q", want)
+		}
+	}
+}
+
+func TestTOMLConfigKeyStyle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("hyphenated key is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai-project = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
+			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		}
+	})
+
+	t.Run("underscore key is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai_project = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "unknown configuration keys: vertexai_project") {
+			t.Fatalf("parseTestFlags() error = %v, want unknown configuration key error", err)
+		}
+	})
 }
 
 // TestComplexFlagInteractions tests complex interactions between multiple flags

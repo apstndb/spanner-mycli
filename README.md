@@ -128,9 +128,10 @@ Flags:
       --format=STRING                          Output format (table, tab, vertical, html, xml, csv, jsonl)
   -v, --verbose                                Display verbose output.
       --credential=STRING                      Use the specific credential file
-      --prompt=PROMPT                          Set the prompt to the specified format
-      --prompt2=PROMPT2                        Set the prompt2 to the specified format
-      --history=HISTORY                        Set the history file to the specified path
+      --prompt=PROMPT                          Set the prompt to the specified format (default: spanner%t> )
+      --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: %P%R> )
+      --history=HISTORY                        Set the history file to the specified path (default:
+                                               /tmp/spanner_mycli_readline.tmp)
       --priority=STRING                        Set default request priority (HIGH|MEDIUM|LOW)
       --role=STRING                            Use the specific database role. --database-role is an alias.
       --endpoint=STRING                        Set the Spanner API endpoint (host:port)
@@ -155,13 +156,15 @@ Flags:
       --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
       --log-level=STRING
       --log-grpc                               Show gRPC logs
-      --query-mode=STRING                      Mode in which the query must be processed.
+      --query-mode=STRING                      Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
+                                               PROFILE.
       --strong                                 Perform a strong query.
       --read-timestamp=STRING                  Perform a query at the given timestamp.
       --vertexai-project=STRING                Vertex AI project
-      --vertexai-model=VERTEXAI-MODEL          Vertex AI model
-      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location
-      --database-dialect=STRING                The SQL dialect of the Cloud Spanner Database.
+      --vertexai-model=VERTEXAI-MODEL          Vertex AI model (default: gemini-3-flash-preview)
+      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location (default: global)
+      --database-dialect=STRING                The SQL dialect of the Cloud Spanner Database. Allowed values:
+                                               POSTGRESQL, GOOGLE_STANDARD_SQL.
       --impersonate-service-account=STRING     Impersonate service account email
   -h, --help                                   Show this help message and exit.
       --version                                Show version string.
@@ -173,7 +176,7 @@ Flags:
                                                execution
       --mcp                                    Run as MCP server
       --skip-system-command                    Do not allow system commands
-      --system-command=SYSTEM-COMMAND          Enable or disable system commands (ON/OFF)
+      --system-command=SYSTEM-COMMAND          Enable or disable system commands (ON/OFF). Default: ON.
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
   -o, --output=STRING                          Redirect output to file (file only, no screen output)
       --skip-column-names                      Suppress column headers in output
@@ -718,7 +721,7 @@ spanner> SELECT """
 This tool supports a TOML configuration file called `.spanner_mycli.toml`.
 The config files are loaded from `~/.spanner_mycli.toml` and `./.spanner_mycli.toml`.
 In the config file, you can set default option values for command line options.
-Hyphenated flags use underscore TOML keys, for example `vertexai_project` for `--vertexai-project`.
+TOML keys follow hyphen-separated flag names, for example `vertexai-project` for `--vertexai-project`.
 
 Example:
 
@@ -1983,10 +1986,10 @@ spanner> PARTITION SELECT * FROM Singers;
 
 ### GenAI support
 
-You can use `GEMINI` statement by setting `vertexai_project` in config file.
+You can use `GEMINI` statement by setting `vertexai-project` in config file.
 
 ```toml
-vertexai_project = "example-project"
+vertexai-project = "example-project"
 ```
 
 Built-in Spanner reference docs are always available. Setting `DEVELOPERKNOWLEDGE_API_KEY` or `GOOGLE_API_KEY` enables dynamic documentation lookup via the Developer Knowledge API for more comprehensive coverage.
