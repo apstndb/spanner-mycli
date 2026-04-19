@@ -135,7 +135,7 @@ type spannerOptions struct {
 	VertexAIProject           string          `name:"vertexai-project" help:"Vertex AI project"`
 	VertexAIModel             *string         `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
 	VertexAILocation          *string         `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
-	DatabaseDialect           string          `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL."`
+	DatabaseDialect           string          `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset."`
 	ImpersonateServiceAccount string          `name:"impersonate-service-account" help:"Impersonate service account email"`
 	Help                      showHelpFlag    `name:"help" short:"h" help:"Show this help message and exit."`
 	Version                   showVersionFlag `name:"version" help:"Show version string."`
@@ -622,6 +622,8 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 	}
 
 	if len(configFiles) > 0 {
+		// kong-toml normalizes configuration to hyphen-separated keys and its
+		// validator rejects unknown underscore variants such as vertexai_project.
 		options = append(options, kong.Configuration(kongtoml.Loader, configFiles...))
 	}
 	// Context.Resolve keeps the last non-nil resolver result, so appending the

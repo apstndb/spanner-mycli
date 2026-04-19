@@ -1853,13 +1853,13 @@ func TestHelpOutputDocumentsDefaultsAndConfigKeys(t *testing.T) {
 
 	helpOutput := normalizeWhitespace(stdout.String())
 	for _, want := range []string{
-		"default: spanner%t> ",
-		"default: %P%R> ",
-		"default: /tmp/spanner_mycli_readline.tmp",
+		fmt.Sprintf("default: %s", defaultPrompt),
+		fmt.Sprintf("default: %s", defaultPrompt2),
+		fmt.Sprintf("default: %s", defaultHistoryFile),
 		"Allowed values: NORMAL, PLAN, PROFILE.",
-		"default: gemini-3-flash-preview",
-		"default: global",
-		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL.",
+		fmt.Sprintf("default: %s", defaultVertexAIModel),
+		fmt.Sprintf("default: %s", defaultVertexAILocation),
+		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset.",
 		"Default: ON.",
 	} {
 		if !strings.Contains(helpOutput, want) {
@@ -1893,7 +1893,7 @@ vertexai-project = "example-project"
 		}
 	})
 
-	t.Run("underscore key is rejected", func(t *testing.T) {
+	t.Run("underscore key is rejected by kong-toml validation", func(t *testing.T) {
 		t.Parallel()
 
 		configFile := filepath.Join(t.TempDir(), configFileName)

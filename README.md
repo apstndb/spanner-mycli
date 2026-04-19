@@ -164,7 +164,8 @@ Flags:
       --vertexai-model=VERTEXAI-MODEL          Vertex AI model (default: gemini-3-flash-preview)
       --vertexai-location=VERTEXAI-LOCATION    Vertex AI location (default: global)
       --database-dialect=STRING                The SQL dialect of the Cloud Spanner Database. Allowed values:
-                                               POSTGRESQL, GOOGLE_STANDARD_SQL.
+                                               POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this
+                                               flag to leave it unset.
       --impersonate-service-account=STRING     Impersonate service account email
   -h, --help                                   Show this help message and exit.
       --version                                Show version string.
@@ -722,6 +723,7 @@ This tool supports a TOML configuration file called `.spanner_mycli.toml`.
 The config files are loaded from `~/.spanner_mycli.toml` and `./.spanner_mycli.toml`.
 In the config file, you can set default option values for command line options.
 TOML keys follow hyphen-separated flag names, for example `vertexai-project` for `--vertexai-project`.
+This follows `kong-toml`'s key mapping and validation; underscore variants such as `vertexai_project` are rejected as unknown configuration keys.
 
 Example:
 
