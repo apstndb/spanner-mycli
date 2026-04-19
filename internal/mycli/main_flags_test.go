@@ -1842,7 +1842,7 @@ func TestHelpAndVersionFlags(t *testing.T) {
 	}
 }
 
-func TestHelpOutputDocumentsDefaultsAndConfigKeys(t *testing.T) {
+func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 	t.Parallel()
 
 	var stdout bytes.Buffer
