@@ -39,13 +39,9 @@ func underscoreCompatibleTOMLLoader(r io.Reader) (kong.Resolver, error) {
 	if err != nil {
 		return nil, formatConfigError(filename, err)
 	}
-	normalizedTree, err := normalizeTOMLValue(tree.ToMap())
-	if err != nil {
-		return nil, formatConfigError(filename, err)
-	}
 	return &underscoreCompatibleTOMLResolver{
 		filename: filename,
-		tree:     normalizedTree.(map[string]any),
+		tree:     tree.ToMap(),
 	}, nil
 }
 
@@ -57,7 +53,10 @@ type underscoreCompatibleTOMLResolver struct {
 }
 
 func (r *underscoreCompatibleTOMLResolver) Resolve(kctx *kong.Context, parent *kong.Path, flag *kong.Flag) (any, error) {
-	value, ok := r.findValue(parent, flag)
+	value, ok, err := r.findValue(parent, flag)
+	if err != nil {
+		return nil, formatConfigError(r.filename, err)
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -66,10 +65,10 @@ func (r *underscoreCompatibleTOMLResolver) Resolve(kctx *kong.Context, parent *k
 
 func (r *underscoreCompatibleTOMLResolver) Validate(app *kong.Application) error {
 	configKeys := map[string]bool{}
-	flattenNormalizedTOMLTree("", r.tree, configKeys)
+	flattenTOMLTree("", r.tree, configKeys)
 	_ = kong.Visit(app, func(node kong.Visitable, next kong.Next) error {
 		if flag, ok := node.(*kong.Flag); ok {
-			delete(configKeys, flag.Name)
+			deleteMatchingConfigKeys(configKeys, flag.Name)
 		}
 		return next(nil)
 	})
@@ -88,7 +87,7 @@ func formatConfigError(filename string, err error) error {
 	return fmt.Errorf("%s: %w", filename, err)
 }
 
-func (r *underscoreCompatibleTOMLResolver) findValue(parent *kong.Path, flag *kong.Flag) (any, bool) {
+func (r *underscoreCompatibleTOMLResolver) findValue(parent *kong.Path, flag *kong.Flag) (any, bool, error) {
 	keys := []string{
 		strings.Join(append(strings.Split(parent.Node().Path(), "-"), flag.Name), "-"),
 		flag.Name,
@@ -96,20 +95,28 @@ func (r *underscoreCompatibleTOMLResolver) findValue(parent *kong.Path, flag *ko
 	return r.findValueFromKeys(keys)
 }
 
-func (r *underscoreCompatibleTOMLResolver) findValueFromKeys(keys []string) (any, bool) {
+func (r *underscoreCompatibleTOMLResolver) findValueFromKeys(keys []string) (any, bool, error) {
 	for _, key := range keys {
 		parts := strings.Split(key, "-")
-		if value, ok := r.findValueParts(parts[0], parts[1:], r.tree); ok {
-			return value, ok
+		value, ok, err := r.findValueParts(parts[0], parts[1:], r.tree)
+		if err != nil {
+			return nil, false, err
+		}
+		if ok {
+			return value, ok, nil
 		}
 	}
-	return nil, false
+	return nil, false, nil
 }
 
-func (r *underscoreCompatibleTOMLResolver) findValueParts(prefix string, suffix []string, tree map[string]any) (any, bool) {
-	if value, ok := tree[prefix]; ok {
+func (r *underscoreCompatibleTOMLResolver) findValueParts(prefix string, suffix []string, tree map[string]any) (any, bool, error) {
+	value, ok, err := findAliasValue(tree, prefix)
+	if err != nil {
+		return nil, false, err
+	}
+	if ok {
 		if len(suffix) == 0 {
-			return value, true
+			return value, true, nil
 		}
 		if branch, ok := value.(map[string]any); ok {
 			return r.findValueParts(suffix[0], suffix[1:], branch)
@@ -118,17 +125,17 @@ func (r *underscoreCompatibleTOMLResolver) findValueParts(prefix string, suffix 
 	if len(suffix) > 0 {
 		return r.findValueParts(prefix+"-"+suffix[0], suffix[1:], tree)
 	}
-	return nil, false
+	return nil, false, nil
 }
 
-func flattenNormalizedTOMLTree(prefix string, tree any, flags map[string]bool) {
+func flattenTOMLTree(prefix string, tree any, flags map[string]bool) {
 	switch tree := tree.(type) {
 	case map[string]any:
 		for key, value := range tree {
 			if prefix == "" {
-				flattenNormalizedTOMLTree(key, value, flags)
+				flattenTOMLTree(key, value, flags)
 			} else {
-				flattenNormalizedTOMLTree(prefix+"-"+key, value, flags)
+				flattenTOMLTree(prefix+"-"+key, value, flags)
 			}
 		}
 	default:
@@ -136,35 +143,40 @@ func flattenNormalizedTOMLTree(prefix string, tree any, flags map[string]bool) {
 	}
 }
 
-func normalizeTOMLValue(value any) (any, error) {
-	switch value := value.(type) {
-	case map[string]any:
-		normalized := make(map[string]any, len(value))
-		rawKeys := map[string]string{}
-		for rawKey, rawValue := range value {
-			normalizedKey := strings.ReplaceAll(rawKey, "_", "-")
-			if previous, exists := rawKeys[normalizedKey]; exists {
-				return nil, fmt.Errorf("duplicate configuration keys after underscore normalization: %s, %s", previous, rawKey)
+func deleteMatchingConfigKeys(configKeys map[string]bool, flagName string) {
+	for _, prefix := range []string{flagName, strings.ReplaceAll(flagName, "-", "_")} {
+		delete(configKeys, prefix)
+		for key := range configKeys {
+			if strings.HasPrefix(key, prefix+"-") {
+				delete(configKeys, key)
 			}
-			normalizedValue, err := normalizeTOMLValue(rawValue)
-			if err != nil {
-				return nil, err
-			}
-			rawKeys[normalizedKey] = rawKey
-			normalized[normalizedKey] = normalizedValue
 		}
-		return normalized, nil
-	case []any:
-		normalized := make([]any, len(value))
-		for i, entry := range value {
-			normalizedEntry, err := normalizeTOMLValue(entry)
-			if err != nil {
-				return nil, err
-			}
-			normalized[i] = normalizedEntry
-		}
-		return normalized, nil
-	default:
-		return value, nil
 	}
+}
+
+func findAliasValue(tree map[string]any, key string) (any, bool, error) {
+	candidates := []string{key}
+	if underscored := strings.ReplaceAll(key, "-", "_"); underscored != key {
+		candidates = append(candidates, underscored)
+	}
+
+	var (
+		foundKey   string
+		foundValue any
+	)
+	for _, candidate := range candidates {
+		value, ok := tree[candidate]
+		if !ok {
+			continue
+		}
+		if foundKey != "" {
+			return nil, false, fmt.Errorf("duplicate configuration keys for %q: %s, %s", key, foundKey, candidate)
+		}
+		foundKey = candidate
+		foundValue = value
+	}
+	if foundKey == "" {
+		return nil, false, nil
+	}
+	return foundValue, true, nil
 }

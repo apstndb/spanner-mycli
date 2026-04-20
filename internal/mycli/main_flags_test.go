@@ -1931,25 +1931,30 @@ vertexai_project = "example-project"
 		}
 	})
 
-	t.Run("duplicate hyphen and underscore aliases are rejected", func(t *testing.T) {
+	t.Run("map-valued set keys preserve underscores", func(t *testing.T) {
 		t.Parallel()
 
 		configFile := filepath.Join(t.TempDir(), configFileName)
 		if err := os.WriteFile(configFile, []byte(`project = "p"
 instance = "i"
 database = "d"
-vertexai-project = "example-project"
-vertexai_project = "other-project"
+
+[set]
+CLI_FORMAT = "VERTICAL"
 `), 0o644); err != nil {
 			t.Fatalf("Failed to create config file: %v", err)
 		}
 
-		_, err := parseTestFlags(nil, configFile)
-		if err == nil {
-			t.Fatal("parseTestFlags() error = nil, want error")
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
 		}
-		if !strings.Contains(err.Error(), "duplicate configuration keys after underscore normalization") {
-			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
+		if got := gopts.Spanner.Set["CLI_FORMAT"]; got != "VERTICAL" {
+			t.Fatalf("Set[CLI_FORMAT] = %q, want %q", got, "VERTICAL")
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Display.CLIFormat; got != enums.DisplayModeVertical {
+			t.Fatalf("CLIFormat = %v, want %v", got, enums.DisplayModeVertical)
 		}
 	})
 }
