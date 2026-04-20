@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1853,8 +1854,8 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 
 	helpOutput := normalizeWhitespace(stdout.String())
 	for _, want := range []string{
-		fmt.Sprintf("default: %s", defaultPrompt),
-		fmt.Sprintf("default: %s", defaultPrompt2),
+		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
+		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
 		fmt.Sprintf("default: %s", defaultHistoryFile),
 		"Allowed values: NORMAL, PLAN, PROFILE.",
 		fmt.Sprintf("default: %s", defaultVertexAIModel),
@@ -1868,7 +1869,7 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 	}
 }
 
-func TestTOMLConfigKeyStyle(t *testing.T) {
+func TestTOMLConfigKeyAliases(t *testing.T) {
 	t.Parallel()
 
 	t.Run("hyphenated key is accepted", func(t *testing.T) {
@@ -1893,7 +1894,7 @@ vertexai-project = "example-project"
 		}
 	})
 
-	t.Run("underscore key is rejected by kong-toml validation", func(t *testing.T) {
+	t.Run("underscore key alias is accepted", func(t *testing.T) {
 		t.Parallel()
 
 		configFile := filepath.Join(t.TempDir(), configFileName)
@@ -1905,12 +1906,35 @@ vertexai_project = "example-project"
 			t.Fatalf("Failed to create config file: %v", err)
 		}
 
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
+			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		}
+	})
+
+	t.Run("duplicate hyphen and underscore aliases are rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai-project = "example-project"
+vertexai_project = "other-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
 		_, err := parseTestFlags(nil, configFile)
 		if err == nil {
 			t.Fatal("parseTestFlags() error = nil, want error")
 		}
-		if !strings.Contains(err.Error(), "unknown configuration keys: vertexai_project") {
-			t.Fatalf("parseTestFlags() error = %v, want unknown configuration key error", err)
+		if !strings.Contains(err.Error(), "duplicate configuration keys after underscore normalization") {
+			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
 		}
 	})
 }

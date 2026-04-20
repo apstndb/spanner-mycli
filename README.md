@@ -128,8 +128,8 @@ Flags:
       --format=STRING                          Output format (table, tab, vertical, html, xml, csv, jsonl)
   -v, --verbose                                Display verbose output.
       --credential=STRING                      Use the specific credential file
-      --prompt=PROMPT                          Set the prompt to the specified format (default: spanner%t> )
-      --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: %P%R> )
+      --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
+      --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: "%P%R> ")
       --history=HISTORY                        Set the history file to the specified path (default:
                                                /tmp/spanner_mycli_readline.tmp)
       --priority=STRING                        Set default request priority (HIGH|MEDIUM|LOW)
@@ -722,8 +722,8 @@ spanner> SELECT """
 This tool supports a TOML configuration file called `.spanner_mycli.toml`.
 The config files are loaded from `~/.spanner_mycli.toml` and `./.spanner_mycli.toml`.
 In the config file, you can set default option values for command line options.
-TOML keys follow hyphen-separated flag names, for example `vertexai-project` for `--vertexai-project`.
-This follows `kong-toml`'s key mapping and validation; underscore variants such as `vertexai_project` are rejected as unknown configuration keys.
+TOML keys normally follow hyphen-separated flag names, for example `vertexai-project` for `--vertexai-project`.
+For convenience, matching snake_case aliases such as `vertexai_project` are accepted too.
 
 Example:
 
@@ -1988,10 +1988,10 @@ spanner> PARTITION SELECT * FROM Singers;
 
 ### GenAI support
 
-You can use `GEMINI` statement by setting `vertexai-project` in config file.
+You can use `GEMINI` statement by setting `vertexai_project` in config file.
 
 ```toml
-vertexai-project = "example-project"
+vertexai_project = "example-project"
 ```
 
 Built-in Spanner reference docs are always available. Setting `DEVELOPERKNOWLEDGE_API_KEY` or `GOOGLE_API_KEY` enables dynamic documentation lookup via the Developer Knowledge API for more comprehensive coverage.

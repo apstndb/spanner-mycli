@@ -32,7 +32,6 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/alecthomas/kong"
-	kongtoml "github.com/alecthomas/kong-toml"
 	"github.com/apstndb/spanemuboost"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -102,8 +101,8 @@ type spannerOptions struct {
 	Format              string            `name:"format" help:"Output format (table, tab, vertical, html, xml, csv, jsonl)"`
 	Verbose             bool              `name:"verbose" short:"v" help:"Display verbose output."`
 	Credential          string            `name:"credential" help:"Use the specific credential file"`
-	Prompt              *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPrompt})"`
-	Prompt2             *string           `name:"prompt2" help:"Set the prompt2 to the specified format (default: ${defaultPrompt2})"`
+	Prompt              *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`
+	Prompt2             *string           `name:"prompt2" help:"Set the prompt2 to the specified format (default: ${defaultPrompt2Quoted})"`
 	HistoryFile         *string           `name:"history" help:"Set the history file to the specified path (default: ${defaultHistoryFile})"`
 	Priority            string            `name:"priority" help:"Set default request priority (HIGH|MEDIUM|LOW)"`
 	Role                string            `name:"role" help:"Use the specific database role. --database-role is an alias."`
@@ -614,7 +613,9 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 			"version":                 getVersion(),
 			"installFrom":             installFrom,
 			"defaultPrompt":           defaultPrompt,
+			"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
 			"defaultPrompt2":          defaultPrompt2,
+			"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
 			"defaultHistoryFile":      defaultHistoryFile,
 			"defaultVertexAIModel":    defaultVertexAIModel,
 			"defaultVertexAILocation": defaultVertexAILocation,
@@ -622,9 +623,9 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 	}
 
 	if len(configFiles) > 0 {
-		// kong-toml normalizes configuration to hyphen-separated keys and its
-		// validator rejects unknown underscore variants such as vertexai_project.
-		options = append(options, kong.Configuration(kongtoml.Loader, configFiles...))
+		// Keep kong-toml's normal hyphenated lookup while also accepting
+		// snake_case aliases such as vertexai_project for user convenience.
+		options = append(options, kong.Configuration(underscoreCompatibleTOMLLoader, configFiles...))
 	}
 	// Context.Resolve keeps the last non-nil resolver result, so appending the
 	// SPANNER_* resolver after TOML preserves CLI > env > config precedence.
