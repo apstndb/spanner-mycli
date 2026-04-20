@@ -81,12 +81,12 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify:             lo.ToPtr(false), // Insecure takes precedence
 				LogGrpc:                   true,
 				LogLevel:                  "INFO",
-				QueryMode:                 "PLAN",
+				QueryMode:                 lo.ToPtr("PLAN"),
 				Strong:                    true,
 				ReadTimestamp:             "", // Strong takes precedence
 				VertexAIProject:           "vertex-project",
 				VertexAIModel:             lo.ToPtr("gemini-1.0-pro"),
-				DatabaseDialect:           "POSTGRESQL",
+				DatabaseDialect:           lo.ToPtr("POSTGRESQL"),
 				ImpersonateServiceAccount: "test-sa@example.com",
 				EnablePartitionedDML:      true,
 			},

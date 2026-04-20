@@ -30,18 +30,18 @@ import (
 // underscoreCompatibleTOMLLoader keeps kong-toml's hyphenated key model while
 // also accepting snake_case aliases for user-facing configuration keys.
 func underscoreCompatibleTOMLLoader(r io.Reader) (kong.Resolver, error) {
-	tree, err := toml.LoadReader(r)
-	if err != nil {
-		return nil, err
-	}
-	normalizedTree, err := normalizeTOMLValue(tree.ToMap())
-	if err != nil {
-		return nil, err
-	}
-
 	var filename string
 	if named, ok := r.(interface{ Name() string }); ok {
 		filename = named.Name()
+	}
+
+	tree, err := toml.LoadReader(r)
+	if err != nil {
+		return nil, formatConfigError(filename, err)
+	}
+	normalizedTree, err := normalizeTOMLValue(tree.ToMap())
+	if err != nil {
+		return nil, formatConfigError(filename, err)
 	}
 	return &underscoreCompatibleTOMLResolver{
 		filename: filename,
@@ -76,9 +76,16 @@ func (r *underscoreCompatibleTOMLResolver) Validate(app *kong.Application) error
 	if len(configKeys) > 0 {
 		keys := slices.Collect(maps.Keys(configKeys))
 		slices.Sort(keys)
-		return fmt.Errorf("%s: unknown configuration keys: %s", r.filename, strings.Join(keys, ", "))
+		return formatConfigError(r.filename, fmt.Errorf("unknown configuration keys: %s", strings.Join(keys, ", ")))
 	}
 	return nil
+}
+
+func formatConfigError(filename string, err error) error {
+	if filename == "" {
+		return err
+	}
+	return fmt.Errorf("%s: %w", filename, err)
 }
 
 func (r *underscoreCompatibleTOMLResolver) findValue(parent *kong.Path, flag *kong.Flag) (any, bool) {

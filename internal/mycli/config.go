@@ -124,17 +124,16 @@ type spannerOptions struct {
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
 	LogLevel            string            `name:"log-level"`
 	LogGrpc             bool              `name:"log-grpc" help:"Show gRPC logs"`
-	// QueryMode and DatabaseDialect intentionally stay as plain strings here.
-	// Kong only validates enum tags for required or defaulted values, but these
-	// options are optional and should remain unset unless the user provides them.
-	// Validation still happens later via system-variable initialization.
-	QueryMode                 string          `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE."`
+	// Kong only accepts enum validation on optional flags when they are modeled as
+	// pointers. Keeping these as *string preserves "unset" semantics while still
+	// letting Kong validate and document the allowed values natively.
+	QueryMode                 *string         `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
 	Strong                    bool            `name:"strong" help:"Perform a strong query."`
 	ReadTimestamp             string          `name:"read-timestamp" help:"Perform a query at the given timestamp."`
 	VertexAIProject           string          `name:"vertexai-project" help:"Vertex AI project"`
 	VertexAIModel             *string         `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
 	VertexAILocation          *string         `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
-	DatabaseDialect           string          `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset."`
+	DatabaseDialect           *string         `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset." enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
 	ImpersonateServiceAccount string          `name:"impersonate-service-account" help:"Impersonate service account email"`
 	Help                      showHelpFlag    `name:"help" short:"h" help:"Show this help message and exit."`
 	Version                   showVersionFlag `name:"version" help:"Show version string."`
@@ -150,10 +149,10 @@ type spannerOptions struct {
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
 	SkipSystemCommand bool `name:"skip-system-command" help:"Do not allow system commands"`
-	// SystemCommand provides an alternative way to control system command execution.
-	// It accepts ON/OFF values and is maintained for compatibility with Google Cloud Spanner CLI.
-	// When both --skip-system-command and --system-command are used, --skip-system-command takes precedence.
-	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF). Default: ON." enum:"ON,OFF"`
+	// SystemCommand provides an alternative way to control system command
+	// execution. Kong's default keeps the documented ON value aligned with the
+	// effective default, while --skip-system-command still takes precedence.
+	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF). Default: ON." enum:"ON,OFF" default:"ON"`
 	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
 	Output          string  `name:"output" short:"o" help:"Redirect output to file (file only, no screen output)"`
 	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`
@@ -543,11 +542,11 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	lo.Must0(sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns))
 
 	if err := applyOptionMappings(sysVars, []optionMapping{
-		{"CLI_DATABASE_DIALECT", opts.DatabaseDialect, "--database-dialect"},
+		{"CLI_DATABASE_DIALECT", lo.FromPtr(opts.DatabaseDialect), "--database-dialect"},
 		{"AUTOCOMMIT_DML_MODE", lo.Ternary(opts.EnablePartitionedDML, "PARTITIONED_NON_ATOMIC", ""), "--enable-partitioned-dml"},
 		{"STATEMENT_TIMEOUT", opts.Timeout, "--timeout"},
 		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
-		{"CLI_QUERY_MODE", opts.QueryMode, "--query-mode"},
+		{"CLI_QUERY_MODE", lo.FromPtr(opts.QueryMode), "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
 		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
 		{"CLI_STYLED_OUTPUT", lo.Ternary(opts.Color != "" && opts.Color != "AUTO", opts.Color, ""), "--color"},

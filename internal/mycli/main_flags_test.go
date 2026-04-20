@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/alecthomas/kong"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
@@ -78,6 +79,20 @@ func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
 	t.Helper()
 	if want != nil && got != *want {
 		t.Errorf("%s = %v, want %v", fieldName, got, *want)
+	}
+}
+
+func assertStringPtrEqual(t *testing.T, fieldName string, got, want *string) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	if got == nil {
+		t.Errorf("%s = nil, want %q", fieldName, *want)
+		return
+	}
+	if *got != *want {
+		t.Errorf("%s = %q, want %q", fieldName, *got, *want)
 	}
 }
 
@@ -219,8 +234,8 @@ func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOption
 		return
 	}
 	assertEqual(t, "Priority", got.Priority, want.Priority)
-	assertEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
-	assertEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
+	assertStringPtrEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
+	assertStringPtrEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
 	assertEqual(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
 	assertEqual(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
 	assertEqual(t, "Timeout", got.Timeout, want.Timeout)
@@ -416,12 +431,12 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid query-mode value",
 			args:        withRequiredFlags("--query-mode", "INVALID"),
-			errContains: "invalid value of --query-mode",
+			errContains: "--query-mode must be one of",
 		},
 		{
 			name:        "invalid database-dialect value",
 			args:        withRequiredFlags("--database-dialect", "INVALID"),
-			errContains: "invalid value of --database-dialect",
+			errContains: "--database-dialect must be one of",
 		},
 
 		// Format validation
@@ -1937,6 +1952,19 @@ vertexai_project = "other-project"
 			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
 		}
 	})
+}
+
+func TestKongOptionalEnumUsesPointerSemantics(t *testing.T) {
+	t.Parallel()
+
+	type opts struct {
+		QueryMode       *string `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
+		DatabaseDialect *string `name:"database-dialect" enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
+	}
+
+	if _, err := kong.New(&opts{}); err != nil {
+		t.Fatalf("kong.New() error = %v, want nil", err)
+	}
 }
 
 // TestComplexFlagInteractions tests complex interactions between multiple flags
