@@ -66,12 +66,14 @@ func (r *underscoreCompatibleTOMLResolver) Resolve(kctx *kong.Context, parent *k
 func (r *underscoreCompatibleTOMLResolver) Validate(app *kong.Application) error {
 	configKeys := map[string]bool{}
 	flattenTOMLTree("", r.tree, configKeys)
-	_ = kong.Visit(app, func(node kong.Visitable, next kong.Next) error {
+	if err := kong.Visit(app, func(node kong.Visitable, next kong.Next) error {
 		if flag, ok := node.(*kong.Flag); ok {
 			deleteMatchingConfigKeys(configKeys, flag.Name)
 		}
 		return next(nil)
-	})
+	}); err != nil {
+		return err
+	}
 	if len(configKeys) > 0 {
 		keys := slices.Collect(maps.Keys(configKeys))
 		slices.Sort(keys)
