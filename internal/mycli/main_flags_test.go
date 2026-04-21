@@ -1946,6 +1946,28 @@ vertexai_project = "example-project"
 		}
 	})
 
+	t.Run("duplicate hyphen and underscore aliases are rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai-project = "example-project"
+vertexai_project = "other-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), `duplicate configuration keys for "vertexai-project": vertexai-project, vertexai_project`) {
+			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
+		}
+	})
+
 	t.Run("map-valued set keys preserve underscores", func(t *testing.T) {
 		t.Parallel()
 
