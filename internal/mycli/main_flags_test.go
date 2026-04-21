@@ -82,7 +82,7 @@ func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
 	}
 }
 
-func assertStringPtrEqual(t *testing.T, fieldName string, got, want *string) {
+func assertStringPtrEqual[T ~string](t *testing.T, fieldName string, got *T, want *string) {
 	t.Helper()
 	if want == nil {
 		return
@@ -91,8 +91,8 @@ func assertStringPtrEqual(t *testing.T, fieldName string, got, want *string) {
 		t.Errorf("%s = nil, want %q", fieldName, *want)
 		return
 	}
-	if *got != *want {
-		t.Errorf("%s = %q, want %q", fieldName, *got, *want)
+	if string(*got) != *want {
+		t.Errorf("%s = %q, want %q", fieldName, string(*got), *want)
 	}
 }
 
@@ -589,29 +589,44 @@ func TestParseFlagsValidation(t *testing.T) {
 		})
 	}
 
-	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
+	for _, tc := range []struct {
+		arg  string
+		want string
+	}{
+		{arg: "NORMAL", want: "NORMAL"},
+		{arg: "PLAN", want: "PLAN"},
+		{arg: "PROFILE", want: "PROFILE"},
+		{arg: "plan", want: "PLAN"},
+	} {
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid query-mode %s", mode),
-			args: withRequiredFlags("--query-mode", mode),
-			want: &spannerOptionsExpectations{QueryMode: &mode},
+			name: fmt.Sprintf("valid query-mode %s", tc.arg),
+			args: withRequiredFlags("--query-mode", tc.arg),
+			want: &spannerOptionsExpectations{QueryMode: ptr(tc.want)},
 		})
 	}
 
-	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
+	for _, tc := range []struct {
+		arg  string
+		want string
+	}{
+		{arg: "POSTGRESQL", want: "POSTGRESQL"},
+		{arg: "GOOGLE_STANDARD_SQL", want: "GOOGLE_STANDARD_SQL"},
+		{arg: "postgresql", want: "POSTGRESQL"},
+	} {
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid database-dialect %s", dialect),
-			args: withRequiredFlags("--database-dialect", dialect),
-			want: &spannerOptionsExpectations{DatabaseDialect: &dialect},
+			name: fmt.Sprintf("valid database-dialect %s", tc.arg),
+			args: withRequiredFlags("--database-dialect", tc.arg),
+			want: &spannerOptionsExpectations{DatabaseDialect: ptr(tc.want)},
 		})
 	}
 
@@ -1957,18 +1972,71 @@ CLI_FORMAT = "VERTICAL"
 			t.Fatalf("CLIFormat = %v, want %v", got, enums.DisplayModeVertical)
 		}
 	})
+
+	t.Run("unknown empty table is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+
+[typo]
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "unknown configuration keys: typo") {
+			t.Fatalf("parseTestFlags() error = %v, want unknown empty table error", err)
+		}
+	})
 }
 
-func TestKongOptionalEnumUsesPointerSemantics(t *testing.T) {
+func TestKongOptionalEnumPreservesUnsetAndLowercaseInput(t *testing.T) {
 	t.Parallel()
 
 	type opts struct {
-		QueryMode       *string `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
-		DatabaseDialect *string `name:"database-dialect" enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
+		QueryMode *caseInsensitiveEnumValue `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
 	}
 
-	if _, err := kong.New(&opts{}); err != nil {
+	var unset opts
+	parser, err := kong.New(&unset)
+	if err != nil {
 		t.Fatalf("kong.New() error = %v, want nil", err)
+	}
+	if _, err := parser.Parse(nil); err != nil {
+		t.Fatalf("Parse(nil) error = %v", err)
+	}
+	if unset.QueryMode != nil {
+		t.Fatalf("QueryMode = %v, want nil", *unset.QueryMode)
+	}
+
+	var set opts
+	parser, err = kong.New(&set)
+	if err != nil {
+		t.Fatalf("kong.New() error = %v, want nil", err)
+	}
+	if _, err := parser.Parse([]string{"--query-mode", "plan"}); err != nil {
+		t.Fatalf("Parse(lowercase) error = %v", err)
+	}
+	if set.QueryMode == nil || string(*set.QueryMode) != "PLAN" {
+		t.Fatalf("QueryMode = %v, want PLAN", set.QueryMode)
+	}
+}
+
+func TestKongOptionalEnumRequiresPointerOrDefault(t *testing.T) {
+	t.Parallel()
+
+	type opts struct {
+		QueryMode caseInsensitiveEnumValue `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
+	}
+
+	if _, err := kong.New(&opts{}); err == nil {
+		t.Fatal("kong.New() error = nil, want error")
 	}
 }
 

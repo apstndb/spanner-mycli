@@ -86,6 +86,15 @@ func (v showVersionFlag) BeforeReset(app *kong.Kong, vars kong.Vars) error {
 	return versionRequestedError{}
 }
 
+// caseInsensitiveEnumValue preserves case-insensitive CLI input while still
+// allowing Kong enum validation to run on the normalized uppercase value.
+type caseInsensitiveEnumValue string
+
+func (v *caseInsensitiveEnumValue) UnmarshalText(text []byte) error {
+	*v = caseInsensitiveEnumValue(strings.ToUpper(string(text)))
+	return nil
+}
+
 type spannerOptions struct {
 	ProjectId           string            `name:"project" short:"p" help:"(required) GCP Project ID ($SPANNER_PROJECT_ID)."`
 	InstanceId          string            `name:"instance" short:"i" help:"(required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)"`
@@ -127,24 +136,24 @@ type spannerOptions struct {
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
-	QueryMode                 *string         `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
-	Strong                    bool            `name:"strong" help:"Perform a strong query."`
-	ReadTimestamp             string          `name:"read-timestamp" help:"Perform a query at the given timestamp."`
-	VertexAIProject           string          `name:"vertexai-project" help:"Vertex AI project"`
-	VertexAIModel             *string         `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
-	VertexAILocation          *string         `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
-	DatabaseDialect           *string         `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset." enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
-	ImpersonateServiceAccount string          `name:"impersonate-service-account" help:"Impersonate service account email"`
-	Help                      showHelpFlag    `name:"help" short:"h" help:"Show this help message and exit."`
-	Version                   showVersionFlag `name:"version" help:"Show version string."`
-	StatementHelp             bool            `name:"statement-help" hidden:"" help:"Show statement help."`
-	DatabaseRole              string          `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
-	DeploymentEndpoint        string          `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
-	EnablePartitionedDML      bool            `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	Timeout                   string          `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
-	Async                     bool            `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
-	TryPartitionQuery         bool            `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
-	MCP                       bool            `name:"mcp" help:"Run as MCP server"`
+	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
+	Strong                    bool                      `name:"strong" help:"Perform a strong query."`
+	ReadTimestamp             string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
+	VertexAIProject           string                    `name:"vertexai-project" help:"Vertex AI project"`
+	VertexAIModel             *string                   `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
+	VertexAILocation          *string                   `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
+	DatabaseDialect           *caseInsensitiveEnumValue `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset." enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
+	ImpersonateServiceAccount string                    `name:"impersonate-service-account" help:"Impersonate service account email"`
+	Help                      showHelpFlag              `name:"help" short:"h" help:"Show this help message and exit."`
+	Version                   showVersionFlag           `name:"version" help:"Show version string."`
+	StatementHelp             bool                      `name:"statement-help" hidden:"" help:"Show statement help."`
+	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
+	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
+	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
+	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	Async                     bool                      `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
+	TryPartitionQuery         bool                      `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
+	MCP                       bool                      `name:"mcp" help:"Run as MCP server"`
 	// SkipSystemCommand is kept for compatibility with official Spanner CLI.
 	// The official implementation uses --skip-system-command to disable shell commands,
 	// so we maintain the same flag name and behavior for consistency.
@@ -542,11 +551,11 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	lo.Must0(sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns))
 
 	if err := applyOptionMappings(sysVars, []optionMapping{
-		{"CLI_DATABASE_DIALECT", lo.FromPtr(opts.DatabaseDialect), "--database-dialect"},
+		{"CLI_DATABASE_DIALECT", string(lo.FromPtr(opts.DatabaseDialect)), "--database-dialect"},
 		{"AUTOCOMMIT_DML_MODE", lo.Ternary(opts.EnablePartitionedDML, "PARTITIONED_NON_ATOMIC", ""), "--enable-partitioned-dml"},
 		{"STATEMENT_TIMEOUT", opts.Timeout, "--timeout"},
 		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
-		{"CLI_QUERY_MODE", lo.FromPtr(opts.QueryMode), "--query-mode"},
+		{"CLI_QUERY_MODE", string(lo.FromPtr(opts.QueryMode)), "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
 		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
 		{"CLI_STYLED_OUTPUT", lo.Ternary(opts.Color != "" && opts.Color != "AUTO", opts.Color, ""), "--color"},
@@ -611,9 +620,7 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 		kong.Vars{
 			"version":                 getVersion(),
 			"installFrom":             installFrom,
-			"defaultPrompt":           defaultPrompt,
 			"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
-			"defaultPrompt2":          defaultPrompt2,
 			"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
 			"defaultHistoryFile":      defaultHistoryFile,
 			"defaultVertexAIModel":    defaultVertexAIModel,

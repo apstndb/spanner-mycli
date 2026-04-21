@@ -131,6 +131,10 @@ func (r *underscoreCompatibleTOMLResolver) findValueParts(prefix string, suffix 
 func flattenTOMLTree(prefix string, tree any, flags map[string]bool) {
 	switch tree := tree.(type) {
 	case map[string]any:
+		if prefix != "" && len(tree) == 0 {
+			flags[prefix] = true
+			return
+		}
 		for key, value := range tree {
 			if prefix == "" {
 				flattenTOMLTree(key, value, flags)
