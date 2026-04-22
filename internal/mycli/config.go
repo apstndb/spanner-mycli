@@ -161,7 +161,7 @@ type spannerOptions struct {
 	// SystemCommand provides an alternative way to control system command
 	// execution. Kong's default keeps the documented ON value aligned with the
 	// effective default, while --skip-system-command still takes precedence.
-	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF). Default: ON." enum:"ON,OFF" default:"ON"`
+	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF). Default: ON." enum:"ON,OFF" default:"ON" placeholder:"ON|OFF"`
 	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
 	Output          string  `name:"output" short:"o" help:"Redirect output to file (file only, no screen output)"`
 	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`

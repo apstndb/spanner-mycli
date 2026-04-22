@@ -177,7 +177,7 @@ Flags:
                                                execution
       --mcp                                    Run as MCP server
       --skip-system-command                    Do not allow system commands
-      --system-command=ON                      Enable or disable system commands (ON/OFF). Default: ON.
+      --system-command=ON|OFF                  Enable or disable system commands (ON/OFF). Default: ON.
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
   -o, --output=STRING                          Redirect output to file (file only, no screen output)
       --skip-column-names                      Suppress column headers in output

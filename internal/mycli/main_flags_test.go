@@ -1884,6 +1884,7 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 
 	helpOutput := normalizeWhitespace(stdout.String())
 	for _, want := range []string{
+		"--system-command=ON|OFF",
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
 		fmt.Sprintf("default: %s", defaultHistoryFile),
