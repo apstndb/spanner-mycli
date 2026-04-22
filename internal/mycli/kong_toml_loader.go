@@ -83,10 +83,12 @@ func formatConfigError(filename string, err error) error {
 }
 
 func (r *underscoreCompatibleTOMLResolver) findValue(parent *kong.Path, flag *kong.Flag) (any, bool, error) {
-	keys := []string{
-		strings.Join(append(strings.Split(parent.Node().Path(), "-"), flag.Name), "-"),
-		flag.Name,
+	parentPath := parent.Node().Path()
+	keys := make([]string, 0, 2)
+	if parentPath != "" {
+		keys = append(keys, strings.Join(append(strings.Split(parentPath, "-"), flag.Name), "-"))
 	}
+	keys = append(keys, flag.Name)
 	return r.findValueFromKeys(keys)
 }
 
@@ -158,13 +160,13 @@ func deleteMatchingConfigKeys(configKeys map[string]bool, flag *kong.Flag, nodeP
 		prefixes = append(prefixes, nodePath+"-"+flag.Name)
 	}
 	for _, prefix := range prefixes {
-		for _, prefix := range []string{prefix, strings.ReplaceAll(prefix, "-", "_")} {
-			delete(configKeys, prefix)
+		for _, candidatePrefix := range []string{prefix, strings.ReplaceAll(prefix, "-", "_")} {
+			delete(configKeys, candidatePrefix)
 			if !flag.IsMap() {
 				continue
 			}
 			for key := range configKeys {
-				if strings.HasPrefix(key, prefix+"-") {
+				if strings.HasPrefix(key, candidatePrefix+"-") {
 					delete(configKeys, key)
 				}
 			}
