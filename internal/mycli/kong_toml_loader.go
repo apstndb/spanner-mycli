@@ -68,7 +68,7 @@ func (r *underscoreCompatibleTOMLResolver) Validate(app *kong.Application) error
 	flattenTOMLTree("", r.tree, configKeys)
 	if err := kong.Visit(app, func(node kong.Visitable, next kong.Next) error {
 		if flag, ok := node.(*kong.Flag); ok {
-			deleteMatchingConfigKeys(configKeys, flag.Name)
+			deleteMatchingConfigKeys(configKeys, flag)
 		}
 		return next(nil)
 	}); err != nil {
@@ -149,9 +149,12 @@ func flattenTOMLTree(prefix string, tree any, flags map[string]bool) {
 	}
 }
 
-func deleteMatchingConfigKeys(configKeys map[string]bool, flagName string) {
-	for _, prefix := range []string{flagName, strings.ReplaceAll(flagName, "-", "_")} {
+func deleteMatchingConfigKeys(configKeys map[string]bool, flag *kong.Flag) {
+	for _, prefix := range []string{flag.Name, strings.ReplaceAll(flag.Name, "-", "_")} {
 		delete(configKeys, prefix)
+		if !flag.IsMap() {
+			continue
+		}
 		for key := range configKeys {
 			if strings.HasPrefix(key, prefix+"-") {
 				delete(configKeys, key)

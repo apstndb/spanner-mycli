@@ -1995,6 +1995,29 @@ CLI_FORMAT = "VERTICAL"
 		}
 	})
 
+	t.Run("nested typo under scalar flag is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+
+[vertexai]
+project-id = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "unknown configuration keys: vertexai-project-id") {
+			t.Fatalf("parseTestFlags() error = %v, want nested scalar typo error", err)
+		}
+	})
+
 	t.Run("unknown empty table is rejected", func(t *testing.T) {
 		t.Parallel()
 
