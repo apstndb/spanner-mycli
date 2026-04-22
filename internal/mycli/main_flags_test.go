@@ -7,11 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/alecthomas/kong"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
@@ -63,6 +65,10 @@ func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
 }
 
+func normalizeWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // ptr returns a pointer to the given string
 func ptr(s string) *string {
 	return &s
@@ -73,6 +79,20 @@ func assertEqual[T comparable](t *testing.T, fieldName string, got T, want *T) {
 	t.Helper()
 	if want != nil && got != *want {
 		t.Errorf("%s = %v, want %v", fieldName, got, *want)
+	}
+}
+
+func assertStringPtrEqual[T ~string](t *testing.T, fieldName string, got *T, want *string) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	if got == nil {
+		t.Errorf("%s = nil, want %q", fieldName, *want)
+		return
+	}
+	if string(*got) != *want {
+		t.Errorf("%s = %q, want %q", fieldName, string(*got), *want)
 	}
 }
 
@@ -214,8 +234,8 @@ func verifySpannerOptions(t *testing.T, got *spannerOptions, want *spannerOption
 		return
 	}
 	assertEqual(t, "Priority", got.Priority, want.Priority)
-	assertEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
-	assertEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
+	assertStringPtrEqual(t, "QueryMode", got.QueryMode, want.QueryMode)
+	assertStringPtrEqual(t, "DatabaseDialect", got.DatabaseDialect, want.DatabaseDialect)
 	assertEqual(t, "DirectedRead", got.DirectedRead, want.DirectedRead)
 	assertEqual(t, "ReadTimestamp", got.ReadTimestamp, want.ReadTimestamp)
 	assertEqual(t, "Timeout", got.Timeout, want.Timeout)
@@ -411,12 +431,12 @@ func TestParseFlagsValidation(t *testing.T) {
 		{
 			name:        "invalid query-mode value",
 			args:        withRequiredFlags("--query-mode", "INVALID"),
-			errContains: "invalid value of --query-mode",
+			errContains: "--query-mode must be one of",
 		},
 		{
 			name:        "invalid database-dialect value",
 			args:        withRequiredFlags("--database-dialect", "INVALID"),
-			errContains: "invalid value of --database-dialect",
+			errContains: "--database-dialect must be one of",
 		},
 
 		// Format validation
@@ -569,29 +589,44 @@ func TestParseFlagsValidation(t *testing.T) {
 		})
 	}
 
-	for _, mode := range []string{"NORMAL", "PLAN", "PROFILE"} {
+	for _, tc := range []struct {
+		arg  string
+		want string
+	}{
+		{arg: "NORMAL", want: "NORMAL"},
+		{arg: "PLAN", want: "PLAN"},
+		{arg: "PROFILE", want: "PROFILE"},
+		{arg: "plan", want: "PLAN"},
+	} {
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid query-mode %s", mode),
-			args: withRequiredFlags("--query-mode", mode),
-			want: &spannerOptionsExpectations{QueryMode: &mode},
+			name: fmt.Sprintf("valid query-mode %s", tc.arg),
+			args: withRequiredFlags("--query-mode", tc.arg),
+			want: &spannerOptionsExpectations{QueryMode: ptr(tc.want)},
 		})
 	}
 
-	for _, dialect := range []string{"POSTGRESQL", "GOOGLE_STANDARD_SQL"} {
+	for _, tc := range []struct {
+		arg  string
+		want string
+	}{
+		{arg: "POSTGRESQL", want: "POSTGRESQL"},
+		{arg: "GOOGLE_STANDARD_SQL", want: "GOOGLE_STANDARD_SQL"},
+		{arg: "postgresql", want: "POSTGRESQL"},
+	} {
 		tests = append(tests, struct {
 			name        string
 			args        []string
 			errContains string
 			want        *spannerOptionsExpectations
 		}{
-			name: fmt.Sprintf("valid database-dialect %s", dialect),
-			args: withRequiredFlags("--database-dialect", dialect),
-			want: &spannerOptionsExpectations{DatabaseDialect: &dialect},
+			name: fmt.Sprintf("valid database-dialect %s", tc.arg),
+			args: withRequiredFlags("--database-dialect", tc.arg),
+			want: &spannerOptionsExpectations{DatabaseDialect: ptr(tc.want)},
 		})
 	}
 
@@ -1835,6 +1870,253 @@ func TestHelpAndVersionFlags(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	_, _, err := parseFlagsArgs([]string{"--help"}, "built from source", nil, &stdout, io.Discard)
+	if !isHelpRequested(err) {
+		t.Fatalf("Expected help to be written, but got err = %v", err)
+	}
+
+	helpOutput := normalizeWhitespace(stdout.String())
+	for _, want := range []string{
+		"--system-command=ON|OFF",
+		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
+		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
+		fmt.Sprintf("default: %s", defaultHistoryFile),
+		"Allowed values: NORMAL, PLAN, PROFILE.",
+		fmt.Sprintf("default: %s", defaultVertexAIModel),
+		fmt.Sprintf("default: %s", defaultVertexAILocation),
+		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset.",
+		"Default: ON.",
+	} {
+		if !strings.Contains(helpOutput, want) {
+			t.Errorf("help output does not contain %q", want)
+		}
+	}
+}
+
+func TestTOMLConfigKeyAliases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("hyphenated key is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai-project = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
+			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		}
+	})
+
+	t.Run("underscore key alias is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai_project = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
+			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		}
+	})
+
+	t.Run("duplicate hyphen and underscore aliases are rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+vertexai-project = "example-project"
+vertexai_project = "other-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), `duplicate configuration keys for "vertexai-project": vertexai-project, vertexai_project`) {
+			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
+		}
+	})
+
+	t.Run("map-valued set keys preserve underscores", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+
+[set]
+CLI_FORMAT = "VERTICAL"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		gopts, err := parseTestFlags(nil, configFile)
+		if err != nil {
+			t.Fatalf("parseTestFlags() error = %v", err)
+		}
+		if got := gopts.Spanner.Set["CLI_FORMAT"]; got != "VERTICAL" {
+			t.Fatalf("Set[CLI_FORMAT] = %q, want %q", got, "VERTICAL")
+		}
+		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
+		if got := sysVars.Display.CLIFormat; got != enums.DisplayModeVertical {
+			t.Fatalf("CLIFormat = %v, want %v", got, enums.DisplayModeVertical)
+		}
+	})
+
+	t.Run("nested typo under scalar flag is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+
+[vertexai]
+project-id = "example-project"
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "unknown configuration keys: vertexai-project-id") {
+			t.Fatalf("parseTestFlags() error = %v, want nested scalar typo error", err)
+		}
+	})
+
+	t.Run("unknown empty table is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		configFile := filepath.Join(t.TempDir(), configFileName)
+		if err := os.WriteFile(configFile, []byte(`project = "p"
+instance = "i"
+database = "d"
+
+[typo]
+`), 0o644); err != nil {
+			t.Fatalf("Failed to create config file: %v", err)
+		}
+
+		_, err := parseTestFlags(nil, configFile)
+		if err == nil {
+			t.Fatal("parseTestFlags() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "unknown configuration keys: typo") {
+			t.Fatalf("parseTestFlags() error = %v, want unknown empty table error", err)
+		}
+	})
+}
+
+func TestTOMLConfigValidationTracksNestedFlagPaths(t *testing.T) {
+	t.Parallel()
+
+	type runCommand struct {
+		Timeout string `name:"timeout"`
+	}
+	type opts struct {
+		Run runCommand `cmd:"" name:"run"`
+	}
+
+	configFile := filepath.Join(t.TempDir(), configFileName)
+	if err := os.WriteFile(configFile, []byte(`[run]
+timeout = "10s"
+`), 0o644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	var parsed opts
+	parser, err := kong.New(&parsed,
+		kong.Name("nested-config-test"),
+		kong.NoDefaultHelp(),
+		kong.Configuration(underscoreCompatibleTOMLLoader, configFile),
+	)
+	if err != nil {
+		t.Fatalf("kong.New() error = %v", err)
+	}
+	if _, err := parser.Parse([]string{"run"}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if got := parsed.Run.Timeout; got != "10s" {
+		t.Fatalf("Run.Timeout = %q, want %q", got, "10s")
+	}
+}
+
+func TestKongOptionalEnumPreservesUnsetAndLowercaseInput(t *testing.T) {
+	t.Parallel()
+
+	type opts struct {
+		QueryMode *caseInsensitiveEnumValue `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
+	}
+
+	var unset opts
+	parser, err := kong.New(&unset)
+	if err != nil {
+		t.Fatalf("kong.New() error = %v, want nil", err)
+	}
+	if _, err := parser.Parse(nil); err != nil {
+		t.Fatalf("Parse(nil) error = %v", err)
+	}
+	if unset.QueryMode != nil {
+		t.Fatalf("QueryMode = %v, want nil", *unset.QueryMode)
+	}
+
+	var set opts
+	parser, err = kong.New(&set)
+	if err != nil {
+		t.Fatalf("kong.New() error = %v, want nil", err)
+	}
+	if _, err := parser.Parse([]string{"--query-mode", "plan"}); err != nil {
+		t.Fatalf("Parse(lowercase) error = %v", err)
+	}
+	if set.QueryMode == nil || string(*set.QueryMode) != "PLAN" {
+		t.Fatalf("QueryMode = %v, want PLAN", set.QueryMode)
+	}
+}
+
+func TestKongOptionalEnumRequiresPointerOrDefault(t *testing.T) {
+	t.Parallel()
+
+	type opts struct {
+		QueryMode caseInsensitiveEnumValue `name:"query-mode" enum:"NORMAL,PLAN,PROFILE"`
+	}
+
+	if _, err := kong.New(&opts{}); err == nil {
+		t.Fatal("kong.New() error = nil, want error")
 	}
 }
 

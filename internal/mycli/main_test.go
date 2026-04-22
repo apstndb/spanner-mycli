@@ -20,6 +20,11 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
+func ptrCaseInsensitiveEnumValue(s string) *caseInsensitiveEnumValue {
+	v := caseInsensitiveEnumValue(s)
+	return &v
+}
+
 func Test_initializeSystemVariables(t *testing.T) {
 	// NOTE: Most test cases below hardcode expected values instead of using newSystemVariablesWithDefaults()
 	// This means they need updating when defaults change (like TablePreviewRows).
@@ -81,12 +86,12 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify:             lo.ToPtr(false), // Insecure takes precedence
 				LogGrpc:                   true,
 				LogLevel:                  "INFO",
-				QueryMode:                 "PLAN",
+				QueryMode:                 ptrCaseInsensitiveEnumValue("PLAN"),
 				Strong:                    true,
 				ReadTimestamp:             "", // Strong takes precedence
 				VertexAIProject:           "vertex-project",
 				VertexAIModel:             lo.ToPtr("gemini-1.0-pro"),
-				DatabaseDialect:           "POSTGRESQL",
+				DatabaseDialect:           ptrCaseInsensitiveEnumValue("POSTGRESQL"),
 				ImpersonateServiceAccount: "test-sa@example.com",
 				EnablePartitionedDML:      true,
 			},
