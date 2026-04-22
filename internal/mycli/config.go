@@ -86,8 +86,8 @@ func (v showVersionFlag) BeforeReset(app *kong.Kong, vars kong.Vars) error {
 	return versionRequestedError{}
 }
 
-// caseInsensitiveEnumValue preserves case-insensitive CLI input while still
-// allowing Kong enum validation to run on the normalized uppercase value.
+// caseInsensitiveEnumValue accepts case-insensitive CLI input and normalizes
+// it to uppercase so Kong enum validation runs on the normalized value.
 type caseInsensitiveEnumValue string
 
 func (v *caseInsensitiveEnumValue) UnmarshalText(text []byte) error {
