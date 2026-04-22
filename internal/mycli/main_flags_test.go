@@ -2042,6 +2042,40 @@ database = "d"
 	})
 }
 
+func TestTOMLConfigValidationTracksNestedFlagPaths(t *testing.T) {
+	t.Parallel()
+
+	type runCommand struct {
+		Timeout string `name:"timeout"`
+	}
+	type opts struct {
+		Run runCommand `cmd:"" name:"run"`
+	}
+
+	configFile := filepath.Join(t.TempDir(), configFileName)
+	if err := os.WriteFile(configFile, []byte(`[run]
+timeout = "10s"
+`), 0o644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	var parsed opts
+	parser, err := kong.New(&parsed,
+		kong.Name("nested-config-test"),
+		kong.NoDefaultHelp(),
+		kong.Configuration(underscoreCompatibleTOMLLoader, configFile),
+	)
+	if err != nil {
+		t.Fatalf("kong.New() error = %v", err)
+	}
+	if _, err := parser.Parse([]string{"run"}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if got := parsed.Run.Timeout; got != "10s" {
+		t.Fatalf("Run.Timeout = %q, want %q", got, "10s")
+	}
+}
+
 func TestKongOptionalEnumPreservesUnsetAndLowercaseInput(t *testing.T) {
 	t.Parallel()
 

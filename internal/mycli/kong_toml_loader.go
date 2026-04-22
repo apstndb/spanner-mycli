@@ -66,14 +66,7 @@ func (r *underscoreCompatibleTOMLResolver) Resolve(kctx *kong.Context, parent *k
 func (r *underscoreCompatibleTOMLResolver) Validate(app *kong.Application) error {
 	configKeys := map[string]bool{}
 	flattenTOMLTree("", r.tree, configKeys)
-	if err := kong.Visit(app, func(node kong.Visitable, next kong.Next) error {
-		if flag, ok := node.(*kong.Flag); ok {
-			deleteMatchingConfigKeys(configKeys, flag)
-		}
-		return next(nil)
-	}); err != nil {
-		return err
-	}
+	deleteMatchingNodeConfigKeys(configKeys, app.Node)
 	if len(configKeys) > 0 {
 		keys := slices.Collect(maps.Keys(configKeys))
 		slices.Sort(keys)
@@ -149,15 +142,31 @@ func flattenTOMLTree(prefix string, tree any, flags map[string]bool) {
 	}
 }
 
-func deleteMatchingConfigKeys(configKeys map[string]bool, flag *kong.Flag) {
-	for _, prefix := range []string{flag.Name, strings.ReplaceAll(flag.Name, "-", "_")} {
-		delete(configKeys, prefix)
-		if !flag.IsMap() {
-			continue
-		}
-		for key := range configKeys {
-			if strings.HasPrefix(key, prefix+"-") {
-				delete(configKeys, key)
+func deleteMatchingNodeConfigKeys(configKeys map[string]bool, node *kong.Node) {
+	path := node.Path()
+	for _, flag := range node.Flags {
+		deleteMatchingConfigKeys(configKeys, flag, path)
+	}
+	for _, child := range node.Children {
+		deleteMatchingNodeConfigKeys(configKeys, child)
+	}
+}
+
+func deleteMatchingConfigKeys(configKeys map[string]bool, flag *kong.Flag, nodePath string) {
+	prefixes := []string{flag.Name}
+	if nodePath != "" {
+		prefixes = append(prefixes, nodePath+"-"+flag.Name)
+	}
+	for _, prefix := range prefixes {
+		for _, prefix := range []string{prefix, strings.ReplaceAll(prefix, "-", "_")} {
+			delete(configKeys, prefix)
+			if !flag.IsMap() {
+				continue
+			}
+			for key := range configKeys {
+				if strings.HasPrefix(key, prefix+"-") {
+					delete(configKeys, key)
+				}
 			}
 		}
 	}
