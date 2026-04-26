@@ -247,11 +247,11 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	if gotConfig.UserAgent != "embedded-omni-test" {
 		t.Errorf("UserAgent = %q, want %q", gotConfig.UserAgent, "embedded-omni-test")
 	}
-	if gotConfig.SessionPoolConfig.MinOpened != defaultClientConfig.SessionPoolConfig.MinOpened {
-		t.Errorf("SessionPoolConfig.MinOpened = %d, want %d", gotConfig.SessionPoolConfig.MinOpened, defaultClientConfig.SessionPoolConfig.MinOpened)
+	if gotConfig.MinOpened != defaultClientConfig.MinOpened {
+		t.Errorf("SessionPoolConfig.MinOpened = %d, want %d", gotConfig.MinOpened, defaultClientConfig.MinOpened)
 	}
-	if gotConfig.SessionPoolConfig.MaxOpened != defaultClientConfig.SessionPoolConfig.MaxOpened {
-		t.Errorf("SessionPoolConfig.MaxOpened = %d, want %d", gotConfig.SessionPoolConfig.MaxOpened, defaultClientConfig.SessionPoolConfig.MaxOpened)
+	if gotConfig.MaxOpened != defaultClientConfig.MaxOpened {
+		t.Errorf("SessionPoolConfig.MaxOpened = %d, want %d", gotConfig.MaxOpened, defaultClientConfig.MaxOpened)
 	}
 	if gotConfig.DatabaseRole != "test-role" {
 		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")
