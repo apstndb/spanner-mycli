@@ -659,7 +659,8 @@ func TestStreamManagerSilentMode(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		outputFile := filepath.Join(tmpDir, "output.sql")
-		if err := os.WriteFile(outputFile, []byte("stale dump\n"), 0o644); err != nil {
+		seedContent := "stale dump with trailing bytes that must be removed\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
 			t.Fatalf("Failed to seed output file: %v", err)
 		}
 
@@ -679,6 +680,9 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		}
 		if string(content) != freshData {
 			t.Fatalf("Expected redirected output %q, got %q", freshData, string(content))
+		}
+		if strings.Contains(string(content), "trailing bytes") {
+			t.Fatalf("Expected truncation to remove old tail, got %q", string(content))
 		}
 	})
 
