@@ -50,8 +50,9 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 }
 
 // openOutputFile validates and opens a file for file output.
-// appendMode=true preserves existing content for tee logging, while false starts
-// output redirection from a clean file.
+// appendMode=true preserves existing content for tee logging, while false opens
+// the file without truncating so callers can defer reset until after any
+// previous output file is safely closed.
 func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 	// Check if the path already exists and is a regular file before opening.
 	// This rejects already-existing special files such as FIFOs.
@@ -78,8 +79,6 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 	openFlags := os.O_CREATE | os.O_WRONLY
 	if appendMode {
 		openFlags |= os.O_APPEND
-	} else {
-		openFlags |= os.O_TRUNC
 	}
 
 	file, err := os.OpenFile(filePath, openFlags, 0o644)
@@ -101,6 +100,16 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+func resetOutputFile(file *os.File) error {
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	return nil
 }
 
 // createTeeWriter creates a MultiWriter that writes to both the original stream and a tee file
@@ -176,6 +185,13 @@ func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 			// To be safe, close the new file and abort the operation to prevent a leak.
 			_ = teeFile.Close()
 			return fmt.Errorf("failed to switch tee file: could not close previous file %q: %w", sm.teeFile.Name(), err)
+		}
+	}
+
+	if silent {
+		if err := resetOutputFile(teeFile); err != nil {
+			_ = teeFile.Close()
+			return fmt.Errorf("failed to reset output file %q: %w", filePath, err)
 		}
 	}
 

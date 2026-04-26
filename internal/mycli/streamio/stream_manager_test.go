@@ -681,6 +681,51 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		}
 	})
 
+	t.Run("silent mode leaves target unchanged when switch fails", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+
+		tmpDir := t.TempDir()
+		currentFile := filepath.Join(tmpDir, "current.log")
+		if err := sm.EnableTee(currentFile, false); err != nil {
+			t.Fatalf("Failed to enable initial tee: %v", err)
+		}
+
+		sm.mu.Lock()
+		currentHandle := sm.teeFile
+		sm.mu.Unlock()
+		if err := currentHandle.Close(); err != nil {
+			t.Fatalf("Failed to poison current tee file: %v", err)
+		}
+
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		seedContent := "stale dump\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		err := sm.EnableTee(outputFile, true)
+		if err == nil {
+			t.Fatal("Expected enable output redirect to fail when closing previous file fails")
+		}
+		if !strings.Contains(err.Error(), "failed to switch tee file") {
+			t.Fatalf("Expected switch failure error, got %v", err)
+		}
+
+		content, readErr := os.ReadFile(outputFile)
+		if readErr != nil {
+			t.Fatalf("Failed to read redirected file after failed switch: %v", readErr)
+		}
+		if string(content) != seedContent {
+			t.Fatalf("Expected redirected file to remain %q, got %q", seedContent, string(content))
+		}
+
+		sm.mu.Lock()
+		sm.teeFile = nil
+		sm.mu.Unlock()
+	})
+
 	t.Run("GetWriter vs GetOutStream usage", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
