@@ -91,8 +91,8 @@ INSERT INTO Users (UserId, UserName, Email) VALUES
 
 5. Use your custom sample:
 ```bash
-spanner-mycli --embedded-emulator --sample-database=/path/to/mysample/metadata.json
-spanner-mycli --embedded-omni --sample-database=/path/to/mysample/metadata.json
+spanner-mycli --embedded-emulator --sample-database=/path/to/mysample/metadata.(json|yaml|yml)
+spanner-mycli --embedded-omni --sample-database=/path/to/mysample/metadata.(json|yaml|yml)
 ```
 
 ### Advanced Example with Mixed Sources
