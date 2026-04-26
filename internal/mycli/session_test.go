@@ -1,12 +1,16 @@
 package mycli
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"testing"
 
+	"cloud.google.com/go/spanner"
+	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -122,5 +126,41 @@ func TestSession_FailStatementIfReadOnly(t *testing.T) {
 	err = s.failStatementIfReadOnly()
 	if err != nil {
 		t.Errorf("failStatementIfReadOnly should not return an error when ReadOnly is false")
+	}
+}
+
+func TestNewSessionClosesClientWhenAdminClientCreationFails(t *testing.T) {
+	expectedErr := errors.New("admin client creation failed")
+	fakeClient := &spanner.Client{}
+
+	var closedClient *spanner.Client
+
+	session, err := newSessionWithFactories(
+		context.Background(),
+		&systemVariables{
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+				Database: "test-database",
+			},
+		},
+		func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error) {
+			return fakeClient, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return nil, expectedErr
+		},
+		func(client *spanner.Client) {
+			closedClient = client
+		},
+	)
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("newSessionWithFactories() error = %v, want %v", err, expectedErr)
+	}
+	if session != nil {
+		t.Fatalf("newSessionWithFactories() session = %#v, want nil", session)
+	}
+	if closedClient != fakeClient {
+		t.Fatalf("newSessionWithFactories() closed client = %p, want %p", closedClient, fakeClient)
 	}
 }

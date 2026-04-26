@@ -268,6 +268,24 @@ func logGrpcClientOptions() []option.ClientOption {
 }
 
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
+	return newSessionWithFactories(
+		ctx,
+		sysVars,
+		spanner.NewClientWithConfig,
+		adminapi.NewDatabaseAdminClient,
+		func(client *spanner.Client) { client.Close() },
+		opts...,
+	)
+}
+
+func newSessionWithFactories(
+	ctx context.Context,
+	sysVars *systemVariables,
+	clientFactory func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error),
+	adminClientFactory func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error),
+	closeClient func(*spanner.Client),
+	opts ...option.ClientOption,
+) (*Session, error) {
 	dbPath := sysVars.DatabasePath()
 	clientConfig := defaultClientConfig
 	clientConfig.DatabaseRole = sysVars.Connection.Role
@@ -282,13 +300,14 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	}
 
 	opts = append(opts, defaultClientOpts...)
-	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, opts...)
+	client, err := clientFactory(ctx, dbPath, clientConfig, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	adminClient, err := adminapi.NewDatabaseAdminClient(ctx, opts...)
+	adminClient, err := adminClientFactory(ctx, opts...)
 	if err != nil {
+		closeClient(client)
 		return nil, err
 	}
 
