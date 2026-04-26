@@ -50,7 +50,7 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 	var openErr error
 
 	go func() {
-		_, openErr = openTeeFile(fifoPath)
+		_, openErr = openTeeFile(fifoPath, true)
 		close(done)
 	}()
 

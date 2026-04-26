@@ -179,7 +179,7 @@ Flags:
       --skip-system-command                    Do not allow system commands
       --system-command=ON|OFF                  Enable or disable system commands (ON/OFF). Default: ON.
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
-  -o, --output=STRING                          Redirect output to file (file only, no screen output)
+  -o, --output=STRING                          Redirect output to file (overwrites existing file, no screen output)
       --skip-column-names                      Suppress column headers in output
       --streaming="AUTO"                       Streaming output mode: AUTO (format-dependent default), TRUE (always
                                                stream), FALSE (never stream)
@@ -384,7 +384,7 @@ spanner> \T another.log       -- Start tee to a different file
 ##### Using --output option
 
 ```bash
-# Redirect all output to file (no screen output)
+# Redirect all output to file (overwrites existing file, no screen output)
 $ spanner-mycli --output backup.sql -p myproject -i myinstance -d mydb -e 'DUMP DATABASE;'
 
 # Useful for clean SQL exports without progress messages on screen
@@ -394,13 +394,13 @@ $ spanner-mycli --output export.sql -p myproject -i myinstance -d mydb
 ##### Using \o meta-command (PostgreSQL-style)
 
 ```sql
-spanner> \o backup.sql        -- Redirect output to file only
+spanner> \o backup.sql        -- Redirect output to file only (overwrite if it exists)
 spanner> DUMP DATABASE;       -- SQL goes to file, progress shows on screen
 spanner> \o                   -- Disable redirect (return to screen output)
 spanner> SELECT * FROM users; -- This shows on screen only
 
 -- Alternative using \O (symmetric with \T/\t pattern)
-spanner> \o export.sql        -- Redirect output to file only
+spanner> \o export.sql        -- Redirect output to file only (overwrite if it exists)
 spanner> SELECT * FROM keys;  -- Output goes to file only
 spanner> \O                   -- Disable redirect using \O
 ```
@@ -631,7 +631,7 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 | `\u <database>` | Switch to a different database | `\u mydb` |
 | `\T <filename>` | Start tee logging to file (both screen and file) | `\T output.txt` |
 | `\t` | Stop tee logging | `\t` |
-| `\o <filename>` | Redirect output to file only (no screen) | `\o backup.sql` |
+| `\o <filename>` | Redirect output to file only (overwrite existing file, no screen) | `\o backup.sql` |
 | `\o` | Disable output redirect (return to screen) | `\o` |
 | `\O` | Disable output redirect (alternative to `\o`) | `\O` |
 

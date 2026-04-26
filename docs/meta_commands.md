@@ -197,9 +197,9 @@ spanner> SELECT * FROM sensitive_data;  -- This will only show on screen
 
 ### Output Redirect (`\o` and `\O`) - PostgreSQL-style
 
-The `\o` meta command provides output redirection (file only, no screen output), complementing the `--output` command-line option.
+The `\o` meta command provides output redirection (file only, no screen output), complementing the `--output` command-line option. Unlike tee logging, output redirection starts from a clean file each time and overwrites any existing file content.
 
-- `\o <filename>` - Redirect output to the specified file only (no screen output)
+- `\o <filename>` - Redirect output to the specified file only (overwrite existing file, no screen output)
 - `\o` - Disable output redirect (return to screen output)
 - `\O` - Disable output redirect (alternative syntax, symmetric with `\T`/`\t`)
 

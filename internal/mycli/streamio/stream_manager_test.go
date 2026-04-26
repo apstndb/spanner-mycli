@@ -650,6 +650,37 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		}
 	})
 
+	t.Run("silent mode truncates existing file", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
+
+		tmpDir := t.TempDir()
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		if err := os.WriteFile(outputFile, []byte("stale dump\n"), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		if err := sm.EnableTee(outputFile, true); err != nil {
+			t.Fatalf("Failed to enable output redirect: %v", err)
+		}
+
+		writer := sm.GetWriter()
+		freshData := "CREATE TABLE Singers (\n"
+		if _, err := writer.Write([]byte(freshData)); err != nil {
+			t.Fatalf("Failed to write redirected output: %v", err)
+		}
+
+		content, err := os.ReadFile(outputFile)
+		if err != nil {
+			t.Fatalf("Failed to read redirected file: %v", err)
+		}
+		if string(content) != freshData {
+			t.Fatalf("Expected redirected output %q, got %q", freshData, string(content))
+		}
+	})
+
 	t.Run("GetWriter vs GetOutStream usage", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}

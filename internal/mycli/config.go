@@ -163,7 +163,7 @@ type spannerOptions struct {
 	// effective default, while --skip-system-command still takes precedence.
 	SystemCommand   *string `name:"system-command" help:"Enable or disable system commands (ON/OFF). Default: ON." enum:"ON,OFF" default:"ON" placeholder:"ON|OFF"`
 	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
-	Output          string  `name:"output" short:"o" help:"Redirect output to file (file only, no screen output)"`
+	Output          string  `name:"output" short:"o" help:"Redirect output to file (overwrites existing file, no screen output)"`
 	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`
 	Streaming       string  `name:"streaming" help:"Streaming output mode: AUTO (format-dependent default), TRUE (always stream), FALSE (never stream)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
 	Color           string  `name:"color" help:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
