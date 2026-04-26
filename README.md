@@ -155,7 +155,7 @@ Flags:
       --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime
       --sample-database=STRING                 Initialize embedded runtime with built-in sample (e.g. fingraph, singers,
                                                banking) or path to metadata.json file. Requires --embedded-emulator or
-                                               --embedded-omni.
+                                               --embedded-omni. Cannot be combined with --detached.
       --list-samples                           List available sample databases and exit
       --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
       --log-level=STRING

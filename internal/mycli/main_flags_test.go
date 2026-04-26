@@ -367,6 +367,11 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name: "sample database accepts embedded omni",
 			args: []string{"--embedded-omni", "--sample-database", "singers"},
 		},
+		{
+			name:        "sample database rejects detached mode",
+			args:        []string{"--embedded-omni", "--sample-database", "singers", "--detached"},
+			errContains: "--sample-database cannot be used with --detached",
+		},
 
 		// Missing required parameters
 		{

@@ -134,7 +134,7 @@ type spannerOptions struct {
 	EmbeddedOmni        bool              `name:"embedded-omni" help:"Use embedded experimental Spanner Omni. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
 	EmulatorImage       string            `name:"emulator-image" help:"container image for embedded runtime (--embedded-emulator or --embedded-omni)"`
 	EmulatorPlatform    string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime"`
-	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator or --embedded-omni."`
+	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
 	LogLevel            string            `name:"log-level"`
@@ -247,6 +247,9 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	// Validate sample database flags
 	if opts.SampleDatabase != "" && !opts.usesEmbeddedRuntime() {
 		return fmt.Errorf("--sample-database requires --embedded-emulator or --embedded-omni")
+	}
+	if opts.SampleDatabase != "" && opts.Detached {
+		return fmt.Errorf("--sample-database cannot be used with --detached")
 	}
 	if opts.ListSamples && opts.SampleDatabase != "" {
 		return fmt.Errorf("--list-samples and --sample-database are mutually exclusive")
