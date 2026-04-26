@@ -1166,7 +1166,7 @@ default:default:emulator-database
 > SELECT 1
 ```
 
-`--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, reuses the backend-provided client options needed for the experimental host, and can load the same sample databases as the embedded emulator path.
+`--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, reuses the backend-provided client options needed for the experimental host, and can load the same sample databases as the embedded emulator path. In Spanner Omni terminology, this embedded single-server setup corresponds to a deployment, which is the Omni equivalent of a Google Cloud Spanner instance; see [Spanner Omni key terms](https://docs.cloud.google.com/spanner-omni/key-terms). Before relying on embedded Omni locally, also check the official [Spanner Omni system requirements](https://docs.cloud.google.com/spanner-omni/system-requirements).
 
 ### Protocol Buffers support
 
