@@ -184,7 +184,7 @@ func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 			// If we can't close the old file, we're in a risky state.
 			// To be safe, close the new file and abort the operation to prevent a leak.
 			_ = teeFile.Close()
-			return fmt.Errorf("failed to switch tee file: could not close previous file %q: %w", sm.teeFile.Name(), err)
+			return fmt.Errorf("failed to switch file output: could not close previous output file %q: %w", sm.teeFile.Name(), err)
 		}
 	}
 

@@ -709,7 +709,7 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected enable output redirect to fail when closing previous file fails")
 		}
-		if !strings.Contains(err.Error(), "failed to switch tee file") {
+		if !strings.Contains(err.Error(), "failed to switch file output") {
 			t.Fatalf("Expected switch failure error, got %v", err)
 		}
 
