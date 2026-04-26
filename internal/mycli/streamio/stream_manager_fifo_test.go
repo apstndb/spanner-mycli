@@ -65,7 +65,7 @@ func TestOpenOutputFile_FIFO(t *testing.T) {
 		if openErr == nil {
 			t.Error("Expected error when opening FIFO, got nil")
 		}
-		if !strings.Contains(openErr.Error(), "regular file") {
+		if !strings.Contains(openErr.Error(), "must be a regular file") {
 			t.Errorf("Expected regular-file error, got: %v", openErr)
 		}
 	case <-time.After(1 * time.Second):
@@ -112,7 +112,7 @@ func TestStreamManager_FIFO(t *testing.T) {
 		if enableErr == nil {
 			t.Error("Expected error when enabling tee to FIFO, got nil")
 		}
-		if !strings.Contains(enableErr.Error(), "regular file") {
+		if !strings.Contains(enableErr.Error(), "must be a regular file") {
 			t.Errorf("Expected regular-file error, got: %v", enableErr)
 		}
 		// Verify that tee is not enabled

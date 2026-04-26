@@ -59,7 +59,7 @@ func TestStreamManager_DirectoryError(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when enabling tee with directory path")
 	}
-	if !strings.Contains(err.Error(), "regular file") {
+	if !strings.Contains(err.Error(), "must be a regular file") {
 		t.Errorf("Expected regular-file error, got: %v", err)
 	}
 
