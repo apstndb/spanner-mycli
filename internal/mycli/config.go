@@ -623,9 +623,7 @@ func parseFlagsArgs(args []string, installFrom string, configFiles []string, std
 }
 
 func newGlobalOptions() globalOptions {
-	var gopts globalOptions
-	gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
-	return gopts
+	return globalOptions{}
 }
 
 const configFileName = ".spanner_mycli.toml"
