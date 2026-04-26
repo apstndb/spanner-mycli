@@ -35,7 +35,7 @@ func TestRequestPriority(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients := spanemuboost.SetupClients(t, lazyEmu,
+	clients := spanemuboost.SetupClients(t, lazyRuntime,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),
@@ -162,7 +162,7 @@ func TestIsolationLevel(t *testing.T) {
 	ctx := t.Context()
 
 	// Use shared emulator with a random instance ID for isolation
-	clients := spanemuboost.SetupClients(t, lazyEmu,
+	clients := spanemuboost.SetupClients(t, lazyRuntime,
 		spanemuboost.WithRandomInstanceID(),
 		spanemuboost.WithProjectID(project),
 		spanemuboost.WithDatabaseID(database),

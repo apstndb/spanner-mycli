@@ -125,7 +125,10 @@ func dmlResult(n int) *Result {
 	return &Result{AffectedRows: n, IsExecutedDML: true}
 }
 
-var lazyEmu = spanemuboost.NewLazyEmulator(spanemuboost.EnableInstanceAutoConfigOnly())
+var lazyRuntime = spanemuboost.NewLazyRuntime(
+	spanemuboost.BackendEmulator,
+	spanemuboost.EnableInstanceAutoConfigOnly(),
+)
 
 func TestMain(m *testing.M) {
 	// Clear Spanner-related environment variables that could interfere with tests.
@@ -135,7 +138,7 @@ func TestMain(m *testing.M) {
 	_ = os.Unsetenv("SPANNER_INSTANCE_ID")
 	_ = os.Unsetenv("SPANNER_DATABASE_ID")
 
-	lazyEmu.TestMain(m)
+	lazyRuntime.TestMain(m)
 }
 
 func initializeSession(ctx context.Context, clients *spanemuboost.Clients) (session *Session, err error) {
@@ -207,7 +210,7 @@ func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clien
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
 
-	clients = spanemuboost.SetupClients(t, lazyEmu, options...)
+	clients = spanemuboost.SetupClients(t, lazyRuntime, options...)
 
 	var err error
 	session, err = initializeSession(ctx, clients)
@@ -229,7 +232,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 
 	// Admin-only mode: create instance without database
 	// Always use instance-level isolation for all tests
-	clients = spanemuboost.SetupClients(t, lazyEmu,
+	clients = spanemuboost.SetupClients(t, lazyRuntime,
 		spanemuboost.WithRandomInstanceID(), // Instance-level isolation for all tests
 		spanemuboost.EnableInstanceAutoConfigOnly(),
 	)

@@ -192,7 +192,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			spanemuboost.WithProjectID(sysVars.Connection.Project),
 			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
-			spanemuboost.WithEmulatorImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
+			spanemuboost.WithContainerImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
 			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
 		}
 
@@ -269,29 +269,40 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			}
 		}
 
-		emu, err := spanemuboost.RunEmulator(ctx, emulatorOpts...)
+		embeddedRuntime, err := spanemuboost.Run(ctx, spanemuboost.BackendEmulator, emulatorOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
 		}
 		defer func() {
-			if err := emu.Close(); err != nil {
+			if err := embeddedRuntime.Close(); err != nil {
 				slog.Warn("failed to close emulator container", "error", err)
 			}
 		}()
+		sysVars.Connection.Project = embeddedRuntime.ProjectID()
+		sysVars.Connection.Instance = embeddedRuntime.InstanceID()
+		if databaseID := embeddedRuntime.DatabaseID(); !opts.Detached && databaseID != "" {
+			sysVars.Connection.Database = databaseID
+		}
 
 		// Always detect the actual platform the container is running on
 		// The --emulator-platform flag only controls what platform is requested,
 		// but we want to show the actual platform in CLI_EMULATOR_PLATFORM
-		sysVars.Connection.EmulatorPlatform = detectContainerPlatform(ctx, emu.Container())
+		runtimePlatform, err := spanemuboost.RuntimePlatform(ctx, embeddedRuntime)
+		if err != nil {
+			slog.Warn("failed to detect embedded runtime platform", "error", err)
+			sysVars.Connection.EmulatorPlatform = "unknown"
+		} else {
+			sysVars.Connection.EmulatorPlatform = runtimePlatform
+		}
 		slog.Debug("Detected container platform",
 			"requested", opts.EmulatorPlatform,
 			"actual", sysVars.Connection.EmulatorPlatform)
 
 		// Parse container URI into host and port
-		host, port, err := parseEndpoint(emu.URI())
+		host, port, err := parseEndpoint(embeddedRuntime.URI())
 		if err != nil {
 			// This should not happen with a valid URI from testcontainers, but handle defensively.
-			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", emu.URI(), err)
+			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", embeddedRuntime.URI(), err)
 		}
 		sysVars.Connection.Host, sysVars.Connection.Port = host, port
 		sysVars.Connection.WithoutAuthentication = true
