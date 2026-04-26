@@ -2,6 +2,7 @@ package streamio
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -726,6 +727,55 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		sm.mu.Unlock()
 	})
 
+	t.Run("silent mode reset failure clears output state", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
+
+		tmpDir := t.TempDir()
+		currentFile := filepath.Join(tmpDir, "current.log")
+		if err := sm.EnableTee(currentFile, false); err != nil {
+			t.Fatalf("Failed to enable initial tee: %v", err)
+		}
+
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		seedContent := "stale dump\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		sm.resetFile = func(*os.File) error {
+			return errors.New("boom")
+		}
+
+		err := sm.EnableTee(outputFile, true)
+		if err == nil {
+			t.Fatal("Expected enable output redirect to fail when reset fails")
+		}
+		if !strings.Contains(err.Error(), "failed to reset output file") {
+			t.Fatalf("Expected reset failure error, got %v", err)
+		}
+
+		if sm.IsEnabled() {
+			t.Fatal("Expected output state to be cleared after reset failure")
+		}
+		if sm.IsInSilentTeeMode() {
+			t.Fatal("Expected silent mode to be disabled after reset failure")
+		}
+		if got := sm.GetWriter(); got != originalOut {
+			t.Fatal("Expected writer to fall back to original output after reset failure")
+		}
+
+		content, readErr := os.ReadFile(outputFile)
+		if readErr != nil {
+			t.Fatalf("Failed to read redirected file after reset failure: %v", readErr)
+		}
+		if string(content) != seedContent {
+			t.Fatalf("Expected redirected file to remain %q, got %q", seedContent, string(content))
+		}
+	})
+
 	t.Run("GetWriter vs GetOutStream usage", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
@@ -768,4 +818,16 @@ func TestStreamManagerSilentMode(t *testing.T) {
 			t.Errorf("Expected file to have only data %q, got %q", dataOutput, string(content))
 		}
 	})
+}
+
+func TestResetOutputFile_Nil(t *testing.T) {
+	t.Parallel()
+
+	err := resetOutputFile(nil)
+	if err == nil {
+		t.Fatal("Expected resetOutputFile(nil) to fail")
+	}
+	if !strings.Contains(err.Error(), "output file is nil") {
+		t.Fatalf("Expected nil-file error, got %v", err)
+	}
 }

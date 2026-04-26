@@ -3,6 +3,7 @@
 package streamio
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -103,6 +104,9 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 }
 
 func resetOutputFile(file *os.File) error {
+	if file == nil {
+		return errors.New("output file is nil")
+	}
 	if err := file.Truncate(0); err != nil {
 		return err
 	}
@@ -139,6 +143,7 @@ type StreamManager struct {
 	teeFile      *os.File      // Tee file when enabled
 	cachedWriter io.Writer     // Cache the writer to ensure consistent behavior
 	silentMode   bool          // When true, output goes only to file (not stdout)
+	resetFile    func(*os.File) error
 }
 
 // NewStreamManager creates a new StreamManager instance
@@ -147,6 +152,7 @@ func NewStreamManager(inStream io.ReadCloser, outStream, errStream io.Writer) *S
 		inStream:  inStream,
 		outStream: outStream,
 		errStream: errStream,
+		resetFile: resetOutputFile,
 	}
 
 	// If outStream is a terminal, keep a reference for terminal operations
@@ -189,8 +195,15 @@ func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 	}
 
 	if silent {
-		if err := resetOutputFile(teeFile); err != nil {
+		resetFile := sm.resetFile
+		if resetFile == nil {
+			resetFile = resetOutputFile
+		}
+		if err := resetFile(teeFile); err != nil {
 			_ = teeFile.Close()
+			sm.teeFile = nil
+			sm.silentMode = false
+			sm.cachedWriter = nil
 			return fmt.Errorf("failed to reset output file %q: %w", filePath, err)
 		}
 	}
