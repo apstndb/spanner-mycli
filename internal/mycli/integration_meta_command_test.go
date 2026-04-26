@@ -587,7 +587,7 @@ SELECT "foo" AS s;`
 
 		// Check that error was printed
 		outputStr := consoleBuf.String()
-		if !strings.Contains(outputStr, "ERROR: tee output to a non-regular file is not supported") {
+		if !strings.Contains(outputStr, "ERROR: output file must be a regular file") {
 			t.Errorf("Expected output to contain error about directory, got: %s", outputStr)
 		}
 	})
