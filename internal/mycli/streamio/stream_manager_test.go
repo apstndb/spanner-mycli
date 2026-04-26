@@ -686,6 +686,17 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
 		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		t.Cleanup(func() {
+			sm.mu.Lock()
+			teeFile := sm.teeFile
+			sm.teeFile = nil
+			sm.silentMode = false
+			sm.cachedWriter = nil
+			sm.mu.Unlock()
+			if teeFile != nil {
+				_ = teeFile.Close()
+			}
+		})
 
 		tmpDir := t.TempDir()
 		currentFile := filepath.Join(tmpDir, "current.log")
@@ -721,10 +732,6 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		if string(content) != seedContent {
 			t.Fatalf("Expected redirected file to remain %q, got %q", seedContent, string(content))
 		}
-
-		sm.mu.Lock()
-		sm.teeFile = nil
-		sm.mu.Unlock()
 	})
 
 	t.Run("silent mode reset failure clears output state", func(t *testing.T) {
