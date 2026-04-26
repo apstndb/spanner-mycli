@@ -1126,8 +1126,9 @@ Available sample databases:
 
 Usage: spanner-mycli --embedded-emulator --sample-database=<name>
        spanner-mycli --embedded-omni --sample-database=<name>
-       spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.(json|yaml|yml)
-       spanner-mycli --embedded-omni --sample-database=/path/to/metadata.(json|yaml|yml)
+       spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.yaml
+       spanner-mycli --embedded-omni --sample-database=/path/to/metadata.yaml
+       Sample metadata files may use .json, .yaml, or .yml.
 
 # Start with the banking sample database
 $ spanner-mycli --embedded-emulator --sample-database=banking
