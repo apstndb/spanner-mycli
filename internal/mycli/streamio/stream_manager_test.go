@@ -2,6 +2,7 @@ package streamio
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -496,7 +497,7 @@ func TestSafeTeeWriter(t *testing.T) {
 		wg.Wait()
 
 		// Verify only one warning was printed (important for concurrent writes)
-		warningCount := strings.Count(errOut.String(), "WARNING: Failed to write to tee file")
+		warningCount := strings.Count(errOut.String(), "WARNING: Failed to write to output file")
 		if warningCount != 1 {
 			t.Errorf("Expected exactly 1 warning, got %d warnings", warningCount)
 		}
@@ -538,10 +539,10 @@ func TestSafeTeeWriter(t *testing.T) {
 
 		// Check warning was printed
 		errOutput := errBuf.String()
-		if !strings.Contains(errOutput, "WARNING: Failed to write to tee file") {
+		if !strings.Contains(errOutput, "WARNING: Failed to write to output file") {
 			t.Errorf("Expected warning message, got: %s", errOutput)
 		}
-		if !strings.Contains(errOutput, "WARNING: Tee logging disabled for remainder of session") {
+		if !strings.Contains(errOutput, "WARNING: File output disabled for remainder of session") {
 			t.Errorf("Expected disabled message, got: %s", errOutput)
 		}
 
@@ -650,6 +651,142 @@ func TestStreamManagerSilentMode(t *testing.T) {
 		}
 	})
 
+	t.Run("silent mode truncates existing file", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
+
+		tmpDir := t.TempDir()
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		seedContent := "stale dump with trailing bytes that must be removed\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		if err := sm.EnableTee(outputFile, true); err != nil {
+			t.Fatalf("Failed to enable output redirect: %v", err)
+		}
+
+		writer := sm.GetWriter()
+		freshData := "CREATE TABLE Singers (\n"
+		if _, err := writer.Write([]byte(freshData)); err != nil {
+			t.Fatalf("Failed to write redirected output: %v", err)
+		}
+
+		content, err := os.ReadFile(outputFile)
+		if err != nil {
+			t.Fatalf("Failed to read redirected file: %v", err)
+		}
+		if string(content) != freshData {
+			t.Fatalf("Expected redirected output %q, got %q", freshData, string(content))
+		}
+		if strings.Contains(string(content), "trailing bytes") {
+			t.Fatalf("Expected truncation to remove old tail, got %q", string(content))
+		}
+	})
+
+	t.Run("silent mode leaves target unchanged when switch fails", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		t.Cleanup(func() {
+			sm.mu.Lock()
+			teeFile := sm.teeFile
+			sm.teeFile = nil
+			sm.silentMode = false
+			sm.cachedWriter = nil
+			sm.mu.Unlock()
+			if teeFile != nil {
+				_ = teeFile.Close()
+			}
+		})
+
+		tmpDir := t.TempDir()
+		currentFile := filepath.Join(tmpDir, "current.log")
+		if err := sm.EnableTee(currentFile, false); err != nil {
+			t.Fatalf("Failed to enable initial tee: %v", err)
+		}
+
+		sm.mu.Lock()
+		currentHandle := sm.teeFile
+		sm.mu.Unlock()
+		if err := currentHandle.Close(); err != nil {
+			t.Fatalf("Failed to poison current tee file: %v", err)
+		}
+
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		seedContent := "stale dump\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		err := sm.EnableTee(outputFile, true)
+		if err == nil {
+			t.Fatal("Expected enable output redirect to fail when closing previous file fails")
+		}
+		if !strings.Contains(err.Error(), "failed to switch file output") {
+			t.Fatalf("Expected switch failure error, got %v", err)
+		}
+
+		content, readErr := os.ReadFile(outputFile)
+		if readErr != nil {
+			t.Fatalf("Failed to read redirected file after failed switch: %v", readErr)
+		}
+		if string(content) != seedContent {
+			t.Fatalf("Expected redirected file to remain %q, got %q", seedContent, string(content))
+		}
+	})
+
+	t.Run("silent mode reset failure clears output state", func(t *testing.T) {
+		originalOut := &bytes.Buffer{}
+		errOut := &bytes.Buffer{}
+		sm := NewStreamManager(os.Stdin, originalOut, errOut)
+		defer sm.Close()
+
+		tmpDir := t.TempDir()
+		currentFile := filepath.Join(tmpDir, "current.log")
+		if err := sm.EnableTee(currentFile, false); err != nil {
+			t.Fatalf("Failed to enable initial tee: %v", err)
+		}
+
+		outputFile := filepath.Join(tmpDir, "output.sql")
+		seedContent := "stale dump\n"
+		if err := os.WriteFile(outputFile, []byte(seedContent), 0o644); err != nil {
+			t.Fatalf("Failed to seed output file: %v", err)
+		}
+
+		sm.resetFile = func(*os.File) error {
+			return errors.New("boom")
+		}
+
+		err := sm.EnableTee(outputFile, true)
+		if err == nil {
+			t.Fatal("Expected enable output redirect to fail when reset fails")
+		}
+		if !strings.Contains(err.Error(), "failed to reset output file") {
+			t.Fatalf("Expected reset failure error, got %v", err)
+		}
+
+		if sm.IsEnabled() {
+			t.Fatal("Expected output state to be cleared after reset failure")
+		}
+		if sm.IsInSilentTeeMode() {
+			t.Fatal("Expected silent mode to be disabled after reset failure")
+		}
+		if got := sm.GetWriter(); got != originalOut {
+			t.Fatal("Expected writer to fall back to original output after reset failure")
+		}
+
+		content, readErr := os.ReadFile(outputFile)
+		if readErr != nil {
+			t.Fatalf("Failed to read redirected file after reset failure: %v", readErr)
+		}
+		if string(content) != seedContent {
+			t.Fatalf("Expected redirected file to remain %q, got %q", seedContent, string(content))
+		}
+	})
+
 	t.Run("GetWriter vs GetOutStream usage", func(t *testing.T) {
 		originalOut := &bytes.Buffer{}
 		errOut := &bytes.Buffer{}
@@ -692,4 +829,16 @@ func TestStreamManagerSilentMode(t *testing.T) {
 			t.Errorf("Expected file to have only data %q, got %q", dataOutput, string(content))
 		}
 	})
+}
+
+func TestResetOutputFile_Nil(t *testing.T) {
+	t.Parallel()
+
+	err := resetOutputFile(nil)
+	if err == nil {
+		t.Fatal("Expected resetOutputFile(nil) to fail")
+	}
+	if !strings.Contains(err.Error(), "output file is nil") {
+		t.Fatalf("Expected nil-file error, got %v", err)
+	}
 }

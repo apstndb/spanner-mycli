@@ -644,7 +644,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 				return path, func() {}
 			},
 			wantErr:     true,
-			errContains: "non-regular file", // Our validation returns this error
+			errContains: "must be a regular file",
 		},
 	}
 

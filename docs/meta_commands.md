@@ -197,9 +197,9 @@ spanner> SELECT * FROM sensitive_data;  -- This will only show on screen
 
 ### Output Redirect (`\o` and `\O`) - PostgreSQL-style
 
-The `\o` meta command provides output redirection (file only, no screen output), complementing the `--output` command-line option.
+The `\o` meta command redirects query and result output to a file, complementing the `--output` command-line option. Progress messages, prompts, and errors still use the normal screen streams. Unlike tee logging, each time output redirection is enabled it starts from a clean file and overwrites any existing file content.
 
-- `\o <filename>` - Redirect output to the specified file only (no screen output)
+- `\o <filename>` - Redirect query/data output to the specified file (overwrite existing file)
 - `\o` - Disable output redirect (return to screen output)
 - `\O` - Disable output redirect (alternative syntax, symmetric with `\T`/`\t`)
 
@@ -220,7 +220,7 @@ spanner> \O                   -- Disable using \O (symmetric with \t)
 | Command | Screen Output | File Output | Use Case |
 |---------|--------------|-------------|----------|
 | `\T file` | Yes | Yes | Log queries while working interactively |
-| `\o file` | No | Yes | Export clean SQL without cluttering screen |
+| `\o file` | Prompts/progress/errors only | Yes | Export clean SQL while keeping status messages visible |
 | Neither | Yes | No | Normal interactive work |
 
 For detailed information about output functionality (what gets logged, file handling, error handling), see [Output logging and redirection](../README.md#output-logging-and-redirection) in the README.

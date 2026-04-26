@@ -25,7 +25,7 @@ func supportsFIFO() bool {
 	}
 }
 
-func TestOpenTeeFile_FIFO(t *testing.T) {
+func TestOpenOutputFile_FIFO(t *testing.T) {
 	t.Parallel()
 	// Skip test on platforms that don't support FIFOs reliably
 	if !supportsFIFO() {
@@ -45,12 +45,16 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 		t.Skipf("Failed to create FIFO (may not be supported): %v", err)
 	}
 
-	// Test that openTeeFile rejects the FIFO without hanging
+	// Test that openOutputFile rejects the FIFO without hanging
 	done := make(chan struct{})
 	var openErr error
 
 	go func() {
-		_, openErr = openTeeFile(fifoPath)
+		file, err := openOutputFile(fifoPath, true)
+		if file != nil {
+			_ = file.Close()
+		}
+		openErr = err
 		close(done)
 	}()
 
@@ -61,11 +65,11 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 		if openErr == nil {
 			t.Error("Expected error when opening FIFO, got nil")
 		}
-		if !strings.Contains(openErr.Error(), "non-regular file") {
-			t.Errorf("Expected 'non-regular file' error, got: %v", openErr)
+		if !strings.Contains(openErr.Error(), "must be a regular file") {
+			t.Errorf("Expected regular-file error, got: %v", openErr)
 		}
 	case <-time.After(1 * time.Second):
-		t.Fatal("openTeeFile hung when attempting to open FIFO - the protection is not working")
+		t.Fatal("openOutputFile hung when attempting to open FIFO - the protection is not working")
 	}
 }
 
@@ -108,8 +112,8 @@ func TestStreamManager_FIFO(t *testing.T) {
 		if enableErr == nil {
 			t.Error("Expected error when enabling tee to FIFO, got nil")
 		}
-		if !strings.Contains(enableErr.Error(), "non-regular file") {
-			t.Errorf("Expected 'non-regular file' error, got: %v", enableErr)
+		if !strings.Contains(enableErr.Error(), "must be a regular file") {
+			t.Errorf("Expected regular-file error, got: %v", enableErr)
 		}
 		// Verify that tee is not enabled
 		if sm.IsEnabled() {
