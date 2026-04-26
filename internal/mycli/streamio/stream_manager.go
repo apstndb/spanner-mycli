@@ -49,7 +49,7 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// openTeeFile validates and opens a file for tee output.
+// openTeeFile validates and opens a file for file output.
 // appendMode=true preserves existing content for tee logging, while false starts
 // output redirection from a clean file.
 func openTeeFile(filePath string, appendMode bool) (*os.File, error) {
@@ -65,14 +65,14 @@ func openTeeFile(filePath string, appendMode bool) (*os.File, error) {
 	case err == nil:
 		// File exists - ensure it's a regular file
 		if !fi.Mode().IsRegular() {
-			return nil, fmt.Errorf("tee output to a non-regular file is not supported: %q", filePath)
+			return nil, fmt.Errorf("file output to a non-regular file is not supported: %q", filePath)
 		}
 	case os.IsNotExist(err):
 		// File doesn't exist - OpenFile will create it
 		// Continue to OpenFile
 	default:
 		// Unexpected stat error (e.g., permission denied)
-		return nil, fmt.Errorf("failed to stat tee file %q: %w", filePath, err)
+		return nil, fmt.Errorf("failed to stat output file %q: %w", filePath, err)
 	}
 
 	openFlags := os.O_CREATE | os.O_WRONLY
@@ -98,7 +98,7 @@ func openTeeFile(filePath string, appendMode bool) (*os.File, error) {
 
 	if !fi.Mode().IsRegular() {
 		file.Close()
-		return nil, fmt.Errorf("tee output to a non-regular file is not supported: %q", filePath)
+		return nil, fmt.Errorf("file output to a non-regular file is not supported: %q", filePath)
 	}
 
 	return file, nil
@@ -164,7 +164,8 @@ func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 	defer sm.mu.Unlock()
 
 	// Open the new tee file while holding the lock to ensure atomicity.
-	teeFile, err := openTeeFile(filePath, !silent)
+	appendMode := !silent
+	teeFile, err := openTeeFile(filePath, appendMode)
 	if err != nil {
 		return err
 	}
