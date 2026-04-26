@@ -496,7 +496,7 @@ func TestSafeTeeWriter(t *testing.T) {
 		wg.Wait()
 
 		// Verify only one warning was printed (important for concurrent writes)
-		warningCount := strings.Count(errOut.String(), "WARNING: Failed to write to tee file")
+		warningCount := strings.Count(errOut.String(), "WARNING: Failed to write to output file")
 		if warningCount != 1 {
 			t.Errorf("Expected exactly 1 warning, got %d warnings", warningCount)
 		}
@@ -538,10 +538,10 @@ func TestSafeTeeWriter(t *testing.T) {
 
 		// Check warning was printed
 		errOutput := errBuf.String()
-		if !strings.Contains(errOutput, "WARNING: Failed to write to tee file") {
+		if !strings.Contains(errOutput, "WARNING: Failed to write to output file") {
 			t.Errorf("Expected warning message, got: %s", errOutput)
 		}
-		if !strings.Contains(errOutput, "WARNING: Tee logging disabled for remainder of session") {
+		if !strings.Contains(errOutput, "WARNING: File output disabled for remainder of session") {
 			t.Errorf("Expected disabled message, got: %s", errOutput)
 		}
 

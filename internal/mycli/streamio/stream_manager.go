@@ -37,8 +37,8 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 	if err != nil {
 		// Print warning only once to avoid spamming
 		s.hasWarned = true
-		fmt.Fprintf(s.errStream, "WARNING: Failed to write to tee file: %v\n", err)
-		fmt.Fprintf(s.errStream, "WARNING: Tee logging disabled for remainder of session\n")
+		fmt.Fprintf(s.errStream, "WARNING: Failed to write to output file: %v\n", err)
+		fmt.Fprintf(s.errStream, "WARNING: File output disabled for remainder of session\n")
 		// CRITICAL: We must return success here even though the write failed.
 		// io.MultiWriter will stop writing to ALL writers (including stdout!)
 		// if ANY writer returns an error. By returning success, we ensure
@@ -53,8 +53,8 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 // appendMode=true preserves existing content for tee logging, while false starts
 // output redirection from a clean file.
 func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
-	// Check if the file exists and is a regular file before opening.
-	// This prevents blocking on special files like FIFOs.
+	// Check if the path already exists and is a regular file before opening.
+	// This rejects already-existing special files such as FIFOs.
 	fi, err := os.Stat(filePath)
 
 	// Handle three cases:
@@ -65,7 +65,7 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 	case err == nil:
 		// File exists - ensure it's a regular file
 		if !fi.Mode().IsRegular() {
-			return nil, fmt.Errorf("file output to a non-regular file is not supported: %q", filePath)
+			return nil, fmt.Errorf("output file must be a regular file: %q", filePath)
 		}
 	case os.IsNotExist(err):
 		// File doesn't exist - OpenFile will create it
@@ -87,9 +87,8 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 		return nil, err
 	}
 
-	// Double-check the file after opening to handle TOCTOU race conditions.
-	// Without this check, a regular file could be replaced with a FIFO
-	// between our initial stat and open calls, causing the CLI to block.
+	// Double-check the opened file to catch paths that changed after the initial
+	// stat but still opened successfully.
 	fi, err = file.Stat()
 	if err != nil {
 		file.Close()
@@ -98,7 +97,7 @@ func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 
 	if !fi.Mode().IsRegular() {
 		file.Close()
-		return nil, fmt.Errorf("file output to a non-regular file is not supported: %q", filePath)
+		return nil, fmt.Errorf("output file must be a regular file: %q", filePath)
 	}
 
 	return file, nil

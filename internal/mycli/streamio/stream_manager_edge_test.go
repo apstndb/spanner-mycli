@@ -59,8 +59,8 @@ func TestStreamManager_DirectoryError(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when enabling tee with directory path")
 	}
-	if !strings.Contains(err.Error(), "non-regular file") {
-		t.Errorf("Expected 'non-regular file' error, got: %v", err)
+	if !strings.Contains(err.Error(), "regular file") {
+		t.Errorf("Expected regular-file error, got: %v", err)
 	}
 
 	// Verify tee is not enabled
@@ -208,7 +208,7 @@ func TestStreamManager_WriteAfterError(t *testing.T) {
 	}
 
 	// Check warning was printed
-	if !strings.Contains(errOut.String(), "WARNING: Failed to write to tee file") {
+	if !strings.Contains(errOut.String(), "WARNING: Failed to write to output file") {
 		t.Error("Expected warning message not found")
 	}
 
