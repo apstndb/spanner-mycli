@@ -130,6 +130,8 @@ func TestSession_FailStatementIfReadOnly(t *testing.T) {
 }
 
 func TestNewSessionClosesClientWhenAdminClientCreationFails(t *testing.T) {
+	t.Parallel()
+
 	expectedErr := errors.New("admin client creation failed")
 	fakeClient := &spanner.Client{}
 
