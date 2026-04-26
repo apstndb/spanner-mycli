@@ -280,7 +280,9 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}()
 		sysVars.Connection.Project = embeddedRuntime.ProjectID()
 		sysVars.Connection.Instance = embeddedRuntime.InstanceID()
-		sysVars.Connection.Database = embeddedRuntime.DatabaseID()
+		if databaseID := embeddedRuntime.DatabaseID(); !opts.Detached && databaseID != "" {
+			sysVars.Connection.Database = databaseID
+		}
 
 		// Always detect the actual platform the container is running on
 		// The --emulator-platform flag only controls what platform is requested,
