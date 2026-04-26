@@ -45,12 +45,12 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 		t.Skipf("Failed to create FIFO (may not be supported): %v", err)
 	}
 
-	// Test that openTeeFile rejects the FIFO without hanging
+	// Test that openOutputFile rejects the FIFO without hanging
 	done := make(chan struct{})
 	var openErr error
 
 	go func() {
-		_, openErr = openTeeFile(fifoPath, true)
+		_, openErr = openOutputFile(fifoPath, true)
 		close(done)
 	}()
 
@@ -65,7 +65,7 @@ func TestOpenTeeFile_FIFO(t *testing.T) {
 			t.Errorf("Expected 'non-regular file' error, got: %v", openErr)
 		}
 	case <-time.After(1 * time.Second):
-		t.Fatal("openTeeFile hung when attempting to open FIFO - the protection is not working")
+		t.Fatal("openOutputFile hung when attempting to open FIFO - the protection is not working")
 	}
 }
 

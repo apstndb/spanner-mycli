@@ -353,7 +353,7 @@ spanner> SHOW VARIABLE STATEMENT_TIMEOUT;
 spanner-mycli provides two ways to capture output to files:
 
 1. **Tee functionality**: Append output to a file while still displaying it on the console (like the Unix `tee` command)
-2. **Output redirect**: Send output only to a file, with no screen output (like shell redirection `>`)
+2. **Output redirect**: Send query and result output to a file while prompts, progress, and errors stay on their normal screen streams
 
 Both features are available through command-line options and interactive meta-commands.
 

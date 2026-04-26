@@ -49,10 +49,10 @@ func (s *safeTeeWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// openTeeFile validates and opens a file for file output.
+// openOutputFile validates and opens a file for file output.
 // appendMode=true preserves existing content for tee logging, while false starts
 // output redirection from a clean file.
-func openTeeFile(filePath string, appendMode bool) (*os.File, error) {
+func openOutputFile(filePath string, appendMode bool) (*os.File, error) {
 	// Check if the file exists and is a regular file before opening.
 	// This prevents blocking on special files like FIFOs.
 	fi, err := os.Stat(filePath)
@@ -165,7 +165,7 @@ func (sm *StreamManager) EnableTee(filePath string, silent bool) error {
 
 	// Open the new tee file while holding the lock to ensure atomicity.
 	appendMode := !silent
-	teeFile, err := openTeeFile(filePath, appendMode)
+	teeFile, err := openOutputFile(filePath, appendMode)
 	if err != nil {
 		return err
 	}

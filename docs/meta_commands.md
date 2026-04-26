@@ -220,7 +220,7 @@ spanner> \O                   -- Disable using \O (symmetric with \t)
 | Command | Screen Output | File Output | Use Case |
 |---------|--------------|-------------|----------|
 | `\T file` | Yes | Yes | Log queries while working interactively |
-| `\o file` | Progress/errors only | Yes | Export clean SQL while keeping status messages visible |
+| `\o file` | Prompts/progress/errors only | Yes | Export clean SQL while keeping status messages visible |
 | Neither | Yes | No | Normal interactive work |
 
 For detailed information about output functionality (what gets logged, file handling, error handling), see [Output logging and redirection](../README.md#output-logging-and-redirection) in the README.
