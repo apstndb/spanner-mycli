@@ -50,7 +50,11 @@ func TestOpenOutputFile_FIFO(t *testing.T) {
 	var openErr error
 
 	go func() {
-		_, openErr = openOutputFile(fifoPath, true)
+		file, err := openOutputFile(fifoPath, true)
+		if file != nil {
+			_ = file.Close()
+		}
+		openErr = err
 		close(done)
 	}()
 
