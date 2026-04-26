@@ -364,9 +364,8 @@ func TestParseFlagsCombinations(t *testing.T) {
 			errContains: errMsgEmbeddedModesExclusive,
 		},
 		{
-			name:        "sample database requires embedded emulator",
-			args:        []string{"--embedded-omni", "--sample-database", "singers"},
-			errContains: "--sample-database requires --embedded-emulator",
+			name: "sample database accepts embedded omni",
+			args: []string{"--embedded-omni", "--sample-database", "singers"},
 		},
 
 		// Missing required parameters

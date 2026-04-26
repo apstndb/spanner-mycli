@@ -153,8 +153,9 @@ Flags:
       --emulator-image=STRING                  container image for embedded runtime (--embedded-emulator or
                                                --embedded-omni)
       --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime
-      --sample-database=STRING                 Initialize emulator with built-in sample (e.g. fingraph, singers,
-                                               banking) or path to metadata.json file. Requires --embedded-emulator.
+      --sample-database=STRING                 Initialize embedded runtime with built-in sample (e.g. fingraph, singers,
+                                               banking) or path to metadata.json file. Requires --embedded-emulator or
+                                               --embedded-omni.
       --list-samples                           List available sample databases and exit
       --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
       --log-level=STRING
@@ -1107,7 +1108,7 @@ Empty set (8.763167ms)
 
 #### Sample Databases
 
-You can initialize the emulator with Google's official sample databases using the `--sample-database` flag:
+You can initialize the embedded runtime with Google's official sample databases using the `--sample-database` flag:
 
 ```bash
 # List available sample databases
@@ -1123,7 +1124,9 @@ Available sample databases:
   singers        GoogleSQL    Music database used throughout Spanner documentation
 
 Usage: spanner-mycli --embedded-emulator --sample-database=<name>
+       spanner-mycli --embedded-omni --sample-database=<name>
        spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.json
+       spanner-mycli --embedded-omni --sample-database=/path/to/metadata.json
 
 # Start with the banking sample database
 $ spanner-mycli --embedded-emulator --sample-database=banking
@@ -1140,8 +1143,12 @@ emulator-project:emulator-instance:emulator-database
 # Use embedded fingraph sample
 $ spanner-mycli --embedded-emulator --sample-database=fingraph
 
+# Load the same sample on embedded Omni
+$ spanner-mycli --embedded-omni --sample-database=fingraph
+
 # Use custom sample with metadata file
 $ spanner-mycli --embedded-emulator --sample-database=/path/to/mysample.yaml
+$ spanner-mycli --embedded-omni --sample-database=/path/to/mysample.yaml
 ```
 
 The sample databases include both embedded samples (fingraph, singers) and samples downloaded from Google Cloud Storage. You can also create custom samples using metadata files in JSON or YAML format.
@@ -1159,7 +1166,7 @@ default:default:emulator-database
 > SELECT 1
 ```
 
-`--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, and reuses the backend-provided client options needed for the experimental host. `--sample-database` remains emulator-only.
+`--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, reuses the backend-provided client options needed for the experimental host, and can load the same sample databases as the embedded emulator path.
 
 ### Protocol Buffers support
 

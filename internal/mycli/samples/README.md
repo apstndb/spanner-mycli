@@ -50,6 +50,8 @@ spanner-mycli --list-samples
 # Use a built-in sample
 spanner-mycli --embedded-emulator --sample-database=fingraph
 spanner-mycli --embedded-emulator --sample-database=singers
+spanner-mycli --embedded-omni --sample-database=fingraph
+spanner-mycli --embedded-omni --sample-database=singers
 ```
 
 ### Creating Custom Samples
@@ -90,6 +92,7 @@ INSERT INTO Users (UserId, UserName, Email) VALUES
 5. Use your custom sample:
 ```bash
 spanner-mycli --embedded-emulator --sample-database=/path/to/mysample/metadata.json
+spanner-mycli --embedded-omni --sample-database=/path/to/mysample/metadata.json
 ```
 
 ### Advanced Example with Mixed Sources

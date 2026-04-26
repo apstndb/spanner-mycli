@@ -210,6 +210,8 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 			EmbeddedClientConfig: &spanner.ClientConfig{
 				DisableNativeMetrics: true,
 				IsExperimentalHost:   true,
+				DisableRouteToLeader: true,
+				UserAgent:            "embedded-omni-test",
 			},
 		},
 	}
@@ -238,6 +240,18 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	}
 	if !gotConfig.IsExperimentalHost {
 		t.Error("IsExperimentalHost = false, want true")
+	}
+	if !gotConfig.DisableRouteToLeader {
+		t.Error("DisableRouteToLeader = false, want true")
+	}
+	if gotConfig.UserAgent != "embedded-omni-test" {
+		t.Errorf("UserAgent = %q, want %q", gotConfig.UserAgent, "embedded-omni-test")
+	}
+	if gotConfig.SessionPoolConfig.MinOpened != defaultClientConfig.SessionPoolConfig.MinOpened {
+		t.Errorf("SessionPoolConfig.MinOpened = %d, want %d", gotConfig.SessionPoolConfig.MinOpened, defaultClientConfig.SessionPoolConfig.MinOpened)
+	}
+	if gotConfig.SessionPoolConfig.MaxOpened != defaultClientConfig.SessionPoolConfig.MaxOpened {
+		t.Errorf("SessionPoolConfig.MaxOpened = %d, want %d", gotConfig.SessionPoolConfig.MaxOpened, defaultClientConfig.SessionPoolConfig.MaxOpened)
 	}
 	if gotConfig.DatabaseRole != "test-role" {
 		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")

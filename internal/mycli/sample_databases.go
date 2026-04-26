@@ -422,7 +422,9 @@ func ListAvailableSamples() string {
 	}
 
 	sb.WriteString("\nUsage: spanner-mycli --embedded-emulator --sample-database=<name>\n")
+	sb.WriteString("       spanner-mycli --embedded-omni --sample-database=<name>\n")
 	sb.WriteString("       spanner-mycli --embedded-emulator --sample-database=/path/to/metadata.json\n")
+	sb.WriteString("       spanner-mycli --embedded-omni --sample-database=/path/to/metadata.json\n")
 	return sb.String()
 }
 

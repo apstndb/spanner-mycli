@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,12 +71,14 @@ var defaultClientOpts = []option.ClientOption{
 }
 
 func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConfig {
-	clientConfig := defaultClientConfig
 	if override := sysVars.Internal.EmbeddedClientConfig; override != nil {
-		clientConfig.DisableNativeMetrics = override.DisableNativeMetrics
-		clientConfig.IsExperimentalHost = override.IsExperimentalHost
+		clientConfig := *override
+		if reflect.DeepEqual(clientConfig.SessionPoolConfig, spanner.SessionPoolConfig{}) {
+			clientConfig.SessionPoolConfig = defaultClientConfig.SessionPoolConfig
+		}
+		return clientConfig
 	}
-	return clientConfig
+	return defaultClientConfig
 }
 
 // Use MEDIUM priority not to disturb regular workloads on the database.
