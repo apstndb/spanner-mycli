@@ -35,6 +35,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"google.golang.org/api/option"
 
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
@@ -155,9 +156,11 @@ type FeatureVars struct {
 
 // InternalVars holds internal state not directly exposed as system variables.
 type InternalVars struct {
-	ProtoDescriptorFile []string // CLI_PROTO_DESCRIPTOR_FILE
-	ProtoDescriptor     *descriptorpb.FileDescriptorSet
-	LastQueryCache      *LastQueryCache
+	ProtoDescriptorFile   []string // CLI_PROTO_DESCRIPTOR_FILE
+	ProtoDescriptor       *descriptorpb.FileDescriptorSet
+	LastQueryCache        *LastQueryCache
+	EmbeddedClientOptions []option.ClientOption
+	EmbeddedClientConfig  *spanner.ClientConfig
 }
 
 // systemVariables holds configuration state for spanner-mycli sessions.

@@ -21,7 +21,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Query profiles (EARLY EXPERIMENTAL) for rendering sampled query plans using `SHOW QUERY PROFILES` and `SHOW QUERY PROFILE`
 * Respects my minor use cases
   * Protocol Buffers support as `SHOW LOCAL PROTO`, `SHOW REMOTE PROTO`, `SYNC PROTO BUNDLE` statement
-  * Can use embedded emulator (`--embedded-emulator`)
+  * Can use embedded runtime backends (`--embedded-emulator`, `--embedded-omni`)
   * Support [query parameters](#query-parameter-support)
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
   * Experimental Partitioned Query and Data Boost support.
@@ -148,8 +148,11 @@ Flags:
                                                alias.
       --embedded-emulator                      Use embedded Cloud Spanner Emulator. --project, --instance, --database,
                                                --endpoint, --insecure will be automatically configured.
-      --emulator-image=STRING                  container image for --embedded-emulator
-      --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator
+      --embedded-omni                          Use embedded experimental Spanner Omni. --project, --instance,
+                                               --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=STRING                  container image for embedded runtime (--embedded-emulator or
+                                               --embedded-omni)
+      --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime
       --sample-database=STRING                 Initialize emulator with built-in sample (e.g. fingraph, singers,
                                                banking) or path to metadata.json file. Requires --embedded-emulator.
       --list-samples                           List available sample databases and exit
@@ -1145,6 +1148,18 @@ The sample databases include both embedded samples (fingraph, singers) and sampl
 
 > [!NOTE]
 > The embedded emulator has the same limitations as the standalone emulator. See the warning in the [Using with the Cloud Spanner Emulator](#using-with-the-cloud-spanner-emulator) section above for details.
+
+### Embedded Spanner Omni
+
+spanner-mycli can also launch experimental Spanner Omni via `spanemuboost`.
+
+```bash
+$ spanner-mycli --embedded-omni
+default:default:emulator-database
+> SELECT 1
+```
+
+`--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, and reuses the backend-provided client options needed for the experimental host. `--sample-database` remains emulator-only.
 
 ### Protocol Buffers support
 

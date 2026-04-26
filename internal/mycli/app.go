@@ -17,7 +17,6 @@
 package mycli
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +33,7 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	"golang.org/x/term"
+	"google.golang.org/api/option"
 
 	_ "github.com/apstndb/spanner-mycli/internal/mycli/formatsql" // Register SQL export formatters
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -171,10 +171,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		}
 	}
 
-	if opts.EmbeddedEmulator {
-		// Log when user provides custom values with embedded emulator
+	if opts.usesEmbeddedRuntime() {
+		backend := opts.embeddedRuntimeBackend()
+		// Log when user provides custom values with embedded runtime
 		if opts.ProjectId != "" || opts.InstanceId != "" || opts.DatabaseId != "" {
-			attrs := []any{}
+			attrs := []any{"backend", backend}
 			if opts.ProjectId != "" {
 				attrs = append(attrs, "project", opts.ProjectId)
 			}
@@ -184,26 +185,32 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			if opts.DatabaseId != "" {
 				attrs = append(attrs, "database", opts.DatabaseId)
 			}
-			slog.Warn("Using embedded emulator with user-provided values", attrs...)
+			slog.Warn("Using embedded runtime with user-provided values", attrs...)
 		}
 
 		// Use values from sysVars (which includes defaults set in initializeSystemVariables)
-		emulatorOpts := []spanemuboost.Option{
+		runtimeOpts := []spanemuboost.Option{
 			spanemuboost.WithProjectID(sysVars.Connection.Project),
 			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
-			spanemuboost.WithContainerImage(cmp.Or(opts.EmulatorImage, spanemuboost.DefaultEmulatorImage)),
 			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
 		}
+		if opts.EmulatorImage != "" {
+			runtimeOpts = append(runtimeOpts, spanemuboost.WithContainerImage(opts.EmulatorImage))
+		}
 
-		// In detached mode, only create instance without database
+		// Detached mode should not auto-create a database.
 		if opts.Detached {
-			emulatorOpts = append(emulatorOpts, spanemuboost.EnableInstanceAutoConfigOnly())
+			if backend == spanemuboost.BackendOmni {
+				runtimeOpts = append(runtimeOpts, spanemuboost.DisableAutoConfig())
+			} else {
+				runtimeOpts = append(runtimeOpts, spanemuboost.EnableInstanceAutoConfigOnly())
+			}
 		}
 
 		// Add platform customizer if specified
 		if opts.EmulatorPlatform != "" {
-			emulatorOpts = append(emulatorOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
+			runtimeOpts = append(runtimeOpts, spanemuboost.WithContainerCustomizers(withPlatform(opts.EmulatorPlatform)))
 		}
 
 		// Load sample database if specified
@@ -229,7 +236,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			}
 
 			// Use the sample's dialect
-			emulatorOpts = append(emulatorOpts, spanemuboost.WithDatabaseDialect(sample.ParsedDialect))
+			runtimeOpts = append(runtimeOpts, spanemuboost.WithDatabaseDialect(sample.ParsedDialect))
 
 			// Prepare URIs for batch loading
 			var uris []string
@@ -253,7 +260,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 					if err != nil {
 						return fmt.Errorf("failed to parse %s statements: %w", stmtType, err)
 					}
-					emulatorOpts = append(emulatorOpts, setupFunc(statements))
+					runtimeOpts = append(runtimeOpts, setupFunc(statements))
 				}
 				return nil
 			}
@@ -269,13 +276,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			}
 		}
 
-		embeddedRuntime, err := spanemuboost.Run(ctx, spanemuboost.BackendEmulator, emulatorOpts...)
+		embeddedRuntime, err := spanemuboost.Run(ctx, backend, runtimeOpts...)
 		if err != nil {
-			return fmt.Errorf("failed to start Cloud Spanner Emulator: %w", err)
+			return fmt.Errorf("failed to start embedded %s runtime: %w", backend, err)
 		}
 		defer func() {
 			if err := embeddedRuntime.Close(); err != nil {
-				slog.Warn("failed to close emulator container", "error", err)
+				slog.Warn("failed to close embedded runtime", "backend", backend, "error", err)
 			}
 		}()
 		sysVars.Connection.Project = embeddedRuntime.ProjectID()
@@ -302,10 +309,17 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		host, port, err := parseEndpoint(embeddedRuntime.URI())
 		if err != nil {
 			// This should not happen with a valid URI from testcontainers, but handle defensively.
-			return fmt.Errorf("failed to parse emulator endpoint URI %q: %w", embeddedRuntime.URI(), err)
+			return fmt.Errorf("failed to parse embedded runtime endpoint URI %q: %w", embeddedRuntime.URI(), err)
 		}
 		sysVars.Connection.Host, sysVars.Connection.Port = host, port
-		sysVars.Connection.WithoutAuthentication = true
+		switch backend {
+		case spanemuboost.BackendEmulator:
+			sysVars.Connection.WithoutAuthentication = true
+		case spanemuboost.BackendOmni:
+			sysVars.Internal.EmbeddedClientOptions = append([]option.ClientOption(nil), embeddedRuntime.ClientOptions()...)
+			omniClientConfig := spanemuboost.RecommendedOmniClientConfig()
+			sysVars.Internal.EmbeddedClientConfig = &omniClientConfig
+		}
 	}
 
 	// TTY detection has been moved to StreamManager.

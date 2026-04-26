@@ -578,6 +578,87 @@ func Test_initializeSystemVariables(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "embedded omni with no user values",
+			opts: &spannerOptions{
+				EmbeddedOmni: true,
+			},
+			want: systemVariables{
+				Connection: ConnectionVars{
+					Project:       "default",
+					Instance:      "default",
+					Database:      "emulator-database",
+					Insecure:      true,
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					TypeStylesRaw:        defaultTypeStyles,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:         slog.LevelWarn,
+					VertexAIModel:    defaultVertexAIModel,
+					VertexAILocation: defaultVertexAILocation,
+					FuzzyFinderKey:   "C_T",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "embedded omni with detached mode",
+			opts: &spannerOptions{
+				EmbeddedOmni: true,
+				Detached:     true,
+			},
+			want: systemVariables{
+				Connection: ConnectionVars{
+					Project:       "default",
+					Instance:      "default",
+					Database:      "",
+					Insecure:      true,
+					EnableADCPlus: true,
+				},
+				Display: DisplayVars{
+					Prompt:               defaultPrompt,
+					Prompt2:              defaultPrompt2,
+					HistoryFile:          defaultHistoryFile,
+					CLIFormat:            enums.DisplayModeTable,
+					AnalyzeColumns:       DefaultAnalyzeColumns,
+					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+					TypeStylesRaw:        defaultTypeStyles,
+					OutputTemplateFile:   "",
+					OutputTemplate:       defaultOutputFormat,
+				},
+				Query: QueryVars{
+					RPCPriority:      defaultPriority,
+					TablePreviewRows: 50,
+				},
+				Transaction: TransactionVars{
+					ReturnCommitStats: true,
+				},
+				Feature: FeatureVars{
+					LogLevel:         slog.LevelWarn,
+					VertexAIModel:    defaultVertexAIModel,
+					VertexAILocation: defaultVertexAILocation,
+					FuzzyFinderKey:   "C_T",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "CLI_ANALYZE_COLUMNS set",
 			opts: &spannerOptions{
 				Set: map[string]string{

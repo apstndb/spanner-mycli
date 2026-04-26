@@ -166,3 +166,125 @@ func TestNewSessionClosesClientWhenAdminClientCreationFails(t *testing.T) {
 		t.Fatalf("newSessionWithFactories() closed client = %p, want %p", closedClient, fakeClient)
 	}
 }
+
+func TestCreateClientOptionsUsesEmbeddedClientOptions(t *testing.T) {
+	t.Parallel()
+
+	sysVars := &systemVariables{
+		Connection: ConnectionVars{
+			Host:                  "localhost",
+			Port:                  9010,
+			WithoutAuthentication: true,
+		},
+		Internal: InternalVars{
+			EmbeddedClientOptions: []option.ClientOption{
+				option.WithoutAuthentication(),
+			},
+		},
+	}
+
+	opts, err := createClientOptions(context.Background(), nil, sysVars)
+	if err != nil {
+		t.Fatalf("createClientOptions() error = %v", err)
+	}
+	if len(opts) != 1 {
+		t.Fatalf("createClientOptions() len = %d, want 1", len(opts))
+	}
+}
+
+func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
+	t.Parallel()
+
+	directedRead := &sppb.DirectedReadOptions{}
+	sysVars := &systemVariables{
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "test-database",
+			Role:     "test-role",
+		},
+		Query: QueryVars{
+			DirectedRead: directedRead,
+		},
+		Internal: InternalVars{
+			EmbeddedClientConfig: &spanner.ClientConfig{
+				DisableNativeMetrics: true,
+				IsExperimentalHost:   true,
+			},
+		},
+	}
+
+	var gotConfig spanner.ClientConfig
+	session, err := newSessionWithFactories(
+		context.Background(),
+		sysVars,
+		func(_ context.Context, _ string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			gotConfig = cfg
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("newSessionWithFactories() error = %v", err)
+	}
+	if session == nil {
+		t.Fatal("newSessionWithFactories() returned nil session")
+	}
+	if !gotConfig.DisableNativeMetrics {
+		t.Error("DisableNativeMetrics = false, want true")
+	}
+	if !gotConfig.IsExperimentalHost {
+		t.Error("IsExperimentalHost = false, want true")
+	}
+	if gotConfig.DatabaseRole != "test-role" {
+		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")
+	}
+	if diff := cmp.Diff(directedRead, gotConfig.DirectedReadOptions, protocmp.Transform()); diff != "" {
+		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testing.T) {
+	t.Parallel()
+
+	sysVars := &systemVariables{
+		Connection: ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "test-database",
+			Insecure: true,
+		},
+		Internal: InternalVars{
+			EmbeddedClientOptions: []option.ClientOption{
+				option.WithoutAuthentication(),
+			},
+		},
+	}
+
+	var gotOpts []option.ClientOption
+	session, err := newSessionWithFactories(
+		context.Background(),
+		sysVars,
+		func(_ context.Context, _ string, _ spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
+			gotOpts = append([]option.ClientOption(nil), opts...)
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+		sysVars.Internal.EmbeddedClientOptions...,
+	)
+	if err != nil {
+		t.Fatalf("newSessionWithFactories() error = %v", err)
+	}
+	if session == nil {
+		t.Fatal("newSessionWithFactories() returned nil session")
+	}
+	if len(gotOpts) != len(sysVars.Internal.EmbeddedClientOptions)+len(defaultClientOpts) {
+		t.Fatalf("len(opts) = %d, want %d", len(gotOpts), len(sysVars.Internal.EmbeddedClientOptions)+len(defaultClientOpts))
+	}
+}
