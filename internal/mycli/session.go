@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,17 @@ var defaultClientConfig = spanner.ClientConfig{
 
 var defaultClientOpts = []option.ClientOption{
 	option.WithGRPCConnectionPool(1),
+}
+
+func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConfig {
+	if override := sysVars.Internal.EmbeddedClientConfig; override != nil {
+		clientConfig := *override
+		if reflect.DeepEqual(clientConfig.SessionPoolConfig, spanner.SessionPoolConfig{}) {
+			clientConfig.SessionPoolConfig = defaultClientConfig.SessionPoolConfig
+		}
+		return clientConfig
+	}
+	return defaultClientConfig
 }
 
 // Use MEDIUM priority not to disturb regular workloads on the database.
@@ -287,11 +299,11 @@ func newSessionWithFactories(
 	opts ...option.ClientOption,
 ) (*Session, error) {
 	dbPath := sysVars.DatabasePath()
-	clientConfig := defaultClientConfig
+	clientConfig := clientConfigForSystemVariables(sysVars)
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure {
+	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
@@ -326,11 +338,11 @@ func newSessionWithFactories(
 }
 
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
-	clientConfig := defaultClientConfig
+	clientConfig := clientConfigForSystemVariables(sysVars)
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure {
+	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
@@ -958,6 +970,10 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 
 // createClientOptions creates client options based on credential and system variables
 func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
+	if len(sysVars.Internal.EmbeddedClientOptions) > 0 {
+		return append([]option.ClientOption(nil), sysVars.Internal.EmbeddedClientOptions...), nil
+	}
+
 	var opts []option.ClientOption
 	if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
 		// Reconstruct the endpoint, adding brackets back for IPv6 addresses

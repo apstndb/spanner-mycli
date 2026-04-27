@@ -49,8 +49,11 @@ func TestListAvailableSamples(t *testing.T) {
 	}
 
 	// Check for usage instruction
-	if !strings.Contains(output, "metadata.json") {
-		t.Error("ListAvailableSamples() missing metadata.json instruction")
+	if !strings.Contains(output, "metadata.yaml") {
+		t.Error("ListAvailableSamples() missing concrete metadata example")
+	}
+	if !strings.Contains(output, ".json, .yaml, or .yml") {
+		t.Error("ListAvailableSamples() missing metadata format note")
 	}
 }
 

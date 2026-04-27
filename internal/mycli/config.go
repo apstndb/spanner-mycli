@@ -65,6 +65,11 @@ type versionRequestedError struct{}
 
 func (versionRequestedError) Error() string { return "version requested" }
 
+const (
+	defaultEmbeddedOmniProjectID  = "default"
+	defaultEmbeddedOmniInstanceID = "default"
+)
+
 type showHelpFlag bool
 
 // BeforeReset runs for matched flags in Kong's traced path, which lets help
@@ -126,9 +131,10 @@ type spannerOptions struct {
 	Insecure            *bool             `name:"insecure" help:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
 	EmbeddedEmulator    bool              `name:"embedded-emulator" help:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
-	EmulatorImage       string            `name:"emulator-image" help:"container image for --embedded-emulator"`
-	EmulatorPlatform    string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded emulator"`
-	SampleDatabase      string            `name:"sample-database" help:"Initialize emulator with built-in sample (e.g. fingraph, singers, banking) or path to metadata.json file. Requires --embedded-emulator."`
+	EmbeddedOmni        bool              `name:"embedded-omni" help:"Use embedded experimental Spanner Omni. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmulatorImage       string            `name:"emulator-image" help:"container image for embedded runtime (--embedded-emulator or --embedded-omni)"`
+	EmulatorPlatform    string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime"`
+	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
 	LogLevel            string            `name:"log-level"`
@@ -191,6 +197,17 @@ func determineInitialDatabase(opts *spannerOptions) string {
 	return ""
 }
 
+func (opts *spannerOptions) usesEmbeddedRuntime() bool {
+	return opts.EmbeddedEmulator || opts.EmbeddedOmni
+}
+
+func (opts *spannerOptions) embeddedRuntimeBackend() spanemuboost.Backend {
+	if opts.EmbeddedOmni {
+		return spanemuboost.BackendOmni
+	}
+	return spanemuboost.BackendEmulator
+}
+
 // ValidateSpannerOptions validates the spannerOptions struct.
 func ValidateSpannerOptions(opts *spannerOptions) error {
 	if opts.Strong && opts.ReadTimestamp != "" {
@@ -202,11 +219,15 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		return fmt.Errorf("invalid combination: --endpoint and (--host or --port) are mutually exclusive")
 	}
 
-	if !opts.EmbeddedEmulator && (opts.ProjectId == "" || opts.InstanceId == "") {
+	if opts.EmbeddedEmulator && opts.EmbeddedOmni {
+		return fmt.Errorf("invalid combination: --embedded-emulator and --embedded-omni are mutually exclusive")
+	}
+
+	if !opts.usesEmbeddedRuntime() && (opts.ProjectId == "" || opts.InstanceId == "") {
 		return fmt.Errorf("missing parameters: -p, -i are required")
 	}
 
-	if !opts.EmbeddedEmulator && !opts.Detached && opts.DatabaseId == "" {
+	if !opts.usesEmbeddedRuntime() && !opts.Detached && opts.DatabaseId == "" {
 		return fmt.Errorf("missing parameter: -d is required (or use --detached for detached mode)")
 	}
 
@@ -224,8 +245,11 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 		return fmt.Errorf("invalid combination: --execute(-e), --file(-f), --sql, --source are exclusive")
 	}
 	// Validate sample database flags
-	if opts.SampleDatabase != "" && !opts.EmbeddedEmulator {
-		return fmt.Errorf("--sample-database requires --embedded-emulator")
+	if opts.SampleDatabase != "" && !opts.usesEmbeddedRuntime() {
+		return fmt.Errorf("--sample-database requires --embedded-emulator or --embedded-omni")
+	}
+	if opts.SampleDatabase != "" && opts.Detached {
+		return fmt.Errorf("--sample-database cannot be used with --detached")
 	}
 	if opts.ListSamples && opts.SampleDatabase != "" {
 		return fmt.Errorf("--list-samples and --sample-database are mutually exclusive")
@@ -518,18 +542,26 @@ func applyFormatAndSetOptions(sysVars *systemVariables, opts *spannerOptions) er
 	return nil
 }
 
-func applyEmbeddedEmulatorDefaults(sysVars *systemVariables, opts *spannerOptions) error {
-	if opts.EmbeddedEmulator {
-		// When using embedded emulator, insecure connection is required
+func applyEmbeddedRuntimeDefaults(sysVars *systemVariables, opts *spannerOptions) error {
+	if opts.usesEmbeddedRuntime() {
+		// When using an embedded runtime, insecure connection is required.
 		sysVars.Connection.Insecure = true
-		// sysVars.Connection.Host/Port and sysVars.Connection.WithoutAuthentication will be set in run() after emulator starts
+		// sysVars.Connection.Host/Port and authentication-related settings are set in run() after the runtime starts.
 
-		// Set default values for embedded emulator if not specified by user
+		// Set default values for embedded runtime if not specified by user.
 		if sysVars.Connection.Project == "" {
-			sysVars.Connection.Project = spanemuboost.DefaultProjectID
+			if opts.EmbeddedOmni {
+				sysVars.Connection.Project = defaultEmbeddedOmniProjectID
+			} else {
+				sysVars.Connection.Project = spanemuboost.DefaultProjectID
+			}
 		}
 		if sysVars.Connection.Instance == "" {
-			sysVars.Connection.Instance = spanemuboost.DefaultInstanceID
+			if opts.EmbeddedOmni {
+				sysVars.Connection.Instance = defaultEmbeddedOmniInstanceID
+			} else {
+				sysVars.Connection.Instance = spanemuboost.DefaultInstanceID
+			}
 		}
 		// For database, respect --detached mode (empty database)
 		if sysVars.Connection.Database == "" && !opts.Detached {
@@ -569,7 +601,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		applyProtoDescriptors,
 		applyDirectedRead,
 		applyFormatAndSetOptions,
-		applyEmbeddedEmulatorDefaults,
+		applyEmbeddedRuntimeDefaults,
 	} {
 		if err := apply(sysVars, opts); err != nil {
 			return nil, err
@@ -594,9 +626,7 @@ func parseFlagsArgs(args []string, installFrom string, configFiles []string, std
 }
 
 func newGlobalOptions() globalOptions {
-	var gopts globalOptions
-	gopts.Spanner.EmulatorImage = spanemuboost.DefaultEmulatorImage
-	return gopts
+	return globalOptions{}
 }
 
 const configFileName = ".spanner_mycli.toml"

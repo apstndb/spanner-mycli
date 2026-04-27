@@ -50,6 +50,7 @@ const (
 	errMsgEndpointHostPortExclusive    = "--endpoint and (--host or --port) are mutually exclusive"
 	errMsgStrongReadTimestampExclusive = "--strong and --read-timestamp are mutually exclusive"
 	errMsgTryPartitionRequiresInput    = "--try-partition-query requires SQL input via --execute(-e), --file(-f), --source, or --sql"
+	errMsgEmbeddedModesExclusive       = "--embedded-emulator and --embedded-omni are mutually exclusive"
 	errMsgMissingProjectInstance       = "missing parameters: -p, -i are required"
 	errMsgMissingDatabase              = "missing parameter: -d is required"
 )
@@ -353,6 +354,24 @@ func TestParseFlagsCombinations(t *testing.T) {
 			name: "embedded-emulator ignores connection params",
 			args: []string{"--embedded-emulator", "--project", "ignored", "--instance", "ignored", "--database", "ignored"},
 		},
+		{
+			name: "embedded-omni without connection params",
+			args: []string{"--embedded-omni"},
+		},
+		{
+			name:        "embedded modes are mutually exclusive",
+			args:        []string{"--embedded-emulator", "--embedded-omni"},
+			errContains: errMsgEmbeddedModesExclusive,
+		},
+		{
+			name: "sample database accepts embedded omni",
+			args: []string{"--embedded-omni", "--sample-database", "singers"},
+		},
+		{
+			name:        "sample database rejects detached mode",
+			args:        []string{"--embedded-omni", "--sample-database", "singers", "--detached"},
+			errContains: "--sample-database cannot be used with --detached",
+		},
 
 		// Missing required parameters
 		{
@@ -377,6 +396,10 @@ func TestParseFlagsCombinations(t *testing.T) {
 		{
 			name: "embedded emulator doesn't require project/instance/database",
 			args: []string{"--embedded-emulator"},
+		},
+		{
+			name: "embedded omni doesn't require project/instance/database",
+			args: []string{"--embedded-omni"},
 		},
 
 		// Valid combinations
@@ -928,6 +951,15 @@ func TestFlagSpecialModes(t *testing.T) {
 			wantInsecure: true,
 		},
 		{
+			name:          "embedded omni with no explicit values uses defaults",
+			args:          []string{"--embedded-omni"},
+			wantProject:   "default",
+			wantInstance:  "default",
+			wantDatabase:  "emulator-database",
+			wantInsecure:  true,
+			checkAfterRun: true,
+		},
+		{
 			name: "MCP mode sets verbose",
 			args: []string{
 				"--project", "p", "--instance", "i", "--database", "d",
@@ -1040,11 +1072,11 @@ func TestFlagSpecialModes(t *testing.T) {
 			}
 
 			// Special checks for modes that set values in run()
-			if tt.name == "embedded emulator with no explicit values uses defaults" && tt.checkAfterRun {
+			if (tt.name == "embedded emulator with no explicit values uses defaults" || tt.name == "embedded omni with no explicit values uses defaults") && tt.checkAfterRun {
 				// These would be set in run() after emulator starts
 				// Just verify the flags that trigger this behavior are correct
-				if !gopts.Spanner.EmbeddedEmulator {
-					t.Errorf("EmbeddedEmulator flag not set")
+				if !gopts.Spanner.EmbeddedEmulator && !gopts.Spanner.EmbeddedOmni {
+					t.Errorf("embedded runtime flag not set")
 				}
 			}
 
@@ -2486,6 +2518,12 @@ func TestEmulatorPlatformFlag(t *testing.T) {
 			wantEmbedded: true,
 		},
 		{
+			name:         "embedded-omni with platform",
+			args:         []string{"--embedded-omni", "--emulator-platform", "linux/amd64"},
+			wantPlatform: "linux/amd64",
+			wantEmbedded: false,
+		},
+		{
 			name:         "emulator-platform without embedded-emulator",
 			args:         []string{"--emulator-platform", "linux/amd64"},
 			wantPlatform: "linux/amd64",
@@ -2505,5 +2543,20 @@ func TestEmulatorPlatformFlag(t *testing.T) {
 			}
 			assertEqual(t, "EmbeddedEmulator", gopts.Spanner.EmbeddedEmulator, &tt.wantEmbedded)
 		})
+	}
+}
+
+func TestEmbeddedOmniFlag(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseTestFlags([]string{"--embedded-omni"})
+	if err != nil {
+		t.Fatalf("parseTestFlags() error = %v", err)
+	}
+	if !gopts.Spanner.EmbeddedOmni {
+		t.Fatal("EmbeddedOmni flag not set")
+	}
+	if gopts.Spanner.EmbeddedEmulator {
+		t.Fatal("EmbeddedEmulator unexpectedly set")
 	}
 }
