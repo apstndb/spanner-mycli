@@ -341,7 +341,7 @@ func TestDecodeColumn(t *testing.T) {
 		// TODO: Use NullUUID when available. See https://github.com/googleapis/google-cloud-go/pull/11345.
 		{
 			desc:  "UUID",
-			value: gcvctor.StringBasedValue(sppb.TypeCode_UUID, "bd667006-c4a7-49de-814f-e2a2ec65abca"),
+			value: gcvctor.StringBasedValueFromCode(sppb.TypeCode_UUID, "bd667006-c4a7-49de-814f-e2a2ec65abca"),
 			want:  "bd667006-c4a7-49de-814f-e2a2ec65abca",
 		},
 
@@ -354,7 +354,7 @@ func TestDecodeColumn(t *testing.T) {
 		},
 		{
 			desc:  "null proto",
-			value: gcvctor.TypedNull(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
+			value: gcvctor.NullOf(typector.FQNToProtoType("examples.spanner.music.SingerInfo")),
 			want:  "NULL",
 		},
 		{
@@ -370,7 +370,7 @@ func TestDecodeColumn(t *testing.T) {
 		},
 		{
 			desc:  "null array proto",
-			value: gcvctor.TypedNull(typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo"))),
+			value: gcvctor.NullOf(typector.ElemTypeToArrayType(typector.FQNToProtoType("examples.spanner.music.SingerInfo"))),
 			want:  "NULL",
 		},
 

@@ -19,8 +19,8 @@ require (
 	github.com/apstndb/spanemuboost v0.4.0
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.3
-	github.com/apstndb/spantype v0.3.9
-	github.com/apstndb/spanvalue v0.1.9
+	github.com/apstndb/spantype v0.3.11
+	github.com/apstndb/spanvalue v0.2.1
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
@@ -43,7 +43,7 @@ require (
 	github.com/nyaosorg/go-readline-ny v1.14.1
 	github.com/olekukonko/tablewriter v1.1.3
 	github.com/pelletier/go-toml v1.9.5
-	github.com/samber/lo v1.51.0
+	github.com/samber/lo v1.53.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/spf13/afero v1.14.0
 	github.com/stretchr/testify v1.11.1

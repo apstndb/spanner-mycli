@@ -59,10 +59,10 @@ func TestSQLExportIntegration(t *testing.T) {
 				},
 				{
 					gcvctor.Int64Value(3),
-					gcvctor.SimpleTypedNull(sppb.TypeCode_STRING),
+					gcvctor.NullFromCode(sppb.TypeCode_STRING),
 					gcvctor.Float64Value(300),
 					gcvctor.BoolValue(true),
-					gcvctor.SimpleTypedNull(sppb.TypeCode_TIMESTAMP),
+					gcvctor.NullFromCode(sppb.TypeCode_TIMESTAMP),
 				},
 			},
 		},
@@ -337,7 +337,7 @@ CREATE TABLE ComplexDest (
 			// BYTES
 			gcvctor.BytesValue([]byte("hello")),
 			// NUMERIC - Spanner normalizes and returns "123.456" even though we insert with trailing zeros
-			gcvctor.StringBasedValue(sppb.TypeCode_NUMERIC, "123.456"),
+			gcvctor.StringBasedValueFromCode(sppb.TypeCode_NUMERIC, "123.456"),
 		},
 		{
 			gcvctor.Int64Value(2),
@@ -358,9 +358,9 @@ CREATE TABLE ComplexDest (
 				return v
 			}(),
 			// NULL BYTES
-			gcvctor.SimpleTypedNull(sppb.TypeCode_BYTES),
+			gcvctor.NullFromCode(sppb.TypeCode_BYTES),
 			// NULL NUMERIC
-			gcvctor.SimpleTypedNull(sppb.TypeCode_NUMERIC),
+			gcvctor.NullFromCode(sppb.TypeCode_NUMERIC),
 		},
 	}
 
