@@ -38,12 +38,12 @@ func TestJSONFormatConfig(t *testing.T) {
 		wantJSON string
 	}{
 		{name: "INT64 as number", gcv: gcvctor.Int64Value(42), wantJSON: "42"},
-		{name: "NULL", gcv: gcvctor.SimpleTypedNull(sppb.TypeCode_STRING), wantJSON: "null"},
+		{name: "NULL", gcv: gcvctor.NullFromCode(sppb.TypeCode_STRING), wantJSON: "null"},
 		{name: "STRING quoted", gcv: gcvctor.StringValue("hello"), wantJSON: `"hello"`},
 		{name: "BOOL", gcv: gcvctor.BoolValue(true), wantJSON: "true"},
 		{name: "JSON pass-through", gcv: lo.Must(gcvctor.JSONValue(map[string]string{"k": "v"})), wantJSON: `{"k":"v"}`},
 		{name: "ARRAY of INT64", gcv: lo.Must(gcvctor.ArrayValue(gcvctor.Int64Value(1), gcvctor.Int64Value(2))), wantJSON: "[1,2]"},
-		{name: "STRUCT", gcv: lo.Must(gcvctor.StructValue([]string{"name", "age"}, []spanner.GenericColumnValue{gcvctor.StringValue("Alice"), gcvctor.Int64Value(30)})), wantJSON: `{"name":"Alice","age":30}`},
+		{name: "STRUCT", gcv: lo.Must(gcvctor.StructValueOf([]string{"name", "age"}, []spanner.GenericColumnValue{gcvctor.StringValue("Alice"), gcvctor.Int64Value(30)})), wantJSON: `{"name":"Alice","age":30}`},
 	}
 
 	for _, tt := range tests {

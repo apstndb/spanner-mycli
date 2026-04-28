@@ -64,7 +64,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	case format.SQLLiteralValues:
 		// Use SQL literal formatting for modes that declared SQLLiteralValues
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
-		fc := spanvalue.LiteralFormatConfig
+		fc := spanvalue.LiteralFormatConfig()
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
