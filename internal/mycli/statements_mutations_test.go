@@ -50,6 +50,10 @@ func TestParseMutation(t *testing.T) {
 			sliceOf(spanner.Delete("t", spanner.KeyRange{Start: spanner.Key{int64(1)}, End: spanner.Key{int64(10)}, Kind: spanner.ClosedClosed})),
 		},
 		{
+			"DELETE ClosedClosed with CAST", "DELETE", "t", "KEY_RANGE(start_closed=>CAST(1 AS INT64), end_closed=>CAST(10 AS INT64))",
+			sliceOf(spanner.Delete("t", spanner.KeyRange{Start: spanner.Key{int64(1)}, End: spanner.Key{int64(10)}, Kind: spanner.ClosedClosed})),
+		},
+		{
 			"DELETE ClosedOpen", "DELETE", "t", "KEY_RANGE(start_closed=>(1), end_open=>(10))",
 			sliceOf(spanner.Delete("t", spanner.KeyRange{Start: spanner.Key{int64(1)}, End: spanner.Key{int64(10)}, Kind: spanner.ClosedOpen})),
 		},
@@ -63,6 +67,10 @@ func TestParseMutation(t *testing.T) {
 		},
 		{
 			"INSERT typeless struct", "INSERT", "t", "STRUCT(1 AS n)",
+			sliceOf(spanner.Insert("t", []string{"n"}, []any{int64GCV})),
+		},
+		{
+			"INSERT typeless struct with CAST", "INSERT", "t", "STRUCT(CAST(1 AS INT64) AS n)",
 			sliceOf(spanner.Insert("t", []string{"n"}, []any{int64GCV})),
 		},
 		{

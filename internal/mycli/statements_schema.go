@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
+	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
+	"github.com/apstndb/spanvalue"
 	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
@@ -56,7 +58,7 @@ type ShowTablesStatement struct {
 func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Connection.Database)
 	stmt := spanner.Statement{
-		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS `%s` FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", alias),
+		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS %s FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", spanvalue.QuoteIdentifier(dbadminpb.DatabaseDialect_GOOGLE_STANDARD_SQL, alias)),
 		Params: map[string]any{"schema": s.Schema},
 	}
 

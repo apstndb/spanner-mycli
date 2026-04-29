@@ -255,22 +255,11 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 }
 
 func parseLiteralExpr(expr ast.Expr) ([]string, [][]spanner.GenericColumnValue, error) {
-	switch e := expr.(type) {
-	case *ast.ParenExpr:
-		gcv, err := memebridge.MemefishExprToGCV(e)
-		if err != nil {
-			return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", e.SQL(), err)
-		}
-		return convertToColumnsValues(gcv)
-	case *ast.TypedStructLiteral, *ast.TupleStructLiteral, *ast.TypelessStructLiteral, *ast.ArrayLiteral:
-		gcv, err := memebridge.MemefishExprToGCV(e)
-		if err != nil {
-			return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", e.SQL(), err)
-		}
-		return convertToColumnsValues(gcv)
-	default:
-		return nil, nil, fmt.Errorf("unsupported expr as literals: %v", expr.SQL())
+	gcv, err := memebridge.MemefishExprToGCV(expr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("expression is not a supported literal, expr: %v, err: %w", expr.SQL(), err)
 	}
+	return convertToColumnsValues(gcv)
 }
 
 func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, error) {
