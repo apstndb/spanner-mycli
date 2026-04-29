@@ -1,6 +1,10 @@
 package mycli
 
-import "testing"
+import (
+	"testing"
+
+	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+)
 
 func TestBuildSelectQueryWithColumns(t *testing.T) {
 	t.Parallel()
@@ -33,7 +37,7 @@ func TestBuildSelectQueryWithColumns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := buildSelectQueryWithColumns(tt.columns, tt.table); got != tt.wantSQL {
+			if got := buildSelectQueryWithColumns(dbadminpb.DatabaseDialect_GOOGLE_STANDARD_SQL, tt.columns, tt.table); got != tt.wantSQL {
 				t.Fatalf("buildSelectQueryWithColumns() = %q, want %q", got, tt.wantSQL)
 			}
 		})

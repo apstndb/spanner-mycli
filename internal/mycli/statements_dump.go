@@ -72,16 +72,16 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 }
 
 // buildSelectQueryWithColumns creates a SELECT query with explicit column list.
-// Identifiers are quoted via spanvalue's GoogleSQL-aware helpers so reserved words
-// and qualified table names are rendered correctly.
-func buildSelectQueryWithColumns(columns []string, tableName string) string {
+// Identifiers are quoted via spanvalue's dialect-aware helpers so reserved words
+// and qualified table names are rendered correctly for the current database.
+func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []string, tableName string) string {
 	quotedColumns := make([]string, len(columns))
 	for i, col := range columns {
-		quotedColumns[i] = spanvalue.QuoteIdentifier(dbadminpb.DatabaseDialect_GOOGLE_STANDARD_SQL, col)
+		quotedColumns[i] = spanvalue.QuoteIdentifier(dialect, col)
 	}
 	return fmt.Sprintf("SELECT %s FROM %s",
 		strings.Join(quotedColumns, ", "),
-		spanvalue.QuoteQualifiedIdentifier(dbadminpb.DatabaseDialect_GOOGLE_STANDARD_SQL, tableName),
+		spanvalue.QuoteQualifiedIdentifier(dialect, tableName),
 	)
 }
 
@@ -197,7 +197,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			}
 
 			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(columns, table)
+			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
 			// Execute query using the transaction variant since we're already within a transaction
 			dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
@@ -291,7 +291,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 			}
 
 			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(columns, table)
+			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
 			// Write table comment
 			fmt.Fprintf(out, "-- Data for table %s\n", table)
