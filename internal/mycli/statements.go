@@ -528,9 +528,10 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-only transaction`)
 	}
 
-	target := spanvalue.QuoteIdentifier(databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL, s.Table)
+	dialect := session.systemVariables.Feature.DatabaseDialect
+	target := spanvalue.QuoteIdentifier(dialect, s.Table)
 	if s.Schema != "" {
-		target = spanvalue.QuoteIdentifier(databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL, s.Schema) + "." + target
+		target = spanvalue.QuoteIdentifier(dialect, s.Schema) + "." + target
 	}
 
 	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM %s WHERE true", target))
