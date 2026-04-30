@@ -2489,8 +2489,8 @@ github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae h1:dM4EYL52u6aQh
 github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae/go.mod h1:xW+J2790w/YgZZf3y5ff+/iO+dQoJQDGPrNkSLKQ9xc=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKRhehV71v8m4J+76zpjTGcRqsY=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
-github.com/apstndb/memebridge v0.5.0 h1:WaWD0Wp3Yw1BZwyvT4bIf2XsXAA+vq9ZNxUKXXV/vZQ=
-github.com/apstndb/memebridge v0.5.0/go.mod h1:fPrWYKcg5/eaavD6RovT9qeq8K7bDhgLKOcGhqg6zo4=
+github.com/apstndb/memebridge v0.6.0 h1:45uu/RFF63u5vJ+d8HT4PvOfotm1cV4eEveWFwGvElI=
+github.com/apstndb/memebridge v0.6.0/go.mod h1:E/HVP4iaSgiPXMIQTPT1u1uKkjmRtRECkVKE2TrF3bc=
 github.com/apstndb/ptyhelp v0.2.1 h1:vGqYJiIBNS3opPA3JLCKsdKIZzomz2zFkO1PVuM+WLs=
 github.com/apstndb/ptyhelp v0.2.1/go.mod h1:qQr/aibVk0BK/dweEW7mcaT0jAH9NeRHP2in6MIgEcA=
 github.com/apstndb/spanemuboost v0.4.0 h1:PSr0bjmQlMn7iocJygIM4j8fTTDsvwsZdFsr9TwNXsE=
@@ -2501,8 +2501,8 @@ github.com/apstndb/spannerplan v0.1.3 h1:nFzTEvRL4yMzQeFdtWp3V0VaUidNA/o3T7HyIYI
 github.com/apstndb/spannerplan v0.1.3/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
 github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
 github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.2.1 h1:DcC5MBCcnZ2refpv0y2NPM+IQJBb7XtBwx6756A11HM=
-github.com/apstndb/spanvalue v0.2.1/go.mod h1:wyP0oOBwmPVnid/uebb/Xn4p86V+fVl6gTpsI/zpYkQ=
+github.com/apstndb/spanvalue v0.3.0 h1:MsHW+ZhHXdHmeoVjG/qw785mGvyKJ7GBz3cUPYEIDI4=
+github.com/apstndb/spanvalue v0.3.0/go.mod h1:xKnvCW0eC+EtZfICvyesMpr/PJTY8tXjcWR+i0x0dZw=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 h1:aTufxpgGiMiSQ/yoJzWsX7G7DCpvGOaDFtEYiE7QNmA=
 github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6/go.mod h1:kIPoI1ZQRmOP9hVdFSFjPGwOPVEOSpAEIFgG09dK+7Y=
 github.com/aymanbagabas/go-pty v0.2.2 h1:YZREB4eSj+1xdbbItIokX0ekjjeifgJOA+ZvxU4/WM8=

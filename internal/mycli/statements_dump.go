@@ -11,6 +11,7 @@ import (
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
+	"github.com/apstndb/spanvalue"
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
@@ -71,14 +72,17 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 }
 
 // buildSelectQueryWithColumns creates a SELECT query with explicit column list.
-// Column names are quoted with backticks to handle reserved words.
-// Returns a SQL query string in the format: SELECT `col1`, `col2` FROM `tableName`
-func buildSelectQueryWithColumns(columns []string, tableName string) string {
+// Identifiers are quoted via spanvalue's dialect-aware helpers so reserved words
+// and qualified table names are rendered correctly for the current database.
+func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []string, tableName string) string {
 	quotedColumns := make([]string, len(columns))
 	for i, col := range columns {
-		quotedColumns[i] = fmt.Sprintf("`%s`", col)
+		quotedColumns[i] = spanvalue.QuoteIdentifier(dialect, col)
 	}
-	return fmt.Sprintf("SELECT %s FROM `%s`", strings.Join(quotedColumns, ", "), tableName)
+	return fmt.Sprintf("SELECT %s FROM %s",
+		strings.Join(quotedColumns, ", "),
+		spanvalue.QuoteQualifiedIdentifier(dialect, tableName),
+	)
 }
 
 // getWritableColumnsWithTxn queries INFORMATION_SCHEMA to get only columns that can accept INSERT values.
@@ -193,7 +197,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			}
 
 			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(columns, table)
+			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
 			// Execute query using the transaction variant since we're already within a transaction
 			dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
@@ -287,7 +291,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 			}
 
 			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(columns, table)
+			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
 			// Write table comment
 			fmt.Fprintf(out, "-- Data for table %s\n", table)

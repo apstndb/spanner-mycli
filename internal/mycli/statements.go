@@ -34,6 +34,7 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanvalue"
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
@@ -527,12 +528,13 @@ func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) 
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-only transaction`)
 	}
 
-	var schemaPart string
+	dialect := session.systemVariables.Feature.DatabaseDialect
+	target := spanvalue.QuoteIdentifier(dialect, s.Table)
 	if s.Schema != "" {
-		schemaPart = fmt.Sprintf("`%s`.", s.Schema)
+		target = spanvalue.QuoteIdentifier(dialect, s.Schema) + "." + target
 	}
 
-	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM %s`%s` WHERE true", schemaPart, s.Table))
+	return executePDML(ctx, session, fmt.Sprintf("DELETE FROM %s WHERE true", target))
 }
 
 // EXPLAIN, EXPLAIN ANALYZE and DESCRIBE related statements are defined in statements_explain.go
