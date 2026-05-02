@@ -11,9 +11,8 @@ import (
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 )
 
 // minColumnWidth is the hard minimum width for any column.
@@ -112,9 +111,7 @@ func (wc *widthCalculator) StringWidth(s string) int {
 }
 
 func (wc *widthCalculator) maxWidth(s string) int {
-	return hiter.Max(hiter.Map(
-		wc.StringWidth,
-		stringsiter.SplitFunc(s, 0, stringsiter.CutNewLine)))
+	return loi.Max(loi.Map(splitLines(s), wc.StringWidth))
 }
 
 func asc[T cmp.Ordered](left, right T) int {
@@ -204,22 +201,24 @@ func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.
 	return MaxByWithIdx(
 		invalidWidthCount,
 		WidthCount.Count,
-		hiter.Unify(
-			func(adjustWidth int, wc WidthCount) WidthCount {
-				return lo.Ternary(wc.Length()-adjustWidth <= ignoreMax, wc, invalidWidthCount)
-			},
-			hiter.Pairs(slices.Values(adjustWidths), seq)))
+		loi.FilterMapI(seq, func(wc WidthCount, i int) (WidthCount, bool) {
+			if i >= len(adjustWidths) {
+				return invalidWidthCount, false
+			}
+			return lo.Ternary(wc.Length()-adjustWidths[i] <= ignoreMax, wc, invalidWidthCount), true
+		}))
 }
 
 func (wc *widthCalculator) countWidth(ss []string) iter.Seq[WidthCount] {
-	return hiter.Map(
+	return loi.Map(
+		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, wc.maxWidth))),
 		func(e lo.Entry[int, int]) WidthCount {
 			return WidthCount{
 				width: e.Key,
 				count: e.Value,
 			}
 		},
-		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, wc.maxWidth))))
+	)
 }
 
 func (wc *widthCalculator) calculateWidthCounts(currentWidths []int, rows [][]string) [][]WidthCount {
@@ -228,11 +227,11 @@ func (wc *widthCalculator) calculateWidthCounts(currentWidths []int, rows [][]st
 		currentWidth := currentWidths[columnNo]
 		columnValues := rows[columnNo]
 		largerWidthCounts := slices.Collect(
-			hiter.Filter(
+			loi.Filter(
+				wc.countWidth(columnValues),
 				func(v WidthCount) bool {
 					return v.Length() > currentWidth
 				},
-				wc.countWidth(columnValues),
 			))
 		result = append(result, largerWidthCounts)
 	}
@@ -249,7 +248,7 @@ func (wc WidthCount) Length() int { return wc.width }
 func (wc WidthCount) Count() int { return wc.count }
 
 func adjustByHeader(headers []string, availableWidth int) []int {
-	nameWidths := slices.Collect(hiter.Map(tabwrap.StringWidth, slices.Values(headers)))
+	nameWidths := slices.Collect(loi.Map(slices.Values(headers), tabwrap.StringWidth))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 

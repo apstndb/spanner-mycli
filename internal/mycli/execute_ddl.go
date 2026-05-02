@@ -11,8 +11,8 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"google.golang.org/protobuf/proto"
@@ -147,13 +147,13 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.Feature.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
-		result.Rows = slices.Collect(hiter.Unify(
+		result.Rows = slices.Collect(loi.ZipBy2(
+			slices.Values(ddls),
+			slices.Values(metadata.GetCommitTimestamps()),
 			func(ddl string, v *timestamppb.Timestamp) Row {
 				return toRow(ddl+";", v.AsTime().Format(time.RFC3339Nano))
 			},
-			hiter.Pairs(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps())),
-		),
-		)
+		))
 	}
 
 	return result, nil

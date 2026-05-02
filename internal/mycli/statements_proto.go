@@ -4,19 +4,17 @@ import (
 	"context"
 	"iter"
 	"log/slog"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/apstndb/lox"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	scxiter "spheric.cloud/xiter"
 
 	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
 )
@@ -43,10 +41,11 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 }
 
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
-	fullNameSetFds := maps.Collect(
-		scxiter.MapLift(fdsToInfoSeq(fds), func(info *descriptorInfo) (string, struct{}) {
+	fullNameSetFds := loi.Associate(
+		fdsToInfoSeq(fds),
+		func(info *descriptorInfo) (string, struct{}) {
 			return info.FullName, struct{}{}
-		}),
+		},
 	)
 
 	upsertExists, upsertNotExists := splitExistence(fullNameSetFds, upsertPaths)
@@ -84,8 +83,8 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 	fds := session.systemVariables.Internal.ProtoDescriptor
 
 	rows := slices.Collect(
-		scxiter.Map(
-			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		loi.Map(
+			loi.FlatMap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package, info.FileName)
 			},
@@ -114,8 +113,8 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 	}
 
 	rows := slices.Collect(
-		scxiter.Map(
-			scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo),
+		loi.Map(
+			loi.FlatMap(slices.Values(fds.GetFile()), fdpToInfo),
 			func(info *descriptorInfo) Row {
 				return toRow(info.FullName, info.Kind, info.Package)
 			},
@@ -133,7 +132,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 // Helper functions
 
 func fdsToInfoSeq(fds *descriptorpb.FileDescriptorSet) iter.Seq[*descriptorInfo] {
-	return scxiter.Flatmap(slices.Values(fds.GetFile()), fdpToInfo)
+	return loi.FlatMap(slices.Values(fds.GetFile()), fdpToInfo)
 }
 
 func splitExistence(fullNameSet map[string]struct{}, paths []string) ([]string, []string) {
@@ -169,15 +168,16 @@ func fdpToSeq(fdp *descriptorpb.FileDescriptorProto) iter.Seq2[string, proto.Mes
 }
 
 func fdpToInfo(fdp *descriptorpb.FileDescriptorProto) iter.Seq[*descriptorInfo] {
-	return scxiter.MapLower(
-		scxiter.FilterValue(
-			fdpToSeq(fdp),
-			isValidDescriptorProto,
-		),
-		func(name string, message proto.Message) *descriptorInfo {
-			return &descriptorInfo{FullName: name, Kind: toKind(message), Package: fdp.GetPackage(), FileName: fdp.GetName()}
-		},
-	)
+	return func(yield func(*descriptorInfo) bool) {
+		for name, message := range fdpToSeq(fdp) {
+			if !isValidDescriptorProto(message) {
+				continue
+			}
+			if !yield(&descriptorInfo{FullName: name, Kind: toKind(message), Package: fdp.GetPackage(), FileName: fdp.GetName()}) {
+				return
+			}
+		}
+	}
 }
 
 func toKind(message proto.Message) string {
@@ -215,14 +215,15 @@ func isValidDescriptorProto(message proto.Message) bool {
 
 func toNamedType(fullName string) *ast.NamedType {
 	return &ast.NamedType{
-		Path: slices.Collect(hiter.Map(
+		Path: slices.Collect(loi.Map(
+			slices.Values(strings.Split(fullName, ".")),
 			func(s string) *ast.Ident {
 				return &ast.Ident{Name: s}
 			},
-			slices.Values(strings.Split(fullName, ".")))),
+		)),
 	}
 }
 
 func toNamedTypes(fullNames []string) []*ast.NamedType {
-	return slices.Collect(hiter.Map(toNamedType, slices.Values(fullNames)))
+	return slices.Collect(loi.Map(slices.Values(fullNames), toNamedType))
 }

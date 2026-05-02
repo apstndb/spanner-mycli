@@ -11,9 +11,8 @@ import (
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanvalue"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 )
 
 type ShowCreateStatement struct {
@@ -137,9 +136,7 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
 		TableHeader: toTableHeader(""),
-		Rows: sliceOf(toRow(stringsiter.Collect(hiter.Map(
-			func(s string) string { return s + ";\n" },
-			slices.Values(resp.GetStatements()))))),
+		Rows:        sliceOf(toRow(strings.Join(slices.Collect(loi.Map(slices.Values(resp.GetStatements()), func(s string) string { return s + ";\n" })), ""))),
 	}, nil
 }
 

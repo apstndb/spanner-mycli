@@ -10,8 +10,8 @@ import (
 	"slices"
 
 	"github.com/apstndb/go-tabwrap"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/olekukonko/tablewriter/tw"
+	loi "github.com/samber/lo/it"
 )
 
 // formatTable formats output as an ASCII table.
@@ -111,9 +111,12 @@ func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
 	if len(widths) == 0 {
 		return row
 	}
-	wrappedTexts := slices.Collect(hiter.Unify(
-		rw.Wrap,
-		hiter.Pairs(slices.Values(Texts(row)), slices.Values(widths))))
+	wrappedTexts := slices.Collect(loi.FilterMapI(slices.Values(Texts(row)), func(text string, i int) (string, bool) {
+		if i >= len(widths) {
+			return "", false
+		}
+		return rw.Wrap(text, widths[i]), true
+	}))
 	result := make(Row, len(wrappedTexts))
 	for i, text := range wrappedTexts {
 		if i < len(row) {

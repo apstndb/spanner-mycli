@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/time/rate"
 	"google.golang.org/genai"
 )
@@ -162,11 +163,9 @@ func argsToStringSlice(args map[string]any, key string) []string {
 
 // searchResultsToItems converts DocSearchResults to the map format expected by the LLM.
 func searchResultsToItems(results []DocSearchResult) []map[string]any {
-	items := make([]map[string]any, len(results))
-	for i, r := range results {
-		items[i] = map[string]any{"name": r.Name, "snippet": r.Snippet}
-	}
-	return items
+	return lo.Map(results, func(r DocSearchResult, _ int) map[string]any {
+		return map[string]any{"name": r.Name, "snippet": r.Snippet}
+	})
 }
 
 // batchGetToResponse performs a BatchGet and formats the results as a tool response,
@@ -174,10 +173,9 @@ func searchResultsToItems(results []DocSearchResult) []map[string]any {
 func batchGetToResponse(ctx context.Context, cache *docCache, names []string, errMsg string) map[string]any {
 	docs := cache.BatchGet(ctx, names)
 
-	fetched := make(map[string]string, len(docs))
-	for _, doc := range docs {
-		fetched[doc.Name] = doc.Content
-	}
+	fetched := lo.Associate(docs, func(doc DocResult) (string, string) {
+		return doc.Name, doc.Content
+	})
 
 	documents := make(map[string]any, len(names))
 	for _, name := range names {

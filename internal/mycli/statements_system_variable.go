@@ -11,8 +11,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	scxiter "spheric.cloud/xiter"
+	loi "github.com/samber/lo/it"
 )
 
 type ShowVariableStatement struct {
@@ -55,17 +54,17 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	// Special handling for CLI_DIRECT_READ
 	if session.systemVariables.Query.DirectedRead != nil {
-		values := scxiter.Join(scxiter.Map(
+		values := strings.Join(slices.Collect(loi.Map(
 			slices.Values(session.systemVariables.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
 			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
 				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
 			},
-		), ";")
+		)), ";")
 		merged["CLI_DIRECT_READ"] = values
 	}
 
 	rows := slices.SortedFunc(
-		scxiter.MapLower(maps.All(merged), func(k, v string) Row { return toRow(k, v) }),
+		loi.MapToSeq(merged, func(k, v string) Row { return toRow(k, v) }),
 		func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* name */ })
 
 	return &Result{
@@ -165,7 +164,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		Description: "",
 	})
 
-	rows := slices.SortedFunc(hiter.Map(func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }, slices.Values(merged)), func(lhs Row, rhs Row) int {
+	rows := slices.SortedFunc(loi.Map(slices.Values(merged), func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }), func(lhs Row, rhs Row) int {
 		return strings.Compare(lhs[0].RawText(), rhs[0].RawText())
 	})
 

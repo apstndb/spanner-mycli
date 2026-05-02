@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"spheric.cloud/xiter"
+	loi "github.com/samber/lo/it"
 )
 
 // ensureRegistry initializes the registry if needed.
@@ -155,12 +155,12 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 			return nil, errIgnored
 		}
 		// Format DirectedRead for display
-		values := xiter.Join(xiter.Map(
+		values := strings.Join(slices.Collect(loi.Map(
 			slices.Values(sv.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
 			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
 				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
 			},
-		), ";")
+		)), ";")
 		return singletonMap(name, values), nil
 	}
 
