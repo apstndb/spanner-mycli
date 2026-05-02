@@ -164,8 +164,11 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		Description: "",
 	})
 
-	rows := slices.SortedFunc(loi.Map(slices.Values(merged), func(v variableDesc) Row { return toRow(v.Name, strings.Join(v.Operations, ","), v.Description) }), func(lhs Row, rhs Row) int {
-		return strings.Compare(lhs[0].RawText(), rhs[0].RawText())
+	rows := lo.Map(merged, func(v variableDesc, _ int) Row {
+		return toRow(v.Name, strings.Join(v.Operations, ","), v.Description)
+	})
+	slices.SortFunc(rows, func(lhs Row, rhs Row) int {
+		return cmp.Compare(lhs[0].RawText(), rhs[0].RawText())
 	})
 
 	return &Result{
