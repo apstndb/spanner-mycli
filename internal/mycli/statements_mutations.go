@@ -200,9 +200,13 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 }
 
 func toKeys(values []spanner.GenericColumnValue) (spanner.Key, error) {
-	return lo.MapErr(values, func(value spanner.GenericColumnValue, _ int) (any, error) {
+	key, err := lo.MapErr(values, func(value spanner.GenericColumnValue, _ int) (any, error) {
 		return gcvToKeyable(value)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return spanner.Key(key), nil
 }
 
 func typeValueToGCV(k *sppb.StructType_Field, v *structpb.Value) spanner.GenericColumnValue {

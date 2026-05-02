@@ -16,7 +16,6 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 )
@@ -147,13 +146,15 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.Feature.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
-		result.Rows = slices.Collect(loi.ZipBy2(
-			slices.Values(ddls),
-			slices.Values(metadata.GetCommitTimestamps()),
-			func(ddl string, v *timestamppb.Timestamp) Row {
-				return toRow(ddl+";", v.AsTime().Format(time.RFC3339Nano))
-			},
-		))
+		commitTimestamps := metadata.GetCommitTimestamps()
+		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
+		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
+		result.Rows = slices.Collect(loi.FilterMapI(slices.Values(ddls), func(ddl string, i int) (Row, bool) {
+			if i >= len(commitTimestamps) {
+				return nil, false
+			}
+			return toRow(ddl+";", commitTimestamps[i].AsTime().Format(time.RFC3339Nano)), true
+		}))
 	}
 
 	return result, nil
