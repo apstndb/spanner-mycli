@@ -11,6 +11,7 @@ import (
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 )
@@ -202,13 +203,8 @@ func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.
 	return MaxByWithIdx(
 		invalidWidthCount,
 		WidthCount.Count,
-		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-		loi.FilterMapI(seq, func(wc WidthCount, i int) (WidthCount, bool) {
-			if i >= len(adjustWidths) {
-				return invalidWidthCount, false
-			}
-			return lo.Ternary(wc.Length()-adjustWidths[i] <= ignoreMax, wc, invalidWidthCount), true
+		iterutil.ZipShortestBy(seq, slices.Values(adjustWidths), func(wc WidthCount, adjustWidth int) WidthCount {
+			return lo.Ternary(wc.Length()-adjustWidth <= ignoreMax, wc, invalidWidthCount)
 		}))
 }
 

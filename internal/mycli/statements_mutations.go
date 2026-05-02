@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -267,13 +268,8 @@ func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, err
 }
 
 func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
-	// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-	// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-	return slices.Collect(loi.FilterMapI(slices.Values(structTypefields), func(field *sppb.StructType_Field, i int) (spanner.GenericColumnValue, bool) {
-		if i >= len(structValues) {
-			return spanner.GenericColumnValue{}, false
-		}
-		return typeValueToGCV(field, structValues[i]), true
+	return slices.Collect(iterutil.ZipShortestBy(slices.Values(structTypefields), slices.Values(structValues), func(field *sppb.StructType_Field, value *structpb.Value) spanner.GenericColumnValue {
+		return typeValueToGCV(field, value)
 	}))
 }
 

@@ -11,11 +11,12 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
-	loi "github.com/samber/lo/it"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 )
@@ -146,15 +147,10 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.Feature.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
-		commitTimestamps := metadata.GetCommitTimestamps()
-		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-		result.Rows = slices.Collect(loi.FilterMapI(slices.Values(ddls), func(ddl string, i int) (Row, bool) {
-			if i >= len(commitTimestamps) {
-				return nil, false
-			}
-			return toRow(ddl+";", commitTimestamps[i].AsTime().Format(time.RFC3339Nano)), true
-		}))
+		result.Rows = slices.Collect(iterutil.ZipShortestBy(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps()),
+			func(ddl string, commitTimestamp *timestamppb.Timestamp) Row {
+				return toRow(ddl+";", commitTimestamp.AsTime().Format(time.RFC3339Nano))
+			}))
 	}
 
 	return result, nil

@@ -10,8 +10,8 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
-	loi "github.com/samber/lo/it"
 )
 
 func isInsert(sql string) bool {
@@ -72,13 +72,8 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		IsExecutedDML:   true, // This is a batch DML statement
 		CommitTimestamp: result.CommitResponse.CommitTs,
 		CommitStats:     result.CommitResponse.CommitStats,
-		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-		Rows: slices.Collect(loi.FilterMapI(slices.Values(dmls), func(s spanner.Statement, i int) (Row, bool) {
-			if i >= len(affectedRowSlice) {
-				return nil, false
-			}
-			return toRow(s.SQL, strconv.FormatInt(affectedRowSlice[i], 10)), true
+		Rows: slices.Collect(iterutil.ZipShortestBy(slices.Values(dmls), slices.Values(affectedRowSlice), func(s spanner.Statement, affectedRows int64) Row {
+			return toRow(s.SQL, strconv.FormatInt(affectedRows, 10))
 		})),
 		TableHeader:      toTableHeader("DML", "Rows"),
 		AffectedRows:     int(result.Affected),

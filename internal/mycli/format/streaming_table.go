@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/apstndb/go-tabwrap"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
-	loi "github.com/samber/lo/it"
 )
 
 var (
@@ -249,13 +249,8 @@ func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 	}
 
 	rw := f.newCondition()
-	// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-	// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-	return slices.Collect(loi.FilterMapI(slices.Values(headers), func(header string, i int) (string, bool) {
-		if i >= len(f.widths) {
-			return "", false
-		}
-		return rw.Wrap(header, f.widths[i]), true
+	return slices.Collect(iterutil.ZipShortestBy(slices.Values(headers), slices.Values(f.widths), func(header string, width int) string {
+		return rw.Wrap(header, width)
 	}))
 }
 

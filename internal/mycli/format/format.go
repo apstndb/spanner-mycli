@@ -10,8 +10,8 @@ import (
 	"slices"
 
 	"github.com/apstndb/go-tabwrap"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/olekukonko/tablewriter/tw"
-	loi "github.com/samber/lo/it"
 )
 
 // formatTable formats output as an ASCII table.
@@ -111,13 +111,8 @@ func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
 	if len(widths) == 0 {
 		return row
 	}
-	// Keep the previous "shorter input wins" behavior from hiter.Pairs.
-	// loi.ZipBy2 pads missing values with zero values instead of stopping early.
-	wrappedTexts := slices.Collect(loi.FilterMapI(slices.Values(Texts(row)), func(text string, i int) (string, bool) {
-		if i >= len(widths) {
-			return "", false
-		}
-		return rw.Wrap(text, widths[i]), true
+	wrappedTexts := slices.Collect(iterutil.ZipShortestBy(slices.Values(Texts(row)), slices.Values(widths), func(text string, width int) string {
+		return rw.Wrap(text, width)
 	}))
 	result := make(Row, len(wrappedTexts))
 	for i, text := range wrappedTexts {
