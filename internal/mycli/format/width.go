@@ -111,6 +111,7 @@ func (wc *widthCalculator) StringWidth(s string) int {
 }
 
 func (wc *widthCalculator) maxWidth(s string) int {
+	// splitLines is the package-local newline iterator defined at the bottom of this file.
 	return loi.Max(loi.Map(splitLines(s), wc.StringWidth))
 }
 

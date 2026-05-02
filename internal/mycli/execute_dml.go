@@ -72,13 +72,14 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		IsExecutedDML:   true, // This is a batch DML statement
 		CommitTimestamp: result.CommitResponse.CommitTs,
 		CommitStats:     result.CommitResponse.CommitStats,
-		Rows: slices.Collect(loi.ZipBy2(
-			slices.Values(dmls),
-			slices.Values(affectedRowSlice),
-			func(s spanner.Statement, n int64) Row {
-				return toRow(s.SQL, strconv.FormatInt(n, 10))
-			},
-		)),
+		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
+		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
+		Rows: slices.Collect(loi.FilterMapI(slices.Values(dmls), func(s spanner.Statement, i int) (Row, bool) {
+			if i >= len(affectedRowSlice) {
+				return nil, false
+			}
+			return toRow(s.SQL, strconv.FormatInt(affectedRowSlice[i], 10)), true
+		})),
 		TableHeader:      toTableHeader("DML", "Rows"),
 		AffectedRows:     int(result.Affected),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
