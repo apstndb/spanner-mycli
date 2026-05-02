@@ -13,7 +13,7 @@ require (
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.2
-	github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae
+	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.4.0
@@ -33,14 +33,13 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/googleapis/go-spanner-cassandra v0.5.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
-	github.com/hymkor/go-multiline-ny v0.22.4
+	github.com/hymkor/go-multiline-ny v0.23.1
 	github.com/junegunn/fzf v0.68.0
 	github.com/k0kubun/pp/v3 v3.5.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.18.4
 	github.com/modelcontextprotocol/go-sdk v1.4.0
-	github.com/ngicks/go-iterator-helper v0.0.21
-	github.com/nyaosorg/go-readline-ny v1.14.1
+	github.com/nyaosorg/go-readline-ny v1.14.3
 	github.com/olekukonko/tablewriter v1.1.3
 	github.com/pelletier/go-toml v1.9.5
 	github.com/samber/lo v1.53.0
@@ -56,7 +55,6 @@ require (
 	google.golang.org/genai v1.47.0
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.11
-	spheric.cloud/xiter v0.0.0-20250113160306-a1a2c1108100
 )
 
 require (

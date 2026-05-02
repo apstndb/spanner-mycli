@@ -19,8 +19,8 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 )
 
 // GreedyFrequencyStrategy implements the original frequency-based greedy expansion
@@ -69,11 +69,12 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 	for {
 		slog.Debug("widthCounts", "counts", widthCounts)
 
-		firstCounts := hiter.Map(
+		firstCounts := loi.Map(
+			slices.Values(widthCounts),
 			func(wcs []WidthCount) WidthCount {
 				return lo.FirstOr(wcs, invalidWidthCount)
 			},
-			slices.Values(widthCounts))
+		)
 
 		// find the largest count idx within available width
 		idx, target := wc.maxIndex(availableWidth-sumWidths(adjustedWidths), adjustedWidths, firstCounts)

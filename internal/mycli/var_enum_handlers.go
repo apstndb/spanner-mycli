@@ -9,6 +9,7 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/samber/lo"
 )
 
 // EnumVar handles enum-like variables
@@ -207,11 +208,9 @@ func QueryModeVar(ptr *sppb.ExecuteSqlRequest_QueryMode, desc string) *ProtoEnum
 
 // enumerValues is a generic helper for creating value maps from enumer-generated types
 func enumerValues[T fmt.Stringer](values []T) map[string]T {
-	m := make(map[string]T, len(values))
-	for _, v := range values {
-		m[v.String()] = v
-	}
-	return m
+	return lo.Associate(values, func(v T) (string, T) {
+		return v.String(), v
+	})
 }
 
 // DisplayModeVar creates an enum handler for DisplayMode

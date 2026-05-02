@@ -4,14 +4,12 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
-	scxiter "spheric.cloud/xiter"
 )
 
 type ShowParamsStatement struct{}
@@ -19,16 +17,10 @@ type ShowParamsStatement struct{}
 func (s *ShowParamsStatement) isDetachedCompatible() {}
 
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	strMap := make(map[string]string)
-	for k, v := range session.systemVariables.Params {
-		strMap[k] = v.SQL()
-	}
-
-	rows := slices.SortedFunc(
-		scxiter.MapLower(maps.All(session.systemVariables.Params), func(k string, v ast.Node) Row {
-			return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
-		}),
-		func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* parameter name */ })
+	rows := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) Row {
+		return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
+	})
+	slices.SortFunc(rows, func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* parameter name */ })
 
 	return &Result{
 		TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),

@@ -19,11 +19,11 @@ import (
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/nyaosorg/go-readline-ny"
 	"github.com/nyaosorg/go-readline-ny/keys"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 	"github.com/spf13/afero"
 )
 
@@ -241,9 +241,9 @@ const (
 
 func commentHighlighter() highlighterFunc {
 	return lexerHighlighterWithError(func(tok token.Token) [][]int {
-		return slices.Collect(hiter.Map(func(comment token.TokenComment) []int {
+		return slices.Collect(loi.Map(slices.Values(tok.Comments), func(comment token.TokenComment) []int {
 			return sliceOf(int(comment.Pos), int(comment.End))
-		}, slices.Values(tok.Comments)))
+		}))
 	}, func(me *memefish.Error) bool {
 		return me.Message == errMessageUnclosedComment
 	})

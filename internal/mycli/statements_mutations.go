@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -13,12 +12,13 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/char"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -98,11 +98,9 @@ func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
 	if len(e.Args) > 0 {
 		return spanner.KeyRange{}, fmt.Errorf("unknown args: %v", e.SQL())
 	}
-	namedArgMap := maps.Collect(hiter.Divide(
-		func(u *ast.NamedArg) (string, ast.Expr) {
-			return strings.ToLower(u.Name.Name), u.Value
-		},
-		slices.Values(e.NamedArgs)))
+	namedArgMap := lo.Associate(e.NamedArgs, func(u *ast.NamedArg) (string, ast.Expr) {
+		return strings.ToLower(u.Name.Name), u.Value
+	})
 	startClosed, hasStartClosed := namedArgMap["start_closed"]
 	startOpen, hasStartOpen := namedArgMap["start_open"]
 	endClosed, hasEndClosed := namedArgMap["end_closed"]
@@ -185,13 +183,11 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 			slog.Warn("delete mutation ignores column names", "columns", columns)
 		}
 
-		var keys []spanner.Key
-		for _, values := range valuesList {
-			key, err := toKeys(values)
-			if err != nil {
-				return nil, err
-			}
-			keys = append(keys, key)
+		keys, err := lo.MapErr(valuesList, func(values []spanner.GenericColumnValue, _ int) (spanner.Key, error) {
+			return toKeys(values)
+		})
+		if err != nil {
+			return nil, err
 		}
 
 		if len(keys) == 1 {
@@ -202,15 +198,13 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 }
 
 func toKeys(values []spanner.GenericColumnValue) (spanner.Key, error) {
-	var key []any
-	for _, value := range values {
-		keyElem, err := gcvToKeyable(value)
-		if err != nil {
-			return nil, err
-		}
-		key = append(key, keyElem)
+	key, err := lo.MapErr(values, func(value spanner.GenericColumnValue, _ int) (any, error) {
+		return gcvToKeyable(value)
+	})
+	if err != nil {
+		return nil, err
 	}
-	return key, nil
+	return spanner.Key(key), nil
 }
 
 func typeValueToGCV(k *sppb.StructType_Field, v *structpb.Value) spanner.GenericColumnValue {
@@ -237,16 +231,16 @@ func convertToColumnsValues(gcv spanner.GenericColumnValue) ([]string, [][]spann
 			nil
 	case sppb.TypeCode_ARRAY:
 		if gcv.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
-			return nil, slices.Collect(hiter.Map(func(v *structpb.Value) []spanner.GenericColumnValue {
+			return nil, slices.Collect(loi.Map(slices.Values(gcv.Value.GetListValue().GetValues()), func(v *structpb.Value) []spanner.GenericColumnValue {
 				return sliceOf(spanner.GenericColumnValue{
 					Type:  gcv.Type.GetArrayElementType(),
 					Value: v,
 				})
-			}, slices.Values(gcv.Value.GetListValue().GetValues()))), nil
+			})), nil
 		}
 		structTypeFields := gcv.Type.GetArrayElementType().GetStructType().GetFields()
 		return extractColumnNames(structTypeFields),
-			slices.Collect(hiter.Map(extractStructValuesUsingType(structTypeFields), slices.Values(gcv.Value.GetListValue().GetValues()))),
+			slices.Collect(loi.Map(slices.Values(gcv.Value.GetListValue().GetValues()), extractStructValuesUsingType(structTypeFields))),
 			nil
 	default:
 		// [[value]]
@@ -271,9 +265,9 @@ func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, err
 }
 
 func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
-	return slices.Collect(hiter.Unify(
-		typeValueToGCV,
-		hiter.Pairs(slices.Values(structTypefields), slices.Values(structValues))))
+	return slices.Collect(iterutil.ZipShortestBy(slices.Values(structTypefields), slices.Values(structValues), func(field *sppb.StructType_Field, value *structpb.Value) spanner.GenericColumnValue {
+		return typeValueToGCV(field, value)
+	}))
 }
 
 func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
@@ -306,9 +300,7 @@ func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
 		return nil, fmt.Errorf("unsupported operation: %q", op)
 	}
 
-	var mutations []*spanner.Mutation
-	for _, v := range values {
-		mutations = append(mutations, mutationF(table, columns, lo.ToAnySlice(v)))
-	}
-	return mutations, nil
+	return lo.Map(values, func(v []spanner.GenericColumnValue, _ int) *spanner.Mutation {
+		return mutationF(table, columns, lo.ToAnySlice(v))
+	}), nil
 }

@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/apstndb/go-tabwrap"
-	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/olekukonko/tablewriter/tw"
 )
 
@@ -111,9 +111,9 @@ func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
 	if len(widths) == 0 {
 		return row
 	}
-	wrappedTexts := slices.Collect(hiter.Unify(
-		rw.Wrap,
-		hiter.Pairs(slices.Values(Texts(row)), slices.Values(widths))))
+	wrappedTexts := slices.Collect(iterutil.ZipShortestBy(slices.Values(Texts(row)), slices.Values(widths), func(text string, width int) string {
+		return rw.Wrap(text, width)
+	}))
 	result := make(Row, len(wrappedTexts))
 	for i, text := range wrappedTexts {
 		if i < len(row) {

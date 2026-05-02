@@ -18,8 +18,8 @@ import (
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	"github.com/k0kubun/pp/v3"
-	"github.com/ngicks/go-iterator-helper/hiter"
 	"github.com/samber/lo"
+	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -81,16 +81,20 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 			return nil, err
 		}
 
-		maxIDLength := max(hiter.Max(hiter.Map(func(row Row) int { return len(row[0].RawText()) /* ID */ }, slices.Values(rows))), 2)
+		maxIDLength := 2
+		for _, row := range rows {
+			maxIDLength = max(maxIDLength, len(row[0].RawText()) /* ID */)
+		}
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)
 
-		tree := strings.Join(slices.Collect(hiter.Map(
+		tree := strings.Join(slices.Collect(loi.Map(
+			slices.Values(rows),
 			func(r Row) string {
 				return tabwrap.FillLeft(r[0].RawText() /* ID */, maxIDLength) + " | " + r[1].RawText() /* Plan */
 			},
-			slices.Values(rows))), "\n")
+		)), "\n")
 
 		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+tabwrap.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
 			lox.IfOrEmpty(len(predicates) > 0, "\nPredicates:\n"+strings.Join(predicates, "\n"))+"\n"+
