@@ -41,12 +41,10 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 }
 
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
-	fullNameSetFds := loi.Associate(
-		fdsToInfoSeq(fds),
-		func(info *descriptorInfo) (string, struct{}) {
-			return info.FullName, struct{}{}
-		},
-	)
+	fullNameSetFds := make(map[string]struct{})
+	for info := range fdsToInfoSeq(fds) {
+		fullNameSetFds[info.FullName] = struct{}{}
+	}
 
 	upsertExists, upsertNotExists := splitExistence(fullNameSetFds, upsertPaths)
 	deleteExists, _ := splitExistence(fullNameSetFds, deletePaths)

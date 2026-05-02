@@ -98,12 +98,9 @@ func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
 	if len(e.Args) > 0 {
 		return spanner.KeyRange{}, fmt.Errorf("unknown args: %v", e.SQL())
 	}
-	namedArgMap := loi.Associate(
-		slices.Values(e.NamedArgs),
-		func(u *ast.NamedArg) (string, ast.Expr) {
-			return strings.ToLower(u.Name.Name), u.Value
-		},
-	)
+	namedArgMap := lo.Associate(e.NamedArgs, func(u *ast.NamedArg) (string, ast.Expr) {
+		return strings.ToLower(u.Name.Name), u.Value
+	})
 	startClosed, hasStartClosed := namedArgMap["start_closed"]
 	startOpen, hasStartOpen := namedArgMap["start_open"]
 	endClosed, hasEndClosed := namedArgMap["end_closed"]
