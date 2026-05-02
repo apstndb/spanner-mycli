@@ -201,6 +201,8 @@ func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.
 	return MaxByWithIdx(
 		invalidWidthCount,
 		WidthCount.Count,
+		// Keep the previous "shorter input wins" behavior from hiter.Pairs.
+		// loi.ZipBy2 pads missing values with zero values instead of stopping early.
 		loi.FilterMapI(seq, func(wc WidthCount, i int) (WidthCount, bool) {
 			if i >= len(adjustWidths) {
 				return invalidWidthCount, false

@@ -249,6 +249,8 @@ func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 	}
 
 	rw := f.newCondition()
+	// Keep the previous "shorter input wins" behavior from hiter.Pairs.
+	// loi.ZipBy2 pads missing values with zero values instead of stopping early.
 	return slices.Collect(loi.FilterMapI(slices.Values(headers), func(header string, i int) (string, bool) {
 		if i >= len(f.widths) {
 			return "", false

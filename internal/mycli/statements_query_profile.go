@@ -81,7 +81,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 			return nil, err
 		}
 
-		maxIDLength := max(loi.Max(loi.Map(slices.Values(rows), func(row Row) int { return len(row[0].RawText()) /* ID */ })), 2)
+		maxIDLength := max(lo.Max(lo.Map(rows, func(row Row, _ int) int { return len(row[0].RawText()) /* ID */ })), 2)
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)

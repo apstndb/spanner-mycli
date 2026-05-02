@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 )
 
@@ -63,9 +64,8 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		merged["CLI_DIRECT_READ"] = values
 	}
 
-	rows := slices.SortedFunc(
-		loi.MapToSeq(merged, func(k, v string) Row { return toRow(k, v) }),
-		func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* name */ })
+	rows := lo.MapToSlice(merged, func(k, v string) Row { return toRow(k, v) })
+	slices.SortFunc(rows, func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* name */ })
 
 	return &Result{
 		TableHeader:   toTableHeader("name", "value"),

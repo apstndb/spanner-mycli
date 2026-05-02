@@ -263,6 +263,8 @@ func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, err
 }
 
 func extractStructValues(structTypefields []*sppb.StructType_Field, structValues []*structpb.Value) []spanner.GenericColumnValue {
+	// Keep the previous "shorter input wins" behavior from hiter.Pairs.
+	// loi.ZipBy2 pads missing values with zero values instead of stopping early.
 	return slices.Collect(loi.FilterMapI(slices.Values(structTypefields), func(field *sppb.StructType_Field, i int) (spanner.GenericColumnValue, bool) {
 		if i >= len(structValues) {
 			return spanner.GenericColumnValue{}, false
