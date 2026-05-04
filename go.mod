@@ -12,13 +12,13 @@ require (
 	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
-	github.com/apstndb/go-tabwrap v0.1.2
+	github.com/apstndb/go-tabwrap v0.1.3
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.4.0
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
-	github.com/apstndb/spannerplan v0.1.3
+	github.com/apstndb/spannerplan v0.1.6
 	github.com/apstndb/spantype v0.3.11
 	github.com/apstndb/spanvalue v0.3.0
 	github.com/bufbuild/protocompile v0.14.1
@@ -79,7 +79,6 @@ require (
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
 	github.com/apstndb/ptyhelp v0.2.1 // indirect
-	github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 // indirect
 	github.com/aymanbagabas/go-pty v0.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
