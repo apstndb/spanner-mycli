@@ -1,4 +1,5 @@
 version: 2
+# cooldown is a Dependabot version-update option. It does not delay security updates.
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
