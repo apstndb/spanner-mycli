@@ -22,7 +22,7 @@ import (
 	"github.com/apstndb/gsqlutils"
 
 	"github.com/samber/lo"
-	"spheric.cloud/xiter"
+	loi "github.com/samber/lo/it"
 )
 
 const (
@@ -38,7 +38,7 @@ type inputStatement struct {
 
 func separateInput(input string) ([]inputStatement, error) {
 	stmts, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", input)
-	return slices.Collect(xiter.Map(slices.Values(stmts), convertStatement)), err
+	return slices.Collect(loi.Map(slices.Values(stmts), convertStatement)), err
 }
 
 func convertStatement(stmt gsqlutils.RawStatement) inputStatement {

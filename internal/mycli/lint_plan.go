@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ngicks/go-iterator-helper/hiter"
+	loi "github.com/samber/lo/it"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerplan"
@@ -126,7 +126,8 @@ func lintPlan(plan *sppb.QueryPlan) []string {
 }
 
 func formatKeyElemForLinkType(qp *spannerplan.QueryPlan, variableToExp map[string]*sppb.PlanNode, node *sppb.PlanNode, linkType string) []string {
-	return slices.Collect(hiter.Map(
+	return slices.Collect(loi.Map(
+		loi.Filter(slices.Values(node.GetChildLinks()), LinkTypePred(linkType)),
 		formatKeyElem(qp, variableToExp),
-		hiter.Filter(LinkTypePred(linkType), slices.Values(node.GetChildLinks()))))
+	))
 }

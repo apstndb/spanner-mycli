@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/apstndb/go-tabwrap"
-	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
@@ -249,9 +249,9 @@ func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 	}
 
 	rw := f.newCondition()
-	return slices.Collect(hiter.Unify(
-		rw.Wrap,
-		hiter.Pairs(slices.Values(headers), slices.Values(f.widths))))
+	return slices.Collect(iterutil.ZipShortestBy(slices.Values(headers), slices.Values(f.widths), func(header string, width int) string {
+		return rw.Wrap(header, width)
+	}))
 }
 
 // wrapRow wraps row columns according to calculated widths, preserving cell metadata.

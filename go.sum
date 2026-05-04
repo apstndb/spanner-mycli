@@ -2485,8 +2485,8 @@ github.com/apstndb/go-tabwrap v0.1.2 h1:75C3WtTcn4NBw7sM29zWpQzgrwH77lGKj0OC72OB
 github.com/apstndb/go-tabwrap v0.1.2/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb/JBF3wY3HuDM6cB5Y0AzGkXbmVzQ87J1vU=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba/go.mod h1:adI+0n+0AY1J+qhb7UbW3HjsUD15JCQPIih7FHLcrI4=
-github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae h1:dM4EYL52u6aQh97R2agNDukCYhPs4aSDdkSZkvVvcf8=
-github.com/apstndb/gsqlutils v0.0.0-20250517013444-d2334c88d6ae/go.mod h1:xW+J2790w/YgZZf3y5ff+/iO+dQoJQDGPrNkSLKQ9xc=
+github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0 h1:VySrhGRfqXUDCrUuAEz70DrDnPrvj/nXGnUHwJF3PG4=
+github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0/go.mod h1:VwhJDip+HamDWWt+Ol4ECFU0g0HiveA27DeNkt3U8S0=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82 h1:l54uIOgcH4r0lTg8xKRhehV71v8m4J+76zpjTGcRqsY=
 github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
 github.com/apstndb/memebridge v0.6.0 h1:45uu/RFF63u5vJ+d8HT4PvOfotm1cV4eEveWFwGvElI=
@@ -2876,8 +2876,8 @@ github.com/hashicorp/golang-lru v1.0.2 h1:dV3g9Z/unq5DpblPpw+Oqcv4dU/1omnb4Ok8iP
 github.com/hashicorp/golang-lru v1.0.2/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/hymkor/go-multiline-ny v0.22.4 h1:Ag2rkBpDnr3jp+AHe1CuXSOQ4AQ8D0+gBNVf+BAX+/0=
-github.com/hymkor/go-multiline-ny v0.22.4/go.mod h1:v2lqQooHVAO53WICAIbgTn74bQtzsg4tFn29d+7JPwY=
+github.com/hymkor/go-multiline-ny v0.23.1 h1:IULtIWsQHhGVxy7ferWNtRav9FZFX19K46GSdC2R2z4=
+github.com/hymkor/go-multiline-ny v0.23.1/go.mod h1:uwuSgo/xlV0UODTd88wNlllw+fjb+P8dlHvh7dlMqT4=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/iancoleman/strcase v0.3.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
@@ -2982,10 +2982,8 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJ
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/morikuni/aec v1.0.0 h1:nP9CBfwrvYnBRgY6qfDQkygYDmYwOilePFkwzv4dU8A=
 github.com/morikuni/aec v1.0.0/go.mod h1:BbKIizmSmc5MMPqRYbxO4ZU0S0+P200+tUnFx7PXmsc=
-github.com/ngicks/go-iterator-helper v0.0.21 h1:34dorbGaeL7RgxdymHBqZeL+VLL3hUyAL9QdE5HZrRQ=
-github.com/ngicks/go-iterator-helper v0.0.21/go.mod h1:g++KxWVGEkOnIhXVvpNNOdn7ON57aOpfu80ccBvPVHI=
-github.com/nyaosorg/go-readline-ny v1.14.1 h1:bWyXpR6jRaCXysx4bnioxk36+YjQ6dypHKMjHnzIXdk=
-github.com/nyaosorg/go-readline-ny v1.14.1/go.mod h1:/BDf3/H/AScnvey4LoDws1bjTZDB76EE7uKnW2apoKU=
+github.com/nyaosorg/go-readline-ny v1.14.3 h1:HcmGfGgq6M7n7U6Cncd6KwghP84NCLeHzewJ4Hl0M6E=
+github.com/nyaosorg/go-readline-ny v1.14.3/go.mod h1:/BDf3/H/AScnvey4LoDws1bjTZDB76EE7uKnW2apoKU=
 github.com/nyaosorg/go-ttyadapter v0.3.0 h1:/Y7+rGJ0LEcs+AExevwNmND2VJvvpBmgbMuCbntKq3c=
 github.com/nyaosorg/go-ttyadapter v0.3.0/go.mod h1:w6ySb/Y8rpr0uIju4vN/TMRHC/6ayabORHmEVs6d/qE=
 github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 h1:zrbMGy9YXpIeTnGj4EljqMiZsIcE09mmF8XsD5AYOJc=
@@ -4393,5 +4391,3 @@ rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8
 rsc.io/pdf v0.1.1/go.mod h1:n8OzWcQ6Sp37PL01nO98y4iUCRdTGarVfzxY20ICaU4=
 rsc.io/quote/v3 v3.1.0/go.mod h1:yEA65RcK8LyAZtP9Kv3t0HmxON59tX3rD+tICJqUlj0=
 rsc.io/sampler v1.3.0/go.mod h1:T1hPZKmBbMNahiBKFy5HrXp6adAjACjK9JXDnKaTXpA=
-spheric.cloud/xiter v0.0.0-20250113160306-a1a2c1108100 h1:zvxvrLygkh0bC7Ui3Vwa29g7v1FJ4utoIoWk5fOtSIc=
-spheric.cloud/xiter v0.0.0-20250113160306-a1a2c1108100/go.mod h1:i4SlkNfFrn1974zbGZWg8FYXAWLnrS6cYAXtSfmIDhU=

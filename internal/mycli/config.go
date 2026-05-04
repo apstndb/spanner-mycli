@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -37,7 +36,6 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"golang.org/x/term"
-	"spheric.cloud/xiter"
 
 	"github.com/apstndb/spanner-mycli/enums"
 )
@@ -525,7 +523,9 @@ func applyDirectedRead(sysVars *systemVariables, opts *spannerOptions) error {
 func applyFormatAndSetOptions(sysVars *systemVariables, opts *spannerOptions) error {
 	// Set CLI_FORMAT defaults based on flags before processing --set
 	// This allows --set CLI_FORMAT=X to override these defaults
-	sets := maps.Collect(xiter.MapKeys(maps.All(opts.Set), strings.ToUpper))
+	sets := lo.MapKeys(opts.Set, func(_ string, key string) string {
+		return strings.ToUpper(key)
+	})
 	if _, ok := sets["CLI_FORMAT"]; !ok {
 		formatMode := getFormatFromOptions(opts)
 		if formatMode != enums.DisplayModeUnspecified {

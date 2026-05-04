@@ -10,7 +10,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/ngicks/go-iterator-helper/hiter"
+	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
 )
 
@@ -72,11 +72,9 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		IsExecutedDML:   true, // This is a batch DML statement
 		CommitTimestamp: result.CommitResponse.CommitTs,
 		CommitStats:     result.CommitResponse.CommitStats,
-		Rows: slices.Collect(hiter.Unify(
-			func(s spanner.Statement, n int64) Row {
-				return toRow(s.SQL, strconv.FormatInt(n, 10))
-			},
-			hiter.Pairs(slices.Values(dmls), slices.Values(affectedRowSlice)))),
+		Rows: slices.Collect(iterutil.ZipShortestBy(slices.Values(dmls), slices.Values(affectedRowSlice), func(s spanner.Statement, affectedRows int64) Row {
+			return toRow(s.SQL, strconv.FormatInt(affectedRows, 10))
+		})),
 		TableHeader:      toTableHeader("DML", "Rows"),
 		AffectedRows:     int(result.Affected),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),

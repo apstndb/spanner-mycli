@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"cloud.google.com/go/spanner"
-	"github.com/ngicks/go-iterator-helper/hiter"
+	loi "github.com/samber/lo/it"
 )
 
 type PartitionStatement struct{ SQL string }
@@ -23,11 +23,12 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 		return nil, err
 	}
 
-	rows := slices.Collect(hiter.Map(
+	rows := slices.Collect(loi.Map(
+		slices.Values(partitions),
 		func(partition *spanner.Partition) Row {
 			return toRow(base64.StdEncoding.EncodeToString(partition.GetPartitionToken()))
 		},
-		slices.Values(partitions)))
+	))
 
 	ts, err := batchROTx.Timestamp()
 	if err != nil {

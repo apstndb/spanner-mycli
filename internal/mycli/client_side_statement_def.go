@@ -14,10 +14,8 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
-	"github.com/ngicks/go-iterator-helper/hiter"
-	"github.com/ngicks/go-iterator-helper/hiter/stringsiter"
 	"github.com/samber/lo"
-	scxiter "spheric.cloud/xiter"
+	loi "github.com/samber/lo/it"
 )
 
 // clientSideStatementDescription is a human-readable part of clientSideStatementDef.
@@ -126,9 +124,7 @@ func namedGroups(re *regexp.Regexp, match []string) map[string]string {
 	return groups
 }
 
-var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
-	return strings.ReplaceAll(s, " ", `\s+`)
-}, slices.Values([]string{
+var schemaObjectsReStr = strings.Join(slices.Collect(loi.Map(slices.Values([]string{
 	"SCHEMA",
 	"DATABASE",
 	"PLACEMENT",
@@ -143,7 +139,9 @@ var schemaObjectsReStr = stringsiter.Join("|", hiter.Map(func(s string) string {
 	"MODEL",
 	"VECTOR INDEX",
 	"PROPERTY GRAPH",
-})))
+}), func(s string) string {
+	return strings.ReplaceAll(s, " ", `\s+`)
+})), "|")
 
 var whitespaceRe = regexp.MustCompile(`\s+`)
 
@@ -1182,14 +1180,9 @@ func parsePaths(p *memefish.Parser) ([]string, error) {
 		}
 		return sliceOf(name), nil
 	case *ast.TupleStructLiteral:
-		names, err := scxiter.TryCollect(scxiter.MapErr(
-			slices.Values(e.Values),
-			exprToFullName))
-		if err != nil {
-			return nil, err
-		}
-
-		return names, err
+		return lo.MapErr(e.Values, func(expr ast.Expr, _ int) (string, error) {
+			return exprToFullName(expr)
+		})
 	default:
 		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
 	}
@@ -1200,7 +1193,7 @@ func exprToFullName(expr ast.Expr) (string, error) {
 	case *ast.Ident:
 		return e.Name, nil
 	case *ast.Path:
-		return scxiter.Join(hiter.Map(func(ident *ast.Ident) string { return ident.Name }, slices.Values(e.Idents)), "."), nil
+		return strings.Join(slices.Collect(loi.Map(slices.Values(e.Idents), func(ident *ast.Ident) string { return ident.Name })), "."), nil
 	default:
 		return "", fmt.Errorf("must be ident or path, but: %T", expr)
 	}

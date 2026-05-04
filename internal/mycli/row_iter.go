@@ -10,13 +10,13 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/go-json-experiment/json"
-	"github.com/ngicks/go-iterator-helper/hiter"
+	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // extractColumnNames extract column names from ResultSetMetadata.RowType.Fields.
 func extractColumnNames(fields []*sppb.StructType_Field) []string {
-	return slices.Collect(hiter.Map((*sppb.StructType_Field).GetName, slices.Values(fields)))
+	return slices.Collect(loi.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
 }
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.

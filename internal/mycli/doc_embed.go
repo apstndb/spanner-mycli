@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	spannerdocs "github.com/apstndb/spanner-docs-embed"
+	"github.com/samber/lo"
 )
 
 // docInfo describes a known Spanner reference document.
@@ -130,10 +131,9 @@ func loadEmbeddedDocs(cache *docCache) error {
 // formatDocCatalog formats the document catalog for the LLM system prompt.
 // It groups documents by category, marks cached ones, and includes descriptions.
 func formatDocCatalog(cache *docCache) string {
-	cachedNames := make(map[string]bool)
-	for _, name := range cache.Names() {
-		cachedNames[name] = true
-	}
+	cachedNames := lo.Associate(cache.Names(), func(name string) (string, bool) {
+		return name, true
+	})
 
 	var b strings.Builder
 
