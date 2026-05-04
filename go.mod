@@ -1,6 +1,6 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.25
+go 1.25.0
 
 require (
 	cloud.google.com/go v0.123.0
@@ -50,7 +50,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.10.2
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.39.0
-	golang.org/x/time v0.14.0
+	golang.org/x/time v0.15.0
 	google.golang.org/api v0.256.0
 	google.golang.org/genai v1.47.0
 	google.golang.org/grpc v1.76.0
