@@ -1,6 +1,6 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.25
+go 1.25.0
 
 require (
 	cloud.google.com/go v0.123.0
@@ -24,7 +24,7 @@ require (
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
-	github.com/fatih/color v1.18.0
+	github.com/fatih/color v1.19.0
 	github.com/go-json-experiment/json v0.0.0-20250813233538-9b1f9ea2e11b
 	github.com/go-sprout/sprout v1.0.1
 	github.com/goccy/go-yaml v1.18.0
@@ -184,7 +184,7 @@ require (
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/genproto v0.0.0-20250818200422-3122310a409c // indirect
