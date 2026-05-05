@@ -2481,8 +2481,8 @@ github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff h1:qcDUJzSKYWPlv8KyEHThTJpMyg/z4iMjCTpWxKWyCrA=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff/go.mod h1:klldr+wegB1KZME56IMyXEbpWdlnpstoHwJLXiHs6o8=
-github.com/apstndb/go-tabwrap v0.1.2 h1:75C3WtTcn4NBw7sM29zWpQzgrwH77lGKj0OC72OBZfo=
-github.com/apstndb/go-tabwrap v0.1.2/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
+github.com/apstndb/go-tabwrap v0.1.3 h1:5lO2M7Zl5NOus4cve0tu58j3txnNRAEd9MAsFitDCQw=
+github.com/apstndb/go-tabwrap v0.1.3/go.mod h1:duMNZZhNjqj/VXR2AXJN1MWko2RyIytSP1NJyhMmUV4=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb/JBF3wY3HuDM6cB5Y0AzGkXbmVzQ87J1vU=
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba/go.mod h1:adI+0n+0AY1J+qhb7UbW3HjsUD15JCQPIih7FHLcrI4=
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0 h1:VySrhGRfqXUDCrUuAEz70DrDnPrvj/nXGnUHwJF3PG4=
@@ -2497,14 +2497,12 @@ github.com/apstndb/spanemuboost v0.4.0 h1:PSr0bjmQlMn7iocJygIM4j8fTTDsvwsZdFsr9T
 github.com/apstndb/spanemuboost v0.4.0/go.mod h1:eNkNh4KbpREZ8vkjMerGbqDt8L05AHTw+Ek8XXHxyUI=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l0QJZRVSRwBXTxaMMAjrmF0kQDjXlCM0bwTCo5Gs=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6/go.mod h1:Enpmw/D11tME865ROYDQzoHSIo9V8uCgWdu+fxA7n2M=
-github.com/apstndb/spannerplan v0.1.3 h1:nFzTEvRL4yMzQeFdtWp3V0VaUidNA/o3T7HyIYIGk/U=
-github.com/apstndb/spannerplan v0.1.3/go.mod h1:iPN9r9R2AknoFnBFqA232cUO+2ZkHpk4Q1qeSAU9xEM=
+github.com/apstndb/spannerplan v0.1.6 h1:pm1fcp2ciqxoXW+wOMuH7MENlIsJ50FSPhyTVrVtG6s=
+github.com/apstndb/spannerplan v0.1.6/go.mod h1:PMc14PeeNvrzidbisEuoVwpKmhZz1zy41fw8IzKQVbQ=
 github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
 github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
 github.com/apstndb/spanvalue v0.3.0 h1:MsHW+ZhHXdHmeoVjG/qw785mGvyKJ7GBz3cUPYEIDI4=
 github.com/apstndb/spanvalue v0.3.0/go.mod h1:xKnvCW0eC+EtZfICvyesMpr/PJTY8tXjcWR+i0x0dZw=
-github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6 h1:aTufxpgGiMiSQ/yoJzWsX7G7DCpvGOaDFtEYiE7QNmA=
-github.com/apstndb/treeprint v0.0.0-20250529153958-e82576b37da6/go.mod h1:kIPoI1ZQRmOP9hVdFSFjPGwOPVEOSpAEIFgG09dK+7Y=
 github.com/aymanbagabas/go-pty v0.2.2 h1:YZREB4eSj+1xdbbItIokX0ekjjeifgJOA+ZvxU4/WM8=
 github.com/aymanbagabas/go-pty v0.2.2/go.mod h1:gfvlwH+0U66BCwxJREjJaAOEs9H1OFf3YFjI9WSiZ04=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
