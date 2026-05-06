@@ -205,7 +205,6 @@ func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clien
 
 	options = append(options,
 		spanemuboost.EnableAutoConfig(),
-		spanemuboost.WithClientConfig(spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{MinOpened: 5}}),
 		spanemuboost.WithSetupDDLs(ddls),
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)

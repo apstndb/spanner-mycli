@@ -18,11 +18,11 @@ package mycli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,10 +60,6 @@ import (
 
 var defaultClientConfig = spanner.ClientConfig{
 	DisableNativeMetrics: true,
-	SessionPoolConfig: spanner.SessionPoolConfig{
-		MinOpened: 1,
-		MaxOpened: 10, // FIXME: integration_test requires more than a single session
-	},
 }
 
 var defaultClientOpts = []option.ClientOption{
@@ -72,11 +68,7 @@ var defaultClientOpts = []option.ClientOption{
 
 func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConfig {
 	if override := sysVars.Internal.EmbeddedClientConfig; override != nil {
-		clientConfig := *override
-		if reflect.DeepEqual(clientConfig.SessionPoolConfig, spanner.SessionPoolConfig{}) {
-			clientConfig.SessionPoolConfig = defaultClientConfig.SessionPoolConfig
-		}
-		return clientConfig
+		return *override
 	}
 	return defaultClientConfig
 }
@@ -991,10 +983,36 @@ func createClientOptions(ctx context.Context, credential []byte, sysVars *system
 		}
 		opts = append(opts, option.WithTokenSource(source))
 	case len(credential) > 0:
-		opts = append(opts, option.WithCredentialsJSON(credential))
+		opt, err := credentialsJSONOption(credential)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, opt)
 	}
 
 	return opts, nil
+}
+
+func credentialsJSONOption(credential []byte) (option.ClientOption, error) {
+	var metadata struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(credential, &metadata); err != nil {
+		return nil, fmt.Errorf("parse credential type: %w", err)
+	}
+
+	switch metadata.Type {
+	case string(option.ServiceAccount):
+		return option.WithAuthCredentialsJSON(option.ServiceAccount, credential), nil
+	case string(option.AuthorizedUser):
+		return option.WithAuthCredentialsJSON(option.AuthorizedUser, credential), nil
+	case string(option.ImpersonatedServiceAccount):
+		return option.WithAuthCredentialsJSON(option.ImpersonatedServiceAccount, credential), nil
+	case string(option.ExternalAccount):
+		return option.WithAuthCredentialsJSON(option.ExternalAccount, credential), nil
+	default:
+		return nil, fmt.Errorf("unsupported credential type %q", metadata.Type)
+	}
 }
 
 func createSession(ctx context.Context, credential []byte, sysVars *systemVariables) (*Session, error) {
