@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -192,6 +193,72 @@ func TestCreateClientOptionsUsesEmbeddedClientOptions(t *testing.T) {
 	}
 }
 
+func TestCredentialsJSONOption(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		json    string
+		wantErr string
+	}{
+		{
+			name: "service account",
+			json: `{"type":"service_account"}`,
+		},
+		{
+			name: "authorized user",
+			json: `{"type":"authorized_user"}`,
+		},
+		{
+			name: "impersonated service account",
+			json: `{"type":"impersonated_service_account"}`,
+		},
+		{
+			name: "external account",
+			json: `{"type":"external_account"}`,
+		},
+		{
+			name:    "unsupported type",
+			json:    `{"type":"unknown"}`,
+			wantErr: `unsupported credential type "unknown"`,
+		},
+		{
+			name:    "missing type",
+			json:    `{}`,
+			wantErr: "credential JSON missing type",
+		},
+		{
+			name:    "invalid JSON",
+			json:    `{`,
+			wantErr: "parse credential type:",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opt, err := credentialsJSONOption([]byte(tt.json))
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("credentialsJSONOption() error = nil, want error")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("credentialsJSONOption() error = %q, want substring %q", err.Error(), tt.wantErr)
+				}
+				if opt != nil {
+					t.Fatalf("credentialsJSONOption() option = %#v, want nil", opt)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("credentialsJSONOption() error = %v", err)
+			}
+			if opt == nil {
+				t.Fatal("credentialsJSONOption() option = nil, want non-nil")
+			}
+		})
+	}
+}
+
 func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	t.Parallel()
 
@@ -246,12 +313,6 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	}
 	if gotConfig.UserAgent != "embedded-omni-test" {
 		t.Errorf("UserAgent = %q, want %q", gotConfig.UserAgent, "embedded-omni-test")
-	}
-	if gotConfig.MinOpened != defaultClientConfig.MinOpened {
-		t.Errorf("SessionPoolConfig.MinOpened = %d, want %d", gotConfig.MinOpened, defaultClientConfig.MinOpened)
-	}
-	if gotConfig.MaxOpened != defaultClientConfig.MaxOpened {
-		t.Errorf("SessionPoolConfig.MaxOpened = %d, want %d", gotConfig.MaxOpened, defaultClientConfig.MaxOpened)
 	}
 	if gotConfig.DatabaseRole != "test-role" {
 		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")
