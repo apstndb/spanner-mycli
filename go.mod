@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/longrunning v0.9.0
+	cloud.google.com/go/longrunning v0.12.0
 	cloud.google.com/go/spanner v1.91.0
 	cloud.google.com/go/storage v1.56.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
