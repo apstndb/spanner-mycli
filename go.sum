@@ -2497,8 +2497,8 @@ github.com/apstndb/spanemuboost v0.4.1 h1:c5j21noX6fSY8LBFdoXqPw+zo6NudlWR5qiMwT
 github.com/apstndb/spanemuboost v0.4.1/go.mod h1:5qMaU+8vWhS4jcRi9tpUhy7Z2sY3Ljrl7FbCap8nEGo=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l0QJZRVSRwBXTxaMMAjrmF0kQDjXlCM0bwTCo5Gs=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6/go.mod h1:Enpmw/D11tME865ROYDQzoHSIo9V8uCgWdu+fxA7n2M=
-github.com/apstndb/spannerplan v0.1.6 h1:pm1fcp2ciqxoXW+wOMuH7MENlIsJ50FSPhyTVrVtG6s=
-github.com/apstndb/spannerplan v0.1.6/go.mod h1:PMc14PeeNvrzidbisEuoVwpKmhZz1zy41fw8IzKQVbQ=
+github.com/apstndb/spannerplan v0.1.9 h1:T9itZiO5KVQMvoajA0SLJr/DesMOjdYY6i5mSmrS4l8=
+github.com/apstndb/spannerplan v0.1.9/go.mod h1:7Xfm892U2wPhDrT5nf8NMEvEGtk7eGAh15Qa7e316HA=
 github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
 github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
 github.com/apstndb/spanvalue v0.3.0 h1:MsHW+ZhHXdHmeoVjG/qw785mGvyKJ7GBz3cUPYEIDI4=
