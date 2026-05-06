@@ -1000,6 +1000,9 @@ func credentialsJSONOption(credential []byte) (option.ClientOption, error) {
 	if err := json.Unmarshal(credential, &metadata); err != nil {
 		return nil, fmt.Errorf("parse credential type: %w", err)
 	}
+	if metadata.Type == "" {
+		return nil, errors.New("credential JSON missing type")
+	}
 
 	switch metadata.Type {
 	case string(option.ServiceAccount):

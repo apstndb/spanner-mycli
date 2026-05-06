@@ -81,6 +81,12 @@ For full gh-helper command reference, see [dev-docs/issue-management.md](dev-doc
 - **Static patterns**: Precompile at package level (`var patternRe = regexp.MustCompile(...)`)
 - **Dynamic patterns**: Compile at runtime, avoid caching unless profiling shows need
 
+### Go Modernization Baseline
+- This module targets Go 1.25. Use language features and standard-library APIs available through Go 1.25 when touching nearby code, while keeping modernization changes scoped.
+- Do not add loop-variable shadow copies only for closure or parallel-subtest safety. Go 1.22+ gives loop variables per-iteration scope for modules declaring `go 1.22` or later.
+- Prefer clear standard-library helpers over older hand-written patterns when they fit: `slices`, `maps`, `cmp.Or`, `min`/`max`, integer `range`, `sync.OnceFunc`/`OnceValue`, `sync.WaitGroup.Go`, `testing.T.Context()`, and `testing.B.Loop()`.
+- Treat modernization as opportunistic cleanup, not a reason for broad churn-only rewrites.
+
 ## Development Workflow
 
 ### Worktree Usage

@@ -223,6 +223,11 @@ func TestCredentialsJSONOption(t *testing.T) {
 			wantErr: `unsupported credential type "unknown"`,
 		},
 		{
+			name:    "missing type",
+			json:    `{}`,
+			wantErr: "credential JSON missing type",
+		},
+		{
 			name:    "invalid JSON",
 			json:    `{`,
 			wantErr: "parse credential type:",
