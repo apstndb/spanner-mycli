@@ -1093,6 +1093,10 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"FOO BAR",
 		"SELEC T FROM t1",
 		"BEGIN PRIORITY CRITICAL",
+		"EXPLAIN FORMAT= SELECT * FROM t1",
+		"EXPLAIN FORMAT SELECT * FROM t1",
+		"EXPLAIN WIDTH= SELECT * FROM t1",
+		"EXPLAIN WIDTH SELECT * FROM t1",
 	}
 
 	for _, input := range invalidInputs {

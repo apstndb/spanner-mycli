@@ -539,20 +539,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
-			formatStr := lo.FromPtr(options["FORMAT"])
 			var format enums.ExplainFormat
-			if formatStr != "" {
-				format, err = enums.ExplainFormatString(formatStr)
+			if formatStr, ok := options["FORMAT"]; ok {
+				if formatStr == nil || *formatStr == "" {
+					return nil, fmt.Errorf("invalid FORMAT option, expected FORMAT=<format>")
+				}
+				format, err = enums.ExplainFormatString(*formatStr)
 				if err != nil {
 					return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 				}
 			}
 
 			var width int64
-			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
-				width, err = strconv.ParseInt(widthStr, 10, 64)
+			if widthStr, ok := options["WIDTH"]; ok {
+				if widthStr == nil || *widthStr == "" {
+					return nil, fmt.Errorf("invalid WIDTH option, expected WIDTH=<width>")
+				}
+				width, err = strconv.ParseInt(*widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", widthStr, err)
+					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", *widthStr, err)
 				}
 				if width <= 0 {
 					return nil, fmt.Errorf("invalid WIDTH option value: %d, expected a positive integer", width)
