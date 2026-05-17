@@ -18,7 +18,7 @@ require (
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.4.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
-	github.com/apstndb/spannerplan v0.1.9
+	github.com/apstndb/spannerplan v0.1.11
 	github.com/apstndb/spantype v0.3.11
 	github.com/apstndb/spanvalue v0.3.0
 	github.com/bufbuild/protocompile v0.14.1

@@ -30,6 +30,7 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
+	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/apstndb/spannerplan/protoyaml"
 	spstats "github.com/apstndb/spannerplan/stats"
 	"github.com/goccy/go-yaml"
@@ -41,10 +42,11 @@ import (
 )
 
 type ExplainStatement struct {
-	Explain string
-	IsDML   bool // Whether the statement being explained is a DML
-	Format  enums.ExplainFormat
-	Width   int64
+	Explain       string
+	IsDML         bool // Whether the statement being explained is a DML
+	Format        enums.ExplainFormat
+	Width         int64
+	PrintSections *planref.PrintSections
 }
 
 func (s *ExplainStatement) String() string {
@@ -54,37 +56,40 @@ func (s *ExplainStatement) String() string {
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
 func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplain(ctx, session, s.Explain, s.IsDML, s.Format, s.Width)
+	return executeExplain(ctx, session, s.Explain, s.IsDML, s.Format, s.Width, s.PrintSections)
 }
 
 type ExplainAnalyzeStatement struct {
-	Query  string
-	Format enums.ExplainFormat
-	Width  int64
+	Query         string
+	Format        enums.ExplainFormat
+	Width         int64
+	PrintSections *planref.PrintSections
 }
 
 func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	sql := s.Query
 
-	return executeExplainAnalyze(ctx, session, sql, s.Format, s.Width)
+	return executeExplainAnalyze(ctx, session, sql, s.Format, s.Width, s.PrintSections)
 }
 
 type ExplainAnalyzeDmlStatement struct {
-	Dml    string
-	Format enums.ExplainFormat
-	Width  int64
+	Dml           string
+	Format        enums.ExplainFormat
+	Width         int64
+	PrintSections *planref.PrintSections
 }
 
 func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
 
 func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return executeExplainAnalyzeDML(ctx, session, s.Dml, s.Format, s.Width)
+	return executeExplainAnalyzeDML(ctx, session, s.Dml, s.Format, s.Width, s.PrintSections)
 }
 
 type ExplainLastQueryStatement struct {
-	Analyze bool
-	Format  enums.ExplainFormat
-	Width   int64
+	Analyze       bool
+	Format        enums.ExplainFormat
+	Width         int64
+	PrintSections *planref.PrintSections
 }
 
 func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -102,10 +107,10 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 		result, err = generateExplainAnalyzeResult(session.systemVariables,
 			session.systemVariables.Internal.LastQueryCache.QueryPlan,
 			session.systemVariables.Internal.LastQueryCache.QueryStats,
-			s.Format, s.Width)
+			s.Format, s.Width, s.PrintSections)
 	} else {
 		result, err = generateExplainResult(session.systemVariables,
-			session.systemVariables.Internal.LastQueryCache.QueryPlan, s.Format, s.Width)
+			session.systemVariables.Internal.LastQueryCache.QueryPlan, s.Format, s.Width, s.PrintSections)
 	}
 
 	if err != nil {
@@ -228,7 +233,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 	return result, nil
 }
 
-func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format enums.ExplainFormat, width int64) (*Result, error) {
+func executeExplain(ctx context.Context, session *Session, sql string, isDML bool, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, true)
 	if err != nil {
 		return nil, err
@@ -243,7 +248,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 		return nil, errors.New("EXPLAIN statement is not supported for Cloud Spanner Emulator")
 	}
 
-	result, err := generateExplainResult(session.systemVariables, queryPlan, format, width)
+	result, err := generateExplainResult(session.systemVariables, queryPlan, format, width, printSections)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +259,10 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 	return result, nil
 }
 
-func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format enums.ExplainFormat, width int64) (*Result, error) {
+func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
 	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
-	rows, predicates, err := processPlanWithoutStats(queryPlan, format, width)
+	rows, predicates, appendices, err := processPlanWithoutStats(queryPlan, format, width, resolveExplainPrintSections(sysVars, printSections))
 	if err != nil {
 		return nil, err
 	}
@@ -268,12 +273,13 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		AffectedRows: len(rows),
 		Rows:         rows,
 		Predicates:   predicates,
+		Appendices:   appendices,
 		LintResults:  lox.IfOrEmptyF(sysVars.Query.LintPlan, func() []string { return lintPlan(queryPlan) }),
 	}
 	return result, nil
 }
 
-func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64) (*Result, error) {
+func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -292,7 +298,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator")
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats, format, width)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats, format, width, printSections)
 	if err != nil {
 		return nil, err
 	}
@@ -316,25 +322,25 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 }
 
 func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
-	format enums.ExplainFormat, width int64,
+	format enums.ExplainFormat, width int64, printSections *planref.PrintSections,
 ) (*Result, error) {
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query stats: %w", err)
 	}
-	return buildExplainAnalyzeResult(sysVars, plan, queryStats, format, width)
+	return buildExplainAnalyzeResult(sysVars, plan, queryStats, format, width, printSections)
 }
 
 // buildExplainAnalyzeResult builds an EXPLAIN ANALYZE result from pre-parsed QueryStats.
 func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, queryStats QueryStats,
-	format enums.ExplainFormat, width int64,
+	format enums.ExplainFormat, width int64, printSections *planref.PrintSections,
 ) (*Result, error) {
 	def := sysVars.Display.ParsedAnalyzeColumns
 	inlines := sysVars.Display.ParsedInlineStats
 	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
 
-	rows, predicates, err := processPlan(plan, def, inlines, format, width)
+	rows, predicates, appendices, err := processPlan(plan, def, inlines, format, width, resolveExplainPrintSections(sysVars, printSections))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
@@ -355,6 +361,7 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 		Stats:        queryStats,
 		Rows:         rows,
 		Predicates:   predicates,
+		Appendices:   appendices,
 		LintResults:  lintResults,
 		IndexAdvice:  extractIndexAdvice(plan),
 	}
@@ -378,7 +385,7 @@ func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Al
 	return columnNames, columnAlign
 }
 
-func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64) (*Result, error) {
+func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -395,7 +402,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 		return nil, err
 	}
 
-	result, err := generateExplainAnalyzeResult(session.systemVariables, dmlResult.Plan, queryStats, format, width)
+	result, err := generateExplainAnalyzeResult(session.systemVariables, dmlResult.Plan, queryStats, format, width, printSections)
 	if err != nil {
 		return nil, err
 	}
@@ -415,47 +422,31 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	return result, nil
 }
 
-func processPlanWithoutStats(plan *sppb.QueryPlan, format enums.ExplainFormat, width int64) (rows []Row, predicates []string, err error) {
-	return processPlan(plan, nil, nil, format, width)
+func processPlanWithoutStats(plan *sppb.QueryPlan, format enums.ExplainFormat, width int64, printSections planref.PrintSections) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
+	return processPlan(plan, nil, nil, format, width, printSections)
 }
 
-func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format enums.ExplainFormat, width int64) (rows []Row, predicates []string, err error) {
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format enums.ExplainFormat, width int64, printSections planref.PrintSections) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
 	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), inlineStatsDefs, format, width)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	var maxIDLength int
-	for _, row := range rowsWithPredicates {
-		if length := len(fmt.Sprint(row.ID)); length > maxIDLength {
-			maxIDLength = length
-		}
+		return nil, nil, nil, err
 	}
 
 	for _, row := range rowsWithPredicates {
-		rowStrs := []string{row.FormatID(), row.Text()}
+		rowStrs := []string{formatPlanRowID(row, printSections), row.Text()}
 		for _, colRender := range columnRenderDefs {
 			c, err := colRender.MapFunc(row)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 
 			rowStrs = append(rowStrs, c)
 		}
 		rows = append(rows, toRow(rowStrs...))
-
-		var prefix string
-		for i, predicate := range row.Predicates {
-			if i == 0 {
-				prefix = fmt.Sprintf("%*d:", maxIDLength, row.ID)
-			} else {
-				prefix = strings.Repeat(" ", maxIDLength+1)
-			}
-			predicates = append(predicates, fmt.Sprintf("%s %s", prefix, predicate))
-		}
 	}
+	predicates, appendices = buildPlanAppendices(rowsWithPredicates, printSections)
 
-	return rows, predicates, nil
+	return rows, predicates, appendices, nil
 }
 
 type columnRenderDef struct {

@@ -176,6 +176,7 @@ type Result struct {
 	ColumnAlign      []tw.Align // optional
 	Rows             []Row
 	Predicates       []string
+	Appendices       []ResultAppendix
 	AffectedRows     int
 	AffectedRowsType rowCountType
 	Stats            QueryStats

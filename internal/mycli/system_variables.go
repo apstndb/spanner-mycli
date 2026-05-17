@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -64,35 +65,37 @@ type ConnectionVars struct {
 
 // DisplayVars holds display and output formatting configuration.
 type DisplayVars struct {
-	CLIFormat            enums.DisplayMode   // CLI_FORMAT
-	Verbose              bool                // CLI_VERBOSE
-	Prompt               string              // CLI_PROMPT
-	Prompt2              string              // CLI_PROMPT2
-	HistoryFile          string              // CLI_HISTORY_FILE
-	TabWidth             int64               // CLI_TAB_WIDTH
-	TabVisualize         bool                // CLI_TAB_VISUALIZE
-	EnableHighlight      bool                // CLI_ENABLE_HIGHLIGHT
-	UsePager             bool                // CLI_USE_PAGER
-	AutoWrap             bool                // CLI_AUTOWRAP
-	FixedWidth           *int64              // CLI_FIXED_WIDTH
-	MultilineProtoText   bool                // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock    bool                // CLI_MARKDOWN_CODEBLOCK
-	SkipColumnNames      bool                // CLI_SKIP_COLUMN_NAMES
-	SuppressResultLines  bool                // CLI_SUPPRESS_RESULT_LINES
-	ExplainFormat        enums.ExplainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth     int64               // CLI_EXPLAIN_WRAP_WIDTH
-	OutputTemplateFile   string              // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
-	OutputTemplate       *template.Template
-	AnalyzeColumns       string // CLI_ANALYZE_COLUMNS
-	ParsedAnalyzeColumns []columnRenderDef
-	InlineStats          string // CLI_INLINE_STATS
-	ParsedInlineStats    []inlineStatsDef
-	SQLTableName         string              // CLI_SQL_TABLE_NAME
-	SQLBatchSize         int64               // CLI_SQL_BATCH_SIZE
-	EnableProgressBar    bool                // CLI_ENABLE_PROGRESS_BAR
-	StyledOutput         enums.StyledMode    // CLI_STYLED_OUTPUT
-	WidthStrategy        enums.WidthStrategy // CLI_WIDTH_STRATEGY
-	TypeStylesRaw        string              // CLI_TYPE_STYLES (raw string, parsed into systemVariables.typeStyles/nullStyle)
+	CLIFormat                  enums.DisplayMode   // CLI_FORMAT
+	Verbose                    bool                // CLI_VERBOSE
+	Prompt                     string              // CLI_PROMPT
+	Prompt2                    string              // CLI_PROMPT2
+	HistoryFile                string              // CLI_HISTORY_FILE
+	TabWidth                   int64               // CLI_TAB_WIDTH
+	TabVisualize               bool                // CLI_TAB_VISUALIZE
+	EnableHighlight            bool                // CLI_ENABLE_HIGHLIGHT
+	UsePager                   bool                // CLI_USE_PAGER
+	AutoWrap                   bool                // CLI_AUTOWRAP
+	FixedWidth                 *int64              // CLI_FIXED_WIDTH
+	MultilineProtoText         bool                // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock          bool                // CLI_MARKDOWN_CODEBLOCK
+	SkipColumnNames            bool                // CLI_SKIP_COLUMN_NAMES
+	SuppressResultLines        bool                // CLI_SUPPRESS_RESULT_LINES
+	ExplainFormat              enums.ExplainFormat // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth           int64               // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainPrintSections       string              // CLI_EXPLAIN_PRINT_SECTIONS
+	ParsedExplainPrintSections planref.PrintSections
+	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
+	OutputTemplate             *template.Template
+	AnalyzeColumns             string // CLI_ANALYZE_COLUMNS
+	ParsedAnalyzeColumns       []columnRenderDef
+	InlineStats                string // CLI_INLINE_STATS
+	ParsedInlineStats          []inlineStatsDef
+	SQLTableName               string              // CLI_SQL_TABLE_NAME
+	SQLBatchSize               int64               // CLI_SQL_BATCH_SIZE
+	EnableProgressBar          bool                // CLI_ENABLE_PROGRESS_BAR
+	StyledOutput               enums.StyledMode    // CLI_STYLED_OUTPUT
+	WidthStrategy              enums.WidthStrategy // CLI_WIDTH_STRATEGY
+	TypeStylesRaw              string              // CLI_TYPE_STYLES (raw string, parsed into systemVariables.typeStyles/nullStyle)
 }
 
 // QueryVars holds query execution configuration.
@@ -289,14 +292,16 @@ func newSystemVariablesWithDefaults() systemVariables {
 			EnableADCPlus: true,
 		},
 		Display: DisplayVars{
-			CLIFormat:            enums.DisplayModeTable, // Default to TABLE format
-			AnalyzeColumns:       DefaultAnalyzeColumns,
-			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-			Prompt:               defaultPrompt,
-			Prompt2:              defaultPrompt2,
-			HistoryFile:          defaultHistoryFile,
-			OutputTemplate:       defaultOutputFormat,
-			TypeStylesRaw:        defaultTypeStyles,
+			CLIFormat:                  enums.DisplayModeTable, // Default to TABLE format
+			AnalyzeColumns:             DefaultAnalyzeColumns,
+			ParsedAnalyzeColumns:       DefaultParsedAnalyzeColumns,
+			ExplainPrintSections:       DefaultExplainPrintSections,
+			ParsedExplainPrintSections: DefaultParsedExplainPrintSections,
+			Prompt:                     defaultPrompt,
+			Prompt2:                    defaultPrompt2,
+			HistoryFile:                defaultHistoryFile,
+			OutputTemplate:             defaultOutputFormat,
+			TypeStylesRaw:              defaultTypeStyles,
 		},
 		Query: QueryVars{
 			RPCPriority:      defaultPriority,
