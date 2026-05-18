@@ -837,7 +837,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
 				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
-				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns"),
+				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
 				cmpopts.EquateEmpty(), // Added EquateEmpty
@@ -903,6 +903,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			CLIFormat:            enums.DisplayModeTable,
 			AnalyzeColumns:       DefaultAnalyzeColumns,
 			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+			ExplainPrintSections: DefaultExplainPrintSections,
 			TypeStylesRaw:        defaultTypeStyles,
 		},
 		Query: QueryVars{
@@ -924,7 +925,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	if diff := cmp.Diff(want, got,
 		cmpopts.EquateEmpty(),
 		cmpopts.IgnoreUnexported(systemVariables{}),
-		cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Display.ParsedAnalyzeColumns", "Registry"), // Ignore template and function pointer comparisons
+		cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Display.ParsedAnalyzeColumns", "Display.ParsedExplainPrintSections", "Registry"), // Ignore template and function pointer comparisons
 	); diff != "" {
 		t.Errorf("newSystemVariablesWithDefaults() mismatch (-want +got):\n%s", diff)
 	}
@@ -937,6 +938,9 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	// Separately check ParsedAnalyzeColumns is not nil
 	if got.Display.ParsedAnalyzeColumns == nil {
 		t.Errorf("newSystemVariablesWithDefaults() ParsedAnalyzeColumns should not be nil")
+	}
+	if got.Display.ParsedExplainPrintSections == nil {
+		t.Errorf("newSystemVariablesWithDefaults() ParsedExplainPrintSections should not be nil")
 	}
 }
 
@@ -1128,7 +1132,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			// Compare key fields
 			if diff := cmp.Diff(test.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.OutputTemplate", "Registry"), // Ignore complex fields for this test
+				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections", "Display.OutputTemplate", "Registry"), // Ignore complex fields for this test
 				cmpopts.EquateEmpty(),
 			); diff != "" {
 				t.Errorf("createSystemVariablesFromOptions() mismatch (-want +got):\n%s", diff)

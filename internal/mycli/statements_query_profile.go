@@ -13,7 +13,6 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-tabwrap"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -76,7 +75,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, row := range rows {
-		rows, predicates, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth)
+		rows, _, appendices, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth, resolveExplainPrintSections(session.systemVariables, nil))
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +96,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 		)), "\n")
 
 		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+tabwrap.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
-			lox.IfOrEmpty(len(predicates) > 0, "\nPredicates:\n"+strings.Join(predicates, "\n"))+"\n"+
+			formatQueryProfileAppendices(appendices)+"\n"+
 			formatStats(row)))
 	}
 
@@ -106,6 +105,29 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 		Rows:         resultRows,
 		AffectedRows: len(resultRows),
 	}, nil
+}
+
+func formatQueryProfileAppendices(appendices []ResultAppendix) string {
+	var b strings.Builder
+	for _, appendix := range appendices {
+		if len(appendix.Lines) == 0 {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		title := appendix.Title
+		if title == "Predicates(identified by ID):" {
+			title = "Predicates:"
+		}
+		b.WriteString(title)
+		b.WriteString("\n")
+		b.WriteString(strings.Join(appendix.Lines, "\n"))
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\n" + b.String()
 }
 
 type ShowQueryProfileStatement struct {
@@ -140,7 +162,7 @@ ORDER BY INTERVAL_END DESC`,
 	}
 
 	return buildExplainAnalyzeResult(session.systemVariables, qpr.QueryProfile.QueryPlan, qpr.QueryProfile.QueryStats,
-		enums.ExplainFormatUnspecified, 0)
+		enums.ExplainFormatUnspecified, 0, nil)
 }
 
 func formatStats(stats *queryProfilesRow) string {

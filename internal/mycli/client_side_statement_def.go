@@ -11,6 +11,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spanner-mycli/enums"
+	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
@@ -509,17 +510,17 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Show execution plan without execution`,
-				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Syntax: `EXPLAIN [FORMAT=<format>] [WIDTH=<width>] [PRINT=<preset-or-sections>] <sql>`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
 				Usage:  `Execute query and show execution plan with profile`,
-				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] <sql>`,
+				Syntax: `EXPLAIN ANALYZE [FORMAT=<format>] [WIDTH=<width>] [PRINT=<preset-or-sections>] <sql>`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 			{
 				Usage:  `Show EXPLAIN [ANALYZE] of the last query without execution`,
-				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] LAST QUERY`,
+				Syntax: `EXPLAIN [ANALYZE] [FORMAT=<format>] [WIDTH=<width>] [PRINT=<preset-or-sections>] LAST QUERY`,
 				Note:   "Options can be in any order. Spaces are not allowed before or after the `=`.",
 			},
 		},
@@ -527,10 +528,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		// - (?is): case-insensitive, dot matches newline
 		// - ^EXPLAIN\s+: start with EXPLAIN keyword
 		// - (?P<analyze>ANALYZE\s+)?: optional ANALYZE keyword
-		// - (?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)): options with format/width/last/query
+		// - (?P<options>(?:(?:FORMAT|WIDTH|PRINT|LAST|QUERY)(?:=\S*)?(?:\s+|$))*)): options with format/width/print/last/query
 		// - (?P<query>.*|): optional query text or empty string
 		// - $: end of string
-		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|LAST|QUERY)(?:|=\S+)(?:\s+|$))*)(?P<query>.*|)$`),
+		Pattern: regexp.MustCompile(`(?is)^EXPLAIN\s+(?P<analyze>ANALYZE\s+)?(?P<options>(?:(?:FORMAT|WIDTH|PRINT|LAST|QUERY)(?:=\S*)?(?:\s+|$))*)(?P<query>.*|)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			isAnalyze := groups["analyze"] != ""
 			options, err := parseExplainOptions(groups["options"])
@@ -538,24 +539,41 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 			}
 
-			formatStr := lo.FromPtr(options["FORMAT"])
 			var format enums.ExplainFormat
-			if formatStr != "" {
-				format, err = enums.ExplainFormatString(formatStr)
+			if formatStr, ok := options["FORMAT"]; ok {
+				if formatStr == nil || *formatStr == "" {
+					return nil, fmt.Errorf("invalid FORMAT option, expected FORMAT=<format>")
+				}
+				format, err = enums.ExplainFormatString(*formatStr)
 				if err != nil {
 					return nil, fmt.Errorf("invalid EXPLAIN%s: %w", lo.Ternary(isAnalyze, " ANALYZE", ""), err)
 				}
 			}
 
 			var width int64
-			if widthStr := lo.FromPtr(options["WIDTH"]); widthStr != "" {
-				width, err = strconv.ParseInt(widthStr, 10, 64)
+			if widthStr, ok := options["WIDTH"]; ok {
+				if widthStr == nil || *widthStr == "" {
+					return nil, fmt.Errorf("invalid WIDTH option, expected WIDTH=<width>")
+				}
+				width, err = strconv.ParseInt(*widthStr, 10, 64)
 				if err != nil {
-					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", widthStr, err)
+					return nil, fmt.Errorf("invalid WIDTH option value: %q, expected a positive integer. Error: %w", *widthStr, err)
 				}
 				if width <= 0 {
 					return nil, fmt.Errorf("invalid WIDTH option value: %d, expected a positive integer", width)
 				}
+			}
+
+			var printSections *planref.PrintSections
+			if printStr, ok := options["PRINT"]; ok {
+				if printStr == nil {
+					return nil, fmt.Errorf("invalid PRINT option, expected PRINT=<preset-or-sections>")
+				}
+				sections, err := planref.ParsePrintSections(*printStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid PRINT option value: %w", err)
+				}
+				printSections = planref.NewPrintSections(sections...)
 			}
 
 			// expectLabel enforces <name> is not appeared as <name>=<value> form.
@@ -583,7 +601,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 					return nil, fmt.Errorf(`invalid string after LAST QUERY: %q. Correct syntax: EXPLAIN [ANALYZE] [options] LAST QUERY`, query)
 				}
 
-				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width}, nil
+				return &ExplainLastQueryStatement{Analyze: isAnalyze, Format: format, Width: width, PrintSections: printSections}, nil
 			}
 
 			if strings.TrimSpace(query) == "" && (!hasLastOption || !hasQueryOption) {
@@ -593,11 +611,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			isDML := stmtkind.IsDMLLexical(query)
 			switch {
 			case isAnalyze && isDML:
-				return &ExplainAnalyzeDmlStatement{Dml: query, Format: format, Width: width}, nil
+				return &ExplainAnalyzeDmlStatement{Dml: query, Format: format, Width: width, PrintSections: printSections}, nil
 			case isAnalyze:
-				return &ExplainAnalyzeStatement{Query: query, Format: format, Width: width}, nil
+				return &ExplainAnalyzeStatement{Query: query, Format: format, Width: width, PrintSections: printSections}, nil
 			default:
-				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width}, nil
+				return &ExplainStatement{Explain: query, IsDML: isDML, Format: format, Width: width, PrintSections: printSections}, nil
 			}
 		},
 	},

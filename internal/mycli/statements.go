@@ -72,9 +72,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case session.systemVariables.Query.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0)
+		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0, nil)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0)
+		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0, nil)
 	default:
 		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
@@ -98,9 +98,9 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	case session.systemVariables.Query.TryPartitionQuery:
 		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session)
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
-		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0)
+		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0, nil)
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
-		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0)
+		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0, nil)
 	default:
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}

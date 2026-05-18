@@ -1013,7 +1013,7 @@ optimizer statistics: auto_20250421_21_29_41UTC
 	for _, tcase := range tcases {
 		t.Run(tcase.desc, func(t *testing.T) {
 			stats := protostruct.DecodeToMap(tcase.resultSetStats.QueryStats)
-			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats, enums.ExplainFormatUnspecified, 0)
+			result, err := generateExplainAnalyzeResult(tcase.sysVars, tcase.resultSetStats.QueryPlan, stats, enums.ExplainFormatUnspecified, 0, nil)
 			if err != nil {
 				t.Errorf("shouldn't fail, but: %v", err)
 			}

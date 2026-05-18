@@ -230,7 +230,7 @@ func TestCommentHighlighter(t *testing.T) {
 }
 
 func TestColorToSequence(t *testing.T) {
-	t.Parallel()
+	t.Setenv("NO_COLOR", "")
 	// Save original NoColor state
 	originalNoColor := color.NoColor
 	defer func() { color.NoColor = originalNoColor }()

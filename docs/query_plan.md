@@ -478,6 +478,37 @@ Predicates(identified by ID):
 
 Note: Since the widths of columns other than the Operator column are not deterministic, there may be cases where the output does not fit within 80 characters even with the same settings, such as when the number of Rows is large.
 
+## Query plan appendix sections
+
+By default, `EXPLAIN`, `EXPLAIN ANALYZE`, and query profile plan renderers print the predicate appendix.
+You can select an appendix preset or explicit sections per `EXPLAIN` statement with `PRINT=<preset-or-sections>`, or set the session default with `CLI_EXPLAIN_PRINT_SECTIONS`.
+
+Valid presets are:
+
+- `basic`: predicate-like scalar links. This is the default.
+- `enhanced`: predicate, ordering, and aggregate scalar links.
+- `full`: all scalar links, including unnamed links, as a raw debug dump.
+- `none`: suppress appendix output.
+
+Explicit section lists are still accepted:
+
+- `predicates`: predicate-like scalar links.
+- `ordering`: sort key scalar links.
+- `aggregate`: grouping and aggregate scalar links.
+- `typed`: all typed scalar links as a raw debug dump.
+- `full`: all scalar links, including unnamed links, as a raw debug dump.
+
+`typed` and `full` are debug views and cannot be combined with other sections.
+Use `PRINT=none`, `PRINT=`, `SET CLI_EXPLAIN_PRINT_SECTIONS='none'`, or `SET CLI_EXPLAIN_PRINT_SECTIONS=''` to suppress appendix output.
+
+```
+spanner> EXPLAIN PRINT=enhanced
+         SELECT SingerId, COUNT(*) FROM Singers GROUP BY SingerId ORDER BY SingerId;
+
+spanner> SET CLI_EXPLAIN_PRINT_SECTIONS='enhanced';
+Empty set (0.00 sec)
+```
+
 ## Configuration Options
 
 ### System Variables
@@ -485,9 +516,11 @@ Note: Since the widths of columns other than the Operator column are not determi
 - `CLI_INLINE_STATS`: Define inline statistics display within operator column
 - `CLI_LINT_PLAN`: Enable heuristic query plan linter for EXPLAIN and EXPLAIN ANALYZE
 - `CLI_EXPLAIN_FORMAT`: Control EXPLAIN format (TRADITIONAL vs default concise format)
+- `CLI_EXPLAIN_PRINT_SECTIONS`: Select query plan appendix preset or sections (`basic`, `enhanced`, `full`, `none`, or comma-separated `predicates`, `ordering`, `aggregate`, `typed`, `full`)
 
 ### Statement Options
 - `FORMAT`: Control output format
   - `FORMAT=COMPACT`: Remove whitespace and use single-character tree drawing
   - `FORMAT=TRADITIONAL`: Use spanner-cli compatible format
 - `WIDTH=<width>`: Control content wrapping for fixed-width displays
+- `PRINT=<preset-or-sections>`: Override query plan appendix preset or sections for one `EXPLAIN` statement

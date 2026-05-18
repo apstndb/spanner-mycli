@@ -344,6 +344,19 @@ func (r *VarRegistry) registerAll() {
 			return ExplainFormatVar(&sv.Display.ExplainFormat, "").Set(value)
 		},
 	})
+	r.Register("CLI_EXPLAIN_PRINT_SECTIONS", &CustomVar{
+		base: StringVar(&sv.Display.ExplainPrintSections,
+			"Query plan appendix preset or comma-separated sections to print. Presets: basic, enhanced, full, none. Sections: predicates, ordering, aggregate, typed, full. Empty string suppresses appendices."),
+		customSetter: func(value string) error {
+			sections, err := parseExplainPrintSections(value)
+			if err != nil {
+				return err
+			}
+			sv.Display.ExplainPrintSections = value
+			sv.Display.ParsedExplainPrintSections = sections
+			return nil
+		},
+	})
 	r.Register("CLI_LOG_LEVEL", &LogLevelVar{
 		ptr:         &sv.Feature.LogLevel,
 		description: "Log level for the CLI.",

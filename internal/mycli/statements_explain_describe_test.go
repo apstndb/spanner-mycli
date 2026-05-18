@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"os"
+	"strings"
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -11,6 +12,7 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
+	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -51,8 +53,22 @@ func testPlanProcessing(t *testing.T, file string, want []plantree.RowWithPredic
 	if err != nil {
 		t.Errorf("error should be nil, but got = %v", err)
 	}
-	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+	if diff := cmp.Diff(want, got, planRowTextCmpOpts()...); diff != "" {
 		t.Errorf("processPlanNodes() differ: %s", diff)
+	}
+}
+
+func planRowTextCmpOpts() []cmp.Option {
+	// These tests cover spanner-mycli's rendered text, predicate, and stats
+	// behavior. spannerplan also populates metadata used by appendix rendering.
+	return []cmp.Option{
+		cmpopts.IgnoreFields(
+			plantree.RowWithPredicates{},
+			"ChildLinks",
+			"DisplayName",
+			"Keys",
+			"ScalarChildLinks",
+		),
 	}
 }
 
@@ -413,6 +429,69 @@ func TestRenderTreeUsingTestdataPlans(t *testing.T) {
 	}
 }
 
+func TestProcessPlanPredicateMarkersFollowPrintSections(t *testing.T) {
+	t.Parallel()
+	plan := loadTestPlan(t, "testdata/plans/filter.input.json")
+
+	rows, _, _, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{planref.PrintPredicates})
+	if err != nil {
+		t.Fatalf("processPlanWithoutStats() with predicates error = %v", err)
+	}
+	if !hasStarredPlanID(rows) {
+		t.Fatal("processPlanWithoutStats() with predicate appendix should mark predicate rows")
+	}
+
+	rows, _, _, err = processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{})
+	if err != nil {
+		t.Fatalf("processPlanWithoutStats() without appendices error = %v", err)
+	}
+	if hasStarredPlanID(rows) {
+		t.Fatal("processPlanWithoutStats() without predicate appendix should not mark predicate rows")
+	}
+}
+
+func TestProcessPlanAppendicesUsingRealPlan(t *testing.T) {
+	t.Parallel()
+	plan := loadTestPlan(t, "testdata/plans/scalar_subqueries.input.json")
+
+	_, _, appendices, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{
+		planref.PrintAggregate,
+		planref.PrintTyped,
+	})
+	if err != nil {
+		t.Fatalf("processPlanWithoutStats() error = %v", err)
+	}
+	if !appendixContains(appendices, "Aggregates(identified by ID):", "Agg: COUNT()") {
+		t.Fatalf("aggregate appendix does not contain COUNT() line: %#v", appendices)
+	}
+	if !appendixContains(appendices, "Node Parameters(identified by ID):", "Condition:") {
+		t.Fatalf("typed appendix does not contain condition line: %#v", appendices)
+	}
+}
+
+func hasStarredPlanID(rows []Row) bool {
+	for _, row := range rows {
+		if strings.HasPrefix(row[0].RawText(), "*") {
+			return true
+		}
+	}
+	return false
+}
+
+func appendixContains(appendices []ResultAppendix, title, fragment string) bool {
+	for _, appendix := range appendices {
+		if appendix.Title != title {
+			continue
+		}
+		for _, line := range appendix.Lines {
+			if strings.Contains(line, fragment) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func Total(s string) stats.ExecutionStatsValue {
 	return stats.ExecutionStatsValue{Total: s}
 }
@@ -547,7 +626,7 @@ func TestRenderTreeWithStats(t *testing.T) {
 			if err != nil {
 				t.Errorf("error should be nil, but got = %v", err)
 			}
-			if diff := cmp.Diff(test.want, got, cmpopts.IgnoreFields(plantree.RowWithPredicates{}, "ChildLinks")); diff != "" {
+			if diff := cmp.Diff(test.want, got, planRowTextCmpOpts()...); diff != "" {
 				t.Errorf("node.RenderTreeWithStats() differ: %s", diff)
 			}
 		})

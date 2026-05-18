@@ -143,7 +143,11 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		}
 	}
 
-	if len(result.Predicates) > 0 {
+	if len(result.Appendices) > 0 {
+		for _, appendix := range result.Appendices {
+			printResultAppendix(out, appendix)
+		}
+	} else if len(result.Predicates) > 0 {
 		fmt.Fprintln(out, "Predicates(identified by ID):")
 		for _, s := range result.Predicates {
 			fmt.Fprintf(out, " %s\n", s)
@@ -187,6 +191,17 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	}
 
 	return nil
+}
+
+func printResultAppendix(out io.Writer, appendix ResultAppendix) {
+	if len(appendix.Lines) == 0 {
+		return
+	}
+	fmt.Fprintln(out, appendix.Title)
+	for _, s := range appendix.Lines {
+		fmt.Fprintf(out, " %s\n", s)
+	}
+	fmt.Fprintln(out)
 }
 
 type OutputContext struct {

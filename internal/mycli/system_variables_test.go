@@ -1003,6 +1003,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_DATABASE_DIALECT":         "GOOGLE_STANDARD_SQL",
 			"CLI_QUERY_MODE":               "PROFILE",
 			"CLI_EXPLAIN_FORMAT":           "CURRENT",
+			"CLI_EXPLAIN_PRINT_SECTIONS":   "ordering,aggregate",
 			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
 		}
 		for name, value := range stringTests {
@@ -1152,6 +1153,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_PROMPT2":                  `"test-prompt2"`,
 			"STATEMENT_TAG":                `"test-statement"`,
 			"CLI_EXPLAIN_FORMAT":           `"CURRENT"`,
+			"CLI_EXPLAIN_PRINT_SECTIONS":   `"ordering,aggregate"`,
 			"OPTIMIZER_VERSION":            `"LATEST"`,
 			"OPTIMIZER_STATISTICS_PACKAGE": `"test-package"`,
 			"STATEMENT_TIMEOUT":            `"30s"`,

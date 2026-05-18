@@ -27,6 +27,7 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
+	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
@@ -39,6 +40,10 @@ import (
 )
 
 // Test helpers for statement processing
+
+func printSectionsForTest(sections ...planref.PrintSection) *planref.PrintSections {
+	return planref.NewPrintSections(sections...)
+}
 
 func testStatementWithModes(t *testing.T, input string, want Statement, skipModes []enums.ParseMode, typeCheckOnly bool) {
 	t.Helper()
@@ -675,6 +680,38 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ExplainStatement{Explain: "SELECT * FROM t1", Width: 50},
 		},
 		{
+			desc:  "EXPLAIN SELECT statement with PRINT sections",
+			input: "EXPLAIN PRINT=ordering,aggregate SELECT * FROM t1",
+			want: &ExplainStatement{
+				Explain:       "SELECT * FROM t1",
+				PrintSections: printSectionsForTest(planref.PrintOrdering, planref.PrintAggregate),
+			},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with PRINT preset",
+			input: "EXPLAIN PRINT=enhanced SELECT * FROM t1",
+			want: &ExplainStatement{
+				Explain:       "SELECT * FROM t1",
+				PrintSections: printSectionsForTest(planref.PrintPredicates, planref.PrintOrdering, planref.PrintAggregate),
+			},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with PRINT none preset",
+			input: "EXPLAIN PRINT=none SELECT * FROM t1",
+			want: &ExplainStatement{
+				Explain:       "SELECT * FROM t1",
+				PrintSections: printSectionsForTest(),
+			},
+		},
+		{
+			desc:  "EXPLAIN SELECT statement with empty PRINT sections",
+			input: "EXPLAIN PRINT= SELECT * FROM t1",
+			want: &ExplainStatement{
+				Explain:       "SELECT * FROM t1",
+				PrintSections: printSectionsForTest(),
+			},
+		},
+		{
 			desc:  "EXPLAIN ANALYZE SELECT statement with FORMAT=COMPACT WIDTH",
 			input: "EXPLAIN ANALYZE FORMAT=COMPACT WIDTH=50 SELECT * FROM t1",
 			want:  &ExplainAnalyzeStatement{Query: "SELECT * FROM t1", Format: enums.ExplainFormatCompact, Width: 50},
@@ -708,6 +745,13 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "EXPLAIN LAST QUERY with options",
 			input: "EXPLAIN LAST QUERY FORMAT=COMPACT WIDTH=50",
 			want:  &ExplainLastQueryStatement{Format: enums.ExplainFormatCompact, Width: 50},
+		},
+		{
+			desc:  "EXPLAIN LAST QUERY with PRINT sections",
+			input: "EXPLAIN PRINT=full LAST QUERY",
+			want: &ExplainLastQueryStatement{
+				PrintSections: printSectionsForTest(planref.PrintFull),
+			},
 		},
 		{
 			desc:  "SHOW PLAN NODE",
@@ -1049,6 +1093,10 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"FOO BAR",
 		"SELEC T FROM t1",
 		"BEGIN PRIORITY CRITICAL",
+		"EXPLAIN FORMAT= SELECT * FROM t1",
+		"EXPLAIN FORMAT SELECT * FROM t1",
+		"EXPLAIN WIDTH= SELECT * FROM t1",
+		"EXPLAIN WIDTH SELECT * FROM t1",
 	}
 
 	for _, input := range invalidInputs {
