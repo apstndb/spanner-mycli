@@ -268,7 +268,7 @@ type fzfPrepared struct {
 
 // prepareFzfOptions is a pure function that deterministically computes fzf arguments
 // and formatted input lines from candidates. This enables unit testing without TTY.
-// The header parameter affects height calculation (adds 1 line if non-empty).
+// The header parameter affects height calculation (adds header text and separator lines).
 func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
 	// Determine if any candidate needs display/insert separation.
 	hasLabels := false

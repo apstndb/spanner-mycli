@@ -993,7 +993,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
 
 > **Note**: `CLI_FUZZY_FINDER_OPTIONS` passes additional fzf options to the fuzzy finder. Options are appended after built-in defaults, so user options take precedence (last wins).
-> Built-in defaults: `--reverse`, `--no-sort`, `--height`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`, and `--header-border=inline` when a header is shown.
+> Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`, and `--header-border=inline` when a header is shown.
 > `--tmux` and `--popup` are not supported because the fuzzy finder runs fzf in-process via the Go library.
 
 > **Note**: `CLI_TYPE_STYLES` configures ANSI styling for query result values based on their Spanner type. Format: colon-separated `TYPE=STYLE` pairs.

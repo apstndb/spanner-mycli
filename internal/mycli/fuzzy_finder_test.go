@@ -905,7 +905,7 @@ func TestPrepareFzfOptions_HeightCap(t *testing.T) {
 		}
 	}
 
-	// totalDisplayLines(40) + gaps(9) + extra(5) = 54, capped at 20
+	// totalDisplayLines(40) + gaps(9) + extra(6) = 55, capped at 20
 	assert.Equal(t, "20", heightVal)
 }
 

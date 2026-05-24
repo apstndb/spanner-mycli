@@ -182,7 +182,7 @@ TODO
 - **Notes**:
   - Options are appended after built-in defaults, so user options take precedence (last wins)
   - Uses standard fzf option syntax (space-separated flags)
-  - Built-in defaults: `--reverse`, `--no-sort`, `--height`, `--border=rounded`, `--info=inline-right`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, and `--header-border=inline` when a header is shown
+  - Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--border=rounded`, `--info=inline-right`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, and `--header-border=inline` when a header is shown
   - Useful for customizing appearance (colors, layout) or behavior (sorting, preview)
   - `--tmux` and `--popup` are **not supported** because the fuzzy finder runs fzf in-process via the Go library
 
