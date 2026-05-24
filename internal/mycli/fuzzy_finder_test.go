@@ -745,6 +745,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 		wantHasLabels      bool
 		wantDelimiterArg   bool
 		wantMultilineArgs  bool
+		wantHeaderBorder   bool
 		wantFixedHeight    bool // true = fixed height (no ~), false = shrink height (~N)
 		wantFormattedCount int
 	}{
@@ -758,6 +759,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			wantHasLabels:      false,
 			wantDelimiterArg:   false,
 			wantMultilineArgs:  false,
+			wantHeaderBorder:   false,
 			wantFixedHeight:    false,
 			wantFormattedCount: 2,
 		},
@@ -771,6 +773,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			wantHasLabels:      true,
 			wantDelimiterArg:   true,
 			wantMultilineArgs:  false,
+			wantHeaderBorder:   true,
 			wantFixedHeight:    false,
 			wantFormattedCount: 2,
 		},
@@ -784,6 +787,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			wantHasLabels:      true,
 			wantDelimiterArg:   true,
 			wantMultilineArgs:  true,
+			wantHeaderBorder:   true,
 			wantFixedHeight:    true,
 			wantFormattedCount: 2,
 		},
@@ -797,6 +801,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			wantHasLabels:      true,
 			wantDelimiterArg:   true,
 			wantMultilineArgs:  true,
+			wantHeaderBorder:   false,
 			wantFixedHeight:    true,
 			wantFormattedCount: 2,
 		},
@@ -815,6 +820,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			hasReadZero := false
 			hasMultiLine := false
 			hasGap := false
+			hasHeaderBorder := false
 			hasFixedHeight := false
 			for _, arg := range p.args {
 				if strings.HasPrefix(arg, "--delimiter=") {
@@ -832,6 +838,9 @@ func TestPrepareFzfOptions(t *testing.T) {
 				if arg == "--gap" {
 					hasGap = true
 				}
+				if arg == "--header-border=inline" {
+					hasHeaderBorder = true
+				}
 				if heightVal, ok := strings.CutPrefix(arg, "--height="); ok {
 					hasFixedHeight = !strings.HasPrefix(heightVal, "~")
 				}
@@ -842,6 +851,7 @@ func TestPrepareFzfOptions(t *testing.T) {
 			assert.Equal(t, tt.wantMultilineArgs, hasReadZero, "read0 arg")
 			assert.Equal(t, tt.wantMultilineArgs, hasMultiLine, "multi-line arg")
 			assert.Equal(t, tt.wantMultilineArgs, hasGap, "gap arg")
+			assert.Equal(t, tt.wantHeaderBorder, hasHeaderBorder, "header border arg")
 			assert.Equal(t, tt.wantFixedHeight, hasFixedHeight, "fixed height")
 
 			// Verify formatted lines structure.
@@ -871,9 +881,9 @@ func TestPrepareFzfOptions_DynamicHeight(t *testing.T) {
 		}
 	}
 
-	// Expected: totalDisplayLines(5) + gaps(1) + extra(5: border(2)+prompt(1)+separator(1)+header(1))
-	// = 11, capped at min(11, 20) = 11
-	assert.Equal(t, "11", heightVal)
+	// Expected: totalDisplayLines(5) + gaps(1) + extra(6: border(2)+prompt(1)+separator(1)+header(1)+inline header separator(1))
+	// = 12, capped at min(12, 20) = 12
+	assert.Equal(t, "12", heightVal)
 }
 
 func TestPrepareFzfOptions_HeightCap(t *testing.T) {
@@ -895,7 +905,7 @@ func TestPrepareFzfOptions_HeightCap(t *testing.T) {
 		}
 	}
 
-	// totalDisplayLines(40) + gaps(9) + extra(5) = 54, capped at 20
+	// totalDisplayLines(40) + gaps(9) + extra(6) = 55, capped at 20
 	assert.Equal(t, "20", heightVal)
 }
 

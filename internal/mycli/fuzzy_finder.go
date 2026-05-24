@@ -268,7 +268,7 @@ type fzfPrepared struct {
 
 // prepareFzfOptions is a pure function that deterministically computes fzf arguments
 // and formatted input lines from candidates. This enables unit testing without TTY.
-// The header parameter affects height calculation (adds 1 line if non-empty).
+// The header parameter affects height calculation (adds header text and separator lines).
 func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
 	// Determine if any candidate needs display/insert separation.
 	hasLabels := false
@@ -301,7 +301,7 @@ func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
 	if hasMultiline {
 		extra := 4 // border(2) + prompt(1) + separator(1)
 		if header != "" {
-			extra++
+			extra += 2 // header text + inline header separator
 		}
 		gaps := len(candidates) - 1 // --gap adds 1 line between items
 		h := min(totalDisplayLines+gaps+extra, 20)
@@ -314,6 +314,9 @@ func prepareFzfOptions(candidates []fzfItem, header string) fzfPrepared {
 		"--info=inline-right",
 		"--select-1", "--exit-0",
 		"--highlight-line", "--cycle",
+	}
+	if header != "" {
+		fzfArgs = append(fzfArgs, "--header-border=inline")
 	}
 	if hasLabels {
 		fzfArgs = append(fzfArgs, "--delimiter="+fzfDelimiter, "--with-nth=2..")
