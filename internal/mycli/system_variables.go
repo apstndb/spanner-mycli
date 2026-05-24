@@ -82,6 +82,7 @@ type DisplayVars struct {
 	SuppressResultLines        bool                // CLI_SUPPRESS_RESULT_LINES
 	ExplainFormat              enums.ExplainFormat // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth           int64               // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainHangingIndent       bool                // CLI_EXPLAIN_HANGING_INDENT
 	ExplainPrintSections       string              // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
 	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
@@ -295,6 +296,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 			CLIFormat:                  enums.DisplayModeTable, // Default to TABLE format
 			AnalyzeColumns:             DefaultAnalyzeColumns,
 			ParsedAnalyzeColumns:       DefaultParsedAnalyzeColumns,
+			ExplainHangingIndent:       true,
 			ExplainPrintSections:       DefaultExplainPrintSections,
 			ParsedExplainPrintSections: DefaultParsedExplainPrintSections,
 			Prompt:                     defaultPrompt,

@@ -212,6 +212,8 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_TAB_VISUALIZE", BoolVar(&sv.Display.TabVisualize, "Visualize tab characters with arrow symbol in table output."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.Display.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
+	r.Register("CLI_EXPLAIN_HANGING_INDENT", BoolVar(&sv.Display.ExplainHangingIndent,
+		"Use hanging indent for wrapped EXPLAIN operator lines. Only affects EXPLAIN wrapping when CLI_EXPLAIN_WRAP_WIDTH or WIDTH is set."))
 	r.Register("CLI_FUZZY_FINDER_KEY", StringVar(&sv.Feature.FuzzyFinderKey,
 		"Key binding for fuzzy finder. Uses go-readline-ny key names (e.g., C_T, M_F, F1). Set to empty string to disable. The default is C_T (Ctrl+T)."))
 	r.Register("CLI_FUZZY_FINDER_OPTIONS", StringVar(&sv.Feature.FuzzyFinderOptions,

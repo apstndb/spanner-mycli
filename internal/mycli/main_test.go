@@ -837,7 +837,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
 				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
-				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),
+				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainHangingIndent", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
 				cmpopts.EquateEmpty(), // Added EquateEmpty
@@ -903,6 +903,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			CLIFormat:            enums.DisplayModeTable,
 			AnalyzeColumns:       DefaultAnalyzeColumns,
 			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
+			ExplainHangingIndent: true,
 			ExplainPrintSections: DefaultExplainPrintSections,
 			TypeStylesRaw:        defaultTypeStyles,
 		},

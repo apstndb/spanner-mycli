@@ -49,7 +49,7 @@ func loadTestPlan(t *testing.T, file string) *sppb.QueryPlan {
 func testPlanProcessing(t *testing.T, file string, want []plantree.RowWithPredicates) {
 	t.Helper()
 	plan := loadTestPlan(t, file)
-	got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0)
+	got, err := processPlanNodes(plan.GetPlanNodes(), nil, enums.ExplainFormatTraditional, 0, false)
 	if err != nil {
 		t.Errorf("error should be nil, but got = %v", err)
 	}
@@ -70,6 +70,85 @@ func planRowTextCmpOpts() []cmp.Option {
 			"ScalarChildLinks",
 		),
 	}
+}
+
+func TestProcessPlanNodesUsesHangingIndentForWrappedPlans(t *testing.T) {
+	t.Parallel()
+
+	rows, err := processPlanNodes(hangingIndentPlanNodes(), nil, enums.ExplainFormatCurrent, 21, true)
+	if err != nil {
+		t.Fatalf("processPlanNodes(..., hangingIndent=true) error = %v", err)
+	}
+	got := planRowByID(t, rows, 1)
+
+	want := plantree.RowWithPredicates{
+		ID:       1,
+		TreePart: "+- \n|          ",
+		NodeText: "[Input] Batch Scan\n <Row>",
+	}
+	if diff := cmp.Diff(want, plantree.RowWithPredicates{
+		ID:       got.ID,
+		TreePart: got.TreePartString(),
+		NodeText: got.NodeText,
+	}); diff != "" {
+		t.Fatalf("wrapped hanging-indent row mismatch (-want +got):\n%s", diff)
+	}
+
+	legacyRows, err := processPlanNodes(hangingIndentPlanNodes(), nil, enums.ExplainFormatCurrent, 21, false)
+	if err != nil {
+		t.Fatalf("processPlanNodes(..., hangingIndent=false) error = %v", err)
+	}
+	legacy := planRowByID(t, legacyRows, 1)
+	wantLegacy := plantree.RowWithPredicates{
+		ID:       1,
+		TreePart: "+- \n|  ",
+		NodeText: "[Input] Batch Scan\n <Row>",
+	}
+	if diff := cmp.Diff(wantLegacy, plantree.RowWithPredicates{
+		ID:       legacy.ID,
+		TreePart: legacy.TreePartString(),
+		NodeText: legacy.NodeText,
+	}); diff != "" {
+		t.Fatalf("wrapped opt-out row mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func hangingIndentPlanNodes() []*sppb.PlanNode {
+	return []*sppb.PlanNode{
+		{
+			Index:       0,
+			DisplayName: "Cross Apply",
+			Kind:        sppb.PlanNode_RELATIONAL,
+			ChildLinks: []*sppb.PlanNode_ChildLink{
+				{ChildIndex: 1},
+				{ChildIndex: 2, Type: "Map"},
+			},
+		},
+		{
+			Index:       1,
+			DisplayName: "Batch Scan",
+			Kind:        sppb.PlanNode_RELATIONAL,
+			Metadata: &structpb.Struct{Fields: map[string]*structpb.Value{
+				"execution_method": structpb.NewStringValue("Row"),
+			}},
+		},
+		{
+			Index:       2,
+			DisplayName: "Serialize Result",
+			Kind:        sppb.PlanNode_RELATIONAL,
+		},
+	}
+}
+
+func planRowByID(t *testing.T, rows []plantree.RowWithPredicates, id int32) plantree.RowWithPredicates {
+	t.Helper()
+	for _, row := range rows {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("plan row %d not found in %v", id, rows)
+	return plantree.RowWithPredicates{}
 }
 
 func TestRenderTreeUsingTestdataPlans(t *testing.T) {
@@ -433,7 +512,7 @@ func TestProcessPlanPredicateMarkersFollowPrintSections(t *testing.T) {
 	t.Parallel()
 	plan := loadTestPlan(t, "testdata/plans/filter.input.json")
 
-	rows, _, _, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{planref.PrintPredicates})
+	rows, _, _, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{planref.PrintPredicates})
 	if err != nil {
 		t.Fatalf("processPlanWithoutStats() with predicates error = %v", err)
 	}
@@ -441,7 +520,7 @@ func TestProcessPlanPredicateMarkersFollowPrintSections(t *testing.T) {
 		t.Fatal("processPlanWithoutStats() with predicate appendix should mark predicate rows")
 	}
 
-	rows, _, _, err = processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{})
+	rows, _, _, err = processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{})
 	if err != nil {
 		t.Fatalf("processPlanWithoutStats() without appendices error = %v", err)
 	}
@@ -454,7 +533,7 @@ func TestProcessPlanAppendicesUsingRealPlan(t *testing.T) {
 	t.Parallel()
 	plan := loadTestPlan(t, "testdata/plans/scalar_subqueries.input.json")
 
-	_, _, appendices, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, planref.PrintSections{
+	_, _, appendices, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{
 		planref.PrintAggregate,
 		planref.PrintTyped,
 	})
