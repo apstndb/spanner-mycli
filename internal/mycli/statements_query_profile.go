@@ -74,30 +74,30 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 	}
 
 	var resultRows []Row
-	for _, row := range rows {
-		rows, _, appendices, err := processPlanWithoutStats(row.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth, session.systemVariables.Display.ExplainHangingIndent, resolveExplainPrintSections(session.systemVariables, nil))
+	for _, queryProfileRow := range rows {
+		planRows, _, appendices, err := processPlanWithoutStats(queryProfileRow.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth, session.systemVariables.Display.ExplainHangingIndent, resolveExplainPrintSections(session.systemVariables, nil))
 		if err != nil {
 			return nil, err
 		}
 
 		maxIDLength := 2
-		for _, row := range rows {
-			maxIDLength = max(maxIDLength, len(row[0].RawText()) /* ID */)
+		for _, planRow := range planRows {
+			maxIDLength = max(maxIDLength, len(planRow[0].RawText()) /* ID */)
 		}
 
 		pprinter := pp.New()
 		pprinter.SetColoringEnabled(false)
 
 		tree := strings.Join(slices.Collect(loi.Map(
-			slices.Values(rows),
-			func(r Row) string {
-				return tabwrap.FillLeft(r[0].RawText() /* ID */, maxIDLength) + " | " + r[1].RawText() /* Plan */
+			slices.Values(planRows),
+			func(planRow Row) string {
+				return tabwrap.FillLeft(planRow[0].RawText() /* ID */, maxIDLength) + " | " + planRow[1].RawText() /* Plan */
 			},
 		)), "\n")
 
-		resultRows = append(resultRows, toRow(row.QueryProfile.QueryStats.QueryText+"\n"+tabwrap.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
+		resultRows = append(resultRows, toRow(queryProfileRow.QueryProfile.QueryStats.QueryText+"\n"+tabwrap.FillRight("ID", maxIDLength)+" | Plan\n"+tree+
 			formatQueryProfileAppendices(appendices)+"\n"+
-			formatStats(row)))
+			formatStats(queryProfileRow)))
 	}
 
 	return &Result{
