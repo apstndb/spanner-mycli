@@ -943,36 +943,36 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 
 #### spanner-mycli original variables
 
-| Name                      | READ/WRITE | Example                                        |
-|---------------------------|------------|------------------------------------------------|
-| CLI_PROJECT               | READ_ONLY  | `"myproject"`                                  |
-| CLI_INSTANCE              | READ_ONLY  | `"myinstance"`                                 |
-| CLI_DATABASE              | READ_ONLY  | `"mydb"`                                       |
-| CLI_DIRECT_READ           | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
-| CLI_ENDPOINT              | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT                | READ_WRITE | `"TABLE"` (`"TAB"` in batch mode)              |
-| CLI_HISTORY_FILE          | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
-| CLI_PROMPT                | READ_WRITE | `"spanner%t> "`                                |
-| CLI_PROMPT2               | READ_WRITE | `"%P%R> "`                                     |
-| CLI_ROLE                  | READ_ONLY  | `"spanner_info_reader"`                        |
-| CLI_VERBOSE               | READ_WRITE | `TRUE`                                         |
-| CLI_PROTO_DESCRIPTOR_FILE | READ_WRITE | `"order_descriptors.pb"`                       |
-| CLI_PARSE_MODE            | READ_WRITE | `"FALLBACK"`                                   |
-| CLI_INSECURE              | READ_WRITE | `"FALSE"`                                      |
-| CLI_QUERY_MODE            | READ_WRITE | `"PROFILE"`                                    |
-| CLI_LINT_PLAN             | READ_WRITE | `"TRUE"`                                       |
+| Name                       | READ/WRITE | Example                                        |
+|----------------------------|------------|------------------------------------------------|
+| CLI_PROJECT                | READ_ONLY  | `"myproject"`                                  |
+| CLI_INSTANCE               | READ_ONLY  | `"myinstance"`                                 |
+| CLI_DATABASE               | READ_ONLY  | `"mydb"`                                       |
+| CLI_DIRECT_READ            | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
+| CLI_ENDPOINT               | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
+| CLI_FORMAT                 | READ_WRITE | `"TABLE"` (`"TAB"` in batch mode)              |
+| CLI_HISTORY_FILE           | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
+| CLI_PROMPT                 | READ_WRITE | `"spanner%t> "`                                |
+| CLI_PROMPT2                | READ_WRITE | `"%P%R> "`                                     |
+| CLI_ROLE                   | READ_ONLY  | `"spanner_info_reader"`                        |
+| CLI_VERBOSE                | READ_WRITE | `TRUE`                                         |
+| CLI_PROTO_DESCRIPTOR_FILE  | READ_WRITE | `"order_descriptors.pb"`                       |
+| CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
+| CLI_INSECURE               | READ_WRITE | `"FALSE"`                                      |
+| CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
+| CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
-| CLI_USE_PAGER             | READ_WRITE | `"TRUE"`                                       |
-| CLI_AUTOWRAP              | READ_WRITE | `"TRUE"`                                       |
-| CLI_DATABASE_DIALECT      | READ_WRITE | `"TRUE"`                                       |
-| CLI_ENABLE_HIGHLIGHT      | READ_WRITE | `"TRUE"`                                       |
-| CLI_PROTOTEXT_MULTILINE   | READ_WRITE | `"TRUE"`                                       |
-| CLI_FIXED_WIDTH           | READ_WRITE | `80`                                           |
-| CLI_STREAMING             | READ_WRITE | `"AUTO"`                                       |
-| CLI_TABLE_PREVIEW_ROWS    | READ_WRITE | `50`                                           |
-| CLI_FUZZY_FINDER_KEY      | READ_WRITE | `"C_T"`                                        |
-| CLI_FUZZY_FINDER_OPTIONS  | READ_WRITE | `""`                                           |
-| CLI_TYPE_STYLES           | READ_WRITE | `"NULL=dim"`                                   |
+| CLI_USE_PAGER              | READ_WRITE | `"TRUE"`                                       |
+| CLI_AUTOWRAP               | READ_WRITE | `"TRUE"`                                       |
+| CLI_DATABASE_DIALECT       | READ_WRITE | `"TRUE"`                                       |
+| CLI_ENABLE_HIGHLIGHT       | READ_WRITE | `"TRUE"`                                       |
+| CLI_PROTOTEXT_MULTILINE    | READ_WRITE | `"TRUE"`                                       |
+| CLI_FIXED_WIDTH            | READ_WRITE | `80`                                           |
+| CLI_STREAMING              | READ_WRITE | `"AUTO"`                                       |
+| CLI_TABLE_PREVIEW_ROWS     | READ_WRITE | `50`                                           |
+| CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
+| CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
+| CLI_TYPE_STYLES            | READ_WRITE | `"NULL=dim"`                                   |
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
