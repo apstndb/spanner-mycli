@@ -516,6 +516,7 @@ Empty set (0.00 sec)
 - `CLI_INLINE_STATS`: Define inline statistics display within operator column
 - `CLI_LINT_PLAN`: Enable heuristic query plan linter for EXPLAIN and EXPLAIN ANALYZE
 - `CLI_EXPLAIN_FORMAT`: Control EXPLAIN format (TRADITIONAL vs default concise format)
+- `CLI_EXPLAIN_HANGING_INDENT`: Use hanging indent for wrapped plan lines; default is `TRUE`, and `FALSE` restores tree-aligned wrapped continuation lines
 - `CLI_EXPLAIN_PRINT_SECTIONS`: Select query plan appendix preset or sections (`basic`, `enhanced`, `full`, `none`, or comma-separated `predicates`, `ordering`, `aggregate`, `typed`, `full`)
 
 ### Statement Options
