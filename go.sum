@@ -2501,8 +2501,8 @@ github.com/apstndb/spannerplan v0.1.11 h1:chLsajnYPQI2vwirOeBFNQU0sBWOx9Jet4DuM+
 github.com/apstndb/spannerplan v0.1.11/go.mod h1:7Xfm892U2wPhDrT5nf8NMEvEGtk7eGAh15Qa7e316HA=
 github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
 github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.3.0 h1:MsHW+ZhHXdHmeoVjG/qw785mGvyKJ7GBz3cUPYEIDI4=
-github.com/apstndb/spanvalue v0.3.0/go.mod h1:xKnvCW0eC+EtZfICvyesMpr/PJTY8tXjcWR+i0x0dZw=
+github.com/apstndb/spanvalue v0.4.2 h1:aM/8J8KBtciiEht7cRl1sX8N3QuyuNcaxX+ZkEmC4aI=
+github.com/apstndb/spanvalue v0.4.2/go.mod h1:xKnvCW0eC+EtZfICvyesMpr/PJTY8tXjcWR+i0x0dZw=
 github.com/aymanbagabas/go-pty v0.2.2 h1:YZREB4eSj+1xdbbItIokX0ekjjeifgJOA+ZvxU4/WM8=
 github.com/aymanbagabas/go-pty v0.2.2/go.mod h1:gfvlwH+0U66BCwxJREjJaAOEs9H1OFf3YFjI9WSiZ04=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=

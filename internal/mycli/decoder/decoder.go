@@ -50,19 +50,15 @@ func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) 
 		return nil, err
 	}
 
-	return &spanvalue.FormatConfig{
-		NullString:  "NULL",
-		FormatArray: spanvalue.FormatUntypedArray,
-		FormatStruct: spanvalue.FormatStruct{
-			FormatStructField: spanvalue.FormatSimpleStructField,
-			FormatStructParen: spanvalue.FormatBracketStruct,
-		},
-		FormatComplexPlugins: []spanvalue.FormatComplexFunc{
+	fc := spanvalue.SpannerCLICompatibleFormatConfig().Clone()
+	fc.FormatComplexPlugins = append(
+		[]spanvalue.FormatComplexFunc{
 			formatProto(types, multiline),
 			formatEnum(types),
 		},
-		FormatNullable: spanvalue.FormatNullableSpannerCLICompatible,
-	}, nil
+		fc.FormatComplexPlugins...,
+	)
+	return fc, nil
 }
 
 func dynamicTypesByFDS(fds *descriptorpb.FileDescriptorSet) (*dynamicpb.Types, error) {
