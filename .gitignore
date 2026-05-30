@@ -11,8 +11,10 @@ credentials.json
 
 # IDE and tool directories - DO NOT delete in main workspace, safe to delete ONLY in phantom worktrees
 .idea/
+.agents/
 .claude/*
 !.claude/settings.json
+.codex/
 
 # Cache and temporary files - safe to delete anywhere
 .cache/
