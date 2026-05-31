@@ -3,7 +3,6 @@ package mycli
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -153,38 +152,29 @@ func spanvalueSQLBatchSize(batchSize int64) (int, error) {
 
 func runSpanvalueRowIterator(qe *queryExecution, w writer.RowIteratorWriter) (*writer.RowIteratorResult, int64, error) {
 	hooks := writer.RowIteratorHooksFromWriter(w)
-	writeRow := hooks.WriteRow
 
-	var rowCount int64
-	hooks.WriteRow = func(row *spanner.Row) error {
-		now := time.Now()
-		if qe.Metrics != nil && qe.Metrics.FirstRowTime == nil {
-			qe.Metrics.FirstRowTime = &now
-		}
-
-		if writeRow != nil {
-			if err := writeRow(row); err != nil {
-				return err
-			}
-		}
-
-		rowCount++
-		if qe.Metrics != nil {
-			qe.Metrics.LastRowTime = &now
-			qe.Metrics.RowCount = rowCount
-		}
-		return flushSpanvalueStreamingRow(w)
-	}
-
-	result, err := writer.RunRowIterator(qe.Iter, hooks)
-	return result, rowCount, err
+	return runRowIteratorTransform(
+		qe.Iter,
+		func(row *spanner.Row) (*spanner.Row, error) { return row, nil },
+		rowIteratorSink[*spanner.Row]{
+			PrepareMetadata: hooks.PrepareMetadata,
+			Write:           hooks.WriteRow,
+			Finish: func(result *writer.RowIteratorResult, _ int64) error {
+				if hooks.Finish == nil {
+					return nil
+				}
+				return hooks.Finish(result)
+			},
+		},
+		withRowIteratorMetrics(qe.Metrics),
+		withRowIteratorAfterWriteRow(func() error { return flushSpanvalueStreamingRow(w) }),
+	)
 }
 
 func runSpanvalueRowIteratorWithProcessor(
 	qe *queryExecution,
 	rowTransform func(*spanner.Row) (Row, error),
 ) (*writer.RowIteratorResult, int64, error) {
-	var rowCount int64
 	initialized := false
 
 	initProcessor := func(md *sppb.ResultSetMetadata) error {
@@ -198,43 +188,26 @@ func runSpanvalueRowIteratorWithProcessor(
 		return nil
 	}
 
-	hooks := writer.RowIteratorHooks{
-		PrepareMetadata: initProcessor,
-		WriteRow: func(row *spanner.Row) error {
-			now := time.Now()
-			if qe.Metrics != nil && qe.Metrics.FirstRowTime == nil {
-				qe.Metrics.FirstRowTime = &now
-			}
-
-			transformedRow, err := rowTransform(row)
-			if err != nil {
-				return fmt.Errorf("failed to transform row: %w", err)
-			}
-			if err := qe.Processor.ProcessRow(transformedRow); err != nil {
-				return fmt.Errorf("failed to process row %d: %w", rowCount+1, err)
-			}
-
-			rowCount++
-			if qe.Metrics != nil {
-				qe.Metrics.LastRowTime = &now
-				qe.Metrics.RowCount = rowCount
-			}
-			return nil
+	return runRowIteratorTransform(
+		qe.Iter,
+		rowTransform,
+		rowIteratorSink[Row]{
+			PrepareMetadata: initProcessor,
+			Write:           qe.Processor.ProcessRow,
+			Finish: func(result *writer.RowIteratorResult, rowCount int64) error {
+				if err := initProcessor(result.Metadata); err != nil {
+					return err
+				}
+				parsedStats, _ := parseQueryStats(result.Stats.QueryStats)
+				if err := qe.Processor.Finish(parsedStats, rowCount); err != nil {
+					return fmt.Errorf("failed to finish processing: %w", err)
+				}
+				return nil
+			},
 		},
-		Finish: func(result *writer.RowIteratorResult) error {
-			if err := initProcessor(result.Metadata); err != nil {
-				return err
-			}
-			parsedStats, _ := parseQueryStats(result.Stats.QueryStats)
-			if err := qe.Processor.Finish(parsedStats, rowCount); err != nil {
-				return fmt.Errorf("failed to finish processing: %w", err)
-			}
-			return nil
-		},
-	}
-
-	result, err := writer.RunRowIterator(qe.Iter, hooks)
-	return result, rowCount, err
+		withRowIteratorMetrics(qe.Metrics),
+		withRowIteratorErrorLabels("failed to transform row", "failed to process row", ""),
+	)
 }
 
 func flushSpanvalueStreamingRow(w writer.RowIteratorWriter) error {
