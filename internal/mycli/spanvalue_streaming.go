@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanvalue/writer"
@@ -44,6 +45,41 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 		return nil, true, err
 	}
 	return result, true, nil
+}
+
+// executeStreamingSQLWithSpanvalueProcessor uses spanvalue's RowIterator hooks
+// for formats that still need spanner-mycli's RowProcessor/StreamingFormatter
+// stack, such as TABLE, TAB, VERTICAL, HTML, and XML.
+func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, error) {
+	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
+	if qe.ValueFmtMode == format.JSONValues {
+		rowTransform = withRawJSONMarker(rowTransform)
+	}
+
+	rowIterResult, rowCount, err := runSpanvalueRowIteratorWithProcessor(qe, rowTransform)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &Result{
+		Rows:                  nil,
+		TableHeader:           toTableHeader(rowIterResult.Metadata.GetRowType().GetFields()),
+		AffectedRows:          int(rowCount),
+		Streamed:              true,
+		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
+	}
+
+	if err := finalizeQueryResult(
+		result,
+		rowIterResult.Stats.QueryStats,
+		qe.ReadOnlyTxn,
+		rowIterResult.Stats.QueryPlan,
+		qe.SysVars,
+		qe.Metrics,
+	); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
@@ -138,6 +174,63 @@ func runSpanvalueRowIterator(qe *queryExecution, w writer.RowIteratorWriter) (*w
 			qe.Metrics.RowCount = rowCount
 		}
 		return flushSpanvalueStreamingRow(w)
+	}
+
+	result, err := writer.RunRowIterator(qe.Iter, hooks)
+	return result, rowCount, err
+}
+
+func runSpanvalueRowIteratorWithProcessor(
+	qe *queryExecution,
+	rowTransform func(*spanner.Row) (Row, error),
+) (*writer.RowIteratorResult, int64, error) {
+	var rowCount int64
+	initialized := false
+
+	initProcessor := func(md *sppb.ResultSetMetadata) error {
+		if initialized || md == nil {
+			return nil
+		}
+		if err := qe.Processor.Init(md, qe.SysVars); err != nil {
+			return fmt.Errorf("failed to initialize processor: %w", err)
+		}
+		initialized = true
+		return nil
+	}
+
+	hooks := writer.RowIteratorHooks{
+		PrepareMetadata: initProcessor,
+		WriteRow: func(row *spanner.Row) error {
+			now := time.Now()
+			if qe.Metrics != nil && qe.Metrics.FirstRowTime == nil {
+				qe.Metrics.FirstRowTime = &now
+			}
+
+			transformedRow, err := rowTransform(row)
+			if err != nil {
+				return fmt.Errorf("failed to transform row: %w", err)
+			}
+			if err := qe.Processor.ProcessRow(transformedRow); err != nil {
+				return fmt.Errorf("failed to process row %d: %w", rowCount+1, err)
+			}
+
+			rowCount++
+			if qe.Metrics != nil {
+				qe.Metrics.LastRowTime = &now
+				qe.Metrics.RowCount = rowCount
+			}
+			return nil
+		},
+		Finish: func(result *writer.RowIteratorResult) error {
+			if err := initProcessor(result.Metadata); err != nil {
+				return err
+			}
+			parsedStats, _ := parseQueryStats(result.Stats.QueryStats)
+			if err := qe.Processor.Finish(parsedStats, rowCount); err != nil {
+				return fmt.Errorf("failed to finish processing: %w", err)
+			}
+			return nil
+		},
 	}
 
 	result, err := writer.RunRowIterator(qe.Iter, hooks)
