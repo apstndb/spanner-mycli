@@ -348,6 +348,10 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, error) {
 	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
+	if result, handled, err := executeStreamingSQLWithSpanvalueWriter(qe); handled || err != nil {
+		return result, err
+	}
+
 	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
 	if qe.ValueFmtMode == format.JSONValues {
 		rowTransform = withRawJSONMarker(rowTransform)

@@ -487,15 +487,15 @@ CREATE TABLE TestTable (
 			// Check for expected patterns based on export mode
 			switch tt.exportMode {
 			case enums.DisplayModeSQLInsert:
-				if !strings.Contains(sqlOutput, "INSERT INTO TestTable") {
+				if !strings.Contains(sqlOutput, "INSERT INTO `TestTable`") {
 					t.Errorf("Expected INSERT INTO statement, got: %s", sqlOutput)
 				}
 			case enums.DisplayModeSQLInsertOrUpdate:
-				if !strings.Contains(sqlOutput, "INSERT OR UPDATE INTO TestTable") {
+				if !strings.Contains(sqlOutput, "INSERT OR UPDATE INTO `TestTable`") {
 					t.Errorf("Expected INSERT OR UPDATE statement, got: %s", sqlOutput)
 				}
 			case enums.DisplayModeSQLInsertOrIgnore:
-				if !strings.Contains(sqlOutput, "INSERT OR IGNORE INTO TestTable") {
+				if !strings.Contains(sqlOutput, "INSERT OR IGNORE INTO `TestTable`") {
 					t.Errorf("Expected INSERT OR IGNORE statement, got: %s", sqlOutput)
 				}
 			}
@@ -741,7 +741,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 				}
 			}
 			// Verify the output contains expected SQL
-			if !strings.Contains(streamOutput, "INSERT INTO StreamTarget") {
+			if !strings.Contains(streamOutput, "INSERT INTO `StreamTarget`") {
 				t.Errorf("Expected INSERT statement in output")
 			}
 		} else {

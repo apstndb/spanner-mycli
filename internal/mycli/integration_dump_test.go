@@ -286,7 +286,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	}
 
 	// Count INSERT statements
-	insertCount := strings.Count(output, "INSERT INTO StreamTest")
+	insertCount := strings.Count(output, "INSERT INTO `StreamTest`")
 	if insertCount < 5 {
 		t.Errorf("Expected at least 5 INSERT statements, got %d\nOutput:\n%s", insertCount, output)
 	}
