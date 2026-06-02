@@ -89,18 +89,26 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 
 	switch qe.SysVars.Display.CLIFormat {
 	case enums.DisplayModeCSV:
-		return writer.NewCSVWriter(
+		w, err := writer.NewCSVWriter(
 			out,
 			writer.WithFormatter(qe.FormatConfig),
 			writer.WithHeader(!qe.SysVars.Display.SkipColumnNames),
 			writer.WithUnnamedFieldNamer(nil),
-		), true, nil
+		)
+		if err != nil {
+			return nil, true, err
+		}
+		return w, true, nil
 	case enums.DisplayModeJSONL:
-		return writer.NewJSONLWriter(
+		w, err := writer.NewJSONLWriter(
 			out,
 			writer.WithFormatter(qe.FormatConfig),
 			writer.WithUnnamedFieldNamer(nil),
-		), true, nil
+		)
+		if err != nil {
+			return nil, true, err
+		}
+		return w, true, nil
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		if qe.SysVars.Display.SQLTableName == "" {
 			return nil, false, nil
@@ -109,14 +117,18 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 		if err != nil {
 			return nil, true, err
 		}
-		return writer.NewSQLInsertWriter(
+		w, err := writer.NewSQLInsertWriter(
 			out,
 			qe.SysVars.Display.SQLTableName,
 			writer.WithFormatter(qe.FormatConfig),
 			writer.WithSQLBatchSize(batchSize),
 			writer.WithSQLDialect(qe.SysVars.Feature.DatabaseDialect),
 			writer.WithSQLInsertKind(spanvalueSQLInsertKind(qe.SysVars.Display.CLIFormat)),
-		), true, nil
+		)
+		if err != nil {
+			return nil, true, err
+		}
+		return w, true, nil
 	default:
 		return nil, false, nil
 	}
