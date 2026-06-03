@@ -39,9 +39,10 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 		return nil, true, normalizeSpanvalueWriterError(err)
 	}
 
+	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
 		Rows:                  nil,
-		TableHeader:           toTableHeader(rowIterResult.Metadata.GetRowType().GetFields()),
+		TableHeader:           toTableHeader(fields),
 		AffectedRows:          int(rowCount),
 		Streamed:              true,
 		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
@@ -49,9 +50,9 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 
 	if err := finalizeQueryResult(
 		result,
-		rowIterResult.Stats.QueryStats,
+		queryStats,
 		qe.ReadOnlyTxn,
-		rowIterResult.Stats.QueryPlan,
+		queryPlan,
 		qe.SysVars,
 		qe.Metrics,
 	); err != nil {
@@ -74,9 +75,10 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 		return nil, err
 	}
 
+	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
 		Rows:                  nil,
-		TableHeader:           toTableHeader(rowIterResult.Metadata.GetRowType().GetFields()),
+		TableHeader:           toTableHeader(fields),
 		AffectedRows:          int(rowCount),
 		Streamed:              true,
 		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
@@ -84,9 +86,9 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 
 	if err := finalizeQueryResult(
 		result,
-		rowIterResult.Stats.QueryStats,
+		queryStats,
 		qe.ReadOnlyTxn,
-		rowIterResult.Stats.QueryPlan,
+		queryPlan,
 		qe.SysVars,
 		qe.Metrics,
 	); err != nil {
@@ -125,7 +127,11 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 		return w, true, nil
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
 		if qe.SysVars.Display.SQLTableName == "" {
-			return nil, false, nil
+			return nil, true, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
+				"Options:\n" +
+				"  1. Use DUMP TABLE for full table exports\n" +
+				"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
+				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
 		batchSize, err := spanvalueSQLBatchSize(qe.SysVars.Display.SQLBatchSize)
 		if err != nil {
@@ -221,10 +227,15 @@ func runSpanvalueRowIteratorWithProcessor(
 			PrepareMetadata: initProcessor,
 			Write:           qe.Processor.ProcessRow,
 			Finish: func(result *writer.RowIteratorResult, rowCount int64) error {
-				if err := initProcessor(result.Metadata); err != nil {
+				_, queryStats, _ := rowIteratorResultParts(result)
+				var metadata *sppb.ResultSetMetadata
+				if result != nil {
+					metadata = result.Metadata
+				}
+				if err := initProcessor(metadata); err != nil {
 					return err
 				}
-				parsedStats, _ := parseQueryStats(result.Stats.QueryStats)
+				parsedStats, _ := parseQueryStats(queryStats)
 				if err := qe.Processor.Finish(parsedStats, rowCount); err != nil {
 					return fmt.Errorf("failed to finish processing: %w", err)
 				}
@@ -234,6 +245,18 @@ func runSpanvalueRowIteratorWithProcessor(
 		withRowIteratorMetrics(qe.Metrics),
 		withRowIteratorErrorLabels("failed to transform row", "failed to process row", ""),
 	)
+}
+
+func rowIteratorResultParts(result *writer.RowIteratorResult) ([]*sppb.StructType_Field, map[string]any, *sppb.QueryPlan) {
+	if result == nil {
+		return nil, nil, nil
+	}
+
+	var fields []*sppb.StructType_Field
+	if result.Metadata != nil {
+		fields = result.Metadata.GetRowType().GetFields()
+	}
+	return fields, result.Stats.QueryStats, result.Stats.QueryPlan
 }
 
 func flushSpanvalueStreamingRow(w writer.RowIteratorWriter) error {
