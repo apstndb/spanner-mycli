@@ -197,7 +197,7 @@ func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (Strea
 		return NewJSONLFormatter(out), nil
 	case ModeTable, ModeTableComment, ModeTableDetailComment:
 		// Table formats need screenWidth, so they must be created by the caller
-		// Return a dummy formatter for isStreamingSupported check
+		// Return a dummy formatter for capability checks.
 		if out == io.Discard {
 			return NewTableStreamingFormatter(out, config, 0, 0, mode), nil
 		}

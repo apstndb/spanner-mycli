@@ -67,7 +67,7 @@ func TestNewStreamingFormatter(t *testing.T) {
 		{name: "html", mode: ModeHTML, out: io.Discard},
 		{name: "xml", mode: ModeXML, out: io.Discard},
 		{name: "jsonl", mode: ModeJSONL, out: io.Discard},
-		// Table formats with io.Discard are allowed (for isStreamingSupported check)
+		// Table formats with io.Discard are allowed for capability checks.
 		{name: "table_discard", mode: ModeTable, out: io.Discard},
 		// Table formats with real writer require screenWidth
 		{name: "table_real_writer", mode: ModeTable, out: &bytes.Buffer{}, wantErr: true},
