@@ -31,6 +31,10 @@ import (
 func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, error) {
 	w, handled, err := newSpanvalueRowIteratorWriter(qe)
 	if err != nil || !handled {
+		if err != nil && qe.Iter != nil {
+			// Writer setup failed before RunRowIterator could take ownership.
+			qe.Iter.Stop()
+		}
 		return nil, handled, err
 	}
 
