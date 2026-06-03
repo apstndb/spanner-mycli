@@ -75,11 +75,6 @@ func runRowIteratorTransform[T any](
 	hooks := writer.RowIteratorHooks{
 		PrepareMetadata: sink.PrepareMetadata,
 		WriteRow: func(row *spanner.Row) error {
-			now := time.Now()
-			if cfg.metrics != nil && cfg.metrics.FirstRowTime == nil {
-				cfg.metrics.FirstRowTime = &now
-			}
-
 			transformedRow, err := transform(row)
 			if err != nil {
 				return wrapRowIteratorError(cfg.transformErrorLabel, err)
@@ -92,7 +87,15 @@ func runRowIteratorTransform[T any](
 
 			rowCount++
 			if cfg.metrics != nil {
-				cfg.metrics.LastRowTime = &now
+				now := time.Now()
+				if cfg.metrics.FirstRowTime == nil {
+					firstRowTime := now
+					cfg.metrics.FirstRowTime = &firstRowTime
+				}
+				if cfg.metrics.LastRowTime == nil {
+					cfg.metrics.LastRowTime = new(time.Time)
+				}
+				*cfg.metrics.LastRowTime = now
 				cfg.metrics.RowCount = rowCount
 			}
 
