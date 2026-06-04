@@ -135,7 +135,13 @@ type queryExecution struct {
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
 func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error) {
-	useStreaming, processor := decideExecutionMode(qe.SysVars)
+	useStreaming, processor, err := decideExecutionMode(qe.SysVars)
+	if err != nil {
+		if qe.Iter != nil {
+			qe.Iter.Stop()
+		}
+		return nil, err
+	}
 	qe.Metrics.IsStreaming = useStreaming
 	qe.Processor = processor
 
@@ -145,7 +151,6 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 		"sqlTableName", qe.SysVars.Display.SQLTableName)
 
 	var result *Result
-	var err error
 	if useStreaming {
 		result, err = executeWithStreaming(ctx, qe)
 	} else {
@@ -241,14 +246,24 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
-func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor) {
+func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor, error) {
 	// Get output writer from StreamManager (respects tee/redirect settings)
 	outStream := sysVars.StreamManager.GetWriter()
 	if outStream == nil {
-		return false, nil
+		return false, nil, nil
 	}
 
-	// Determine screen width based on system variables
+	screenWidth := displayScreenWidth(sysVars)
+
+	// Try to create streaming processor based on settings
+	processor, err := createStreamingProcessor(sysVars, outStream, screenWidth)
+	if err != nil {
+		return false, nil, err
+	}
+	return processor != nil, processor, nil
+}
+
+func displayScreenWidth(sysVars *systemVariables) int {
 	screenWidth := math.MaxInt
 	if sysVars.Display.AutoWrap {
 		if sysVars.Display.FixedWidth != nil {
@@ -264,10 +279,7 @@ func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor) {
 			}
 		}
 	}
-
-	// Try to create streaming processor based on settings
-	processor, _ := createStreamingProcessor(sysVars, outStream, screenWidth)
-	return processor != nil, processor
+	return screenWidth
 }
 
 // executeWithStreaming executes the query using streaming mode.
@@ -355,41 +367,27 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 }
 
 // createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
-// Returns nil if streaming should not be used (based on StreamingMode setting and format).
+// Non-table formats are always streaming because they do not benefit from row buffering.
+// For table formats, CLI_STREAMING controls whether to trade layout quality for immediate output.
 func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
-	// Check if streaming should be used based on mode
-	shouldStream := false
-	switch sysVars.Query.StreamingMode {
-	case enums.StreamingModeTrue:
-		// Always stream if format supports it
-		shouldStream = true
-	case enums.StreamingModeFalse:
-		// Never stream
-		return nil, nil
-	case enums.StreamingModeAuto:
-		// AUTO mode: decide based on format
-		switch sysVars.Display.CLIFormat {
-		case enums.DisplayModeTable, enums.DisplayModeTableComment, enums.DisplayModeTableDetailComment:
-			// Table formats: buffer by default for accurate column widths
-			shouldStream = false
-		case enums.DisplayModeCSV, enums.DisplayModeTab, enums.DisplayModeVertical, enums.DisplayModeHTML, enums.DisplayModeXML,
-			enums.DisplayModeJSONL,
-			enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-			// Other formats: stream by default for better performance
-			shouldStream = true
+	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
+	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
+		switch sysVars.Query.StreamingMode {
+		case enums.StreamingModeTrue:
+			return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
+		case enums.StreamingModeFalse, enums.StreamingModeAuto:
+			// Table formats buffer by default for accurate column widths.
+			return nil, nil
 		default:
-			// Unknown format: buffer for safety
-			shouldStream = false
+			return nil, nil
 		}
+	}
+
+	switch sysVars.Query.StreamingMode {
+	case enums.StreamingModeTrue, enums.StreamingModeFalse, enums.StreamingModeAuto:
 	default:
-		// Unknown mode: buffer for safety
 		return nil, nil
 	}
 
-	if !shouldStream {
-		return nil, nil
-	}
-
-	// Use the shared processor creation logic to avoid duplication
 	return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
 }

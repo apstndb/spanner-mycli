@@ -9,46 +9,28 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestNewFormatter(t *testing.T) {
-	t.Parallel()
+func formatVertical(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewVerticalFormatter(out), rows, columnNames, config)
+}
 
-	tests := []struct {
-		name    string
-		mode    Mode
-		wantErr bool
-	}{
-		{name: "unspecified", mode: "UNSPECIFIED"},
-		{name: "empty", mode: ""},
-		{name: "table", mode: ModeTable},
-		{name: "table_comment", mode: ModeTableComment},
-		{name: "table_detail_comment", mode: ModeTableDetailComment},
-		{name: "vertical", mode: ModeVertical},
-		{name: "tab", mode: ModeTab},
-		{name: "csv", mode: ModeCSV},
-		{name: "jsonl", mode: ModeJSONL},
-		{name: "html", mode: ModeHTML},
-		{name: "xml", mode: ModeXML},
-		{name: "invalid", mode: Mode("NONEXISTENT"), wantErr: true},
-	}
+func formatTab(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewTabFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			fn, err := NewFormatter(tt.mode)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if fn == nil {
-				t.Error("expected non-nil FormatFunc")
-			}
-		})
-	}
+func formatCSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewCSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+}
+
+func formatHTML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewHTMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+}
+
+func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewXMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+}
+
+func formatJSONL(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewJSONLFormatter(out), rows, columnNames, config)
 }
 
 func TestNewStreamingFormatter(t *testing.T) {
@@ -91,25 +73,6 @@ func TestNewStreamingFormatter(t *testing.T) {
 				t.Error("expected non-nil StreamingFormatter")
 			}
 		})
-	}
-}
-
-func TestNewFormatter_RegisteredMode(t *testing.T) {
-	// No t.Parallel(): mutates global registry
-	testMode := Mode("TEST_CUSTOM")
-	RegisterFormatFunc(func(mode Mode) (FormatFunc, error) {
-		return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-			return nil
-		}, nil
-	}, testMode)
-	t.Cleanup(func() { unregisterFormatFunc(testMode) })
-
-	fn, err := NewFormatter(testMode)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if fn == nil {
-		t.Error("expected non-nil FormatFunc from registered mode")
 	}
 }
 

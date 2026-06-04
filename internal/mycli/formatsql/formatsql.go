@@ -2,8 +2,8 @@
 // It generates INSERT, INSERT OR IGNORE, and INSERT OR UPDATE statements
 // that can be used for database migration, backup/restore, and test data generation.
 //
-// This package registers its formatters with the format package's registry,
-// allowing it to be used as a plugin without the format package depending on memefish.
+// This package registers its streaming formatter with the format package's registry,
+// allowing it to be used without the format package depending on memefish.
 //
 // Current Design Constraints:
 // - Values are expected to be pre-formatted as SQL literals using spanvalue.LiteralFormatConfig
@@ -31,14 +31,8 @@ const (
 )
 
 func init() {
-	format.RegisterFormatFunc(newFormatSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
 	format.RegisterStreamingFormatter(newStreamingFormatterSQL, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
 	format.RegisterValueFormatMode(format.SQLLiteralValues, ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate)
-}
-
-// newFormatSQL is the FormatFuncFactory for SQL export modes.
-func newFormatSQL(mode format.Mode) (format.FormatFunc, error) {
-	return FormatSQL(mode), nil
 }
 
 // newStreamingFormatterSQL is the StreamingFormatterFactory for SQL export modes.
@@ -452,37 +446,33 @@ func (s *SQLStreamingFormatter) FinishFormat() error {
 	return s.formatter.Finish()
 }
 
-// FormatSQL is the non-streaming formatter for SQL export.
-func FormatSQL(mode format.Mode) format.FormatFunc {
-	return func(out io.Writer, rows []format.Row, columnNames []string, config format.FormatConfig, screenWidth int) error {
-		tableName := config.SQLTableName
+// WriteSQL writes already-buffered SQL literal rows. This exists only for the
+// DUMP buffered fallback used when no real output stream is available.
+func WriteSQL(out io.Writer, rows []format.Row, columnNames []string, config format.FormatConfig, mode format.Mode) error {
+	tableName := config.SQLTableName
 
-		if tableName == "" {
-			return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
-				"Options:\n" +
-				"  1. Use DUMP TABLE for full table exports\n" +
-				"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
-				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
-		}
-
-		formatter, err := NewSQLFormatter(out, mode, tableName, config.SQLBatchSize)
-		if err != nil {
-			return err
-		}
-
-		// Write header (will validate column names)
-		if err := formatter.WriteHeader(columnNames); err != nil {
-			return err
-		}
-
-		// Write all rows
-		for _, row := range rows {
-			if err := formatter.WriteRow(format.Texts(row)); err != nil {
-				return err
-			}
-		}
-
-		// Finish and flush
-		return formatter.Finish()
+	if tableName == "" {
+		return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
+			"Options:\n" +
+			"  1. Use DUMP TABLE for full table exports\n" +
+			"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
+			"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 	}
+
+	formatter, err := NewSQLFormatter(out, mode, tableName, config.SQLBatchSize)
+	if err != nil {
+		return err
+	}
+
+	if err := formatter.WriteHeader(columnNames); err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		if err := formatter.WriteRow(format.Texts(row)); err != nil {
+			return err
+		}
+	}
+
+	return formatter.Finish()
 }

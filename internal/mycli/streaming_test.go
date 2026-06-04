@@ -181,9 +181,7 @@ func TestBufferedVsStreaming(t *testing.T) {
 	// Buffered output
 	var bufBuffered bytes.Buffer
 	config := sysVars.toFormatConfig()
-	csvFormatter, err := format.NewFormatter(format.ModeCSV)
-	assert.NoError(t, err)
-	err = csvFormatter(&bufBuffered, rows, columnNames, config, 0)
+	err := format.ExecuteWithFormatter(format.NewCSVFormatter(&bufBuffered, sysVars.Display.SkipColumnNames), rows, columnNames, config)
 	assert.NoError(t, err)
 
 	// Streaming output

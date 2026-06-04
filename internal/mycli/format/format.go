@@ -14,15 +14,6 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 )
 
-// formatTable formats output as an ASCII table.
-// No writeBuffered wrapping needed: non-streaming TableStreamingFormatter defers
-// all output to Render() in FinishFormat(), so no partial output on error.
-func formatTable(mode Mode) FormatFunc {
-	return func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-		return WriteTable(out, rows, columnNames, config, screenWidth, mode)
-	}
-}
-
 // TableParams holds additional parameters for table formatting that are not
 // part of the standard FormatConfig (used only by table format).
 type TableParams struct {
@@ -44,37 +35,6 @@ func WriteTable(w io.Writer, rows []Row, columnNames []string, config FormatConf
 func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode Mode, params TableParams) error {
 	formatter := NewTableFormatterForBuffered(w, config, screenWidth, mode, params)
 	return ExecuteWithFormatter(formatter, rows, columnNames, config)
-}
-
-// formatVertical formats output in vertical format where each row is displayed
-// with column names on the left and values on the right.
-func formatVertical(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewVerticalFormatter(out), rows, columnNames, config)
-}
-
-// formatTab formats output as tab-separated values.
-func formatTab(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewTabFormatter(out, config.SkipColumnNames), rows, columnNames, config)
-}
-
-// formatCSV formats output as comma-separated values following RFC 4180.
-func formatCSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewCSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
-}
-
-// formatHTML formats output as an HTML table.
-func formatHTML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewHTMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
-}
-
-// formatXML formats output as XML.
-func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewXMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
-}
-
-// formatJSONL formats output as JSON Lines (one JSON object per row).
-func formatJSONL(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewJSONLFormatter(out), rows, columnNames, config)
 }
 
 // wrapRowStyled wraps styled (ANSI-coded) cell text with ControlSequences-aware Wrap.
@@ -123,36 +83,6 @@ func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
 		}
 	}
 	return result
-}
-
-// NewFormatter creates a new formatter function based on the display mode.
-// Built-in modes (TABLE, CSV, etc.) are handled directly.
-// Custom modes are looked up in the registry (see RegisterFormatFunc).
-func NewFormatter(mode Mode) (FormatFunc, error) {
-	switch mode {
-	case ModeUnspecified, "":
-		return formatTable(ModeTable), nil
-	case ModeTable, ModeTableComment, ModeTableDetailComment:
-		return formatTable(mode), nil
-	case ModeVertical:
-		return formatVertical, nil
-	case ModeTab:
-		return formatTab, nil
-	case ModeCSV:
-		return formatCSV, nil
-	case ModeHTML:
-		return formatHTML, nil
-	case ModeXML:
-		return formatXML, nil
-	case ModeJSONL:
-		return formatJSONL, nil
-	default:
-		// Look up in registry for custom modes
-		if factory, ok := lookupFormatFunc(mode); ok {
-			return factory(mode)
-		}
-		return nil, errUnsupportedMode("display", mode)
-	}
 }
 
 // ExecuteWithFormatter executes buffered formatting using a streaming formatter.

@@ -291,6 +291,11 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
 		// Metrics are collected but not part of test expectations
 		cmpopts.IgnoreFields(Result{}, "Metrics"),
+		// DML THEN RETURN keeps output atomic by rendering rows before implicit
+		// commit and no longer exposes those rows through Result.Rows.
+		cmp.FilterValues(func(x, y Result) bool {
+			return x.HasRenderedOutput || y.HasRenderedOutput
+		}, cmpopts.IgnoreFields(Result{}, "Rows", "RenderedOutput", "HasRenderedOutput")),
 		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	)

@@ -1,10 +1,6 @@
 package format
 
-import (
-	"io"
-
-	"github.com/apstndb/spanner-mycli/enums"
-)
+import "github.com/apstndb/spanner-mycli/enums"
 
 // Cell is the interface for a single formatted cell.
 // The format package is agnostic to the concrete type — it only calls these methods.
@@ -130,10 +126,6 @@ type FormatConfig struct {
 	WidthStrategy   enums.WidthStrategy // Column width allocation algorithm. Zero value = GreedyFrequency (default).
 	TabVisualize    bool                // When true, visualize tab characters with → symbol in table output.
 }
-
-// FormatFunc is a function type that formats and writes result data.
-// It takes an output writer, rows, column names, config, and screen width.
-type FormatFunc func(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error
 
 // StreamingFormatter defines the interface for format-specific streaming output.
 // Each format (CSV, TAB, etc.) implements this interface to handle streaming output.

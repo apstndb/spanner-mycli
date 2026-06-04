@@ -72,56 +72,44 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		return nil
 	}
 
-	// Determine the display format to use
-	displayFormat := sysVars.Display.CLIFormat
+	// Build FormatConfig from systemVariables
+	config := sysVars.toFormatConfig()
 
-	// Modes that require SQL literal values (e.g., SQL_INSERT) must fall back to table format
-	// when values were not formatted as SQL literals (HasSQLFormattedValues is false).
-	// This affects metadata queries (SHOW CREATE TABLE, EXPLAIN) and DML with THEN RETURN.
-	fmtMode := format.Mode(displayFormat.String())
+	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
+	if fmtMode == format.ModeUnspecified {
+		fmtMode = format.ModeTable
+	}
+
+	// Modes that require SQL literal values (e.g., SQL_INSERT) must fall back to
+	// table format when values were not formatted as SQL literals. This affects
+	// non-query buffered results such as metadata statements and DML THEN RETURN.
 	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && !result.HasSQLFormattedValues {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
 			"requestedFormat", sysVars.Display.CLIFormat,
 			"statementType", "non-SELECT/DML")
-		displayFormat = enums.DisplayModeTable // Fall back to table format
+		fmtMode = format.ModeTable
 	}
 
-	// Build FormatConfig from systemVariables
-	config := sysVars.toFormatConfig()
-
-	// Recompute fmtMode after potential fallback above
-	fmtMode = format.Mode(displayFormat.String())
-
-	// For SQL export, resolve the table name from Result if available
 	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && result.SQLTableNameForExport != "" {
 		config.SQLTableName = result.SQLTableNameForExport
 	}
 
-	// Create the appropriate formatter based on the display mode
-	formatter, err := format.NewFormatter(fmtMode)
-	if err != nil {
-		return fmt.Errorf("failed to create formatter: %w", err)
-	}
-
-	// For table mode, pass verbose headers and column align via WriteTableWithParams
-	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
-		verboseHeaders := renderTableHeader(result.TableHeader, true)
-		tableMode := fmtMode
-		if tableMode == format.ModeUnspecified {
-			tableMode = format.ModeTable
+	if !fmtMode.IsTableMode() {
+		formatter, err := format.NewStreamingFormatter(fmtMode, out, config)
+		if err != nil {
+			return fmt.Errorf("failed to create streaming formatter for buffered rows: %w", err)
 		}
-		return format.WriteTableWithParams(out, result.Rows, columnNames, config, screenWidth, tableMode, format.TableParams{
-			VerboseHeaders: verboseHeaders,
-			ColumnAlign:    result.ColumnAlign,
-		})
+		if err := format.ExecuteWithFormatter(formatter, result.Rows, columnNames, config); err != nil {
+			return fmt.Errorf("streaming formatter failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
+		}
+		return nil
 	}
 
-	// Format and write the result
-	if err := formatter(out, result.Rows, columnNames, config, screenWidth); err != nil {
-		return fmt.Errorf("formatting failed for mode %v: %w", sysVars.Display.CLIFormat, err)
-	}
-
-	return nil
+	verboseHeaders := renderTableHeader(result.TableHeader, true)
+	return format.WriteTableWithParams(out, result.Rows, columnNames, config, screenWidth, fmtMode, format.TableParams{
+		VerboseHeaders: verboseHeaders,
+		ColumnAlign:    result.ColumnAlign,
+	})
 }
 
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) error {
@@ -136,10 +124,17 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 		fmt.Fprintln(out, input+";")
 	}
 
-	// Skip table data if already streamed
+	// Skip table data if already streamed or pre-rendered by an execution path
+	// that needs atomic output after side effects such as implicit DML commit.
 	if !result.Streamed {
-		if err := printTableData(sysVars, screenWidth, out, result); err != nil {
-			return err
+		if result.HasRenderedOutput {
+			if _, err := out.Write(result.RenderedOutput); err != nil {
+				return err
+			}
+		} else {
+			if err := printTableData(sysVars, screenWidth, out, result); err != nil {
+				return err
+			}
 		}
 	}
 

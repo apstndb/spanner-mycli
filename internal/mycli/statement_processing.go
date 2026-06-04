@@ -173,13 +173,19 @@ type QueryIndexAdvice struct {
 }
 
 type Result struct {
-	ColumnAlign      []tw.Align // optional
-	Rows             []Row
-	Predicates       []string
-	Appendices       []ResultAppendix
-	AffectedRows     int
-	AffectedRowsType rowCountType
-	Stats            QueryStats
+	ColumnAlign []tw.Align // optional
+	Rows        []Row
+
+	// RenderedOutput holds pre-rendered table data that should be written before
+	// appendices and result lines. Used when output must stay atomic until after
+	// execution side effects such as implicit DML commit have succeeded.
+	RenderedOutput    []byte
+	HasRenderedOutput bool
+	Predicates        []string
+	Appendices        []ResultAppendix
+	AffectedRows      int
+	AffectedRowsType  rowCountType
+	Stats             QueryStats
 
 	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
 	IsExecutedDML bool

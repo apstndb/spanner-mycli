@@ -64,8 +64,9 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
 	outStream := session.systemVariables.StreamManager.GetWriter()
-	// Use streaming unless: output is nil/io.Discard (tests) or streaming explicitly disabled
-	if outStream != nil && outStream != io.Discard && session.systemVariables.Query.StreamingMode != enums.StreamingModeFalse {
+	// Use streaming whenever there is a real output stream. DUMP output is not a
+	// table layout, so CLI_STREAMING=false should not force row buffering here.
+	if outStream != nil && outStream != io.Discard {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
 	}
 	return executeDumpBuffered(ctx, session, mode, specificTables)
@@ -213,7 +214,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 				var buf bytes.Buffer
 				config := session.systemVariables.toFormatConfig()
 				config.SQLTableName = table
-				if err := formatsql.FormatSQL(formatsql.ModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
+				if err := formatsql.WriteSQL(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, formatsql.ModeSQLInsert); err != nil {
 					return fmt.Errorf("failed to format SQL for table %s: %w", table, err)
 				}
 				if buf.Len() > 0 {

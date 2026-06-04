@@ -187,8 +187,8 @@ Flags:
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
   -o, --output=STRING                          Redirect query/data output to file (overwrites existing file)
       --skip-column-names                      Suppress column headers in output
-      --streaming="AUTO"                       Streaming output mode: AUTO (format-dependent default), TRUE (always
-                                               stream), FALSE (never stream)
+      --streaming="AUTO"                       Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
+                                               table output. Non-table formats always stream.
       --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
                                                FALSE (never styled)
   -q, --quiet                                  Suppress result lines like 'rows in set' for clean output
@@ -986,10 +986,10 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 >
 > You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, or `--csv`.
 
-> **Note**: `CLI_STREAMING` controls streaming output mode:
-> - `AUTO` (default) - Automatically selects streaming for CSV/Tab/Vertical/HTML/XML formats, buffered for Table formats
-> - `TRUE` - Forces streaming for all formats (reduces memory usage, faster time-to-first-byte)
-> - `FALSE` - Forces buffered mode for all formats (allows accurate column width calculation)
+> **Note**: `CLI_STREAMING` controls table streaming output mode:
+> - `AUTO` (default) - Buffers Table formats for accurate column width calculation; non-table formats stream
+> - `TRUE` - Streams Table formats too (reduces memory usage, faster time-to-first-byte)
+> - `FALSE` - Buffers Table formats; non-table formats still stream
 >
 > For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
 
