@@ -20,6 +20,21 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func executeSQLExportForTest(t *testing.T, ctx context.Context, session *Session, query string) (*Result, string, error) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
+
+	stmt, err := BuildStatement(query)
+	if err != nil {
+		t.Fatalf("Failed to build export statement: %v", err)
+	}
+
+	result, err := stmt.Execute(ctx, session)
+	return result, buf.String(), err
+}
+
 func TestSQLExportIntegration(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -140,16 +155,11 @@ CREATE TABLE DestTable (
 			session.systemVariables.Display.CLIFormat = tt.exportMode
 			session.systemVariables.Display.SQLTableName = tt.tableName
 			session.systemVariables.Display.SQLBatchSize = tt.batchSize
-			// Force buffered mode for testing
+			// SQL export is a non-table format, so it streams even when table streaming is disabled.
 			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
-			// Execute the query - with SQL format set, it should use proper SQL literal formatting
-			stmt, err := BuildStatement(tt.query)
-			if err != nil {
-				t.Fatalf("Failed to build export statement: %v", err)
-			}
-
-			result, err := stmt.Execute(ctx, session)
+			// Execute the query - with SQL format set, it should use proper SQL literal formatting.
+			result, sqlOutput, err := executeSQLExportForTest(t, ctx, session, tt.query)
 			if err != nil {
 				t.Fatalf("Failed to execute export query: %v", err)
 			}
@@ -157,14 +167,6 @@ CREATE TABLE DestTable (
 			// Debug: Log result details
 			t.Logf("Query result: rows=%d, header=%v", len(result.Rows), result.TableHeader)
 
-			// Capture the SQL export output
-			var buf bytes.Buffer
-			err = printTableData(session.systemVariables, 0, &buf, result)
-			if err != nil {
-				t.Fatalf("Failed to format SQL export: %v", err)
-			}
-
-			sqlOutput := buf.String()
 			t.Logf("Generated SQL:\n%s", sqlOutput)
 
 			// Debug: Log if SQL output is empty
@@ -267,26 +269,13 @@ CREATE TABLE ComplexDest (
 	session.systemVariables.Display.CLIFormat = enums.DisplayModeSQLInsert
 	session.systemVariables.Display.SQLTableName = "ComplexDest"
 	session.systemVariables.Display.SQLBatchSize = 0
-	session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse // Force buffered mode
+	session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
-	stmt, err := BuildStatement("SELECT * FROM ComplexSource ORDER BY id")
-	if err != nil {
-		t.Fatalf("Failed to build statement: %v", err)
-	}
-
-	result, err := stmt.Execute(ctx, session)
+	_, sqlOutput, err := executeSQLExportForTest(t, ctx, session, "SELECT * FROM ComplexSource ORDER BY id")
 	if err != nil {
 		t.Fatalf("Failed to execute query: %v", err)
 	}
 
-	// Generate SQL export
-	var buf bytes.Buffer
-	err = printTableData(session.systemVariables, 0, &buf, result)
-	if err != nil {
-		t.Fatalf("Failed to format SQL export: %v", err)
-	}
-
-	sqlOutput := buf.String()
 	t.Logf("SQL export with complex types:\n%s", sqlOutput)
 
 	// Execute the generated SQL to import data
@@ -589,36 +578,13 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 			session.systemVariables.Display.SQLBatchSize = 0
 			session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
 
-			stmt, err := BuildStatement(tc.query)
-			if err != nil {
-				t.Fatalf("Failed to build statement: %v", err)
-			}
-
-			result, err := stmt.Execute(ctx, session)
-			if err != nil {
-				t.Fatalf("Failed to execute query: %v", err)
-			}
-
-			// Extract column names using the same method as printTableData
-			columnNames := extractTableColumnNames(result.TableHeader)
+			result, sqlOutput, err := executeSQLExportForTest(t, ctx, session, tc.query)
 
 			t.Logf("Test: %s", tc.desc)
 			t.Logf("Query: %s", tc.query)
-			t.Logf("Column names: %v", columnNames)
-			t.Logf("Row count: %d", len(result.Rows))
-
-			// Check for unnamed columns (empty strings)
-			unnamedCount := 0
-			for i, name := range columnNames {
-				if name == "" {
-					t.Logf("  Column %d is unnamed", i)
-					unnamedCount++
-				}
+			if result != nil {
+				t.Logf("Row count: %d", len(result.Rows))
 			}
-
-			// Try to format as SQL
-			var buf bytes.Buffer
-			err = printTableData(session.systemVariables, 0, &buf, result)
 
 			if tc.expectErr {
 				if err == nil {
@@ -634,7 +600,6 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error formatting SQL: %v", err)
 				} else {
-					sqlOutput := buf.String()
 					if sqlOutput == "" {
 						t.Errorf("Expected SQL output but got empty string")
 					} else {
@@ -870,40 +835,21 @@ CREATE TABLE TestTable (
 			t.Logf("Testing: %s", tt.description)
 			t.Logf("Query: %s", tt.query)
 
-			// Execute the query
-			stmt, err := BuildStatement(tt.query)
-			if err != nil {
-				t.Fatalf("Failed to build statement: %v", err)
-			}
-
-			result, err := stmt.Execute(ctx, session)
+			result, sqlOutput, err := executeSQLExportForTest(t, ctx, session, tt.query)
 
 			if tt.shouldAutoDetect {
 				if err != nil {
 					t.Fatalf("Expected successful execution with auto-detection, got error: %v", err)
 				}
 
-				// Check if we got valid result with rows
-				if result == nil || (len(result.Rows) == 0 && !result.Streamed) {
-					t.Fatalf("Expected result with data but got empty result")
+				if result == nil || !result.Streamed {
+					t.Fatalf("Expected streamed SQL export result, got %#v", result)
 				}
 
-				// Test buffered mode: format the result using printTableData
-				// This verifies that auto-detected table name is preserved in Result struct
-				var buf bytes.Buffer
-				session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
-
-				// Format the buffered result
-				err = printTableData(session.systemVariables, 0, &buf, result)
-				if err != nil {
-					t.Fatalf("Failed to format buffered result: %v", err)
-				}
-
-				sqlOutput := buf.String()
 				t.Logf("Generated SQL with auto-detected table:\n%s", sqlOutput)
 
 				// Verify the output contains the expected table name
-				expectedPattern := fmt.Sprintf("INTO %s", tt.expectedTable)
+				expectedPattern := fmt.Sprintf("INTO `%s`", tt.expectedTable)
 				if !strings.Contains(sqlOutput, expectedPattern) {
 					t.Errorf("Expected table name %s in output, but got:\n%s", tt.expectedTable, sqlOutput)
 				}
@@ -929,22 +875,8 @@ CREATE TABLE TestTable (
 					// Error during execution is expected
 					t.Logf("Got expected error during execution: %v", err)
 				} else {
-					// If execution succeeded, formatting should fail
-					var buf bytes.Buffer
-					err = printTableData(session.systemVariables, 0, &buf, result)
-					if err == nil {
-						t.Errorf("Expected error without table name, but formatting succeeded")
-						t.Logf("Unexpected output: %s", buf.String())
-					} else {
-						t.Logf("Got expected error during formatting: %v", err)
-						// Check if error message is helpful
-						errStr := err.Error()
-						if !strings.Contains(errStr, "SQL export requires a table name") &&
-							!strings.Contains(errStr, "Auto-detection failed") &&
-							!strings.Contains(errStr, "CLI_SQL_TABLE_NAME") {
-							t.Logf("Warning: Error message could be more helpful: %v", err)
-						}
-					}
+					t.Errorf("Expected error without table name, but execution succeeded")
+					t.Logf("Unexpected output: %s", sqlOutput)
 				}
 			}
 		})
@@ -1026,51 +958,28 @@ func TestSQLExportAutoDetectionWithComplexQueries(t *testing.T) {
 			t.Logf("Testing: %s", tc.desc)
 			t.Logf("Query: %s", tc.query)
 
-			stmt, err := BuildStatement(tc.query)
-			if err != nil {
-				t.Fatalf("Failed to build statement: %v", err)
-			}
-
-			result, err := stmt.Execute(ctx, session)
+			_, sqlOutput, err := executeSQLExportForTest(t, ctx, session, tc.query)
 			if err != nil {
 				// Error during execution is acceptable
 				t.Logf("Error during execution (expected): %v", err)
 			} else {
-				// If execution succeeded, formatting should fail
-				var buf bytes.Buffer
-				err = printTableData(session.systemVariables, 0, &buf, result)
-				if err == nil {
-					t.Errorf("Expected error for complex query without table name, but succeeded")
-					t.Logf("Unexpected output: %s", buf.String())
-				} else {
-					t.Logf("Got expected error: %v", err)
-					// Verify error message mentions the need for explicit table name
-					if !strings.Contains(err.Error(), "CLI_SQL_TABLE_NAME") {
-						t.Logf("Error message should mention CLI_SQL_TABLE_NAME")
-					}
-				}
+				t.Errorf("Expected error for complex query without table name, but succeeded")
+				t.Logf("Unexpected output: %s", sqlOutput)
 			}
 
 			// Now test with explicit table name - should work
 			session.systemVariables.Display.SQLTableName = "ExportTable"
 
 			// Re-execute with explicit table name
-			result, err = stmt.Execute(ctx, session)
+			_, sqlOutput, err = executeSQLExportForTest(t, ctx, session, tc.query)
 			if err != nil {
 				t.Logf("Note: Query failed even with explicit table name: %v", err)
 				// Some queries like JOINs may still fail for other reasons
 			} else {
-				var buf bytes.Buffer
-				err = printTableData(session.systemVariables, 0, &buf, result)
-				if err != nil {
-					t.Logf("Note: Formatting failed even with explicit table name: %v", err)
+				if strings.Contains(sqlOutput, "INSERT INTO `ExportTable`") {
+					t.Logf("Success with explicit table name: Generated %d bytes of SQL", len(sqlOutput))
 				} else {
-					sqlOutput := buf.String()
-					if strings.Contains(sqlOutput, "INSERT INTO ExportTable") {
-						t.Logf("Success with explicit table name: Generated %d bytes of SQL", len(sqlOutput))
-					} else {
-						t.Errorf("Expected INSERT INTO ExportTable in output")
-					}
+					t.Errorf("Expected INSERT INTO `ExportTable` in output")
 				}
 			}
 		})
