@@ -348,29 +348,10 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, error) {
 	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
 
-	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
-	if qe.ValueFmtMode == format.JSONValues {
-		rowTransform = withRawJSONMarker(rowTransform)
+	if result, handled, err := executeStreamingSQLWithSpanvalueWriter(qe); handled || err != nil {
+		return result, err
 	}
-	slog.Debug("executeStreamingSQL calling consumeRowIterWithProcessor")
-	stats, rowCount, metadata, plan, err := consumeRowIterWithProcessor(qe.Iter, qe.Processor, rowTransform, qe.SysVars, qe.Metrics)
-	slog.Debug("executeStreamingSQL after consumeRowIterWithProcessor", "err", err, "metadata", metadata != nil, "rowCount", rowCount)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		Rows:                  nil,
-		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows:          int(rowCount),
-		Streamed:              true,
-		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
-	}
-
-	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return executeStreamingSQLWithSpanvalueProcessor(qe)
 }
 
 // createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
