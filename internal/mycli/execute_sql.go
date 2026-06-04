@@ -375,19 +375,18 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		switch sysVars.Query.StreamingMode {
 		case enums.StreamingModeTrue:
 			return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
-		case enums.StreamingModeFalse, enums.StreamingModeAuto:
-			// Table formats buffer by default for accurate column widths.
-			return nil, nil
 		default:
+			// Table formats buffer by default for accurate column widths.
 			return nil, nil
 		}
 	}
 
+	// Non-table formats always stream regardless of CLI_STREAMING; only
+	// guard against an unexpected enum value.
 	switch sysVars.Query.StreamingMode {
 	case enums.StreamingModeTrue, enums.StreamingModeFalse, enums.StreamingModeAuto:
+		return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
 	default:
 		return nil, nil
 	}
-
-	return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
 }

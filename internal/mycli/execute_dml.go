@@ -100,6 +100,8 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		queryStats = updateResult.Stats
 		tableHeader = toTableHeader(updateResult.Metadata.GetRowType().GetFields())
 		if tableHeader != nil {
+			// Render inside the transaction callback so a formatting error
+			// aborts the implicit commit instead of committing without output.
 			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Rows)
 			if err != nil {
 				return 0, nil, nil, err

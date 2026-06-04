@@ -200,7 +200,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			// Build SELECT query with explicit column list
 			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
-			dataResult, dumpOutput, err := executeDumpTableBuffered(ctx, session, txn, selectQuery, table)
+			dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table)
 			if err != nil {
 				return fmt.Errorf("export table %s: %w", table, err)
 			}
@@ -240,7 +240,7 @@ func writeResultRows(out io.Writer, rows []Row) error {
 	return nil
 }
 
-func executeDumpTableBuffered(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
+func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
 	var buf bytes.Buffer
 	originalStreamManager := session.systemVariables.StreamManager
 	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
@@ -248,8 +248,10 @@ func executeDumpTableBuffered(ctx context.Context, session *Session, txn *spanne
 		session.systemVariables.StreamManager = originalStreamManager
 	}()
 
+	// SQL export is a non-table format and streams into the temporary
+	// StreamManager above; that capture is what makes this DUMP path buffered.
 	result, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-		enums.DisplayModeSQLInsert, enums.StreamingModeFalse, table)
+		enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
 	return result, buf.String(), err
 }
 
