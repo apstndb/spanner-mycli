@@ -219,7 +219,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_FUZZY_FINDER_OPTIONS", StringVar(&sv.Feature.FuzzyFinderOptions,
 		"Additional fzf options passed to the fuzzy finder. Appended after built-in defaults, so user options take precedence. Example: --color=dark --no-select-1"))
 	r.Register("CLI_STREAMING", StreamingModeVar(&sv.Query.StreamingMode,
-		"Controls streaming output mode: AUTO (format-dependent), TRUE (always stream), FALSE (never stream). Default is AUTO."))
+		"Controls table streaming output mode: AUTO/FALSE buffer table output for layout quality, TRUE streams table output. Non-table formats always stream. Default is AUTO."))
 	r.Register("CLI_STYLED_OUTPUT", StyledModeVar(&sv.Display.StyledOutput,
 		"Controls ANSI styling in table output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled). Default is AUTO."))
 	r.Register("CLI_WIDTH_STRATEGY", WidthStrategyVar(&sv.Display.WidthStrategy,

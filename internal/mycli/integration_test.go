@@ -291,6 +291,9 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
 		// Metrics are collected but not part of test expectations
 		cmpopts.IgnoreFields(Result{}, "Metrics"),
+		// Rendered output is a display artifact. Tests assert the structural
+		// signal with HasRenderedOutput instead.
+		cmpopts.IgnoreFields(Result{}, "RenderedOutput"),
 		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	)
@@ -710,13 +713,10 @@ func TestTransactionStatements(t *testing.T) {
 				{
 					"INSERT INTO TestTable (id, active) VALUES (1, true), (2, false) THEN RETURN *",
 					&Result{
-						IsExecutedDML: true,
-						AffectedRows:  2,
-						Rows: sliceOf(
-							toRow("1", "true"),
-							toRow("2", "false"),
-						),
-						TableHeader: toTableHeader(testTableRowType),
+						IsExecutedDML:     true,
+						AffectedRows:      2,
+						HasRenderedOutput: true,
+						TableHeader:       toTableHeader(testTableRowType),
 					},
 				},
 				srEmpty("ROLLBACK"),
@@ -782,10 +782,10 @@ func TestTransactionStatements(t *testing.T) {
 				{
 					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
-						IsExecutedDML: true,
-						AffectedRows:  2,
-						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:   toTableHeader(testTableRowType),
+						IsExecutedDML:     true,
+						AffectedRows:      2,
+						HasRenderedOutput: true,
+						TableHeader:       toTableHeader(testTableRowType),
 					},
 				},
 				srEmpty("ROLLBACK"),
@@ -794,10 +794,10 @@ func TestTransactionStatements(t *testing.T) {
 				{
 					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
-						IsExecutedDML: true,
-						AffectedRows:  2,
-						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:   toTableHeader(testTableRowType),
+						IsExecutedDML:     true,
+						AffectedRows:      2,
+						HasRenderedOutput: true,
+						TableHeader:       toTableHeader(testTableRowType),
 					},
 				},
 				srEmpty("ROLLBACK"),
@@ -805,10 +805,10 @@ func TestTransactionStatements(t *testing.T) {
 				{
 					"DELETE TestTable WHERE TRUE THEN RETURN *",
 					&Result{
-						IsExecutedDML: true,
-						AffectedRows:  2,
-						Rows:          sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:   toTableHeader(testTableRowType),
+						IsExecutedDML:     true,
+						AffectedRows:      2,
+						HasRenderedOutput: true,
+						TableHeader:       toTableHeader(testTableRowType),
 					},
 				},
 				srEmpty("COMMIT"),

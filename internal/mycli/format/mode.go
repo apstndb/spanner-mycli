@@ -2,7 +2,7 @@ package format
 
 // Mode represents the output format mode as a string.
 // Built-in modes are defined as constants below.
-// Custom modes can be registered via RegisterFormatFunc and RegisterStreamingFormatter.
+// Custom streaming modes can be registered via RegisterStreamingFormatter.
 //
 // Mode values use UPPER_SNAKE_CASE to match the enumer-generated strings
 // of enums.DisplayMode, enabling conversion via format.Mode(dm.String()).

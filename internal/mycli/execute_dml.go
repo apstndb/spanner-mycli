@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -87,15 +88,26 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	var rows []Row
+	var renderedOutput []byte
+	var hasRenderedOutput bool
 	var queryStats map[string]any
+	var tableHeader TableHeader
 	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		updateResult, err := session.runUpdateOnTransaction(ctx, tx, stmt, implicit)
 		if err != nil {
 			return 0, nil, nil, err
 		}
-		rows = updateResult.Rows
 		queryStats = updateResult.Stats
+		tableHeader = toTableHeader(updateResult.Metadata.GetRowType().GetFields())
+		if tableHeader != nil {
+			// Render inside the transaction callback so a formatting error
+			// aborts the implicit commit instead of committing without output.
+			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Rows)
+			if err != nil {
+				return 0, nil, nil, err
+			}
+			hasRenderedOutput = true
+		}
 		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
@@ -118,9 +130,23 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		CommitTimestamp:       result.CommitResponse.CommitTs,
 		CommitStats:           result.CommitResponse.CommitStats,
 		Stats:                 stats,
-		TableHeader:           toTableHeader(result.Metadata.GetRowType().GetFields()),
-		Rows:                  rows,
+		TableHeader:           tableHeader,
+		RenderedOutput:        renderedOutput,
+		HasRenderedOutput:     hasRenderedOutput,
 		AffectedRows:          int(result.Affected),
 		HasSQLFormattedValues: false, // DML with THEN RETURN uses regular formatting, not SQL literals
 	}, nil
+}
+
+func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, rows []Row) ([]byte, error) {
+	var buf bytes.Buffer
+	result := &Result{
+		TableHeader:           tableHeader,
+		Rows:                  rows,
+		HasSQLFormattedValues: false,
+	}
+	if err := printTableData(sysVars, displayScreenWidth(sysVars), &buf, result); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

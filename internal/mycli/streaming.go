@@ -10,7 +10,10 @@ import (
 // This delegates to createStreamingProcessor to maintain a single source of truth for the streaming decision logic.
 func shouldUseStreaming(sysVars *systemVariables) bool {
 	// Use a dummy writer to test if streaming would be enabled
-	processor, _ := createStreamingProcessor(sysVars, io.Discard, 80)
+	processor, err := createStreamingProcessor(sysVars, io.Discard, 80)
+	if err != nil {
+		return false
+	}
 	return processor != nil
 }
 

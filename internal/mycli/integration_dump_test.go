@@ -386,13 +386,13 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	}
 
 	// Check INSERT statements
-	if strings.Count(outputStr, "INSERT INTO Venues") < 2 {
+	if strings.Count(outputStr, "INSERT INTO `Venues`") < 2 {
 		t.Errorf("Expected at least 2 INSERT statements for Venues")
 	}
-	if strings.Count(outputStr, "INSERT INTO Artists") < 2 {
+	if strings.Count(outputStr, "INSERT INTO `Artists`") < 2 {
 		t.Errorf("Expected at least 2 INSERT statements for Artists")
 	}
-	if strings.Count(outputStr, "INSERT INTO Concerts") < 2 {
+	if strings.Count(outputStr, "INSERT INTO `Concerts`") < 2 {
 		t.Errorf("Expected at least 2 INSERT statements for Concerts")
 	}
 }
@@ -560,10 +560,9 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	// Expected output with only writable columns
 	// The generated INSERT should include: UserId, FirstName, LastName, Order, CreatedAt
 	// It should NOT include: FullName, SearchTokens, ComputedValue (all generated columns)
-	// Note: The formatter only quotes identifiers when necessary (e.g., reserved words like "Order")
 	expectedRows := []Row{
 		toRow("-- Data for table Users"),
-		toRow("INSERT INTO Users (UserId, FirstName, LastName, `Order`, CreatedAt) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"),
+		toRow("INSERT INTO `Users` (`UserId`, `FirstName`, `LastName`, `Order`, `CreatedAt`) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"),
 		toRow(""),
 	}
 

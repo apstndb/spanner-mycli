@@ -15,7 +15,12 @@ func TestShouldUseStreaming(t *testing.T) {
 	}
 
 	if shouldUseStreaming(sysVars) {
-		t.Error("Streaming should be disabled when StreamingMode is FALSE")
+		t.Error("Streaming should be disabled for table output when StreamingMode is FALSE")
+	}
+
+	sysVars.Display.CLIFormat = enums.DisplayModeCSV
+	if !shouldUseStreaming(sysVars) {
+		t.Error("Streaming should stay enabled for non-table output when StreamingMode is FALSE")
 	}
 
 	sysVars.Query.StreamingMode = enums.StreamingModeTrue

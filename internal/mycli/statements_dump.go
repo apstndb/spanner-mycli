@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/apstndb/spanvalue"
 )
 
@@ -64,8 +64,9 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
 	outStream := session.systemVariables.StreamManager.GetWriter()
-	// Use streaming unless: output is nil/io.Discard (tests) or streaming explicitly disabled
-	if outStream != nil && outStream != io.Discard && session.systemVariables.Query.StreamingMode != enums.StreamingModeFalse {
+	// Use streaming whenever there is a real output stream. DUMP output is not a
+	// table layout, so CLI_STREAMING=false should not force row buffering here.
+	if outStream != nil && outStream != io.Discard {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
 	}
 	return executeDumpBuffered(ctx, session, mode, specificTables)
@@ -199,27 +200,16 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 			// Build SELECT query with explicit column list
 			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
 
-			// Execute query using the transaction variant since we're already within a transaction
-			dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-				enums.DisplayModeSQLInsert, enums.StreamingModeFalse, table)
+			dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table)
 			if err != nil {
 				return fmt.Errorf("export table %s: %w", table, err)
 			}
 
-			// Format the result for buffered output
 			result.Rows = append(result.Rows, toRow(fmt.Sprintf("-- Data for table %s", table)))
 
-			if len(dataResult.Rows) > 0 {
-				var buf bytes.Buffer
-				config := session.systemVariables.toFormatConfig()
-				config.SQLTableName = table
-				if err := formatsql.FormatSQL(formatsql.ModeSQLInsert)(&buf, dataResult.Rows, extractTableColumnNames(dataResult.TableHeader), config, 0); err != nil {
-					return fmt.Errorf("failed to format SQL for table %s: %w", table, err)
-				}
-				if buf.Len() > 0 {
-					for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-						result.Rows = append(result.Rows, toRow(line))
-					}
+			if dumpOutput != "" {
+				for _, line := range strings.Split(strings.TrimRight(dumpOutput, "\n"), "\n") {
+					result.Rows = append(result.Rows, toRow(line))
 				}
 			}
 
@@ -248,6 +238,21 @@ func writeResultRows(out io.Writer, rows []Row) error {
 		}
 	}
 	return nil
+}
+
+func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
+	var buf bytes.Buffer
+	originalStreamManager := session.systemVariables.StreamManager
+	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, originalStreamManager.GetErrStream())
+	defer func() {
+		session.systemVariables.StreamManager = originalStreamManager
+	}()
+
+	// SQL export is a non-table format and streams into the temporary
+	// StreamManager above; that capture is what makes this DUMP path buffered.
+	result, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
+		enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
+	return result, buf.String(), err
 }
 
 // executeDumpStreaming performs dump operation with streaming output.
