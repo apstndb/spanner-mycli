@@ -445,34 +445,3 @@ func (s *SQLStreamingFormatter) WriteRow(row format.Row) error {
 func (s *SQLStreamingFormatter) FinishFormat() error {
 	return s.formatter.Finish()
 }
-
-// WriteSQL writes already-buffered SQL literal rows. This exists only for the
-// DUMP buffered fallback used when no real output stream is available.
-func WriteSQL(out io.Writer, rows []format.Row, columnNames []string, config format.FormatConfig, mode format.Mode) error {
-	tableName := config.SQLTableName
-
-	if tableName == "" {
-		return fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
-			"Options:\n" +
-			"  1. Use DUMP TABLE for full table exports\n" +
-			"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
-			"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
-	}
-
-	formatter, err := NewSQLFormatter(out, mode, tableName, config.SQLBatchSize)
-	if err != nil {
-		return err
-	}
-
-	if err := formatter.WriteHeader(columnNames); err != nil {
-		return err
-	}
-
-	for _, row := range rows {
-		if err := formatter.WriteRow(format.Texts(row)); err != nil {
-			return err
-		}
-	}
-
-	return formatter.Finish()
-}

@@ -24,24 +24,6 @@ func runPrintTableData(t *testing.T, mode enums.DisplayMode, skipColNames bool, 
 	return buf.String(), err
 }
 
-func assertContains(t *testing.T, output string, want []string) {
-	t.Helper()
-	for _, w := range want {
-		if !strings.Contains(output, w) {
-			t.Errorf("output missing %q\nGot:\n%s", w, output)
-		}
-	}
-}
-
-func assertNotContains(t *testing.T, output string, notWant []string) {
-	t.Helper()
-	for _, nw := range notWant {
-		if strings.Contains(output, nw) {
-			t.Errorf("output should not contain %q\nGot:\n%s", nw, output)
-		}
-	}
-}
-
 func assertErrorStatus(t *testing.T, err error, wantError bool) {
 	t.Helper()
 	if (err != nil) != wantError {
