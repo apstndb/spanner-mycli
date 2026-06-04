@@ -243,7 +243,7 @@ func writeResultRows(out io.Writer, rows []Row) error {
 func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
 	var buf bytes.Buffer
 	originalStreamManager := session.systemVariables.StreamManager
-	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, &buf)
+	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, originalStreamManager.GetErrStream())
 	defer func() {
 		session.systemVariables.StreamManager = originalStreamManager
 	}()
