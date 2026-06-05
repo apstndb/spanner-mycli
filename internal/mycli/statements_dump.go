@@ -249,12 +249,11 @@ func writeCapturedDumpOutput(out io.Writer, output string) error {
 	if output == "" {
 		return nil
 	}
-	for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
-		if _, err := fmt.Fprintln(out, line); err != nil {
-			return err
-		}
+	if _, err := io.WriteString(out, strings.TrimRight(output, "\n")); err != nil {
+		return err
 	}
-	return nil
+	_, err := io.WriteString(out, "\n")
+	return err
 }
 
 func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
