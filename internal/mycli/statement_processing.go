@@ -215,12 +215,6 @@ type Result struct {
 	// - DML with THEN RETURN (uses regular formatting)
 	HasSQLFormattedValues bool
 
-	// IsDirectOutput indicates that Rows contain pre-formatted text lines that should
-	// be printed directly without any table formatting. Used by DUMP statements and
-	// potentially other commands that produce pre-formatted output.
-	// When true, Rows bypass normal table formatting and are output as-is.
-	IsDirectOutput bool
-
 	// SQLTableNameForExport stores the auto-detected or explicitly set table name for SQL export.
 	// This field is populated during query execution when SQL export formats are used.
 	// It ensures the table name is available during the formatting phase, even in buffered mode.
