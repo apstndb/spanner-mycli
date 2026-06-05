@@ -17,23 +17,13 @@
 package decoder
 
 import (
-	"cmp"
-	"encoding/base64"
-	"errors"
-	"strconv"
-	"strings"
-
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spantype"
 	"github.com/apstndb/spanvalue"
+	"github.com/apstndb/spanvalue/protofmt"
 	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 func DecodeRow(row *spanner.Row) ([]string, error) {
@@ -45,7 +35,9 @@ func DecodeRow(row *spanner.Row) ([]string, error) {
 // If fds is nil, it returns a config without custom proto/enum support.
 // The multiline parameter controls the formatting of protobuf messages.
 func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
-	types, err := dynamicTypesByFDS(fds)
+	// protofmt preserves the old nil descriptor behavior: nil builds an empty
+	// resolver, so PROTO/ENUM plugins fall through to the default formatter.
+	resolver, err := protofmt.ProtoEnumResolverFromFileDescriptorSet(fds)
 	if err != nil {
 		return nil, err
 	}
@@ -53,85 +45,15 @@ func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) 
 	fc := spanvalue.SpannerCLICompatibleFormatConfig().Clone()
 	fc.FormatComplexPlugins = append(
 		[]spanvalue.FormatComplexFunc{
-			formatProto(types, multiline),
-			formatEnum(types),
+			protofmt.FormatProtoTextValue(protofmt.ProtoTextValueOptions{
+				Resolver: resolver,
+				Marshal:  prototext.MarshalOptions{Multiline: multiline},
+			}),
+			protofmt.FormatEnumNameValue(protofmt.EnumNameValueOptions{Resolver: resolver}),
 		},
 		fc.FormatComplexPlugins...,
 	)
 	return fc, nil
-}
-
-func dynamicTypesByFDS(fds *descriptorpb.FileDescriptorSet) (*dynamicpb.Types, error) {
-	if fds == nil {
-		return dynamicpb.NewTypes(nil), nil
-	}
-
-	files, err := protodesc.NewFiles(fds)
-	if err != nil {
-		return nil, err
-	}
-
-	return dynamicpb.NewTypes(files), nil
-}
-
-type protoEnumResolver interface {
-	protoregistry.MessageTypeResolver
-	FindEnumByName(protoreflect.FullName) (protoreflect.EnumType, error)
-}
-
-var (
-	_ protoEnumResolver = (*dynamicpb.Types)(nil)
-	_ protoEnumResolver = (*protoregistry.Types)(nil)
-)
-
-func formatProto(types protoEnumResolver, multiline bool) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-		if value.Type.GetCode() != sppb.TypeCode_PROTO {
-			return "", spanvalue.ErrFallthrough
-		}
-
-		messageType, err := types.FindMessageByName(protoreflect.FullName(value.Type.GetProtoTypeFqn()))
-		if errors.Is(err, protoregistry.NotFound) {
-			return "", spanvalue.ErrFallthrough
-		} else if err != nil {
-			return "", err
-		}
-
-		b, err := base64.StdEncoding.DecodeString(value.Value.GetStringValue())
-		if err != nil {
-			return "", err
-		}
-
-		m := messageType.New()
-		if err = proto.Unmarshal(b, m.Interface()); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(prototext.MarshalOptions{Multiline: multiline}.Format(m.Interface())), nil
-	}
-}
-
-func formatEnum(types protoEnumResolver) func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-	return func(formatter spanvalue.Formatter, value spanner.GenericColumnValue, toplevel bool) (string, error) {
-		if value.Type.GetCode() != sppb.TypeCode_ENUM {
-			return "", spanvalue.ErrFallthrough
-		}
-
-		enumType, err := types.FindEnumByName(protoreflect.FullName(value.Type.GetProtoTypeFqn()))
-		if errors.Is(err, protoregistry.NotFound) {
-			return "", spanvalue.ErrFallthrough
-		} else if err != nil {
-			return "", err
-		}
-
-		n, err := strconv.ParseInt(value.Value.GetStringValue(), 10, 64)
-		if err != nil {
-			return "", err
-		}
-
-		return cmp.Or(
-			string(enumType.Descriptor().Values().ByNumber(protoreflect.EnumNumber(n)).Name()),
-			value.Value.GetStringValue()), nil
-	}
 }
 
 // FormatTypeSimple is format type for headers.
