@@ -35,6 +35,8 @@ func DecodeRow(row *spanner.Row) ([]string, error) {
 // If fds is nil, it returns a config without custom proto/enum support.
 // The multiline parameter controls the formatting of protobuf messages.
 func FormatConfigWithProto(fds *descriptorpb.FileDescriptorSet, multiline bool) (*spanvalue.FormatConfig, error) {
+	// protofmt preserves the old nil descriptor behavior: nil builds an empty
+	// resolver, so PROTO/ENUM plugins fall through to the default formatter.
 	resolver, err := protofmt.ProtoEnumResolverFromFileDescriptorSet(fds)
 	if err != nil {
 		return nil, err
