@@ -17,10 +17,11 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.4.1
+	github.com/apstndb/spanenc v0.3.0
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.11
 	github.com/apstndb/spantype v0.3.11
-	github.com/apstndb/spanvalue v0.5.1
+	github.com/apstndb/spanvalue v0.7.1
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
@@ -79,6 +80,8 @@ require (
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
 	github.com/apstndb/ptyhelp v0.2.1 // indirect
+	github.com/apstndb/structfields v0.1.0 // indirect
+	github.com/apstndb/structfields/spannertag v0.1.0 // indirect
 	github.com/aymanbagabas/go-pty v0.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

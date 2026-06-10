@@ -64,14 +64,29 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		merged["CLI_DIRECT_READ"] = values
 	}
 
-	rows := lo.MapToSlice(merged, func(k, v string) Row { return toRow(k, v) })
-	slices.SortFunc(rows, func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* name */ })
+	items := lo.MapToSlice(merged, func(k, v string) nameValueRow {
+		return nameValueRow{Name: k, Value: v}
+	})
+	slices.SortFunc(items, func(lhs, rhs nameValueRow) int {
+		return cmp.Compare(lhs.Name, rhs.Name)
+	})
 
-	return &Result{
-		TableHeader:   toTableHeader("name", "value"),
-		Rows:          rows,
-		KeepVariables: true,
-	}, nil
+	fc, err := clientSideFormatConfig(session)
+	if err != nil {
+		return nil, err
+	}
+	result, err := resultFromRowEncoder(
+		nameValueRowEncoder,
+		items,
+		fc,
+		session.systemVariables.typeStyles,
+		session.systemVariables.nullStyle,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 type SetStatement struct {
@@ -107,12 +122,6 @@ type HelpVariablesStatement struct{}
 func (s *HelpVariablesStatement) isDetachedCompatible() {}
 
 func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	type variableDesc struct {
-		Name        string
-		Operations  []string
-		Description string
-	}
-
 	// Get all variable info from the registry
 	var varInfo map[string]struct {
 		Description string
@@ -129,7 +138,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		varInfo = tmpSV.ListVariableInfo()
 	}
 
-	var merged []variableDesc
+	var merged []helpVariableRow
 	for name, info := range varInfo {
 		var ops []string
 
@@ -146,37 +155,48 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 			ops = append(ops, "add")
 		}
 
-		merged = append(merged, variableDesc{Name: name, Operations: ops, Description: info.Description})
+		merged = append(merged, helpVariableRow{
+			Name:        name,
+			Operations:  strings.Join(ops, ","),
+			Description: info.Description,
+		})
 	}
 
 	// Add special variables not in registry
 	// COMMIT_RESPONSE - virtual variable
-	merged = append(merged, variableDesc{
+	merged = append(merged, helpVariableRow{
 		Name:        "COMMIT_RESPONSE",
-		Operations:  []string{"read"},
+		Operations:  "read",
 		Description: "The most recent response for a read-write transaction. This is a virtual variable: it can be used in SHOW COMMIT_RESPONSE and SHOW COMMIT_RESPONSE.COMMIT_TIMESTAMP and SHOW COMMIT_RESPONSE.MUTATION_COUNT, but attempting to read its value directly will give an error. Instead use the sub-fields COMMIT_TIMESTAMP and MUTATION_COUNT.",
 	})
 
 	// CLI_DIRECT_READ - complex proto type
-	merged = append(merged, variableDesc{
+	merged = append(merged, helpVariableRow{
 		Name:        "CLI_DIRECT_READ",
-		Operations:  []string{"read"},
+		Operations:  "read",
 		Description: "",
 	})
 
-	rows := lo.Map(merged, func(v variableDesc, _ int) Row {
-		return toRow(v.Name, strings.Join(v.Operations, ","), v.Description)
-	})
-	slices.SortFunc(rows, func(lhs Row, rhs Row) int {
-		return cmp.Compare(lhs[0].RawText(), rhs[0].RawText())
+	slices.SortFunc(merged, func(lhs, rhs helpVariableRow) int {
+		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	return &Result{
-		TableHeader:   toTableHeader("name", "operations", "desc"),
-		Rows:          rows,
-		AffectedRows:  len(rows),
-		KeepVariables: true,
-	}, nil
+	fc, err := clientSideFormatConfig(session)
+	if err != nil {
+		return nil, err
+	}
+	var typeStyles map[sppb.TypeCode]string
+	var nullStyle string
+	if session != nil {
+		typeStyles = session.systemVariables.typeStyles
+		nullStyle = session.systemVariables.nullStyle
+	}
+	result, err := resultFromRowEncoder(helpVariablesRowEncoder, merged, fc, typeStyles, nullStyle)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 // formatTimestamp formats a timestamp for display.
