@@ -85,6 +85,9 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	if err != nil {
 		return nil, err
 	}
+	// Preserve pre-bridge behavior: SHOW VARIABLES did not set AffectedRows, so no
+	// "N rows in set" footer is printed for this statement.
+	result.AffectedRows = 0
 	result.KeepVariables = true
 	return result, nil
 }

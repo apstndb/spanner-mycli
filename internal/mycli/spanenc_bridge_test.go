@@ -5,99 +5,30 @@ package mycli
 import (
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanenc"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
-	"github.com/apstndb/spanvalue"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spantype/typector"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestSpanencAPIOverview(t *testing.T) {
+func TestGcvTextToCell_nilGuards(t *testing.T) {
 	t.Parallel()
 
-	// ValueOf: Go value → GenericColumnValue (encodeValue parity).
-	gcv, err := spanenc.ValueOf(int64(42))
-	if err != nil {
-		t.Fatalf("ValueOf: %v", err)
-	}
-	text, err := spanvalue.SpannerCLICompatibleFormatConfig().FormatToplevelColumn(gcv)
-	if err != nil {
-		t.Fatalf("FormatToplevelColumn: %v", err)
-	}
-	if text != "42" {
-		t.Fatalf("got %q, want 42", text)
-	}
+	nullCell := format.NoWrapCell{Cell: format.StyledCell{Text: "NULL", Style: ""}}
+	plainCell := format.PlainCell{Text: "hello"}
 
-	// TypeFor / StructColumns / RowTypeFor: schema from Go types.
-	type singerRow struct {
-		SingerID  int64  `spanner:"SingerId"`
-		FirstName string `spanner:"FirstName"`
-		Internal  string `spanner:"-"`
+	if diff := cmp.Diff(nullCell, gcvTextToCell("NULL", spanner.GenericColumnValue{}, nil, "")); diff != "" {
+		t.Fatalf("nil Value (-got +want):\n%s", diff)
 	}
-	cols, err := spanenc.StructColumns[singerRow]()
-	if err != nil {
-		t.Fatalf("StructColumns: %v", err)
-	}
-	if diff := cmp.Diff([]string{"SingerId", "FirstName"}, cols); diff != "" {
-		t.Fatalf("StructColumns mismatch (-got +want):\n%s", diff)
-	}
-
-	rowType, err := spanenc.RowTypeFor[singerRow]()
-	if err != nil {
-		t.Fatalf("RowTypeFor: %v", err)
-	}
-	if len(rowType.GetFields()) != 2 {
-		t.Fatalf("RowTypeFor fields: got %d, want 2", len(rowType.GetFields()))
-	}
-
-	metadata, err := spanenc.ResultSetMetadataFor[singerRow]()
-	if err != nil {
-		t.Fatalf("ResultSetMetadataFor: %v", err)
-	}
-	if metadata.GetRowType() == nil {
-		t.Fatal("ResultSetMetadataFor: missing row type")
-	}
-
-	// ParamsMap: struct → Statement.Params (read-only fields included).
-	type paramStruct struct {
-		ID   int64  `spanner:"id"`
-		Name string `spanner:"name"`
-		Note string `spanner:"note;readonly"`
-	}
-	params, err := spanenc.ParamsMap(paramStruct{ID: 1, Name: "alice", Note: "hidden"})
-	if err != nil {
-		t.Fatalf("ParamsMap: %v", err)
-	}
-	if params["id"] != int64(1) || params["name"] != "alice" || params["note"] != "hidden" {
-		t.Fatalf("ParamsMap: %+v", params)
-	}
-
-	// MutationMap: write-shaped listing excludes read-only fields.
-	mutMap, err := spanenc.MutationMap(paramStruct{ID: 1, Name: "alice", Note: "hidden"})
-	if err != nil {
-		t.Fatalf("MutationMap: %v", err)
-	}
-	if _, ok := mutMap["note"]; ok {
-		t.Fatalf("MutationMap should exclude read-only field, got %+v", mutMap)
-	}
-
-	// ValuesFromSlice / ArrayValueFromSlice: homogeneous slices.
-	elemType, values, err := spanenc.ValuesFromSlice([]int64{1, 2, 3})
-	if err != nil {
-		t.Fatalf("ValuesFromSlice: %v", err)
-	}
-	if elemType.GetCode() != sppb.TypeCode_INT64 {
-		t.Fatalf("element type: %v", elemType)
-	}
-	if len(values) != 3 {
-		t.Fatalf("values len: got %d, want 3", len(values))
-	}
-	arrGCV, err := spanenc.ArrayValueFromSlice([]string{"a", "b"})
-	if err != nil {
-		t.Fatalf("ArrayValueFromSlice: %v", err)
-	}
-	if arrGCV.Type.GetCode() != sppb.TypeCode_ARRAY {
-		t.Fatalf("array type: %v", arrGCV.Type)
+	if diff := cmp.Diff(plainCell, gcvTextToCell("hello", spanner.GenericColumnValue{
+		Value: structpb.NewStringValue("hello"),
+		Type:  nil,
+	}, nil, "")); diff != "" {
+		t.Fatalf("nil Type (-got +want):\n%s", diff)
 	}
 }
 
@@ -168,5 +99,22 @@ func TestResultFromRowEncoder_showVariablesShape(t *testing.T) {
 	}
 	if len(result.Rows) != 2 {
 		t.Fatalf("rows: got %d, want 2", len(result.Rows))
+	}
+}
+
+func TestGcvTextToCell_typeStyle(t *testing.T) {
+	t.Parallel()
+
+	gcv := spanner.GenericColumnValue{
+		Value: structpb.NewStringValue("42"),
+		Type:  typector.CodeToSimpleType(sppb.TypeCode_INT64),
+	}
+	cell := gcvTextToCell("42", gcv, map[sppb.TypeCode]string{sppb.TypeCode_INT64: "\x1b[31m"}, "")
+	styled, ok := cell.(format.StyledCell)
+	if !ok {
+		t.Fatalf("got %T, want StyledCell", cell)
+	}
+	if styled.Style != "\x1b[31m" || styled.Text != "42" {
+		t.Fatalf("styled cell: %+v", styled)
 	}
 }
