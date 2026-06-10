@@ -13,6 +13,18 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func dumpRenderedOutputForTest(t *testing.T, result *Result) string {
+	t.Helper()
+
+	if !result.HasRenderedOutput {
+		t.Fatalf("expected DUMP fallback to return pre-rendered output")
+	}
+	if len(result.Rows) > 0 {
+		t.Fatalf("expected DUMP fallback to return no rows, got %d", len(result.Rows))
+	}
+	return string(result.RenderedOutput)
+}
+
 func TestDumpStatements(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -115,19 +127,7 @@ func TestDumpStatements(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Execute failed: %v", err)
 			}
-			if !result.IsDirectOutput {
-				t.Errorf("Expected IsDirectOutput to be true")
-			}
-
-			// Convert rows to string for analysis
-			var output strings.Builder
-			for _, row := range result.Rows {
-				if len(row) > 0 {
-					output.WriteString(row[0].RawText())
-					output.WriteString("\n")
-				}
-			}
-			outputStr := output.String()
+			outputStr := dumpRenderedOutputForTest(t, result)
 
 			// Check for DDL presence
 			if tt.expectDDL {
@@ -208,18 +208,12 @@ func TestDumpEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if len(result.Rows) == 0 {
+	outputStr := dumpRenderedOutputForTest(t, result)
+	if outputStr == "" {
 		t.Errorf("Expected at least header comment in output")
 	}
 
-	hasHeader := false
-	for _, row := range result.Rows {
-		if len(row) > 0 && strings.Contains(row[0].RawText(), "-- Database DDL exported by spanner-mycli") {
-			hasHeader = true
-			break
-		}
-	}
-	if !hasHeader {
+	if !strings.Contains(outputStr, "-- Database DDL exported by spanner-mycli") {
 		t.Errorf("Expected DDL header comment")
 	}
 }
@@ -358,15 +352,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 		t.Fatalf("Execute failed: %v", err)
 	}
 
-	// Convert rows to string for analysis
-	var output strings.Builder
-	for _, row := range result.Rows {
-		if len(row) > 0 {
-			output.WriteString(row[0].RawText())
-			output.WriteString("\n")
-		}
-	}
-	outputStr := output.String()
+	outputStr := dumpRenderedOutputForTest(t, result)
 
 	// Check table order - FK referenced tables should come before referencing tables
 	venueIndex := strings.Index(outputStr, "-- Data for table Venues")
@@ -475,15 +461,7 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 		t.Fatalf("Execute failed: %v", err)
 	}
 
-	// Convert rows to string for analysis
-	var output strings.Builder
-	for _, row := range result.Rows {
-		if len(row) > 0 {
-			output.WriteString(row[0].RawText())
-			output.WriteString("\n")
-		}
-	}
-	outputStr := output.String()
+	outputStr := dumpRenderedOutputForTest(t, result)
 
 	// Check table order
 	categoryIndex := strings.Index(outputStr, "-- Data for table Categories")
@@ -560,13 +538,13 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	// Expected output with only writable columns
 	// The generated INSERT should include: UserId, FirstName, LastName, Order, CreatedAt
 	// It should NOT include: FullName, SearchTokens, ComputedValue (all generated columns)
-	expectedRows := []Row{
-		toRow("-- Data for table Users"),
-		toRow("INSERT INTO `Users` (`UserId`, `FirstName`, `LastName`, `Order`, `CreatedAt`) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");"),
-		toRow(""),
-	}
+	expectedOutput := strings.Join([]string{
+		"-- Data for table Users",
+		"INSERT INTO `Users` (`UserId`, `FirstName`, `LastName`, `Order`, `CreatedAt`) VALUES (1, \"John\", \"Doe\", 10, TIMESTAMP \"2024-01-01T12:00:00Z\");",
+		"",
+	}, "\n") + "\n"
 
-	if diff := cmp.Diff(expectedRows, result.Rows); diff != "" {
+	if diff := cmp.Diff(expectedOutput, dumpRenderedOutputForTest(t, result)); diff != "" {
 		t.Errorf("DUMP output mismatch (-want +got):\n%s", diff)
 	}
 }

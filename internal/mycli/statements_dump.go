@@ -162,7 +162,8 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 // executeDumpBuffered performs dump operation with buffering.
 // All output is collected in memory before being returned.
 func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
-	result := &Result{AffectedRows: 0, IsDirectOutput: true}
+	var out bytes.Buffer
+	var affectedRows int
 
 	// Export DDL first if requested (DDL doesn't need transaction consistency)
 	if mode.shouldExportDDL() {
@@ -170,7 +171,9 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 		if err != nil {
 			return nil, fmt.Errorf("export DDL: %w", err)
 		}
-		result.Rows = append(result.Rows, ddlResult.Rows...)
+		if err := writeResultRows(&out, ddlResult.Rows); err != nil {
+			return nil, fmt.Errorf("write DDL: %w", err)
+		}
 	}
 
 	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
@@ -193,7 +196,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 
 			// Skip tables with no writable columns (e.g., all generated columns)
 			if len(columns) == 0 {
-				result.Rows = append(result.Rows, toRow(fmt.Sprintf("-- Skipping table %s (no writable columns)", table)))
+				fmt.Fprintf(&out, "-- Skipping table %s (no writable columns)\n", table)
 				continue
 			}
 
@@ -205,19 +208,17 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 				return fmt.Errorf("export table %s: %w", table, err)
 			}
 
-			result.Rows = append(result.Rows, toRow(fmt.Sprintf("-- Data for table %s", table)))
+			fmt.Fprintf(&out, "-- Data for table %s\n", table)
 
-			if dumpOutput != "" {
-				for _, line := range strings.Split(strings.TrimRight(dumpOutput, "\n"), "\n") {
-					result.Rows = append(result.Rows, toRow(line))
-				}
+			if err := writeCapturedDumpOutput(&out, dumpOutput); err != nil {
+				return fmt.Errorf("write data for table %s: %w", table, err)
 			}
 
 			if dataResult.AffectedRows > 0 {
-				result.Rows = append(result.Rows, toRow(""))
+				fmt.Fprintln(&out)
 			}
 
-			result.AffectedRows += dataResult.AffectedRows
+			affectedRows += dataResult.AffectedRows
 		}
 		return nil
 	})
@@ -225,7 +226,11 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 		return nil, err
 	}
 
-	return result, nil
+	return &Result{
+		AffectedRows:      affectedRows,
+		RenderedOutput:    out.Bytes(),
+		HasRenderedOutput: true,
+	}, nil
 }
 
 // writeResultRows writes Result rows to an io.Writer
@@ -238,6 +243,17 @@ func writeResultRows(out io.Writer, rows []Row) error {
 		}
 	}
 	return nil
+}
+
+func writeCapturedDumpOutput(out io.Writer, output string) error {
+	if output == "" {
+		return nil
+	}
+	if _, err := io.WriteString(out, strings.TrimRight(output, "\n")); err != nil {
+		return err
+	}
+	_, err := io.WriteString(out, "\n")
+	return err
 }
 
 func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
@@ -320,7 +336,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 		return nil, err
 	}
 
-	return &Result{AffectedRows: totalAffectedRows, Streamed: true, IsDirectOutput: false}, nil
+	return &Result{AffectedRows: totalAffectedRows, Streamed: true}, nil
 }
 
 // exportDDL exports database DDL statements
