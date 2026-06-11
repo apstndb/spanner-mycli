@@ -285,7 +285,10 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, err
 	}
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
+	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false)
+	if err != nil {
+		return nil, err
+	}
 
 	stats, _, _, plan, err := consumeRowIterDiscard(iter)
 	if err != nil {

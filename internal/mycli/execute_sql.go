@@ -213,7 +213,10 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	iter, roTxn := session.RunQueryWithStats(ctx, stmt, false)
+	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false)
+	if err != nil {
+		return nil, err
+	}
 
 	result, err := executeAndCollect(ctx, &queryExecution{
 		Session:      session,

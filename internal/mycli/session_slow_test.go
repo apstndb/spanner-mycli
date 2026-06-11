@@ -109,7 +109,10 @@ func TestRequestPriority(t *testing.T) {
 			if err := session.BeginReadWriteTransaction(ctx, 0, test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
-			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			iter, _, err := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			if err != nil {
+				t.Fatalf("failed to run query: %v", err)
+			}
 			if err := iter.Do(func(r *spanner.Row) error {
 				return nil
 			}); err != nil {
@@ -126,7 +129,10 @@ func TestRequestPriority(t *testing.T) {
 			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read only transaction: %v", err)
 			}
-			iter, _ = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false)
+			iter, _, err = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false)
+			if err != nil {
+				t.Fatalf("failed to run query with stats: %v", err)
+			}
 			if err := iter.Do(func(r *spanner.Row) error {
 				return nil
 			}); err != nil {
@@ -243,7 +249,10 @@ func TestIsolationLevel(t *testing.T) {
 			if err := session.BeginReadWriteTransaction(ctx, test.transactionIsolationLevel, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
-			iter, _ := session.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+			iter, _, err := session.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+			if err != nil {
+				t.Fatalf("failed to run query: %v", err)
+			}
 			if err := iter.Do(func(r *spanner.Row) error {
 				return nil
 			}); err != nil {

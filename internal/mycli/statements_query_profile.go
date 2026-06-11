@@ -66,7 +66,10 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`,
 	}
 
-	iter, _ := session.RunQuery(ctx, stmt)
+	iter, _, err := session.RunQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
 
 	rows, _, _, _, _, err := consumeRowIterCollect(iter, toQpr)
 	if err != nil {
@@ -149,7 +152,10 @@ ORDER BY INTERVAL_END DESC`,
 		Params: map[string]interface{}{"fprint": s.Fprint},
 	}
 
-	iter, _ := session.RunQuery(ctx, stmt)
+	iter, _, err := session.RunQuery(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
 
 	qprs, _, _, _, _, err := consumeRowIterCollect(iter, toQpr)
 	if err != nil {
