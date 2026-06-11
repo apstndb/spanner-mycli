@@ -522,6 +522,16 @@ type statementTestCase struct {
 	cmpOpts     []cmp.Option
 }
 
+// typedStringHeader builds the typesTableHeader produced by spanenc-backed
+// virtual result sets whose columns are all STRING (see executeStructRows).
+func typedStringHeader(names ...string) TableHeader {
+	fields := make([]*sppb.StructType_Field, 0, len(names))
+	for _, name := range names {
+		fields = append(fields, &sppb.StructType_Field{Name: name, Type: &sppb.Type{Code: sppb.TypeCode_STRING}})
+	}
+	return toTableHeader(fields...)
+}
+
 // runStatementTests is a helper function to run statement execution tests
 func runStatementTests(t *testing.T, tests []statementTestCase) {
 	t.Helper()
@@ -860,10 +870,7 @@ func TestShowStatements(t *testing.T) {
 					"SHOW VARIABLES",
 					&Result{
 						// Virtual result sets carry row-type metadata like server results.
-						TableHeader: toTableHeader(
-							&sppb.StructType_Field{Name: "name", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-							&sppb.StructType_Field{Name: "value", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-						),
+						TableHeader:   typedStringHeader("name", "value"),
 						KeepVariables: true,
 						// Rows and AffectedRows are dynamic, so we don't check them here.
 					},
@@ -1141,7 +1148,7 @@ func TestProtoStatements(t *testing.T) {
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
-						TableHeader: toTableHeader("full_name", "kind", "package", "file"),
+						TableHeader: typedStringHeader("full_name", "kind", "package", "file"),
 						Rows: sliceOf(
 							toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
 							toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
@@ -1161,7 +1168,7 @@ func TestProtoStatements(t *testing.T) {
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
-						TableHeader: toTableHeader("full_name", "kind", "package", "file"),
+						TableHeader: typedStringHeader("full_name", "kind", "package", "file"),
 						Rows: sliceOf(
 							toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
 							toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
@@ -1178,7 +1185,7 @@ func TestProtoStatements(t *testing.T) {
 			desc: "PROTO BUNDLE statements",
 			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
 			stmtResults: []stmtResult{
-				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: toTableHeader("full_name", "kind", "package")}),
+				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: typedStringHeader("full_name", "kind", "package")}),
 				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
 				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
 				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),

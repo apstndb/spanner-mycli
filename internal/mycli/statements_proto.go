@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanenc"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
@@ -19,12 +20,19 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/proto/zetasql"
 )
 
+// descriptorInfo is the row shape for SHOW LOCAL PROTO; SHOW REMOTE PROTO
+// uses the same shape with the file column masked out.
 type descriptorInfo struct {
-	FullName string
-	Kind     string
-	Package  string
-	FileName string
+	FullName string `spanner:"full_name"`
+	Kind     string `spanner:"kind"`
+	Package  string `spanner:"package"`
+	FileName string `spanner:"file"`
 }
+
+var (
+	localProtoRowEncoder  = spanenc.MustNewRowEncoder[*descriptorInfo]()
+	remoteProtoRowEncoder = spanenc.MustNewRowEncoder[*descriptorInfo](spanenc.WithoutColumns("file"))
+)
 
 type SyncProtoStatement struct {
 	UpsertPaths []string
@@ -80,21 +88,12 @@ type ShowLocalProtoStatement struct{}
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.Internal.ProtoDescriptor
 
-	rows := slices.Collect(
-		loi.Map(
-			loi.FlatMap(slices.Values(fds.GetFile()), fdpToInfo),
-			func(info *descriptorInfo) Row {
-				return toRow(info.FullName, info.Kind, info.Package, info.FileName)
-			},
-		),
-	)
-
-	return &Result{
-		TableHeader:   toTableHeader("full_name", "kind", "package", "file"),
-		Rows:          rows,
-		AffectedRows:  len(rows),
-		KeepVariables: true,
-	}, nil
+	result, err := executeStructRows(localProtoRowEncoder, slices.Collect(fdsToInfoSeq(fds)), session.systemVariables)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 type ShowRemoteProtoStatement struct{}
@@ -110,21 +109,12 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	rows := slices.Collect(
-		loi.Map(
-			loi.FlatMap(slices.Values(fds.GetFile()), fdpToInfo),
-			func(info *descriptorInfo) Row {
-				return toRow(info.FullName, info.Kind, info.Package)
-			},
-		),
-	)
-
-	return &Result{
-		TableHeader:   toTableHeader("full_name", "kind", "package"),
-		Rows:          rows,
-		AffectedRows:  len(rows),
-		KeepVariables: true,
-	}, nil
+	result, err := executeStructRows(remoteProtoRowEncoder, slices.Collect(fdsToInfoSeq(&fds)), session.systemVariables)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 // Helper functions
