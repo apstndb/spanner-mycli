@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"github.com/apstndb/lox"
-	"github.com/apstndb/spanenc"
+	"github.com/apstndb/spancodec"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
@@ -25,7 +25,7 @@ type paramRow struct {
 	Value string `spanner:"Param_Value"`
 }
 
-var showParamsRowEncoder = spanenc.MustNewRowEncoder[paramRow]()
+var showParamsRowEncoder = spancodec.MustNewRowEncoder[paramRow]()
 
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	items := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) paramRow {

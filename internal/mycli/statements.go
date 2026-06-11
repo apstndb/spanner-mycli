@@ -33,7 +33,7 @@ import (
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
-	"github.com/apstndb/spanenc"
+	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"github.com/apstndb/spanvalue/gcvctor"
@@ -202,7 +202,7 @@ type databaseNameRow struct {
 	Database string `spanner:"Database"`
 }
 
-var showDatabasesRowEncoder = spanenc.MustNewRowEncoder[databaseNameRow]()
+var showDatabasesRowEncoder = spancodec.MustNewRowEncoder[databaseNameRow]()
 
 func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	dbIter := session.adminClient.ListDatabases(ctx, &databasepb.ListDatabasesRequest{
@@ -742,7 +742,7 @@ type helpRow struct {
 	Syntax string `spanner:"Syntax"`
 }
 
-var helpRowEncoder = spanenc.MustNewRowEncoder[helpRow]()
+var helpRowEncoder = spancodec.MustNewRowEncoder[helpRow]()
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var items []helpRow

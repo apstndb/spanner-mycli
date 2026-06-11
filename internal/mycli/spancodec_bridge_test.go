@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanenc"
+	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -103,7 +103,7 @@ type typedVirtualRow struct {
 func TestResultFromStructRows_jsonValueMode(t *testing.T) {
 	t.Parallel()
 
-	enc, err := spanenc.NewRowEncoder[typedVirtualRow]()
+	enc, err := spancodec.NewRowEncoder[typedVirtualRow]()
 	if err != nil {
 		t.Fatalf("NewRowEncoder: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestResultFromStructRows_jsonValueMode(t *testing.T) {
 func TestResultFromStructRows_displayMode(t *testing.T) {
 	t.Parallel()
 
-	enc, err := spanenc.NewRowEncoder[typedVirtualRow]()
+	enc, err := spancodec.NewRowEncoder[typedVirtualRow]()
 	if err != nil {
 		t.Fatalf("NewRowEncoder: %v", err)
 	}
