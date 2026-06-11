@@ -577,10 +577,6 @@ func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (
 	return s.txn.RunAnalyzeQuery(ctx, stmt)
 }
 
-func (s *Session) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64, *sppb.ResultSetMetadata, *sppb.QueryPlan, error) {
-	return s.txn.RunUpdate(ctx, stmt, implicit)
-}
-
 func (s *Session) RunInNewOrExistRwTxLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
