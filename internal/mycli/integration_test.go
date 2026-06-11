@@ -522,7 +522,7 @@ type statementTestCase struct {
 	cmpOpts     []cmp.Option
 }
 
-// typedStringHeader builds the typesTableHeader produced by spanenc-backed
+// typedStringHeader builds the typesTableHeader produced by spancodec-backed
 // virtual result sets whose columns are all STRING (see executeStructRows).
 func typedStringHeader(names ...string) TableHeader {
 	fields := make([]*sppb.StructType_Field, 0, len(names))

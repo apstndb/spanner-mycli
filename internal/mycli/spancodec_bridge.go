@@ -1,8 +1,8 @@
 // Copyright 2026 apstndb
 //
-// spanenc_bridge wires github.com/apstndb/spanenc encoders into client-side Result
+// spancodec_bridge wires github.com/apstndb/spancodec encoders into client-side Result
 // construction. Client-side (virtual) result sets are encoded into real
-// *spanner.Row values via spanenc.RowEncoder.Rows, then routed through the same
+// *spanner.Row values via spancodec.RowEncoder.Rows, then routed through the same
 // pipelines as server query results: spanvalue RowIteratorWriter streaming
 // (writer.WriteRowSeq) for formats that have one, or the buffered
 // spannerRowToRow/withRawJSONMarker cell transform otherwise. Cell styling,
@@ -14,7 +14,7 @@ package mycli
 
 import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanenc"
+	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
@@ -36,8 +36,8 @@ type nameValueRow struct {
 }
 
 var (
-	helpVariablesRowEncoder = spanenc.MustNewRowEncoder[helpVariableRow]()
-	nameValueRowEncoder     = spanenc.MustNewRowEncoder[nameValueRow]()
+	helpVariablesRowEncoder = spancodec.MustNewRowEncoder[helpVariableRow]()
+	nameValueRowEncoder     = spancodec.MustNewRowEncoder[nameValueRow]()
 )
 
 // clientSideFormatContext derives the FormatConfig and value-format mode for
@@ -64,7 +64,7 @@ func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig,
 // struct type T: streamed through the same spanvalue writers as server query
 // results when the current format has one, or as a buffered Result otherwise.
 // sysVars may be nil (e.g., HELP VARIABLES without a session); defaults apply.
-func executeStructRows[T any](enc *spanenc.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
+func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
 	result, handled, err := streamStructRows(enc, items, sysVars)
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func executeStructRows[T any](enc *spanenc.RowEncoder[T], items []T, sysVars *sy
 // SQL export modes deliberately keep the buffered table-format fallback
 // (client-side results have no source table), and the remaining formats keep
 // the buffered cell pipeline. Returns handled=false to request that fallback.
-func streamStructRows[T any](enc *spanenc.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, bool, error) {
+func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, bool, error) {
 	if sysVars == nil || sysVars.StreamManager == nil {
 		return nil, false, nil
 	}
@@ -117,11 +117,11 @@ func streamStructRows[T any](enc *spanenc.RowEncoder[T], items []T, sysVars *sys
 }
 
 // resultFromStructRows builds a buffered Result from rows of struct type T.
-// Each item is encoded into a *spanner.Row by the compiled spanenc.RowEncoder
+// Each item is encoded into a *spanner.Row by the compiled spancodec.RowEncoder
 // and converted with the same transform used for server query results, and the
 // table header carries the row type from RowEncoder.ResultSetMetadata so
 // verbose rendering shows column types like server result sets do.
-func resultFromStructRows[T any](enc *spanenc.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
+func resultFromStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
 	fc, vfm, err := clientSideFormatContext(sysVars)
 	if err != nil {
 		return nil, err

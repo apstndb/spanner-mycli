@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/apstndb/lox"
-	"github.com/apstndb/spanenc"
+	"github.com/apstndb/spancodec"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
@@ -30,8 +30,8 @@ type descriptorInfo struct {
 }
 
 var (
-	localProtoRowEncoder  = spanenc.MustNewRowEncoder[*descriptorInfo]()
-	remoteProtoRowEncoder = spanenc.MustNewRowEncoder[*descriptorInfo](spanenc.WithoutColumns("file"))
+	localProtoRowEncoder  = spancodec.MustNewRowEncoder[*descriptorInfo]()
+	remoteProtoRowEncoder = spancodec.MustNewRowEncoder[*descriptorInfo](spancodec.WithoutColumns("file"))
 )
 
 type SyncProtoStatement struct {
