@@ -386,6 +386,11 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 		if err != nil {
 			return fmt.Errorf("failed to parse pager command: %w", err)
 		}
+		// A whitespace-only PAGER yields an empty slice; reject it instead of
+		// panicking on split[0].
+		if len(split) == 0 {
+			return fmt.Errorf("invalid pager command: %q", pagerpath)
+		}
 		cmd = exec.CommandContext(context.Background(), split[0], split[1:]...)
 
 		pr, pw := io.Pipe()

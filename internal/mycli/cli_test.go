@@ -1671,3 +1671,26 @@ func TestCli_executeSourceFile_FileTooLarge(t *testing.T) {
 		t.Errorf("Expected error to contain 'too large', got: %v", err)
 	}
 }
+
+// TestCli_PrintResult_invalidPagerCommand verifies that a whitespace-only
+// PAGER value is rejected with an error instead of panicking on an empty
+// shellquote.Split result.
+func TestCli_PrintResult_invalidPagerCommand(t *testing.T) {
+	t.Setenv("PAGER", "   ")
+
+	outBuf := &bytes.Buffer{}
+	sysVars := &systemVariables{
+		Display: DisplayVars{
+			UsePager:  true,
+			CLIFormat: enums.DisplayModeTab,
+		},
+		StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+	}
+	cli := &Cli{SystemVariables: sysVars}
+
+	result := &Result{TableHeader: toTableHeader("col1"), Rows: []Row{toRow("foo")}}
+	err := cli.PrintResult(80, result, false, "", outBuf)
+	if err == nil || !strings.Contains(err.Error(), "invalid pager command") {
+		t.Fatalf("error = %v, want invalid pager command error", err)
+	}
+}
