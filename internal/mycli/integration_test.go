@@ -522,7 +522,6 @@ type statementTestCase struct {
 	cmpOpts     []cmp.Option
 }
 
-// runStatementTests is a helper function to run statement execution tests
 // typedStringHeader builds the typesTableHeader produced by spanenc-backed
 // virtual result sets whose columns are all STRING (see executeStructRows).
 func typedStringHeader(names ...string) TableHeader {
@@ -533,6 +532,7 @@ func typedStringHeader(names ...string) TableHeader {
 	return toTableHeader(fields...)
 }
 
+// runStatementTests is a helper function to run statement execution tests
 func runStatementTests(t *testing.T, tests []statementTestCase) {
 	t.Helper()
 	t.Parallel()
