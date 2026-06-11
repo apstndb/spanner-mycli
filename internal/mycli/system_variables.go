@@ -9,10 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +22,7 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/bufbuild/protocompile"
@@ -482,19 +481,12 @@ func httpResolveFunc(path string) (protocompile.SearchResult, error) {
 		return protocompile.SearchResult{}, protoregistry.NotFound
 	}
 
-	resp, err := http.Get(path)
-	if err != nil {
-		return protocompile.SearchResult{}, err
-	}
-	defer resp.Body.Close()
-
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, resp.Body)
+	b, err := loadFromHTTPWithLimit(context.Background(), path, filesafety.DefaultMaxFileSize)
 	if err != nil {
 		return protocompile.SearchResult{}, err
 	}
 
-	return protocompile.SearchResult{Source: &buf}, nil
+	return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
 }
 
 var resolver = protocompile.CompositeResolver{&protocompile.SourceResolver{}, httpResolver}
@@ -518,22 +510,13 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 	var b []byte
 	var err error
 	if httpOrHTTPSRe.MatchString(filename) {
-		resp, err := http.Get(filename)
+		b, err = loadFromHTTPWithLimit(context.Background(), filename, filesafety.DefaultMaxFileSize)
 		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch proto descriptor from %v: HTTP %d", filename, resp.StatusCode)
-		}
-
-		b, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error on fetch proto descriptor from %v: %w", filename, err)
 		}
 	} else {
-		b, err = os.ReadFile(filename)
+		// nil options = regular-file check with the 100MB default cap.
+		b, err = filesafety.SafeReadFile(filename, nil)
 		if err != nil {
 			return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
 		}

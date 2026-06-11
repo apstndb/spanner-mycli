@@ -349,6 +349,13 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 
 // loadFromHTTP loads content from HTTP/HTTPS URLs
 func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
+	return loadFromHTTPWithLimit(ctx, uri, filesafety.SampleDatabaseMaxFileSize)
+}
+
+// loadFromHTTPWithLimit loads content from HTTP/HTTPS URLs with a request
+// timeout, status check, and a response size cap (Content-Length when
+// available, enforced by io.LimitReader regardless).
+func loadFromHTTPWithLimit(ctx context.Context, uri string, maxSize int64) ([]byte, error) {
 	// Add timeout to prevent hanging indefinitely
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -369,20 +376,20 @@ func loadFromHTTP(ctx context.Context, uri string) ([]byte, error) {
 	}
 
 	// Check Content-Length header if present
-	if resp.ContentLength > 0 && resp.ContentLength > filesafety.SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("HTTP response from %s too large: %d bytes (max %d)", uri, resp.ContentLength, filesafety.SampleDatabaseMaxFileSize)
+	if resp.ContentLength > 0 && resp.ContentLength > maxSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: %d bytes (max %d)", uri, resp.ContentLength, maxSize)
 	}
 
 	// Use io.LimitReader as a safety measure even if Content-Length is not set
-	limitedReader := io.LimitReader(resp.Body, filesafety.SampleDatabaseMaxFileSize+1)
+	limitedReader := io.LimitReader(resp.Body, maxSize+1)
 	data, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HTTP response from %s: %w", uri, err)
 	}
 
 	// Check if we hit the limit
-	if len(data) > filesafety.SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, filesafety.SampleDatabaseMaxFileSize)
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("HTTP response from %s too large: exceeded %d bytes", uri, maxSize)
 	}
 
 	return data, nil
