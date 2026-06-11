@@ -858,36 +858,34 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
-func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+// An error is returned when no database connection is available; this should not
+// happen if DetachedCompatible interface validation is working correctly.
+func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Validate that we have a database client for query operations
 	if err := tm.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if DetachedCompatible interface validation is working correctly
-		// Log the error for debugging since we can't return it directly
-		slog.Error("RunQueryWithStats called without database connection", "error", err, "statement", stmt.SQL)
-		// Return nil to indicate error - caller should check for nil
-		return nil, nil
+		return nil, nil, err
 	}
 
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := tm.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
-	return tm.runQueryWithOptions(ctx, stmt, opts)
+	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)
+	return iter, roTxn, nil
 }
 
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
-func (tm *TransactionManager) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+// An error is returned when no database connection is available; this should not
+// happen if DetachedCompatible interface validation is working correctly.
+func (tm *TransactionManager) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Validate that we have a database client for query operations
 	if err := tm.ValidateDatabaseOperation(); err != nil {
-		// This should not happen if DetachedCompatible interface validation is working correctly
-		// Log the error for debugging since we can't return it directly
-		slog.Error("RunQuery called without database connection", "error", err, "statement", stmt.SQL)
-		// Return nil to indicate error - caller should check for nil
-		return nil, nil
+		return nil, nil, err
 	}
 
 	opts := tm.buildQueryOptions(nil)
-	return tm.runQueryWithOptions(ctx, stmt, opts)
+	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)
+	return iter, roTxn, nil
 }
 
 // RunAnalyzeQuery analyzes a statement either on the running transaction or on the temporal read-only transaction.

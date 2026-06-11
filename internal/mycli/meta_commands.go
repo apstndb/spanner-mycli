@@ -46,9 +46,12 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Check if StreamManager is configured
+	// Check if StreamManager is configured.
+	// The raw command text is intentionally not logged: it can contain
+	// sensitive data, and this is an internal invariant violation where the
+	// command content is irrelevant to diagnosis.
 	if session.systemVariables.StreamManager == nil {
-		slog.Error("StreamManager is nil, cannot execute shell command", "command", s.Command)
+		slog.Error("StreamManager is nil, cannot execute shell command")
 		return nil, errors.New("internal error: StreamManager not configured")
 	}
 
