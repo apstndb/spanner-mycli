@@ -118,7 +118,11 @@ func TestRequestPriority(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
-			if _, _, _, _, _, err := session.RunUpdate(ctx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), true); err != nil {
+			if _, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+				iter := session.runQueryWithStatsOnTransaction(ctx, tx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), implicit)
+				_, count, metadata, plan, err := consumeRowIterDiscard(iter)
+				return count, plan, metadata, err
+			}); err != nil {
 				t.Fatalf("failed to run update: %v", err)
 			}
 			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {

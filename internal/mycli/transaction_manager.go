@@ -825,8 +825,8 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 //
 //	RunInNewOrExistRwTx -> withReadWriteTransactionContext -> withTransactionLocked -> callback -> runUpdateOnTransaction
 //
-// Using non-locked versions of methods like TransactionAttrsWithLock(), currentPriorityWithLock(),
-// or queryOptionsWithLock() here will cause a deadlock. Always use the *Locked variants.
+// Using non-locked versions of methods like TransactionAttrsWithLock() or currentPriorityWithLock()
+// here will cause a deadlock. Always use the *Locked variants.
 func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
 	fc, err := decoder.FormatConfigWithProto(tm.sysVars.Internal.ProtoDescriptor, tm.sysVars.Display.MultilineProtoText)
 	if err != nil {
@@ -1000,62 +1000,6 @@ func (tm *TransactionManager) runSingleUseQuery(ctx context.Context, stmt spanne
 		txn = txn.WithTimestampBound(*tm.sysVars.Query.ReadOnlyStaleness)
 	}
 	return txn.QueryWithOptions(ctx, stmt, opts), txn
-}
-
-// RunUpdate executes a DML statement on the running read-write transaction.
-// It returns error if there is no running read-write transaction.
-func (tm *TransactionManager) RunUpdate(ctx context.Context, stmt spanner.Statement, implicit bool) ([]Row, map[string]any, int64,
-	*sppb.ResultSetMetadata, *sppb.QueryPlan, error,
-) {
-	fc, err := decoder.FormatConfigWithProto(tm.sysVars.Internal.ProtoDescriptor, tm.sysVars.Display.MultilineProtoText)
-	if err != nil {
-		return nil, nil, 0, nil, nil, err
-	}
-
-	opts := tm.queryOptionsWithLock(sppb.ExecuteSqlRequest_PROFILE.Enum())
-	opts.LastStatement = implicit
-
-	// Reset STATEMENT_TAG
-	tm.sysVars.Transaction.RequestTag = ""
-
-	var rows []Row
-	var stats map[string]any
-	var count int64
-	var metadata *sppb.ResultSetMetadata
-	var plan *sppb.QueryPlan
-
-	err = tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-		var err error
-		rows, stats, count, metadata, plan, err = consumeRowIterCollect(
-			txn.QueryWithOptions(ctx, stmt, opts),
-			spannerRowToRow(fc, tm.sysVars.typeStyles, tm.sysVars.nullStyle),
-		)
-		// Enable heartbeat after any operation (success or failure)
-		// Even failed operations start the abort countdown
-		tc.EnableHeartbeat()
-		return err
-	})
-
-	if err == ErrNotInReadWriteTransaction {
-		return nil, nil, 0, nil, nil, ErrNotInReadWriteTransaction
-	}
-	if err != nil {
-		return nil, nil, 0, nil, nil, err
-	}
-
-	return rows, stats, count, metadata, plan, nil
-}
-
-func (tm *TransactionManager) queryOptionsWithLock(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
-	return spanner.QueryOptions{
-		Mode:       mode,
-		Priority:   tm.currentPriorityWithLock(),
-		RequestTag: tm.sysVars.Transaction.RequestTag,
-		Options: &sppb.ExecuteSqlRequest_QueryOptions{
-			OptimizerVersion:           tm.sysVars.Query.OptimizerVersion,
-			OptimizerStatisticsPackage: tm.sysVars.Query.OptimizerStatisticsPackage,
-		},
-	}
 }
 
 // queryOptionsLocked returns query options without locking.
