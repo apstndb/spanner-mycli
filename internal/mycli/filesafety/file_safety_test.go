@@ -78,7 +78,7 @@ func TestValidateFileSafety(t *testing.T) {
 			path:    tmpDir,
 			opts:    nil,
 			wantErr: true,
-			errMsg:  "cannot read special file",
+			errMsg:  "cannot read directory",
 		},
 	}
 
@@ -252,4 +252,15 @@ func TestSafeReadFile_nonRegularBoundedRead(t *testing.T) {
 			t.Fatalf("error = %v, want too-large error", err)
 		}
 	})
+}
+
+// TestSafeReadFile_directoryRejectedEvenWithAllowNonRegular verifies that
+// directories are rejected with a clear error regardless of AllowNonRegular.
+func TestSafeReadFile_directoryRejectedEvenWithAllowNonRegular(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	_, err := SafeReadFile(dir, &FileSafetyOptions{AllowNonRegular: true})
+	if err == nil || !strings.Contains(err.Error(), "cannot read directory") {
+		t.Fatalf("error = %v, want cannot-read-directory error", err)
+	}
 }

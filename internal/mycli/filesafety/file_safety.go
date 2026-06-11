@@ -50,6 +50,13 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 		maxSize = DefaultMaxFileSize
 	}
 
+	// Directories are never readable as files, regardless of AllowNonRegular;
+	// reject them here for a clear error instead of a system-dependent
+	// os.ReadFile failure (EISDIR etc.).
+	if fi.IsDir() {
+		return fmt.Errorf("cannot read directory %s", path)
+	}
+
 	// Check for special files (devices, named pipes, sockets, etc.)
 	if !opts.AllowNonRegular {
 		if !fi.Mode().IsRegular() {
