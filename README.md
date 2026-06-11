@@ -132,7 +132,7 @@ Flags:
       --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
       --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: "%P%R> ")
       --history=HISTORY                        Set the history file to the specified path (default:
-                                               /tmp/spanner_mycli_readline.tmp)
+                                               ~/.spanner_mycli_history)
       --priority=STRING                        Set default request priority (HIGH|MEDIUM|LOW)
       --role=STRING                            Use the specific database role. --database-role is an alias.
       --endpoint=STRING                        Set the Spanner API endpoint (host:port)
@@ -951,7 +951,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_DIRECT_READ            | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
 | CLI_ENDPOINT               | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
 | CLI_FORMAT                 | READ_WRITE | `"TABLE"` (`"TAB"` in batch mode)              |
-| CLI_HISTORY_FILE           | READ_ONLY  | `"/tmp/spanner_mycli_readline.tmp"`            |
+| CLI_HISTORY_FILE           | READ_ONLY  | `"~/.spanner_mycli_history"`                   |
 | CLI_PROMPT                 | READ_WRITE | `"spanner%t> "`                                |
 | CLI_PROMPT2                | READ_WRITE | `"%P%R> "`                                     |
 | CLI_ROLE                   | READ_ONLY  | `"spanner_info_reader"`                        |

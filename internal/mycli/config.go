@@ -652,7 +652,7 @@ func newFlagParser(gopts *globalOptions, installFrom string, configFiles []strin
 			"installFrom":             installFrom,
 			"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
 			"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
-			"defaultHistoryFile":      defaultHistoryFile,
+			"defaultHistoryFile":      "~/.spanner_mycli_history", // display-only; keep environment-independent for README sync
 			"defaultVertexAIModel":    defaultVertexAIModel,
 			"defaultVertexAILocation": defaultVertexAILocation,
 		},

@@ -300,7 +300,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 			ParsedExplainPrintSections: DefaultParsedExplainPrintSections,
 			Prompt:                     defaultPrompt,
 			Prompt2:                    defaultPrompt2,
-			HistoryFile:                defaultHistoryFile,
+			HistoryFile:                defaultHistoryFile(),
 			OutputTemplate:             defaultOutputFormat,
 			TypeStylesRaw:              defaultTypeStyles,
 		},
