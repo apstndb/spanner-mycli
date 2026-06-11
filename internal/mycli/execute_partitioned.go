@@ -3,21 +3,27 @@ package mycli
 import (
 	"cmp"
 	"context"
+	"errors"
+	"iter"
 	"runtime"
+	"sync/atomic"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanvalue"
+	"github.com/apstndb/spanvalue/writer"
 	"github.com/sourcegraph/conc/pool"
+	"google.golang.org/api/iterator"
 )
 
 func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, err := decoder.FormatConfigWithProto(session.systemVariables.Internal.ProtoDescriptor, session.systemVariables.Display.MultilineProtoText)
+	fc, vfm, sysVars, err := prepareFormatConfig(sql, session.systemVariables)
 	if err != nil {
 		return nil, err
 	}
 
-	stmt, err := newStatement(sql, session.systemVariables.Params, false)
+	stmt, err := newStatement(sql, sysVars.Params, false)
 	if err != nil {
 		return nil, err
 	}
@@ -31,21 +37,96 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		batchROTx.Close()
 	}()
 
+	// Go 1.25+ automatically detects container CPU limits on Linux through container-aware GOMAXPROCS.
+	// This ensures optimal parallelism in containerized environments (Docker, Kubernetes) without manual configuration.
+	parallelism := cmp.Or(int(sysVars.Query.MaxPartitionedParallelism), runtime.GOMAXPROCS(0))
+
+	// Formats backed by a spanvalue RowIteratorWriter (CSV, JSONL, SQL_INSERT*)
+	// stream merged partition rows without buffering, like the query path.
+	result, handled, err := streamPartitionedQuery(ctx, batchROTx, partitions, parallelism, sysVars, fc, vfm)
+	if err != nil {
+		return nil, err
+	}
+	if handled {
+		return result, nil
+	}
+
+	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, sysVars, fc, vfm)
+}
+
+// streamPartitionedQuery streams merged partition rows through the same
+// spanvalue RowIteratorWriter as the query streaming path, via
+// writer.RunRowSeq. Returns handled=false when the current format has no
+// spanvalue writer (table and processor-based formats keep the buffered path).
+func streamPartitionedQuery(
+	ctx context.Context,
+	batchROTx *spanner.BatchReadOnlyTransaction,
+	partitions []*spanner.Partition,
+	parallelism int,
+	sysVars *systemVariables,
+	fc *spanvalue.FormatConfig,
+	vfm format.ValueFormatMode,
+) (*Result, bool, error) {
+	w, handled, err := newSpanvalueRowIteratorWriterFor(sysVars, fc)
+	if err != nil || !handled {
+		return nil, handled, err
+	}
+
+	hooks := writer.AfterEachSuccessfulWriteRow(
+		writer.RowIteratorHooksFromWriter(w),
+		func() error { return flushSpanvalueStreamingRow(w) },
+	)
+
+	var runResult *writer.RowIteratorResult
+	err = runPartitionedRowSeq(ctx, batchROTx, partitions, parallelism,
+		func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+			res, err := writer.RunRowSeq(md, rows, hooks)
+			runResult = res
+			return err
+		})
+	if err != nil {
+		return nil, true, normalizeSpanvalueWriterError(err)
+	}
+
+	return &Result{
+		TableHeader:           toTableHeader(runResult.Metadata.GetRowType().GetFields()),
+		AffectedRows:          runResult.RowsRead,
+		PartitionCount:        len(partitions),
+		Streamed:              true,
+		HasSQLFormattedValues: vfm == format.SQLLiteralValues,
+	}, true, nil
+}
+
+// bufferPartitionedQuery collects all partition rows into memory for formats
+// that need the full result set (table width calculation) or have no
+// streaming writer.
+func bufferPartitionedQuery(
+	ctx context.Context,
+	batchROTx *spanner.BatchReadOnlyTransaction,
+	partitions []*spanner.Partition,
+	parallelism int,
+	sysVars *systemVariables,
+	fc *spanvalue.FormatConfig,
+	vfm format.ValueFormatMode,
+) (*Result, error) {
+	transform := spannerRowToRow(fc, sysVars.typeStyles, sysVars.nullStyle)
+	if vfm == format.JSONValues {
+		transform = withRawJSONMarker(transform)
+	}
+
 	type partitionQueryResult struct {
 		Metadata *sppb.ResultSetMetadata
 		Rows     []Row
 	}
 
-	// Go 1.25+ automatically detects container CPU limits on Linux through container-aware GOMAXPROCS.
-	// This ensures optimal parallelism in containerized environments (Docker, Kubernetes) without manual configuration.
 	p := pool.NewWithResults[*partitionQueryResult]().
 		WithContext(ctx).
-		WithMaxGoroutines(cmp.Or(int(session.systemVariables.Query.MaxPartitionedParallelism), runtime.GOMAXPROCS(0)))
+		WithMaxGoroutines(parallelism)
 
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {
 			iter := batchROTx.Execute(ctx, partition)
-			rows, _, _, md, _, err := consumeRowIterCollect(iter, spannerRowToRow(fc, session.systemVariables.typeStyles, session.systemVariables.nullStyle))
+			rows, _, _, md, _, err := consumeRowIterCollect(iter, transform)
 			if err != nil {
 				return nil, err
 			}
@@ -68,13 +149,115 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		}
 	}
 
-	result := &Result{
+	return &Result{
 		Rows:           allRows,
 		TableHeader:    toTableHeader(rowType.GetFields()),
 		AffectedRows:   len(allRows),
 		PartitionCount: len(partitions),
+	}, nil
+}
+
+// partitionedRow is one fan-in item: a data row or a terminal partition error.
+type partitionedRow struct {
+	row *spanner.Row
+	err error
+}
+
+// runPartitionedRowSeq executes all partitions with bounded concurrency and
+// hands consume the row-type metadata plus a merged, fallible row sequence.
+// The single consumer serializes output, so sinks need no locking. Metadata is
+// captured from whichever partition responds first (every partition of one
+// query shares the same row type) and is available before the first row is
+// yielded; it is nil only when no partition reported metadata.
+//
+// consume aborting early (including on a yielded error) cancels the remaining
+// partition work; partition errors are surfaced through the sequence itself.
+func runPartitionedRowSeq(
+	ctx context.Context,
+	batchROTx *spanner.BatchReadOnlyTransaction,
+	partitions []*spanner.Partition,
+	parallelism int,
+	consume func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error,
+) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	ch := make(chan partitionedRow)
+	var capturedMD atomic.Pointer[sppb.ResultSetMetadata]
+
+	p := pool.New().WithContext(ctx).WithMaxGoroutines(parallelism)
+	for _, partition := range partitions {
+		p.Go(func(ctx context.Context) error {
+			rowIter := batchROTx.Execute(ctx, partition)
+			defer rowIter.Stop()
+			for {
+				row, err := rowIter.Next()
+				// Metadata is populated after the first Next, including when it
+				// returns iterator.Done; store it before sending the row so the
+				// consumer always sees metadata no later than the first row.
+				if md := rowIter.Metadata; md != nil {
+					capturedMD.CompareAndSwap(nil, md)
+				}
+				if err == iterator.Done {
+					return nil
+				}
+				if err != nil {
+					select {
+					case ch <- partitionedRow{err: err}:
+					case <-ctx.Done():
+					}
+					return err
+				}
+				select {
+				case ch <- partitionedRow{row: row}:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		})
 	}
-	return result, nil
+
+	producersDone := make(chan error, 1)
+	go func() {
+		producersDone <- p.Wait()
+		close(ch)
+	}()
+
+	// Hold the first item back until metadata is known: its producer stored
+	// metadata before sending, and a closed channel means all producers
+	// finished (zero data rows) after storing whatever metadata they saw.
+	first, hasFirst := <-ch
+
+	rows := func(yield func(*spanner.Row, error) bool) {
+		if hasFirst {
+			if !yield(first.row, first.err) || first.err != nil {
+				return
+			}
+		}
+		for item := range ch {
+			if !yield(item.row, item.err) || item.err != nil {
+				return
+			}
+		}
+	}
+
+	consumeErr := consume(capturedMD.Load(), rows)
+
+	// Release any producers blocked on send, then wait for them to finish.
+	cancel()
+	for range ch {
+	}
+	producerErr := <-producersDone
+
+	if consumeErr != nil {
+		return consumeErr
+	}
+	// A partition error is normally surfaced through the sequence and returned
+	// by consume above; this covers errors raised after consume stopped reading.
+	if producerErr != nil && !errors.Is(producerErr, context.Canceled) {
+		return producerErr
+	}
+	return nil
 }
 
 func executePDML(ctx context.Context, session *Session, sql string) (*Result, error) {
