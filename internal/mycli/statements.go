@@ -216,6 +216,9 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		}
 
 		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
+		if len(matched) < 2 {
+			return nil, fmt.Errorf("unexpected database resource name format: %q", database.GetName())
+		}
 		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
