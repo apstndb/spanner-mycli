@@ -362,7 +362,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 			{
 				desc:     "directory instead of file",
 				filename: "testdata/protos/",
-				errorMsg: "is a directory",
+				errorMsg: "cannot read special file",
 			},
 			{
 				desc:     "large invalid binary file",
@@ -377,7 +377,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 			{
 				desc:     "HTTP URL - non-existent (404)",
 				filename: httpServer.URL + "/non_existent.pb",
-				errorMsg: "failed to fetch proto descriptor",
+				errorMsg: "error on fetch proto descriptor",
 			},
 		}
 
