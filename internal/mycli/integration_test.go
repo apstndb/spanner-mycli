@@ -661,8 +661,9 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
 						Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
+						AffectedRows:  1,
 					},
 				},
 				{
@@ -685,8 +686,9 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
 						Rows:          sliceOf(toRow("b", "VALUE", "2")),
+						AffectedRows:  1,
 					},
 				},
 			},
@@ -980,7 +982,7 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW DATABASES",
 					&Result{
-						TableHeader: toTableHeader("Database"),
+						TableHeader: typedStringHeader("Database"),
 						// Don't check specific rows since databases vary
 					},
 				},
@@ -1214,7 +1216,7 @@ func TestAdminStatements(t *testing.T) {
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
-						TableHeader: toTableHeader("Database"),
+						TableHeader: typedStringHeader("Database"),
 						// Don't check specific content
 					},
 				},
@@ -1222,7 +1224,7 @@ func TestAdminStatements(t *testing.T) {
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
-						TableHeader: toTableHeader("Database"),
+						TableHeader: typedStringHeader("Database"),
 						// Don't check specific content
 					},
 				},
@@ -1263,7 +1265,7 @@ func TestAdminStatements(t *testing.T) {
 				{
 					stmt: "SHOW DATABASES", // Should show both databases
 					want: &Result{
-						TableHeader:  toTableHeader("Database"),
+						TableHeader:  typedStringHeader("Database"),
 						Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
 						AffectedRows: 2,
 					},
@@ -1297,19 +1299,19 @@ func TestAdminStatements(t *testing.T) {
 			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				},
 				srEmpty("CREATE DATABASE `new-database`"), // CREATE DATABASE returns empty result
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
 				},
 				srEmpty("USE `new-database` ROLE spanner_info_reader"), // nop
 				srEmpty("USE `test-database`"),                         // nop
 				srEmpty("DROP DATABASE `new-database`"),                // DROP DATABASE
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: toTableHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
 				},
 			},
 			// Ignore duration field in CREATE DATABASE result
