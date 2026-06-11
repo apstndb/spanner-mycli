@@ -23,6 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -42,13 +43,25 @@ import (
 const (
 	defaultPrompt           = "spanner%t> "
 	defaultPrompt2          = "%P%R> "
-	defaultHistoryFile      = "/tmp/spanner_mycli_readline.tmp"
 	defaultVertexAIModel    = "gemini-3-flash-preview"
 	defaultVertexAILocation = "global"
 	DefaultAnalyzeColumns   = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
 
 var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDefs(DefaultAnalyzeColumns))
+
+// defaultHistoryFile returns the default history file path,
+// ~/.spanner_mycli_history, following the mysql/psql client convention of a
+// per-user dotfile. The previous default was a predictable, shared path under
+// /tmp, which is a privacy footgun on multi-user systems (#593). Falls back
+// to a relative dotfile when the home directory cannot be determined.
+func defaultHistoryFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".spanner_mycli_history"
+	}
+	return filepath.Join(home, ".spanner_mycli_history")
+}
 
 // buildVersion is set by Main() from ldflags-injected values in the root main package.
 var buildVersion string

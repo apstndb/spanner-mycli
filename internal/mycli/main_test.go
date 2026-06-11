@@ -184,7 +184,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -239,7 +239,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -280,7 +280,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -319,7 +319,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -357,7 +357,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -402,7 +402,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -479,7 +479,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -520,7 +520,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -562,7 +562,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -603,7 +603,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -645,7 +645,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -684,7 +684,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
 					ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
@@ -721,7 +721,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:             defaultPrompt,
 					Prompt2:            defaultPrompt2,
-					HistoryFile:        defaultHistoryFile,
+					HistoryFile:        defaultHistoryFile(),
 					CLIFormat:          enums.DisplayModeTable,
 					AnalyzeColumns:     DefaultAnalyzeColumns,
 					OutputTemplateFile: "output_full.tmpl",
@@ -760,7 +760,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -799,7 +799,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Display: DisplayVars{
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile,
+					HistoryFile:          defaultHistoryFile(),
 					CLIFormat:            enums.DisplayModeTable,
 					AnalyzeColumns:       DefaultAnalyzeColumns,
 					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
@@ -915,7 +915,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 		Display: DisplayVars{
 			Prompt:               defaultPrompt,
 			Prompt2:              defaultPrompt2,
-			HistoryFile:          defaultHistoryFile,
+			HistoryFile:          defaultHistoryFile(),
 			CLIFormat:            enums.DisplayModeTable,
 			AnalyzeColumns:       DefaultAnalyzeColumns,
 			ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,

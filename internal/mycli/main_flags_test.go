@@ -1919,7 +1919,7 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 		"--system-command=ON|OFF",
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
-		fmt.Sprintf("default: %s", defaultHistoryFile),
+		"default: ~/.spanner_mycli_history",
 		"Allowed values: NORMAL, PLAN, PROFILE.",
 		fmt.Sprintf("default: %s", defaultVertexAIModel),
 		fmt.Sprintf("default: %s", defaultVertexAILocation),
