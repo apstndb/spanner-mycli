@@ -33,6 +33,7 @@ import (
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanenc"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"github.com/apstndb/spanvalue/gcvctor"
@@ -196,26 +197,29 @@ func (s *ShowDatabasesStatement) isDetachedCompatible() {}
 
 var extractDatabaseRe = regexp.MustCompile(`projects/[^/]+/instances/[^/]+/databases/(.+)`)
 
+// databaseNameRow is the row shape for SHOW DATABASES.
+type databaseNameRow struct {
+	Database string `spanner:"Database"`
+}
+
+var showDatabasesRowEncoder = spanenc.MustNewRowEncoder[databaseNameRow]()
+
 func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	dbIter := session.adminClient.ListDatabases(ctx, &databasepb.ListDatabasesRequest{
 		Parent: session.InstancePath(),
 	})
 
-	var rows []Row
+	var items []databaseNameRow
 	for database, err := range dbIter.All() {
 		if err != nil {
 			return nil, err
 		}
 
 		matched := extractDatabaseRe.FindStringSubmatch(database.GetName())
-		rows = append(rows, toRow(matched[1]))
+		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
-	return &Result{
-		TableHeader:  toTableHeader("Database"),
-		Rows:         rows,
-		AffectedRows: len(rows),
-	}, nil
+	return executeStructRows(showDatabasesRowEncoder, items, session.systemVariables)
 }
 
 // Split Points
@@ -729,19 +733,33 @@ type HelpStatement struct{}
 
 func (s *HelpStatement) isDetachedCompatible() {}
 
+// helpRow is the row shape for HELP.
+type helpRow struct {
+	Usage  string `spanner:"Usage"`
+	Syntax string `spanner:"Syntax"`
+}
+
+var helpRowEncoder = spanenc.MustNewRowEncoder[helpRow]()
+
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	var rows []Row
+	var items []helpRow
 	for _, stmt := range clientSideStatementDefs {
 		for _, desc := range stmt.Descriptions {
-			rows = append(rows, toRow(desc.Usage, desc.Syntax+";"))
+			items = append(items, helpRow{Usage: desc.Usage, Syntax: desc.Syntax + ";"})
 		}
 	}
-	return &Result{
-		TableHeader:   toTableHeader("Usage", "Syntax"),
-		Rows:          rows,
-		AffectedRows:  len(rows),
-		KeepVariables: true,
-	}, nil
+
+	// session is nil when HELP is rendered without a connection.
+	var sysVars *systemVariables
+	if session != nil {
+		sysVars = session.systemVariables
+	}
+	result, err := executeStructRows(helpRowEncoder, items, sysVars)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 type ExitStatement struct {

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/apstndb/lox"
+	"github.com/apstndb/spanenc"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
@@ -16,17 +17,32 @@ type ShowParamsStatement struct{}
 
 func (s *ShowParamsStatement) isDetachedCompatible() {}
 
-func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	rows := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) Row {
-		return toRow(k, lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"), v.SQL())
-	})
-	slices.SortFunc(rows, func(lhs, rhs Row) int { return cmp.Compare(lhs[0].RawText(), rhs[0].RawText()) /* parameter name */ })
+// paramRow is the row shape for SHOW PARAMS. Param_Value is the memefish
+// SQL rendering of the parameter, so it stays a string by design.
+type paramRow struct {
+	Name  string `spanner:"Param_Name"`
+	Kind  string `spanner:"Param_Kind"`
+	Value string `spanner:"Param_Value"`
+}
 
-	return &Result{
-		TableHeader:   toTableHeader("Param_Name", "Param_Kind", "Param_Value"),
-		Rows:          rows,
-		KeepVariables: true,
-	}, nil
+var showParamsRowEncoder = spanenc.MustNewRowEncoder[paramRow]()
+
+func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	items := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) paramRow {
+		return paramRow{
+			Name:  k,
+			Kind:  lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"),
+			Value: v.SQL(),
+		}
+	})
+	slices.SortFunc(items, func(lhs, rhs paramRow) int { return cmp.Compare(lhs.Name, rhs.Name) })
+
+	result, err := executeStructRows(showParamsRowEncoder, items, session.systemVariables)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 type UnsetParamStatement struct {
