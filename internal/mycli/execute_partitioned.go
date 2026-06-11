@@ -179,13 +179,15 @@ func runPartitionedRowSeq(
 	parallelism int,
 	consume func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error,
 ) error {
-	ctx, cancel := context.WithCancel(ctx)
+	// Do not shadow the parent context: it must stay observable below to
+	// distinguish external cancellation from our own consumer-driven cancel.
+	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	ch := make(chan partitionedRow)
 	var capturedMD atomic.Pointer[sppb.ResultSetMetadata]
 
-	p := pool.New().WithContext(ctx).WithMaxGoroutines(parallelism)
+	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) error {
 			rowIter := batchROTx.Execute(ctx, partition)
@@ -256,6 +258,13 @@ func runPartitionedRowSeq(
 	// by consume above; this covers errors raised after consume stopped reading.
 	if producerErr != nil && !errors.Is(producerErr, context.Canceled) {
 		return producerErr
+	}
+	// External cancellation (timeout, interrupt) makes producers exit with
+	// context.Canceled and the sequence end early, which would otherwise be
+	// indistinguishable from a successful run with fewer rows. Report it so a
+	// truncated result is never treated as success.
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return nil
 }
