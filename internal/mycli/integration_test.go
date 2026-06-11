@@ -628,8 +628,8 @@ func TestParameterStatements(t *testing.T) {
 				{"b", "true", "true", typector.CodeToSimpleType(sppb.TypeCode_BOOL), false},
 				{"bs", `b"foo"`, "Zm9v", typector.CodeToSimpleType(sppb.TypeCode_BYTES), false},
 				{"i64", "1", "1", typector.CodeToSimpleType(sppb.TypeCode_INT64), false},
-				{"f64", "1.0", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64), false},
-				{"f32", "CAST(1.0 AS FLOAT32)", "1.000000", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32), false},
+				{"f64", "1.0", "1", typector.CodeToSimpleType(sppb.TypeCode_FLOAT64), false},
+				{"f32", "CAST(1.0 AS FLOAT32)", "1", typector.CodeToSimpleType(sppb.TypeCode_FLOAT32), false},
 				{"n", `NUMERIC "1"`, "1", typector.CodeToSimpleType(sppb.TypeCode_NUMERIC), false},
 				{"s", `"foo"`, "foo", typector.CodeToSimpleType(sppb.TypeCode_STRING), false},
 				{"js", `JSON "{}"`, "{}", typector.CodeToSimpleType(sppb.TypeCode_JSON), false},
@@ -859,7 +859,11 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW VARIABLES",
 					&Result{
-						TableHeader:   toTableHeader("name", "value"),
+						// Virtual result sets carry row-type metadata like server results.
+						TableHeader: toTableHeader(
+							&sppb.StructType_Field{Name: "name", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+							&sppb.StructType_Field{Name: "value", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						),
 						KeepVariables: true,
 						// Rows and AffectedRows are dynamic, so we don't check them here.
 					},

@@ -22,6 +22,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanvalue"
 	"github.com/apstndb/spanvalue/writer"
 )
 
@@ -102,17 +103,24 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	out := qe.SysVars.StreamManager.GetWriter()
+	return newSpanvalueRowIteratorWriterFor(qe.SysVars, qe.FormatConfig)
+}
+
+// newSpanvalueRowIteratorWriterFor builds the spanvalue RowIteratorWriter for
+// the current CLI_FORMAT, shared by the query streaming path and the
+// client-side virtual result set path (streamStructRows).
+func newSpanvalueRowIteratorWriterFor(sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
+	out := sysVars.StreamManager.GetWriter()
 	if out == nil {
 		return nil, false, nil
 	}
 
-	switch qe.SysVars.Display.CLIFormat {
+	switch sysVars.Display.CLIFormat {
 	case enums.DisplayModeCSV:
 		w, err := writer.NewCSVWriter(
 			out,
-			writer.WithFormatter(qe.FormatConfig),
-			writer.WithHeader(!qe.SysVars.Display.SkipColumnNames),
+			writer.WithFormatter(fc),
+			writer.WithHeader(!sysVars.Display.SkipColumnNames),
 			writer.WithUnnamedFieldNamer(nil),
 		)
 		if err != nil {
@@ -122,7 +130,7 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 	case enums.DisplayModeJSONL:
 		w, err := writer.NewJSONLWriter(
 			out,
-			writer.WithFormatter(qe.FormatConfig),
+			writer.WithFormatter(fc),
 			writer.WithUnnamedFieldNamer(nil),
 		)
 		if err != nil {
@@ -130,24 +138,24 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 		}
 		return w, true, nil
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		if qe.SysVars.Display.SQLTableName == "" {
+		if sysVars.Display.SQLTableName == "" {
 			return nil, true, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
 				"Options:\n" +
 				"  1. Use DUMP TABLE for full table exports\n" +
 				"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
 				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
-		batchSize, err := spanvalueSQLBatchSize(qe.SysVars.Display.SQLBatchSize)
+		batchSize, err := spanvalueSQLBatchSize(sysVars.Display.SQLBatchSize)
 		if err != nil {
 			return nil, true, err
 		}
 		w, err := writer.NewSQLInsertWriter(
 			out,
-			qe.SysVars.Display.SQLTableName,
-			writer.WithFormatter(qe.FormatConfig),
+			sysVars.Display.SQLTableName,
+			writer.WithFormatter(fc),
 			writer.WithSQLBatchSize(batchSize),
-			writer.WithSQLDialect(qe.SysVars.Feature.DatabaseDialect),
-			writer.WithSQLInsertKind(spanvalueSQLInsertKind(qe.SysVars.Display.CLIFormat)),
+			writer.WithSQLDialect(sysVars.Feature.DatabaseDialect),
+			writer.WithSQLInsertKind(spanvalueSQLInsertKind(sysVars.Display.CLIFormat)),
 		)
 		if err != nil {
 			return nil, true, err
