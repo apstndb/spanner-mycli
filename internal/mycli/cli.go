@@ -265,7 +265,9 @@ func (c *Cli) updateSystemVariables(result *Result) {
 // executeSourceFile executes SQL statements from a file
 func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 	// Use common file safety checks (nil uses DefaultMaxFileSize - 100MB)
-	contents, err := filesafety.SafeReadFile(filePath, nil)
+	// AllowNonRegular keeps process substitution working for SOURCE / \.;
+	// SafeReadFile still bounds the read for pipe-like inputs.
+	contents, err := filesafety.SafeReadFile(filePath, &filesafety.FileSafetyOptions{AllowNonRegular: true})
 	if err != nil {
 		return err
 	}

@@ -362,7 +362,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 			{
 				desc:     "directory instead of file",
 				filename: "testdata/protos/",
-				errorMsg: "cannot read special file",
+				errorMsg: "cannot read directory",
 			},
 			{
 				desc:     "large invalid binary file",

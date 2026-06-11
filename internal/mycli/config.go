@@ -38,6 +38,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 )
 
 type globalOptions struct {
@@ -736,7 +737,9 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 		}
 		return string(b), false, nil
 	case fileToRead != "":
-		b, err := os.ReadFile(fileToRead)
+		// AllowNonRegular keeps process substitution (--file <(...)) working;
+		// SafeReadFile still bounds the read for pipe-like inputs.
+		b, err := filesafety.SafeReadFile(fileToRead, &filesafety.FileSafetyOptions{AllowNonRegular: true})
 		if err != nil {
 			return "", false, fmt.Errorf("read from file %v failed: %w", fileToRead, err)
 		}

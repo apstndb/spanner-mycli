@@ -1614,7 +1614,9 @@ func TestCli_executeSourceFile_NonExistentFile(t *testing.T) {
 	}
 }
 
-// TestCli_executeSourceFile_NonRegularFile tests executeSourceFile with a non-regular file
+// TestCli_executeSourceFile_NonRegularFile verifies that non-regular files
+// (process substitution FIFOs, /dev/null) are accepted by SOURCE since #596:
+// reads are bounded by SafeReadFile instead of rejected outright.
 func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -1626,12 +1628,9 @@ func TestCli_executeSourceFile_NonRegularFile(t *testing.T) {
 		SystemVariables: &systemVariables{},
 	}
 
-	// Try to source from /dev/null (a special file)
-	err := cli.executeSourceFile(context.Background(), "/dev/null")
-	if err == nil {
-		t.Error("Expected error for non-regular file")
-	} else if !strings.Contains(err.Error(), "cannot read") {
-		t.Errorf("Expected error to contain 'cannot read', got: %v", err)
+	// /dev/null is a special file; it sources successfully as empty input.
+	if err := cli.executeSourceFile(context.Background(), "/dev/null"); err != nil {
+		t.Errorf("expected /dev/null to source as empty input, got: %v", err)
 	}
 }
 

@@ -18,6 +18,7 @@ package filesafety
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -49,6 +50,13 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 		maxSize = DefaultMaxFileSize
 	}
 
+	// Directories are never readable as files, regardless of AllowNonRegular;
+	// reject them here for a clear error instead of a system-dependent
+	// os.ReadFile failure (EISDIR etc.).
+	if fi.IsDir() {
+		return fmt.Errorf("cannot read directory %s", path)
+	}
+
 	// Check for special files (devices, named pipes, sockets, etc.)
 	if !opts.AllowNonRegular {
 		if !fi.Mode().IsRegular() {
@@ -77,7 +85,11 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 	return nil
 }
 
-// SafeReadFile reads a file after performing safety checks
+// SafeReadFile reads a file after performing safety checks. For regular files
+// the size limit is enforced up front from Stat. Non-regular inputs (only
+// reachable with AllowNonRegular, e.g. process substitution FIFOs) report a
+// meaningless Stat size, so the read itself is capped at the size limit and
+// exceeding it is an error rather than a truncation.
 func SafeReadFile(path string, opts *FileSafetyOptions) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -88,5 +100,27 @@ func SafeReadFile(path string, opts *FileSafetyOptions) ([]byte, error) {
 		return nil, err
 	}
 
-	return os.ReadFile(path)
+	if fi.Mode().IsRegular() {
+		return os.ReadFile(path)
+	}
+
+	maxSize := int64(DefaultMaxFileSize)
+	if opts != nil && opts.MaxSize != 0 {
+		maxSize = opts.MaxSize
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
+	}
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("file %s too large: exceeded %d bytes", path, maxSize)
+	}
+	return data, nil
 }

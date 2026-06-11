@@ -78,7 +78,7 @@ func TestValidateFileSafety(t *testing.T) {
 			path:    tmpDir,
 			opts:    nil,
 			wantErr: true,
-			errMsg:  "cannot read special file",
+			errMsg:  "cannot read directory",
 		},
 	}
 
@@ -206,5 +206,61 @@ func TestFileSafetyConstants(t *testing.T) {
 	}
 	if SampleDatabaseMaxFileSize != 10*1024*1024 {
 		t.Errorf("SampleDatabaseMaxFileSize = %d, want %d", SampleDatabaseMaxFileSize, 10*1024*1024)
+	}
+}
+
+// TestSafeReadFile_nonRegularBoundedRead verifies that AllowNonRegular inputs
+// (e.g. process substitution FIFOs) are read through a size-capped reader:
+// Stat size is meaningless for pipes, so the cap must apply to the read itself.
+func TestSafeReadFile_nonRegularBoundedRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("FIFOs are not supported on Windows")
+	}
+
+	makeFIFO := func(t *testing.T, payload []byte) string {
+		t.Helper()
+		fifo := filepath.Join(t.TempDir(), "fifo")
+		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+			t.Fatalf("mkfifo: %v", err)
+		}
+		go func() {
+			f, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+			if err != nil {
+				return
+			}
+			defer f.Close()
+			_, _ = f.Write(payload)
+		}()
+		return fifo
+	}
+
+	t.Run("within limit", func(t *testing.T) {
+		fifo := makeFIFO(t, []byte("SELECT 1;"))
+		got, err := SafeReadFile(fifo, &FileSafetyOptions{AllowNonRegular: true, MaxSize: 64})
+		if err != nil {
+			t.Fatalf("SafeReadFile: %v", err)
+		}
+		if string(got) != "SELECT 1;" {
+			t.Errorf("got %q, want %q", got, "SELECT 1;")
+		}
+	})
+
+	t.Run("exceeds limit", func(t *testing.T) {
+		fifo := makeFIFO(t, []byte("0123456789"))
+		_, err := SafeReadFile(fifo, &FileSafetyOptions{AllowNonRegular: true, MaxSize: 4})
+		if err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("error = %v, want too-large error", err)
+		}
+	})
+}
+
+// TestSafeReadFile_directoryRejectedEvenWithAllowNonRegular verifies that
+// directories are rejected with a clear error regardless of AllowNonRegular.
+func TestSafeReadFile_directoryRejectedEvenWithAllowNonRegular(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	_, err := SafeReadFile(dir, &FileSafetyOptions{AllowNonRegular: true})
+	if err == nil || !strings.Contains(err.Error(), "cannot read directory") {
+		t.Fatalf("error = %v, want cannot-read-directory error", err)
 	}
 }
