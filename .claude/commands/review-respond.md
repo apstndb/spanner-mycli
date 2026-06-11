@@ -53,5 +53,23 @@ go tool gh-helper threads reply THREAD_ID --resolve \
 
 Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
 
-3. After all threads are resolved, request a new review:
+3. Verify nothing was left as an unsubmitted (PENDING) review:
+
+`gh-helper threads reply --resolve` resolves the thread, but if a reply ends up batched into a *pending* review (e.g., an interrupted submit) instead of being posted directly, the reply stays invisible until that review is submitted — leaving "resolved threads with no visible reply." Check for leftover pending reviews (GitHub only lists your own):
+
+!PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '[.[] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
+
+If `pendingReviews` is non-empty, inspect each review's drafted comments, then submit it so the replies become visible:
+
+```bash
+# inspect what would be published first
+gh api "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
+  --jq '.[] | {in_reply_to_id, body_head: (.body[0:80])}'
+# then submit (publishes the drafted replies; does not change resolution)
+gh api -X POST "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/events" -f event=COMMENT
+```
+
+Proceed only once `pendingReviews` is empty (`[]`).
+
+4. After all threads are resolved, request a new review:
 !go tool gh-helper reviews wait --request-review
