@@ -290,7 +290,13 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, err
 	}
 
-	stats, _, _, plan, err := consumeRowIterDiscard(iter)
+	// Count the actual data rows while draining the iterator;
+	// RowIterator.RowCount is only populated for DML.
+	var actualRows int64
+	stats, _, _, plan, err := consumeRowIter(iter, func(*spanner.Row) error {
+		actualRows++
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +311,11 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	if err != nil {
 		return nil, err
 	}
+
+	// Report the rows the query actually returned, not the number of rendered
+	// plan-node rows, mirroring executeExplainAnalyzeDML's affected-rows
+	// override (#417).
+	result.AffectedRows = int(actualRows)
 
 	if roTxn != nil {
 		ts, err := roTxn.Timestamp()
