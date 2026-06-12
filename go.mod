@@ -21,7 +21,7 @@ require (
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.11
 	github.com/apstndb/spantype v0.3.11
-	github.com/apstndb/spanvalue v0.7.5
+	github.com/apstndb/spanvalue v0.8.0
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/creack/pty v1.1.24
