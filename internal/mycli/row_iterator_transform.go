@@ -35,7 +35,6 @@ type rowIteratorRunConfig struct {
 	transformErrorLabel string
 	writeErrorLabel     string
 	finishErrorLabel    string
-	afterWriteRow       func() error
 }
 
 type rowIteratorRunOption func(*rowIteratorRunConfig)
@@ -51,12 +50,6 @@ func withRowIteratorErrorLabels(transformLabel, writeLabel, finishLabel string) 
 		c.transformErrorLabel = transformLabel
 		c.writeErrorLabel = writeLabel
 		c.finishErrorLabel = finishLabel
-	}
-}
-
-func withRowIteratorAfterWriteRow(f func() error) rowIteratorRunOption {
-	return func(c *rowIteratorRunConfig) {
-		c.afterWriteRow = f
 	}
 }
 
@@ -99,11 +92,6 @@ func runRowIteratorTransform[T any](
 				cfg.metrics.RowCount = rowCount
 			}
 
-			if cfg.afterWriteRow != nil {
-				if err := cfg.afterWriteRow(); err != nil {
-					return err
-				}
-			}
 			return nil
 		},
 		Finish: func(result *writer.RowIteratorResult) error {

@@ -72,10 +72,7 @@ func streamPartitionedQuery(
 		return nil, handled, err
 	}
 
-	hooks := writer.AfterEachSuccessfulWriteRow(
-		writer.RowIteratorHooksFromWriter(w),
-		func() error { return flushSpanvalueStreamingRow(w) },
-	)
+	hooks := writer.RowIteratorHooksFromWriter(w)
 
 	var runResult *writer.RowIteratorResult
 	err = runPartitionedRowSeq(ctx, batchROTx, partitions, parallelism,
