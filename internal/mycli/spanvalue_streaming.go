@@ -122,6 +122,7 @@ func newSpanvalueRowIteratorWriterFor(sysVars *systemVariables, fc *spanvalue.Fo
 			writer.WithFormatter(fc),
 			writer.WithHeader(!sysVars.Display.SkipColumnNames),
 			writer.WithUnnamedFieldNamer(nil),
+			writer.WithFlushEachRow(),
 		)
 		if err != nil {
 			return nil, true, err
@@ -211,7 +212,6 @@ func runSpanvalueRowIterator(qe *queryExecution, w writer.RowIteratorWriter) (*w
 			},
 		},
 		withRowIteratorMetrics(qe.Metrics),
-		withRowIteratorAfterWriteRow(func() error { return flushSpanvalueStreamingRow(w) }),
 	)
 }
 
@@ -269,16 +269,6 @@ func rowIteratorResultParts(result *writer.RowIteratorResult) ([]*sppb.StructTyp
 		fields = result.Metadata.GetRowType().GetFields()
 	}
 	return fields, result.Stats.QueryStats, result.Stats.QueryPlan
-}
-
-func flushSpanvalueStreamingRow(w writer.RowIteratorWriter) error {
-	// RowIteratorWriter always has Flush, but per-row flushing is only safe for
-	// DelimitedWriter. SQLInsertWriter.Flush finalizes partial INSERT batches and
-	// would defeat CLI_SQL_BATCH_SIZE if called after every row.
-	if _, ok := w.(*writer.DelimitedWriter); !ok {
-		return nil
-	}
-	return w.Flush()
 }
 
 func normalizeSpanvalueWriterError(err error) error {
