@@ -17,7 +17,7 @@ require (
 	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spancodec v0.1.1
-	github.com/apstndb/spanemuboost v0.4.1
+	github.com/apstndb/spanemuboost v0.4.5
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.11
 	github.com/apstndb/spanstats v0.1.0
@@ -185,7 +185,7 @@ require (
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
