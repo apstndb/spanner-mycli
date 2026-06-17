@@ -31,15 +31,20 @@ import (
 // Otherwise, values are output as JSON strings (fallback for client-side statements).
 type JSONLFormatter struct {
 	out         io.Writer
+	stringBuf   bytes.Buffer
+	stringEnc   *json.Encoder
 	columns     []string
 	initialized bool
 }
 
 // NewJSONLFormatter creates a new JSONL formatter.
 func NewJSONLFormatter(out io.Writer) *JSONLFormatter {
-	return &JSONLFormatter{
+	f := &JSONLFormatter{
 		out: out,
 	}
+	f.stringEnc = json.NewEncoder(&f.stringBuf)
+	f.stringEnc.SetEscapeHTML(false)
+	return f
 }
 
 // InitFormat stores column names for use as JSON keys.
@@ -77,7 +82,9 @@ func (f *JSONLFormatter) WriteRow(row Row) error {
 			columnName = fmt.Sprintf("Column_%d", i+1)
 		}
 
-		if err := writeJSONString(f.out, columnName); err != nil {
+		// Write object members directly instead of marshaling a map so JSONL
+		// output preserves the original column order.
+		if err := f.writeJSONString(columnName); err != nil {
 			return fmt.Errorf("failed to write JSONL key: %w", err)
 		}
 		if _, err := io.WriteString(f.out, ":"); err != nil {
@@ -108,7 +115,7 @@ func (f *JSONLFormatter) writeValue(cell Cell) error {
 		_, err := f.out.Write(raw)
 		return err
 	}
-	return writeJSONString(f.out, cell.RawText())
+	return f.writeJSONString(cell.RawText())
 }
 
 // FinishFormat completes JSONL output.
@@ -116,18 +123,16 @@ func (f *JSONLFormatter) FinishFormat() error {
 	return nil
 }
 
-func writeJSONString(w io.Writer, s string) error {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(s); err != nil {
+func (f *JSONLFormatter) writeJSONString(s string) error {
+	f.stringBuf.Reset()
+	if err := f.stringEnc.Encode(s); err != nil {
 		return err
 	}
 
-	encoded := b.Bytes()
+	encoded := f.stringBuf.Bytes()
 	if len(encoded) > 0 && encoded[len(encoded)-1] == '\n' {
 		encoded = encoded[:len(encoded)-1]
 	}
-	_, err := w.Write(encoded)
+	_, err := f.out.Write(encoded)
 	return err
 }
