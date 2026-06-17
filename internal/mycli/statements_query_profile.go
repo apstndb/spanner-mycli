@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,8 +15,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 	"github.com/k0kubun/pp/v3"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
@@ -23,16 +22,16 @@ import (
 )
 
 type queryProfiles struct {
-	RawQueryPlan jsontext.Value  `json:"queryPlan"`
+	RawQueryPlan json.RawMessage `json:"queryPlan"`
 	QueryPlan    *sppb.QueryPlan `json:"-"`
 	QueryStats   QueryStats      `json:"queryStats"`
 	Fprint       string          `json:"fprint"`
 }
 
 type rawQueryProfiles struct {
-	RawQueryPlan  jsontext.Value `json:"queryPlan"`
-	RawQueryStats map[string]any `json:"queryStats"`
-	Fprint        string         `json:"fprint"`
+	RawQueryPlan  json.RawMessage `json:"queryPlan"`
+	RawQueryStats map[string]any  `json:"queryStats"`
+	Fprint        string          `json:"fprint"`
 }
 
 type queryProfilesRow struct {

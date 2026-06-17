@@ -453,6 +453,12 @@ func TestFormatJSONL(t *testing.T) {
 			want:    `{"data":"line1\nline2"}` + "\n",
 		},
 		{
+			name:    "html-sensitive characters",
+			columns: []string{"data"},
+			rows:    []Row{StringsToRow("<tag>&value")},
+			want:    `{"data":"<tag>&value"}` + "\n",
+		},
+		{
 			name:    "RawJSONCell with typed values",
 			columns: []string{"id", "name", "active", "tags"},
 			rows: []Row{
@@ -641,6 +647,22 @@ func TestJSONLFormatterLifecycle(t *testing.T) {
 		want := `{"id":"1"}` + "\n"
 		if diff := cmp.Diff(want, buf.String()); diff != "" {
 			t.Errorf("output mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("invalid raw JSON", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		f := NewJSONLFormatter(&buf)
+		if err := f.InitFormat([]string{"bad"}, FormatConfig{}, nil); err != nil {
+			t.Fatalf("init: %v", err)
+		}
+		err := f.WriteRow(Row{RawJSONCell{Cell: PlainCell{Text: "not-json"}}})
+		if err == nil {
+			t.Fatal("expected error for invalid raw JSON")
+		}
+		if !strings.Contains(err.Error(), "invalid raw JSON value") {
+			t.Fatalf("error = %v, want invalid raw JSON value", err)
 		}
 	})
 }
