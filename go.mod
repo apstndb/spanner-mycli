@@ -51,7 +51,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/vbauerster/mpb/v8 v8.10.2
 	go.uber.org/zap v1.27.0
-	golang.org/x/term v0.41.0
+	golang.org/x/term v0.44.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.274.0
 	google.golang.org/genai v1.56.0
@@ -186,7 +186,7 @@ require (
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
