@@ -8,8 +8,8 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
+	"github.com/apstndb/spanstats"
 	"github.com/apstndb/spanvalue"
-	"github.com/go-json-experiment/json"
 	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -21,18 +21,11 @@ func extractColumnNames(fields []*sppb.StructType_Field) []string {
 
 // parseQueryStats parses spanner.RowIterator.QueryStats.
 func parseQueryStats(stats map[string]any) (QueryStats, error) {
-	var queryStats QueryStats
-
-	b, err := json.Marshal(stats)
-	if err != nil {
-		return queryStats, err
+	parsed := spanstats.FromMap(stats)
+	if parsed == nil {
+		return QueryStats{}, nil
 	}
-
-	err = json.Unmarshal(b, &queryStats)
-	if err != nil {
-		return queryStats, err
-	}
-	return queryStats, nil
+	return *parsed, nil
 }
 
 // consumeRowIterDiscard calls iter.Stop().

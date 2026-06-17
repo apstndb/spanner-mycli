@@ -29,6 +29,12 @@ type queryProfiles struct {
 	Fprint       string          `json:"fprint"`
 }
 
+type rawQueryProfiles struct {
+	RawQueryPlan  jsontext.Value `json:"queryPlan"`
+	RawQueryStats map[string]any `json:"queryStats"`
+	Fprint        string         `json:"fprint"`
+}
+
 type queryProfilesRow struct {
 	IntervalEnd     time.Time        `spanner:"INTERVAL_END"`
 	TextFingerprint int64            `spanner:"TEXT_FINGERPRINT"`
@@ -192,12 +198,11 @@ func toQpr(row *spanner.Row) (*queryProfilesRow, error) {
 		return nil, err
 	}
 
-	var profile queryProfiles
-	err := json.Unmarshal([]byte(qpr.RawQueryProfile.String()), &profile)
+	profile, err := parseQueryProfile(qpr.RawQueryProfile.String())
 	if err != nil {
 		return nil, err
 	}
-	qpr.QueryProfile = &profile
+	qpr.QueryProfile = profile
 
 	var queryPlan sppb.QueryPlan
 	err = protojson.Unmarshal(profile.RawQueryPlan, &queryPlan)
@@ -207,4 +212,20 @@ func toQpr(row *spanner.Row) (*queryProfilesRow, error) {
 	profile.QueryPlan = &queryPlan
 
 	return &qpr, nil
+}
+
+func parseQueryProfile(raw string) (*queryProfiles, error) {
+	var profile rawQueryProfiles
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		return nil, err
+	}
+	queryStats, err := parseQueryStats(profile.RawQueryStats)
+	if err != nil {
+		return nil, err
+	}
+	return &queryProfiles{
+		RawQueryPlan: profile.RawQueryPlan,
+		QueryStats:   queryStats,
+		Fprint:       profile.Fprint,
+	}, nil
 }
