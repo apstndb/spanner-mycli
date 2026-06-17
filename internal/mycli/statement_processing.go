@@ -30,9 +30,9 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
+	"github.com/apstndb/spanstats"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/go-json-experiment/json/jsontext"
 	"github.com/olekukonko/tablewriter/tw"
 )
 
@@ -240,33 +240,7 @@ func sliceOf[V any](vs ...V) []V {
 // QueryStats contains query statistics.
 // Some fields may not have a valid value depending on the environment.
 // For example, only ElapsedTime and RowsReturned has valid value for Cloud Spanner Emulator.
-type QueryStats struct {
-	ElapsedTime                string `json:"elapsed_time"`
-	CPUTime                    string `json:"cpu_time"`
-	RowsReturned               string `json:"rows_returned"`
-	RowsScanned                string `json:"rows_scanned"`
-	DeletedRowsScanned         string `json:"deleted_rows_scanned"`
-	OptimizerVersion           string `json:"optimizer_version"`
-	OptimizerStatisticsPackage string `json:"optimizer_statistics_package"`
-	RemoteServerCalls          string `json:"remote_server_calls"`
-	MemoryPeakUsageBytes       string `json:"memory_peak_usage_bytes"`
-	TotalMemoryPeakUsageByte   string `json:"total_memory_peak_usage_byte"`
-	QueryText                  string `json:"query_text"`
-	BytesReturned              string `json:"bytes_returned"`
-	RuntimeCreationTime        string `json:"runtime_creation_time"`
-	StatisticsLoadTime         string `json:"statistics_load_time"`
-	MemoryUsagePercentage      string `json:"memory_usage_percentage"`
-	FilesystemDelaySeconds     string `json:"filesystem_delay_seconds"`
-	LockingDelay               string `json:"locking_delay"`
-	QueryPlanCreationTime      string `json:"query_plan_creation_time"`
-	ServerQueueDelay           string `json:"server_queue_delay"`
-	DataBytesRead              string `json:"data_bytes_read"`
-	IsGraphQuery               string `json:"is_graph_query"`
-	RuntimeCached              string `json:"runtime_cached"`
-	QueryPlanCached            string `json:"query_plan_cached"`
-
-	Unknown jsontext.Value `json:",unknown" pp:"-"`
-}
+type QueryStats = spanstats.QueryStats
 
 var (
 	operatorColumnName       = "Operator <execution_method> (metadata, ...)"
