@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	dkapi "github.com/apstndb/developerknowledge-go"
 	"golang.org/x/time/rate"
 	"google.golang.org/genai"
 )
@@ -158,9 +159,13 @@ func newTestDevKnowledgeClient(t *testing.T, handler http.HandlerFunc) (*devKnow
 	t.Cleanup(server.Close)
 	return &devKnowledgeClient{
 		baseURL: server.URL,
-		apiKey:  "test-api-key",
-		client:  server.Client(),
-		limiter: rate.NewLimiter(rate.Inf, 1),
+		client: &dkapi.Client{
+			BaseURL:    server.URL,
+			APIKey:     "test-api-key",
+			HTTPClient: server.Client(),
+			Limiter:    rate.NewLimiter(rate.Inf, 1),
+			MaxRetries: 2,
+		},
 	}, server.URL
 }
 
@@ -238,12 +243,9 @@ func TestDevKnowledgeClient_DoGet_MaxRetriesExceeded(t *testing.T) {
 	if attempts != 3 {
 		t.Errorf("attempts = %d, want 3", attempts)
 	}
-	var apiErr *devKnowledgeAPIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected devKnowledgeAPIError, got %T: %v", err, err)
-	}
-	if apiErr.Code != 429 {
-		t.Errorf("error code = %d, want 429", apiErr.Code)
+	var rateLimitErr *dkapi.RateLimitError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("expected RateLimitError, got %T: %v", err, err)
 	}
 }
 

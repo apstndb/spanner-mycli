@@ -5,15 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	dkapi "github.com/apstndb/developerknowledge-go"
 	"github.com/samber/lo"
 	"golang.org/x/time/rate"
 	"google.golang.org/genai"
@@ -234,102 +233,40 @@ func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCach
 const defaultDevKnowledgeBaseURL = "https://developerknowledge.googleapis.com/v1alpha"
 
 // devKnowledgeAPIError represents a non-OK HTTP response from the API.
-type devKnowledgeAPIError struct {
-	Code    int
-	Status  string
-	Message string
-}
-
-func (e *devKnowledgeAPIError) Error() string {
-	if e.Status != "" {
-		return fmt.Sprintf("API error %d (%s): %s", e.Code, e.Status, e.Message)
-	}
-	return fmt.Sprintf("HTTP %d: %s", e.Code, e.Message)
-}
+type devKnowledgeAPIError = dkapi.APIError
 
 // devKnowledgeClient is a REST client for the Developer Knowledge API.
 type devKnowledgeClient struct {
 	baseURL string
-	apiKey  string
-	client  *http.Client
-	limiter *rate.Limiter
+	client  *dkapi.Client
 }
 
 func newDevKnowledgeClient(apiKey string) *devKnowledgeClient {
 	return &devKnowledgeClient{
 		baseURL: defaultDevKnowledgeBaseURL,
-		apiKey:  apiKey,
-		client:  http.DefaultClient,
-		// 100 RPM = ~1.67 RPS, burst of 5 for short request bursts
-		limiter: rate.NewLimiter(rate.Every(600*time.Millisecond), 5),
+		client: &dkapi.Client{
+			BaseURL:    defaultDevKnowledgeBaseURL,
+			APIKey:     apiKey,
+			HTTPClient: http.DefaultClient,
+			// 100 RPM = ~1.67 RPS, burst of 5 for short request bursts.
+			Limiter: rate.NewLimiter(rate.Every(600*time.Millisecond), 5),
+			// Keep the previous behavior of three total attempts.
+			MaxRetries: 2,
+		},
 	}
 }
 
 func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, error) {
-	const maxRetries = 3
-	backoff := 1 * time.Second
+	client := *c.client
+	client.Context = ctx
+	return client.DoGet(reqURL)
+}
 
-	for attempt := range maxRetries {
-		if err := c.limiter.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("x-goog-api-key", c.apiKey)
-
-		// Network errors are not retried: doc fetching is best-effort
-		// (stale cache + embedded docs as fallback).
-		resp, err := c.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		// Check for retriable 429 before reading body to avoid unnecessary I/O.
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries-1 {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-			wait := backoff
-			if v := resp.Header.Get("Retry-After"); v != "" {
-				if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-					wait = time.Duration(secs) * time.Second
-				}
-			}
-			slog.Debug("Rate limited, retrying", "attempt", attempt, "wait", wait)
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			backoff *= 2
-			continue
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			var apiErr struct {
-				Error struct {
-					Code    int    `json:"code"`
-					Message string `json:"message"`
-					Status  string `json:"status"`
-				} `json:"error"`
-			}
-			if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-				return nil, &devKnowledgeAPIError{Code: apiErr.Error.Code, Status: apiErr.Error.Status, Message: apiErr.Error.Message}
-			}
-			return nil, &devKnowledgeAPIError{Code: resp.StatusCode, Message: string(body)}
-		}
-
-		return body, nil
-	}
-	return nil, fmt.Errorf("unreachable: exceeded max retries") // required by compiler
+func (c *devKnowledgeClient) batchGetDocuments(ctx context.Context, names []string) ([]dkapi.Document, error) {
+	client := *c.client
+	client.BaseURL = c.baseURL
+	client.Context = ctx
+	return client.BatchGetDocuments(names)
 }
 
 // devKnowledgeDocSearcher implements document operations using the Developer Knowledge REST API.
@@ -375,9 +312,7 @@ func (d *devKnowledgeDocSearcher) GetDocument(ctx context.Context, name string) 
 		return "", fmt.Errorf("get_document failed: %w", err)
 	}
 
-	var doc struct {
-		Content string `json:"content"`
-	}
+	var doc dkapi.Document
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return "", err
 	}
@@ -406,28 +341,13 @@ func (d *devKnowledgeDocSearcher) BatchGetDocuments(ctx context.Context, names [
 }
 
 func (d *devKnowledgeDocSearcher) fetchBatchGet(ctx context.Context, names []string) ([]DocResult, error) {
-	params := url.Values{}
-	for _, name := range names {
-		params.Add("names", name)
-	}
-
-	body, err := d.client.doGet(ctx, d.client.baseURL+"/documents:batchGet?"+params.Encode())
+	docs, err := d.client.batchGetDocuments(ctx, names)
 	if err != nil {
 		return nil, err
 	}
 
-	var resp struct {
-		Documents []struct {
-			Name    string `json:"name"`
-			Content string `json:"content"`
-		} `json:"documents"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-
-	results := make([]DocResult, len(resp.Documents))
-	for i, doc := range resp.Documents {
+	results := make([]DocResult, len(docs))
+	for i, doc := range docs {
 		results[i] = DocResult{Name: doc.Name, Content: doc.Content}
 	}
 	return results, nil
