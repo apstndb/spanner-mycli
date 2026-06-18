@@ -230,7 +230,7 @@ func executeToolCall(ctx context.Context, fc *genai.FunctionCall, cache *docCach
 
 // --- Developer Knowledge REST API client ---
 
-const defaultDevKnowledgeBaseURL = "https://developerknowledge.googleapis.com/v1alpha"
+const defaultDevKnowledgeBaseURL = dkapi.DefaultV1BaseURL
 
 // devKnowledgeAPIError represents a non-OK HTTP response from the API.
 type devKnowledgeAPIError = dkapi.APIError

@@ -175,6 +175,17 @@ func newTestDocSearcher(t *testing.T, handler http.HandlerFunc) *devKnowledgeDoc
 	return &devKnowledgeDocSearcher{client: client}
 }
 
+func TestNewDevKnowledgeClientUsesV1BaseURL(t *testing.T) {
+	t.Parallel()
+	client := newDevKnowledgeClient("test-api-key")
+	if client.baseURL != dkapi.DefaultV1BaseURL {
+		t.Fatalf("baseURL = %q, want %q", client.baseURL, dkapi.DefaultV1BaseURL)
+	}
+	if client.client.BaseURL != dkapi.DefaultV1BaseURL {
+		t.Fatalf("dkapi BaseURL = %q, want %q", client.client.BaseURL, dkapi.DefaultV1BaseURL)
+	}
+}
+
 func TestDevKnowledgeClient_DoGet_APIKeyHeader(t *testing.T) {
 	t.Parallel()
 	var gotHeader string
