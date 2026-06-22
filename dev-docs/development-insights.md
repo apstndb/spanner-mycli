@@ -146,11 +146,11 @@ make test && make lint      # Full validation
 
 # Development cycle
 make build                  # Build the application
-make fasttest              # Quick tests during development
+make test-quick            # Quick tests during development
 make clean                 # Clean artifacts when needed
 
 # Help documentation updates
-make docs-update    # Generate help output for README.md
+make docs-update    # Regenerate README.md help sections
 ```
 
 

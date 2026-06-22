@@ -503,8 +503,7 @@ spanner-mycli/
 │   └── proto*/                      # Generated protobuf code
 ├── enums/                           # Enum type definitions
 ├── docs/                            # User documentation
-├── dev-docs/                        # Developer documentation
-└── bin/                             # Development tool symlinks (created by make build-tools)
+└── dev-docs/                        # Developer documentation
 ```
 
 ## Related Documentation

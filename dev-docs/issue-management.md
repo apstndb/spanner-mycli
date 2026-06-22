@@ -12,9 +12,7 @@ This document covers GitHub workflow, issue management, code review processes, a
 
 ```bash
 # Install all development tools using Go 1.24 tool management
-make build-tools
-
-# This runs: go install tool
+go install tool
 ```
 
 ### gh-helper Usage
