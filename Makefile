@@ -84,6 +84,8 @@ docs-update:
 	@mkdir -p tmp
 	@go tool ptyhelp patch -file README.md -marker readme-help -cols 120 -o tmp/help_clean.txt -normalize-eol=lf -- go run . --help
 	@go run . --statement-help > tmp/statement_help.txt
+	@awk 'NR==FNR { new = new $$0 ORS; next } /<!-- statement-help begin -->/ { print; printf "%s", new; skip=1; next } /<!-- statement-help end -->/ { skip=0; print; next } !skip { print }' tmp/statement_help.txt README.md > tmp/README.md
+	@mv tmp/README.md README.md
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
 	@echo "  - tmp/statement_help.txt: --statement-help output for README.md"

@@ -42,15 +42,15 @@ TODO
 
 ##### CLI_FORMAT
 - **Type**: STRING
-- **Default**: TABLE (interactive mode) or TAB (batch mode)
+- **Default**: TABLE
 - **Description**: Controls output format for query results
 - **Access**: Read/Write
 - **Valid Values**:
-  - `TABLE` - ASCII table with borders (default for interactive mode)
+  - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
   - `TABLE_COMMENT` - Table wrapped in `/* */` comments
   - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in `/* */` comments (useful for embedding results in SQL code blocks)
   - `VERTICAL` - Vertical format with column:value pairs
-  - `TAB` - Tab-separated values (default for batch mode)
+  - `TAB` - Tab-separated values
   - `HTML` - HTML table format
   - `XML` - XML format
   - `CSV` - Comma-separated values (RFC 4180 compliant)

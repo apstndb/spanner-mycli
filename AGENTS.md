@@ -34,7 +34,7 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new review. Use `--request-summary` only right before merge to update the summary.
+5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new Gemini review. Use `--request-summary` only right before merge to update the summary. Do not request Copilot reviews for this repository.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
 8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
@@ -124,7 +124,7 @@ Details: [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/iss
 
 - **Language**: ALL GitHub communications MUST be in English
 - **Tool priority**: `gh-helper` → `gh` CLI → GitHub MCP
-- **Review workflow**: `go tool gh-helper reviews fetch` for feedback analysis (CRITICAL - prevents missing issues). Plan fixes → commit & push → reply with commit hash and resolve threads.
+- **Review workflow**: `go tool gh-helper reviews fetch` for feedback analysis (CRITICAL - prevents missing issues). Plan fixes → commit & push → reply with commit hash and resolve threads. Request follow-up reviews only through Gemini/`gh-helper`; never request Copilot review.
 - **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` for content with special characters. NEVER pass backtick-containing strings directly in shell commands.
 - **Documentation labels**: `docs-user` (README, docs/), `docs-dev` (dev-docs/, AGENTS.md, CLAUDE.md), `ignore-for-release` (dev-docs only PRs)
 - **Gemini style guide** (`.gemini/styleguide.md`): MUST obtain user permission before modifying

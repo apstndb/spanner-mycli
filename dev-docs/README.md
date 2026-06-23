@@ -70,7 +70,7 @@ dev-docs/
 
 ### Updating Help Output in README.md
 
-Run `make docs-update` to regenerate help output files in `./tmp/`, then update the corresponding sections in README.md.
+Run `make docs-update` to regenerate the generated help sections in README.md. The captured command output is also written to `./tmp/` for inspection.
 
 ## Contributing to Documentation
 

@@ -190,8 +190,10 @@ func printResultAppendix(out io.Writer, appendix ResultAppendix) {
 }
 
 type OutputContext struct {
-	Verbose         bool
-	IsExecutedDML   bool
+	Verbose       bool
+	IsExecutedDML bool
+	// Timestamp is kept for custom templates written before the read/commit split.
+	Timestamp       string
 	ReadTimestamp   string
 	CommitTimestamp string
 	Stats           *QueryStats
@@ -215,6 +217,10 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 	readTimestamp := formatTimestamp(result.ReadTimestamp, "")
 	commitTimestamp := formatTimestamp(result.CommitTimestamp, "")
+	timestamp := readTimestamp
+	if timestamp == "" {
+		timestamp = commitTimestamp
+	}
 
 	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
 
@@ -232,6 +238,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	err := outputTemplate.Execute(&sb, OutputContext{
 		Verbose:         verbose,
 		IsExecutedDML:   result.IsExecutedDML,
+		Timestamp:       timestamp,
 		ReadTimestamp:   readTimestamp,
 		CommitTimestamp: commitTimestamp,
 		Stats:           &result.Stats,

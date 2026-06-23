@@ -27,6 +27,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -782,6 +783,60 @@ optimizer statistics: auto_20210829_05_22_28UTC
 		t.Run(tt.desc, func(t *testing.T) {
 			if got := resultLine(defaultOutputFormat, tt.result, tt.verbose); tt.want != got {
 				t.Errorf("resultLine(%v, %v) = %q, but want = %q", tt.result, tt.verbose, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResultLineTimestampAlias(t *testing.T) {
+	t.Parallel()
+	timestamp := "2020-04-01T15:00:00.999999999+09:00"
+	ts, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		t.Fatalf("unexpected time.Parse error: %v", err)
+	}
+	commitTS := ts.Add(time.Second)
+	commitTimestamp := commitTS.Format(time.RFC3339Nano)
+	outputTemplate := template.Must(template.New("compat").Parse(`{{with .Timestamp -}}timestamp:            {{.}}{{"\n"}}{{end -}}`))
+
+	for _, tt := range []struct {
+		desc   string
+		result *Result
+		want   string
+	}{
+		{
+			desc: "read timestamp",
+			result: &Result{
+				TableHeader:   toTableHeader("col1"),
+				AffectedRows:  1,
+				ReadTimestamp: ts,
+			},
+			want: fmt.Sprintf("1 rows in set\ntimestamp:            %s\n", timestamp),
+		},
+		{
+			desc: "commit timestamp",
+			result: &Result{
+				AffectedRows:    1,
+				IsExecutedDML:   true,
+				CommitTimestamp: commitTS,
+			},
+			want: fmt.Sprintf("Query OK, 1 rows affected\ntimestamp:            %s\n", commitTimestamp),
+		},
+		{
+			desc: "read timestamp wins if both are set defensively",
+			result: &Result{
+				TableHeader:     toTableHeader("col1"),
+				AffectedRows:    1,
+				ReadTimestamp:   ts,
+				CommitTimestamp: commitTS,
+			},
+			want: fmt.Sprintf("1 rows in set\ntimestamp:            %s\n", timestamp),
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := resultLine(outputTemplate, tt.result, true); tt.want != got {
+				t.Errorf("resultLine() = %q, want %q", got, tt.want)
 			}
 		})
 	}
