@@ -1581,15 +1581,14 @@ spanner> SHOW SPLIT POINTS;
 
 The detail lines are customizable using Go text/template.
 Note: You need to know `OutputContext` in spanner-mycli and `spanstats.QueryStats`.
+`OutputContext.Timestamp` is a compatibility alias for whichever of `ReadTimestamp` or `CommitTimestamp` is present.
+The explicit `ReadTimestamp` and `CommitTimestamp` fields are also available when the label matters; the bundled [output_full.tmpl](internal/mycli/output_full.tmpl) uses those explicit fields.
 
 ```
-$ curl -sL https://github.com/apstndb/spanner-mycli/raw/main/internal/mycli/output_full.tmpl -o output_full.tmpl
-
-$ cat output_full.tmpl
+$ cat output_timestamp.tmpl
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
 {{if .Verbose -}}
-{{with .ReadTimestamp -}}                   read_timestamp:       {{.}}{{"\n"}}{{end -}}
-{{with .CommitTimestamp -}}                 commit_timestamp:     {{.}}{{"\n"}}{{end -}}
+{{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
 {{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
 {{with .Stats.ElapsedTime -}}               elapsed time:         {{.}}{{"\n"}}{{end -}}
 {{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
@@ -1616,7 +1615,7 @@ $ cat output_full.tmpl
 {{with .Stats.Unknown -}}                   unknown:              {{.}}{{"\n"}}{{end -}}
 {{end -}}
 
-$ spanner-mycli -t -v --output-template output_full.tmpl -e 'SELECT 1'
+$ spanner-mycli -t -v --output-template output_timestamp.tmpl -e 'SELECT 1'
 +-------+
 | n     |
 | INT64 |
@@ -1624,7 +1623,7 @@ $ spanner-mycli -t -v --output-template output_full.tmpl -e 'SELECT 1'
 | 1     |
 +-------+
 1 rows in set (2.21 msecs)
-read_timestamp:       2025-05-04T02:46:40.457385+09:00
+timestamp:            2025-05-04T02:46:40.457385+09:00
 elapsed time:         2.21 msecs
 cpu time:             1.53 msecs
 rows returned:        1
