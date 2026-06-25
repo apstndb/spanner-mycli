@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanstats"
@@ -30,18 +31,26 @@ func parseQueryStats(stats map[string]any) (QueryStats, error) {
 
 // consumeRowIterDiscard calls iter.Stop().
 func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	return consumeRowIter(iter, func(*spanner.Row) error { return nil })
+	result, err := spaniter.DrainRowIterator(iter)
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+	return result.Stats.QueryStats, result.Stats.RowCount, result.Metadata, result.Stats.QueryPlan, nil
 }
 
 // consumeRowIter calls iter.Stop().
 func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
-	defer iter.Stop()
-	err = iter.Do(f)
-	if err != nil {
-		return nil, 0, nil, nil, err
+	var result spaniter.RowIteratorResult
+	for row, rowErr := range spaniter.RowIteratorSeq(iter, spaniter.WithResult(&result)) {
+		if rowErr != nil {
+			return nil, 0, nil, nil, rowErr
+		}
+		if err := f(row); err != nil {
+			return nil, 0, nil, nil, err
+		}
 	}
 
-	return iter.QueryStats, iter.RowCount, iter.Metadata, iter.QueryPlan, nil
+	return result.Stats.QueryStats, result.Stats.RowCount, result.Metadata, result.Stats.QueryPlan, nil
 }
 
 func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
