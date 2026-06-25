@@ -10,11 +10,11 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanvalue"
 	"github.com/apstndb/spanvalue/writer"
 	"github.com/sourcegraph/conc/pool"
-	"google.golang.org/api/iterator"
 )
 
 func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -188,18 +188,15 @@ func runPartitionedRowSeq(
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) error {
 			rowIter := batchROTx.Execute(ctx, partition)
-			defer rowIter.Stop()
-			for {
-				row, err := rowIter.Next()
-				// Metadata is populated after the first Next, including when it
-				// returns iterator.Done; store it before sending the row so the
-				// consumer always sees metadata no later than the first row.
-				if md := rowIter.Metadata; md != nil {
-					capturedMD.CompareAndSwap(nil, md)
+			var result spaniter.RowIteratorResult
+			rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
+			captureMetadata := func() {
+				if result.Metadata != nil {
+					capturedMD.CompareAndSwap(nil, result.Metadata)
 				}
-				if err == iterator.Done {
-					return nil
-				}
+			}
+			for row, err := range rows {
+				captureMetadata()
 				if err != nil {
 					select {
 					case ch <- partitionedRow{err: err}:
@@ -213,6 +210,7 @@ func runPartitionedRowSeq(
 					return ctx.Err()
 				}
 			}
+			return nil
 		})
 	}
 
