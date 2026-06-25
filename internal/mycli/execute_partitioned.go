@@ -84,6 +84,9 @@ func streamPartitionedQuery(
 	if err != nil {
 		return nil, true, normalizeSpanvalueWriterError(err)
 	}
+	if runResult == nil || runResult.Metadata == nil {
+		return nil, true, errors.New("partitioned query writer returned nil metadata")
+	}
 
 	return &Result{
 		TableHeader:           toTableHeader(runResult.Metadata.GetRowType().GetFields()),
@@ -186,11 +189,14 @@ func runPartitionedRowSeq(
 
 	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
 	for _, partition := range partitions {
-		p.Go(func(ctx context.Context) error {
-			rowIter := batchROTx.Execute(ctx, partition)
+		p.Go(func(workerCtx context.Context) error {
+			rowIter := batchROTx.Execute(workerCtx, partition)
 			var result spaniter.RowIteratorResult
 			rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
 			captureMetadata := func() {
+				if rowIter.Metadata != nil {
+					capturedMD.CompareAndSwap(nil, rowIter.Metadata)
+				}
 				if result.Metadata != nil {
 					capturedMD.CompareAndSwap(nil, result.Metadata)
 				}
@@ -200,16 +206,17 @@ func runPartitionedRowSeq(
 				if err != nil {
 					select {
 					case ch <- partitionedRow{err: err}:
-					case <-ctx.Done():
+					case <-workerCtx.Done():
 					}
 					return err
 				}
 				select {
 				case ch <- partitionedRow{row: row}:
-				case <-ctx.Done():
-					return ctx.Err()
+				case <-workerCtx.Done():
+					return workerCtx.Err()
 				}
 			}
+			captureMetadata()
 			return nil
 		})
 	}
