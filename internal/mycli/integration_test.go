@@ -1136,6 +1136,21 @@ func TestPartitionedStatements(t *testing.T) {
 				}},
 			},
 		},
+		{
+			desc: "streaming zero-row partitioned query keeps metadata",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET CLI_FORMAT = CSV"),
+				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable WHERE FALSE", &Result{
+					TableHeader:  toTableHeader(testTableRowType),
+					Streamed:     true,
+					AffectedRows: 0,
+				}},
+			},
+			cmpOpts: []cmp.Option{
+				cmpopts.IgnoreFields(Result{}, "PartitionCount"),
+			},
+		},
 	}
 
 	runStatementTests(t, tests)
