@@ -194,6 +194,9 @@ func runPartitionedRowSeq(
 			var result spaniter.RowIteratorResult
 			rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
 			captureMetadata := func() {
+				if capturedMD.Load() != nil {
+					return
+				}
 				if rowIter.Metadata != nil {
 					capturedMD.CompareAndSwap(nil, rowIter.Metadata)
 				}
