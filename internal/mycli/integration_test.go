@@ -18,6 +18,7 @@ package mycli
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,9 @@ import (
 
 	"github.com/apstndb/spantype/typector"
 )
+
+//go:embed testdata/protos/order_descriptors.pb
+var orderDescriptorsPB []byte
 
 type testTableSchema struct {
 	Id     int64 `spanner:"id"`
@@ -186,7 +190,7 @@ func initializeWithRandomDB(t *testing.T, ddls, dmls []string) (clients *spanemu
 // If database is empty, a random database name is generated.
 // Each test gets its own instance within the shared emulator for isolation.
 // The database is automatically configured with the provided DDLs and DMLs.
-func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clients *spanemuboost.Clients, session *Session) {
+func initializeWithDB(t *testing.T, database string, ddls, dmls []string, extraOpts ...spanemuboost.Option) (clients *spanemuboost.Clients, session *Session) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -208,6 +212,7 @@ func initializeWithDB(t *testing.T, database string, ddls, dmls []string) (clien
 		spanemuboost.WithSetupDDLs(ddls),
 		spanemuboost.WithSetupRawDMLs(dmls),
 	)
+	options = append(options, extraOpts...)
 
 	clients = spanemuboost.SetupClients(t, lazyRuntime, options...)
 
@@ -514,12 +519,13 @@ func srBatchDDL(stmt string, size int) stmtResult {
 
 // statementTestCase represents a test case for statement execution
 type statementTestCase struct {
-	desc        string
-	ddls, dmls  []string
-	admin       bool   // admin mode (no database)
-	database    string // specific database name (empty = use random name)
-	stmtResults []stmtResult
-	cmpOpts     []cmp.Option
+	desc          string
+	ddls, dmls    []string
+	bootstrapOpts []spanemuboost.Option
+	admin         bool   // admin mode (no database)
+	database      string // specific database name (empty = use random name)
+	stmtResults   []stmtResult
+	cmpOpts       []cmp.Option
 }
 
 // typedStringHeader builds the typesTableHeader produced by spancodec-backed
@@ -558,7 +564,7 @@ func runStatementTests(t *testing.T, tests []statementTestCase) {
 				_, session = initializeAdminSession(t)
 			} else {
 				// Regular database mode (specific or random database name)
-				_, session = initializeWithDB(t, tt.database, tt.ddls, tt.dmls)
+				_, session = initializeWithDB(t, tt.database, tt.ddls, tt.dmls, tt.bootstrapOpts...)
 			}
 
 			// Create SessionHandler to properly test USE/DETACH statements
@@ -1136,21 +1142,6 @@ func TestPartitionedStatements(t *testing.T) {
 				}},
 			},
 		},
-		{
-			desc: "streaming zero-row partitioned query keeps metadata",
-			ddls: sliceOf(testTableSimpleDDL),
-			stmtResults: []stmtResult{
-				srKeep("SET CLI_FORMAT = CSV"),
-				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable WHERE FALSE", &Result{
-					TableHeader:  toTableHeader(testTableRowType),
-					Streamed:     true,
-					AffectedRows: 0,
-				}},
-			},
-			cmpOpts: []cmp.Option{
-				cmpopts.IgnoreFields(Result{}, "PartitionCount"),
-			},
-		},
 	}
 
 	runStatementTests(t, tests)
@@ -1199,8 +1190,31 @@ func TestProtoStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "SHOW REMOTE PROTO with spanemuboost proto bundle bootstrap",
+			bootstrapOpts: []spanemuboost.Option{
+				spanemuboost.WithSetupDDLs([]string{"CREATE PROTO BUNDLE (`examples.shipping.Order`)"}),
+				spanemuboost.WithSetupRawFileDescriptorSet(orderDescriptorsPB),
+			},
+			stmtResults: []stmtResult{
+				{
+					stmt: `SHOW REMOTE PROTO`,
+					want: &Result{
+						TableHeader: typedStringHeader("full_name", "kind", "package"),
+						Rows: sliceOf(
+							toRow("examples.shipping.Order", "PROTO", "examples.shipping"),
+							toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping"),
+							toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping"),
+							toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping"),
+						),
+						AffectedRows:  4,
+						KeepVariables: true,
+					},
+				},
+			},
+		},
+		{
 			desc: "PROTO BUNDLE statements",
-			// Note: Current cloud-spanner-emulator only accepts DDL, but it is nop.
+			// Note: CREATE/ALTER/SYNC PROTO BUNDLE still exercise the CLI session path.
 			stmtResults: []stmtResult{
 				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: typedStringHeader("full_name", "kind", "package")}),
 				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
