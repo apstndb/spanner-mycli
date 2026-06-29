@@ -10,7 +10,6 @@ import (
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-tabwrap"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
@@ -42,7 +41,7 @@ var replacerForProgress = strings.NewReplacer(
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
 		return &Result{
-			TableHeader: toTableHeader(lox.IfOrEmpty(session.systemVariables.Feature.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"))),
+			TableHeader: toTableHeader(lo.Ternary(session.systemVariables.Feature.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"), lo.Empty[[]string]())),
 		}, nil
 	}
 

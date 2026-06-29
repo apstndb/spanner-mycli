@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
@@ -30,7 +29,7 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 	var rows []Row
 	for _, stmt := range ddlResponse.Statements {
 		if isCreateDDL(stmt, s.ObjectType, s.Schema, s.Name) {
-			fqn := lox.IfOrEmpty(s.Schema != "", s.Schema+".") + s.Name
+			fqn := lo.Ternary(s.Schema != "", s.Schema+".", lo.Empty[string]()) + s.Name
 			rows = append(rows, toRow(fqn, stmt))
 			break
 		}

@@ -4,12 +4,12 @@ import (
 	"cmp"
 	"iter"
 	"log/slog"
+	"maps"
 	"math"
 	"slices"
 	"strings"
 
 	"github.com/apstndb/go-tabwrap"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
@@ -87,7 +87,17 @@ func applyColumnFloors(widths []int, hints []ColumnHint, availableWidth int) {
 
 // MaxWithIdx returns the index and value of the maximum element in seq.
 func MaxWithIdx[E cmp.Ordered](fallback E, seq iter.Seq[E]) (int, E) {
-	return MaxByWithIdx(fallback, lox.Identity, seq)
+	val := fallback
+	idx := -1
+	current := -1
+	for v := range seq {
+		current++
+		if val < v {
+			val = v
+			idx = current
+		}
+	}
+	return idx, val
 }
 
 // MaxByWithIdx returns the index and value of the element with the maximum key.
@@ -209,12 +219,13 @@ func (wc *widthCalculator) maxIndex(ignoreMax int, adjustWidths []int, seq iter.
 }
 
 func (wc *widthCalculator) countWidth(ss []string) iter.Seq[WidthCount] {
+	counts := lo.CountValuesBy(ss, wc.maxWidth)
 	return loi.Map(
-		slices.Values(lox.EntriesSortedByKey(lo.CountValuesBy(ss, wc.maxWidth))),
-		func(e lo.Entry[int, int]) WidthCount {
+		slices.Values(slices.Sorted(maps.Keys(counts))),
+		func(w int) WidthCount {
 			return WidthCount{
-				width: e.Key,
-				count: e.Value,
+				width: w,
+				count: counts[w],
 			}
 		},
 	)
