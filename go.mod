@@ -15,7 +15,6 @@ require (
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.3
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
-	github.com/apstndb/lox v0.0.0-20241212132733-62f24606dc82
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spancodec v0.1.1
 	github.com/apstndb/spanemuboost v0.4.6
@@ -182,7 +181,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect

@@ -29,13 +29,10 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	"github.com/apstndb/lox"
-	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/google/shlex"
 	"github.com/hymkor/go-multiline-ny"
 	fzf "github.com/junegunn/fzf/src"
 	"github.com/nyaosorg/go-readline-ny"
-	"github.com/samber/lo"
 	"google.golang.org/api/iterator"
 )
 
@@ -1034,7 +1031,7 @@ func (f *fuzzyFinderCommand) fetchParamCandidates() []fzfItem {
 	items := make([]fzfItem, 0, len(names))
 	for _, name := range names {
 		v := params[name]
-		kind := lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE")
+		kind := paramKind(v)
 		items = append(items, fzfItem{
 			Value: name,
 			Label: fmt.Sprintf("%s [%s] %s", name, kind, v.SQL()),

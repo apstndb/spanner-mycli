@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spancodec"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -27,11 +26,20 @@ type paramRow struct {
 
 var showParamsRowEncoder = spancodec.MustNewRowEncoder[paramRow]()
 
+func paramKind(v ast.Node) string {
+	switch v.(type) {
+	case ast.Type:
+		return "TYPE"
+	default:
+		return "VALUE"
+	}
+}
+
 func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	items := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) paramRow {
 		return paramRow{
 			Name:  k,
-			Kind:  lo.Ternary(lox.InstanceOf[ast.Type](v), "TYPE", "VALUE"),
+			Kind:  paramKind(v),
 			Value: v.SQL(),
 		}
 	})

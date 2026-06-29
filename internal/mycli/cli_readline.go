@@ -14,7 +14,6 @@ import (
 
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/gsqlutils"
-	"github.com/apstndb/lox"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
@@ -223,7 +222,7 @@ func lexerHighlighter(f func(tok token.Token) [][]int) highlighterFunc {
 
 func tokenHighlighter(pred func(tok token.Token) bool) highlighterFunc {
 	return lexerHighlighter(func(tok token.Token) [][]int {
-		return lox.IfOrEmpty(pred(tok), sliceOf(sliceOf(int(tok.Pos), int(tok.End))))
+		return lo.Ternary(pred(tok), sliceOf(sliceOf(int(tok.Pos), int(tok.End))), lo.Empty[[][]int]())
 	})
 }
 

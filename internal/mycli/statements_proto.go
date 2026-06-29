@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spancodec"
 	"github.com/bufbuild/protocompile/walk"
 	"github.com/cloudspannerecosystem/memefish/ast"
@@ -58,20 +57,20 @@ func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, de
 	deleteExists, _ := splitExistence(fullNameSetFds, deletePaths)
 
 	ddl := lo.Ternary(len(fds.GetFile()) == 0,
-		lox.IfOrEmpty[ast.DDL](len(upsertNotExists) > 0,
+		lo.Ternary[ast.DDL](len(upsertNotExists) > 0,
 			&ast.CreateProtoBundle{
 				Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertNotExists)},
-			}),
+			}, lo.Empty[ast.DDL]()),
 		lo.If[ast.DDL](len(upsertNotExists) == 0 && len(upsertExists) == 0 && len(deleteExists) == len(fullNameSetFds),
 			&ast.DropProtoBundle{}).
 			ElseIf(len(upsertNotExists) > 0 || len(upsertExists) > 0 || len(deleteExists) > 0,
 				&ast.AlterProtoBundle{
-					Insert: lox.IfOrEmpty(len(upsertNotExists) > 0,
-						&ast.AlterProtoBundleInsert{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertNotExists)}}),
-					Update: lox.IfOrEmpty(len(upsertExists) > 0,
-						&ast.AlterProtoBundleUpdate{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertExists)}}),
-					Delete: lox.IfOrEmpty(len(deleteExists) > 0,
-						&ast.AlterProtoBundleDelete{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(deleteExists)}}),
+					Insert: lo.Ternary(len(upsertNotExists) > 0,
+						&ast.AlterProtoBundleInsert{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertNotExists)}}, lo.Empty[*ast.AlterProtoBundleInsert]()),
+					Update: lo.Ternary(len(upsertExists) > 0,
+						&ast.AlterProtoBundleUpdate{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(upsertExists)}}, lo.Empty[*ast.AlterProtoBundleUpdate]()),
+					Delete: lo.Ternary(len(deleteExists) > 0,
+						&ast.AlterProtoBundleDelete{Types: &ast.ProtoBundleTypes{Types: toNamedTypes(deleteExists)}}, lo.Empty[*ast.AlterProtoBundleDelete]()),
 				}).
 			Else(nil),
 	)

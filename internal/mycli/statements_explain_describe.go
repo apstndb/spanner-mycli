@@ -25,7 +25,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spannerplan"
@@ -274,7 +273,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		Rows:         rows,
 		Predicates:   predicates,
 		Appendices:   appendices,
-		LintResults:  lox.IfOrEmptyF(sysVars.Query.LintPlan, func() []string { return lintPlan(queryPlan) }),
+		LintResults:  lo.TernaryF(sysVars.Query.LintPlan, func() []string { return lintPlan(queryPlan) }, lo.Empty[[]string]),
 	}
 	return result, nil
 }

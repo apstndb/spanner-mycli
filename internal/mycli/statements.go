@@ -31,7 +31,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/gsqlutils"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
@@ -264,13 +263,13 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 			for i := range md.GetStatements() {
 				rows = append(rows, toRow(lo.Ternary(i == 0, lo.LastOrEmpty(strings.Split(op.GetName(), "/")), ""),
 					md.GetStatements()[i]+";",
-					lox.IfOrEmpty(i == 0, strconv.FormatBool(op.GetDone())),
-					lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+					lo.Ternary(i == 0, strconv.FormatBool(op.GetDone()), lo.Empty[string]()),
+					lo.TernaryF(len(md.GetProgress()) > i, func() string {
 						return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
-					}),
-					lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+					}, lo.Empty[string]),
+					lo.TernaryF(len(md.GetCommitTimestamps()) > i, func() string {
 						return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
-					}),
+					}, lo.Empty[string]),
 					op.GetError().GetMessage()))
 			}
 			num++
@@ -835,13 +834,13 @@ func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDataba
 		rows = append(rows, toRow(
 			lo.Ternary(i == 0, operationId, ""),
 			md.GetStatements()[i]+";",
-			lox.IfOrEmpty(i == 0, strconv.FormatBool(done)),
-			lox.IfOrEmptyF(len(md.GetProgress()) > i, func() string {
+			lo.Ternary(i == 0, strconv.FormatBool(done), lo.Empty[string]()),
+			lo.TernaryF(len(md.GetProgress()) > i, func() string {
 				return fmt.Sprint(md.GetProgress()[i].GetProgressPercent())
-			}),
-			lox.IfOrEmptyF(len(md.GetCommitTimestamps()) > i, func() string {
+			}, lo.Empty[string]),
+			lo.TernaryF(len(md.GetCommitTimestamps()) > i, func() string {
 				return md.GetCommitTimestamps()[i].AsTime().Format(time.RFC3339Nano)
-			}),
+			}, lo.Empty[string]),
 			errorMessage,
 		))
 	}

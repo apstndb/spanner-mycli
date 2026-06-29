@@ -10,7 +10,6 @@ import (
 	"text/template"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/lox"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
@@ -222,7 +221,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 		timestamp = commitTimestamp
 	}
 
-	elapsedTimePart := lox.IfOrEmpty(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime))
+	elapsedTimePart := lo.Ternary(result.Stats.ElapsedTime != "", fmt.Sprintf(" (%s)", result.Stats.ElapsedTime), lo.Empty[string]())
 
 	var batchInfo string
 	switch result.BatchInfo {
@@ -230,7 +229,7 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 	default:
 		batchInfo = fmt.Sprintf(" (%d %s%s in batch)", result.BatchInfo.Size,
 			lo.Ternary(result.BatchInfo.Mode == batchModeDDL, "DDL", "DML"),
-			lox.IfOrEmpty(result.BatchInfo.Size > 1, "s"),
+			lo.Ternary(result.BatchInfo.Size > 1, "s", lo.Empty[string]()),
 		)
 	}
 
