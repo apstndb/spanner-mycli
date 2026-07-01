@@ -147,6 +147,9 @@ type FeatureVars struct {
 	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
 	VertexAILocation       string                     // CLI_VERTEXAI_LOCATION
+	BigQueryProject        string                     // CLI_BIGQUERY_PROJECT (defaults to CLI_PROJECT when empty)
+	BigQueryLocation       string                     // CLI_BIGQUERY_LOCATION
+	BigQueryMaxBytesBilled *int64                     // CLI_BIGQUERY_MAX_BYTES_BILLED
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL

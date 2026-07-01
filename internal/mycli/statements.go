@@ -650,6 +650,8 @@ func runBatch(ctx context.Context, session *Session) (*Result, error) {
 
 // LLM related statements are defined in statements_llm.go
 
+// BigQuery related statements are defined in statements_bigquery.go
+
 // Cassandra interface
 type CQLStatement struct {
 	CQL string

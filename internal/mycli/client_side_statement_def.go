@@ -1083,6 +1083,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
 		},
 	},
+	// BigQuery
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Execute BigQuery SQL`,
+				Syntax: `BIGQUERY <sql>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^BIGQUERY\s+(?P<sql>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &BigQueryStatement{SQL: groups["sql"]}, nil
+		},
+	},
 	// Cassandra interface
 	{
 		Descriptions: []clientSideStatementDescription{
