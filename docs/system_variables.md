@@ -83,7 +83,7 @@ TODO
   - Can be set via `--xml` flag (sets to XML format)
   - Can be set via `--csv` flag (sets to CSV format)
   - Can be set via `--format=jsonl` flag (sets to JSONL format)
-  - Can be set via `--table` flag (sets to TABLE format in batch mode)
+  - Can be set via `--table` flag (explicit TABLE format; batch mode already defaults to TABLE)
   - HTML and XML formats are compatible with Google Cloud Spanner CLI
   - All special characters are properly escaped in HTML, XML, and CSV formats for security
   - CSV format follows RFC 4180 standard with automatic escaping of commas, quotes, and newlines
@@ -223,5 +223,38 @@ TODO
   - The default `"NULL=dim"` renders NULL values in dim (faint) text
   - Styling only applies when output supports ANSI escape codes (interactive terminal with styled formats)
   - Inspired by `LS_COLORS`, `GCC_COLORS`, and `JQ_COLORS` environment variable patterns
+
+#### BigQuery Variables
+
+##### CLI_BIGQUERY_PROJECT
+- **Type**: STRING
+- **Default**: (empty; falls back to `CLI_PROJECT`)
+- **Description**: GCP project for `BIGQUERY` statement execution
+- **Access**: Read/Write
+- **Usage**:
+  ```sql
+  SET CLI_BIGQUERY_PROJECT = 'my-gcp-project';
+  BIGQUERY SELECT 1 AS n;
+  ```
+
+##### CLI_BIGQUERY_LOCATION
+- **Type**: STRING
+- **Default**: (empty)
+- **Description**: BigQuery location for queries (for example `US`, `EU`)
+- **Access**: Read/Write
+- **Usage**:
+  ```sql
+  SET CLI_BIGQUERY_LOCATION = 'US';
+  ```
+
+##### CLI_BIGQUERY_MAX_BYTES_BILLED
+- **Type**: INT64
+- **Default**: NULL
+- **Description**: Maximum bytes billed per BigQuery query
+- **Access**: Read/Write
+- **Usage**:
+  ```sql
+  SET CLI_BIGQUERY_MAX_BYTES_BILLED = 1000000000;
+  ```
 
 TODO: Document other CLI_* variables

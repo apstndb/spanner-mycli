@@ -111,6 +111,7 @@ The `internal/mycli/client_side_statement_def.go` file is the heart of spanner-m
 #### Advanced Features
 - **Protocol Buffers**: Proto type management and operations
 - **GenAI**: AI-powered query assistance
+- **BigQuery**: Execute BigQuery SQL via `BIGQUERY` statement
 - **Partitioned Operations**: Large-scale data processing
 - **Batching**: Batch operation management
 - **Mutations**: DML operation handling
