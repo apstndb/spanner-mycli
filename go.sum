@@ -2497,8 +2497,8 @@ github.com/apstndb/spancodec v0.1.1 h1:26jll4gTzB18yUilmSSE1IfCF9Rht2j/+cc492hji
 github.com/apstndb/spancodec v0.1.1/go.mod h1:muPblFXUB5gkkvBBEM/2zzuVAOvin/dBtDsKagIcivY=
 github.com/apstndb/spanemuboost v0.4.6 h1:9f1qQDLNrPQJiswNLtiTaR0U//zToqxjcEGWGkyThm4=
 github.com/apstndb/spanemuboost v0.4.6/go.mod h1:urUe85EvqomWV4vCj2pALluNhIksbu9RAQZufgq1b8E=
-github.com/apstndb/spaniter v0.1.0 h1:OpTpePq0bN/EWS1mIXAk0lfQ98PAI4xRcBQ4pd9Ijk0=
-github.com/apstndb/spaniter v0.1.0/go.mod h1:vl6zVOnA2m35fAeF1WsGD7AuaWUK5aCVG6aS/35njFE=
+github.com/apstndb/spaniter v0.3.1 h1:hhi4+JCF80x696bg7zIco7Vo8kmPbkbTdvSOEhItp50=
+github.com/apstndb/spaniter v0.3.1/go.mod h1:aBSHcHIqgAZXCxFdi734R/wAQUIuCQ6WZ+CjOCxARIM=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l0QJZRVSRwBXTxaMMAjrmF0kQDjXlCM0bwTCo5Gs=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6/go.mod h1:Enpmw/D11tME865ROYDQzoHSIo9V8uCgWdu+fxA7n2M=
 github.com/apstndb/spannerplan v0.1.11 h1:chLsajnYPQI2vwirOeBFNQU0sBWOx9Jet4DuM+zhg2c=
