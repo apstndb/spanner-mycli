@@ -1,0 +1,13 @@
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64
+
+builds:
+  - id: spanner-mycli
+    main: .
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Git.Tag}}
+      - -X main.installFrom=ghcr.io/apstndb/spanner-mycli:{{.Git.Tag}}

@@ -69,6 +69,46 @@ jobs:
       - name: run unit tests with race detector
         run: go test -short -race ./...
 
+  # Go security check using govulncheck.
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+      - name: run govulncheck
+        run: govulncheck ./...
+
+  # Cross-compile check to keep published windows/darwin binaries buildable.
+  cross-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Cross-compile
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
+
   # Run tests in a separate job for parallel execution
   test:
     runs-on: ubuntu-latest
