@@ -76,7 +76,12 @@ func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConf
 // Use MEDIUM priority not to disturb regular workloads on the database.
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
-// getTimeoutForStatement returns the appropriate timeout for the given statement type
+// getTimeoutForStatement returns the timeout applied at the statement execution
+// boundary: ExecuteStatement wraps the context with this value exactly once, so
+// individual operations must not layer their own timeouts on top. A user-set
+// STATEMENT_TIMEOUT (nil until set) overrides the defaults: 10 minutes for
+// ordinary statements, and 24 hours for partitioned DML to accommodate its
+// long-running semantics.
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
 	// For partitioned DML, use longer default if no custom timeout is set
 	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.Query.StatementTimeout == nil {

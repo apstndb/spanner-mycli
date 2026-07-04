@@ -1,90 +1,53 @@
 # Developer Documentation
 
-This directory contains detailed technical documentation for spanner-mycli developers and contributors.
+Detailed technical documentation for spanner-mycli developers and coding
+agents. AGENTS.md holds only the rules that cause damage if skipped; this
+directory holds the details; anything derivable from the code or git history
+belongs in neither.
 
-## Documentation Structure
+## Contents
 
 ```
 dev-docs/
-├── README.md                    # This file - overview and navigation
-├── architecture-guide.md        # System architecture and code organization
-├── development-insights.md      # Development patterns and best practices
-├── issue-management.md          # GitHub workflow and PR processes
-├── coding-guidelines.md         # Coding standards and style guidelines
-├── testing-guidelines.md        # Testing standards and coverage goals
-└── patterns/                    # Specific implementation patterns
-    └── system-variables.md      # System variable implementation patterns
+├── README.md                    # This file - index
+├── architecture-guide.md        # Code map and pointers to authoritative doc comments
+├── development-insights.md      # Development workflow notes (manual verification, panic policy)
+├── issue-management.md          # gh-helper reference, labels, PR process, worktrees
+└── patterns/
+    ├── system-variables.md      # Adding and modifying system variables
+    └── testing.md               # Test tiers, style, isolation, coverage
 ```
 
-## Documentation Overview
+- [Architecture Guide](architecture-guide.md) - where each subsystem lives and
+  which code doc comments are authoritative (system variables state model,
+  transactions, streams, timeouts, flag precedence); how to add a client-side
+  statement.
+- [Development Insights](development-insights.md) - manual verification with
+  the embedded emulator, panic vs error policy, review-loop pointers.
+- [Issue Management](issue-management.md) - full gh-helper command reference,
+  review workflow, label system, release-notes labels, git and phantom
+  worktree practices.
+- [System Variable Patterns](patterns/system-variables.md) - the
+  StartupConfig/ConnectionVars/LastResult decomposition, registration API,
+  SET LOCAL contract, testing.
+- [Testing Best Practices](patterns/testing.md) - test tiers (`-short`),
+  style (std testing + go-cmp), isolation rules, flag/startup testing,
+  coverage analysis.
 
-### [Architecture Guide](architecture-guide.md)
-- Core components and their responsibilities
-- Client-side statement system details
-- Configuration management
-- Testing infrastructure
-- Dependencies and build system
+## Maintenance Rules
 
-### [Development Insights](development-insights.md)
-- Development workflow patterns
-- Error handling best practices
-- Resource management strategies
-- Code quality improvement techniques
-- Context and session management
-
-### [Issue Management](issue-management.md)
-- Development tools usage (Go 1.24 tool management)
-- GitHub issue workflow and labeling
-- Pull request process (see also `/create-pr` skill)
-- Git best practices and phantom worktree management
-
-### [Coding Guidelines](coding-guidelines.md)
-- Go language standards and conventions
-- Project-specific coding rules
-- Current deviations and future improvements
-
-### [Testing Guidelines](testing-guidelines.md)
-- Coverage goals and current status
-- Running tests and coverage locally
-- Writing effective tests
-- Priority areas for coverage improvement
-
-### [Patterns](patterns/)
-- [System Variables](patterns/system-variables.md) - Implementation patterns for system variables, timeout management, and testing strategies
-
-## Updating Documentation
-
-### When to Update
-
-1. **New Features**: Document architecture changes and implementation patterns
-2. **Bug Fixes**: Update if the fix reveals important patterns or insights
-3. **Process Changes**: Update workflow documentation when development processes evolve
-4. **Pattern Discovery**: Add new patterns when establishing best practices
-
-### Documentation Standards
-
-- Use clear, technical language appropriate for developers
-- Include code examples with proper syntax highlighting
-- Cross-reference related documentation
-- Keep examples up-to-date with current codebase
-
-### Updating Help Output in README.md
-
-Run `make docs-update` to regenerate the generated help sections in README.md. The captured command output is also written to `./tmp/` for inspection.
-
-## Contributing to Documentation
-
-When adding new documentation:
-
-1. Place it in the appropriate existing file or create a new file if needed
-2. Update this README.md with navigation if adding new files
-3. Ensure cross-references are accurate
-4. Follow existing formatting and structure patterns
-5. Remember: Implementation details belong here, not in AGENTS.md
+- Update the relevant file in the same PR as an intentional behavior or
+  process change; delete text that no longer matches the code rather than
+  hedging it.
+- A fact about one specific type or function belongs in its doc comment, not
+  here. These docs should carry only cross-cutting knowledge an agent cannot
+  learn from the code.
+- `make docs-update` regenerates the help sections in the top-level README.md
+  (output also written to `./tmp/` for inspection).
 
 ## Related Documentation
 
-- [AGENTS.md](../AGENTS.md) - Shared repository guidance for coding agents
-- [CLAUDE.md](../CLAUDE.md) - Minimal Claude Code stub that references `@AGENTS.md`
-- [User Documentation](../docs/) - End-user facing documentation
-- [README.md](../README.md) - Project overview and quick start
+- [AGENTS.md](../AGENTS.md) - shared repository guidance for coding agents
+  (CLAUDE.md is a stub containing `@AGENTS.md`)
+- [User Documentation](../docs/) - end-user facing documentation
+- [README.md](../README.md) - project overview and quick start
