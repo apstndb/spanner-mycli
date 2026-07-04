@@ -694,6 +694,9 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (result *
 			err = closeErr
 			return
 		}
+		if errors.Is(err, closeErr) {
+			return
+		}
 		err = errors.Join(err, closeErr)
 	}()
 
