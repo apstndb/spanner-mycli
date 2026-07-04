@@ -142,11 +142,49 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
+	queryPlan, err := spannerplan.New(planNodes)
+	if err != nil {
+		return nil, err
+	}
+	parentLinksInfo := formatShowPlanNodeIncomingLinks(queryPlan.ParentLinks(int32(s.NodeID)))
+
 	return &Result{
 		TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", s.NodeID)),
-		Rows:         sliceOf(toRow(string(y))),
-		AffectedRows: 1,
+		Rows:         sliceOf(toRow(string(y)), toRow(parentLinksInfo)),
+		AffectedRows: 2,
 	}, nil
+}
+
+func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) string {
+	if len(links) == 0 {
+		return "Incoming Parent Links:\n  - No incoming parent links"
+	}
+
+	var lines []string
+	lines = append(lines, "Incoming Parent Links:")
+
+	for _, link := range links {
+		childType := link.ChildLink.GetType()
+		if childType == "" {
+			childType = "(not set)"
+		}
+
+		parentNodeIndex := -1
+		parentTitle := "unknown"
+		if link.Parent != nil {
+			parentNodeIndex = int(link.Parent.GetIndex())
+			parentTitle = spannerplan.NodeTitle(link.Parent)
+		}
+
+		lines = append(lines, fmt.Sprintf("  - Parent Node Index: %d", parentNodeIndex))
+		lines = append(lines, fmt.Sprintf("    Parent Node Title: %s", parentTitle))
+		lines = append(lines, fmt.Sprintf("    Child Link Type: %s", childType))
+		if link.ChildLink.GetVariable() != "" {
+			lines = append(lines, fmt.Sprintf("    Variable: %s", link.ChildLink.GetVariable()))
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func hasCompound(fields map[string]*structpb.Value) bool {
