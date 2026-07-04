@@ -128,7 +128,7 @@ func (s *CreateDatabaseStatement) String() string {
 	return s.CreateStatement
 }
 
-func (CreateDatabaseStatement) IsMutationStatement() {}
+func (CreateDatabaseStatement) isMutationStatement() {}
 
 func (s *CreateDatabaseStatement) isDetachedCompatible() {}
 
@@ -587,7 +587,7 @@ func (s *BulkDdlStatement) String() string {
 	return strings.Join(s.Ddls, ";\n")
 }
 
-func (BulkDdlStatement) IsMutationStatement() {}
+func (BulkDdlStatement) isMutationStatement() {}
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
@@ -597,7 +597,7 @@ type BatchDMLStatement struct {
 	DMLs []spanner.Statement
 }
 
-func (BatchDMLStatement) IsMutationStatement() {}
+func (BatchDMLStatement) isMutationStatement() {}
 
 func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeBatchDML(ctx, session, s.DMLs)
