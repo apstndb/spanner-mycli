@@ -27,8 +27,53 @@ Conventions:
   statement) perform no RPCs, which is how statements_set_local_test.go tests
   transaction-scoped variables under `-short`.
 
+## Test Style
+
+- Standard `testing` package plus `github.com/google/go-cmp` for comparisons;
+  this repository does not use testify. Report diffs as
+  `t.Errorf("mismatch (-want +got):\n%s", diff)`.
+- Table-driven tests with `t.Run()` subtests and descriptive case names.
+- Naming: `Test<Function>`, `Test<Type>_<Method>`, or `Test<Type>_<Scenario>`.
+- Mark helpers with `t.Helper()` so failures point at the caller.
+- Use `t.Fatal` when the test cannot continue (setup failures); use `t.Error`
+  to collect multiple independent failures.
+
+## Test Isolation
+
+Write tests as if they will run under `t.Parallel()` even when they do not:
+
+- Always `t.Setenv()`, never `os.Setenv()`.
+- Never `os.Chdir()`. For config-file behavior, `parseFlagsArgs` accepts
+  explicit config file paths, so tests can point at a file in `t.TempDir()`
+  without touching process state.
+- Use `t.TempDir()` for files and `t.Cleanup()` for other resources.
+
+## Flag and Startup Testing
+
+Startup validation happens in three stages, and tests must target the right
+one (see main_flags_test.go for the harness):
+
+1. kong parsing (`parseFlags` / `parseFlagsArgs`) - syntax errors.
+2. `ValidateSpannerOptions` - business rules such as mutual exclusivity.
+3. `initializeSystemVariables` - value format and type conversion errors.
+
+Behavior that depends on `term.IsTerminal()` needs a real PTY; use the
+`pty.Open()` helpers in main_flags_test.go to simulate interactive stdin.
+
+## Testing Unmockable Spanner Types
+
+Spanner transaction types have unexported fields and cannot be mocked. Use
+two tiers: unit tests for error paths and locking behavior (no real
+transaction needed), and emulator integration tests for actual behavior. See
+transaction_manager_test.go and
+session_transaction_helpers_integration_test.go.
+
 ## Coverage Analysis
 
+- `make test-coverage` writes `tmp/coverage.out` / `tmp/coverage.html`
+  (excluding enumer-generated files) and prints the total;
+  `make test-coverage-open` opens the HTML report. On PRs, octocov comments
+  with the coverage delta.
 - Use `go tool cover -func` for a quick, readable summary of function-level coverage
 - Use `go tool cover -html` for detailed line-by-line analysis
 - Before and after test refactoring, always verify coverage doesn't decrease:

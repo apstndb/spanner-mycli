@@ -117,6 +117,12 @@ type TransactionManager struct {
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction: Type-safe transaction access
 	// - clearTransactionContext, TransactionAttrsWithLock: Safe context management
 	// All transaction context access MUST go through these helpers.
+	//
+	// Naming convention: methods with a WithLock suffix acquire mu internally;
+	// methods with a Locked suffix assume the caller already holds mu. Go
+	// mutexes are not reentrant, so calling a WithLock method from a callback
+	// that already runs under mu (e.g. inside withTransactionLocked) deadlocks;
+	// use the Locked variant there instead.
 	mu           sync.RWMutex
 	client       *spanner.Client      // same pointer as Session.client
 	sysVars      *systemVariables     // same pointer as Session.systemVariables
