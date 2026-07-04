@@ -49,6 +49,7 @@ const (
 	fuzzyCompleteModel
 	fuzzyCompleteSchema
 	fuzzyCompleteParam
+	fuzzyCompleteSetKeyword
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -79,6 +80,8 @@ func (t fuzzyCompletionType) String() string {
 		return "schema"
 	case fuzzyCompleteParam:
 		return "param"
+	case fuzzyCompleteSetKeyword:
+		return "set_keyword"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -931,6 +934,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 	},
+	// Query Parameter
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Set type query parameter`,
+				Syntax: `SET PARAM <name> <type>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*(?P<type>[^=]*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetParamTypeStatement{Name: groups["name"], Type: groups["type"]}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			// Name completion: SET PARAM [<partial_name>]
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM(?:\s+)?([^\s=]*)$`),
+			CompletionType: fuzzyCompleteParam,
+			Suffix:         " ",
+		}},
+	},
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
@@ -943,6 +965,12 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &SetStatement{VarName: groups["name"], Value: groups["value"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{
+			{
+				// Discover query-parameter completion via the reserved keyword `PARAM`.
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+()$`),
+				CompletionType: fuzzyCompleteSetKeyword,
+				Suffix:         " ",
+			},
 			{
 				// Value completion: SET <name> = <partial_value>
 				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+(\S+)\s*=\s*(\S*)$`),
@@ -994,24 +1022,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+VARIABLE\s+(\S*)$`),
 			CompletionType: fuzzyCompleteVariable,
-		}},
-	},
-	// Query Parameter
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Set type query parameter`,
-				Syntax: `SET PARAM <name> <type>`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*(?P<type>[^=]*)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &SetParamTypeStatement{Name: groups["name"], Type: groups["type"]}, nil
-		},
-		Completion: []fuzzyArgCompletion{{
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\s+([^\s=]*)$`),
-			CompletionType: fuzzyCompleteParam,
-			Suffix:         " ",
 		}},
 	},
 	{

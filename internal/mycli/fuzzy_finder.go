@@ -246,6 +246,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Schemas"
 	case fuzzyCompleteParam:
 		return "Query Parameters"
+	case fuzzyCompleteSetKeyword:
+		return "Query Parameter Keywords"
 	default:
 		return "Statements"
 	}
@@ -774,6 +776,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchSchemaCandidates(ctx)
 	case fuzzyCompleteParam:
 		return f.fetchParamCandidates(), nil
+	case fuzzyCompleteSetKeyword:
+		return toFzfItems([]string{"PARAM"}), nil
 	default:
 		return nil, nil
 	}

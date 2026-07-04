@@ -69,7 +69,7 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    6,
 		},
-		// Argument completion: SET → variable (with " = " suffix)
+		// Argument completion: SET → query-parameter keyword or variable (with " = " suffix)
 		{
 			name:               "SET with partial name",
 			input:              "SET CLI_",
@@ -81,10 +81,10 @@ func TestDetectFuzzyContext(t *testing.T) {
 		{
 			name:               "SET with no name",
 			input:              "SET ",
-			wantCompletionType: fuzzyCompleteVariable,
+			wantCompletionType: fuzzyCompleteSetKeyword,
 			wantArgPrefix:      "",
 			wantArgStartPos:    4,
-			wantSuffix:         " = ",
+			wantSuffix:         " ",
 		},
 		{
 			name:               "set lowercase",
@@ -515,6 +515,14 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgStartPos:    19,
 		},
 		// Argument completion: SET PARAM → param
+		{
+			name:               "SET PARAM",
+			input:              "SET PARAM",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "",
+			wantArgStartPos:    9,
+			wantSuffix:         " ",
+		},
 		{
 			name:               "SET PARAM with trailing space",
 			input:              "SET PARAM ",
