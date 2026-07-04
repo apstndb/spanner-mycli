@@ -764,17 +764,27 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 
 			if groups["timestamp"] != "" {
-				if t, err := time.Parse(time.RFC3339Nano, unquoteString(groups["timestamp"])); err == nil {
+				timestamp := unquoteString(groups["timestamp"])
+				var parseTimeErr error
+				var parseStalenessErr error
+				if t, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
 					stmt = &BeginRoStatement{
 						TimestampBoundType: readTimestamp,
 						Timestamp:          t,
 					}
-				}
-				if i, err := strconv.Atoi(groups["timestamp"]); err == nil {
-					stmt = &BeginRoStatement{
-						TimestampBoundType: exactStaleness,
-						Staleness:          time.Duration(i) * time.Second,
+				} else {
+					parseTimeErr = err
+					if i, err := strconv.Atoi(timestamp); err == nil {
+						stmt = &BeginRoStatement{
+							TimestampBoundType: exactStaleness,
+							Staleness:          time.Duration(i) * time.Second,
+						}
+					} else {
+						parseStalenessErr = err
 					}
+				}
+				if parseTimeErr != nil && parseStalenessErr != nil {
+					return nil, fmt.Errorf("invalid ro timestamp value %q: failed to parse as RFC3339 timestamp (%v) and as seconds staleness (%v)", groups["timestamp"], parseTimeErr, parseStalenessErr)
 				}
 			}
 

@@ -95,23 +95,59 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return formatAsyncDdlResult(op)
 	}
 
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	pollDdl := func() (*databasepb.UpdateDatabaseDdlMetadata, error) {
+		if err := op.Poll(ctx); err != nil {
+			return nil, err
+		}
+
+		return op.Metadata()
+	}
+
+	metadata, err := pollDdl()
+	if err != nil {
+		teardown()
+		return nil, err
+	}
+
+	if metadata != nil && bars != nil {
+		progresses := metadata.GetProgress()
+		for i, progress := range progresses {
+			if i >= len(bars) {
+				break
+			}
+			bar := bars[i]
+			if bar.Completed() {
+				continue
+			}
+			progressPercent := int64(progress.ProgressPercent)
+			bar.SetCurrent(progressPercent)
+		}
+	}
+
 	for !op.Done() {
-		time.Sleep(5 * time.Second)
-		err := op.Poll(ctx)
+		select {
+		case <-ticker.C:
+			// continue
+		case <-ctx.Done():
+			teardown()
+			return nil, ctx.Err()
+		}
+
+		metadata, err = pollDdl()
 		if err != nil {
 			teardown()
 			return nil, err
 		}
 
-		metadata, err := op.Metadata()
-		if err != nil {
-			teardown()
-			return nil, err
-		}
-
-		if bars != nil {
+		if metadata != nil && bars != nil {
 			progresses := metadata.GetProgress()
 			for i, progress := range progresses {
+				if i >= len(bars) {
+					break
+				}
 				bar := bars[i]
 				if bar.Completed() {
 					continue
@@ -122,7 +158,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		}
 	}
 
-	metadata, err := op.Metadata()
+	metadata, err = op.Metadata()
 	if err != nil {
 		teardown()
 		return nil, err

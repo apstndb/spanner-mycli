@@ -22,6 +22,10 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
 
 	rows := slices.Collect(loi.Map(
 		slices.Values(partitions),
