@@ -39,16 +39,20 @@ type FileSafetyOptions struct {
 	AllowNonRegular bool
 }
 
+func maxFileSize(opts *FileSafetyOptions) int64 {
+	if opts == nil || opts.MaxSize == 0 {
+		return DefaultMaxFileSize
+	}
+	return opts.MaxSize
+}
+
 // ValidateFileSafety checks if a file is safe to read based on the given options
 func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) error {
 	if opts == nil {
 		opts = &FileSafetyOptions{}
 	}
 
-	maxSize := opts.MaxSize
-	if maxSize == 0 {
-		maxSize = DefaultMaxFileSize
-	}
+	maxSize := maxFileSize(opts)
 
 	// Directories are never readable as files, regardless of AllowNonRegular;
 	// reject them here for a clear error instead of a system-dependent
@@ -63,6 +67,8 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 			// Check specific modes for better error messages
 			mode := fi.Mode()
 			switch {
+			case mode&os.ModeCharDevice != 0:
+				return fmt.Errorf("cannot read character device %s", path)
 			case mode&os.ModeDevice != 0:
 				return fmt.Errorf("cannot read device file %s", path)
 			case mode&os.ModeNamedPipe != 0:
@@ -104,10 +110,7 @@ func SafeReadFile(path string, opts *FileSafetyOptions) ([]byte, error) {
 		return os.ReadFile(path)
 	}
 
-	maxSize := int64(DefaultMaxFileSize)
-	if opts != nil && opts.MaxSize != 0 {
-		maxSize = opts.MaxSize
-	}
+	maxSize := maxFileSize(opts)
 
 	f, err := os.Open(path)
 	if err != nil {

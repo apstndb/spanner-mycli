@@ -114,7 +114,7 @@ func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Re
 FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
-  LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
+  LOWER(I.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
 		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
 	}
 

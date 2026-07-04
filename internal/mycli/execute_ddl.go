@@ -95,8 +95,18 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return formatAsyncDdlResult(op)
 	}
 
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
 	for !op.Done() {
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ticker.C:
+			// continue
+		case <-ctx.Done():
+			teardown()
+			return nil, ctx.Err()
+		}
+
 		err := op.Poll(ctx)
 		if err != nil {
 			teardown()

@@ -317,6 +317,12 @@ func TestRunMCP(t *testing.T) {
 			wantOutput: "tbl", // Should show the test table
 		},
 		{
+			desc:       "MCP execute_statement trims statement before removing semicolon",
+			ddls:       testTableDDLs,
+			statement:  "SHOW TABLES ;  ",
+			wantOutput: "tbl",
+		},
+		{
 			desc:       "MCP execute_statement with SELECT",
 			ddls:       testTableDDLs,
 			dmls:       sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"),

@@ -684,11 +684,7 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 	s := session.cqlSession
 
 	q := s.Query(cs.CQL)
-	if err := q.Exec(); err != nil {
-		return nil, err
-	}
-
-	it := s.Query(cs.CQL).WithContext(ctx).Iter()
+	it := q.WithContext(ctx).Iter()
 	defer it.Close()
 
 	var headers []string
