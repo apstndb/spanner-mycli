@@ -1,9 +1,11 @@
 name: goreleaser
 
+# Trigger only on v-prefixed tags, matching ko.yml, so a stray non-v tag
+# cannot create a GitHub release that has no corresponding container image.
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
 
 permissions:
   contents: write
@@ -11,6 +13,7 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -19,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
       - name: Install tools
         run: |
           go install tool

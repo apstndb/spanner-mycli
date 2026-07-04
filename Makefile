@@ -1,5 +1,5 @@
 .PHONY: build generate clean run test test-verbose test-quick test-coverage test-coverage-open \
-	lint fmt fmt-check check all all-quick docs-update help-dev \
+	check-race lint fmt fmt-check check all all-quick docs-update help-dev \
 	worktree-setup worktree-list worktree-delete
 
 build:
@@ -25,6 +25,10 @@ test-verbose:
 # Quick tests for development cycle
 test-quick:
 	go test -short ./...
+
+# Race detector on unit tests (same gate as the CI "race" job)
+check-race:
+	go test -short -race ./...
 
 # Test with coverage profile
 test-coverage:
@@ -98,6 +102,7 @@ help-dev:
 	@echo "  make test-coverage     - Run tests with coverage report"
 	@echo "  make test-coverage-open - Run coverage and open HTML report in browser"
 	@echo "  make test-quick        - Run quick tests (go test -short)"
+	@echo "  make check-race        - Run unit tests with race detector (same as CI race job)"
 	@echo "  make lint              - Run linter (required before push)"
 	@echo "  make fmt               - Format code (modifies files)"
 	@echo "  make fmt-check         - Check if code is properly formatted"

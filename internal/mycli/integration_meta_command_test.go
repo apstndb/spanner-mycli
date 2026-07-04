@@ -32,7 +32,7 @@ func TestMetaCommandIntegration(t *testing.T) {
 
 	t.Run("interactive shell command execution", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = false
+		sysVars.Config.SkipSystemCommand = false
 
 		// Create a simulated interactive session with shell commands
 		input := io.NopCloser(strings.NewReader("\\! echo hello\n\\! echo world\nexit;\n"))
@@ -66,7 +66,7 @@ func TestMetaCommandIntegration(t *testing.T) {
 
 	t.Run("shell command execution in batch mode", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = false
+		sysVars.Config.SkipSystemCommand = false
 
 		// Create a mock stdin with a shell command
 		input := strings.NewReader("\\! echo hello\nexit;\n")
@@ -95,7 +95,7 @@ func TestMetaCommandIntegration(t *testing.T) {
 
 	t.Run("shell command disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = true
+		sysVars.Config.SkipSystemCommand = true
 
 		input := strings.NewReader("")
 		output := &bytes.Buffer{}
@@ -124,7 +124,7 @@ func TestMetaCommandIntegration(t *testing.T) {
 
 	t.Run("interactive shell command disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.SkipSystemCommand = true
+		sysVars.Config.SkipSystemCommand = true
 
 		// Create a simulated interactive session
 		input := strings.NewReader("\\! echo hello\nexit;\n")
@@ -164,9 +164,9 @@ SELECT "foo" AS s;`
 		}
 
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
 
 		// Create a mock session handler with a test client
 		session := &Session{
@@ -211,9 +211,9 @@ SELECT "foo" AS s;`
 
 	t.Run("source command with non-existent file", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
 
 		// Create a mock session handler with a test client
 		session := &Session{
@@ -278,9 +278,9 @@ SELECT "foo" AS s;`
 
 	t.Run("prompt command execution", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
 
 		// Create a mock session handler with a test client
 		session := &Session{
@@ -310,8 +310,8 @@ SELECT "foo" AS s;`
 		}
 
 		// Verify the prompt was changed (with trailing space added)
-		if sysVars.Prompt != "custom-prompt> " {
-			t.Errorf("Expected prompt to be 'custom-prompt> ', got %q", sysVars.Prompt)
+		if sysVars.Display.Prompt != "custom-prompt> " {
+			t.Errorf("Expected prompt to be 'custom-prompt> ', got %q", sysVars.Display.Prompt)
 		}
 
 		// Check that SHOW VARIABLE output contains the expected table format
@@ -329,9 +329,9 @@ SELECT "foo" AS s;`
 
 	t.Run("prompt command with percent expansion", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
 
 		// Create a mock session handler with a test client
 		session := &Session{
@@ -361,8 +361,8 @@ SELECT "foo" AS s;`
 		}
 
 		// Verify the prompt was changed (expansion happens during display, with trailing space added)
-		if sysVars.Prompt != "[%p/%i/%d]> " {
-			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]> ', got %q", sysVars.Prompt)
+		if sysVars.Display.Prompt != "[%p/%i/%d]> " {
+			t.Errorf("Expected prompt to be '[%%p/%%i/%%d]> ', got %q", sysVars.Display.Prompt)
 		}
 
 		// Note: This test verifies that the prompt is stored with percent patterns intact.
@@ -478,9 +478,9 @@ SELECT "foo" AS s;`
 	// Helper functions for tee tests
 	setupTeeTestCLI := func(commands string) (*Cli, *bytes.Buffer) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
 
 		// Use buffers for tee's console output to keep tests hermetic and verifiable.
 		consoleBuf := &bytes.Buffer{}
