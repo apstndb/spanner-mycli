@@ -34,7 +34,8 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new Gemini review. Use `--request-summary` only right before merge to update the summary. Do not request Copilot reviews for this repository.
+5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new Gemini review. Use `--request-summary` only right before merge, and only if the PR changed substantially after creation. Do not request Copilot reviews for this repository.
+   - **Gemini sunset (#693)**: consumer Gemini Code Assist code review ceases on 2026-07-17. If no Gemini review arrives (timeout, or after that date), do NOT keep re-requesting or waiting; CI checks (item 8) are the merge gate. Replacement flow is tracked in issue #693.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
 8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
@@ -74,7 +75,7 @@ For full gh-helper command reference, see [dev-docs/issue-management.md](dev-doc
 
 ### System Variable Conventions
 - CLI-specific variables **MUST** use `CLI_` prefix
-- All registrations in `internal/mycli/system_variables_registry.go`
+- All registrations in `internal/mycli/var_registry.go` (`registerAll`)
 - Details: [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md)
 
 ### Regex Pattern Guidelines

@@ -15,6 +15,8 @@ Please execute the following steps:
 - `/gemini review` triggers an **inline code review** — this is also automatic but may take several minutes for large PRs.
 - If the wait times out without a review, **wait longer or request `/gemini review`** (NOT `/gemini summary`).
 
+**Gemini sunset (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17**. On or after that date (or whenever reviews stop arriving), skip the retry advice above: do not re-request `/gemini review` or extend the wait. Verify CI checks pass and continue; checks are the merge gate until the replacement flow in #693 is decided.
+
 2. Check for unresolved threads:
 !go tool gh-helper reviews fetch --unresolved-only
 

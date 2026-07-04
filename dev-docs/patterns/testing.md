@@ -1,5 +1,32 @@
 # Testing Best Practices
 
+## Test Tiers and Conventions
+
+The suite has two tiers, selected with the standard `-short` flag:
+
+- `go test -short ./...` - unit tests only; no Docker required; runs in a few
+  seconds. Integration tests self-skip via `testing.Short()`.
+- `make test` (`go test ./...`) - additionally runs integration tests against
+  a shared Cloud Spanner emulator (spanemuboost lazy runtime; the container
+  boots once per process and each test gets an isolated random database via
+  `initializeWithRandomDB`).
+
+Conventions:
+
+- Gate emulator-dependent tests with `testing.Short()` (usually via the
+  `runStatementTests` helper). Do NOT introduce new build tags for this:
+  tag-gated files (`//go:build integration`, `skip_slow_test`) are not built
+  by default and silently rot because nothing compiles them in CI.
+- For statement-level integration tests, prefer the `statementTestCase` /
+  `runStatementTests` table in integration_test.go with the `sr` / `srEmpty` /
+  `srKeep` / `srDML` result helpers. `compareResult` already ignores
+  `ReadTimestamp`, `CommitTimestamp`, `CommitStats`, `Stats`, and `Metrics`,
+  so expectations stay small.
+- Logic that can be exercised without RPCs should be a unit test even if the
+  feature is transactional: pending transactions (`BEGIN` before the first
+  statement) perform no RPCs, which is how statements_set_local_test.go tests
+  transaction-scoped variables under `-short`.
+
 ## Coverage Analysis
 
 - Use `go tool cover -func` for a quick, readable summary of function-level coverage
