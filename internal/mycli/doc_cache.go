@@ -169,6 +169,8 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 	if exists && c.isFresh(entry) {
 		content, err := c.decompress(entry.data)
 		if err != nil {
+			delete(c.entries, name)
+			exists = false
 			slog.Warn("Failed to decompress cached document, attempting refresh", "name", name, "error", err)
 			if c.fetch == nil {
 				return "", false

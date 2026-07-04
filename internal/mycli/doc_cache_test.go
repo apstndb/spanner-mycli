@@ -209,6 +209,40 @@ func TestDocCache_GetFreshEntryCorruptDataWithoutAPIReturnsMiss(t *testing.T) {
 	if content != "" {
 		t.Errorf("content = %q, want empty", content)
 	}
+	if _, exists := c.entries["documents/test/doc"]; exists {
+		t.Fatal("expected corrupted cache entry to be deleted")
+	}
+}
+
+func TestDocCache_GetFreshEntryCorruptDataWithFetcherFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	fetchCalls := 0
+	c := newTestCache(t,
+		withNowFunc(func() time.Time { return now }),
+		withDocFetcher(func(_ context.Context, _ string) (string, error) {
+			fetchCalls++
+			return "", fmt.Errorf("API down")
+		}),
+	)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: now.Add(-time.Minute), // fresh under default TTL
+	}
+
+	content, ok := c.Get(context.Background(), "documents/test/doc")
+	if ok {
+		t.Fatal("expected cache miss when refresh fails for corrupted fresh entry")
+	}
+	if content != "" {
+		t.Errorf("content = %q, want empty", content)
+	}
+	if fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1", fetchCalls)
+	}
+	if _, exists := c.entries["documents/test/doc"]; exists {
+		t.Fatal("expected corrupted cache entry to be deleted on refresh failure")
+	}
 }
 
 func TestDocCache_EmbeddedDocRefreshedWhenAPIAvailable(t *testing.T) {
