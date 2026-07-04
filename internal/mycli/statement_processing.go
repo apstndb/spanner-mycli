@@ -46,6 +46,25 @@ type MutationStatement interface {
 	isMutationStatement()
 }
 
+// Compile-time assertions for every MutationStatement implementation.
+// The marker method is unexported, so a typo (e.g. an exported
+// IsMutationStatement) silently drops the type out of the interface and
+// bypasses the READONLY guard in Session.ExecuteStatement (issue #695).
+// Keep this list in sync when adding a mutation statement.
+var (
+	_ MutationStatement = (*MutateStatement)(nil)
+	_ MutationStatement = (*ExplainAnalyzeDmlStatement)(nil)
+	_ MutationStatement = (*BeginRwStatement)(nil)
+	_ MutationStatement = (*DmlStatement)(nil)
+	_ MutationStatement = (*DdlStatement)(nil)
+	_ MutationStatement = (*CreateDatabaseStatement)(nil)
+	_ MutationStatement = (*DropDatabaseStatement)(nil)
+	_ MutationStatement = (*TruncateTableStatement)(nil)
+	_ MutationStatement = (*PartitionedDmlStatement)(nil)
+	_ MutationStatement = (*BulkDdlStatement)(nil)
+	_ MutationStatement = (*BatchDMLStatement)(nil)
+)
+
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
 // Statements implementing this interface can execute when session.IsDetached() is true.
 type DetachedCompatible interface {
