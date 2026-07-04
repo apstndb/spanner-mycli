@@ -14,12 +14,16 @@ payload=$(cat)
 if command -v jq >/dev/null 2>&1; then
     file_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 else
-    # Fallback without jq: extract the first "file_path" string value with
-    # POSIX sed only (grep -o is a GNU extension). Good enough for the plain
-    # absolute paths Claude Code sends; paths with embedded escaped quotes
-    # are not expected.
+    # Fallback without jq: extract a "file_path" JSON key value with POSIX
+    # sed only (grep -o is a GNU extension). The key must be preceded by a
+    # brace, comma, or whitespace so keys merely ending in file_path do not
+    # match. This is best-effort: payload text inside old_string/new_string
+    # can still false-match, but the .go suffix check, the -f check, and the
+    # fact that the only action is running the formatter bound the impact to
+    # formatting an unintended Go file, which is harmless. jq is the primary
+    # path.
     file_path=$(printf '%s' "$payload" |
-        sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+        sed -n 's/.*[[:space:],{]"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
         head -n 1)
 fi
 
