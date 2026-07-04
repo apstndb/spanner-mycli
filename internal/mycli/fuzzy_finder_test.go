@@ -547,6 +547,22 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgStartPos:    10,
 			wantSuffix:         " ",
 		},
+		{
+			name:               "SET PARAMETER stays variable completion",
+			input:              "SET PARAMETER",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "PARAMETER",
+			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET PARAM_FOO stays variable completion",
+			input:              "SET PARAM_FOO",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "PARAM_FOO",
+			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
 		// Argument completion: UNSET PARAM → param
 		{
 			name:               "UNSET PARAM with trailing space",

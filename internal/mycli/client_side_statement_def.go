@@ -948,7 +948,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Completion: []fuzzyArgCompletion{{
 			// Name completion: SET PARAM [<partial_name>]
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM(?:\s+)?([^\s=]*)$`),
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\b\s*([^\s=]*)$`),
 			CompletionType: fuzzyCompleteParam,
 			Suffix:         " ",
 		}},
