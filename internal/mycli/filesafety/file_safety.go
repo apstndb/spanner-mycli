@@ -75,8 +75,6 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 				return fmt.Errorf("cannot read named pipe %s", path)
 			case mode&os.ModeSocket != 0:
 				return fmt.Errorf("cannot read socket file %s", path)
-			case mode&os.ModeCharDevice != 0:
-				return fmt.Errorf("cannot read character device %s", path)
 			default:
 				return fmt.Errorf("cannot read special file %s (mode: %v)", path, mode)
 			}
