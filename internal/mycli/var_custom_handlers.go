@@ -151,7 +151,10 @@ func (p *ProtoDescriptorVar) IsReadOnly() bool {
 	return false
 }
 
-// EndpointVar handles CLI_ENDPOINT (host:port)
+// EndpointVar handles CLI_ENDPOINT (host:port).
+// Read-only, like CLI_HOST and CLI_PORT which it is derived from: the
+// endpoint is part of the immutable StartupConfig, and changing it after
+// startup would not reconnect the live session.
 type EndpointVar struct {
 	hostPtr     *string
 	portPtr     *int
@@ -166,19 +169,7 @@ func (e *EndpointVar) Get() (string, error) {
 }
 
 func (e *EndpointVar) Set(value string) error {
-	if value == "" {
-		*e.hostPtr = ""
-		*e.portPtr = 0
-		return nil
-	}
-
-	host, port, err := parseEndpoint(value)
-	if err != nil {
-		return err
-	}
-	*e.hostPtr = host
-	*e.portPtr = port
-	return nil
+	return errSetterReadOnly
 }
 
 func (e *EndpointVar) Description() string {
@@ -186,7 +177,7 @@ func (e *EndpointVar) Description() string {
 }
 
 func (e *EndpointVar) IsReadOnly() bool {
-	return false
+	return true
 }
 
 // parseOutputTemplate parses output template file

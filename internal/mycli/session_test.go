@@ -172,12 +172,10 @@ func TestCreateClientOptionsUsesEmbeddedClientOptions(t *testing.T) {
 	t.Parallel()
 
 	sysVars := &systemVariables{
-		Connection: ConnectionVars{
+		Config: StartupConfig{
 			Host:                  "localhost",
 			Port:                  9010,
 			WithoutAuthentication: true,
-		},
-		Internal: InternalVars{
 			EmbeddedClientOptions: []option.ClientOption{
 				option.WithoutAuthentication(),
 			},
@@ -273,7 +271,7 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 		Query: QueryVars{
 			DirectedRead: directedRead,
 		},
-		Internal: InternalVars{
+		Config: StartupConfig{
 			EmbeddedClientConfig: &spanner.ClientConfig{
 				DisableNativeMetrics: true,
 				IsExperimentalHost:   true,
@@ -330,9 +328,9 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 			Project:  "test-project",
 			Instance: "test-instance",
 			Database: "test-database",
-			Insecure: true,
 		},
-		Internal: InternalVars{
+		Config: StartupConfig{
+			Insecure: true,
 			EmbeddedClientOptions: []option.ClientOption{
 				option.WithoutAuthentication(),
 			},
@@ -351,7 +349,7 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 			return &adminapi.DatabaseAdminClient{}, nil
 		},
 		func(*spanner.Client) {},
-		sysVars.Internal.EmbeddedClientOptions...,
+		sysVars.Config.EmbeddedClientOptions...,
 	)
 	if err != nil {
 		t.Fatalf("newSessionWithFactories() error = %v", err)
@@ -359,7 +357,7 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 	if session == nil {
 		t.Fatal("newSessionWithFactories() returned nil session")
 	}
-	if len(gotOpts) != len(sysVars.Internal.EmbeddedClientOptions)+len(defaultClientOpts) {
-		t.Fatalf("len(opts) = %d, want %d", len(gotOpts), len(sysVars.Internal.EmbeddedClientOptions)+len(defaultClientOpts))
+	if len(gotOpts) != len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts) {
+		t.Fatalf("len(opts) = %d, want %d", len(gotOpts), len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts))
 	}
 }

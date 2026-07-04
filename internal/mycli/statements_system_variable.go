@@ -49,9 +49,9 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	merged := session.systemVariables.ListVariables()
 
 	// Special handling for COMMIT_RESPONSE
-	if session.systemVariables.Transaction.CommitResponse != nil {
-		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.Transaction.CommitTimestamp, "NULL")
-		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.Transaction.CommitResponse.GetCommitStats().GetMutationCount(), 10)
+	if session.systemVariables.LastResult.CommitResponse != nil {
+		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.LastResult.CommitTimestamp, "NULL")
+		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.LastResult.CommitResponse.GetCommitStats().GetMutationCount(), 10)
 	}
 
 	// Special handling for CLI_DIRECT_READ

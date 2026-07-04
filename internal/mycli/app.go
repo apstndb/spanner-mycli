@@ -304,13 +304,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		runtimePlatform, err := spanemuboost.RuntimePlatform(ctx, embeddedRuntime)
 		if err != nil {
 			slog.Warn("failed to detect embedded runtime platform", "error", err)
-			sysVars.Connection.EmulatorPlatform = "unknown"
+			sysVars.Config.EmulatorPlatform = "unknown"
 		} else {
-			sysVars.Connection.EmulatorPlatform = runtimePlatform
+			sysVars.Config.EmulatorPlatform = runtimePlatform
 		}
 		slog.Debug("Detected container platform",
 			"requested", opts.EmulatorPlatform,
-			"actual", sysVars.Connection.EmulatorPlatform)
+			"actual", sysVars.Config.EmulatorPlatform)
 
 		// Parse container URI into host and port
 		host, port, err := parseEndpoint(embeddedRuntime.URI())
@@ -318,14 +318,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			// This should not happen with a valid URI from testcontainers, but handle defensively.
 			return fmt.Errorf("failed to parse embedded runtime endpoint URI %q: %w", embeddedRuntime.URI(), err)
 		}
-		sysVars.Connection.Host, sysVars.Connection.Port = host, port
+		sysVars.Config.Host, sysVars.Config.Port = host, port
 		switch backend {
 		case spanemuboost.BackendEmulator:
-			sysVars.Connection.WithoutAuthentication = true
+			sysVars.Config.WithoutAuthentication = true
 		case spanemuboost.BackendOmni:
-			sysVars.Internal.EmbeddedClientOptions = append([]option.ClientOption(nil), embeddedRuntime.ClientOptions()...)
+			sysVars.Config.EmbeddedClientOptions = append([]option.ClientOption(nil), embeddedRuntime.ClientOptions()...)
 			omniClientConfig := spanemuboost.RecommendedOmniClientConfig()
-			sysVars.Internal.EmbeddedClientConfig = &omniClientConfig
+			sysVars.Config.EmbeddedClientConfig = &omniClientConfig
 		}
 	}
 

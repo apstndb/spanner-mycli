@@ -248,17 +248,17 @@ func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, i
 
 func (c *Cli) updateSystemVariables(result *Result) {
 	// Update timestamps - both ReadTimestamp and CommitTimestamp are now separate fields
-	c.SystemVariables.Query.ReadTimestamp = result.ReadTimestamp
-	c.SystemVariables.Transaction.CommitTimestamp = result.CommitTimestamp
+	c.SystemVariables.LastResult.ReadTimestamp = result.ReadTimestamp
+	c.SystemVariables.LastResult.CommitTimestamp = result.CommitTimestamp
 
 	if result.CommitStats != nil {
 		var ts *timestamppb.Timestamp
 		if !result.CommitTimestamp.IsZero() {
 			ts = timestamppb.New(result.CommitTimestamp)
 		}
-		c.SystemVariables.Transaction.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
+		c.SystemVariables.LastResult.CommitResponse = &sppb.CommitResponse{CommitStats: result.CommitStats, CommitTimestamp: ts}
 	} else {
-		c.SystemVariables.Transaction.CommitResponse = nil
+		c.SystemVariables.LastResult.CommitResponse = nil
 	}
 }
 

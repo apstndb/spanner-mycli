@@ -47,12 +47,14 @@ type LastQueryCache struct {
 	CommitTimestamp time.Time
 }
 
-// ConnectionVars holds connection-related configuration.
-type ConnectionVars struct {
-	Project                   string // CLI_PROJECT
-	Instance                  string // CLI_INSTANCE
-	Database                  string // CLI_DATABASE
-	Role                      string // CLI_ROLE
+// StartupConfig holds configuration that is immutable after startup.
+// It is populated by parseFlags/createSystemVariablesFromOptions (and, for the
+// embedded runtime, by setup code in app.go before any session is created) and
+// must never be written afterwards: every corresponding system variable is
+// registered read-only, and USE/DETACH do not touch it.
+// Exception: EnableADCPlus is session-init-only; its custom setter rejects
+// writes once a session exists (see var_registry.go).
+type StartupConfig struct {
 	Host                      string // CLI_HOST
 	Port                      int    // CLI_PORT
 	Insecure                  bool   // CLI_INSECURE
@@ -60,6 +62,35 @@ type ConnectionVars struct {
 	ImpersonateServiceAccount string // CLI_IMPERSONATE_SERVICE_ACCOUNT
 	EnableADCPlus             bool   // CLI_ENABLE_ADC_PLUS
 	EmulatorPlatform          string // CLI_EMULATOR_PLATFORM
+	LogGrpc                   bool   // CLI_LOG_GRPC
+	MCP                       bool   // CLI_MCP
+	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
+
+	// Embedded runtime overrides used by tests and the embedded emulator.
+	EmbeddedClientOptions []option.ClientOption
+	EmbeddedClientConfig  *spanner.ClientConfig
+}
+
+// ConnectionVars holds the connection identity. Project and Instance are fixed
+// at startup; Database and Role are mutated in place only by USE/DETACH
+// (SessionHandler.switchSession).
+type ConnectionVars struct {
+	Project  string // CLI_PROJECT
+	Instance string // CLI_INSTANCE
+	Database string // CLI_DATABASE
+	Role     string // CLI_ROLE
+}
+
+// LastResult holds outputs of the most recently executed statement or
+// transaction. It is written by statement execution and read back through
+// read-only system variables (READ_TIMESTAMP, COMMIT_TIMESTAMP,
+// COMMIT_RESPONSE) and last-query features such as CLI_INLINE_STATS.
+// Unlike the *Vars groups, nothing here is user-settable.
+type LastResult struct {
+	ReadTimestamp   time.Time            // READ_TIMESTAMP
+	CommitTimestamp time.Time            // COMMIT_TIMESTAMP
+	CommitResponse  *sppb.CommitResponse // COMMIT_RESPONSE
+	QueryCache      *LastQueryCache
 }
 
 // DisplayVars holds display and output formatting configuration.
@@ -103,7 +134,6 @@ type QueryVars struct {
 	StatementTimeout           *time.Duration                    // STATEMENT_TIMEOUT
 	RPCPriority                sppb.RequestOptions_Priority      // RPC_PRIORITY
 	ReadOnlyStaleness          *spanner.TimestampBound           // READ_ONLY_STALENESS
-	ReadTimestamp              time.Time                         // READ_TIMESTAMP
 	OptimizerVersion           string                            // OPTIMIZER_VERSION
 	OptimizerStatisticsPackage string                            // OPTIMIZER_STATISTICS_PACKAGE
 	AutoPartitionMode          bool                              // AUTO_PARTITION_MODE
@@ -129,8 +159,6 @@ type TransactionVars struct {
 	AutoBatchDML                bool                                           // AUTO_BATCH_DML
 	AutocommitDMLMode           enums.AutocommitDMLMode                        // AUTOCOMMIT_DML_MODE
 	ReturnCommitStats           bool                                           // RETURN_COMMIT_STATS
-	CommitResponse              *sppb.CommitResponse                           // COMMIT_RESPONSE
-	CommitTimestamp             time.Time                                      // COMMIT_TIMESTAMP
 	DefaultIsolationLevel       sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
 	ReadLockMode                sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
 
@@ -150,28 +178,33 @@ type FeatureVars struct {
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
-	SkipSystemCommand      bool                       // CLI_SKIP_SYSTEM_COMMAND
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
-	LogGrpc                bool                       // CLI_LOG_GRPC
 	LogLevel               slog.Level                 // CLI_LOG_LEVEL
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
 }
 
 // InternalVars holds internal state not directly exposed as system variables.
 type InternalVars struct {
-	ProtoDescriptorFile   []string // CLI_PROTO_DESCRIPTOR_FILE
-	ProtoDescriptor       *descriptorpb.FileDescriptorSet
-	LastQueryCache        *LastQueryCache
-	EmbeddedClientOptions []option.ClientOption
-	EmbeddedClientConfig  *spanner.ClientConfig
+	ProtoDescriptorFile []string // CLI_PROTO_DESCRIPTOR_FILE
+	ProtoDescriptor     *descriptorpb.FileDescriptorSet
 }
 
-// systemVariables holds configuration state for spanner-mycli sessions.
-// IMPORTANT: This struct is designed to be read-only after creation for session safety.
-// SessionHandler depends on this read-only property when creating new sessions with
-// modified copies of systemVariables (e.g., for USE/DETACH operations).
+// systemVariables holds the session state of spanner-mycli, layered by
+// ownership and mutability:
+//
+//   - Config: immutable after startup (see StartupConfig)
+//   - Connection: connection identity; Database/Role mutated only by USE/DETACH
+//   - LastResult: per-statement outputs, written by statement execution
+//   - Display/Query/Transaction/Feature/Internal: the SET-able surface,
+//     mutated through the Registry (and transaction-scoped via SET LOCAL)
+//
+// There is exactly one live instance per process: the Registry captures
+// pointers into this struct, so it must never be copied (USE/DETACH mutate it
+// in place; see SessionHandler.switchSession).
 type systemVariables struct {
+	Config      StartupConfig
 	Connection  ConnectionVars
+	LastResult  LastResult
 	Display     DisplayVars
 	Query       QueryVars
 	Transaction TransactionVars
@@ -288,7 +321,7 @@ func (sv *systemVariables) ProjectPath() string {
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
-		Connection: ConnectionVars{
+		Config: StartupConfig{
 			EnableADCPlus: true,
 		},
 		Display: DisplayVars{

@@ -97,15 +97,18 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:                   "test-project",
-					Instance:                  "test-instance",
-					Database:                  "test-database",
-					Role:                      "test-role",
+					Project:  "test-project",
+					Instance: "test-instance",
+					Database: "test-database",
+					Role:     "test-role",
+				},
+				Config: StartupConfig{
 					Host:                      "test-endpoint",
 					Port:                      443,
 					Insecure:                  true,
 					ImpersonateServiceAccount: "test-sa@example.com",
 					EnableADCPlus:             true,
+					LogGrpc:                   true,
 				},
 				Display: DisplayVars{
 					Verbose:              true,
@@ -145,7 +148,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReadOnly:          true,
 				},
 				Feature: FeatureVars{
-					LogGrpc:          true,
 					LogLevel:         slog.LevelInfo,
 					VertexAIProject:  "vertex-project",
 					VertexAIModel:    "gemini-1.0-pro",
@@ -178,7 +180,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				ReadTimestamp: "2023-01-01T00:00:00Z",
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -233,7 +235,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Timeout: "30s",
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -273,7 +275,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					Insecure:      true, // --insecure takes precedence
 					EnableADCPlus: true,
 				},
@@ -312,7 +314,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					Insecure:      false, // --insecure takes precedence even when false
 					EnableADCPlus: true,
 				},
@@ -350,7 +352,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 				SkipTlsVerify: lo.ToPtr(true),
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Connection: ConnectionVars{},
+				Config: StartupConfig{
 					Insecure:      true, // Uses skip-tls-verify value
 					EnableADCPlus: true,
 				},
@@ -396,7 +399,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				DirectedRead: "invalid-option",
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -470,9 +473,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:       "user-project",
-					Instance:      "user-instance",
-					Database:      "user-database",
+					Project:  "user-project",
+					Instance: "user-instance",
+					Database: "user-database",
+				},
+				Config: StartupConfig{
 					Insecure:      true, // embedded emulator always sets this
 					EnableADCPlus: true,
 				},
@@ -511,9 +516,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:       "emulator-project",  // Default value set in initializeSystemVariables
-					Instance:      "emulator-instance", // Default value set in initializeSystemVariables
-					Database:      "emulator-database", // Default value set in initializeSystemVariables
+					Project:  "emulator-project",  // Default value set in initializeSystemVariables
+					Instance: "emulator-instance", // Default value set in initializeSystemVariables
+					Database: "emulator-database", // Default value set in initializeSystemVariables
+				},
+				Config: StartupConfig{
 					Insecure:      true,
 					EnableADCPlus: true,
 				},
@@ -553,9 +560,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:       "emulator-project",  // Default set for emulator
-					Instance:      "emulator-instance", // Default set for emulator
-					Database:      "",                  // Empty - respects detached mode
+					Project:  "emulator-project",  // Default set for emulator
+					Instance: "emulator-instance", // Default set for emulator
+					Database: "",                  // Empty - respects detached mode
+				},
+				Config: StartupConfig{
 					Insecure:      true,
 					EnableADCPlus: true,
 				},
@@ -594,9 +603,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:       "default",
-					Instance:      "default",
-					Database:      "emulator-database",
+					Project:  "default",
+					Instance: "default",
+					Database: "emulator-database",
+				},
+				Config: StartupConfig{
 					Insecure:      true,
 					EnableADCPlus: true,
 				},
@@ -636,9 +647,11 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Connection: ConnectionVars{
-					Project:       "default",
-					Instance:      "default",
-					Database:      "",
+					Project:  "default",
+					Instance: "default",
+					Database: "",
+				},
+				Config: StartupConfig{
 					Insecure:      true,
 					EnableADCPlus: true,
 				},
@@ -678,7 +691,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -715,7 +728,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				OutputTemplate: "output_full.tmpl",
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -754,7 +767,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -793,7 +806,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 				},
 			},
 			want: systemVariables{
-				Connection: ConnectionVars{
+				Config: StartupConfig{
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
@@ -852,7 +865,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// and those that are set later in run() (e.g., EnableProgressBar, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Connection.WithoutAuthentication", "Registry"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Config.WithoutAuthentication", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
@@ -909,7 +922,8 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	got := newSystemVariablesWithDefaults()
 
 	want := systemVariables{
-		Connection: ConnectionVars{
+		Connection: ConnectionVars{},
+		Config: StartupConfig{
 			EnableADCPlus: true,
 		},
 		Display: DisplayVars{
@@ -1079,7 +1093,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
 				sv.Feature.LogLevel = slog.LevelWarn
-				sv.Feature.SkipSystemCommand = true
+				sv.Config.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -1092,7 +1106,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
 				sv.Feature.LogLevel = slog.LevelWarn
-				sv.Feature.SkipSystemCommand = true
+				sv.Config.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -1105,7 +1119,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
 				sv.Feature.LogLevel = slog.LevelWarn
-				sv.Feature.SkipSystemCommand = false
+				sv.Config.SkipSystemCommand = false
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),
@@ -1119,7 +1133,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 			want: func() systemVariables {
 				sv := newSystemVariablesWithDefaults()
 				sv.Feature.LogLevel = slog.LevelWarn
-				sv.Feature.SkipSystemCommand = true
+				sv.Config.SkipSystemCommand = true
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),

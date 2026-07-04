@@ -223,9 +223,11 @@ func testRunMCPWithNonExistentDatabase(t *testing.T) {
 	}
 	sysVarsNonExistent := systemVariables{
 		Connection: ConnectionVars{
-			Project:               clients.ProjectID,  // Use real project
-			Instance:              clients.InstanceID, // Use real instance
-			Database:              "non-existent-database",
+			Project:  clients.ProjectID,  // Use real project
+			Instance: clients.InstanceID, // Use real instance
+			Database: "non-existent-database",
+		},
+		Config: StartupConfig{
 			Host:                  host,
 			Port:                  port,
 			WithoutAuthentication: true,
@@ -431,12 +433,14 @@ func TestRunMCP(t *testing.T) {
 		// Create a new system variables with modified values
 		modifiedSysVars := &systemVariables{
 			Connection: ConnectionVars{
-				Project:               session.systemVariables.Connection.Project,
-				Instance:              session.systemVariables.Connection.Instance,
-				Database:              session.systemVariables.Connection.Database,
-				Host:                  session.systemVariables.Connection.Host,
-				Port:                  session.systemVariables.Connection.Port,
-				WithoutAuthentication: session.systemVariables.Connection.WithoutAuthentication,
+				Project:  session.systemVariables.Connection.Project,
+				Instance: session.systemVariables.Connection.Instance,
+				Database: session.systemVariables.Connection.Database,
+			},
+			Config: StartupConfig{
+				Host:                  session.systemVariables.Config.Host,
+				Port:                  session.systemVariables.Config.Port,
+				WithoutAuthentication: session.systemVariables.Config.WithoutAuthentication,
 			},
 			Display: DisplayVars{
 				AutoWrap:        true, // Set a different value

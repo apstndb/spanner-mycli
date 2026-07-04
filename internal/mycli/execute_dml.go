@@ -119,7 +119,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
+	session.systemVariables.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:       result.Plan,
 		QueryStats:      queryStats,
 		CommitTimestamp: result.CommitResponse.CommitTs,

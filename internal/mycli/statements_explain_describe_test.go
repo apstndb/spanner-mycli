@@ -857,8 +857,8 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
-				Display:  DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
-				Internal: InternalVars{LastQueryCache: tt.lastQueryCache},
+				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
+				LastResult: LastResult{QueryCache: tt.lastQueryCache},
 			}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
@@ -910,8 +910,8 @@ execution_stats:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
-				Display:  DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
-				Internal: InternalVars{LastQueryCache: tt.lastQueryCache},
+				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
+				LastResult: LastResult{QueryCache: tt.lastQueryCache},
 			}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)

@@ -140,12 +140,12 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 	// This behavior is maintained for java-spanner compatibility where SHOW VARIABLE
 	// COMMIT_RESPONSE returns both values as a result set.
 	if upperName == "COMMIT_RESPONSE" {
-		if sv.Transaction.CommitResponse == nil {
+		if sv.LastResult.CommitResponse == nil {
 			return nil, errIgnored
 		}
 		return map[string]string{
-			"COMMIT_TIMESTAMP": formatTimestamp(sv.Transaction.CommitTimestamp, "NULL"),
-			"MUTATION_COUNT":   strconv.FormatInt(sv.Transaction.CommitResponse.GetCommitStats().GetMutationCount(), 10),
+			"COMMIT_TIMESTAMP": formatTimestamp(sv.LastResult.CommitTimestamp, "NULL"),
+			"MUTATION_COUNT":   strconv.FormatInt(sv.LastResult.CommitResponse.GetCommitStats().GetMutationCount(), 10),
 		}, nil
 	}
 

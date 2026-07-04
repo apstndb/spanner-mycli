@@ -67,7 +67,7 @@ var defaultClientOpts = []option.ClientOption{
 }
 
 func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConfig {
-	if override := sysVars.Internal.EmbeddedClientConfig; override != nil {
+	if override := sysVars.Config.EmbeddedClientConfig; override != nil {
 		return *override
 	}
 	return defaultClientConfig
@@ -321,11 +321,11 @@ func newSessionWithFactories(
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.Feature.LogGrpc {
+	if sysVars.Config.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -360,11 +360,11 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.Feature.LogGrpc {
+	if sysVars.Config.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -992,22 +992,22 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 
 // createClientOptions creates client options based on credential and system variables
 func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
-	if len(sysVars.Internal.EmbeddedClientOptions) > 0 {
-		return append([]option.ClientOption(nil), sysVars.Internal.EmbeddedClientOptions...), nil
+	if len(sysVars.Config.EmbeddedClientOptions) > 0 {
+		return append([]option.ClientOption(nil), sysVars.Config.EmbeddedClientOptions...), nil
 	}
 
 	var opts []option.ClientOption
-	if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
+	if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
 		// Reconstruct the endpoint, adding brackets back for IPv6 addresses
-		endpoint := net.JoinHostPort(sysVars.Connection.Host, strconv.Itoa(sysVars.Connection.Port))
+		endpoint := net.JoinHostPort(sysVars.Config.Host, strconv.Itoa(sysVars.Config.Port))
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
 	switch {
-	case sysVars.Connection.WithoutAuthentication:
+	case sysVars.Config.WithoutAuthentication:
 		opts = append(opts, option.WithoutAuthentication())
-	case sysVars.Connection.EnableADCPlus:
-		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.Connection.ImpersonateServiceAccount))
+	case sysVars.Config.EnableADCPlus:
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.Config.ImpersonateServiceAccount))
 		if err != nil {
 			return nil, err
 		}
