@@ -209,6 +209,7 @@ optimizer statistics: auto_20250605_10_15_54UTC
 #### `SHOW PLAN NODE`
 
 You can also print the raw plan node in the last query using `SHOW PLAN NODE <node_id>` client-side statement.
+The output now includes incoming parent-link context in addition to the YAML node dump.
 
 ```
 spanner> SHOW PLAN NODE 18;
@@ -243,7 +244,13 @@ spanner> SHOW PLAN NODE 18;
 |     total: "2"                                                                                  |
 |     unit: rows                                                                                  |
 +-------------------------------------------------------------------------------------------------+
-1 rows in set (0.00 sec)
+| Incoming Parent Links:                                                                          |
+|   - Parent Node Index: 16                                                                       |
+|     Parent Node Title: [Map] Local Distributed Union <Row>                                      |
+|     Child Link Type: Map                                                                        |
+|     Variable: AlbumId                                                                           |
++-------------------------------------------------------------------------------------------------+
+2 rows in set (0.00 sec)
 ```
 
 ## Query plan linter (EARLY EXPERIMENTAL)
