@@ -65,7 +65,7 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	}
 	outStream := session.systemVariables.StreamManager.GetWriter()
 	// Use streaming whenever there is a real output stream. DUMP output is not a
-	// table layout, so CLI_STREAMING=false should not force row buffering here.
+	// table layout, so CLI_TABLE_STREAMING=false should not force row buffering here.
 	if outStream != nil && outStream != io.Discard {
 		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
 	}

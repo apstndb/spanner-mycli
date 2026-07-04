@@ -170,7 +170,7 @@ type spannerOptions struct {
 	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
 	Output          string  `name:"output" short:"o" help:"Redirect query/data output to file (overwrites existing file)"`
 	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`
-	Streaming       string  `name:"streaming" help:"Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams table output. Non-table formats always stream." enum:"AUTO,TRUE,FALSE" default:"AUTO"`
+	TableStreaming  string  `name:"table-streaming" help:"Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams table output. Non-table formats always stream." enum:"AUTO,TRUE,FALSE" default:"AUTO"`
 	Color           string  `name:"color" help:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
 	Quiet           bool    `name:"quiet" short:"q" help:"Suppress result lines like 'rows in set' for clean output"`
 }
@@ -590,7 +590,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
 		{"CLI_QUERY_MODE", string(lo.FromPtr(opts.QueryMode)), "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
-		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
+		{"CLI_TABLE_STREAMING", lo.Ternary(opts.TableStreaming != "" && opts.TableStreaming != "AUTO", opts.TableStreaming, ""), "--table-streaming"},
 		{"CLI_STYLED_OUTPUT", lo.Ternary(opts.Color != "" && opts.Color != "AUTO", opts.Color, ""), "--color"},
 	}); err != nil {
 		return nil, err

@@ -188,7 +188,7 @@ Flags:
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
   -o, --output=STRING                          Redirect query/data output to file (overwrites existing file)
       --skip-column-names                      Suppress column headers in output
-      --streaming="AUTO"                       Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
+      --table-streaming="AUTO"                 Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
                                                table output. Non-table formats always stream.
       --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
                                                FALSE (never styled)
@@ -977,7 +977,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_ENABLE_HIGHLIGHT       | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE    | READ_WRITE | `"TRUE"`                                       |
 | CLI_FIXED_WIDTH            | READ_WRITE | `80`                                           |
-| CLI_STREAMING              | READ_WRITE | `"AUTO"`                                       |
+| CLI_TABLE_STREAMING        | READ_WRITE | `"AUTO"`                                       |
 | CLI_TABLE_PREVIEW_ROWS     | READ_WRITE | `50`                                           |
 | CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
@@ -999,7 +999,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 >
 > You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, `--csv`, or `--format`.
 
-> **Note**: `CLI_STREAMING` controls table streaming output mode:
+> **Note**: `CLI_TABLE_STREAMING` controls table streaming output mode:
 > - `AUTO` (default) - Buffers Table formats for accurate column width calculation; non-table formats stream
 > - `TRUE` - Streams Table formats too (reduces memory usage, faster time-to-first-byte)
 > - `FALSE` - Buffers Table formats; non-table formats still stream

@@ -433,6 +433,36 @@ func TestParseFlagsCombinations(t *testing.T) {
 	}
 }
 
+// TestTableStreamingFlagMapping verifies the new table-specific streaming CLI flag name and behavior.
+func TestTableStreamingFlagMapping(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseTestFlags(withRequiredFlags("--table-streaming", "FALSE"))
+	if err != nil {
+		t.Fatalf("parseTestFlags() unexpected error for --table-streaming: %v", err)
+	}
+
+	sysVars, err := initializeSystemVariables(&gopts.Spanner)
+	if err != nil {
+		t.Fatalf("initializeSystemVariables() unexpected error: %v", err)
+	}
+
+	gotMode, err := sysVars.Get("CLI_TABLE_STREAMING")
+	if err != nil {
+		t.Fatalf("Get(CLI_TABLE_STREAMING) unexpected error: %v", err)
+	}
+	if got, ok := gotMode["CLI_TABLE_STREAMING"]; !ok || got != "FALSE" {
+		t.Fatalf("Get(CLI_TABLE_STREAMING) = %v, want FALSE", got)
+	}
+	if sysVars.Query.StreamingMode != enums.StreamingModeFalse {
+		t.Fatalf("Query.StreamingMode = %v, want %v", sysVars.Query.StreamingMode, enums.StreamingModeFalse)
+	}
+
+	if _, err := parseTestFlags(withRequiredFlags("--streaming", "FALSE")); err == nil {
+		t.Fatal("expected parse failure for deprecated --streaming flag, got nil")
+	}
+}
+
 // TestParseFlagsValidation tests flag value validation
 func TestParseFlagsValidation(t *testing.T) {
 	t.Parallel()

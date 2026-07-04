@@ -371,7 +371,7 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 
 // createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
 // Non-table formats are always streaming because they do not benefit from row buffering.
-// For table formats, CLI_STREAMING controls whether to trade layout quality for immediate output.
+// For table formats, CLI_TABLE_STREAMING controls whether to trade layout quality for immediate output.
 func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
 	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
 	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
@@ -384,7 +384,7 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		}
 	}
 
-	// Non-table formats always stream regardless of CLI_STREAMING; only
+	// Non-table formats always stream regardless of CLI_TABLE_STREAMING; only
 	// guard against an unexpected enum value.
 	switch sysVars.Query.StreamingMode {
 	case enums.StreamingModeTrue, enums.StreamingModeFalse, enums.StreamingModeAuto:
