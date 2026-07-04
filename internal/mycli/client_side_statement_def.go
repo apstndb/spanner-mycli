@@ -895,6 +895,33 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 	// System Variable
 	{
+		// Must precede the generic `SET <name> = <value>` definition so that
+		// LOCAL is consumed as a keyword rather than as a variable name.
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Set variable for the current transaction`,
+				Syntax: `SET LOCAL <name> = <value>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+LOCAL\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>\S.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &SetLocalStatement{VarName: groups["name"], Value: groups["value"]}, nil
+		},
+		Completion: []fuzzyArgCompletion{
+			{
+				// Value completion: SET LOCAL <name> = <partial_value>
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+LOCAL\s+(\S+)\s*=\s*(\S*)$`),
+				CompletionType: fuzzyCompleteVariableValue,
+			},
+			{
+				// Name completion: SET LOCAL <partial_name>
+				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+LOCAL\s+([^\s=]*)$`),
+				CompletionType: fuzzyCompleteVariable,
+				Suffix:         " = ",
+			},
+		},
+	},
+	{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Set variable`,

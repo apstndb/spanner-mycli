@@ -185,28 +185,57 @@ func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *sys
 	return NewSession(ctx, sysVars, h.clientOpts...)
 }
 
-func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
-	newSystemVariables := *h.systemVariables
-	newSystemVariables.Connection.Database = s.Database
-	newSystemVariables.Connection.Role = s.Role
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
+// validateSessionSwitch rejects USE/DETACH while a transaction or batch is
+// active. Switching sessions would silently abandon the transaction (its locks
+// would persist until client teardown) and drop any buffered batch statements.
+func (h *SessionHandler) validateSessionSwitch() error {
+	if h.Session == nil {
+		return nil
+	}
+	if h.InTransaction() {
+		return errors.New("cannot switch session while a transaction is active; COMMIT, ROLLBACK, or CLOSE it first")
+	}
+	if h.batch.IsActive() {
+		return errors.New("cannot switch session while a batch is active; RUN BATCH or ABORT BATCH first")
+	}
+	return nil
+}
 
-	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
-	if err != nil {
+// switchSession mutates the single live systemVariables instance in place and
+// builds a replacement session around it. The registry holds pointers into this
+// struct and other components (Cli, StreamManager consumers) hold the same
+// pointer, so copying the struct would fork the state they read (split-brain).
+// On any failure the connection fields and the inTransaction hook (which
+// newSessionWithFactories points at the new session) are restored.
+func (h *SessionHandler) switchSession(ctx context.Context, database, role string, validate func(*Session) error) (*Result, error) {
+	if err := h.validateSessionSwitch(); err != nil {
 		return nil, err
 	}
 
-	// Check if the target database exists
-	exists, err := newSession.DatabaseExists(ctx)
+	sysVars := h.systemVariables
+	oldDatabase, oldRole := sysVars.Connection.Database, sysVars.Connection.Role
+	oldInTransaction := sysVars.inTransaction
+	sysVars.Connection.Database = database
+	sysVars.Connection.Role = role
+
+	restore := func() {
+		sysVars.Connection.Database = oldDatabase
+		sysVars.Connection.Role = oldRole
+		sysVars.inTransaction = oldInTransaction
+	}
+
+	newSession, err := h.createSessionWithOpts(ctx, sysVars)
 	if err != nil {
-		newSession.Close()
+		restore()
 		return nil, err
 	}
 
-	if !exists {
-		newSession.Close()
-		return nil, fmt.Errorf("unknown database %q", s.Database)
+	if validate != nil {
+		if err := validate(newSession); err != nil {
+			newSession.Close()
+			restore()
+			return nil, err
+		}
 	}
 
 	// Replace the old session with the new one
@@ -216,25 +245,22 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 	return &Result{}, nil
 }
 
+func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
+	return h.switchSession(ctx, s.Database, s.Role, func(newSession *Session) error {
+		exists, err := newSession.DatabaseExists(ctx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("unknown database %q", s.Database)
+		}
+		return nil
+	})
+}
+
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
-	newSystemVariables := *h.systemVariables
-
 	// Clear database and role to switch to detached mode
-	newSystemVariables.Connection.Database = ""
-	newSystemVariables.Connection.Role = ""
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
-
-	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
-	if err != nil {
-		return nil, err
-	}
-
-	// Replace the old session with the new one
-	h.Session.Close()
-	h.Session = newSession
-
-	return &Result{}, nil
+	return h.switchSession(ctx, "", "", nil)
 }
 
 type SessionMode int
@@ -937,6 +963,14 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	defer func() {
 		if result != nil {
 			result.BatchInfo = s.batch.Info()
+		}
+	}()
+	// SET LOCAL values revert when the transaction ends for any reason:
+	// COMMIT/ROLLBACK/CLOSE statements, or automatic rollback on statement error.
+	// All those paths funnel through here, so one post-statement check suffices.
+	defer func() {
+		if s.txn != nil {
+			s.txn.restoreLocalVarsIfIdle()
 		}
 	}()
 	if _, ok := stmt.(MutationStatement); ok {

@@ -50,6 +50,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
+    * `SET LOCAL <name> = <value>` statement (transaction-scoped; the value reverts when the transaction ends)
     * `SHOW VARIABLES` statement
     * `SHOW VARIABLE <name>` statement
     * `--set <name>=<value>` flag
@@ -609,6 +610,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Start DML batching                                              | `START BATCH DML;`                                                                                         |                                                                                                                                                                                           |
 | Run active batch                                                | `RUN BATCH;`                                                                                               |                                                                                                                                                                                           |
 | Abort active batch                                              | `ABORT BATCH [TRANSACTION];`                                                                               |                                                                                                                                                                                           |
+| Set variable for the current transaction                        | `SET LOCAL <name> = <value>;`                                                                              |                                                                                                                                                                                           |
 | Set variable                                                    | `SET <name> = <value>;`                                                                                    |                                                                                                                                                                                           |
 | Add value to variable                                           | `SET <name> += <value>;`                                                                                   |                                                                                                                                                                                           |
 | Show variables                                                  | `SHOW VARIABLES;`                                                                                          |                                                                                                                                                                                           |

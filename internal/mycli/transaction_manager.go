@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -120,6 +121,18 @@ type TransactionManager struct {
 	client       *spanner.Client      // same pointer as Session.client
 	sysVars      *systemVariables     // same pointer as Session.systemVariables
 	clientConfig spanner.ClientConfig // for directed read in tryQueryInTransaction
+
+	// localVarUndo records (name, previous value) pairs for system variables
+	// changed by SET LOCAL in the current transaction. Guarded by mu.
+	// It lives on the TransactionManager rather than on transactionContext so it
+	// survives the pending -> active context replacement in Begin*TransactionLocked.
+	localVarUndo []savedLocalVar
+}
+
+// savedLocalVar is one SET LOCAL undo-log entry.
+type savedLocalVar struct {
+	name     string // uppercase variable name
+	oldValue string // display-string value before SET LOCAL, restored via Registry.Set
 }
 
 // NewTransactionManager creates a new TransactionManager.
@@ -247,6 +260,48 @@ func (tm *TransactionManager) withReadOnlyTransactionOrStart(ctx context.Context
 
 	// Now execute within the transaction we created
 	return tm.withReadOnlyTransaction(fn)
+}
+
+// pushLocalVarUndo appends a SET LOCAL undo entry for the current transaction.
+// It fails if no transaction is active, because the entry would never be replayed.
+func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
+	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil {
+			return ErrNoTransaction
+		}
+		tm.localVarUndo = append(tm.localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
+		return nil
+	})
+}
+
+// restoreLocalVarsIfIdle replays the SET LOCAL undo log once the transaction has
+// ended. SET LOCAL values revert on commit, rollback, and close alike, so instead
+// of hooking every transaction-ending site (including automatic rollback on
+// statement error), this runs after each statement execution and acts only when
+// no transaction context remains. Replay happens outside the lock because
+// variable setters may themselves inspect transaction state.
+func (tm *TransactionManager) restoreLocalVarsIfIdle() {
+	var entries []savedLocalVar
+	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr != nil || len(tm.localVarUndo) == 0 {
+			return nil
+		}
+		entries = tm.localVarUndo
+		tm.localVarUndo = nil
+		return nil
+	})
+
+	// Replay in reverse so that for a variable set twice, the value saved by the
+	// first SET LOCAL wins.
+	for _, e := range slices.Backward(entries) {
+		if err := tm.sysVars.Registry.Set(e.name, e.oldValue, false); err != nil {
+			// SET LOCAL verified at set time that the saved value round-trips
+			// through the setter, so a failure here means session state changed
+			// underneath us; the variable keeps its transaction-local value.
+			slog.Warn("failed to restore SET LOCAL variable after transaction end",
+				"name", e.name, "value", e.oldValue, "err", err)
+		}
+	}
 }
 
 // clearTransactionContext atomically clears the transaction context.

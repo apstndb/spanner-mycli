@@ -935,6 +935,16 @@ TABLE Singers (42)
 			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
 		},
 		{
+			desc:  "SET LOCAL statement",
+			input: `SET LOCAL OPTIMIZER_VERSION = "3"`,
+			want:  &SetLocalStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
+		},
+		{
+			desc:  "SET statement with variable named LOCAL is not SET LOCAL",
+			input: `SET LOCAL = "3"`,
+			want:  &SetStatement{VarName: "LOCAL", Value: `"3"`},
+		},
+		{
 			desc:  "SHOW VARIABLE statement",
 			input: `SHOW VARIABLE OPTIMIZER_VERSION`,
 			want:  &ShowVariableStatement{VarName: "OPTIMIZER_VERSION"},
