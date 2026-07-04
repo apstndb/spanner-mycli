@@ -10,9 +10,11 @@ permissions:
   contents: read
 
 # Cancel superseded runs on the same ref (e.g. new pushes to a PR branch).
+# Keep main-branch runs alive so post-merge coverage/sync history is not lost
+# when merges land in quick succession.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   readme-sync:
