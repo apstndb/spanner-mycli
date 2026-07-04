@@ -879,13 +879,13 @@ priority = "HIGH"
 			assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
+			if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Config.Host, sysVars.Config.Port)
 			}
 			assertEqual(t, "Endpoint (constructed from Host:Port)", gotEndpoint, &tt.wantEndpoint)
 			assertEqual(t, "Role", sysVars.Connection.Role, &tt.wantRole)
-			assertEqual(t, "LogGrpc", sysVars.Feature.LogGrpc, &tt.wantLogGrpc)
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "LogGrpc", sysVars.Config.LogGrpc, &tt.wantLogGrpc)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 		})
 	}
 }
@@ -1043,9 +1043,9 @@ func TestFlagSpecialModes(t *testing.T) {
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 			assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
-			assertEqual(t, "MCP", sysVars.Feature.MCP, &tt.wantMCP)
+			assertEqual(t, "MCP", sysVars.Config.MCP, &tt.wantMCP)
 
 			// For CLI_FORMAT, we need to simulate what run() does
 			// Check if this test case has specified a desired CLI_FORMAT value
@@ -2278,7 +2278,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 						if sysVars.Connection.Role != tt.wantRole {
 							t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 						}
-						assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+						assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 						assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
 						assertEqual(t, "ReadOnly", sysVars.Transaction.ReadOnly, &tt.wantReadOnly)
 						assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
@@ -2360,11 +2360,11 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			if sysVars.Connection.Role != tt.wantRole {
 				t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 			}
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
+			if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Config.Host, sysVars.Config.Port)
 			}
 			if gotEndpoint != tt.wantEndpoint {
 				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
@@ -2436,10 +2436,10 @@ func TestHostPortFlags(t *testing.T) {
 				return
 			}
 
-			if sysVars.Connection.Host != tt.wantHost {
-				t.Errorf("Host = %q, want %q", sysVars.Connection.Host, tt.wantHost)
+			if sysVars.Config.Host != tt.wantHost {
+				t.Errorf("Host = %q, want %q", sysVars.Config.Host, tt.wantHost)
 			}
-			assertEqual(t, "Port", sysVars.Connection.Port, &tt.wantPort)
+			assertEqual(t, "Port", sysVars.Config.Port, &tt.wantPort)
 		})
 	}
 }

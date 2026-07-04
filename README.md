@@ -967,7 +967,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_VERBOSE                | READ_WRITE | `TRUE`                                         |
 | CLI_PROTO_DESCRIPTOR_FILE  | READ_WRITE | `"order_descriptors.pb"`                       |
 | CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
-| CLI_INSECURE               | READ_WRITE | `"FALSE"`                                      |
+| CLI_INSECURE               | READ_ONLY  | `"FALSE"`                                      |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |

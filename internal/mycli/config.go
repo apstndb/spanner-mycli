@@ -359,7 +359,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	sysVars.Connection.Instance = opts.InstanceId
 	sysVars.Connection.Database = determineInitialDatabase(opts)
 	sysVars.Display.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
-	sysVars.Feature.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
+	sysVars.Config.MCP = opts.MCP                      // Set MCP field for CLI_MCP system variable
 
 	// Override defaults only if explicitly provided
 	if opts.Prompt != nil {
@@ -392,11 +392,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 
 	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
 	if opts.Insecure != nil {
-		sysVars.Connection.Insecure = *opts.Insecure
+		sysVars.Config.Insecure = *opts.Insecure
 	} else if opts.SkipTlsVerify != nil {
-		sysVars.Connection.Insecure = *opts.SkipTlsVerify
+		sysVars.Config.Insecure = *opts.SkipTlsVerify
 	} else {
-		sysVars.Connection.Insecure = false // default value
+		sysVars.Config.Insecure = false // default value
 	}
 
 	// Handle --endpoint/--deployment-endpoint aliases with proper precedence
@@ -412,37 +412,37 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
 		}
-		sysVars.Connection.Host, sysVars.Connection.Port = host, port
+		sysVars.Config.Host, sysVars.Config.Port = host, port
 	} else if opts.Host != "" || opts.Port != 0 {
 		// Handle --host and --port flags
 		if opts.Port != 0 && opts.Host == "" {
 			// Only port specified: use localhost for emulator
-			sysVars.Connection.Host = "localhost"
-			sysVars.Connection.Port = opts.Port
+			sysVars.Config.Host = "localhost"
+			sysVars.Config.Port = opts.Port
 		} else if opts.Host != "" && opts.Port == 0 {
 			// Only host specified: use standard Spanner port
-			sysVars.Connection.Host = opts.Host
-			sysVars.Connection.Port = 443
+			sysVars.Config.Host = opts.Host
+			sysVars.Config.Port = 443
 		} else {
 			// Both specified
-			sysVars.Connection.Host = opts.Host
-			sysVars.Connection.Port = opts.Port
+			sysVars.Config.Host = opts.Host
+			sysVars.Config.Port = opts.Port
 		}
 	}
 	sysVars.Params = params
-	sysVars.Feature.LogGrpc = opts.LogGrpc
+	sysVars.Config.LogGrpc = opts.LogGrpc
 	sysVars.Feature.LogLevel = l
-	sysVars.Connection.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
+	sysVars.Config.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.Feature.VertexAIProject = opts.VertexAIProject
 	sysVars.Feature.AsyncDDL = opts.Async
 
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command
 	if opts.SkipSystemCommand {
-		sysVars.Feature.SkipSystemCommand = true
+		sysVars.Config.SkipSystemCommand = true
 	} else if opts.SystemCommand != nil {
 		// --system-command=OFF disables system commands
-		sysVars.Feature.SkipSystemCommand = *opts.SystemCommand == "OFF"
+		sysVars.Config.SkipSystemCommand = *opts.SystemCommand == "OFF"
 	}
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
 
@@ -546,8 +546,8 @@ func applyFormatAndSetOptions(sysVars *systemVariables, opts *spannerOptions) er
 func applyEmbeddedRuntimeDefaults(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.usesEmbeddedRuntime() {
 		// When using an embedded runtime, insecure connection is required.
-		sysVars.Connection.Insecure = true
-		// sysVars.Connection.Host/Port and authentication-related settings are set in run() after the runtime starts.
+		sysVars.Config.Insecure = true
+		// sysVars.Config.Host/Port and authentication-related settings are set in run() after the runtime starts.
 
 		// Set default values for embedded runtime if not specified by user.
 		if sysVars.Connection.Project == "" {

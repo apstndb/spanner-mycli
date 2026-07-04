@@ -316,7 +316,7 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 		}
 	}
 
-	sysVars.Internal.LastQueryCache = &LastQueryCache{
+	sysVars.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,

@@ -207,8 +207,11 @@ func (r *VarRegistry) registerAll() {
 		"A boolean indicating whether to display progress bars during operations. The default is false."))
 	r.Register("CLI_ASYNC_DDL", BoolVar(&sv.Feature.AsyncDDL,
 		"A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))
-	r.Register("CLI_SKIP_SYSTEM_COMMAND", BoolVar(&sv.Feature.SkipSystemCommand,
-		"Controls whether system commands are disabled."))
+	// Read-only: this is a security feature (--skip-system-command /
+	// --system-command=OFF); if it were settable, a user in a restricted
+	// environment could re-enable shell access with a single SET.
+	r.Register("CLI_SKIP_SYSTEM_COMMAND", BoolVar(&sv.Config.SkipSystemCommand,
+		"A read-only boolean indicating whether system commands are disabled. Set by --skip-system-command or --system-command=OFF.").AsReadOnly())
 	r.Register("CLI_TAB_VISUALIZE", BoolVar(&sv.Display.TabVisualize, "Visualize tab characters with arrow symbol in table output."))
 	r.Register("CLI_SKIP_COLUMN_NAMES", BoolVar(&sv.Display.SkipColumnNames,
 		"A boolean indicating whether to suppress column headers in output. The default is false."))
@@ -253,9 +256,9 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_VERTEXAI_MODEL", StringVar(&sv.Feature.VertexAIModel, "Vertex AI model for natural language features."))
 	r.Register("CLI_VERTEXAI_LOCATION", StringVar(&sv.Feature.VertexAILocation, "Vertex AI location for natural language features."))
 	r.Register("CLI_ROLE", StringVar(&sv.Connection.Role, "Cloud Spanner database role.").AsReadOnly())
-	r.Register("CLI_HOST", StringVar(&sv.Connection.Host, "Host on which Spanner server is located").AsReadOnly())
-	r.Register("CLI_EMULATOR_PLATFORM", StringVar(&sv.Connection.EmulatorPlatform, "Container platform used by embedded emulator.").AsReadOnly())
-	r.Register("CLI_IMPERSONATE_SERVICE_ACCOUNT", StringVar(&sv.Connection.ImpersonateServiceAccount, "Service account to impersonate.").AsReadOnly())
+	r.Register("CLI_HOST", StringVar(&sv.Config.Host, "Host on which Spanner server is located").AsReadOnly())
+	r.Register("CLI_EMULATOR_PLATFORM", StringVar(&sv.Config.EmulatorPlatform, "Container platform used by embedded emulator.").AsReadOnly())
+	r.Register("CLI_IMPERSONATE_SERVICE_ACCOUNT", StringVar(&sv.Config.ImpersonateServiceAccount, "Service account to impersonate.").AsReadOnly())
 
 	// === Integer variables (10+) ===
 	r.Register("MAX_PARTITIONED_PARALLELISM", IntVar(&sv.Query.MaxPartitionedParallelism,
@@ -272,7 +275,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("CLI_SUPPRESS_RESULT_LINES", BoolVar(&sv.Display.SuppressResultLines,
 		"Suppress result lines like 'rows in set' for clean output. Useful for scripting and dump operations."))
 	r.Register("CLI_PORT", &IntGetterVar{
-		getter:      func() int64 { return int64(sv.Connection.Port) },
+		getter:      func() int64 { return int64(sv.Config.Port) },
 		description: "Port number for connections.",
 	})
 
@@ -373,11 +376,11 @@ func (r *VarRegistry) registerAll() {
 		return "NULL"
 	}, "Current terminal width. Returns NULL if not connected to a terminal."))
 	r.Register("READ_TIMESTAMP", &TimestampVar{
-		ptr:         &sv.Query.ReadTimestamp,
+		ptr:         &sv.LastResult.ReadTimestamp,
 		description: "The read timestamp of the most recent read-only transaction.",
 	})
 	r.Register("COMMIT_TIMESTAMP", &TimestampVar{
-		ptr:         &sv.Transaction.CommitTimestamp,
+		ptr:         &sv.LastResult.CommitTimestamp,
 		description: "The commit timestamp of the last read-write transaction that Spanner committed.",
 	})
 
@@ -420,8 +423,8 @@ func (r *VarRegistry) registerAll() {
 	})
 
 	r.Register("CLI_ENDPOINT", &EndpointVar{
-		hostPtr:     &sv.Connection.Host,
-		portPtr:     &sv.Connection.Port,
+		hostPtr:     &sv.Config.Host,
+		portPtr:     &sv.Config.Port,
 		description: "Host and port for connections (host:port format).",
 	})
 
@@ -481,7 +484,7 @@ func (r *VarRegistry) registerAll() {
 	// to detect whether a session has been created. Could use native support
 	// for session-init-only behavior if added to VarHandler (see TODO in var_handler.go).
 	r.Register("CLI_ENABLE_ADC_PLUS", &CustomVar{
-		base: BoolVar(&sv.Connection.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
+		base: BoolVar(&sv.Config.EnableADCPlus, "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."),
 		customSetter: func(value string) error {
 			if sv.inTransaction != nil {
 				return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
@@ -490,14 +493,14 @@ func (r *VarRegistry) registerAll() {
 			if err != nil {
 				return err
 			}
-			sv.Connection.EnableADCPlus = b
+			sv.Config.EnableADCPlus = b
 			return nil
 		},
 	})
 
-	r.Register("CLI_MCP", BoolVar(&sv.Feature.MCP, "A read-only boolean indicating whether the connection is running as an MCP server.").AsReadOnly())
-	r.Register("CLI_INSECURE", BoolVar(&sv.Connection.Insecure, "Skip TLS certificate verification (insecure).").AsReadOnly())
-	r.Register("CLI_LOG_GRPC", BoolVar(&sv.Feature.LogGrpc, "Enable gRPC logging.").AsReadOnly())
+	r.Register("CLI_MCP", BoolVar(&sv.Config.MCP, "A read-only boolean indicating whether the connection is running as an MCP server.").AsReadOnly())
+	r.Register("CLI_INSECURE", BoolVar(&sv.Config.Insecure, "Skip TLS certificate verification (insecure).").AsReadOnly())
+	r.Register("CLI_LOG_GRPC", BoolVar(&sv.Config.LogGrpc, "Enable gRPC logging.").AsReadOnly())
 
 	// === Unimplemented variables ===
 	r.Register("AUTOCOMMIT", &UnimplementedVar{
