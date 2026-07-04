@@ -655,7 +655,7 @@ type CQLStatement struct {
 	CQL string
 }
 
-func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (result *Result, err error) {
 	// lazy initialize gocql.ClusterConfig
 	if session.cqlCluster == nil {
 		cluster := spancql.NewCluster(&spancql.Options{
@@ -685,7 +685,17 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 
 	q := s.Query(cs.CQL)
 	it := q.WithContext(ctx).Iter()
-	defer it.Close()
+	defer func() {
+		closeErr := it.Close()
+		if closeErr == nil {
+			return
+		}
+		if err == nil {
+			err = closeErr
+			return
+		}
+		err = errors.Join(err, closeErr)
+	}()
 
 	var headers []string
 	for _, col := range it.Columns() {
@@ -711,7 +721,8 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 		rows = append(rows, row)
 	}
 
-	return &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}, nil
+	result = &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}
+	return result, nil
 }
 
 func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {

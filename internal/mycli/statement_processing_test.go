@@ -1120,6 +1120,21 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 	}
 }
 
+func TestBuildStatement_BeginRoInvalidTimestampValue(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildStatement("BEGIN RO foo")
+	if err == nil {
+		t.Fatal("BuildStatement(BEGIN RO foo) expected error, but got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse as RFC3339 timestamp") {
+		t.Fatalf("BuildStatement(BEGIN RO foo) error=%q, want RFC3339 parse failure", err)
+	}
+	if !strings.Contains(err.Error(), "seconds staleness") {
+		t.Fatalf("BuildStatement(BEGIN RO foo) error=%q, want seconds staleness parse failure", err)
+	}
+}
+
 func TestIsCreateDDL(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
