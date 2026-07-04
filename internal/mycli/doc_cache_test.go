@@ -170,6 +170,27 @@ func TestDocCache_TTL_StaleEntryReturnedOnFetchError(t *testing.T) {
 	}
 }
 
+func TestDocCache_GetFreshEntryCorruptDataRefetchesFromAPI(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t,
+		withDocFetcher(func(_ context.Context, _ string) (string, error) {
+			return "fresh from API", nil
+		}),
+	)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	content, ok := c.Get(context.Background(), "documents/test/doc")
+	if !ok {
+		t.Fatal("expected cache hit from API refresh")
+	}
+	if content != "fresh from API" {
+		t.Errorf("content = %q", content)
+	}
+}
+
 func TestDocCache_EmbeddedDocRefreshedWhenAPIAvailable(t *testing.T) {
 	t.Parallel()
 	c := newTestCache(t,
