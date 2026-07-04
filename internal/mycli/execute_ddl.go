@@ -115,6 +115,9 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if bars != nil {
 		progresses := metadata.GetProgress()
 		for i, progress := range progresses {
+			if i >= len(bars) {
+				break
+			}
 			bar := bars[i]
 			if bar.Completed() {
 				continue
@@ -142,6 +145,9 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		if bars != nil {
 			progresses := metadata.GetProgress()
 			for i, progress := range progresses {
+				if i >= len(bars) {
+					break
+				}
 				bar := bars[i]
 				if bar.Completed() {
 					continue
