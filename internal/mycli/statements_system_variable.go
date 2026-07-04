@@ -3,6 +3,7 @@ package mycli
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -90,6 +91,62 @@ func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	if err := session.systemVariables.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}
+	return &Result{KeepVariables: true}, nil
+}
+
+// SetLocalStatement implements `SET LOCAL <name> = <value>`: the change is
+// scoped to the current transaction. The previous value is recorded in the
+// transaction's undo log (TransactionManager.localVarUndo) and restored when
+// the transaction ends, whether by COMMIT, ROLLBACK, or CLOSE.
+// Following java-spanner, SET LOCAL outside a transaction is an error.
+type SetLocalStatement struct {
+	VarName string
+	Value   string
+}
+
+func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.txn == nil || !session.InTransaction() {
+		return nil, errors.New("SET LOCAL requires an active transaction; start one with BEGIN")
+	}
+
+	sysVars := session.systemVariables
+	upperName := strings.ToUpper(s.VarName)
+
+	// Mirror the SET special cases for variables living outside the registry.
+	if upperName == "COMMIT_RESPONSE" || upperName == "CLI_DIRECT_READ" {
+		return nil, errSetterUnimplemented{s.VarName}
+	}
+
+	oldValue, err := sysVars.Registry.Get(upperName)
+	if err != nil {
+		var unknownErr *ErrUnknownVariable
+		if errors.As(err, &unknownErr) {
+			return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
+		}
+		return nil, err
+	}
+
+	// Pre-flight: verify the saved value can be set back, so the restore at
+	// transaction end cannot fail. This also rejects read-only variables and
+	// variables whose setter refuses writes mid-transaction, before any state
+	// changes. Setting the current value again is semantically a no-op.
+	if err := sysVars.Registry.Set(upperName, oldValue, false); err != nil {
+		return nil, fmt.Errorf("%s does not support SET LOCAL: %w", upperName, err)
+	}
+
+	if err := sysVars.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
+		return nil, err
+	}
+
+	if err := session.txn.pushLocalVarUndo(upperName, oldValue); err != nil {
+		// The transaction ended between the check above and the push;
+		// undo the set so the value does not silently outlive the transaction.
+		if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
+			err = errors.Join(err, restoreErr)
+		}
+		return nil, err
+	}
+
 	return &Result{KeepVariables: true}, nil
 }
 
