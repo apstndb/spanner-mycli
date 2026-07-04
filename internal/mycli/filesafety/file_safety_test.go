@@ -23,7 +23,21 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
+
+type mockFileInfo struct {
+	name string
+	mode os.FileMode
+	size int64
+}
+
+func (f mockFileInfo) Name() string       { return f.name }
+func (f mockFileInfo) Size() int64        { return f.size }
+func (f mockFileInfo) Mode() os.FileMode  { return f.mode }
+func (f mockFileInfo) ModTime() time.Time { return time.Time{} }
+func (f mockFileInfo) IsDir() bool        { return false }
+func (f mockFileInfo) Sys() interface{}   { return nil }
 
 func TestValidateFileSafety(t *testing.T) {
 	t.Parallel()
@@ -122,6 +136,23 @@ func TestValidateFileSafety(t *testing.T) {
 				t.Errorf("ValidateFileSafety() error = %v, want error containing %q", err, tt.errMsg)
 			}
 		})
+	}
+}
+
+func TestValidateFileSafety_ModeCharDevice(t *testing.T) {
+	t.Parallel()
+	fi := mockFileInfo{
+		name: "char-device",
+		mode: os.ModeCharDevice,
+		size: 0,
+	}
+
+	err := ValidateFileSafety(fi, "/dev/null", nil)
+	if err == nil {
+		t.Fatalf("expected error for character device")
+	}
+	if !strings.Contains(err.Error(), "character device") {
+		t.Errorf("error = %v, want char device error", err)
 	}
 }
 
