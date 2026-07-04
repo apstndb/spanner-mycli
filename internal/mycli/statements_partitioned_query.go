@@ -29,6 +29,10 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 			return toRow(base64.StdEncoding.EncodeToString(partition.GetPartitionToken()))
 		},
 	))
+	defer func() {
+		batchROTx.Cleanup(ctx)
+		batchROTx.Close()
+	}()
 
 	ts, err := batchROTx.Timestamp()
 	if err != nil {

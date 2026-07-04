@@ -1107,6 +1107,7 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"EXPLAIN FORMAT SELECT * FROM t1",
 		"EXPLAIN WIDTH= SELECT * FROM t1",
 		"EXPLAIN WIDTH SELECT * FROM t1",
+		"BEGIN RO foo",
 	}
 
 	for _, input := range invalidInputs {
