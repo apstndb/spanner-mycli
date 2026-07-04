@@ -47,6 +47,7 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 make check                    # REQUIRED before ANY push (test + lint + fmt-check)
 make build                    # Build the application
 make test-quick               # Quick tests during development
+make check-race               # Unit tests with race detector (CI also runs this)
 make fmt                      # Format code
 
 # Development tools (Go tool directive, managed via go.mod)
