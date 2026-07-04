@@ -170,6 +170,9 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 		content, err := c.decompress(entry.data)
 		if err != nil {
 			slog.Warn("Failed to decompress cached document, attempting refresh", "name", name, "error", err)
+			if c.fetch == nil {
+				return "", false
+			}
 		} else {
 			return content, true
 		}

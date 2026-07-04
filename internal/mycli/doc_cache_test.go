@@ -191,6 +191,26 @@ func TestDocCache_GetFreshEntryCorruptDataRefetchesFromAPI(t *testing.T) {
 	}
 }
 
+func TestDocCache_GetFreshEntryCorruptDataWithoutAPIReturnsMiss(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	c := newTestCache(t,
+		withNowFunc(func() time.Time { return now }),
+	)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: now.Add(-time.Minute), // fresh under default TTL
+	}
+
+	content, ok := c.Get(context.Background(), "documents/test/doc")
+	if ok {
+		t.Fatal("expected cache miss for corrupted fresh entry without fetcher")
+	}
+	if content != "" {
+		t.Errorf("content = %q, want empty", content)
+	}
+}
+
 func TestDocCache_EmbeddedDocRefreshedWhenAPIAvailable(t *testing.T) {
 	t.Parallel()
 	c := newTestCache(t,
