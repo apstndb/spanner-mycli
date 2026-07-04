@@ -40,6 +40,28 @@ TODO
   - When both flags are used, `--skip-system-command` takes precedence
   - Security feature to prevent shell command execution in restricted environments
 
+##### CLI_TABLE_STREAMING
+- **Type**: ENUM
+- **Default**: AUTO
+- **Description**: Controls streaming behavior for table-oriented output formats.
+- **Access**: Read/Write
+- **Valid Values**:
+  - `AUTO` (default) - Buffer table output to calculate widths for stable layout.
+  - `TRUE` - Stream table output as rows are produced for faster time-to-first-byte.
+  - `FALSE` - Never stream table output; always buffer table output for full layout.
+- **Usage**:
+  ```sql
+  SET CLI_TABLE_STREAMING = 'FALSE';
+  SELECT * FROM users;  -- Table output is buffered for width stability
+
+  SET CLI_TABLE_STREAMING = 'TRUE';
+  SELECT * FROM users;  -- Table output is streamed
+  ```
+- **Notes**:
+  - This setting only affects table formats. Non-table formats (CSV, JSONL, etc.) continue to stream regardless.
+  - `CLI_TABLE_PREVIEW_ROWS` controls how many rows are used to estimate column width before streaming.
+  - `AUTO` is the safe default for balanced memory usage and result formatting.
+
 ##### CLI_FORMAT
 - **Type**: STRING
 - **Default**: TABLE

@@ -142,7 +142,7 @@ type QueryVars struct {
 	QueryMode                  *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
 	TryPartitionQuery          bool                              // CLI_TRY_PARTITION_QUERY
 	DirectedRead               *sppb.DirectedReadOptions         // CLI_DIRECT_READ
-	StreamingMode              enums.StreamingMode               // CLI_STREAMING
+	StreamingMode              enums.StreamingMode               // CLI_TABLE_STREAMING
 	TablePreviewRows           int64                             // CLI_TABLE_PREVIEW_ROWS
 	BuildStatementMode         enums.ParseMode                   // CLI_PARSE_MODE
 	Profile                    bool                              // CLI_PROFILE
