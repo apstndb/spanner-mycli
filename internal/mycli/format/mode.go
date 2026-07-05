@@ -2,7 +2,6 @@ package format
 
 // Mode represents the output format mode as a string.
 // Built-in modes are defined as constants below.
-// Custom streaming modes can be registered via RegisterStreamingFormatter.
 //
 // Mode values use UPPER_SNAKE_CASE to match the enumer-generated strings
 // of enums.DisplayMode, enabling conversion via format.Mode(dm.String()).
@@ -20,6 +19,9 @@ const (
 	ModeXML                Mode = "XML"
 	ModeCSV                Mode = "CSV"
 	ModeJSONL              Mode = "JSONL"
+	ModeSQLInsert          Mode = "SQL_INSERT"
+	ModeSQLInsertOrIgnore  Mode = "SQL_INSERT_OR_IGNORE"
+	ModeSQLInsertOrUpdate  Mode = "SQL_INSERT_OR_UPDATE"
 )
 
 // IsTableMode returns true if the mode is one of the table display modes.
@@ -47,15 +49,16 @@ const (
 	JSONValues
 )
 
-// ValueFormatModeFor returns the ValueFormatMode declared for the given Mode.
-// Built-in modes return DisplayValues (except JSONL which returns JSONValues).
-// Registered modes return their declared value.
+// ValueFormatModeFor returns the ValueFormatMode required by the given Mode:
+// JSONValues for JSONL, SQLLiteralValues for the SQL export modes, and
+// DisplayValues for everything else.
 func ValueFormatModeFor(mode Mode) ValueFormatMode {
-	if mode == ModeJSONL {
+	switch mode {
+	case ModeJSONL:
 		return JSONValues
+	case ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate:
+		return SQLLiteralValues
+	default:
+		return DisplayValues
 	}
-	if vfm, ok := lookupValueFormatMode(mode); ok {
-		return vfm
-	}
-	return DisplayValues
 }

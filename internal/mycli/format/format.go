@@ -1,7 +1,9 @@
 package format
 
 // This file contains output formatters for query results.
-// It implements various output formats (TABLE, CSV, HTML, XML, etc.) with proper error handling.
+// It implements the display-oriented output formats (TABLE, TAB, TSV, VERTICAL,
+// HTML, XML) with proper error handling. CSV, JSONL, and the SQL export modes
+// are emitted by the spanvalue writers instead (see the mycli package).
 // All formatters follow a consistent pattern where errors are propagated instead of logged and ignored.
 
 import (
@@ -110,11 +112,10 @@ func ExecuteWithFormatter(formatter StreamingFormatter, rows []Row, columnNames 
 // NewStreamingFormatter creates a streaming formatter for the given display mode.
 // Note: Table formats (Table, TableComment, TableDetailComment) require screenWidth
 // and should be created with NewTableStreamingFormatter directly by the caller.
-// Built-in modes are handled directly. Custom modes are looked up in the registry.
+// CSV, JSONL, and the SQL export modes are not handled here: they are emitted
+// by the spanvalue writers on both the streaming and buffered paths.
 func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
 	switch mode {
-	case ModeCSV:
-		return NewCSVFormatter(out, config.SkipColumnNames), nil
 	case ModeTab:
 		return NewTabFormatter(out, config.SkipColumnNames), nil
 	case ModeTSV:
@@ -125,8 +126,6 @@ func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (Strea
 		return NewHTMLFormatter(out, config.SkipColumnNames), nil
 	case ModeXML:
 		return NewXMLFormatter(out, config.SkipColumnNames), nil
-	case ModeJSONL:
-		return NewJSONLFormatter(out), nil
 	case ModeTable, ModeTableComment, ModeTableDetailComment:
 		// Table formats need screenWidth, so they must be created by the caller
 		// Return a dummy formatter for capability checks.
@@ -135,10 +134,6 @@ func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (Strea
 		}
 		return nil, fmt.Errorf("table formats require screenWidth - use NewTableStreamingFormatter directly")
 	default:
-		// Look up in registry for custom modes
-		if factory, ok := lookupStreamingFormatter(mode); ok {
-			return factory(mode, out, config)
-		}
-		return nil, errUnsupportedMode("streaming", mode)
+		return nil, fmt.Errorf("unsupported streaming mode: %s", mode)
 	}
 }
