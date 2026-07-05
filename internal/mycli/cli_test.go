@@ -349,7 +349,15 @@ Empty set
 		for _, test := range tests {
 			t.Run(test.desc, func(t *testing.T) {
 				out := &bytes.Buffer{}
-				err := printResult(test.sysVars, test.screenWidth, out, test.result, false, test.input)
+				// Compose printResult with resultSink the same way
+				// displayResult does, so decorated cases (markdown fence,
+				// echo) assert the full byte-identical output.
+				cli := &Cli{SystemVariables: test.sysVars}
+				sink := cli.newResultSink(out, test.input)
+				err := printResult(test.sysVars, test.screenWidth, sink, test.result, false)
+				if err == nil {
+					err = sink.finish()
+				}
 				if err != nil {
 					t.Errorf("printResult() unexpected error: %v", err)
 				}
@@ -371,7 +379,7 @@ Empty set
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeVertical}}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeVertical}}, math.MaxInt, out, result, false)
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -400,7 +408,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab}}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab}}, math.MaxInt, out, result, false)
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -424,7 +432,7 @@ bar: 4
 				toRow("back\\slash", "NULL"),
 			),
 		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTSV}}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTSV}}, math.MaxInt, out, result, false)
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -448,7 +456,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}}, math.MaxInt, out, result, false)
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -475,7 +483,7 @@ bar: 4
 				toRow("3", "4"),
 			),
 		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}}, math.MaxInt, out, result, false, "")
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}}, math.MaxInt, out, result, false)
 		if err != nil {
 			t.Errorf("printResult() unexpected error: %v", err)
 		}
@@ -1098,7 +1106,7 @@ optimizer statistics: auto_20250421_21_29_41UTC
 			}
 
 			var sb strings.Builder
-			err = printResult(tcase.sysVars, 0, &sb, result, false, "")
+			err = printResult(tcase.sysVars, 0, &sb, result, false)
 			if err != nil {
 				t.Errorf("printResult() unexpected error: %v", err)
 			}
