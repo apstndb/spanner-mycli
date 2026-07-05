@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -227,7 +228,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(fmt.Sprintf(`(?is)^SHOW\s+CREATE\s+(?P<type>%s)\s+(?P<fqn>.+)$`, schemaObjectsReStr)),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			objectType := strings.ToUpper(whitespaceRe.ReplaceAllString(groups["type"], " "))
-			schema, name := extractSchemaAndName(unquoteIdentifier(groups["fqn"]))
+			schema, name, err := parseSchemaAndName(groups["fqn"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid object name in SHOW CREATE %s: %w", objectType, err)
+			}
 			return &ShowCreateStatement{ObjectType: objectType, Schema: schema, Name: name}, nil
 		},
 		Completion: []fuzzyArgCompletion{
@@ -271,7 +275,15 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TABLES(?:\s+(?P<schema>.+))?$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &ShowTablesStatement{Schema: unquoteIdentifier(groups["schema"])}, nil
+			var schema string
+			if groups["schema"] != "" {
+				var err error
+				schema, err = parseIdentifierArg(groups["schema"])
+				if err != nil {
+					return nil, fmt.Errorf("invalid schema name in SHOW TABLES: %w", err)
+				}
+			}
+			return &ShowTablesStatement{Schema: schema}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+TABLES\s+(\S*)$`),
@@ -287,7 +299,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^(?:SHOW\s+COLUMNS\s+FROM)\s+(?P<table>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
+			schema, table, err := parseSchemaAndName(groups["table"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table name in SHOW COLUMNS: %w", err)
+			}
 			return &ShowColumnsStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -304,7 +319,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(?P<table>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
+			schema, table, err := parseSchemaAndName(groups["table"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table name in SHOW INDEX: %w", err)
+			}
 			return &ShowIndexStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -358,7 +376,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			tables := splitTableNames(groups["tables"])
+			tables, err := parseTableNameList(groups["tables"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table list in DUMP TABLES: %w", err)
+			}
 			return &DumpTablesStatement{Tables: tables}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -500,7 +521,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^TRUNCATE\s+TABLE\s+(?P<table>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			schema, table := extractSchemaAndName(unquoteIdentifier(groups["table"]))
+			schema, table, err := parseSchemaAndName(groups["table"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table name in TRUNCATE TABLE: %w", err)
+			}
 			return &TruncateTableStatement{Schema: schema, Table: table}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
@@ -965,8 +989,14 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `SET <name> = <value>`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SET\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>\S.*)$`),
+		// The name group is [^\s=]*[^\s+=] (not [^\s=]+) so that it cannot end
+		// with "+": otherwise "SET x+=1" (no spaces around +=) would match here
+		// with name "x+" and shadow the SET <name> += <value> definition below.
+		Pattern: regexp.MustCompile(`(?is)^SET\s+(?P<name>[^\s=]*[^\s+=])\s*=\s*(?P<value>\S.*)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
+			if err := rejectSetKeywordAsVarName(groups["name"]); err != nil {
+				return nil, err
+			}
 			return &SetStatement{VarName: groups["name"], Value: groups["value"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{
@@ -997,6 +1027,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+(?P<name>[^\s+=]+)\s*\+=\s*(?P<value>\S.*)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
+			if err := rejectSetKeywordAsVarName(groups["name"]); err != nil {
+				return nil, err
+			}
 			return &SetAddStatement{VarName: groups["name"], Value: groups["value"]}, nil
 		},
 	},
@@ -1189,6 +1222,21 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 }
 
 // Helper functions for HandleGroups implementations
+
+// rejectSetKeywordAsVarName rejects PARAM as a variable name in the generic
+// SET definitions. PARAM is a statement keyword: reaching a generic SET
+// handler with it means the input did not fit the dedicated SET PARAM
+// definitions (e.g. "SET PARAM=1", a typo for SET PARAM <name> = <value>),
+// and reporting the dedicated syntax is more helpful than failing later with
+// "unknown variable name: PARAM".
+// Note: LOCAL is deliberately NOT rejected; `SET LOCAL = "3"` sets a variable
+// named LOCAL (codified in TestBuildStatement since SET LOCAL support).
+func rejectSetKeywordAsVarName(name string) error {
+	if strings.EqualFold(name, "PARAM") {
+		return errors.New("invalid SET PARAM syntax: expected SET PARAM <name> <type> or SET PARAM <name> = <value>")
+	}
+	return nil
+}
 
 func parseTransaction(s string) (isReadOnly bool, err error) {
 	if !transactionRe.MatchString(s) {

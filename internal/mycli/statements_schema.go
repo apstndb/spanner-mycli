@@ -183,6 +183,9 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 
 func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
 	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
+	// Both user-supplied identifiers are interpolated into the regex below and
+	// must be escaped; an unescaped schema would be interpreted as regex syntax.
+	schema = regexp.QuoteMeta(schema)
 	table = regexp.QuoteMeta(table)
 
 	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)
