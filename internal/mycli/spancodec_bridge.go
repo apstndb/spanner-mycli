@@ -4,18 +4,18 @@
 // construction. Client-side (virtual) result sets are encoded into real
 // *spanner.Row values via spancodec.RowEncoder.Rows, then routed through the same
 // pipelines as server query results: spanvalue RowIteratorWriter streaming
-// (writer.WriteRowSeq) for formats that have one, or the buffered
-// spannerRowToRow/withRawJSONMarker cell transform otherwise. Cell styling,
-// NULL handling, value formatting, and header metadata therefore stay identical
-// to server-side result sets by construction rather than by parallel
-// implementation.
+// (writer.WriteRowSeq) for formats that have one, or a typed buffered Result
+// (Result.Typed) otherwise, which printTableData renders lazily with the same
+// transforms as server query results. Cell styling, NULL handling, value
+// formatting, and header metadata therefore stay identical to server-side
+// result sets by construction rather than by parallel implementation.
 
 package mycli
 
 import (
 	"io"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
@@ -82,7 +82,7 @@ func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, session *
 	if handled {
 		return result, nil
 	}
-	return resultFromStructRows(enc, items, sysVars)
+	return resultFromStructRows(enc, items)
 }
 
 // streamStructRows streams items through a spanvalue RowIteratorWriter via
@@ -126,48 +126,39 @@ func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *s
 	}, true, nil
 }
 
-// resultFromStructRows builds a buffered Result from rows of struct type T.
-// Each item is encoded into a *spanner.Row by the compiled spancodec.RowEncoder
-// and converted with the same transform used for server query results, and the
-// table header carries the row type from RowEncoder.ResultSetMetadata so
-// verbose rendering shows column types like server result sets do.
-func resultFromStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
-	fc, vfm, err := clientSideFormatContext(sysVars)
-	if err != nil {
-		return nil, err
-	}
-
-	var typeStyles map[sppb.TypeCode]string
-	var nullStyle string
-	if sysVars != nil {
-		typeStyles = sysVars.typeStyles
-		nullStyle = sysVars.nullStyle
-	}
-	transform := spannerRowToRow(fc, typeStyles, nullStyle)
-	if vfm == format.JSONValues {
-		transform = withRawJSONMarker(transform)
-	}
-
+// resultFromStructRows builds a typed buffered Result from rows of struct type
+// T. Each item is encoded into a *spanner.Row by the compiled
+// spancodec.RowEncoder and carried raw in Result.Typed, so export formats
+// re-render from values through the single spanvalue emitters while
+// table-family formats derive display cells lazily in printTableData with the
+// same transform as the server query path. The table header carries the row
+// type from RowEncoder.ResultSetMetadata so verbose rendering shows column
+// types like server result sets do.
+//
+// SQLExportAllowed stays false: client-side result sets have no source table
+// and fall back to TABLE format under SQL_INSERT* modes, preserving the prior
+// behavior where clientSideFormatContext forced display formatting there.
+func resultFromStructRows[T any](enc *spancodec.RowEncoder[T], items []T) (*Result, error) {
 	metadata, err := enc.ResultSetMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	rows := make([]Row, 0, len(items))
+	rows := make([]*spanner.Row, 0, len(items))
 	for row, err := range enc.Rows(items) {
 		if err != nil {
 			return nil, err
 		}
-		cells, err := transform(row)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, cells)
+		rows = append(rows, row)
 	}
 
 	return &Result{
-		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
-		Rows:         rows,
+		TableHeader: toTableHeader(metadata.GetRowType().GetFields()),
+		Typed: &TypedRows{
+			Metadata:         metadata,
+			Rows:             rows,
+			SQLExportAllowed: false,
+		},
 		AffectedRows: len(rows),
 	}, nil
 }

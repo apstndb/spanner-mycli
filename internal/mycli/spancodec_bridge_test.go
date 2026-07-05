@@ -22,19 +22,35 @@ func TestResultFromStructRows_helpVariablesShape(t *testing.T) {
 		{Name: "CLI_ECHO_INPUT", Operations: "read,write", Description: "echo SQL input"},
 		{Name: "COMMIT_RESPONSE", Operations: "read", Description: "virtual commit stats"},
 	}
-	result, err := resultFromStructRows(helpVariablesRowEncoder, items, nil)
+	result, err := resultFromStructRows(helpVariablesRowEncoder, items)
 	if err != nil {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
+	if result.Rows != nil {
+		t.Fatalf("typed buffered result must not set Rows, got %v", result.Rows)
+	}
+	if result.Typed == nil {
+		t.Fatal("typed buffered result must set Typed")
+	}
+	if result.Typed.SQLExportAllowed {
+		t.Error("client-side result must not allow SQL export")
+	}
 	if got := result.TableHeader.Render(false); !cmp.Equal(got, []string{"name", "operations", "desc"}) {
 		t.Fatalf("headers: %v", got)
+	}
+
+	// The typed rows derive to the same display cells the eager path produced.
+	sysVars := newSystemVariablesWithDefaults()
+	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	if err != nil {
+		t.Fatalf("deriveDisplayRows: %v", err)
 	}
 	wantRows := []Row{
 		toRow("CLI_ECHO_INPUT", "read,write", "echo SQL input"),
 		toRow("COMMIT_RESPONSE", "read", "virtual commit stats"),
 	}
-	if diff := cmp.Diff(wantRows, result.Rows); diff != "" {
+	if diff := cmp.Diff(wantRows, rows); diff != "" {
 		t.Fatalf("rows mismatch (-want +got):\n%s", diff)
 	}
 	if result.AffectedRows != 2 {
@@ -49,7 +65,7 @@ func TestResultFromStructRows_showVariablesShape(t *testing.T) {
 		{Name: "CLI_DATABASE", Value: "my-db"},
 		{Name: "CLI_FORMAT", Value: "TABLE"},
 	}
-	result, err := resultFromStructRows(nameValueRowEncoder, items, nil)
+	result, err := resultFromStructRows(nameValueRowEncoder, items)
 	if err != nil {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
@@ -60,8 +76,60 @@ func TestResultFromStructRows_showVariablesShape(t *testing.T) {
 	if got := result.TableHeader.Render(false); !cmp.Equal(got, []string{"name", "value"}) {
 		t.Fatalf("headers: %v", got)
 	}
-	if len(result.Rows) != 2 {
-		t.Fatalf("rows: got %d, want 2", len(result.Rows))
+	if result.Typed == nil || len(result.Typed.Rows) != 2 {
+		t.Fatalf("typed rows: got %v", result.Typed)
+	}
+}
+
+// TestResultFromStructRows_byteIdentity pins the rendered bytes of a client-side
+// typed buffered result across the export and table formats, extending the
+// byte-identity replay suite to this migrated producer (issue #738 PR3).
+func TestResultFromStructRows_byteIdentity(t *testing.T) {
+	t.Parallel()
+
+	items := []nameValueRow{{Name: "A", Value: "1"}, {Name: "B", Value: "2"}}
+	result, err := resultFromStructRows(nameValueRowEncoder, items)
+	if err != nil {
+		t.Fatalf("resultFromStructRows: %v", err)
+	}
+
+	for _, tt := range []struct {
+		mode enums.DisplayMode
+		want string
+	}{
+		{
+			mode: enums.DisplayModeCSV,
+			want: "name,value\nA,1\nB,2\n",
+		},
+		{
+			mode: enums.DisplayModeJSONL,
+			want: "{\"name\":\"A\",\"value\":\"1\"}\n{\"name\":\"B\",\"value\":\"2\"}\n",
+		},
+	} {
+		t.Run(tt.mode.String(), func(t *testing.T) {
+			t.Parallel()
+			got, err := runPrintTableData(t, tt.mode, false, result)
+			if err != nil {
+				t.Fatalf("printTableData: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	// SQL export is not allowed for client-side results, so SQL_INSERT falls
+	// back to TABLE rendering identically to DisplayModeTable.
+	sqlOut, err := runPrintTableData(t, enums.DisplayModeSQLInsert, false, result)
+	if err != nil {
+		t.Fatalf("printTableData SQL_INSERT: %v", err)
+	}
+	tableOut, err := runPrintTableData(t, enums.DisplayModeTable, false, result)
+	if err != nil {
+		t.Fatalf("printTableData TABLE: %v", err)
+	}
+	if diff := cmp.Diff(tableOut, sqlOut); diff != "" {
+		t.Errorf("SQL_INSERT should fall back to TABLE (-table +sql):\n%s", diff)
 	}
 }
 
@@ -71,7 +139,7 @@ func TestResultFromStructRows_showVariablesShape(t *testing.T) {
 func TestResultFromStructRows_typedHeader(t *testing.T) {
 	t.Parallel()
 
-	result, err := resultFromStructRows(nameValueRowEncoder, []nameValueRow{{Name: "a", Value: "b"}}, nil)
+	result, err := resultFromStructRows(nameValueRowEncoder, []nameValueRow{{Name: "a", Value: "b"}})
 	if err != nil {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
@@ -111,12 +179,16 @@ func TestResultFromStructRows_jsonValueMode(t *testing.T) {
 	sysVars := newSystemVariablesWithDefaults()
 	sysVars.Display.CLIFormat = enums.DisplayModeJSONL
 
-	result, err := resultFromStructRows(enc, []typedVirtualRow{{Name: "x", Count: 42, Enabled: true, Note: nil}}, &sysVars)
+	result, err := resultFromStructRows(enc, []typedVirtualRow{{Name: "x", Count: 42, Enabled: true, Note: nil}})
 	if err != nil {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
-	row := result.Rows[0]
+	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	if err != nil {
+		t.Fatalf("deriveDisplayRows: %v", err)
+	}
+	row := rows[0]
 	wantTexts := []string{`"x"`, "42", "true", "null"}
 	for i, want := range wantTexts {
 		if !format.IsRawJSON(row[i]) {
@@ -139,12 +211,16 @@ func TestResultFromStructRows_displayMode(t *testing.T) {
 	}
 
 	sysVars := newSystemVariablesWithDefaults()
-	result, err := resultFromStructRows(enc, []typedVirtualRow{{Name: "x", Count: 42, Enabled: true, Note: nil}}, &sysVars)
+	result, err := resultFromStructRows(enc, []typedVirtualRow{{Name: "x", Count: 42, Enabled: true, Note: nil}})
 	if err != nil {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
-	row := result.Rows[0]
+	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	if err != nil {
+		t.Fatalf("deriveDisplayRows: %v", err)
+	}
+	row := rows[0]
 	wantTexts := []string{"x", "42", "true", "NULL"}
 	for i, want := range wantTexts {
 		if got := row[i].RawText(); got != want {
@@ -209,15 +285,15 @@ func TestExecuteStructRows_streaming(t *testing.T) {
 				t.Errorf("AffectedRows = %d, want 2", result.AffectedRows)
 			}
 			if tt.wantStream {
-				if len(result.Rows) != 0 {
-					t.Errorf("Rows = %v, want none for streamed result", result.Rows)
+				if result.Typed != nil || len(result.Rows) != 0 {
+					t.Errorf("streamed result must carry no body payload, got Typed=%v Rows=%v", result.Typed, result.Rows)
 				}
 				if got := buf.String(); got != tt.wantOutput {
 					t.Errorf("output = %q, want %q", got, tt.wantOutput)
 				}
 			} else {
-				if len(result.Rows) != 2 {
-					t.Errorf("Rows = %v, want 2 buffered rows", result.Rows)
+				if result.Typed == nil || len(result.Typed.Rows) != 2 {
+					t.Errorf("Typed = %v, want 2 buffered typed rows", result.Typed)
 				}
 				if buf.Len() != 0 {
 					t.Errorf("output = %q, want empty for buffered result", buf.String())
