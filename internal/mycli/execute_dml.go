@@ -102,7 +102,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		if tableHeader != nil {
 			// Render inside the transaction callback so a formatting error
 			// aborts the implicit commit instead of committing without output.
-			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Rows)
+			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Metadata, updateResult.Rows)
 			if err != nil {
 				return 0, nil, nil, err
 			}
@@ -156,12 +156,25 @@ func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHea
 	return result, nil
 }
 
-func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, rows []Row) ([]byte, error) {
+// renderDMLReturnedRows renders THEN RETURN rows to bytes at display time from
+// the raw typed rows, so value types are preserved for the active CLI_FORMAT
+// (issue #738 PR2). Previously the rows were converted to display-text cells
+// inside the transaction with the display FormatConfig, which under
+// CLI_FORMAT=JSONL emitted type-unfaithful output (e.g. {"n":"1"} instead of
+// {"n":1}). The temp Result is kind (c) (Typed) with SQLExportAllowed=false,
+// preserving the rule that THEN RETURN falls back to a table under SQL export.
+//
+// It is called inside the DML transaction callback so a render failure aborts
+// the implicit commit rather than committing without output.
+func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, metadata *sppb.ResultSetMetadata, rows []*spanner.Row) ([]byte, error) {
 	var buf bytes.Buffer
 	result := &Result{
-		TableHeader:      tableHeader,
-		Rows:             rows,
-		SQLExportAllowed: false,
+		TableHeader: tableHeader,
+		Typed: &TypedRows{
+			Metadata:         metadata,
+			Rows:             rows,
+			SQLExportAllowed: false,
+		},
 	}
 	if err := printTableData(sysVars, displayScreenWidth(sysVars), &buf, result); err != nil {
 		return nil, err
