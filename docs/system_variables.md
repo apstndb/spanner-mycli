@@ -19,7 +19,7 @@ TODO
   SELECT * FROM users;  -- Output without column headers
   ```
 - **Notes**:
-  - Affects table format (`CLI_FORMAT='TABLE'`), tab format (`CLI_FORMAT='TAB'`), CSV format (`CLI_FORMAT='CSV'`), HTML format (`CLI_FORMAT='HTML'`), and XML format (`CLI_FORMAT='XML'`)
+  - Affects table format (`CLI_FORMAT='TABLE'`), tab format (`CLI_FORMAT='TAB'`), TSV format (`CLI_FORMAT='TSV'`), CSV format (`CLI_FORMAT='CSV'`), HTML format (`CLI_FORMAT='HTML'`), and XML format (`CLI_FORMAT='XML'`)
   - Headers are always preserved in vertical format (`CLI_FORMAT='VERTICAL'`) as they are integral to the format
   - Can be set via `--skip-column-names` command-line flag
   - Useful for scripting and data processing where only raw data is needed
