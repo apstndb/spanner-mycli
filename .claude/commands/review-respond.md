@@ -53,7 +53,7 @@ go tool gh-helper threads reply THREAD_ID --resolve \
 
 Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
 
-3. After all threads are resolved, request a new review:
-!go tool gh-helper reviews wait --request-review
+3. After all threads are resolved, wait for CI checks on the pushed fixes — they are the merge gate:
+!go tool gh-helper reviews wait --exclude-reviews
 
-**Gemini sunset (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17**. On or after that date (or whenever reviews stop arriving), skip step 3 — a re-requested review will never come. Verify CI checks pass instead; checks are the merge gate until the replacement flow in #693 is decided.
+**Gemini review is best-effort (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17** and is unavailable after. Do not request a new review (`--request-review`) or wait for one; if another review happens to arrive before the sunset, handle its threads by repeating steps 1-2.

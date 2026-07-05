@@ -13,4 +13,4 @@ Please show me:
 2. PR merge status:
 !gh pr status --json "number,title,state,mergeable,statusCheckRollup"
 
-3. Summary of what needs to be done before merging.
+3. Summary of what needs to be done before merging. CI checks are the merge gate; unresolved threads must be addressed, but do not wait for or request new reviews (Gemini sunset, issue #693).
