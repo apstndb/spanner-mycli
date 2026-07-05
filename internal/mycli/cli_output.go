@@ -43,16 +43,25 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 
 	columnNames := extractTableColumnNames(result.TableHeader)
 
+	// rows holds the display-text cells to render. For a typed buffered result
+	// (Result.Typed, issue #738) they are derived lazily below; otherwise they
+	// are the presentation cells already on Result.Rows.
+	rows := result.Rows
+	bodyRowCount := len(rows)
+	if result.Typed != nil {
+		bodyRowCount = len(result.Typed.Rows)
+	}
+
 	// Log logic error where we have rows but no columns
-	if len(columnNames) == 0 && len(result.Rows) > 0 {
+	if len(columnNames) == 0 && bodyRowCount > 0 {
 		slog.Error("printTableData called with empty column headers but non-empty rows - this indicates a logic error",
-			"rowCount", len(result.Rows))
+			"rowCount", bodyRowCount)
 	}
 
 	// Debug logging
 	slog.Debug("printTableData",
 		"columnCount", len(columnNames),
-		"rowCount", len(result.Rows),
+		"rowCount", bodyRowCount,
 		"format", sysVars.Display.CLIFormat)
 
 	// Skip formatting only if there's no header at all (e.g., SET statements)
@@ -69,10 +78,33 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		fmtMode = format.ModeTable
 	}
 
+	// SQL export is allowed only for genuine query results. The typed and
+	// display-text paths carry this distinction on different fields (issue #738).
+	sqlExportAllowed := result.SQLExportAllowed
+	if result.Typed != nil {
+		sqlExportAllowed = result.Typed.SQLExportAllowed
+	}
+
+	// Typed buffered results carry raw *spanner.Row values. Export formats
+	// (CSV/JSONL/SQL_INSERT*) replay them through the single spanvalue emitters;
+	// table-family formats derive display cells with the same transform as the
+	// query path. This is where lazy formatting happens for issue #738.
+	if t := result.Typed; t != nil {
+		if usesSpanvalueWriter(sysVars.Display.CLIFormat) &&
+			(format.ValueFormatModeFor(fmtMode) != format.SQLLiteralValues || sqlExportAllowed) {
+			return writeTypedRows(out, sysVars, result)
+		}
+		var err error
+		if rows, err = deriveDisplayRows(sysVars, t); err != nil {
+			return err
+		}
+	}
+
 	// Modes that require SQL literal values (e.g., SQL_INSERT) must fall back to
 	// table format when values were not formatted as SQL literals. This affects
-	// non-query buffered results such as metadata statements and DML THEN RETURN.
-	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && !result.HasSQLFormattedValues {
+	// non-query buffered results such as metadata statements and DML THEN RETURN,
+	// and typed results whose SQLExportAllowed is false (writeTypedRows skipped).
+	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && !sqlExportAllowed {
 		slog.Warn("SQL export format not applicable for this statement type, using table format instead",
 			"requestedFormat", sysVars.Display.CLIFormat,
 			"statementType", "non-SELECT/DML")
@@ -84,7 +116,7 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		// writers so those formats have a single byte-emitting implementation
 		// shared with the streaming paths. The fallback above guarantees the
 		// SQL modes only reach this replay with SQL-literal formatted cells.
-		if handled, err := writeBufferedRowsWithSpanvalueWriter(out, sysVars, result.SQLTableNameForExport, columnNames, result.Rows); handled || err != nil {
+		if handled, err := writeBufferedRowsWithSpanvalueWriter(out, sysVars, result.SQLTableNameForExport, columnNames, rows); handled || err != nil {
 			if err != nil {
 				return fmt.Errorf("spanvalue writer failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
 			}
@@ -94,14 +126,14 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		if err != nil {
 			return fmt.Errorf("failed to create streaming formatter for buffered rows: %w", err)
 		}
-		if err := format.ExecuteWithFormatter(formatter, result.Rows, columnNames, config); err != nil {
+		if err := format.ExecuteWithFormatter(formatter, rows, columnNames, config); err != nil {
 			return fmt.Errorf("streaming formatter failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
 		}
 		return nil
 	}
 
 	verboseHeaders := renderTableHeader(result.TableHeader, true)
-	return format.WriteTableWithParams(out, result.Rows, columnNames, config, screenWidth, fmtMode, format.TableParams{
+	return format.WriteTableWithParams(out, rows, columnNames, config, screenWidth, fmtMode, format.TableParams{
 		VerboseHeaders: verboseHeaders,
 		ColumnAlign:    result.ColumnAlign,
 	})

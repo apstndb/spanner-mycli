@@ -91,11 +91,11 @@ func streamPartitionedQuery(
 	}
 
 	return &Result{
-		TableHeader:           toTableHeader(runResult.Metadata.GetRowType().GetFields()),
-		AffectedRows:          runResult.RowsRead,
-		PartitionCount:        len(partitions),
-		Streamed:              true,
-		HasSQLFormattedValues: vfm == format.SQLLiteralValues,
+		TableHeader:      toTableHeader(runResult.Metadata.GetRowType().GetFields()),
+		AffectedRows:     runResult.RowsRead,
+		PartitionCount:   len(partitions),
+		Streamed:         true,
+		SQLExportAllowed: vfm == format.SQLLiteralValues,
 	}, true, nil
 }
 
