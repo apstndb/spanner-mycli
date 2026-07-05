@@ -409,7 +409,7 @@ var (
 // are parsed as GoogleSQL expressions (e.g., TRUE, 'string value').
 func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 	sv.ensureRegistry()
-	return sv.setFromGoogleSQL(name, value)
+	return sv.setFrom(name, value, true)
 }
 
 // SetFromSimple sets a system variable using Simple parsing mode.
@@ -417,17 +417,17 @@ func (sv *systemVariables) SetFromGoogleSQL(name string, value string) error {
 // don't follow GoogleSQL syntax rules.
 func (sv *systemVariables) SetFromSimple(name string, value string) error {
 	sv.ensureRegistry()
-	return sv.setFromSimple(name, value)
+	return sv.setFrom(name, value, false)
 }
 
 func (sv *systemVariables) AddFromGoogleSQL(name string, value string) error {
 	sv.ensureRegistry()
-	return sv.addFromGoogleSQL(name, value)
+	return sv.addFrom(name, value, true)
 }
 
 func (sv *systemVariables) AddFromSimple(name string, value string) error {
 	sv.ensureRegistry()
-	return sv.addFromSimple(name, value)
+	return sv.addFrom(name, value, false)
 }
 
 func (sv *systemVariables) Get(name string) (map[string]string, error) {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,14 +44,12 @@ type ShowVariablesStatement struct{}
 func (s *ShowVariablesStatement) isDetachedCompatible() {}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Get all variables from the registry
+	// Get all single-valued variables from the registry.
 	merged := session.systemVariables.ListVariables()
 
-	// Special handling for COMMIT_RESPONSE
-	if session.systemVariables.LastResult.CommitResponse != nil {
-		merged["COMMIT_TIMESTAMP"] = formatTimestamp(session.systemVariables.LastResult.CommitTimestamp, "NULL")
-		merged["MUTATION_COUNT"] = strconv.FormatInt(session.systemVariables.LastResult.CommitResponse.GetCommitStats().GetMutationCount(), 10)
-	}
+	// Merge multi-valued variables (COMMIT_RESPONSE -> COMMIT_TIMESTAMP,
+	// MUTATION_COUNT). These intentionally override the plain rows.
+	maps.Copy(merged, session.systemVariables.Registry.ListMultiValues())
 
 	// Special handling for CLI_DIRECT_READ
 	if session.systemVariables.Query.DirectedRead != nil {
@@ -113,8 +110,10 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Res
 	sysVars.ensureRegistry()
 	upperName := strings.ToUpper(s.VarName)
 
-	// Mirror the SET special cases for variables living outside the registry.
-	if upperName == "COMMIT_RESPONSE" || upperName == "CLI_DIRECT_READ" {
+	// CLI_DIRECT_READ still lives outside the registry and has no setter; mirror
+	// the SET special case. COMMIT_RESPONSE is now a registry def, so the
+	// localAllowed() check below rejects it (read-only) with no special case.
+	if upperName == "CLI_DIRECT_READ" {
 		return nil, errSetterUnimplemented{s.VarName}
 	}
 
@@ -178,9 +177,9 @@ type HelpVariablesStatement struct{}
 func (s *HelpVariablesStatement) isDetachedCompatible() {}
 
 // helpVariableRows returns sorted rows describing every system variable known
-// to the registry, plus the special variables handled outside the registry
-// (COMMIT_RESPONSE, CLI_DIRECT_READ). It is shared by HELP VARIABLES and the
-// documentation generator behind the hidden --sysvars-help flag.
+// to the registry, plus CLI_DIRECT_READ, which is still handled outside the
+// registry. It is shared by HELP VARIABLES and the documentation generator
+// behind the hidden --sysvars-help flag.
 func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 	varInfo := sysVars.ListVariableInfo()
 
@@ -208,15 +207,11 @@ func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 		})
 	}
 
-	// Add special variables not in registry
-	// COMMIT_RESPONSE - virtual variable
-	merged = append(merged, helpVariableRow{
-		Name:        "COMMIT_RESPONSE",
-		Operations:  "read",
-		Description: "The most recent response for a read-write transaction. This is a virtual variable: it can be used in SHOW COMMIT_RESPONSE and SHOW COMMIT_RESPONSE.COMMIT_TIMESTAMP and SHOW COMMIT_RESPONSE.MUTATION_COUNT, but attempting to read its value directly will give an error. Instead use the sub-fields COMMIT_TIMESTAMP and MUTATION_COUNT.",
-	})
-
-	// CLI_DIRECT_READ - complex proto type
+	// Add special variables not in the registry.
+	// COMMIT_RESPONSE is now a registry def (multi-valued), so it is described
+	// from varInfo above and no longer hand-appended here.
+	//
+	// CLI_DIRECT_READ - complex proto type (still outside the registry)
 	merged = append(merged, helpVariableRow{
 		Name:        "CLI_DIRECT_READ",
 		Operations:  "read",

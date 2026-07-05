@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -23,108 +22,50 @@ func (sv *systemVariables) ensureRegistry() {
 	}
 }
 
-// setFromGoogleSQL implements setting variables from GoogleSQL mode
-func (sv *systemVariables) setFromGoogleSQL(name string, value string) error {
+// setFrom sets a variable through the registry, translating registry error
+// types into the legacy messages callers and tests expect. isGoogleSQL selects
+// GoogleSQL vs simple value parsing.
+func (sv *systemVariables) setFrom(name string, value string, isGoogleSQL bool) error {
 	upperName := strings.ToUpper(name)
 
-	// Special case for COMMIT_RESPONSE (unimplemented setter)
-	if upperName == "COMMIT_RESPONSE" {
-		return errSetterUnimplemented{name}
-	}
-
-	// Special case for CLI_DIRECT_READ (unimplemented setter)
+	// CLI_DIRECT_READ lives outside the registry (complex proto type; see get);
+	// its setter is not yet implemented. COMMIT_RESPONSE is now a read-only
+	// registry def, so it no longer needs a special case here (Registry.Set
+	// rejects it with errSetterReadOnly).
 	if upperName == "CLI_DIRECT_READ" {
 		return errSetterUnimplemented{name}
 	}
 
-	slog.Debug("setFromGoogleSQL calling Registry.Set", "upperName", upperName, "value", value)
-	err := sv.Registry.Set(upperName, value, true)
-	slog.Debug("setFromGoogleSQL after Registry.Set", "err", err)
-	// Convert to legacy error types for compatibility
-	if err != nil {
-		if errors.Is(err, errSetterReadOnly) {
-			return errSetterReadOnly
-		}
-		var unknownErr *ErrUnknownVariable
-		if errors.As(err, &unknownErr) {
-			return fmt.Errorf("unknown variable name: %v", name)
-		}
-		var unimplementedErr *errSetterUnimplemented
-		if errors.As(err, &unimplementedErr) {
-			return errSetterUnimplemented{name}
-		}
+	slog.Debug("setFrom calling Registry.Set", "upperName", upperName, "value", value, "isGoogleSQL", isGoogleSQL)
+	err := sv.Registry.Set(upperName, value, isGoogleSQL)
+	slog.Debug("setFrom after Registry.Set", "err", err)
+	// ErrUnknownVariable carries a different message ("unknown variable: X");
+	// translate it to the legacy "unknown variable name: X" form. Other registry
+	// errors (read-only, unimplemented setter, parse errors) already carry the
+	// message callers expect, so they pass through unchanged.
+	var unknownErr *ErrUnknownVariable
+	if errors.As(err, &unknownErr) {
+		return fmt.Errorf("unknown variable name: %v", name)
 	}
 
 	return err
 }
 
-// setFromSimple implements setting variables from simple mode
-func (sv *systemVariables) setFromSimple(name string, value string) error {
-	upperName := strings.ToUpper(name)
-
-	// Special case for COMMIT_RESPONSE (unimplemented setter)
-	if upperName == "COMMIT_RESPONSE" {
-		return errSetterUnimplemented{name}
+// addFrom performs ADD through the registry, translating registry error types
+// into the legacy messages. isGoogleSQL selects GoogleSQL value parsing.
+func (sv *systemVariables) addFrom(name string, value string, isGoogleSQL bool) error {
+	if isGoogleSQL {
+		value = parseGoogleSQLValue(value)
 	}
-
-	// Special case for CLI_DIRECT_READ (unimplemented setter)
-	if upperName == "CLI_DIRECT_READ" {
-		return errSetterUnimplemented{name}
-	}
-
-	err := sv.Registry.Set(upperName, value, false)
-	// Convert to legacy error types for compatibility
-	if err != nil {
-		if errors.Is(err, errSetterReadOnly) {
-			return errSetterReadOnly
-		}
-		var unknownErr *ErrUnknownVariable
-		if errors.As(err, &unknownErr) {
-			return fmt.Errorf("unknown variable name: %v", name)
-		}
-		var unimplementedErr *errSetterUnimplemented
-		if errors.As(err, &unimplementedErr) {
-			return errSetterUnimplemented{name}
-		}
-	}
-
-	return err
-}
-
-// addFromGoogleSQL implements ADD from GoogleSQL mode
-func (sv *systemVariables) addFromGoogleSQL(name string, value string) error {
-	// Parse GoogleSQL value
-	value = parseGoogleSQLValue(value)
 
 	err := sv.Registry.Add(name, value)
-	// Convert to legacy error types for compatibility
-	if err != nil {
-		var addErr *ErrAddNotSupported
-		if errors.As(err, &addErr) {
-			return fmt.Errorf("%s does not support ADD operation", name)
-		}
-		var unknownErr *ErrUnknownVariable
-		if errors.As(err, &unknownErr) {
-			return fmt.Errorf("unknown variable name: %v", name)
-		}
+	var addErr *ErrAddNotSupported
+	if errors.As(err, &addErr) {
+		return fmt.Errorf("%s does not support ADD operation", name)
 	}
-
-	return err
-}
-
-// addFromSimple implements ADD from simple mode
-func (sv *systemVariables) addFromSimple(name string, value string) error {
-	err := sv.Registry.Add(name, value)
-	// Convert to legacy error types for compatibility
-	if err != nil {
-		var addErr *ErrAddNotSupported
-		if errors.As(err, &addErr) {
-			return fmt.Errorf("%s does not support ADD operation", name)
-		}
-		var unknownErr *ErrUnknownVariable
-		if errors.As(err, &unknownErr) {
-			return fmt.Errorf("unknown variable name: %v", name)
-		}
+	var unknownErr *ErrUnknownVariable
+	if errors.As(err, &unknownErr) {
+		return fmt.Errorf("unknown variable name: %v", name)
 	}
 
 	return err
@@ -134,19 +75,12 @@ func (sv *systemVariables) addFromSimple(name string, value string) error {
 func (sv *systemVariables) get(name string) (map[string]string, error) {
 	upperName := strings.ToUpper(name)
 
-	// Special case for COMMIT_RESPONSE
-	// This variable returns multiple key-value pairs (COMMIT_TIMESTAMP and MUTATION_COUNT)
-	// which doesn't fit the single-string return type of the Variable interface.
-	// This behavior is maintained for java-spanner compatibility where SHOW VARIABLE
-	// COMMIT_RESPONSE returns both values as a result set.
-	if upperName == "COMMIT_RESPONSE" {
-		if sv.LastResult.CommitResponse == nil {
-			return nil, errIgnored
-		}
-		return map[string]string{
-			"COMMIT_TIMESTAMP": formatTimestamp(sv.LastResult.CommitTimestamp, "NULL"),
-			"MUTATION_COUNT":   strconv.FormatInt(sv.LastResult.CommitResponse.GetCommitStats().GetMutationCount(), 10),
-		}, nil
+	// Multi-valued variables (COMMIT_RESPONSE) return several columns, which
+	// don't fit the single-string Variable.Get; SHOW VARIABLE reads them via the
+	// MultiValueVar capability. GetVariable resolves aliases and returns nil for
+	// unknown names (the nil type assertion below simply falls through).
+	if mv, ok := sv.Registry.GetVariable(upperName).(MultiValueVar); ok {
+		return mv.GetMulti()
 	}
 
 	// Special case for CLI_DIRECT_READ (complex proto type not in registry)
