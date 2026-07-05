@@ -2494,8 +2494,8 @@ github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba/go.mod h1:adI+0n+0AY1J+qhb7UbW3HjsUD15JCQPIih7FHLcrI4=
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0 h1:VySrhGRfqXUDCrUuAEz70DrDnPrvj/nXGnUHwJF3PG4=
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0/go.mod h1:VwhJDip+HamDWWt+Ol4ECFU0g0HiveA27DeNkt3U8S0=
-github.com/apstndb/memebridge v0.6.0 h1:45uu/RFF63u5vJ+d8HT4PvOfotm1cV4eEveWFwGvElI=
-github.com/apstndb/memebridge v0.6.0/go.mod h1:E/HVP4iaSgiPXMIQTPT1u1uKkjmRtRECkVKE2TrF3bc=
+github.com/apstndb/memebridge v0.6.4 h1:OoOXj+m5YtosbAPz0pLNVUwhhCohf1mC2o+Dy9WMsjQ=
+github.com/apstndb/memebridge v0.6.4/go.mod h1:gw6dfrUAsT+GvmuRGiG/fnGbrKfiVvnjBriQt6nLnys=
 github.com/apstndb/ptyhelp v0.2.1 h1:vGqYJiIBNS3opPA3JLCKsdKIZzomz2zFkO1PVuM+WLs=
 github.com/apstndb/ptyhelp v0.2.1/go.mod h1:qQr/aibVk0BK/dweEW7mcaT0jAH9NeRHP2in6MIgEcA=
 github.com/apstndb/spancodec v0.1.1 h1:26jll4gTzB18yUilmSSE1IfCF9Rht2j/+cc492hjixE=
@@ -2510,10 +2510,10 @@ github.com/apstndb/spannerplan v0.1.11 h1:chLsajnYPQI2vwirOeBFNQU0sBWOx9Jet4DuM+
 github.com/apstndb/spannerplan v0.1.11/go.mod h1:7Xfm892U2wPhDrT5nf8NMEvEGtk7eGAh15Qa7e316HA=
 github.com/apstndb/spanstats v0.1.0 h1:wAPqtFn1AfQaIudB4HwTLiIPinwWJw/gQhgE7NQWVKo=
 github.com/apstndb/spanstats v0.1.0/go.mod h1:DFGYC9e7WE0BFQL0st6EQwrl1Pn2FuvDWSefwI9FTWc=
-github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
-github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.8.0 h1:wLHl/0m5C6PvRwJOJoz1nRL4qSpS17eS1tW3Pjzcvo8=
-github.com/apstndb/spanvalue v0.8.0/go.mod h1:bqVJYydQf+D0Tux1LtyRlREPVwrVYNG+1usZJ489GTA=
+github.com/apstndb/spantype v0.3.13 h1:FTP3zUpVXMfPlZ3P+1RK6SYHND+96YVht0I+ZHGIzMc=
+github.com/apstndb/spantype v0.3.13/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
+github.com/apstndb/spanvalue v0.8.2 h1:CMTJUmpSGtVrlKazMC6fmsi/PrOojhDNkmdLb0q1iPY=
+github.com/apstndb/spanvalue v0.8.2/go.mod h1:krLMj3J9sKS/IBLIUkEUlFufcxeLkIGJon+ypSPgrl0=
 github.com/apstndb/structfields v0.1.0 h1:TQbi8EpzLyDr1GOsLWJfMQrtw+cq7BQhNCHhqZTCtEg=
 github.com/apstndb/structfields v0.1.0/go.mod h1:iZuSnr5cvgVvMaEhm0ceB+auA+MeNmA1mtnBA05m9Qw=
 github.com/apstndb/structfields/spannertag v0.1.0 h1:faXv5yYgKHV4DA3V0UpL4D9cTgMM87yacNbno0p3ulM=
@@ -2551,8 +2551,8 @@ github.com/clipperhouse/displaywidth v0.11.0 h1:lBc6kY44VFw+TDx4I8opi/EtL9m20WSE
 github.com/clipperhouse/displaywidth v0.11.0/go.mod h1:bkrFNkf81G8HyVqmKGxsPufD3JhNl3dSqnGhOoSD/o0=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
-github.com/cloudspannerecosystem/memefish v0.6.2 h1:0R6C8KdJLLbL3aYk/rzWrwvE+bPRMqj/2MNlNvAzIPo=
-github.com/cloudspannerecosystem/memefish v0.6.2/go.mod h1:mVw0xBxy0yOgm990BuR0+nqP8J+yBAAf7N/2uL69rBU=
+github.com/cloudspannerecosystem/memefish v0.7.0 h1:VkKZzVIIJ2Yj3D++NdTJFgyrr/fCgRCqcjTiia8R10U=
+github.com/cloudspannerecosystem/memefish v0.7.0/go.mod h1:tfdaTgJaxw38uEiY2tUPQ5Bk1c+6nLjIBJXSxD+bkFI=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/cncf/udpa/go v0.0.0-20200629203442-efcf912fb354/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
 github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=
