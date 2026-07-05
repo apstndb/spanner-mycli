@@ -17,7 +17,7 @@ jobs:
       id-token: write
     steps:
       # Checkout must run before setup-go so go-version-file can read go.mod.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
