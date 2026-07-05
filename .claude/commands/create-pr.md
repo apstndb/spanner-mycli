@@ -61,9 +61,15 @@ Fixes #ISSUE_NUMBER
    go tool gh-helper labels add-from-issues --pr <PR_NUMBER>
    ```
 
-5. Wait for initial Gemini review:
+5. Wait for CI checks — they are the merge gate:
 ```bash
-go tool gh-helper reviews wait --timeout 15m
+go tool gh-helper reviews wait --exclude-reviews --timeout 15m
 ```
+
+6. Check once (non-blocking) whether review feedback arrived, and address any unresolved threads with `/review-cycle`:
+```bash
+go tool gh-helper reviews fetch --unresolved-only
+```
+Gemini review is best-effort until 2026-07-17 and unavailable after (issue #693) — if none arrived, do not wait for one or request one.
 
 **Important**: Use `--body-file` or heredoc for PR body content with special characters. Never pass backtick-containing strings directly in shell commands.

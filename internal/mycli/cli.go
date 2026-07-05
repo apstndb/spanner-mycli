@@ -18,7 +18,6 @@ package mycli
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,14 +25,12 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"os/exec"
 	"os/signal"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/hymkor/go-multiline-ny"
-	"github.com/kballard/go-shellquote"
 	"golang.org/x/term"
 
 	"github.com/apstndb/go-tabwrap"
@@ -373,50 +370,22 @@ func (c *Cli) PrintBatchError(err error) {
 	printError(c.GetErrStream(), err)
 }
 
+// PrintResult prints a buffered result with the output decorations and the
+// CLI_USE_PAGER pager applied. Statement execution does not go through this
+// method (executeStatement shares one resultSink between streamed rows and
+// the buffered display); it remains for direct callers holding a Result.
 func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, input string, w io.Writer) error {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
 		w = c.GetWriter()
 	}
 
-	ostream := w
-	var cmd *exec.Cmd
-	if c.SystemVariables.Display.UsePager {
-		pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
-
-		split, err := shellquote.Split(pagerpath)
-		if err != nil {
-			return fmt.Errorf("failed to parse pager command: %w", err)
-		}
-		// A whitespace-only PAGER yields an empty slice; reject it instead of
-		// panicking on split[0].
-		if len(split) == 0 {
-			return fmt.Errorf("invalid pager command: %q", pagerpath)
-		}
-		cmd = exec.CommandContext(context.Background(), split[0], split[1:]...)
-
-		pr, pw := io.Pipe()
-		ostream = pw
-		cmd.Stdin = pr
-		cmd.Stdout = w
-
-		err = cmd.Start()
-		if err != nil {
-			slog.Error("failed to start pager command", "err", err)
-			return fmt.Errorf("failed to start pager: %w", err)
-		}
-		defer func() {
-			err := pw.Close()
-			if err != nil {
-				slog.Error("failed to close pipe", "err", err)
-			}
-			err = cmd.Wait()
-			if err != nil {
-				slog.Error("failed to wait for pager command", "err", err)
-			}
-		}()
+	sink := c.newResultSink(w, input)
+	if err := printResult(c.SystemVariables, screenWidth, sink, result, interactive); err != nil {
+		sink.abort()
+		return err
 	}
-	return printResult(c.SystemVariables, screenWidth, ostream, result, interactive, input)
+	return sink.finish()
 }
 
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
@@ -522,7 +491,9 @@ func confirm(in io.Reader, out io.Writer, msg string) bool {
 
 	s := bufio.NewScanner(in)
 	for {
-		s.Scan()
+		if !s.Scan() {
+			return false
+		}
 		switch strings.ToLower(s.Text()) {
 		case "yes":
 			return true
@@ -557,8 +528,32 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		stop = func() {}
 	}
 
-	// Execute the statement
-	result, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
+	// Execute the statement, routing streamed output to the caller-provided
+	// writer. This keeps streaming formats and DUMP on the same destination
+	// as buffered display (notably the MCP handler's capture buffer).
+	//
+	// Non-meta statements stream through a resultSink so the output
+	// decorations (markdown fence, input echo) and the CLI_USE_PAGER pager
+	// apply to streamed rows in the correct order; buffered display below
+	// shares the same sink. Meta commands keep the undecorated, unpaged
+	// direct writer (they also skip displayResult).
+	_, isMetaCommand := stmt.(MetaCommandStatement)
+	outW := w
+	var sink *resultSink
+	if !isMetaCommand {
+		sink = c.newResultSink(w, input)
+		// On the error path abort() closes a fence opened by already-streamed
+		// rows and releases the pager; if nothing was written it stays silent.
+		defer sink.abort()
+		outW = sink
+	}
+	out := outputContext{
+		w: outW,
+		// Resolve the width against the caller's writer, not the sink: the
+		// pager pipe is never a terminal.
+		screenWidth: func() int { return c.resolveScreenWidth(w) },
+	}
+	result, err := c.SessionHandler.ExecuteStatementWithOutput(ctx, stmt, out)
 
 	// Stop progress mark
 	stop()
@@ -589,8 +584,8 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	c.updateResultStats(result, elapsed)
 
 	// Display the result (skip for meta commands)
-	if _, isMetaCommand := stmt.(MetaCommandStatement); !isMetaCommand {
-		if err := c.displayResult(result, interactive, input, w); err != nil {
+	if !isMetaCommand {
+		if err := c.displayResult(sink, result, interactive, w); err != nil {
 			return "", fmt.Errorf("failed to display result: %w", err)
 		}
 	}
@@ -684,34 +679,42 @@ func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 	return width, nil
 }
 
-// displayResult displays the result of the statement execution.
+// resolveScreenWidth returns the display width used for wrapping: the fixed
+// width when configured, the terminal width when CLI_AUTOWRAP is on and a
+// terminal is available, and effectively unlimited otherwise. It is the
+// single width source for both buffered display and streamed rendering.
+func (c *Cli) resolveScreenWidth(w io.Writer) int {
+	if !c.SystemVariables.Display.AutoWrap {
+		return math.MaxInt
+	}
+	if c.SystemVariables.Display.FixedWidth != nil {
+		return int(*c.SystemVariables.Display.FixedWidth)
+	}
+	width, err := c.GetTerminalSizeWithTty(w)
+	if err != nil {
+		// Warn because CLI_AUTOWRAP = TRUE cannot be honored without a width.
+		slog.Warn("failed to get terminal size", "err", err)
+		return math.MaxInt
+	}
+	return width
+}
+
+// displayResult displays the result of the statement execution through the
+// per-statement sink (which may already carry streamed rows) and finalizes
+// the sink: closing decoration, pager shutdown. w is the undecorated
+// destination used for width resolution and the interactive trailing newline
+// (written after the pager exits, as before).
 // It returns an error if the output operation fails.
-func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) error {
+func (c *Cli) displayResult(sink *resultSink, result *Result, interactive bool, w io.Writer) error {
 	// If no writer is provided, use the CLI's OutStream
 	if w == nil {
 		w = c.GetWriter()
 	}
 
-	size := math.MaxInt
-	if c.SystemVariables.Display.AutoWrap {
-		if c.SystemVariables.Display.FixedWidth != nil {
-			// Use fixed width if set
-			size = int(*c.SystemVariables.Display.FixedWidth)
-		} else {
-			// Otherwise get terminal width
-			width, err := c.GetTerminalSizeWithTty(w)
-			if err != nil {
-				// Add warning log when terminal size cannot be obtained
-				// and CLI_AUTOWRAP = TRUE
-				slog.Warn("failed to get terminal size", "err", err)
-				size = math.MaxInt
-			} else {
-				size = width
-			}
-		}
+	if err := printResult(c.SystemVariables, c.resolveScreenWidth(w), sink, result, interactive); err != nil {
+		return err
 	}
-
-	if err := c.PrintResult(size, result, interactive, input, w); err != nil {
+	if err := sink.finish(); err != nil {
 		return err
 	}
 

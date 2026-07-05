@@ -46,18 +46,24 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 		shellCmd = exec.CommandContext(ctx, "sh", "-c", s.Command)
 	}
 
-	// Check if StreamManager is configured.
+	// Check if an output destination is configured.
 	// The raw command text is intentionally not logged: it can contain
 	// sensitive data, and this is an internal invariant violation where the
 	// command content is irrelevant to diagnosis.
-	if session.systemVariables.StreamManager == nil {
-		slog.Error("StreamManager is nil, cannot execute shell command")
-		return nil, errors.New("internal error: StreamManager not configured")
+	stdout := session.outputWriter()
+	if stdout == nil {
+		slog.Error("no output destination configured, cannot execute shell command")
+		return nil, errors.New("internal error: no output destination configured")
 	}
 
-	// Stream stdout and stderr directly to avoid buffering large amounts of data in memory
-	shellCmd.Stdout = session.systemVariables.StreamManager.GetWriter()
-	shellCmd.Stderr = session.systemVariables.StreamManager.GetErrStream()
+	// Stream stdout and stderr directly to avoid buffering large amounts of
+	// data in memory. Stdout goes through the per-statement output context so
+	// shell output cannot leak into the global stream (e.g. the JSON-RPC
+	// stdout under --mcp); stderr keeps the process-global error stream.
+	shellCmd.Stdout = stdout
+	if session.systemVariables.StreamManager != nil {
+		shellCmd.Stderr = session.systemVariables.StreamManager.GetErrStream()
+	}
 
 	// Execute the command
 	if err := shellCmd.Run(); err != nil {

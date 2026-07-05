@@ -1149,3 +1149,92 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		})
 	})
 }
+
+func TestRenderSystemVariablesHelp(t *testing.T) {
+	t.Parallel()
+
+	got := renderSystemVariablesHelp()
+
+	for _, want := range []string{
+		"| Name",
+		"`CLI_FORMAT`",
+		// Special variables handled outside the registry.
+		"`COMMIT_RESPONSE`",
+		"`CLI_DIRECT_READ`",
+		// Description content with angle brackets must be markdown-escaped.
+		`\<name\>:\<template\>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderSystemVariablesHelp() must contain %q", want)
+		}
+	}
+
+	if strings.Contains(got, "<name>") {
+		t.Error("renderSystemVariablesHelp() must escape angle brackets in descriptions")
+	}
+}
+
+// TestOutputTemplateFileEmptyRestoresDefault is a regression test for the
+// unified output-template loader (issue #725, PR0). Setting
+// CLI_OUTPUT_TEMPLATE_FILE to an empty string (or NULL) must restore the
+// built-in default template (defaultOutputFormat), not nil, and it must match
+// the startup state produced when no --output-template flag is given. This
+// Get/Set round-trip is what RESET ALL relies on.
+func TestOutputTemplateFileEmptyRestoresDefault(t *testing.T) {
+	t.Parallel()
+
+	// Startup with no --output-template flag: applyOutputTemplate receives an
+	// empty opts.OutputTemplate and must leave the default template in place.
+	startup := newSystemVariablesWithDefaultsForTest()
+	if err := applyOutputTemplate(startup, &spannerOptions{OutputTemplate: ""}); err != nil {
+		t.Fatalf("applyOutputTemplate with empty flag: %v", err)
+	}
+	if startup.Display.OutputTemplate != defaultOutputFormat {
+		t.Errorf("startup OutputTemplate = %p, want defaultOutputFormat %p", startup.Display.OutputTemplate, defaultOutputFormat)
+	}
+	if startup.Display.OutputTemplateFile != "" {
+		t.Errorf("startup OutputTemplateFile = %q, want empty", startup.Display.OutputTemplateFile)
+	}
+
+	for _, empty := range []string{"", "NULL", "null"} {
+		t.Run("set_"+empty, func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaultsForTest()
+			// First point it at a real template file so the empty-set has
+			// something to override.
+			if err := sv.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", "output_default.tmpl"); err != nil {
+				t.Fatalf("SET to file: %v", err)
+			}
+			if sv.Display.OutputTemplate == defaultOutputFormat {
+				t.Fatal("precondition failed: template still default after setting a file")
+			}
+
+			// SET CLI_OUTPUT_TEMPLATE_FILE = '' must restore the default template.
+			if err := sv.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", empty); err != nil {
+				t.Fatalf("SET to %q: %v", empty, err)
+			}
+			if sv.Display.OutputTemplate == nil {
+				t.Fatalf("after SET %q, OutputTemplate is nil; want default template", empty)
+			}
+			if sv.Display.OutputTemplate != defaultOutputFormat {
+				t.Errorf("after SET %q, OutputTemplate = %p, want defaultOutputFormat %p", empty, sv.Display.OutputTemplate, defaultOutputFormat)
+			}
+
+			// Startup-with-no-flag and SET-empty must be byte-identical states.
+			if sv.Display.OutputTemplateFile != startup.Display.OutputTemplateFile {
+				t.Errorf("OutputTemplateFile mismatch: SET-empty %q vs startup %q", sv.Display.OutputTemplateFile, startup.Display.OutputTemplateFile)
+			}
+			if sv.Display.OutputTemplate != startup.Display.OutputTemplate {
+				t.Errorf("OutputTemplate mismatch between SET-empty and startup")
+			}
+
+			got, err := sv.get("CLI_OUTPUT_TEMPLATE_FILE")
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if diff := cmp.Diff(singletonMap("CLI_OUTPUT_TEMPLATE_FILE", ""), got); diff != "" {
+				t.Errorf("get mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

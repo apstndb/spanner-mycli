@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"iter"
 	"runtime"
 	"sync/atomic"
@@ -43,7 +44,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 
 	// Formats backed by a spanvalue RowIteratorWriter (CSV, JSONL, SQL_INSERT*)
 	// stream merged partition rows without buffering, like the query path.
-	result, handled, err := streamPartitionedQuery(ctx, batchROTx, partitions, parallelism, sysVars, fc, vfm)
+	result, handled, err := streamPartitionedQuery(ctx, session.outputWriter(), batchROTx, partitions, parallelism, sysVars, fc, vfm)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +61,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 // spanvalue writer (table and processor-based formats keep the buffered path).
 func streamPartitionedQuery(
 	ctx context.Context,
+	out io.Writer,
 	batchROTx *spanner.BatchReadOnlyTransaction,
 	partitions []*spanner.Partition,
 	parallelism int,
@@ -67,7 +69,7 @@ func streamPartitionedQuery(
 	fc *spanvalue.FormatConfig,
 	vfm format.ValueFormatMode,
 ) (*Result, bool, error) {
-	w, handled, err := newSpanvalueRowIteratorWriterFor(sysVars, fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sysVars, fc)
 	if err != nil || !handled {
 		return nil, handled, err
 	}

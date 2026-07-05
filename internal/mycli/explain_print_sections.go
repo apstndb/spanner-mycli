@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 )
@@ -109,6 +110,42 @@ func buildPlanAppendices(rows []plantree.RowWithPredicates, sections planref.Pri
 		}
 	}
 	return predicates, appendices
+}
+
+// buildQueryPlanAppendix renders a query plan as one or more titled result
+// appendices. It is used for CLI_QUERY_MODE='WITH_PLAN_AND_STATS', where the
+// main table is occupied by the query result rows, so the plan tree (and any
+// requested CLI_EXPLAIN_PRINT_SECTIONS sections) are rendered after the table
+// instead of as table columns.
+//
+// It reuses the same section-resolution and appendix-building machinery as
+// EXPLAIN [ANALYZE] (see buildExplainAnalyzeResult): resolveExplainPrintSections
+// resolves CLI_EXPLAIN_PRINT_SECTIONS, and buildPlanAppendices turns the
+// resolved sections into additional appendices (e.g. Predicates, Ordering)
+// following the plan-tree appendix.
+func buildQueryPlanAppendix(sysVars *systemVariables, plan *sppb.QueryPlan) ([]ResultAppendix, error) {
+	sections := resolveExplainPrintSections(sysVars, nil)
+
+	rows, err := processPlanNodes(plan.GetPlanNodes(), sysVars.Display.ParsedInlineStats,
+		sysVars.Display.ExplainFormat, sysVars.Display.ExplainWrapWidth, sysVars.Display.ExplainHangingIndent)
+	if err != nil {
+		return nil, err
+	}
+
+	var maxIDLength int
+	for _, row := range rows {
+		maxIDLength = max(maxIDLength, len(formatPlanRowID(row, sections)))
+	}
+
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, fmt.Sprintf("%*s: %s", maxIDLength, formatPlanRowID(row, sections), row.Text()))
+	}
+	planAppendix := ResultAppendix{Title: "Query Plan(identified by ID):", Lines: lines}
+
+	_, sectionAppendices := buildPlanAppendices(rows, sections)
+
+	return append([]ResultAppendix{planAppendix}, sectionAppendices...), nil
 }
 
 func formatPlanRowID(row plantree.RowWithPredicates, sections planref.PrintSections) string {

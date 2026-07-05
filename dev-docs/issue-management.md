@@ -16,7 +16,6 @@ Tools are managed via the Go tool directive (`go install tool` installs them).
 # Review operations
 go tool gh-helper reviews fetch <PR>                     # Fetch review data including threads
 go tool gh-helper reviews fetch <PR> --unresolved-only   # Only unresolved threads
-go tool gh-helper reviews fetch <PR> --needs-reply-only  # Only threads needing replies
 go tool gh-helper reviews fetch <PR> --no-bodies         # Exclude review bodies (lightweight)
 go tool gh-helper reviews wait <PR>                      # Wait for reviews and checks
 go tool gh-helper reviews wait <PR> --async              # Check once (non-blocking)
@@ -53,19 +52,27 @@ creation with `issues show <parent> --include-sub`.
 
 ## Review Workflow
 
+**CI checks are the merge gate.** Consumer Gemini Code Assist code review is
+best-effort until its sunset on 2026-07-17 and unavailable after that date
+(#693). Until then a review may still arrive automatically on PR creation;
+if it does, address the feedback like any other review. Never block on a
+Gemini review, extend waits for one, or re-request one (`--request-review`
+and `--request-summary` are no longer part of the workflow).
+
 ```bash
-# 1. Create PR (Gemini review and summary are auto-triggered; no flags needed)
+# 1. Create PR
 gh pr create --title "feat: new feature" --body-file body.md
 
-# 2. Wait for the automatic review
-go tool gh-helper reviews wait <PR> --timeout 15m
+# 2. Merge gate: wait for CI checks to pass
+go tool gh-helper reviews wait <PR> --exclude-reviews --timeout 15m
 
-# 3. After additional commits: request a new review
+# 3. Best-effort (until 2026-07-17): check once whether review feedback
+#    arrived — non-blocking; do not wait or re-request if it did not
+go tool gh-helper reviews fetch <PR> --unresolved-only
+
+# 4. After additional commits: push, then re-run the checks gate
 git push
-go tool gh-helper reviews wait <PR> --request-review --timeout 15m
-
-# 4. Right before merge, only if the PR changed substantially: update summary
-go tool gh-helper reviews wait <PR> --request-summary --timeout 15m
+go tool gh-helper reviews wait <PR> --exclude-reviews --timeout 15m
 ```
 
 Thread resolution order matters: commit, push, then reply with the commit
@@ -73,9 +80,8 @@ hash and resolve (`threads reply <ID> --commit-hash <HASH> --resolve`). A
 reply without a pushed commit is not verifiable. Also read review bodies, not
 just threads - severity notes ("critical", "high") may appear only there.
 
-See AGENTS.md for the authoritative merge-gate rules, including the Gemini
-Code Assist sunset (#693): if no review arrives, CI checks are the merge gate;
-do not keep re-requesting. Never request Copilot reviews for this repository.
+See AGENTS.md for the authoritative merge-gate rules. Never request Copilot
+reviews for this repository.
 
 ## Issue Management
 

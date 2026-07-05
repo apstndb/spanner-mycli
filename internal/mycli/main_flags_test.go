@@ -649,7 +649,10 @@ func TestParseFlagsValidation(t *testing.T) {
 		{arg: "NORMAL", want: "NORMAL"},
 		{arg: "PLAN", want: "PLAN"},
 		{arg: "PROFILE", want: "PROFILE"},
+		{arg: "WITH_STATS", want: "WITH_STATS"},
+		{arg: "WITH_PLAN_AND_STATS", want: "WITH_PLAN_AND_STATS"},
 		{arg: "plan", want: "PLAN"},
+		{arg: "with_stats", want: "WITH_STATS"},
 	} {
 		tests = append(tests, struct {
 			name        string
@@ -1950,7 +1953,7 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
 		"default: ~/.spanner_mycli_history",
-		"Allowed values: NORMAL, PLAN, PROFILE.",
+		"Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.",
 		fmt.Sprintf("default: %s", defaultVertexAIModel),
 		fmt.Sprintf("default: %s", defaultVertexAILocation),
 		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset.",

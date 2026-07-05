@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -32,8 +32,8 @@ jobs:
       - name: Install tools
         run: go install tool
 
-      - name: Regenerate README help
+      - name: Regenerate README help and docs
         run: make docs-update
 
-      - name: Check README is up to date
-        run: git diff --exit-code -- README.md
+      - name: Check generated docs are up to date
+        run: git diff --exit-code -- README.md docs/system_variables.md

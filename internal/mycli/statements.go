@@ -76,6 +76,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular execution;
+		// effectiveQueryMode() resolves the request-level mode and
+		// finalizeQueryResult() adjusts stats/plan rendering.
 		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
@@ -102,6 +105,8 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular DML
+		// execution; effectiveQueryMode() resolves the request-level mode.
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}
 }
@@ -221,7 +226,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
-	return executeStructRows(showDatabasesRowEncoder, items, session.systemVariables)
+	return executeStructRows(showDatabasesRowEncoder, items, session)
 }
 
 // Split Points
@@ -628,6 +633,9 @@ func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Res
 }
 
 func runBatch(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
 	batch, err := session.batch.TakeForExecution()
 	if err != nil {
 		return nil, err
@@ -762,11 +770,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 	}
 
 	// session is nil when HELP is rendered without a connection.
-	var sysVars *systemVariables
-	if session != nil {
-		sysVars = session.systemVariables
-	}
-	result, err := executeStructRows(helpRowEncoder, items, sysVars)
+	result, err := executeStructRows(helpRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}

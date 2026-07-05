@@ -14,9 +14,12 @@ The suite has two tiers, selected with the standard `-short` flag:
 Conventions:
 
 - Gate emulator-dependent tests with `testing.Short()` (usually via the
-  `runStatementTests` helper). Do NOT introduce new build tags for this:
-  tag-gated files (`//go:build integration`, `skip_slow_test`) are not built
-  by default and silently rot because nothing compiles them in CI.
+  `runStatementTests` helper). Do NOT introduce new build tags for this.
+  Legacy tags remain in a few files: `//go:build integration` excludes
+  those files from default `go test` (CI compile-checks them with
+  `go vet -tags integration,skip_slow_test`). Files marked
+  `//go:build !skip_slow_test` are built by default and excluded only when
+  the `skip_slow_test` tag is defined (as in that CI vet step).
 - For statement-level integration tests, prefer the `statementTestCase` /
   `runStatementTests` table in integration_test.go with the `sr` / `srEmpty` /
   `srKeep` / `srDML` result helpers. `compareResult` already ignores
@@ -29,9 +32,13 @@ Conventions:
 
 ## Test Style
 
-- Standard `testing` package plus `github.com/google/go-cmp` for comparisons;
-  this repository does not use testify. Report diffs as
+- Standard `testing` package plus `github.com/google/go-cmp` for comparisons
+  is the primary style. Report diffs as
   `t.Errorf("mismatch (-want +got):\n%s", diff)`.
+- A handful of test files use `github.com/stretchr/testify`
+  (`assert`/`require`), so it is a direct dependency in go.mod. Prefer
+  std `testing` + go-cmp for new tests; within a file that already uses
+  testify, matching its existing style is fine.
 - Table-driven tests with `t.Run()` subtests and descriptive case names.
 - Naming: `Test<Function>`, `Test<Type>_<Method>`, or `Test<Type>_<Scenario>`.
 - Mark helpers with `t.Helper()` so failures point at the caller.

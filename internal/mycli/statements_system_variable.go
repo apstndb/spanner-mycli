@@ -72,7 +72,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	result, err := executeStructRows(nameValueRowEncoder, items, session.systemVariables)
+	result, err := executeStructRows(nameValueRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}
@@ -168,22 +168,12 @@ type HelpVariablesStatement struct{}
 
 func (s *HelpVariablesStatement) isDetachedCompatible() {}
 
-func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// Get all variable info from the registry
-	var varInfo map[string]struct {
-		Description string
-		ReadOnly    bool
-		CanAdd      bool
-	}
-
-	if session != nil {
-		varInfo = session.systemVariables.ListVariableInfo()
-	} else {
-		// If session is nil, create a temporary systemVariables to get the variable info
-		tmpSV := newSystemVariablesWithDefaults()
-		tmpSV.ensureRegistry()
-		varInfo = tmpSV.ListVariableInfo()
-	}
+// helpVariableRows returns sorted rows describing every system variable known
+// to the registry, plus the special variables handled outside the registry
+// (COMMIT_RESPONSE, CLI_DIRECT_READ). It is shared by HELP VARIABLES and the
+// documentation generator behind the hidden --sysvars-help flag.
+func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
+	varInfo := sysVars.ListVariableInfo()
 
 	var merged []helpVariableRow
 	for name, info := range varInfo {
@@ -221,18 +211,32 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 	merged = append(merged, helpVariableRow{
 		Name:        "CLI_DIRECT_READ",
 		Operations:  "read",
-		Description: "",
+		Description: "Directed read options for read-only operations, in replica_location:replica_type format. Set by the --directed-read flag.",
 	})
 
 	slices.SortFunc(merged, func(lhs, rhs helpVariableRow) int {
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
+	return merged
+}
+
+func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var sysVars *systemVariables
 	if session != nil {
 		sysVars = session.systemVariables
+	} else {
+		// If session is nil, create a temporary systemVariables to get the variable info
+		tmpSV := newSystemVariablesWithDefaults()
+		tmpSV.ensureRegistry()
+		sysVars = &tmpSV
 	}
-	result, err := executeStructRows(helpVariablesRowEncoder, merged, sysVars)
+
+	merged := helpVariableRows(sysVars)
+
+	// executeStructRows handles a nil session by rendering a buffered result
+	// with default formatting, preserving the pre-existing detached behavior.
+	result, err := executeStructRows(helpVariablesRowEncoder, merged, session)
 	if err != nil {
 		return nil, err
 	}

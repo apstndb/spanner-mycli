@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// Variable interface that all handlers implement
+// Variable is the minimal get/set surface every handler implements.
+// Metadata (description, read-only/scope) lives in the varDef table
+// (see var_defs.go); the registry enforces policy from the def, not the handler.
 type Variable interface {
 	Get() (string, error)
 	Set(string) error
-	Description() string
-	IsReadOnly() bool
 }
 
 // ValidValuesEnumerator is implemented by variables that have a constrained set of valid values.
@@ -28,23 +28,17 @@ func formatBool(b bool) string {
 	return strings.ToUpper(strconv.FormatBool(b))
 }
 
-// VarHandler handles get/set operations for a variable
+// VarHandler handles get/set operations for a variable.
 //
-// TODO: Consider adding native support for session-init-only variables.
-// Currently, variables like CLI_ENABLE_ADC_PLUS use custom setters to check
-// if a session has been created, but this could be better supported as a first-class
-// feature. Potential implementation:
-//   - Add a sessionInitOnly bool field to VarHandler
-//   - Move the session-existence check logic into the Set method
-//   - This would centralize the behavior and make it declarative rather than imperative
+// Read-only enforcement no longer lives here: the varDef's scope/readOnly
+// metadata drives it in VarRegistry.Set, so a handler only needs to know how
+// to format, parse, and validate its value.
 type VarHandler[T any] struct {
-	ptr         *T
-	format      func(T) string
-	parse       func(string) (T, error)
-	validate    func(T) error
-	readOnly    bool
-	description string
-	enumValues  []string // optional: constrained valid values for fuzzy completion
+	ptr        *T
+	format     func(T) string
+	parse      func(string) (T, error)
+	validate   func(T) error
+	enumValues []string // optional: constrained valid values for fuzzy completion
 }
 
 // Get returns the formatted value
@@ -57,10 +51,6 @@ func (h *VarHandler[T]) Get() (string, error) {
 
 // Set parses and sets the value
 func (h *VarHandler[T]) Set(value string) error {
-	if h.readOnly {
-		return errSetterReadOnly
-	}
-
 	parsed, err := h.parse(value)
 	if err != nil {
 		return err
@@ -81,22 +71,6 @@ func (h *VarHandler[T]) Set(value string) error {
 	return nil
 }
 
-// Description returns the variable description
-func (h *VarHandler[T]) Description() string {
-	return h.description
-}
-
-// IsReadOnly returns whether the variable is read-only
-func (h *VarHandler[T]) IsReadOnly() bool {
-	return h.readOnly
-}
-
-// AsReadOnly makes the handler read-only
-func (h *VarHandler[T]) AsReadOnly() *VarHandler[T] {
-	h.readOnly = true
-	return h
-}
-
 // ValidValues returns the constrained valid values, if any.
 // Implements ValidValuesEnumerator for VarHandler instances with enumValues set.
 func (h *VarHandler[T]) ValidValues() []string {
@@ -110,41 +84,37 @@ func (h *VarHandler[T]) WithValidator(validate func(T) error) *VarHandler[T] {
 }
 
 // BoolVar creates a handler for bool variables
-func BoolVar(ptr *bool, desc string) *VarHandler[bool] {
+func BoolVar(ptr *bool) *VarHandler[bool] {
 	return &VarHandler[bool]{
-		ptr:         ptr,
-		description: desc,
-		format:      formatBool,
-		parse:       strconv.ParseBool,
-		enumValues:  []string{"TRUE", "FALSE"},
+		ptr:        ptr,
+		format:     formatBool,
+		parse:      strconv.ParseBool,
+		enumValues: []string{"TRUE", "FALSE"},
 	}
 }
 
 // StringVar creates a handler for string variables
-func StringVar(ptr *string, desc string) *VarHandler[string] {
+func StringVar(ptr *string) *VarHandler[string] {
 	return &VarHandler[string]{
-		ptr:         ptr,
-		description: desc,
-		format:      func(s string) string { return s },
-		parse:       func(s string) (string, error) { return s, nil },
+		ptr:    ptr,
+		format: func(s string) string { return s },
+		parse:  func(s string) (string, error) { return s, nil },
 	}
 }
 
 // IntVar creates a handler for int64 variables
-func IntVar(ptr *int64, desc string) *VarHandler[int64] {
+func IntVar(ptr *int64) *VarHandler[int64] {
 	return &VarHandler[int64]{
-		ptr:         ptr,
-		description: desc,
-		format:      func(i int64) string { return strconv.FormatInt(i, 10) },
-		parse:       func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
+		ptr:    ptr,
+		format: func(i int64) string { return strconv.FormatInt(i, 10) },
+		parse:  func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
 	}
 }
 
 // NullableDurationVar creates a handler for nullable duration variables
-func NullableDurationVar(ptr **time.Duration, desc string) *VarHandler[*time.Duration] {
+func NullableDurationVar(ptr **time.Duration) *VarHandler[*time.Duration] {
 	return &VarHandler[*time.Duration]{
-		ptr:         ptr,
-		description: desc,
+		ptr: ptr,
 		format: func(d *time.Duration) string {
 			if d == nil {
 				return "NULL"
@@ -165,10 +135,9 @@ func NullableDurationVar(ptr **time.Duration, desc string) *VarHandler[*time.Dur
 }
 
 // NullableIntVar creates a handler for nullable int64 variables
-func NullableIntVar(ptr **int64, desc string) *VarHandler[*int64] {
+func NullableIntVar(ptr **int64) *VarHandler[*int64] {
 	return &VarHandler[*int64]{
-		ptr:         ptr,
-		description: desc,
+		ptr: ptr,
 		format: func(i *int64) string {
 			if i == nil {
 				return "NULL"
@@ -190,8 +159,7 @@ func NullableIntVar(ptr **int64, desc string) *VarHandler[*int64] {
 
 // ReadOnlyVar creates a read-only variable with custom getter
 type ReadOnlyVar struct {
-	getter      func() string
-	description string
+	getter func() string
 }
 
 func (r *ReadOnlyVar) Get() (string, error) {
@@ -202,19 +170,10 @@ func (r *ReadOnlyVar) Set(value string) error {
 	return errSetterReadOnly
 }
 
-func (r *ReadOnlyVar) Description() string {
-	return r.description
-}
-
-func (r *ReadOnlyVar) IsReadOnly() bool {
-	return true
-}
-
 // NewReadOnlyVar creates a new read-only variable
-func NewReadOnlyVar(getter func() string, desc string) *ReadOnlyVar {
+func NewReadOnlyVar(getter func() string) *ReadOnlyVar {
 	return &ReadOnlyVar{
-		getter:      getter,
-		description: desc,
+		getter: getter,
 	}
 }
 
@@ -237,14 +196,6 @@ func (c *CustomVar) Set(value string) error {
 		return c.customSetter(value)
 	}
 	return c.base.Set(value)
-}
-
-func (c *CustomVar) Description() string {
-	return c.base.Description()
-}
-
-func (c *CustomVar) IsReadOnly() bool {
-	return c.base.IsReadOnly()
 }
 
 // Helper function for duration validation

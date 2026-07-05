@@ -63,6 +63,7 @@ var (
 	_ MutationStatement = (*PartitionedDmlStatement)(nil)
 	_ MutationStatement = (*BulkDdlStatement)(nil)
 	_ MutationStatement = (*BatchDMLStatement)(nil)
+	_ MutationStatement = (*SyncProtoStatement)(nil)
 )
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).

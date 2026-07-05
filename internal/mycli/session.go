@@ -125,6 +125,12 @@ type Session struct {
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
+
+	// output is the per-statement output destination for streamed results,
+	// set for the duration of one statement execution via withOutput /
+	// ExecuteStatementWithOutput. See outputContext in output_context.go.
+	// Zero value means "fall back to the StreamManager writer".
+	output outputContext
 }
 
 // SchemaGeneration returns the current schema generation counter.
@@ -596,8 +602,8 @@ func (s *Session) ClosePendingTransaction() error {
 	return s.txn.ClosePendingTransaction()
 }
 
-func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-	return s.txn.RunQueryWithStats(ctx, stmt, implicit)
+func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+	return s.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
 }
 
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
@@ -980,13 +986,10 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	}()
 	if _, ok := stmt.(MutationStatement); ok {
 		result := &Result{}
-		_, err := s.DetermineTransaction(ctx)
-		if err != nil {
+		if err := s.failStatementIfReadOnly(); err != nil {
 			return result, err
 		}
-
-		err = s.failStatementIfReadOnly()
-		if err != nil {
+		if _, err := s.DetermineTransaction(ctx); err != nil {
 			return result, err
 		}
 		return stmt.Execute(ctx, s)

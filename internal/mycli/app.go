@@ -156,6 +156,11 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return nil
 	}
 
+	if opts.SysVarsHelp {
+		fmt.Print(renderSystemVariablesHelp())
+		return nil
+	}
+
 	if opts.ListSamples {
 		fmt.Print(ListAvailableSamples())
 		return nil
@@ -408,6 +413,40 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 			if err != nil {
 				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
+		}
+	}
+
+	if err := table.Render(); err != nil {
+		slog.Error("tablewriter.Table.Render() failed", "err", err)
+	}
+
+	return sb.String()
+}
+
+// renderSystemVariablesHelp generates a markdown table of all system variables
+// from the variable registry. It backs the hidden --sysvars-help flag, which
+// `make docs-update` uses to regenerate the reference table in
+// docs/system_variables.md.
+func renderSystemVariablesHelp() string {
+	sysVars := newSystemVariablesWithDefaults()
+	sysVars.ensureRegistry()
+
+	var sb strings.Builder
+
+	table := tablewriter.NewTable(&sb,
+		tablewriter.WithRenderer(renderer.NewMarkdown()),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft))
+
+	table.Header([]string{"Name", "Operations", "Description"})
+
+	// Escape characters that would break markdown table cells or be eaten by
+	// HTML sanitizers (e.g. literal <name> placeholders in descriptions).
+	escaper := strings.NewReplacer("|", `\|`, "<", `\<`, ">", `\>`)
+	for _, row := range helpVariableRows(&sysVars) {
+		err := table.Append([]string{"`" + row.Name + "`", row.Operations, escaper.Replace(row.Description)})
+		if err != nil {
+			slog.Error("tablewriter.Table.Append() failed", "err", err)
 		}
 	}
 

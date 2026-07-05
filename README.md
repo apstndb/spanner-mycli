@@ -127,7 +127,7 @@ Flags:
       --html                                   Display output in HTML format.
       --xml                                    Display output in XML format.
       --csv                                    Display output in CSV format.
-      --format=STRING                          Output format (table, tab, vertical, html, xml, csv, jsonl)
+      --format=STRING                          Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)
   -v, --verbose                                Display verbose output.
       --credential=STRING                      Use the specific credential file
       --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
@@ -164,7 +164,7 @@ Flags:
       --log-level=STRING
       --log-grpc                               Show gRPC logs
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
-                                               PROFILE.
+                                               PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
       --read-timestamp=STRING                  Perform a query at the given timestamp.
       --vertexai-project=STRING                Vertex AI project
@@ -309,6 +309,11 @@ id      name    active
 1       foo     true
 2       bar     false
 ```
+
+`TAB` writes values as-is, so values containing tabs or newlines break the row/column structure.
+Use `--format=TSV` for the same layout with lossless escaping: tab, newline, carriage return, and
+backslash inside values are escaped as `\t`, `\n`, `\r`, and `\\`, guaranteeing one row per line
+and one field per tab-separated column.
 
 With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
 
@@ -988,7 +993,8 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > - `TABLE_COMMENT` - Table wrapped in /* */ comments  
 > - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
 > - `VERTICAL` - Vertical format (column: value pairs)
-> - `TAB` - Tab-separated values
+> - `TAB` - Tab-separated values (raw; values containing tabs or newlines break the row/column structure)
+> - `TSV` - Tab-separated values with escaping (tab, newline, carriage return, and backslash in values are escaped as `\t`, `\n`, `\r`, `\\`)
 > - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
 > - `XML` - XML format (compatible with Google Cloud Spanner CLI)
 > - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)

@@ -111,7 +111,7 @@ type spannerOptions struct {
 	HTML                bool              `name:"html" help:"Display output in HTML format."`
 	XML                 bool              `name:"xml" help:"Display output in XML format."`
 	CSV                 bool              `name:"csv" help:"Display output in CSV format."`
-	Format              string            `name:"format" help:"Output format (table, tab, vertical, html, xml, csv, jsonl)"`
+	Format              string            `name:"format" help:"Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)"`
 	Verbose             bool              `name:"verbose" short:"v" help:"Display verbose output."`
 	Credential          string            `name:"credential" help:"Use the specific credential file"`
 	Prompt              *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`
@@ -141,7 +141,7 @@ type spannerOptions struct {
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
-	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
+	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS." enum:"NORMAL,PLAN,PROFILE,WITH_STATS,WITH_PLAN_AND_STATS"`
 	Strong                    bool                      `name:"strong" help:"Perform a strong query."`
 	ReadTimestamp             string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
 	VertexAIProject           string                    `name:"vertexai-project" help:"Vertex AI project"`
@@ -152,6 +152,7 @@ type spannerOptions struct {
 	Help                      showHelpFlag              `name:"help" short:"h" help:"Show this help message and exit."`
 	Version                   showVersionFlag           `name:"version" help:"Show version string."`
 	StatementHelp             bool                      `name:"statement-help" hidden:"" help:"Show statement help."`
+	SysVarsHelp               bool                      `name:"sysvars-help" hidden:"" help:"Show system variables help in markdown format."`
 	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
@@ -476,12 +477,12 @@ func applyOptionMappings(sysVars *systemVariables, mappings []optionMapping) err
 }
 
 func applyOutputTemplate(sysVars *systemVariables, opts *spannerOptions) error {
-	if opts.OutputTemplate == "" {
-		setDefaultOutputTemplate(sysVars)
-	} else {
-		if err := setOutputTemplateFile(sysVars, opts.OutputTemplate); err != nil {
-			return fmt.Errorf("parse error of output template: %w", err)
-		}
+	// Route startup through the single registry-side loader so that startup and
+	// SET CLI_OUTPUT_TEMPLATE_FILE share identical semantics (an empty value
+	// restores the built-in default template). This is the sole output-template
+	// loader; setDefaultOutputTemplate/setOutputTemplateFile were removed.
+	if err := sysVars.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", opts.OutputTemplate); err != nil {
+		return fmt.Errorf("parse error of output template: %w", err)
 	}
 	return nil
 }
