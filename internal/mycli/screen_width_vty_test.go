@@ -173,8 +173,8 @@ func TestDisplayResultWithPty(t *testing.T) {
 				SystemVariables: sysVars,
 			}
 
-			// Call displayResult
-			err = cli.displayResult(tt.result, tt.interactive, tt.input, tty)
+			// Call displayResult with a per-statement sink, as executeStatement does
+			err = cli.displayResult(cli.newResultSink(tty, tt.input), tt.result, tt.interactive, tty)
 			if err != nil {
 				t.Fatalf("displayResult() failed: %v", err)
 			}

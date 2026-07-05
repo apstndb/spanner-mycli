@@ -236,7 +236,7 @@ func TestPrintResultWritesRenderedOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := printResult(sysVars, 80, &buf, result, true, ""); err != nil {
+	if err := printResult(sysVars, 80, &buf, result, true); err != nil {
 		t.Fatalf("printResult() error = %v", err)
 	}
 
@@ -257,7 +257,7 @@ func testResultLineSuppression(t *testing.T, sysVars *systemVariables, result *R
 	t.Helper()
 
 	var buf bytes.Buffer
-	err := printResult(sysVars, 80, &buf, result, interactive, "")
+	err := printResult(sysVars, 80, &buf, result, interactive)
 	if err != nil {
 		t.Fatalf("printResult failed: %v", err)
 	}
