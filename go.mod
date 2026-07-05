@@ -10,14 +10,14 @@ require (
 	cloud.google.com/go/storage v1.63.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.15.0
-	github.com/apstndb/adcplus v0.0.0-20241227140857-9f127090f91c
+	github.com/apstndb/adcplus v0.2.0
 	github.com/apstndb/developerknowledge-go v0.2.0
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
-	github.com/apstndb/go-tabwrap v0.1.3
+	github.com/apstndb/go-tabwrap v0.1.4
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/memebridge v0.6.4
-	github.com/apstndb/spancodec v0.1.1
+	github.com/apstndb/spancodec v0.1.2
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
