@@ -25,4 +25,9 @@ jobs:
       - run: |
           tag="${GITHUB_REF#refs/tags/}"
           export VERSION="${tag#v}"
-          ko build -t latest,"${tag}" --bare
+          # Prerelease tags (v1.2.3-alpha.1 etc.) must not move the latest tag.
+          case "${tag}" in
+            *-*) tags="${tag}" ;;
+            *)   tags="latest,${tag}" ;;
+          esac
+          ko build -t "${tags}" --bare
