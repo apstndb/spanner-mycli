@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spanner-mycli/enums"
@@ -193,9 +194,31 @@ type QueryIndexAdvice struct {
 	ImprovementFactor float64
 }
 
+// TypedRows preserves the raw result-set (metadata + typed rows) for a buffered
+// Result so export formats re-render from values, not display text. It is the
+// (c) "typed buffered" body payload described in issue #738: at most one of
+// Result.Rows, Result.Typed, Result.RenderedOutput is set, and Result.Streamed
+// means the body was already emitted during execution.
+type TypedRows struct {
+	// Metadata is the authoritative column names + types for the result set.
+	Metadata *sppb.ResultSetMetadata
+	// Rows are the raw decoded rows; they remain valid after RowIterator.Stop
+	// because each row owns its decoded values.
+	Rows []*spanner.Row
+	// SQLExportAllowed preserves today's rule that only real query results are
+	// exported as INSERTs; other typed producers fall back to TABLE under
+	// SQL_INSERT* (successor of the buffered-query use of SQLExportAllowed).
+	SQLExportAllowed bool
+}
+
 type Result struct {
 	ColumnAlign []tw.Align // optional
 	Rows        []Row
+
+	// Typed holds the raw typed rows for a buffered query result; rendering
+	// derives display cells or replays raw rows at display time (printTableData).
+	// Mutually exclusive with Rows/RenderedOutput/Streamed (see TypedRows).
+	Typed *TypedRows
 
 	// RenderedOutput holds pre-rendered table data that should be written before
 	// appendices and result lines. Used when output must stay atomic until after
@@ -224,8 +247,11 @@ type Result struct {
 	IndexAdvice []QueryIndexAdvice // Index recommendations from query advisor
 	PreInput    string
 
-	// HasSQLFormattedValues indicates that the row values have been formatted as SQL literals
-	// using spanvalue.LiteralFormatConfig instead of regular display formatting.
+	// SQLExportAllowed indicates that the display-text row values in Rows have
+	// been formatted as SQL literals using spanvalue.LiteralFormatConfig instead
+	// of regular display formatting, so they may be replayed into INSERT
+	// statements. This flag governs the display-text (Rows) replay path; the
+	// typed (Typed) path carries its own TypedRows.SQLExportAllowed.
 	// This flag is set to true only when:
 	// - executeSQL is called with SQL export format (SQL_INSERT, SQL_INSERT_OR_IGNORE, SQL_INSERT_OR_UPDATE)
 	// - The values in Rows are valid SQL literals that can be used in INSERT statements
@@ -234,7 +260,7 @@ type Result struct {
 	// - SHOW CREATE TABLE, SHOW TABLES (metadata queries)
 	// - EXPLAIN, EXPLAIN ANALYZE (query plan information)
 	// - DML with THEN RETURN (uses regular formatting)
-	HasSQLFormattedValues bool
+	SQLExportAllowed bool
 
 	// SQLTableNameForExport stores the auto-detected or explicitly set table name for SQL export.
 	// This field is populated during query execution when SQL export formats are used.

@@ -138,15 +138,15 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 // appendix, when a plan is available.
 func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHeader, renderedOutput []byte, hasRenderedOutput bool, sysVars *systemVariables) (*Result, error) {
 	result := &Result{
-		IsExecutedDML:         true, // This is a regular DML statement
-		CommitTimestamp:       dmlResult.CommitResponse.CommitTs,
-		CommitStats:           dmlResult.CommitResponse.CommitStats,
-		Stats:                 stats,
-		TableHeader:           tableHeader,
-		RenderedOutput:        renderedOutput,
-		HasRenderedOutput:     hasRenderedOutput,
-		AffectedRows:          int(dmlResult.Affected),
-		HasSQLFormattedValues: false, // DML with THEN RETURN uses regular formatting, not SQL literals
+		IsExecutedDML:     true, // This is a regular DML statement
+		CommitTimestamp:   dmlResult.CommitResponse.CommitTs,
+		CommitStats:       dmlResult.CommitResponse.CommitStats,
+		Stats:             stats,
+		TableHeader:       tableHeader,
+		RenderedOutput:    renderedOutput,
+		HasRenderedOutput: hasRenderedOutput,
+		AffectedRows:      int(dmlResult.Affected),
+		SQLExportAllowed:  false, // DML with THEN RETURN uses regular formatting, not SQL literals
 	}
 
 	if err := applyQueryModeStatsRendering(result, dmlResult.Plan, sysVars); err != nil {
@@ -159,9 +159,9 @@ func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHea
 func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, rows []Row) ([]byte, error) {
 	var buf bytes.Buffer
 	result := &Result{
-		TableHeader:           tableHeader,
-		Rows:                  rows,
-		HasSQLFormattedValues: false,
+		TableHeader:      tableHeader,
+		Rows:             rows,
+		SQLExportAllowed: false,
 	}
 	if err := printTableData(sysVars, displayScreenWidth(sysVars), &buf, result); err != nil {
 		return nil, err

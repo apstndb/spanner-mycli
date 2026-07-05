@@ -46,7 +46,7 @@ var (
 // rendering client-side (virtual) result sets. It mirrors prepareFormatConfig
 // for the query path, with one intentional divergence: SQL-literal modes fall
 // back to display formatting because client-side results never set
-// HasSQLFormattedValues and therefore render as tables in SQL export modes.
+// SQLExportAllowed and therefore render as tables in SQL export modes.
 func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig, format.ValueFormatMode, error) {
 	if sysVars == nil {
 		fc, err := decoder.FormatConfigWithProto(nil, false)
