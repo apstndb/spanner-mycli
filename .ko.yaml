@@ -9,5 +9,5 @@ builds:
       - CGO_ENABLED=0
     ldflags:
       - -s -w
-      - -X main.version={{.Git.Tag}}
+      - -X main.version={{.Env.VERSION}}
       - -X main.installFrom=ghcr.io/apstndb/spanner-mycli:{{.Git.Tag}}
