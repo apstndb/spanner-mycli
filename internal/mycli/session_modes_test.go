@@ -325,8 +325,10 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 			t.Errorf("SHOW VARIABLES failed in admin session: %v", err)
 		} else if result == nil {
 			t.Error("SHOW VARIABLES returned nil result")
+		} else if result.Typed == nil {
+			t.Error("SHOW VARIABLES returned no typed rows")
 		} else {
-			t.Logf("SHOW VARIABLES returned %d rows", len(result.Rows))
+			t.Logf("SHOW VARIABLES returned %d rows", len(result.Typed.Rows))
 		}
 	})
 
