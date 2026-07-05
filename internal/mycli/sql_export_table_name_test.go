@@ -1,104 +1,25 @@
-package formatsql
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package mycli
 
 import (
 	"testing"
 
-	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestParseSimpleTablePath(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		input     string
-		wantPath  *ast.Path
-		wantError string
-	}{
-		{
-			name:  "simple table name",
-			input: "Users",
-			wantPath: &ast.Path{
-				Idents: []*ast.Ident{{Name: "Users"}},
-			},
-		},
-		{
-			name:  "schema qualified name",
-			input: "myschema.Users",
-			wantPath: &ast.Path{
-				Idents: []*ast.Ident{{Name: "myschema"}, {Name: "Users"}},
-			},
-		},
-		{
-			name:  "reserved word as table name",
-			input: "Order",
-			wantPath: &ast.Path{
-				Idents: []*ast.Ident{{Name: "Order"}},
-			},
-		},
-		{
-			name:  "three-part name",
-			input: "catalog.schema.table",
-			wantPath: &ast.Path{
-				Idents: []*ast.Ident{{Name: "catalog"}, {Name: "schema"}, {Name: "table"}},
-			},
-		},
-		{
-			name:  "table name with spaces around",
-			input: "  Users  ",
-			wantPath: &ast.Path{
-				Idents: []*ast.Ident{{Name: "Users"}},
-			},
-		},
-		{
-			name:      "empty string",
-			input:     "",
-			wantError: "CLI_SQL_TABLE_NAME must be set for SQL export formats",
-		},
-		{
-			name:      "only spaces",
-			input:     "   ",
-			wantError: "CLI_SQL_TABLE_NAME must be set for SQL export formats",
-		},
-		{
-			name:      "empty part in path",
-			input:     "schema..table",
-			wantError: `empty identifier in table path: "schema..table"`,
-		},
-		{
-			name:      "trailing dot",
-			input:     "schema.table.",
-			wantError: `empty identifier in table path: "schema.table."`,
-		},
-		{
-			name:      "leading dot",
-			input:     ".table",
-			wantError: `empty identifier in table path: ".table"`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseSimpleTablePath(tt.input)
-
-			if tt.wantError != "" {
-				require.Error(t, err)
-				assert.Equal(t, tt.wantError, err.Error())
-				assert.Nil(t, got)
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, len(tt.wantPath.Idents), len(got.Idents))
-				for i, ident := range tt.wantPath.Idents {
-					assert.Equal(t, ident.Name, got.Idents[i].Name)
-				}
-				// Verify SQL output works (important for reserved words)
-				_ = got.SQL()
-			}
-		})
-	}
-}
 
 func TestExtractTableNameFromQuery(t *testing.T) {
 	t.Parallel()
@@ -452,7 +373,7 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ExtractTableNameFromQuery(tt.query)
+			got, err := extractTableNameFromQuery(tt.query)
 
 			if tt.wantError != "" {
 				// Expecting an error
@@ -469,45 +390,6 @@ func TestExtractTableNameFromQuery(t *testing.T) {
 				// Error is expected for unsupported patterns
 				require.Error(t, err, "should return error for unsupported pattern: %s", tt.description)
 			}
-		})
-	}
-}
-
-func TestParseSimpleTablePathSQL(t *testing.T) {
-	t.Parallel()
-	// Test that reserved words are properly quoted in SQL output
-	tests := []struct {
-		name    string
-		input   string
-		wantSQL string
-	}{
-		{
-			name:    "simple table",
-			input:   "Users",
-			wantSQL: "Users",
-		},
-		{
-			name:    "reserved word ORDER",
-			input:   "Order",
-			wantSQL: "`Order`", // Reserved words are auto-quoted by memefish
-		},
-		{
-			name:    "schema qualified",
-			input:   "myschema.Users",
-			wantSQL: "myschema.Users",
-		},
-		{
-			name:    "reserved words in path",
-			input:   "select.from.where",
-			wantSQL: "`select`.`from`.`where`", // All reserved words are quoted
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path, err := ParseSimpleTablePath(tt.input)
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantSQL, path.SQL())
 		})
 	}
 }

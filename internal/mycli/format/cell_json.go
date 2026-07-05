@@ -15,10 +15,10 @@
 package format
 
 // RawJSONCell wraps a Cell to signal that its RawText() is a valid JSON value.
-// JSON-aware formatters (like JSONL) write the text directly as raw JSON
-// instead of quoting it as a JSON string. For cells without this wrapper
-// (e.g., client-side statement results), the JSONL formatter quotes the
-// text as a JSON string.
+// JSON-aware consumers (the buffered JSONL replay through the spanvalue
+// writer) emit the text directly as raw JSON instead of quoting it as a JSON
+// string. Cells without this wrapper (e.g., client-side statement results)
+// are emitted as JSON strings.
 type RawJSONCell struct {
 	Cell
 }

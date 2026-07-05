@@ -79,11 +79,17 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		fmtMode = format.ModeTable
 	}
 
-	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && result.SQLTableNameForExport != "" {
-		config.SQLTableName = result.SQLTableNameForExport
-	}
-
 	if !fmtMode.IsTableMode() {
+		// CSV/JSONL/SQL_INSERT* replay buffered rows through the spanvalue
+		// writers so those formats have a single byte-emitting implementation
+		// shared with the streaming paths. The fallback above guarantees the
+		// SQL modes only reach this replay with SQL-literal formatted cells.
+		if handled, err := writeBufferedRowsWithSpanvalueWriter(out, sysVars, result.SQLTableNameForExport, columnNames, result.Rows); handled || err != nil {
+			if err != nil {
+				return fmt.Errorf("spanvalue writer failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
+			}
+			return nil
+		}
 		formatter, err := format.NewStreamingFormatter(fmtMode, out, config)
 		if err != nil {
 			return fmt.Errorf("failed to create streaming formatter for buffered rows: %w", err)
@@ -101,18 +107,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	})
 }
 
-func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool, input string) error {
-	if sysVars.Display.MarkdownCodeblock {
-		fmt.Fprintln(out, "```sql")
-	}
-
-	// Echo the input SQL if CLI_ECHO_INPUT is enabled
-	// This output is intentionally sent to 'out' (not TtyOutStream) so it's captured in tee files
-	// This provides complete context in logs showing which queries produced which results
-	if sysVars.Feature.EchoInput && input != "" {
-		fmt.Fprintln(out, input+";")
-	}
-
+// printResult writes the result body (table data, appendices, result line) to
+// out. The surrounding decorations (CLI_MARKDOWN_CODEBLOCK fence,
+// CLI_ECHO_INPUT echo) and the CLI_USE_PAGER pager are owned by resultSink so
+// they order correctly around streamed rows; pass a resultSink as out to get
+// the decorated output.
+func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool) error {
 	// Skip table data if already streamed or pre-rendered by an execution path
 	// that needs atomic output after side effects such as implicit DML commit.
 	if !result.Streamed {
@@ -168,10 +168,6 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 	if sysVars.Display.CLIFormat == enums.DisplayModeTableDetailComment {
 		fmt.Fprintln(out, "*/")
-	}
-
-	if sysVars.Display.MarkdownCodeblock {
-		fmt.Fprintln(out, "```")
 	}
 
 	return nil

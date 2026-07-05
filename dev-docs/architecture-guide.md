@@ -29,7 +29,7 @@ Key files in `internal/mycli`:
   [patterns/system-variables.md](patterns/system-variables.md)).
 - **streamio/**: `StreamManager`, the stdin/stdout/TTY/tee stream separation.
 
-Supporting subpackages under `internal/mycli/` (format, formatsql, metrics,
+Supporting subpackages under `internal/mycli/` (format, metrics,
 decoder, iterutil, filesafety, ...) are small and self-describing; read their
 doc comments.
 

@@ -14,7 +14,6 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
-	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
@@ -70,10 +69,6 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 // prepareFormatConfig determines the appropriate format configuration based on the display mode.
 // It returns the format config, the value format mode used, and the potentially modified sysVars.
 // This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
-//
-// Instead of switching on specific mode names, this function queries the registry
-// for the ValueFormatMode declared by the formatter.
-// Note: execute_sql.go still imports formatsql for ExtractTableNameFromQuery (SQL parsing utility).
 func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, format.ValueFormatMode, *systemVariables, error) {
 	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
 	vfm := format.ValueFormatModeFor(fmtMode)
@@ -86,7 +81,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
-			detectedTableName, detectionErr := formatsql.ExtractTableNameFromQuery(sql)
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
 			if detectedTableName != "" {
 				// Create a copy of sysVars to use the detected table name for this execution only.
 				// This is important for:
@@ -268,12 +263,19 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
+// Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) stream without a
+// RowProcessor: executeStreamingSQLWithSpanvalueWriter creates and validates
+// the writer itself.
 func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
 	// The per-statement output destination (respects tee/redirect settings
 	// and the MCP handler's capture buffer).
 	outStream := qe.Session.outputWriter()
 	if outStream == nil {
 		return false, nil, nil
+	}
+
+	if usesSpanvalueWriter(qe.SysVars.Display.CLIFormat) {
+		return true, nil, nil
 	}
 
 	screenWidth := qe.Session.displayWidthFor(qe.SysVars)
@@ -417,6 +419,8 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 // createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
 // Non-table formats are always streaming because they do not benefit from row buffering.
 // For table formats, CLI_TABLE_STREAMING controls whether to trade layout quality for immediate output.
+// Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) never reach this function:
+// decideExecutionMode routes them to the spanvalue writer path directly.
 func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
 	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
 	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
