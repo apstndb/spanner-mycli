@@ -220,16 +220,18 @@ type Result struct {
 	// Mutually exclusive with Rows/RenderedOutput/Streamed (see TypedRows).
 	Typed *TypedRows
 
-	// RenderedOutput holds pre-rendered table data that should be written before
-	// appendices and result lines. Used when output must stay atomic until after
-	// execution side effects such as implicit DML commit have succeeded.
-	RenderedOutput    []byte
-	HasRenderedOutput bool
-	Predicates        []string
-	Appendices        []ResultAppendix
-	AffectedRows      int
-	AffectedRowsType  rowCountType
-	Stats             QueryStats
+	// RenderedOutput holds pre-rendered text (kind (d)) that should be written
+	// before appendices and result lines. Used when output must stay atomic until
+	// after execution side effects such as implicit DML commit have succeeded.
+	// A non-nil RenderedOutput is the signal to write it instead of formatting a
+	// body payload (printResult); the two producers (DUMP buffered fallback, DML
+	// THEN RETURN) always set it together with their content.
+	RenderedOutput   []byte
+	Predicates       []string
+	Appendices       []ResultAppendix
+	AffectedRows     int
+	AffectedRowsType rowCountType
+	Stats            QueryStats
 
 	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
 	IsExecutedDML bool

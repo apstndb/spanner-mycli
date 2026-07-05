@@ -16,7 +16,7 @@ import (
 func dumpRenderedOutputForTest(t *testing.T, result *Result) string {
 	t.Helper()
 
-	if !result.HasRenderedOutput {
+	if result.RenderedOutput == nil {
 		t.Fatalf("expected DUMP fallback to return pre-rendered output")
 	}
 	if len(result.Rows) > 0 {

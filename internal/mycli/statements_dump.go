@@ -170,7 +170,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 		if err != nil {
 			return nil, fmt.Errorf("export DDL: %w", err)
 		}
-		if err := writeResultRows(&out, ddlResult.Rows); err != nil {
+		if _, err := out.Write(ddlResult.RenderedOutput); err != nil {
 			return nil, fmt.Errorf("write DDL: %w", err)
 		}
 	}
@@ -226,22 +226,9 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	}
 
 	return &Result{
-		AffectedRows:      affectedRows,
-		RenderedOutput:    out.Bytes(),
-		HasRenderedOutput: true,
+		AffectedRows:   affectedRows,
+		RenderedOutput: out.Bytes(),
 	}, nil
-}
-
-// writeResultRows writes Result rows to an io.Writer
-func writeResultRows(out io.Writer, rows []Row) error {
-	for _, row := range rows {
-		if len(row) > 0 {
-			if _, err := fmt.Fprintln(out, row[0].RawText()); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func writeCapturedDumpOutput(out io.Writer, output string) error {
@@ -280,7 +267,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 		if err != nil {
 			return nil, fmt.Errorf("failed to export DDL: %w", err)
 		}
-		if err := writeResultRows(out, ddlResult.Rows); err != nil {
+		if _, err := out.Write(ddlResult.RenderedOutput); err != nil {
 			return nil, fmt.Errorf("failed to write DDL: %w", err)
 		}
 	}
@@ -338,24 +325,28 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 	return &Result{AffectedRows: totalAffectedRows, Streamed: true}, nil
 }
 
-// exportDDL exports database DDL statements
+// exportDDL exports database DDL statements as pre-rendered text (kind (d)).
+// Each statement is terminated with ';' and followed by a blank line, matching
+// the previous per-row rendering; callers write Result.RenderedOutput directly.
 func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	ddl, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &Result{Rows: make([]Row, 0, len(ddl.Statements)+2)}
-	result.Rows = append(result.Rows, toRow("-- Database DDL exported by spanner-mycli"), toRow(""))
+	var out bytes.Buffer
+	fmt.Fprintln(&out, "-- Database DDL exported by spanner-mycli")
+	fmt.Fprintln(&out)
 
 	for _, stmt := range ddl.Statements {
 		if !strings.HasSuffix(stmt, ";") {
 			stmt += ";"
 		}
-		result.Rows = append(result.Rows, toRow(stmt), toRow(""))
+		fmt.Fprintln(&out, stmt)
+		fmt.Fprintln(&out)
 	}
 
-	return result, nil
+	return &Result{RenderedOutput: out.Bytes()}, nil
 }
 
 // getTableDependencyOrderWithTxn returns tables in dependency order using a transaction for consistency.

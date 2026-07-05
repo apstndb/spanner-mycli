@@ -22,6 +22,7 @@ import (
 	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
+	"github.com/apstndb/spanvalue/writer"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -34,12 +35,22 @@ type identRow struct {
 	F float64 `spanner:"f"`
 }
 
-// TestTypedRowsByteIdentity proves that PR1 is zero behavior change on the
-// buffered query path: for every CLI_FORMAT, rendering a typed buffered result
-// (Result.Typed) produces byte-identical output to the pre-PR1 shape where the
-// same raw rows were eagerly transformed to display cells (Result.Rows) with
-// the execution-time FormatConfig. This is the replay regression suite for the
-// typed producer added in PR1 (issue #738 section 6).
+// TestTypedRowsByteIdentity is the byte-identity regression suite for the typed
+// buffered producer (issue #738 section 6). For every CLI_FORMAT, rendering a
+// typed buffered result (Result.Typed) must be byte-identical to the canonical
+// emitter for that format:
+//
+//   - Export formats (CSV/JSONL/SQL_INSERT*): the streaming writer that a live
+//     query uses (newSpanvalueRowIteratorWriterFor + writer.WriteRowSeq over the
+//     same raw rows). This is the single source of truth those formats stream
+//     through; the buffered typed path must produce the same bytes.
+//   - Table-family formats: the same raw rows eagerly transformed to display
+//     cells (Result.Rows) with the execution-time FormatConfig, then rendered as
+//     a presentation table. Table rendering is unchanged by the decomposition.
+//
+// (Before PR5 the export reference was also eager display cells replayed through
+// a pass-through-GCV writer; PR5 deleted that replay, so export formats now
+// compare against the streaming writer directly.)
 func TestTypedRowsByteIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -73,33 +84,47 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 			sv.Display.CLIFormat = mode
 			sv.Display.SQLTableName = "Items" // required by SQL export modes
 
-			// Reproduce the pre-PR1 executeWithBuffering row construction: eager
-			// display cells using the execution-time FormatConfig.
 			fc, vfm, sv2, err := prepareFormatConfig("SELECT * FROM Items", &sv)
 			if err != nil {
 				t.Fatalf("prepareFormatConfig: %v", err)
 			}
-			transform := spannerRowToRow(fc, sv2.typeStyles, sv2.nullStyle)
-			if vfm == format.JSONValues {
-				transform = withRawJSONMarker(transform)
-			}
-			var oldRows []Row
-			for _, row := range rawRows {
-				cells, err := transform(row)
-				if err != nil {
-					t.Fatalf("transform: %v", err)
+			sqlExport := vfm == format.SQLLiteralValues
+
+			// Reference bytes for the format's canonical emitter.
+			var wantBuf bytes.Buffer
+			if usesSpanvalueWriter(mode) {
+				// Export formats stream through this writer for live queries.
+				w, handled, err := newSpanvalueRowIteratorWriterFor(&wantBuf, sv2, fc)
+				if err != nil || !handled {
+					t.Fatalf("newSpanvalueRowIteratorWriterFor: handled=%v err=%v", handled, err)
 				}
-				oldRows = append(oldRows, cells)
+				if _, err := writer.WriteRowSeq(md, rowSeq(rawRows), w); err != nil {
+					t.Fatalf("WriteRowSeq: %v", err)
+				}
+			} else {
+				// Table-family formats: eager display cells rendered as a table.
+				transform := spannerRowToRow(fc, sv2.typeStyles, sv2.nullStyle)
+				if vfm == format.JSONValues {
+					transform = withRawJSONMarker(transform)
+				}
+				var oldRows []Row
+				for _, row := range rawRows {
+					cells, err := transform(row)
+					if err != nil {
+						t.Fatalf("transform: %v", err)
+					}
+					oldRows = append(oldRows, cells)
+				}
+				oldResult := &Result{
+					Rows:         oldRows,
+					TableHeader:  header,
+					AffectedRows: len(rawRows),
+				}
+				if err := printTableData(&sv, 0, &wantBuf, oldResult); err != nil {
+					t.Fatalf("printTableData(reference): %v", err)
+				}
 			}
 
-			sqlExport := vfm == format.SQLLiteralValues
-			oldResult := &Result{
-				Rows:                  oldRows,
-				TableHeader:           header,
-				AffectedRows:          len(rawRows),
-				SQLExportAllowed:      sqlExport,
-				SQLTableNameForExport: sv2.Display.SQLTableName,
-			}
 			newResult := &Result{
 				Typed:                 &TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: sqlExport},
 				TableHeader:           header,
@@ -107,18 +132,15 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 				SQLTableNameForExport: sv2.Display.SQLTableName,
 			}
 
-			var oldBuf, newBuf bytes.Buffer
-			if err := printTableData(&sv, 0, &oldBuf, oldResult); err != nil {
-				t.Fatalf("printTableData(old): %v", err)
-			}
+			var newBuf bytes.Buffer
 			if err := printTableData(&sv, 0, &newBuf, newResult); err != nil {
 				t.Fatalf("printTableData(new): %v", err)
 			}
-			if oldBuf.Len() == 0 {
+			if wantBuf.Len() == 0 {
 				t.Fatalf("expected non-empty output for %s", mode)
 			}
-			if diff := cmp.Diff(oldBuf.String(), newBuf.String()); diff != "" {
-				t.Errorf("typed replay is not byte-identical for %s (-old +new):\n%s", mode, diff)
+			if diff := cmp.Diff(wantBuf.String(), newBuf.String()); diff != "" {
+				t.Errorf("typed replay is not byte-identical for %s (-want +got):\n%s", mode, diff)
 			}
 		})
 	}

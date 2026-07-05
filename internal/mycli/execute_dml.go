@@ -89,7 +89,6 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	}
 
 	var renderedOutput []byte
-	var hasRenderedOutput bool
 	var queryStats map[string]any
 	var tableHeader TableHeader
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
@@ -102,11 +101,13 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		if tableHeader != nil {
 			// Render inside the transaction callback so a formatting error
 			// aborts the implicit commit instead of committing without output.
+			// renderedOutput may be empty (e.g. JSONL with zero returned rows);
+			// printResult re-derives the same empty body when it is nil, so a
+			// separate "has rendered output" flag is unnecessary.
 			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Metadata, updateResult.Rows)
 			if err != nil {
 				return 0, nil, nil, err
 			}
-			hasRenderedOutput = true
 		}
 		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
@@ -125,7 +126,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		CommitTimestamp: result.CommitResponse.CommitTs,
 	}
 
-	return buildDMLResult(result, stats, tableHeader, renderedOutput, hasRenderedOutput, session.systemVariables)
+	return buildDMLResult(result, stats, tableHeader, renderedOutput, session.systemVariables)
 }
 
 // buildDMLResult assembles the final Result for a regular (non-batch) DML
@@ -136,17 +137,16 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 // render even without CLI_VERBOSE, and WITH_PLAN_AND_STATS additionally
 // appends the query plan collected by runUpdateOnTransaction as a result
 // appendix, when a plan is available.
-func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHeader, renderedOutput []byte, hasRenderedOutput bool, sysVars *systemVariables) (*Result, error) {
+func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHeader, renderedOutput []byte, sysVars *systemVariables) (*Result, error) {
 	result := &Result{
-		IsExecutedDML:     true, // This is a regular DML statement
-		CommitTimestamp:   dmlResult.CommitResponse.CommitTs,
-		CommitStats:       dmlResult.CommitResponse.CommitStats,
-		Stats:             stats,
-		TableHeader:       tableHeader,
-		RenderedOutput:    renderedOutput,
-		HasRenderedOutput: hasRenderedOutput,
-		AffectedRows:      int(dmlResult.Affected),
-		SQLExportAllowed:  false, // DML with THEN RETURN uses regular formatting, not SQL literals
+		IsExecutedDML:    true, // This is a regular DML statement
+		CommitTimestamp:  dmlResult.CommitResponse.CommitTs,
+		CommitStats:      dmlResult.CommitResponse.CommitStats,
+		Stats:            stats,
+		TableHeader:      tableHeader,
+		RenderedOutput:   renderedOutput,
+		AffectedRows:     int(dmlResult.Affected),
+		SQLExportAllowed: false, // DML with THEN RETURN uses regular formatting, not SQL literals
 	}
 
 	if err := applyQueryModeStatsRendering(result, dmlResult.Plan, sysVars); err != nil {
