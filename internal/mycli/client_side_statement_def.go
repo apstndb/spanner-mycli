@@ -49,7 +49,7 @@ const (
 	fuzzyCompleteModel
 	fuzzyCompleteSchema
 	fuzzyCompleteParam
-	fuzzyCompleteSetKeyword
+	fuzzyCompleteSetTarget
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -80,8 +80,8 @@ func (t fuzzyCompletionType) String() string {
 		return "schema"
 	case fuzzyCompleteParam:
 		return "param"
-	case fuzzyCompleteSetKeyword:
-		return "set_keyword"
+	case fuzzyCompleteSetTarget:
+		return "set_target"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -947,8 +947,13 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &SetParamTypeStatement{Name: groups["name"], Type: groups["type"]}, nil
 		},
 		Completion: []fuzzyArgCompletion{{
-			// Name completion: SET PARAM [<partial_name>]
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\b\s*([^\s=]*)$`),
+			// Name completion: SET PARAM <partial_name>. Whitespace after
+			// PARAM is required: without it (input "SET PARAM"), the argument
+			// group would start immediately after the M and the completion
+			// would be glued into "SET PARAMname". Bare "SET PARAM" instead
+			// falls through to the generic SET target completion, which
+			// re-completes the PARAM token itself.
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+PARAM\s+([^\s=]*)$`),
 			CompletionType: fuzzyCompleteParam,
 			Suffix:         " ",
 		}},
@@ -966,20 +971,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Completion: []fuzzyArgCompletion{
 			{
-				// Discover query-parameter completion via the reserved keyword `PARAM`.
-				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+()$`),
-				CompletionType: fuzzyCompleteSetKeyword,
-				Suffix:         " ",
-			},
-			{
 				// Value completion: SET <name> = <partial_value>
 				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+(\S+)\s*=\s*(\S*)$`),
 				CompletionType: fuzzyCompleteVariableValue,
 			},
 			{
-				// Name completion: SET <partial_name>
+				// Target completion: SET <partial_name>. Candidates are the
+				// system variables plus the PARAM keyword in one list, so
+				// bare `SET ` offers everything and a partial "PARAM" token
+				// (including bare "SET PARAM" without a trailing space)
+				// completes to "SET PARAM ". The PARAM item overrides the
+				// " = " suffix per-item (fzfItem.Suffix).
 				PrefixPattern:  regexp.MustCompile(`(?i)^\s*SET\s+([^\s=]*)$`),
-				CompletionType: fuzzyCompleteVariable,
+				CompletionType: fuzzyCompleteSetTarget,
 				Suffix:         " = ",
 			},
 		},
