@@ -15,6 +15,7 @@
 package mycli
 
 import (
+	"fmt"
 	"io"
 	"iter"
 
@@ -77,8 +78,15 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 	}
 
 	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sv, fc)
-	if err != nil || !handled {
+	if err != nil {
 		return err
+	}
+	if !handled {
+		// printTableData only calls writeTypedRows for usesSpanvalueWriter
+		// formats with a non-nil out, so newSpanvalueRowIteratorWriterFor must
+		// handle them. Fail loudly rather than silently drop rows if the two
+		// format sets ever diverge.
+		return fmt.Errorf("no spanvalue writer for typed replay in format %v", sv.Display.CLIFormat)
 	}
 	if _, err := writer.WriteRowSeq(result.Typed.Metadata, rowSeq(result.Typed.Rows), w); err != nil {
 		return normalizeSpanvalueWriterError(err)
