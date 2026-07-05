@@ -35,10 +35,10 @@ DESCRIBE SELECT * FROM users;`
 
 		// Create system variables with ECHO enabled
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
-		sysVars.EchoInput = true // Enable ECHO
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
+		sysVars.Feature.EchoInput = true // Enable ECHO
 
 		// Create a mock session
 		session := &Session{
@@ -103,10 +103,10 @@ DESCRIBE SELECT * FROM users;`
 
 		// Create system variables with ECHO disabled
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Project = "test-project"
-		sysVars.Instance = "test-instance"
-		sysVars.Database = "test-database"
-		sysVars.EchoInput = false // Disable ECHO
+		sysVars.Connection.Project = "test-project"
+		sysVars.Connection.Instance = "test-instance"
+		sysVars.Connection.Database = "test-database"
+		sysVars.Feature.EchoInput = false // Disable ECHO
 
 		// Create a mock session
 		session := &Session{

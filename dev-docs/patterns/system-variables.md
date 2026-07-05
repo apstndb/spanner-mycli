@@ -1,270 +1,171 @@
 # System Variable Implementation Patterns
 
-This document provides detailed patterns and best practices for implementing system variables in spanner-mycli.
+This document describes how to add and modify system variables in spanner-mycli,
+matching the actual code as of the StartupConfig/LastResult decomposition
+(PR #692) and SET LOCAL support (PR #400 / PR #691).
 
-## Design Patterns (Issue #243 Insights)
+## State model
 
-**Discovery**: Consistent patterns for system variable implementation improve maintainability and user experience
+`systemVariables` (internal/mycli/system_variables.go) is layered by ownership
+and mutability:
 
-### Basic Implementation Pattern
+| Group | Type | Mutability | Examples |
+|-------|------|------------|----------|
+| `Config` | `StartupConfig` | Immutable after startup; every backing variable is registered read-only | `CLI_HOST`, `CLI_INSECURE`, `CLI_SKIP_SYSTEM_COMMAND` |
+| `Connection` | `ConnectionVars` | Identity; `Database`/`Role` mutated only by USE/DETACH | `CLI_DATABASE`, `CLI_ROLE` |
+| `LastResult` | `LastResult` | Written by statement execution; never user-settable | `READ_TIMESTAMP`, `COMMIT_RESPONSE` |
+| `Display`/`Query`/`Transaction`/`Feature`/`Internal` | `*Vars` | The SET-able surface (also scoped by SET LOCAL) | `CLI_FORMAT`, `STATEMENT_TIMEOUT` |
 
-1. **Naming Convention**: CLI-specific variables **MUST** use `CLI_` prefix to distinguish from java-spanner JDBC properties
+**Single-instance contract**: there is exactly one live `systemVariables` per
+process. The registry (`VarRegistry`) captures raw pointers into it, so the
+struct must never be copied. USE/DETACH mutate it in place
+(`SessionHandler.switchSession`).
 
-2. **Access Control Design**:
-   - **Presentation layer variables** (display, formatting): Use standard VarHandler with read/write access
-   - **Session behavior variables** (authentication, connection settings): Use read-only VarHandler to prevent runtime session state changes
+## Adding a variable
 
-3. **Implementation Template**:
-   ```go
-   // In internal/mycli/system_variables_registry.go
-   
-   // Read/write variable (boolean)
-   r.Register("CLI_VARIABLE_NAME", 
-       BoolVar(&sv.FieldName).
-           WithDescription("Clear description of purpose and default value"))
-   
-   // Read/write variable (string)
-   r.Register("CLI_STRING_VARIABLE",
-       StringVar(&sv.FieldName).
-           WithDescription("Description of the variable"))
-   
-   // Read-only variable
-   r.Register("CLI_READ_ONLY_VARIABLE",
-       NewReadOnlyVar(
-           func() (string, error) { return sv.FieldName, nil },
-           "Description explaining read-only nature"))
-   ```
+1. **Naming**: spanner-mycli-specific variables MUST use the `CLI_` prefix.
+   Names without the prefix are reserved for java-spanner JDBC-compatible
+   properties.
+2. **Pick the group by mutability**, not by topic:
+   - Fixed at startup -> `StartupConfig` field + read-only registration +
+     direct assignment in `createSystemVariablesFromOptions` (config.go).
+   - User-settable -> the matching `*Vars` group + writable registration.
+   - Produced by statement execution -> `LastResult` field + read-only
+     registration (or a getter-only handler).
+3. **Add a `varDef` entry** to the `varDefs` table in
+   `internal/mycli/var_defs.go`. `registerAll`
+   (`internal/mycli/var_registry.go`) iterates the table to build the
+   registry; `system_variables_registry.go` holds the set/get plumbing.
+4. **Document**: the reference table in docs/system_variables.md is generated
+   from the registry (via the hidden `--sysvars-help` flag); run
+   `make docs-update` after registering, so the description doubles as user
+   documentation. The README system-variables table is hand-maintained; add a
+   row there. Add a detailed section to docs/system_variables.md if the
+   variable needs more than one line of explanation.
+5. **Test**: see Testing below.
 
-4. **Testing Requirements**: Add comprehensive test cases to `internal/mycli/system_variables_test.go` covering both successful operations and proper error handling for unimplemented setters
+## Registration API (var_defs.go + var_handler.go, var_enum_handlers.go, var_custom_handlers.go)
 
-5. **Documentation**: Include clear descriptions explaining purpose, default values, and any access restrictions
+Every variable is one `varDef` entry in the `varDefs` table (var_defs.go).
+Metadata (name, `desc`, `scope`/`readOnly`) lives in the def; the `bind`
+closure constructs the live handler bound to the process-wide
+`systemVariables`. Handlers implement only `Get`/`Set` — read-only enforcement
+is driven by the def's scope in `VarRegistry.Set`, not by the handler. `scope`
+values: `scopeSession` (SET-able), `scopeStartup` (StartupConfig-backed,
+read-only), `scopeConnection` (connection identity, read-only), `scopeResult`
+(LastResult output, read-only).
 
-### Architecture Guidelines
-
-- **Pattern**: Use generic VarHandler types (BoolVar, StringVar, IntVar, etc.) for type-safe variable handling
-- **Architecture**: Session behavior variables should be read-only to prevent runtime session state changes that could cause inconsistencies
-- **Error Handling**: The registry automatically handles type validation and returns appropriate errors
-- **Testing Strategy**: System variables test pattern in `internal/mycli/system_variables_test.go` covers both SET/GET operations and proper error handling
-- **Code Organization**: All variable registrations are centralized in `internal/mycli/system_variables_registry.go`
-
-### Session-Init-Only Variables
-
-Some variables can only be set before session creation because they control client initialization behavior that cannot be changed after the session is established.
-
-**Implementation Pattern**:
-1. Use a custom validator that checks if session exists
-2. Document in the Description that it must be set before session creation
-
-**Example**:
 ```go
-// In internal/mycli/system_variables_registry.go
-r.Register("CLI_ENABLE_ADC_PLUS",
-    BoolVar(&sv.EnableADCPlus).
-        WithValidator(func(v bool) error {
-            if sv.CurrentSession != nil {
-                return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
-            }
-            return nil
-        }).
-        WithDescription("A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true."))
+// In the varDefs table (internal/mycli/var_defs.go):
+
+// Writable bool/string/int
+{
+	name: "CLI_VERBOSE", desc: "Display verbose output.", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable { return BoolVar(&sv.Display.Verbose) },
+},
+
+// Read-only (StartupConfig-backed): a non-session scope makes it non-settable
+{
+	name: "CLI_INSECURE", desc: "Skip TLS certificate verification (insecure).",
+	scope: scopeStartup,
+	bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.Insecure) },
+},
+
+// Computed read-only value: getter is func() string (it cannot fail)
+{
+	name: "CLI_VERSION", desc: "The version of spanner-mycli.", scope: scopeStartup,
+	bind: func(sv *systemVariables) Variable { return NewReadOnlyVar(getVersion) },
+},
+
+// Enums: enumer-generated types in enums/ with a small typed constructor
+{
+	name: "CLI_FORMAT", desc: "...", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable { return DisplayModeVar(&sv.Display.CLIFormat) },
+},
+
+// Validation hook (duration bounds via WithValidator)
+{
+	name: "STATEMENT_TIMEOUT", desc: "...", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable {
+		return NullableDurationVar(&sv.Query.StatementTimeout).
+			WithValidator(durationValidator(durationPtr(0), nil))
+	},
+},
+
+// ADD support: set bindAdd to construct the ADD handler (see CLI_PROTO_DESCRIPTOR_FILE)
 ```
 
-**Behavior**:
-- Can be set via `--set` flag before session creation
-- After session creation, any attempt to set the value will return an error with a clear message
-- The registry handles case-insensitive variable names automatically
+### Session-init-only variables
 
-### Development Workflow
+Variables that control client initialization can be set via `--set` before the
+session exists but must reject later writes. The actual pattern is a
+`CustomVar` whose setter checks `sv.inTransaction` as a session-existence
+proxy (it is nil until the first session is created); see the
+`CLI_ENABLE_ADC_PLUS` entry in the `varDefs` table for the canonical example.
 
-- **Workflow**: phantom + tmux horizontal split works well for focused system variable implementation
-- **Manual Testing**: Use `--embedded-emulator` only when Go test suite is insufficient - prefer comprehensive test cases in existing test suite
+### Raw + parsed variables
 
-## Timeout Implementation Patterns (Issue #276 Insights)
+Variables like `CLI_TYPE_STYLES` and `CLI_ANALYZE_COLUMNS` store the raw
+string (shown by SHOW VARIABLE) plus a parsed artifact in a sibling field.
+Their custom setter must keep both in sync, and parse errors must reject the
+SET before any state changes.
 
-**Discovery**: Centralized timeout management and pointer type design for proper state handling
+## SET LOCAL compatibility
 
-### Pointer Type Design
+`SET LOCAL` (statements_system_variable.go) saves the current display value
+and restores it through the setter when the transaction ends. This imposes a
+contract on every writable variable:
 
-**Key Pattern**: Using `*time.Duration` for system variables enables distinction between unset (nil) vs zero timeout, critical for backward compatibility
+- **Get -> Set must round-trip**: the string returned by the getter must be
+  accepted by the setter (nullable handlers already accept `NULL`). SET LOCAL
+  verifies this with a pre-flight `Set(Get())` and rejects variables that
+  fail, so a non-round-tripping variable degrades gracefully - but fix the
+  round-trip if the variable should support SET LOCAL.
+- **Setter side effects re-run on restore**: parsing (templates, styles) is
+  re-executed when the saved value is set back. Setters must be idempotent
+  for the same value.
+- Read-only variables and setters that reject writes mid-transaction are
+  rejected by the pre-flight check automatically.
+
+## CLI flag mapping (config.go)
+
+- StartupConfig fields are assigned directly in
+  `createSystemVariablesFromOptions` (their variables are read-only, so the
+  registry path would reject them).
+- Settable variables map flags through `applyOptionMappings` /
+  `SetFromSimple`, which routes through the setter and its validation.
+  Prefer this over direct assignment so `--flag` and `SET` cannot diverge.
+
+## Testing
+
+Match the existing test style (std testing + go-cmp preferred; see
+[testing.md](testing.md#test-style) for notes on testify usage):
 
 ```go
-type systemVariables struct {
-    // Other fields...
-    StatementTimeout *time.Duration
+func TestMyVariable(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest() // registry-ready defaults
+	if err := sysVars.SetFromSimple("CLI_MY_VARIABLE", "value"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := sysVars.Registry.Get("CLI_MY_VARIABLE")
+	// assert on got/err
+	_ = got
+	_ = err
 }
 ```
 
-Benefits:
-- `nil` = unset (use default behavior)
-- `&time.Duration{0}` = explicitly set to zero (immediate timeout)
-- `&time.Duration{5*time.Minute}` = explicitly set timeout
-
-### Context Management Pattern
-
-**Centralized timeout application** in `Session.ExecuteStatement` prevents `defer cancel()` timing issues during resource cleanup:
-
-```go
-func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) error {
-    // Apply timeout at the session boundary, not in individual operations
-    if s.systemVariables.StatementTimeout != nil {
-        var cancel context.CancelFunc
-        ctx, cancel = context.WithTimeout(ctx, *s.systemVariables.StatementTimeout)
-        defer cancel()
-    }
-    
-    // Execute statement with timeout context
-    return s.executeStatementWithContext(ctx, stmt)
-}
-```
-
-### Early Validation Pattern
-
-**Pre-validate CLI flag values** before system variable assignment for better error reporting:
-
-```go
-if opts.Timeout != "" {
-    // Validate format first
-    _, err := time.ParseDuration(opts.Timeout)
-    if err != nil {
-        return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
-    }
-    
-    // Then set the system variable
-    if err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", opts.Timeout); err != nil {
-        return systemVariables{}, fmt.Errorf("invalid value of --timeout: %v: %w", opts.Timeout, err)
-    }
-}
-```
-
-### Differentiated Defaults
-
-**Operation-specific defaults** when timeout is unspecified:
-
-```go
-func (s *Session) getEffectiveTimeout() time.Duration {
-    if s.systemVariables.StatementTimeout != nil {
-        return *s.systemVariables.StatementTimeout
-    }
-    
-    // Apply different defaults based on operation type
-    switch s.currentOperation {
-    case "partitioned_dml":
-        return 24 * time.Hour  // Existing PDML default
-    default:
-        return 10 * time.Minute  // New general default
-    }
-}
-```
-
-### Context Lifecycle Management
-
-**Context cancellation must align with resource lifecycle** - centralize timeout application at statement execution boundary, not at individual operation level:
-
-- ✅ Apply timeout at `Session.ExecuteStatement` level
-- ❌ Apply timeout at individual `client.Single().Query()` calls
-- ✅ Ensure `defer cancel()` happens after all resource cleanup
-- ❌ Cancel context before resource cleanup completes
-
-## Testing Patterns
-
-### System Variable Test Structure
-
-```go
-func TestSystemVariable_TIMEOUT(t *testing.T) {
-    tests := []struct {
-        name    string
-        value   string
-        wantErr bool
-        want    *time.Duration
-    }{
-        {"valid duration", "5m", false, durationPtr(5 * time.Minute)},
-        {"zero duration", "0", false, durationPtr(0)},
-        {"invalid format", "invalid", true, nil},
-        {"negative duration", "-5m", true, nil},
-    }
-    
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            vars := newSystemVariables()
-            err := vars.Set("STATEMENT_TIMEOUT", tt.value)
-            
-            if tt.wantErr {
-                assert.Error(t, err)
-                return
-            }
-            
-            assert.NoError(t, err)
-            assert.Equal(t, tt.want, vars.StatementTimeout)
-        })
-    }
-}
-```
-
-### Integration Test Considerations
-
-**Long-running integration tests** need explicit timeout configuration (1h) to prevent false failures during CI:
-
-```go
-func TestIntegration_LongRunningQuery(t *testing.T) {
-    if testing.Short() {
-        t.Skip("Skipping long-running integration test")
-    }
-    
-    // Set explicit timeout for integration tests
-    session.systemVariables.StatementTimeout = &time.Hour
-    
-    // Run test...
-}
-```
-
-## Async DDL System Variable Patterns (Issue #277)
-
-**Discovery**: System variable integration with operation control patterns
-
-### System Variable Integration with Operation Control
-
-**Pattern**: Use system variables to control DDL execution behavior without breaking existing workflows
-
-```go
-// In executeDdlStatements function
-if session.systemVariables.AsyncDDL {
-    return formatAsyncDdlResult(op)
-}
-// Continue with synchronous execution...
-```
-
-**Implementation Template**:
-```go
-// In internal/mycli/system_variables_registry.go
-r.Register("CLI_ASYNC_DDL",
-    BoolVar(&sv.AsyncDDL).
-        WithDescription("A boolean indicating whether DDL statements should be executed asynchronously. The default is false."))
-
-// CLI flag mapping in createSystemVariablesFromOptions
-sysVars.AsyncDDL = opts.Async
-```
-
-### CLI Flag Integration Best Practices
-
-**Location**: Process CLI flags in `createSystemVariablesFromOptions()` function
-
-**Pattern for Boolean Flags**:
-```go
-// Direct mapping approach
-sysVars.AsyncDDL = opts.Async
-```
-
-**Pattern for Complex Flags** (reference from timeout implementation):
-```go
-// Validation before system variable assignment
-if opts.ComplexFlag != "" {
-    if err := sysVars.SetFromSimple("CLI_COMPLEX_FLAG", opts.ComplexFlag); err != nil {
-        return systemVariables{}, fmt.Errorf("invalid value of --complex-flag: %v: %w", opts.ComplexFlag, err)
-    }
-}
-```
+- Read-only StartupConfig variables: add the name to
+  `TestStartupConfigVariablesAreReadOnly` (startup_config_test.go). This is
+  load-bearing for security-sensitive variables such as
+  `CLI_SKIP_SYSTEM_COMMAND`.
+- SET/GET coverage lives in system_variables_test.go; transaction-scoped
+  behavior examples are in statements_set_local_test.go (unit; runs with
+  `-short` because pending transactions need no RPCs) and
+  TestSetLocalStatements in integration_test.go (emulator).
 
 ## Related Documentation
 
 - [Development Insights](../development-insights.md) - General development patterns
 - [Architecture Guide](../architecture-guide.md) - Overall system architecture
+- [docs/system_variables.md](../../docs/system_variables.md) - User-facing reference

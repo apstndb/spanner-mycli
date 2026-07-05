@@ -20,36 +20,108 @@ on:
   pull_request:
 
 name: CI
+
+# Cancel superseded runs on the same ref (e.g. new pushes to a PR branch).
+# Keep main-branch runs alive so post-merge coverage/sync history is not lost
+# when merges land in quick succession.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   # Run linting in a separate job for parallel execution
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
       - run: go version
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.4
           args: --timeout=5m
+      # Compile-only guard: integration-tagged files are excluded from default
+      # go test; this vet step builds them. skip_slow_test is defined here so
+      # !skip_slow_test files are excluded from this check (they still compile
+      # in the default test and lint jobs above).
+      - name: vet tag-gated test files
+        run: go vet -tags integration,skip_slow_test ./...
+
+  # Race detector on unit tests only (short mode, no Docker/emulator needed).
+  # The full suite under -race would be too slow for PR feedback.
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go version
+      - name: run unit tests with race detector
+        run: go test -short -race ./...
+
+  # Go security check using govulncheck.
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+      - name: run govulncheck
+        run: govulncheck ./...
+
+  # Cross-compile check to keep published windows/darwin binaries buildable.
+  cross-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Cross-compile
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
 
   # Run tests in a separate job for parallel execution
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
       - run: go version
       - name: run tests with coverage
         run: make test-coverage

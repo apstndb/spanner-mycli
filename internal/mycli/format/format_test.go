@@ -17,8 +17,8 @@ func formatTab(out io.Writer, rows []Row, columnNames []string, config FormatCon
 	return ExecuteWithFormatter(NewTabFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
 
-func formatCSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewCSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+func formatTSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewTSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
 
 func formatHTML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
@@ -27,10 +27,6 @@ func formatHTML(out io.Writer, rows []Row, columnNames []string, config FormatCo
 
 func formatXML(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
 	return ExecuteWithFormatter(NewXMLFormatter(out, config.SkipColumnNames), rows, columnNames, config)
-}
-
-func formatJSONL(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
-	return ExecuteWithFormatter(NewJSONLFormatter(out), rows, columnNames, config)
 }
 
 func TestNewStreamingFormatter(t *testing.T) {
@@ -43,12 +39,16 @@ func TestNewStreamingFormatter(t *testing.T) {
 		out     io.Writer
 		wantErr bool
 	}{
-		{name: "csv", mode: ModeCSV, out: io.Discard},
 		{name: "tab", mode: ModeTab, out: io.Discard},
+		{name: "tsv", mode: ModeTSV, out: io.Discard},
 		{name: "vertical", mode: ModeVertical, out: io.Discard},
 		{name: "html", mode: ModeHTML, out: io.Discard},
 		{name: "xml", mode: ModeXML, out: io.Discard},
-		{name: "jsonl", mode: ModeJSONL, out: io.Discard},
+		// CSV, JSONL, and SQL export modes are emitted by the spanvalue
+		// writers, not by format package streaming formatters.
+		{name: "csv_not_here", mode: ModeCSV, out: io.Discard, wantErr: true},
+		{name: "jsonl_not_here", mode: ModeJSONL, out: io.Discard, wantErr: true},
+		{name: "sql_insert_not_here", mode: ModeSQLInsert, out: io.Discard, wantErr: true},
 		// Table formats with io.Discard are allowed for capability checks.
 		{name: "table_discard", mode: ModeTable, out: io.Discard},
 		// Table formats with real writer require screenWidth
@@ -76,30 +76,11 @@ func TestNewStreamingFormatter(t *testing.T) {
 	}
 }
 
-func TestNewStreamingFormatter_RegisteredMode(t *testing.T) {
-	// No t.Parallel(): mutates global registry
-
-	// Register a custom streaming mode
-	testMode := Mode("TEST_STREAMING_CUSTOM")
-	RegisterStreamingFormatter(func(mode Mode, out io.Writer, config FormatConfig) (StreamingFormatter, error) {
-		return NewCSVFormatter(out, false), nil
-	}, testMode)
-	t.Cleanup(func() { unregisterStreamingFormatter(testMode) })
-
-	sf, err := NewStreamingFormatter(testMode, io.Discard, FormatConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if sf == nil {
-		t.Error("expected non-nil StreamingFormatter from registered mode")
-	}
-}
-
 func TestValueFormatModeFor(t *testing.T) {
-	// No t.Parallel(): mutates global registry
+	t.Parallel()
 
-	// Built-in modes should return DisplayValues
-	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
+	// Display modes should return DisplayValues
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeTSV, ModeVertical, ModeHTML, ModeXML} {
 		if got := ValueFormatModeFor(mode); got != DisplayValues {
 			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
 		}
@@ -110,97 +91,43 @@ func TestValueFormatModeFor(t *testing.T) {
 		t.Errorf("ValueFormatModeFor(JSONL) = %d, want JSONValues", got)
 	}
 
+	// SQL export modes should return SQLLiteralValues
+	for _, mode := range []Mode{ModeSQLInsert, ModeSQLInsertOrIgnore, ModeSQLInsertOrUpdate} {
+		if got := ValueFormatModeFor(mode); got != SQLLiteralValues {
+			t.Errorf("ValueFormatModeFor(%s) = %d, want SQLLiteralValues", mode, got)
+		}
+	}
+
 	// Unknown mode should return DisplayValues
 	if got := ValueFormatModeFor(Mode("NONEXISTENT")); got != DisplayValues {
 		t.Errorf("ValueFormatModeFor(NONEXISTENT) = %d, want DisplayValues", got)
-	}
-
-	// Registered mode with SQLLiteralValues
-	testMode := Mode("TEST_SQL_LITERAL")
-	RegisterValueFormatMode(SQLLiteralValues, testMode)
-	t.Cleanup(func() { unregisterValueFormatMode(testMode) })
-	if got := ValueFormatModeFor(testMode); got != SQLLiteralValues {
-		t.Errorf("ValueFormatModeFor(%s) = %d, want SQLLiteralValues", testMode, got)
 	}
 }
 
 func TestExecuteWithFormatter_EmptyColumns(t *testing.T) {
 	t.Parallel()
 
-	err := ExecuteWithFormatter(NewCSVFormatter(io.Discard, false), nil, nil, FormatConfig{})
+	err := ExecuteWithFormatter(NewTabFormatter(io.Discard, false), nil, nil, FormatConfig{})
 	if err != nil {
 		t.Fatalf("expected nil error for empty columns, got: %v", err)
 	}
 }
 
-func TestExecuteWithFormatter_CSVOutput(t *testing.T) {
+func TestExecuteWithFormatter_TabOutput(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
 	columns := []string{"id", "name"}
 	rows := []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")}
 
-	err := ExecuteWithFormatter(NewCSVFormatter(&buf, false), rows, columns, FormatConfig{})
+	err := ExecuteWithFormatter(NewTabFormatter(&buf, false), rows, columns, FormatConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := "id,name\n1,Alice\n2,Bob\n"
+	want := "id\tname\n1\tAlice\n2\tBob\n"
 	if diff := cmp.Diff(want, buf.String()); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestFormatCSV(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		columns     []string
-		rows        []Row
-		skipHeaders bool
-		want        string
-	}{
-		{
-			name:    "basic",
-			columns: []string{"id", "name"},
-			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
-			want:    "id,name\n1,Alice\n2,Bob\n",
-		},
-		{
-			name:        "skip headers",
-			columns:     []string{"id", "name"},
-			rows:        []Row{StringsToRow("1", "Alice")},
-			skipHeaders: true,
-			want:        "1,Alice\n",
-		},
-		{
-			name:    "special characters",
-			columns: []string{"col"},
-			rows:    []Row{StringsToRow("value with, comma"), StringsToRow("value with \"quotes\"")},
-			want:    "col\n\"value with, comma\"\n\"value with \"\"quotes\"\"\"\n",
-		},
-		{
-			name:    "empty rows",
-			columns: []string{"id"},
-			rows:    nil,
-			want:    "id\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			config := FormatConfig{SkipColumnNames: tt.skipHeaders}
-			err := formatCSV(&buf, tt.rows, tt.columns, config, 0)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
-				t.Errorf("output mismatch (-want +got):\n%s", diff)
-			}
-		})
 	}
 }
 
@@ -233,6 +160,15 @@ func TestFormatTab(t *testing.T) {
 			rows:    nil,
 			want:    "id\n",
 		},
+		{
+			// TAB is intentionally raw (backward compatible): special characters
+			// pass through unescaped even though they break the row/column structure.
+			// TSV provides the escaped variant.
+			name:    "special characters pass through raw",
+			columns: []string{"a", "b"},
+			rows:    []Row{StringsToRow("tab\there", "line\nbreak"), StringsToRow("back\\slash", "cr\rhere")},
+			want:    "a\tb\ntab\there\tline\nbreak\nback\\slash\tcr\rhere\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +177,100 @@ func TestFormatTab(t *testing.T) {
 			var buf bytes.Buffer
 			config := FormatConfig{SkipColumnNames: tt.skipHeaders}
 			err := formatTab(&buf, tt.rows, tt.columns, config, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
+				t.Errorf("output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFormatTSV(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		columns     []string
+		rows        []Row
+		skipHeaders bool
+		want        string
+	}{
+		{
+			name:    "basic",
+			columns: []string{"id", "name"},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
+			want:    "id\tname\n1\tAlice\n2\tBob\n",
+		},
+		{
+			name:        "skip headers",
+			columns:     []string{"id", "name"},
+			rows:        []Row{StringsToRow("1", "Alice")},
+			skipHeaders: true,
+			want:        "1\tAlice\n",
+		},
+		{
+			name:    "empty rows",
+			columns: []string{"id"},
+			rows:    nil,
+			want:    "id\n",
+		},
+		{
+			name:    "tab in value",
+			columns: []string{"a", "b"},
+			rows:    []Row{StringsToRow("tab\there", "plain")},
+			want:    "a\tb\ntab\\there\tplain\n",
+		},
+		{
+			name:    "newline in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow("line\nbreak")},
+			want:    "a\nline\\nbreak\n",
+		},
+		{
+			name:    "carriage return in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow("cr\rhere"), StringsToRow("crlf\r\nhere")},
+			want:    "a\ncr\\rhere\ncrlf\\r\\nhere\n",
+		},
+		{
+			name:    "backslash in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow(`back\slash`), StringsToRow(`literal\t`)},
+			want:    "a\nback\\\\slash\nliteral\\\\t\n",
+		},
+		{
+			// Quotes are not special in TSV; they pass through verbatim.
+			name:    "quotes are not escaped",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow(`say "hi" and 'bye'`)},
+			want:    "a\nsay \"hi\" and 'bye'\n",
+		},
+		{
+			// Empty strings produce empty fields; NULL is whatever text the value
+			// formatter produced (the same "NULL" literal as TAB/TABLE), so an
+			// empty string and NULL remain distinguishable only if the NULL
+			// literal is non-empty (the display default).
+			name:    "empty string and NULL literal",
+			columns: []string{"a", "b", "c"},
+			rows:    []Row{StringsToRow("", "NULL", "x")},
+			want:    "a\tb\tc\n\tNULL\tx\n",
+		},
+		{
+			name:    "header names are escaped",
+			columns: []string{"col\twith\ttabs", "col\nwith\nnewlines"},
+			rows:    []Row{StringsToRow("1", "2")},
+			want:    "col\\twith\\ttabs\tcol\\nwith\\nnewlines\n1\t2\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			config := FormatConfig{SkipColumnNames: tt.skipHeaders}
+			err := formatTSV(&buf, tt.rows, tt.columns, config, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -413,89 +443,6 @@ func TestFormatXML(t *testing.T) {
 	}
 }
 
-func TestFormatJSONL(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		columns []string
-		rows    []Row
-		want    string
-	}{
-		{
-			name:    "basic",
-			columns: []string{"id", "name"},
-			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
-			want:    `{"id":"1","name":"Alice"}` + "\n" + `{"id":"2","name":"Bob"}` + "\n",
-		},
-		{
-			name:    "special characters",
-			columns: []string{"col"},
-			rows:    []Row{StringsToRow("value with \"quotes\""), StringsToRow("value with, comma")},
-			want:    `{"col":"value with \"quotes\""}` + "\n" + `{"col":"value with, comma"}` + "\n",
-		},
-		{
-			name:    "empty rows",
-			columns: []string{"id"},
-			rows:    nil,
-			want:    "",
-		},
-		{
-			name:    "complex spanner type",
-			columns: []string{"SPANNER_TYPE"},
-			rows:    []Row{StringsToRow(`ARRAY<STRUCT<COLUMN STRING(MAX), LOCK_MODE STRING(MAX)>>`)},
-			want:    `{"SPANNER_TYPE":"ARRAY<STRUCT<COLUMN STRING(MAX), LOCK_MODE STRING(MAX)>>"}` + "\n",
-		},
-		{
-			name:    "newline in value",
-			columns: []string{"data"},
-			rows:    []Row{StringsToRow("line1\nline2")},
-			want:    `{"data":"line1\nline2"}` + "\n",
-		},
-		{
-			name:    "html-sensitive characters",
-			columns: []string{"data"},
-			rows:    []Row{StringsToRow("<tag>&value")},
-			want:    `{"data":"<tag>&value"}` + "\n",
-		},
-		{
-			name:    "RawJSONCell with typed values",
-			columns: []string{"id", "name", "active", "tags"},
-			rows: []Row{
-				{
-					RawJSONCell{Cell: PlainCell{Text: "42"}},
-					RawJSONCell{Cell: PlainCell{Text: `"Alice"`}},
-					RawJSONCell{Cell: PlainCell{Text: "true"}},
-					RawJSONCell{Cell: PlainCell{Text: `["a","b"]`}},
-				},
-			},
-			want: `{"id":42,"name":"Alice","active":true,"tags":["a","b"]}` + "\n",
-		},
-		{
-			name:    "RawJSONCell with null",
-			columns: []string{"val"},
-			rows: []Row{
-				{RawJSONCell{Cell: PlainCell{Text: "null"}}},
-			},
-			want: `{"val":null}` + "\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			err := formatJSONL(&buf, tt.rows, tt.columns, FormatConfig{}, 0)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
-				t.Errorf("output mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
 func TestXMLEscape(t *testing.T) {
 	t.Parallel()
 
@@ -524,52 +471,25 @@ func TestXMLEscape(t *testing.T) {
 	}
 }
 
-func TestCSVFormatterLifecycle(t *testing.T) {
-	t.Parallel()
-
-	t.Run("write before init", func(t *testing.T) {
-		t.Parallel()
-		f := NewCSVFormatter(io.Discard, false)
-		err := f.WriteRow(StringsToRow("1"))
-		if err == nil {
-			t.Error("expected error writing before init")
-		}
-	})
-
-	t.Run("double init is noop", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		f := NewCSVFormatter(&buf, false)
-		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
-			t.Fatalf("first init: %v", err)
-		}
-		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
-			t.Fatalf("second init: %v", err)
-		}
-		// Header should only appear once
-		if err := f.FinishFormat(); err != nil {
-			t.Fatalf("finish: %v", err)
-		}
-		if diff := cmp.Diff("id\n", buf.String()); diff != "" {
-			t.Errorf("double init should not duplicate headers (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("empty column names", func(t *testing.T) {
-		t.Parallel()
-		f := NewCSVFormatter(io.Discard, false)
-		if err := f.InitFormat(nil, FormatConfig{}, nil); err != nil {
-			t.Fatalf("init with empty columns: %v", err)
-		}
-	})
-}
-
 func TestTabFormatterLifecycle(t *testing.T) {
 	t.Parallel()
 
 	t.Run("write before init", func(t *testing.T) {
 		t.Parallel()
 		f := NewTabFormatter(io.Discard, false)
+		err := f.WriteRow(StringsToRow("1"))
+		if err == nil {
+			t.Error("expected error writing before init")
+		}
+	})
+}
+
+func TestTSVFormatterLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write before init", func(t *testing.T) {
+		t.Parallel()
+		f := NewTSVFormatter(io.Discard, false)
 		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
@@ -612,57 +532,6 @@ func TestXMLFormatterLifecycle(t *testing.T) {
 		err := f.WriteRow(StringsToRow("1"))
 		if err == nil {
 			t.Error("expected error writing before init")
-		}
-	})
-}
-
-func TestJSONLFormatterLifecycle(t *testing.T) {
-	t.Parallel()
-
-	t.Run("write before init", func(t *testing.T) {
-		t.Parallel()
-		f := NewJSONLFormatter(io.Discard)
-		err := f.WriteRow(StringsToRow("1"))
-		if err == nil {
-			t.Error("expected error writing before init")
-		}
-	})
-
-	t.Run("double init is noop", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		f := NewJSONLFormatter(&buf)
-		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
-			t.Fatalf("first init: %v", err)
-		}
-		if err := f.InitFormat([]string{"id"}, FormatConfig{}, nil); err != nil {
-			t.Fatalf("second init: %v", err)
-		}
-		if err := f.WriteRow(StringsToRow("1")); err != nil {
-			t.Fatalf("write: %v", err)
-		}
-		if err := f.FinishFormat(); err != nil {
-			t.Fatalf("finish: %v", err)
-		}
-		want := `{"id":"1"}` + "\n"
-		if diff := cmp.Diff(want, buf.String()); diff != "" {
-			t.Errorf("output mismatch (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("invalid raw JSON", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		f := NewJSONLFormatter(&buf)
-		if err := f.InitFormat([]string{"bad"}, FormatConfig{}, nil); err != nil {
-			t.Fatalf("init: %v", err)
-		}
-		err := f.WriteRow(Row{RawJSONCell{Cell: PlainCell{Text: "not-json"}}})
-		if err == nil {
-			t.Fatal("expected error for invalid raw JSON")
-		}
-		if !strings.Contains(err.Error(), "invalid raw JSON value") {
-			t.Fatalf("error = %v, want invalid raw JSON value", err)
 		}
 	})
 }
@@ -853,8 +722,8 @@ func TestStyledCellInNonTableFormats(t *testing.T) {
 		name     string
 		formatFn func(io.Writer, []Row, []string, FormatConfig, int) error
 	}{
-		{"csv", formatCSV},
 		{"tab", formatTab},
+		{"tsv", formatTSV},
 		{"vertical", formatVertical},
 		{"html", formatHTML},
 		{"xml", formatXML},
@@ -1084,6 +953,7 @@ func TestNullStyledInNonTableFormats(t *testing.T) {
 		wantNoESC bool
 	}{
 		{"tab", formatTab, true},
+		{"tsv", formatTSV, true},
 		{"vertical", formatVertical, true},
 		{"html", formatHTML, true},
 		{"xml", formatXML, true},
@@ -1105,30 +975,5 @@ func TestNullStyledInNonTableFormats(t *testing.T) {
 				t.Errorf("%s output should contain NULL text, got:\n%s", tt.name, output)
 			}
 		})
-	}
-}
-
-func TestNullStyledInCSV(t *testing.T) {
-	t.Parallel()
-
-	// Verify that CSV uses RawText() — no ANSI codes in output
-	rows := []Row{
-		{PlainCell{Text: "1"}, StyledCell{Text: "NULL", Style: "\033[2m"}},
-	}
-	columns := []string{"id", "value"}
-
-	var buf bytes.Buffer
-	err := formatCSV(&buf, rows, columns, FormatConfig{}, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	output := buf.String()
-	if strings.Contains(output, "\033") {
-		t.Errorf("CSV output should not contain ANSI codes, got:\n%s", output)
-	}
-	want := "id,value\n1,NULL\n"
-	if output != want {
-		t.Errorf("got:\n%s\nwant:\n%s", output, want)
 	}
 }

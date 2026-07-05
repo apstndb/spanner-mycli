@@ -4,13 +4,27 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     cooldown:
       default-days: 3
+    groups:
+      google-go:
+        patterns:
+          - "cloud.google.com/*"
+          - "google.golang.org/*"
+          - "github.com/googleapis/*"
+          - "github.com/GoogleCloudPlatform/*"
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     cooldown:
       default-days: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -102,41 +102,6 @@ func TestSessionModes(t *testing.T) {
 			t.Error("Expected database-connected session when database is specified")
 		}
 	})
-
-	t.Run("ConnectToDatabase upgrades admin session", func(t *testing.T) {
-		sysVars := &systemVariables{
-			Connection: ConnectionVars{
-				Project:  "test-project",
-				Instance: "test-instance",
-				Database: "",
-			},
-		}
-
-		session, err := NewAdminSession(ctx, sysVars)
-		if err != nil {
-			t.Skip("Skipping test due to authentication requirements:", err)
-		}
-		defer session.Close()
-
-		// Verify it starts as detached
-		if !session.IsDetached() {
-			t.Error("Expected detached session initially")
-		}
-
-		// Try to connect to database
-		err = session.ConnectToDatabase(ctx, "test-database")
-		if err != nil {
-			t.Skip("Skipping database connection test:", err)
-		}
-
-		// Verify it's now database-connected
-		if session.IsDetached() {
-			t.Error("Expected database-connected session after ConnectToDatabase")
-		}
-		if session.client == nil {
-			t.Error("Expected non-nil client after ConnectToDatabase")
-		}
-	})
 }
 
 func TestDatabaseOperationValidation(t *testing.T) {

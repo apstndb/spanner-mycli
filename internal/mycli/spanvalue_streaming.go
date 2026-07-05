@@ -17,6 +17,7 @@ package mycli
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -68,8 +69,15 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 
 // executeStreamingSQLWithSpanvalueProcessor uses spanvalue's RowIterator hooks
 // for formats that still need spanner-mycli's RowProcessor/StreamingFormatter
-// stack, such as TABLE, TAB, VERTICAL, HTML, and XML.
+// stack, such as TABLE, TAB, TSV, VERTICAL, HTML, and XML.
 func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, error) {
+	if qe.Processor == nil {
+		// Spanvalue-writer formats stream without a processor and must have
+		// been handled by executeStreamingSQLWithSpanvalueWriter.
+		qe.Iter.Stop()
+		return nil, fmt.Errorf("no streaming processor for format %v", qe.SysVars.Display.CLIFormat)
+	}
+
 	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
 	if qe.ValueFmtMode == format.JSONValues {
 		rowTransform = withRawJSONMarker(rowTransform)
@@ -103,14 +111,29 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	return newSpanvalueRowIteratorWriterFor(qe.SysVars, qe.FormatConfig)
+	return newSpanvalueRowIteratorWriterFor(qe.Session.outputWriter(), qe.SysVars, qe.FormatConfig)
+}
+
+// usesSpanvalueWriter reports whether mode is emitted by a spanvalue writer
+// (newSpanvalueRowIteratorWriterFor). These formats have exactly one
+// byte-emitting implementation: streaming query results, partitioned query
+// fan-in, client-side virtual result sets, and buffered Result replay
+// (writeBufferedRowsWithSpanvalueWriter) all go through the same writers.
+func usesSpanvalueWriter(mode enums.DisplayMode) bool {
+	switch mode {
+	case enums.DisplayModeCSV, enums.DisplayModeJSONL,
+		enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
+		return true
+	default:
+		return false
+	}
 }
 
 // newSpanvalueRowIteratorWriterFor builds the spanvalue RowIteratorWriter for
-// the current CLI_FORMAT, shared by the query streaming path and the
-// client-side virtual result set path (streamStructRows).
-func newSpanvalueRowIteratorWriterFor(sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
-	out := sysVars.StreamManager.GetWriter()
+// the current CLI_FORMAT writing to out, shared by the query streaming path
+// and the client-side virtual result set path (streamStructRows). A nil out
+// requests the buffered fallback.
+func newSpanvalueRowIteratorWriterFor(out io.Writer, sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
 	if out == nil {
 		return nil, false, nil
 	}

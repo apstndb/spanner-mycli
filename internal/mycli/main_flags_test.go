@@ -433,6 +433,36 @@ func TestParseFlagsCombinations(t *testing.T) {
 	}
 }
 
+// TestTableStreamingFlagMapping verifies the new table-specific streaming CLI flag name and behavior.
+func TestTableStreamingFlagMapping(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseTestFlags(withRequiredFlags("--table-streaming", "FALSE"))
+	if err != nil {
+		t.Fatalf("parseTestFlags() unexpected error for --table-streaming: %v", err)
+	}
+
+	sysVars, err := initializeSystemVariables(&gopts.Spanner)
+	if err != nil {
+		t.Fatalf("initializeSystemVariables() unexpected error: %v", err)
+	}
+
+	gotMode, err := sysVars.Get("CLI_TABLE_STREAMING")
+	if err != nil {
+		t.Fatalf("Get(CLI_TABLE_STREAMING) unexpected error: %v", err)
+	}
+	if got, ok := gotMode["CLI_TABLE_STREAMING"]; !ok || got != "FALSE" {
+		t.Fatalf("Get(CLI_TABLE_STREAMING) = %v, want FALSE", got)
+	}
+	if sysVars.Query.StreamingMode != enums.StreamingModeFalse {
+		t.Fatalf("Query.StreamingMode = %v, want %v", sysVars.Query.StreamingMode, enums.StreamingModeFalse)
+	}
+
+	if _, err := parseTestFlags(withRequiredFlags("--streaming", "FALSE")); err == nil {
+		t.Fatal("expected parse failure for deprecated --streaming flag, got nil")
+	}
+}
+
 // TestParseFlagsValidation tests flag value validation
 func TestParseFlagsValidation(t *testing.T) {
 	t.Parallel()
@@ -619,7 +649,10 @@ func TestParseFlagsValidation(t *testing.T) {
 		{arg: "NORMAL", want: "NORMAL"},
 		{arg: "PLAN", want: "PLAN"},
 		{arg: "PROFILE", want: "PROFILE"},
+		{arg: "WITH_STATS", want: "WITH_STATS"},
+		{arg: "WITH_PLAN_AND_STATS", want: "WITH_PLAN_AND_STATS"},
 		{arg: "plan", want: "PLAN"},
+		{arg: "with_stats", want: "WITH_STATS"},
 	} {
 		tests = append(tests, struct {
 			name        string
@@ -879,13 +912,13 @@ priority = "HIGH"
 			assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
+			if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Config.Host, sysVars.Config.Port)
 			}
 			assertEqual(t, "Endpoint (constructed from Host:Port)", gotEndpoint, &tt.wantEndpoint)
 			assertEqual(t, "Role", sysVars.Connection.Role, &tt.wantRole)
-			assertEqual(t, "LogGrpc", sysVars.Feature.LogGrpc, &tt.wantLogGrpc)
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "LogGrpc", sysVars.Config.LogGrpc, &tt.wantLogGrpc)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 		})
 	}
 }
@@ -1043,9 +1076,9 @@ func TestFlagSpecialModes(t *testing.T) {
 
 			// Check results
 			verifyConnectionParams(t, sysVars, tt.wantProject, tt.wantInstance, tt.wantDatabase)
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 			assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
-			assertEqual(t, "MCP", sysVars.Feature.MCP, &tt.wantMCP)
+			assertEqual(t, "MCP", sysVars.Config.MCP, &tt.wantMCP)
 
 			// For CLI_FORMAT, we need to simulate what run() does
 			// Check if this test case has specified a desired CLI_FORMAT value
@@ -1920,7 +1953,7 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt)),
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
 		"default: ~/.spanner_mycli_history",
-		"Allowed values: NORMAL, PLAN, PROFILE.",
+		"Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.",
 		fmt.Sprintf("default: %s", defaultVertexAIModel),
 		fmt.Sprintf("default: %s", defaultVertexAILocation),
 		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset.",
@@ -2278,7 +2311,7 @@ func TestComplexFlagInteractions(t *testing.T) {
 						if sysVars.Connection.Role != tt.wantRole {
 							t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 						}
-						assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+						assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 						assertEqual(t, "Verbose", sysVars.Display.Verbose, &tt.wantVerbose)
 						assertEqual(t, "ReadOnly", sysVars.Transaction.ReadOnly, &tt.wantReadOnly)
 						assertEqual(t, "RPCPriority", sysVars.Query.RPCPriority, &tt.wantPriority)
@@ -2360,11 +2393,11 @@ func TestAliasFlagPrecedence(t *testing.T) {
 			if sysVars.Connection.Role != tt.wantRole {
 				t.Errorf("Role = %q, want %q", sysVars.Connection.Role, tt.wantRole)
 			}
-			assertEqual(t, "Insecure", sysVars.Connection.Insecure, &tt.wantInsecure)
+			assertEqual(t, "Insecure", sysVars.Config.Insecure, &tt.wantInsecure)
 			// Check endpoint by constructing from host and port
 			var gotEndpoint string
-			if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
-				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Connection.Host, sysVars.Connection.Port)
+			if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
+				gotEndpoint = fmt.Sprintf("%s:%d", sysVars.Config.Host, sysVars.Config.Port)
 			}
 			if gotEndpoint != tt.wantEndpoint {
 				t.Errorf("Endpoint (constructed from Host:Port) = %q, want %q", gotEndpoint, tt.wantEndpoint)
@@ -2436,10 +2469,10 @@ func TestHostPortFlags(t *testing.T) {
 				return
 			}
 
-			if sysVars.Connection.Host != tt.wantHost {
-				t.Errorf("Host = %q, want %q", sysVars.Connection.Host, tt.wantHost)
+			if sysVars.Config.Host != tt.wantHost {
+				t.Errorf("Host = %q, want %q", sysVars.Config.Host, tt.wantHost)
 			}
-			assertEqual(t, "Port", sysVars.Connection.Port, &tt.wantPort)
+			assertEqual(t, "Port", sysVars.Config.Port, &tt.wantPort)
 		})
 	}
 }

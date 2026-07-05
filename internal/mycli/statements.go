@@ -76,6 +76,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular execution;
+		// effectiveQueryMode() resolves the request-level mode and
+		// finalizeQueryResult() adjusts stats/plan rendering.
 		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
@@ -102,6 +105,8 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular DML
+		// execution; effectiveQueryMode() resolves the request-level mode.
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}
 }
@@ -128,7 +133,7 @@ func (s *CreateDatabaseStatement) String() string {
 	return s.CreateStatement
 }
 
-func (CreateDatabaseStatement) IsMutationStatement() {}
+func (CreateDatabaseStatement) isMutationStatement() {}
 
 func (s *CreateDatabaseStatement) isDetachedCompatible() {}
 
@@ -221,7 +226,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
-	return executeStructRows(showDatabasesRowEncoder, items, session.systemVariables)
+	return executeStructRows(showDatabasesRowEncoder, items, session)
 }
 
 // Split Points
@@ -587,7 +592,7 @@ func (s *BulkDdlStatement) String() string {
 	return strings.Join(s.Ddls, ";\n")
 }
 
-func (BulkDdlStatement) IsMutationStatement() {}
+func (BulkDdlStatement) isMutationStatement() {}
 
 func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
@@ -597,7 +602,7 @@ type BatchDMLStatement struct {
 	DMLs []spanner.Statement
 }
 
-func (BatchDMLStatement) IsMutationStatement() {}
+func (BatchDMLStatement) isMutationStatement() {}
 
 func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	return executeBatchDML(ctx, session, s.DMLs)
@@ -628,6 +633,9 @@ func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Res
 }
 
 func runBatch(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
 	batch, err := session.batch.TakeForExecution()
 	if err != nil {
 		return nil, err
@@ -657,7 +665,7 @@ type CQLStatement struct {
 	CQL string
 }
 
-func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (result *Result, err error) {
 	// lazy initialize gocql.ClusterConfig
 	if session.cqlCluster == nil {
 		cluster := spancql.NewCluster(&spancql.Options{
@@ -686,12 +694,21 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 	s := session.cqlSession
 
 	q := s.Query(cs.CQL)
-	if err := q.Exec(); err != nil {
-		return nil, err
-	}
-
-	it := s.Query(cs.CQL).WithContext(ctx).Iter()
-	defer it.Close()
+	it := q.WithContext(ctx).Iter()
+	defer func() {
+		closeErr := it.Close()
+		if closeErr == nil {
+			return
+		}
+		if err == nil {
+			err = closeErr
+			return
+		}
+		if errors.Is(err, closeErr) {
+			return
+		}
+		err = errors.Join(err, closeErr)
+	}()
 
 	var headers []string
 	for _, col := range it.Columns() {
@@ -717,7 +734,8 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (*Result,
 		rows = append(rows, row)
 	}
 
-	return &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}, nil
+	result = &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}
+	return result, nil
 }
 
 func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
@@ -754,11 +772,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 	}
 
 	// session is nil when HELP is rendered without a connection.
-	var sysVars *systemVariables
-	if session != nil {
-		sysVars = session.systemVariables
-	}
-	result, err := executeStructRows(helpRowEncoder, items, sysVars)
+	result, err := executeStructRows(helpRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}
@@ -819,14 +833,6 @@ func usedQueryParameterNames(s string) ([]string, error) {
 	}
 
 	return slices.Sorted(maps.Keys(set)), nil
-}
-
-func extractSchemaAndName(s string) (string, string) {
-	schema, name, found := strings.Cut(s, ".")
-	if !found {
-		return "", unquoteIdentifier(s)
-	}
-	return unquoteIdentifier(schema), unquoteIdentifier(name)
 }
 
 // formatUpdateDatabaseDdlRows formats UpdateDatabaseDdlMetadata into rows for SHOW OPERATION format

@@ -58,7 +58,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 			"timestamp", start)
 
 		// Parse the statement
-		statement := strings.TrimSuffix(params.Statement, ";")
+		statement := strings.TrimSuffix(strings.TrimSpace(params.Statement), ";")
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
 			slog.Debug("MCP request failed during parsing",

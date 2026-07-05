@@ -34,7 +34,7 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: Use `go tool gh-helper reviews wait` before merging. Gemini review and summary are auto-triggered on PR creation — do NOT use `--request-review` or `--request-summary` at that point. After additional commits: use `--request-review` to get a new Gemini review. Use `--request-summary` only right before merge to update the summary. Do not request Copilot reviews for this repository.
+5. **PR merge process**: CI checks are the merge gate (item 8). Before merging, run `go tool gh-helper reviews wait <PR> --exclude-reviews` to wait for checks. Gemini review is best-effort until its sunset on 2026-07-17 and unavailable after (#693): if one arrives, address its feedback; never block on it, re-request it (`--request-review`), or request summaries (`--request-summary`). Do not request Copilot reviews for this repository.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
 8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
@@ -46,12 +46,13 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 make check                    # REQUIRED before ANY push (test + lint + fmt-check)
 make build                    # Build the application
 make test-quick               # Quick tests during development
+make check-race               # Unit tests with race detector (CI also runs this)
 make fmt                      # Format code
 
 # Development tools (Go tool directive, managed via go.mod)
 go tool gh-helper reviews fetch <PR>                    # Fetch review data
 go tool gh-helper reviews fetch <PR> --unresolved-only  # Only unresolved threads
-go tool gh-helper reviews wait <PR>                     # Wait for reviews + checks
+go tool gh-helper reviews wait <PR> --exclude-reviews   # Wait for CI checks (merge gate)
 go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --resolve
 go tool gh-helper issues show <N> --include-sub         # Show issue with sub-issues
 go tool gh-helper issues edit <N> --parent <P>          # Link as sub-issue
@@ -74,7 +75,7 @@ For full gh-helper command reference, see [dev-docs/issue-management.md](dev-doc
 
 ### System Variable Conventions
 - CLI-specific variables **MUST** use `CLI_` prefix
-- All registrations in `internal/mycli/system_variables_registry.go`
+- All registrations in `internal/mycli/var_registry.go` (`registerAll`)
 - Details: [dev-docs/patterns/system-variables.md](dev-docs/patterns/system-variables.md)
 
 ### Regex Pattern Guidelines
@@ -124,7 +125,7 @@ Details: [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/iss
 
 - **Language**: ALL GitHub communications MUST be in English
 - **Tool priority**: `gh-helper` → `gh` CLI → GitHub MCP
-- **Review workflow**: `go tool gh-helper reviews fetch` for feedback analysis (CRITICAL - prevents missing issues). Plan fixes → commit & push → reply with commit hash and resolve threads. Request follow-up reviews only through Gemini/`gh-helper`; never request Copilot review.
+- **Review workflow**: `go tool gh-helper reviews fetch` for feedback analysis (CRITICAL - prevents missing issues). Plan fixes → commit & push → reply with commit hash and resolve threads. Do not request follow-up reviews (Gemini sunset, #693); never request Copilot review.
 - **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` for content with special characters. NEVER pass backtick-containing strings directly in shell commands.
 - **Documentation labels**: `docs-user` (README, docs/), `docs-dev` (dev-docs/, AGENTS.md, CLAUDE.md), `ignore-for-release` (dev-docs only PRs)
 - **Gemini style guide** (`.gemini/styleguide.md`): MUST obtain user permission before modifying

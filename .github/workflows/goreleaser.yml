@@ -1,9 +1,11 @@
 name: goreleaser
 
+# Trigger only on v-prefixed tags, matching ko.yml, so a stray non-v tag
+# cannot create a GitHub release that has no corresponding container image.
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
 
 permissions:
   contents: write
@@ -11,21 +13,27 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
       - name: Install tools
         run: |
           go install tool
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7.2.1
+        uses: goreleaser/goreleaser-action@v7.2.3
         with:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin the release version to the pushed tag. Without this, goreleaser
+          # derives the version via git describe, which is ambiguous when multiple
+          # tags point at the same commit: v0.32.0's first run released to
+          # v0.32.0-alpha.1 because both tags shared one commit.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}

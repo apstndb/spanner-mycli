@@ -114,7 +114,7 @@ func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Re
 FROM
   INFORMATION_SCHEMA.INDEXES I
 WHERE
-  LOWER(I.TABLE_SCHEMA) = @table_schema AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
+  LOWER(I.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
 		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
 	}
 
@@ -183,6 +183,9 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 
 func isCreateDDL(ddl string, objectType string, schema string, table string) bool {
 	objectType = strings.ReplaceAll(objectType, " ", `\s+`)
+	// Both user-supplied identifiers are interpolated into the regex below and
+	// must be escaped; an unescaped schema would be interpreted as regex syntax.
+	schema = regexp.QuoteMeta(schema)
 	table = regexp.QuoteMeta(table)
 
 	re := fmt.Sprintf("(?i)^CREATE (?:(?:NULL_FILTERED|UNIQUE) )?(?:OR REPLACE )?%s ", objectType)

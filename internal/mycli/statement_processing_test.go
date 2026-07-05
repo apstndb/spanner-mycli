@@ -211,6 +211,23 @@ func TestBuildStatement(t *testing.T) {
 			want:  &TruncateTableStatement{Schema: "order", Table: "order"},
 		},
 		{
+			// A backquoted identifier containing a dot is a single identifier,
+			// not a schema-qualified name.
+			desc:  "TRUNCATE TABLE statement with quoted identifier containing a dot",
+			input: "TRUNCATE TABLE `a.b`",
+			want:  &TruncateTableStatement{Table: "a.b"},
+		},
+		{
+			desc:  "DUMP TABLES statement with a single table",
+			input: "DUMP TABLES t1",
+			want:  &DumpTablesStatement{Tables: []string{"t1"}},
+		},
+		{
+			desc:  "DUMP TABLES statement with multiple tables",
+			input: "DUMP TABLES t1, sch1.t2, `order`",
+			want:  &DumpTablesStatement{Tables: []string{"t1", "sch1.t2", "order"}},
+		},
+		{
 			desc:  "CREATE VIEW statement",
 			input: "CREATE VIEW t1view SQL SECURITY INVOKER AS SELECT t1.Id FROM t1",
 			want:  &DdlStatement{Ddl: "CREATE VIEW t1view SQL SECURITY INVOKER AS SELECT t1.Id FROM t1"},
@@ -532,6 +549,13 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "SHOW CREATE TABLE statement with quoted identifier",
 			input: "SHOW CREATE TABLE `TABLE`",
 			want:  &ShowCreateStatement{ObjectType: "TABLE", Name: "TABLE"},
+		},
+		{
+			// A backquoted identifier containing a dot is a single identifier,
+			// not a schema-qualified name.
+			desc:  "SHOW CREATE TABLE statement with quoted identifier containing a dot",
+			input: "SHOW CREATE TABLE `a.b`",
+			want:  &ShowCreateStatement{ObjectType: "TABLE", Name: "a.b"},
 		},
 		{
 			desc:  "SHOW CREATE INDEX statement",
@@ -935,6 +959,23 @@ TABLE Singers (42)
 			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
 		},
 		{
+			// Without spaces around +=, the generic SET <name> = <value>
+			// definition must not swallow the "+" into the variable name.
+			desc:  "SET ADD statement without spaces around operator",
+			input: `SET CLI_PROTO_DESCRIPTOR_FILE+="./message_descriptors.pb"`,
+			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
+		},
+		{
+			desc:  "SET LOCAL statement",
+			input: `SET LOCAL OPTIMIZER_VERSION = "3"`,
+			want:  &SetLocalStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
+		},
+		{
+			desc:  "SET statement with variable named LOCAL is not SET LOCAL",
+			input: `SET LOCAL = "3"`,
+			want:  &SetStatement{VarName: "LOCAL", Value: `"3"`},
+		},
+		{
 			desc:  "SHOW VARIABLE statement",
 			input: `SHOW VARIABLE OPTIMIZER_VERSION`,
 			want:  &ShowVariableStatement{VarName: "OPTIMIZER_VERSION"},
@@ -1102,6 +1143,24 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"EXPLAIN FORMAT SELECT * FROM t1",
 		"EXPLAIN WIDTH= SELECT * FROM t1",
 		"EXPLAIN WIDTH SELECT * FROM t1",
+		"BEGIN RO foo",
+		// SHOW TABLES takes a bare schema name; a MySQL-style FROM clause
+		// previously misparsed as schema "FROM foo" and returned an empty result.
+		"SHOW TABLES FROM foo",
+		// Object names are limited to [<schema>.]<name>.
+		"SHOW CREATE TABLE a.b.c",
+		"SHOW COLUMNS FROM a.b.c",
+		"SHOW INDEX FROM t1 t2",
+		"TRUNCATE TABLE t1, t2",
+		// Empty elements in the table list previously produced an empty list,
+		// which DUMP TABLES treated as "dump the whole database".
+		"DUMP TABLES ,",
+		"DUMP TABLES t1,",
+		"DUMP TABLES t1,,t2",
+		// PARAM is a statement keyword; previously fell through to generic SET
+		// as a variable named PARAM.
+		"SET PARAM=1",
+		"SET PARAM = 1",
 	}
 
 	for _, input := range invalidInputs {
@@ -1111,6 +1170,21 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 				t.Errorf("BuildStatement(%q) = %#v, but want error", input, got)
 			}
 		})
+	}
+}
+
+func TestBuildStatement_BeginRoInvalidTimestampValue(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildStatement("BEGIN RO foo")
+	if err == nil {
+		t.Fatal("BuildStatement(BEGIN RO foo) expected error, but got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse as RFC3339 timestamp") {
+		t.Fatalf("BuildStatement(BEGIN RO foo) error=%q, want RFC3339 parse failure", err)
+	}
+	if !strings.Contains(err.Error(), "seconds staleness") {
+		t.Fatalf("BuildStatement(BEGIN RO foo) error=%q, want seconds staleness parse failure", err)
 	}
 }
 
@@ -1166,6 +1240,30 @@ func TestIsCreateDDL(t *testing.T) {
 			table:      `[\]`,
 			want:       false,
 		},
+		{
+			desc:       "match with schema",
+			ddl:        "CREATE TABLE sch1.t1 (\n",
+			objectType: "TABLE",
+			schema:     "sch1",
+			table:      "t1",
+			want:       true,
+		},
+		{
+			desc:       "given schema is regular expression",
+			ddl:        "CREATE TABLE sch1.t1 (\n",
+			objectType: "TABLE",
+			schema:     `....`,
+			table:      "t1",
+			want:       false,
+		},
+		{
+			desc:       "given schema is invalid regular expression",
+			ddl:        "CREATE TABLE sch1.t1 (\n",
+			objectType: "TABLE",
+			schema:     `[\]`,
+			table:      "t1",
+			want:       false,
+		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			if got := isCreateDDL(tt.ddl, tt.objectType, tt.schema, tt.table); got != tt.want {
@@ -1175,13 +1273,14 @@ func TestIsCreateDDL(t *testing.T) {
 	}
 }
 
-func TestExtractSchemaAndTable(t *testing.T) {
+func TestParseSchemaAndName(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		desc   string
-		input  string
-		schema string
-		table  string
+		desc    string
+		input   string
+		schema  string
+		table   string
+		wantErr bool
 	}{
 		{
 			desc:   "raw table",
@@ -1192,6 +1291,12 @@ func TestExtractSchemaAndTable(t *testing.T) {
 		{
 			desc:   "quoted table",
 			input:  "`table`",
+			schema: "",
+			table:  "table",
+		},
+		{
+			desc:   "table with surrounding whitespace",
+			input:  " table ",
 			schema: "",
 			table:  "table",
 		},
@@ -1244,15 +1349,146 @@ func TestExtractSchemaAndTable(t *testing.T) {
 			table:  "table",
 		},
 		{
-			desc:   "whole quoted FQN",
+			// GoogleSQL quoted identifier semantics: a backquoted identifier
+			// containing a dot is a single identifier, not a path.
+			// (Previously misparsed by cutting at the first dot.)
+			desc:   "quoted identifier containing a dot",
 			input:  "`schema.table`",
-			schema: "schema",
-			table:  "table",
+			schema: "",
+			table:  "schema.table",
+		},
+		{
+			desc:   "reserved word as unquoted table name",
+			input:  "order",
+			schema: "",
+			table:  "order",
+		},
+		{
+			desc:    "empty input",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			desc:    "trailing garbage after name",
+			input:   "table extra",
+			wantErr: true,
+		},
+		{
+			desc:    "three components",
+			input:   "a.b.c",
+			wantErr: true,
+		},
+		{
+			desc:    "doubled dot",
+			input:   "a..b",
+			wantErr: true,
+		},
+		{
+			desc:    "trailing dot",
+			input:   "a.",
+			wantErr: true,
+		},
+		{
+			desc:    "comma-separated names",
+			input:   "a,b",
+			wantErr: true,
+		},
+		{
+			desc:    "non-identifier token",
+			input:   "123abc",
+			wantErr: true,
 		},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
-			if schema, table := extractSchemaAndName(tt.input); schema != tt.schema || table != tt.table {
-				t.Errorf("extractSchemaAndName(%q) = (%v, %v), but want (%v, %v)", tt.input, schema, table, tt.schema, tt.table)
+			schema, table, err := parseSchemaAndName(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseSchemaAndName(%q) = (%v, %v), but want error", tt.input, schema, table)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseSchemaAndName(%q) got error: %v", tt.input, err)
+			}
+			if schema != tt.schema || table != tt.table {
+				t.Errorf("parseSchemaAndName(%q) = (%v, %v), but want (%v, %v)", tt.input, schema, table, tt.schema, tt.table)
+			}
+		})
+	}
+}
+
+func TestParseTableNameList(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		desc    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{
+			desc:  "single table",
+			input: "t1",
+			want:  []string{"t1"},
+		},
+		{
+			desc:  "multiple tables",
+			input: "t1, t2,t3",
+			want:  []string{"t1", "t2", "t3"},
+		},
+		{
+			desc:  "qualified and quoted tables",
+			input: "sch1.t1, `order`, `sch2`.`t2`",
+			want:  []string{"sch1.t1", "order", "sch2.t2"},
+		},
+		{
+			desc:  "quoted identifier containing a dot",
+			input: "`a.b`",
+			want:  []string{"a.b"},
+		},
+		{
+			desc:    "empty input",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			desc:    "lone comma",
+			input:   ",",
+			wantErr: true,
+		},
+		{
+			desc:    "leading comma",
+			input:   ",t1",
+			wantErr: true,
+		},
+		{
+			desc:    "trailing comma",
+			input:   "t1,",
+			wantErr: true,
+		},
+		{
+			desc:    "doubled comma",
+			input:   "t1,,t2",
+			wantErr: true,
+		},
+		{
+			desc:    "missing comma between tables",
+			input:   "t1 t2",
+			wantErr: true,
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := parseTableNameList(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseTableNameList(%q) = %v, but want error", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseTableNameList(%q) got error: %v", tt.input, err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("parseTableNameList(%q) differ: %v", tt.input, diff)
 			}
 		})
 	}

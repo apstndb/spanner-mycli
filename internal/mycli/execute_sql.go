@@ -14,11 +14,28 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
-	"github.com/apstndb/spanner-mycli/internal/mycli/formatsql"
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
+	"github.com/samber/lo"
 	"google.golang.org/grpc/codes"
 )
+
+// effectiveQueryMode resolves the request-level ExecuteSqlRequest.QueryMode for
+// regular statement execution from the user-specified CLI_QUERY_MODE.
+//
+// The CLI defaults to PROFILE so execution statistics are always available for
+// verbose output, CLI_INLINE_STATS, and EXPLAIN LAST QUERY. CLI_QUERY_MODE=PLAN
+// and PROFILE are dispatched to the EXPLAIN / EXPLAIN ANALYZE execution paths
+// before reaching regular execution, so only WITH_STATS and WITH_PLAN_AND_STATS
+// need to be respected here; other values (nil, NORMAL) keep the PROFILE default.
+func effectiveQueryMode(userMode *sppb.ExecuteSqlRequest_QueryMode) sppb.ExecuteSqlRequest_QueryMode {
+	switch mode := lo.FromPtr(userMode); mode {
+	case sppb.ExecuteSqlRequest_WITH_STATS, sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS:
+		return mode
+	default:
+		return sppb.ExecuteSqlRequest_PROFILE
+	}
+}
 
 // executeSQLWithFormatAndTxn executes SQL with specific format settings and within a given transaction.
 // This is for use within withReadOnlyTransaction callbacks where we already have a transaction.
@@ -52,10 +69,6 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 // prepareFormatConfig determines the appropriate format configuration based on the display mode.
 // It returns the format config, the value format mode used, and the potentially modified sysVars.
 // This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
-//
-// Instead of switching on specific mode names, this function queries the registry
-// for the ValueFormatMode declared by the formatter.
-// Note: execute_sql.go still imports formatsql for ExtractTableNameFromQuery (SQL parsing utility).
 func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, format.ValueFormatMode, *systemVariables, error) {
 	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
 	vfm := format.ValueFormatModeFor(fmtMode)
@@ -68,7 +81,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
-			detectedTableName, detectionErr := formatsql.ExtractTableNameFromQuery(sql)
+			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
 			if detectedTableName != "" {
 				// Create a copy of sysVars to use the detected table name for this execution only.
 				// This is important for:
@@ -135,7 +148,7 @@ type queryExecution struct {
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
 func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error) {
-	useStreaming, processor, err := decideExecutionMode(qe.SysVars)
+	useStreaming, processor, err := decideExecutionMode(qe)
 	if err != nil {
 		if qe.Iter != nil {
 			qe.Iter.Stop()
@@ -180,9 +193,10 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 		return nil, err
 	}
 
-	// Always use ExecuteSqlRequest_PROFILE mode to get execution statistics from Spanner.
+	// Resolve the request-level query mode from CLI_QUERY_MODE; the default is
+	// PROFILE so execution statistics are always available from Spanner.
 	opts := spanner.QueryOptions{
-		Mode:     sppb.ExecuteSqlRequest_PROFILE.Enum(),
+		Mode:     effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
 		Priority: sysVars.Query.RPCPriority,
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
@@ -213,7 +227,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false)
+	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
 	if err != nil {
 		return nil, err
 	}
@@ -249,17 +263,25 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
-func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor, error) {
-	// Get output writer from StreamManager (respects tee/redirect settings)
-	outStream := sysVars.StreamManager.GetWriter()
+// Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) stream without a
+// RowProcessor: executeStreamingSQLWithSpanvalueWriter creates and validates
+// the writer itself.
+func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
+	// The per-statement output destination (respects tee/redirect settings
+	// and the MCP handler's capture buffer).
+	outStream := qe.Session.outputWriter()
 	if outStream == nil {
 		return false, nil, nil
 	}
 
-	screenWidth := displayScreenWidth(sysVars)
+	if usesSpanvalueWriter(qe.SysVars.Display.CLIFormat) {
+		return true, nil, nil
+	}
+
+	screenWidth := qe.Session.displayWidthFor(qe.SysVars)
 
 	// Try to create streaming processor based on settings
-	processor, err := createStreamingProcessor(sysVars, outStream, screenWidth)
+	processor, err := createStreamingProcessor(qe.SysVars, outStream, screenWidth)
 	if err != nil {
 		return false, nil, err
 	}
@@ -316,10 +338,35 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 		}
 	}
 
-	sysVars.Internal.LastQueryCache = &LastQueryCache{
+	sysVars.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
+	}
+
+	return applyQueryModeStatsRendering(result, plan, sysVars)
+}
+
+// applyQueryModeStatsRendering reflects the user-specified stats query modes
+// in the presentation of result: stats are rendered even without
+// CLI_VERBOSE, and WITH_PLAN_AND_STATS additionally renders the query plan as
+// a result appendix, when a plan is available (e.g. absent for the Cloud
+// Spanner Emulator). This is shared between SELECT result construction
+// (finalizeQueryResult) and DML result construction (buildDMLResult) so both
+// honor CLI_QUERY_MODE identically.
+func applyQueryModeStatsRendering(result *Result, plan *sppb.QueryPlan, sysVars *systemVariables) error {
+	switch lo.FromPtr(sysVars.Query.QueryMode) {
+	case sppb.ExecuteSqlRequest_WITH_STATS:
+		result.ForceVerbose = true
+	case sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS:
+		result.ForceVerbose = true
+		if plan != nil {
+			appendices, err := buildQueryPlanAppendix(sysVars, plan)
+			if err != nil {
+				return err
+			}
+			result.Appendices = append(result.Appendices, appendices...)
+		}
 	}
 	return nil
 }
@@ -371,7 +418,9 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 
 // createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
 // Non-table formats are always streaming because they do not benefit from row buffering.
-// For table formats, CLI_STREAMING controls whether to trade layout quality for immediate output.
+// For table formats, CLI_TABLE_STREAMING controls whether to trade layout quality for immediate output.
+// Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) never reach this function:
+// decideExecutionMode routes them to the spanvalue writer path directly.
 func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
 	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
 	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
@@ -384,7 +433,7 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 		}
 	}
 
-	// Non-table formats always stream regardless of CLI_STREAMING; only
+	// Non-table formats always stream regardless of CLI_TABLE_STREAMING; only
 	// guard against an unexpected enum value.
 	switch sysVars.Query.StreamingMode {
 	case enums.StreamingModeTrue, enums.StreamingModeFalse, enums.StreamingModeAuto:

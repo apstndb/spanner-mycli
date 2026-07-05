@@ -1,5 +1,5 @@
 .PHONY: build generate clean run test test-verbose test-quick test-coverage test-coverage-open \
-	lint fmt fmt-check check all all-quick docs-update help-dev \
+	check-race lint fmt fmt-check check all all-quick docs-update help-dev \
 	worktree-setup worktree-list worktree-delete
 
 build:
@@ -25,6 +25,10 @@ test-verbose:
 # Quick tests for development cycle
 test-quick:
 	go test -short ./...
+
+# Race detector on unit tests (same gate as the CI "race" job)
+check-race:
+	go test -short -race ./...
 
 # Test with coverage profile
 test-coverage:
@@ -77,7 +81,7 @@ all: fmt check
 # Quick development cycle with formatting (destructive)
 all-quick: fmt test-quick lint
 
-# Update README.md help sections
+# Update README.md help sections and docs/system_variables.md reference table
 # go-flags uses ioctl(TIOCGWINSZ) for terminal width, so capture help through a PTY.
 docs-update:
 	@echo "Updating help output for README.md..."
@@ -86,9 +90,14 @@ docs-update:
 	@go run . --statement-help > tmp/statement_help.txt
 	@awk 'NR==FNR { new = new $$0 ORS; next } /<!-- statement-help begin -->/ { print; printf "%s", new; skip=1; next } /<!-- statement-help end -->/ { skip=0; print; next } !skip { print }' tmp/statement_help.txt README.md > tmp/README.md
 	@mv tmp/README.md README.md
+	@echo "Updating system variables reference for docs/system_variables.md..."
+	@go run . --sysvars-help > tmp/sysvars_help.txt
+	@awk 'NR==FNR { new = new $$0 ORS; next } /<!-- sysvars-help begin -->/ { print; printf "%s", new; skip=1; next } /<!-- sysvars-help end -->/ { skip=0; print; next } !skip { print }' tmp/sysvars_help.txt docs/system_variables.md > tmp/system_variables.md
+	@mv tmp/system_variables.md docs/system_variables.md
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
 	@echo "  - tmp/statement_help.txt: --statement-help output for README.md"
+	@echo "  - tmp/sysvars_help.txt: --sysvars-help output for docs/system_variables.md"
 
 # Show development help
 help-dev:
@@ -98,6 +107,7 @@ help-dev:
 	@echo "  make test-coverage     - Run tests with coverage report"
 	@echo "  make test-coverage-open - Run coverage and open HTML report in browser"
 	@echo "  make test-quick        - Run quick tests (go test -short)"
+	@echo "  make check-race        - Run unit tests with race detector (same as CI race job)"
 	@echo "  make lint              - Run linter (required before push)"
 	@echo "  make fmt               - Format code (modifies files)"
 	@echo "  make fmt-check         - Check if code is properly formatted"
@@ -106,7 +116,7 @@ help-dev:
 	@echo "  make all-quick         - Run fmt && test-quick && lint (modifies files)"
 	@echo "  make clean             - Clean build artifacts and test cache"
 	@echo "  make run               - Run with PROJECT/INSTANCE/DATABASE env vars"
-	@echo "  make docs-update       - Generate help output for README.md"
+	@echo "  make docs-update       - Generate help output for README.md and docs/system_variables.md"
 	@echo "  make worktree-setup    - Setup phantom worktree (requires WORKTREE_NAME)"
 	@echo "  make worktree-list     - List existing phantom worktrees"
 	@echo "  make worktree-delete   - Delete phantom worktree (requires WORKTREE_NAME)"

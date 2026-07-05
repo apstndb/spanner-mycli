@@ -57,8 +57,7 @@ func formatTimestampBound(tb *spanner.TimestampBound) string {
 
 // TimestampBoundVar handles READ_ONLY_STALENESS variable
 type TimestampBoundVar struct {
-	ptr         **spanner.TimestampBound
-	description string
+	ptr **spanner.TimestampBound
 }
 
 func (t *TimestampBoundVar) Get() (string, error) {
@@ -82,19 +81,10 @@ func (t *TimestampBoundVar) Set(value string) error {
 	return nil
 }
 
-func (t *TimestampBoundVar) Description() string {
-	return t.description
-}
-
-func (t *TimestampBoundVar) IsReadOnly() bool {
-	return false
-}
-
 // ProtoDescriptorVar handles CLI_PROTO_DESCRIPTOR_FILE with ADD support
 type ProtoDescriptorVar struct {
 	filesPtr      *[]string
 	descriptorPtr **descriptorpb.FileDescriptorSet
-	description   string
 }
 
 func (p *ProtoDescriptorVar) Get() (string, error) {
@@ -143,19 +133,13 @@ func (p *ProtoDescriptorVar) Add(value string) error {
 	return nil
 }
 
-func (p *ProtoDescriptorVar) Description() string {
-	return p.description
-}
-
-func (p *ProtoDescriptorVar) IsReadOnly() bool {
-	return false
-}
-
-// EndpointVar handles CLI_ENDPOINT (host:port)
+// EndpointVar handles CLI_ENDPOINT (host:port).
+// Read-only, like CLI_HOST and CLI_PORT which it is derived from: the
+// endpoint is part of the immutable StartupConfig, and changing it after
+// startup would not reconnect the live session.
 type EndpointVar struct {
-	hostPtr     *string
-	portPtr     *int
-	description string
+	hostPtr *string
+	portPtr *int
 }
 
 func (e *EndpointVar) Get() (string, error) {
@@ -166,27 +150,7 @@ func (e *EndpointVar) Get() (string, error) {
 }
 
 func (e *EndpointVar) Set(value string) error {
-	if value == "" {
-		*e.hostPtr = ""
-		*e.portPtr = 0
-		return nil
-	}
-
-	host, port, err := parseEndpoint(value)
-	if err != nil {
-		return err
-	}
-	*e.hostPtr = host
-	*e.portPtr = port
-	return nil
-}
-
-func (e *EndpointVar) Description() string {
-	return e.description
-}
-
-func (e *EndpointVar) IsReadOnly() bool {
-	return false
+	return errSetterReadOnly
 }
 
 // parseOutputTemplate parses output template file
@@ -216,10 +180,9 @@ func parseInlineStats(value string) ([]inlineStatsDef, error) {
 
 // TemplateVar handles template variables like CLI_ANALYZE_COLUMNS
 type TemplateVar struct {
-	stringPtr   *string
-	parsedPtr   interface{} // Will be type-asserted based on usage
-	parseFunc   func(string) error
-	description string
+	stringPtr *string
+	parsedPtr interface{} // Will be type-asserted based on usage
+	parseFunc func(string) error
 }
 
 func (t *TemplateVar) Get() (string, error) {
@@ -236,27 +199,17 @@ func (t *TemplateVar) Set(value string) error {
 	return nil
 }
 
-func (t *TemplateVar) Description() string {
-	return t.description
-}
-
-func (t *TemplateVar) IsReadOnly() bool {
-	return false
-}
-
 // AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE using enumer-generated methods
-func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode, desc string) *EnumVar[enums.AutocommitDMLMode] {
+func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode) *EnumVar[enums.AutocommitDMLMode] {
 	return &EnumVar[enums.AutocommitDMLMode]{
-		ptr:         ptr,
-		values:      enumerValues(enums.AutocommitDMLModeValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.AutocommitDMLModeValues()),
 	}
 }
 
 // LogLevelVar handles CLI_LOG_LEVEL
 type LogLevelVar struct {
-	ptr         *slog.Level
-	description string
+	ptr *slog.Level
 }
 
 func (l *LogLevelVar) Get() (string, error) {
@@ -281,14 +234,6 @@ func (l *LogLevelVar) Set(value string) error {
 	return nil
 }
 
-func (l *LogLevelVar) Description() string {
-	return l.description
-}
-
-func (l *LogLevelVar) IsReadOnly() bool {
-	return false
-}
-
 // ValidValues returns the standard log level names as GoogleSQL string literals.
 func (l *LogLevelVar) ValidValues() []string {
 	return []string{"'DEBUG'", "'ERROR'", "'INFO'", "'WARN'", "'WARNING'"}
@@ -296,8 +241,7 @@ func (l *LogLevelVar) ValidValues() []string {
 
 // UnimplementedVar handles unimplemented variables
 type UnimplementedVar struct {
-	name        string
-	description string
+	name string
 }
 
 func (u *UnimplementedVar) Get() (string, error) {
@@ -308,18 +252,9 @@ func (u *UnimplementedVar) Set(value string) error {
 	return errSetterUnimplemented{u.name}
 }
 
-func (u *UnimplementedVar) Description() string {
-	return u.description
-}
-
-func (u *UnimplementedVar) IsReadOnly() bool {
-	return false
-}
-
 // TimestampVar handles timestamp formatting for read-only timestamp variables
 type TimestampVar struct {
-	ptr         *time.Time
-	description string
+	ptr *time.Time
 }
 
 func (t *TimestampVar) Get() (string, error) {
@@ -333,18 +268,9 @@ func (t *TimestampVar) Set(value string) error {
 	return errSetterReadOnly
 }
 
-func (t *TimestampVar) Description() string {
-	return t.description
-}
-
-func (t *TimestampVar) IsReadOnly() bool {
-	return true
-}
-
 // IntGetterVar handles integer variables with custom getters
 type IntGetterVar struct {
-	getter      func() int64
-	description string
+	getter func() int64
 }
 
 func (i *IntGetterVar) Get() (string, error) {
@@ -353,12 +279,4 @@ func (i *IntGetterVar) Get() (string, error) {
 
 func (i *IntGetterVar) Set(value string) error {
 	return errSetterReadOnly
-}
-
-func (i *IntGetterVar) Description() string {
-	return i.description
-}
-
-func (i *IntGetterVar) IsReadOnly() bool {
-	return true
 }

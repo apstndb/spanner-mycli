@@ -51,6 +51,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
 * Generalized concepts to extend without a lot of original syntax
   * Generalized system variables concept inspired by Spanner JDBC properties
     * `SET <name> = <value>` statement
+    * `SET LOCAL <name> = <value>` statement (transaction-scoped; the value reverts when the transaction ends)
     * `SHOW VARIABLES` statement
     * `SHOW VARIABLE <name>` statement
     * `--set <name>=<value>` flag
@@ -127,7 +128,7 @@ Flags:
       --html                                   Display output in HTML format.
       --xml                                    Display output in XML format.
       --csv                                    Display output in CSV format.
-      --format=STRING                          Output format (table, tab, vertical, html, xml, csv, jsonl)
+      --format=STRING                          Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)
   -v, --verbose                                Display verbose output.
       --credential=STRING                      Use the specific credential file
       --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
@@ -164,7 +165,7 @@ Flags:
       --log-level=STRING
       --log-grpc                               Show gRPC logs
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
-                                               PROFILE.
+                                               PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
       --read-timestamp=STRING                  Perform a query at the given timestamp.
       --vertexai-project=STRING                Vertex AI project
@@ -188,7 +189,7 @@ Flags:
       --tee=STRING                             Append a copy of output to the specified file (both screen and file)
   -o, --output=STRING                          Redirect query/data output to file (overwrites existing file)
       --skip-column-names                      Suppress column headers in output
-      --streaming="AUTO"                       Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
+      --table-streaming="AUTO"                 Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
                                                table output. Non-table formats always stream.
       --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
                                                FALSE (never styled)
@@ -309,6 +310,11 @@ id      name    active
 1       foo     true
 2       bar     false
 ```
+
+`TAB` writes values as-is, so values containing tabs or newlines break the row/column structure.
+Use `--format=TSV` for the same layout with lossless escaping: tab, newline, carriage return, and
+backslash inside values are escaped as `\t`, `\n`, `\r`, and `\\`, guaranteeing one row per line
+and one field per tab-separated column.
 
 With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
 
@@ -610,11 +616,12 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Start DML batching                                              | `START BATCH DML;`                                                                                         |                                                                                                                                                                                           |
 | Run active batch                                                | `RUN BATCH;`                                                                                               |                                                                                                                                                                                           |
 | Abort active batch                                              | `ABORT BATCH [TRANSACTION];`                                                                               |                                                                                                                                                                                           |
+| Set variable for the current transaction                        | `SET LOCAL <name> = <value>;`                                                                              |                                                                                                                                                                                           |
+| Set type query parameter                                        | `SET PARAM <name> <type>;`                                                                                 |                                                                                                                                                                                           |
 | Set variable                                                    | `SET <name> = <value>;`                                                                                    |                                                                                                                                                                                           |
 | Add value to variable                                           | `SET <name> += <value>;`                                                                                   |                                                                                                                                                                                           |
 | Show variables                                                  | `SHOW VARIABLES;`                                                                                          |                                                                                                                                                                                           |
 | Show variable                                                   | `SHOW VARIABLE <name>;`                                                                                    |                                                                                                                                                                                           |
-| Set type query parameter                                        | `SET PARAM <name> <type>;`                                                                                 |                                                                                                                                                                                           |
 | Set value query parameter                                       | `SET PARAM <name> = <value>;`                                                                              |                                                                                                                                                                                           |
 | Show query parameters                                           | `SHOW PARAMS;`                                                                                             |                                                                                                                                                                                           |
 | Unset query parameter                                           | `UNSET PARAM <name>;`                                                                                      |                                                                                                                                                                                           |
@@ -967,7 +974,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_VERBOSE                | READ_WRITE | `TRUE`                                         |
 | CLI_PROTO_DESCRIPTOR_FILE  | READ_WRITE | `"order_descriptors.pb"`                       |
 | CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
-| CLI_INSECURE               | READ_WRITE | `"FALSE"`                                      |
+| CLI_INSECURE               | READ_ONLY  | `"FALSE"`                                      |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
@@ -977,7 +984,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_ENABLE_HIGHLIGHT       | READ_WRITE | `"TRUE"`                                       |
 | CLI_PROTOTEXT_MULTILINE    | READ_WRITE | `"TRUE"`                                       |
 | CLI_FIXED_WIDTH            | READ_WRITE | `80`                                           |
-| CLI_STREAMING              | READ_WRITE | `"AUTO"`                                       |
+| CLI_TABLE_STREAMING        | READ_WRITE | `"AUTO"`                                       |
 | CLI_TABLE_PREVIEW_ROWS     | READ_WRITE | `50`                                           |
 | CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
@@ -993,7 +1000,8 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 > - `TABLE_COMMENT` - Table wrapped in /* */ comments  
 > - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
 > - `VERTICAL` - Vertical format (column: value pairs)
-> - `TAB` - Tab-separated values
+> - `TAB` - Tab-separated values (raw; values containing tabs or newlines break the row/column structure)
+> - `TSV` - Tab-separated values with escaping (tab, newline, carriage return, and backslash in values are escaped as `\t`, `\n`, `\r`, `\\`)
 > - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
 > - `XML` - XML format (compatible with Google Cloud Spanner CLI)
 > - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
@@ -1004,7 +1012,7 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 >
 > You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, `--csv`, or `--format`.
 
-> **Note**: `CLI_STREAMING` controls table streaming output mode:
+> **Note**: `CLI_TABLE_STREAMING` controls table streaming output mode:
 > - `AUTO` (default) - Buffers Table formats for accurate column width calculation; non-table formats stream
 > - `TRUE` - Streams Table formats too (reduces memory usage, faster time-to-first-byte)
 > - `FALSE` - Buffers Table formats; non-table formats still stream

@@ -257,16 +257,11 @@ func newDevKnowledgeClient(apiKey string) *devKnowledgeClient {
 }
 
 func (c *devKnowledgeClient) doGet(ctx context.Context, reqURL string) ([]byte, error) {
-	client := *c.client
-	client.Context = ctx
-	return client.DoGet(reqURL)
+	return c.client.DoGet(ctx, reqURL)
 }
 
 func (c *devKnowledgeClient) batchGetDocuments(ctx context.Context, names []string) ([]dkapi.Document, error) {
-	client := *c.client
-	client.BaseURL = c.baseURL
-	client.Context = ctx
-	return client.BatchGetDocuments(names)
+	return c.client.BatchGetDocuments(ctx, names)
 }
 
 // devKnowledgeDocSearcher implements document operations using the Developer Knowledge REST API.

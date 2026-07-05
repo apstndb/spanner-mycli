@@ -9,13 +9,20 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same ref (e.g. new pushes to a PR branch).
+# Keep main-branch runs alive so post-merge coverage/sync history is not lost
+# when merges land in quick succession.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   readme-sync:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -25,8 +32,8 @@ jobs:
       - name: Install tools
         run: go install tool
 
-      - name: Regenerate README help
+      - name: Regenerate README help and docs
         run: make docs-update
 
-      - name: Check README is up to date
-        run: git diff --exit-code -- README.md
+      - name: Check generated docs are up to date
+        run: git diff --exit-code -- README.md docs/system_variables.md

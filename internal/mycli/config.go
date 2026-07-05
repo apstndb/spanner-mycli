@@ -111,7 +111,7 @@ type spannerOptions struct {
 	HTML                bool              `name:"html" help:"Display output in HTML format."`
 	XML                 bool              `name:"xml" help:"Display output in XML format."`
 	CSV                 bool              `name:"csv" help:"Display output in CSV format."`
-	Format              string            `name:"format" help:"Output format (table, tab, vertical, html, xml, csv, jsonl)"`
+	Format              string            `name:"format" help:"Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)"`
 	Verbose             bool              `name:"verbose" short:"v" help:"Display verbose output."`
 	Credential          string            `name:"credential" help:"Use the specific credential file"`
 	Prompt              *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`
@@ -141,7 +141,7 @@ type spannerOptions struct {
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
-	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
+	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS." enum:"NORMAL,PLAN,PROFILE,WITH_STATS,WITH_PLAN_AND_STATS"`
 	Strong                    bool                      `name:"strong" help:"Perform a strong query."`
 	ReadTimestamp             string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
 	VertexAIProject           string                    `name:"vertexai-project" help:"Vertex AI project"`
@@ -152,6 +152,7 @@ type spannerOptions struct {
 	Help                      showHelpFlag              `name:"help" short:"h" help:"Show this help message and exit."`
 	Version                   showVersionFlag           `name:"version" help:"Show version string."`
 	StatementHelp             bool                      `name:"statement-help" hidden:"" help:"Show statement help."`
+	SysVarsHelp               bool                      `name:"sysvars-help" hidden:"" help:"Show system variables help in markdown format."`
 	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
@@ -170,7 +171,7 @@ type spannerOptions struct {
 	Tee             string  `name:"tee" help:"Append a copy of output to the specified file (both screen and file)"`
 	Output          string  `name:"output" short:"o" help:"Redirect query/data output to file (overwrites existing file)"`
 	SkipColumnNames bool    `name:"skip-column-names" help:"Suppress column headers in output"`
-	Streaming       string  `name:"streaming" help:"Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams table output. Non-table formats always stream." enum:"AUTO,TRUE,FALSE" default:"AUTO"`
+	TableStreaming  string  `name:"table-streaming" help:"Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams table output. Non-table formats always stream." enum:"AUTO,TRUE,FALSE" default:"AUTO"`
 	Color           string  `name:"color" help:"ANSI styling in output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled)" enum:"AUTO,TRUE,FALSE" default:"AUTO"`
 	Quiet           bool    `name:"quiet" short:"q" help:"Suppress result lines like 'rows in set' for clean output"`
 }
@@ -359,7 +360,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	sysVars.Connection.Instance = opts.InstanceId
 	sysVars.Connection.Database = determineInitialDatabase(opts)
 	sysVars.Display.Verbose = opts.Verbose || opts.MCP // Set Verbose to true when MCP is true
-	sysVars.Feature.MCP = opts.MCP                     // Set MCP field for CLI_MCP system variable
+	sysVars.Config.MCP = opts.MCP                      // Set MCP field for CLI_MCP system variable
 
 	// Override defaults only if explicitly provided
 	if opts.Prompt != nil {
@@ -392,11 +393,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 
 	// Implement precedence: non-hidden flag (--insecure) takes precedence when both are set
 	if opts.Insecure != nil {
-		sysVars.Connection.Insecure = *opts.Insecure
+		sysVars.Config.Insecure = *opts.Insecure
 	} else if opts.SkipTlsVerify != nil {
-		sysVars.Connection.Insecure = *opts.SkipTlsVerify
+		sysVars.Config.Insecure = *opts.SkipTlsVerify
 	} else {
-		sysVars.Connection.Insecure = false // default value
+		sysVars.Config.Insecure = false // default value
 	}
 
 	// Handle --endpoint/--deployment-endpoint aliases with proper precedence
@@ -412,37 +413,37 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse endpoint %q: %w", endpoint, err)
 		}
-		sysVars.Connection.Host, sysVars.Connection.Port = host, port
+		sysVars.Config.Host, sysVars.Config.Port = host, port
 	} else if opts.Host != "" || opts.Port != 0 {
 		// Handle --host and --port flags
 		if opts.Port != 0 && opts.Host == "" {
 			// Only port specified: use localhost for emulator
-			sysVars.Connection.Host = "localhost"
-			sysVars.Connection.Port = opts.Port
+			sysVars.Config.Host = "localhost"
+			sysVars.Config.Port = opts.Port
 		} else if opts.Host != "" && opts.Port == 0 {
 			// Only host specified: use standard Spanner port
-			sysVars.Connection.Host = opts.Host
-			sysVars.Connection.Port = 443
+			sysVars.Config.Host = opts.Host
+			sysVars.Config.Port = 443
 		} else {
 			// Both specified
-			sysVars.Connection.Host = opts.Host
-			sysVars.Connection.Port = opts.Port
+			sysVars.Config.Host = opts.Host
+			sysVars.Config.Port = opts.Port
 		}
 	}
 	sysVars.Params = params
-	sysVars.Feature.LogGrpc = opts.LogGrpc
+	sysVars.Config.LogGrpc = opts.LogGrpc
 	sysVars.Feature.LogLevel = l
-	sysVars.Connection.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
+	sysVars.Config.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	sysVars.Feature.VertexAIProject = opts.VertexAIProject
 	sysVars.Feature.AsyncDDL = opts.Async
 
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command
 	if opts.SkipSystemCommand {
-		sysVars.Feature.SkipSystemCommand = true
+		sysVars.Config.SkipSystemCommand = true
 	} else if opts.SystemCommand != nil {
 		// --system-command=OFF disables system commands
-		sysVars.Feature.SkipSystemCommand = *opts.SystemCommand == "OFF"
+		sysVars.Config.SkipSystemCommand = *opts.SystemCommand == "OFF"
 	}
 	// If neither flag is set, system commands are enabled by default (SkipSystemCommand = false)
 
@@ -476,12 +477,12 @@ func applyOptionMappings(sysVars *systemVariables, mappings []optionMapping) err
 }
 
 func applyOutputTemplate(sysVars *systemVariables, opts *spannerOptions) error {
-	if opts.OutputTemplate == "" {
-		setDefaultOutputTemplate(sysVars)
-	} else {
-		if err := setOutputTemplateFile(sysVars, opts.OutputTemplate); err != nil {
-			return fmt.Errorf("parse error of output template: %w", err)
-		}
+	// Route startup through the single registry-side loader so that startup and
+	// SET CLI_OUTPUT_TEMPLATE_FILE share identical semantics (an empty value
+	// restores the built-in default template). This is the sole output-template
+	// loader; setDefaultOutputTemplate/setOutputTemplateFile were removed.
+	if err := sysVars.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", opts.OutputTemplate); err != nil {
+		return fmt.Errorf("parse error of output template: %w", err)
 	}
 	return nil
 }
@@ -546,8 +547,8 @@ func applyFormatAndSetOptions(sysVars *systemVariables, opts *spannerOptions) er
 func applyEmbeddedRuntimeDefaults(sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.usesEmbeddedRuntime() {
 		// When using an embedded runtime, insecure connection is required.
-		sysVars.Connection.Insecure = true
-		// sysVars.Connection.Host/Port and authentication-related settings are set in run() after the runtime starts.
+		sysVars.Config.Insecure = true
+		// sysVars.Config.Host/Port and authentication-related settings are set in run() after the runtime starts.
 
 		// Set default values for embedded runtime if not specified by user.
 		if sysVars.Connection.Project == "" {
@@ -590,7 +591,7 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
 		{"CLI_QUERY_MODE", string(lo.FromPtr(opts.QueryMode)), "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},
-		{"CLI_STREAMING", lo.Ternary(opts.Streaming != "" && opts.Streaming != "AUTO", opts.Streaming, ""), "--streaming"},
+		{"CLI_TABLE_STREAMING", lo.Ternary(opts.TableStreaming != "" && opts.TableStreaming != "AUTO", opts.TableStreaming, ""), "--table-streaming"},
 		{"CLI_STYLED_OUTPUT", lo.Ternary(opts.Color != "" && opts.Color != "AUTO", opts.Color, ""), "--color"},
 	}); err != nil {
 		return nil, err

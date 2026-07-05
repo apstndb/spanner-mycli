@@ -115,6 +115,18 @@ func (c *docCache) decompress(data []byte) (string, error) {
 	return string(b), nil
 }
 
+// decompressStaleEntry decompresses a stale cache entry and deletes it on corruption.
+// Caller must hold c.mu.
+func (c *docCache) decompressStaleEntry(name string, entry docCacheEntry) (string, error) {
+	content, err := c.decompress(entry.data)
+	if err != nil {
+		delete(c.entries, name)
+		slog.Warn("Failed to decompress stale cached document, discarding entry", "name", name, "error", err)
+		return "", err
+	}
+	return content, nil
+}
+
 // isFresh returns whether an entry is within TTL.
 func (c *docCache) isFresh(e docCacheEntry) bool {
 	if e.fetchedAt.IsZero() {
@@ -169,10 +181,15 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 	if exists && c.isFresh(entry) {
 		content, err := c.decompress(entry.data)
 		if err != nil {
-			slog.Warn("Failed to decompress cached document", "name", name, "error", err)
-			return "", false
+			delete(c.entries, name)
+			exists = false
+			slog.Warn("Failed to decompress cached document, attempting refresh", "name", name, "error", err)
+			if c.fetch == nil {
+				return "", false
+			}
+		} else {
+			return content, true
 		}
-		return content, true
 	}
 
 	// Stale or missing — try API refresh if available.
@@ -183,7 +200,11 @@ func (c *docCache) Get(ctx context.Context, name string) (string, bool) {
 			c.putLocked(name, content)
 			return content, true
 		}
-		slog.Debug("API refresh failed, using stale cache", "name", name, "error", err)
+		if exists {
+			slog.Debug("API refresh failed, using stale cache", "name", name, "error", err)
+		} else {
+			slog.Debug("API refresh failed", "name", name, "error", err)
+		}
 	}
 
 	// Return stale content if available
@@ -219,6 +240,9 @@ func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
 				results = append(results, DocResult{Name: name, Content: content})
 				continue
 			}
+			delete(c.entries, name)
+			exists = false
+			slog.Warn("Failed to decompress cached document, attempting refresh", "name", name, "error", err)
 		}
 		toFetch = append(toFetch, name)
 		if exists {
@@ -247,7 +271,7 @@ func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
 					continue
 				}
 				if stale, ok := staleEntries[name]; ok {
-					if content, err := c.decompress(stale.data); err == nil {
+					if content, err := c.decompressStaleEntry(name, stale); err == nil {
 						results = append(results, DocResult{Name: name, Content: content})
 					}
 				}
@@ -269,7 +293,7 @@ func (c *docCache) BatchGet(ctx context.Context, names []string) []DocResult {
 		}
 		// Use stale entry if available
 		if stale, ok := staleEntries[name]; ok {
-			if content, err := c.decompress(stale.data); err == nil {
+			if content, err := c.decompressStaleEntry(name, stale); err == nil {
 				results = append(results, DocResult{Name: name, Content: content})
 			}
 		}

@@ -119,23 +119,41 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return nil, err
 	}
 
-	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
+	session.systemVariables.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:       result.Plan,
 		QueryStats:      queryStats,
 		CommitTimestamp: result.CommitResponse.CommitTs,
 	}
 
-	return &Result{
+	return buildDMLResult(result, stats, tableHeader, renderedOutput, hasRenderedOutput, session.systemVariables)
+}
+
+// buildDMLResult assembles the final Result for a regular (non-batch) DML
+// statement from its DMLResult and pre-rendered THEN RETURN output.
+//
+// It applies the same CLI_QUERY_MODE-driven presentation rules as SELECT
+// results (see applyQueryModeStatsRendering): WITH_STATS forces stats to
+// render even without CLI_VERBOSE, and WITH_PLAN_AND_STATS additionally
+// appends the query plan collected by runUpdateOnTransaction as a result
+// appendix, when a plan is available.
+func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHeader, renderedOutput []byte, hasRenderedOutput bool, sysVars *systemVariables) (*Result, error) {
+	result := &Result{
 		IsExecutedDML:         true, // This is a regular DML statement
-		CommitTimestamp:       result.CommitResponse.CommitTs,
-		CommitStats:           result.CommitResponse.CommitStats,
+		CommitTimestamp:       dmlResult.CommitResponse.CommitTs,
+		CommitStats:           dmlResult.CommitResponse.CommitStats,
 		Stats:                 stats,
 		TableHeader:           tableHeader,
 		RenderedOutput:        renderedOutput,
 		HasRenderedOutput:     hasRenderedOutput,
-		AffectedRows:          int(result.Affected),
+		AffectedRows:          int(dmlResult.Affected),
 		HasSQLFormattedValues: false, // DML with THEN RETURN uses regular formatting, not SQL literals
-	}, nil
+	}
+
+	if err := applyQueryModeStatsRendering(result, dmlResult.Plan, sysVars); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, rows []Row) ([]byte, error) {

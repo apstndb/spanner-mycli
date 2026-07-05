@@ -14,6 +14,7 @@ credentials.json
 .agents/
 .claude/*
 !.claude/settings.json
+!.claude/commands
 .codex/
 
 # Cache and temporary files - safe to delete anywhere

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -116,10 +117,28 @@ type TransactionManager struct {
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction: Type-safe transaction access
 	// - clearTransactionContext, TransactionAttrsWithLock: Safe context management
 	// All transaction context access MUST go through these helpers.
+	//
+	// Naming convention: methods with a WithLock suffix acquire mu internally;
+	// methods with a Locked suffix assume the caller already holds mu. Go
+	// mutexes are not reentrant, so calling a WithLock method from a callback
+	// that already runs under mu (e.g. inside withTransactionLocked) deadlocks;
+	// use the Locked variant there instead.
 	mu           sync.RWMutex
 	client       *spanner.Client      // same pointer as Session.client
 	sysVars      *systemVariables     // same pointer as Session.systemVariables
 	clientConfig spanner.ClientConfig // for directed read in tryQueryInTransaction
+
+	// localVarUndo records (name, previous value) pairs for system variables
+	// changed by SET LOCAL in the current transaction. Guarded by mu.
+	// It lives on the TransactionManager rather than on transactionContext so it
+	// survives the pending -> active context replacement in Begin*TransactionLocked.
+	localVarUndo []savedLocalVar
+}
+
+// savedLocalVar is one SET LOCAL undo-log entry.
+type savedLocalVar struct {
+	name     string // uppercase variable name
+	oldValue string // display-string value before SET LOCAL, restored via Registry.Set
 }
 
 // NewTransactionManager creates a new TransactionManager.
@@ -129,6 +148,22 @@ func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, cli
 		sysVars:      sysVars,
 		clientConfig: clientConfig,
 	}
+}
+
+// SetClient replaces the Spanner client under tm.mu. It refuses to replace
+// the client while any transaction context exists: the old client is closed
+// by the caller, so a live tc (and its heartbeat goroutine) would be left
+// using a closed client. All Aborted paths that trigger RecreateClient roll
+// back or clear the transaction first; this guard turns that ordering from
+// an emergent property into an enforced invariant.
+func (tm *TransactionManager) SetClient(client *spanner.Client) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil {
+		return fmt.Errorf("cannot replace client during %s transaction", tm.tc.attrs.mode)
+	}
+	tm.client = client
+	return nil
 }
 
 // withTransactionContextWithLock is the most generic base method for transaction context manipulation.
@@ -249,6 +284,48 @@ func (tm *TransactionManager) withReadOnlyTransactionOrStart(ctx context.Context
 	return tm.withReadOnlyTransaction(fn)
 }
 
+// pushLocalVarUndo appends a SET LOCAL undo entry for the current transaction.
+// It fails if no transaction is active, because the entry would never be replayed.
+func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
+	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil {
+			return ErrNoTransaction
+		}
+		tm.localVarUndo = append(tm.localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
+		return nil
+	})
+}
+
+// restoreLocalVarsIfIdle replays the SET LOCAL undo log once the transaction has
+// ended. SET LOCAL values revert on commit, rollback, and close alike, so instead
+// of hooking every transaction-ending site (including automatic rollback on
+// statement error), this runs after each statement execution and acts only when
+// no transaction context remains. Replay happens outside the lock because
+// variable setters may themselves inspect transaction state.
+func (tm *TransactionManager) restoreLocalVarsIfIdle() {
+	var entries []savedLocalVar
+	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr != nil || len(tm.localVarUndo) == 0 {
+			return nil
+		}
+		entries = tm.localVarUndo
+		tm.localVarUndo = nil
+		return nil
+	})
+
+	// Replay in reverse so that for a variable set twice, the value saved by the
+	// first SET LOCAL wins.
+	for _, e := range slices.Backward(entries) {
+		if err := tm.sysVars.Registry.Set(e.name, e.oldValue, false); err != nil {
+			// SET LOCAL verified at set time that the saved value round-trips
+			// through the setter, so a failure here means session state changed
+			// underneath us; the variable keeps its transaction-local value.
+			slog.Warn("failed to restore SET LOCAL variable after transaction end",
+				"name", e.name, "value", e.oldValue, "err", err)
+		}
+	}
+}
+
 // clearTransactionContext atomically clears the transaction context.
 // This is equivalent to setTransactionContext(nil) but more expressive.
 func (tm *TransactionManager) clearTransactionContext() {
@@ -357,7 +434,7 @@ func (tm *TransactionManager) GetTransactionFlagsWithLock() (inTransaction bool,
 
 	inTransaction = true
 	inReadWriteTransaction = tm.tc.attrs.mode == transactionModeReadWrite
-	return
+	return inTransaction, inReadWriteTransaction
 }
 
 // TransactionOptionsBuilder helps build transaction options with proper defaults.
@@ -793,6 +870,8 @@ func (tm *TransactionManager) ClosePendingTransaction() error {
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
 // This is a helper function to be used within transaction closures to avoid direct tc access
 // NOTE: This method is called from within transaction callbacks where mu is already held.
+// PROFILE is intentionally hardcoded: this path serves EXPLAIN ANALYZE for DML,
+// which requires the query plan regardless of CLI_QUERY_MODE.
 func (tm *TransactionManager) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
 	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
@@ -833,7 +912,9 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		return nil, err
 	}
 
-	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	// Respect a user-specified CLI_QUERY_MODE (WITH_STATS / WITH_PLAN_AND_STATS);
+	// otherwise default to PROFILE to get execution statistics.
+	opts := tm.queryOptionsLocked(effectiveQueryMode(tm.sysVars.Query.QueryMode).Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
@@ -858,15 +939,18 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
+// The mode must be a QueryMode that returns execution statistics: PROFILE,
+// WITH_STATS, or WITH_PLAN_AND_STATS. Callers that need the query plan
+// (e.g. EXPLAIN ANALYZE) must pass PROFILE; regular execution should pass
+// effectiveQueryMode() so a user-specified CLI_QUERY_MODE is respected.
 // An error is returned when no database connection is available; this should not
 // happen if DetachedCompatible interface validation is working correctly.
-func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Validate that we have a database client for query operations
 	if err := tm.ValidateDatabaseOperation(); err != nil {
 		return nil, nil, err
 	}
 
-	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := tm.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
 	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)

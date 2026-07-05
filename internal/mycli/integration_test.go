@@ -837,6 +837,69 @@ func TestTransactionStatements(t *testing.T) {
 	runStatementTests(t, tests)
 }
 
+// TestSetLocalStatements tests transaction-scoped system variables (SET LOCAL).
+// The value set by SET LOCAL must be visible inside the transaction and revert
+// when the transaction ends by COMMIT, ROLLBACK, or automatic rollback.
+func TestSetLocalStatements(t *testing.T) {
+	showVerbose := func(want string) stmtResult {
+		return sr("SHOW VARIABLE CLI_VERBOSE", &Result{
+			KeepVariables: true,
+			TableHeader:   toTableHeader("CLI_VERBOSE"),
+			Rows:          sliceOf(toRow(want)),
+		})
+	}
+
+	tests := []statementTestCase{
+		{
+			desc: "SET LOCAL reverts on COMMIT of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_VERBOSE = TRUE"),
+				showVerbose("TRUE"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1),
+				showVerbose("TRUE"),
+				srEmpty("COMMIT"),
+				showVerbose("FALSE"),
+			},
+		},
+		{
+			desc: "SET LOCAL reverts on ROLLBACK of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_VERBOSE = TRUE"),
+				showVerbose("TRUE"),
+				srEmpty("ROLLBACK"),
+				showVerbose("FALSE"),
+			},
+		},
+		{
+			desc: "SET LOCAL reverts when a read-only transaction is closed",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RO"),
+				srKeep("SET LOCAL CLI_VERBOSE = TRUE"),
+				showVerbose("TRUE"),
+				srEmpty("COMMIT"), // closes the read-only transaction
+				showVerbose("FALSE"),
+			},
+		},
+		{
+			desc: "SET LOCAL survives the pending to active transition",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"), // pending until the first statement
+				srKeep("SET LOCAL CLI_VERBOSE = TRUE"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1), // determines RW
+				showVerbose("TRUE"),
+				srEmpty("ROLLBACK"),
+				showVerbose("FALSE"),
+			},
+		},
+	}
+
+	runStatementTests(t, tests)
+}
+
 // TestShowStatements tests SHOW, DESCRIBE, and HELP statement functionality
 func TestShowStatements(t *testing.T) {
 	tests := []statementTestCase{

@@ -1,73 +1,10 @@
 package format
 
 import (
-	"encoding/csv"
 	"fmt"
 	"io"
 	"strings"
 )
-
-// CSVFormatter provides shared CSV formatting logic for both buffered and streaming modes.
-type CSVFormatter struct {
-	writer      *csv.Writer
-	out         io.Writer
-	skipHeaders bool
-	initialized bool
-}
-
-// NewCSVFormatter creates a new CSV formatter.
-func NewCSVFormatter(out io.Writer, skipHeaders bool) *CSVFormatter {
-	return &CSVFormatter{
-		out:         out,
-		writer:      csv.NewWriter(out),
-		skipHeaders: skipHeaders,
-	}
-}
-
-// InitFormat writes CSV headers if needed.
-func (f *CSVFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
-	if f.initialized {
-		return nil
-	}
-
-	if len(columnNames) == 0 {
-		return nil
-	}
-
-	// Write headers unless skipping
-	if !f.skipHeaders {
-		if err := f.writer.Write(columnNames); err != nil {
-			return fmt.Errorf("failed to write CSV header: %w", err)
-		}
-	}
-
-	f.initialized = true
-	return nil
-}
-
-// WriteRow writes a single CSV row.
-func (f *CSVFormatter) WriteRow(row Row) error {
-	if !f.initialized {
-		return fmt.Errorf("CSV formatter not initialized")
-	}
-
-	if err := f.writer.Write(Texts(row)); err != nil {
-		return fmt.Errorf("failed to write CSV row: %w", err)
-	}
-
-	// Flush after each row for streaming
-	f.writer.Flush()
-	return f.writer.Error()
-}
-
-// FinishFormat completes CSV output.
-func (f *CSVFormatter) FinishFormat() error {
-	f.writer.Flush()
-	if err := f.writer.Error(); err != nil {
-		return fmt.Errorf("CSV writer error: %w", err)
-	}
-	return nil
-}
 
 // TabFormatter provides shared tab-separated formatting logic.
 type TabFormatter struct {
@@ -123,6 +60,85 @@ func (f *TabFormatter) WriteRow(row Row) error {
 
 // FinishFormat completes tab-separated output.
 func (f *TabFormatter) FinishFormat() error {
+	return nil
+}
+
+// tsvEscaper escapes characters that would break the TSV row/field structure.
+// This is the conventional lossless TSV escaping (as used by MySQL's tab output,
+// Postgres COPY text format, etc.): backslash, tab, newline, and carriage return
+// are replaced by two-character backslash sequences. Quotes are NOT special in
+// TSV and are emitted verbatim.
+var tsvEscaper = strings.NewReplacer(
+	"\\", `\\`,
+	"\t", `\t`,
+	"\n", `\n`,
+	"\r", `\r`,
+)
+
+// escapeTSVFields escapes each field with tsvEscaper.
+func escapeTSVFields(fields []string) []string {
+	escaped := make([]string, len(fields))
+	for i, field := range fields {
+		escaped[i] = tsvEscaper.Replace(field)
+	}
+	return escaped
+}
+
+// TSVFormatter provides tab-separated formatting with escaping.
+// Unlike TabFormatter (which joins raw cell text and is kept for backward
+// compatibility), TSVFormatter guarantees one row per line and one field per
+// tab-separated column by escaping tab, newline, carriage return, and
+// backslash within values (and header names).
+type TSVFormatter struct {
+	out         io.Writer
+	skipHeaders bool
+	initialized bool
+}
+
+// NewTSVFormatter creates a new escaping tab-separated (TSV) formatter.
+func NewTSVFormatter(out io.Writer, skipHeaders bool) *TSVFormatter {
+	return &TSVFormatter{
+		out:         out,
+		skipHeaders: skipHeaders,
+	}
+}
+
+// InitFormat writes escaped tab-separated headers if needed.
+func (f *TSVFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
+	if f.initialized {
+		return nil
+	}
+
+	if len(columnNames) == 0 {
+		return nil
+	}
+
+	// Write headers unless skipping
+	if !f.skipHeaders {
+		if _, err := fmt.Fprintln(f.out, strings.Join(escapeTSVFields(columnNames), "\t")); err != nil {
+			return fmt.Errorf("failed to write TSV header: %w", err)
+		}
+	}
+
+	f.initialized = true
+	return nil
+}
+
+// WriteRow writes a single escaped tab-separated row.
+func (f *TSVFormatter) WriteRow(row Row) error {
+	if !f.initialized {
+		return fmt.Errorf("TSV formatter not initialized")
+	}
+
+	if _, err := fmt.Fprintln(f.out, strings.Join(escapeTSVFields(Texts(row)), "\t")); err != nil {
+		return fmt.Errorf("failed to write TSV row: %w", err)
+	}
+
+	return nil
+}
+
+// FinishFormat completes tab-separated output.
+func (f *TSVFormatter) FinishFormat() error {
 	return nil
 }
 

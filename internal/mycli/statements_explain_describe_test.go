@@ -3,16 +3,17 @@ package mycli
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
+	"github.com/apstndb/spannerplan/protoyaml"
 	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -857,8 +858,8 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
-				Display:  DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
-				Internal: InternalVars{LastQueryCache: tt.lastQueryCache},
+				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
+				LastResult: LastResult{QueryCache: tt.lastQueryCache},
 			}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
@@ -878,46 +879,100 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 		name           string
 		statement      *ShowPlanNodeStatement
 		lastQueryCache *LastQueryCache
-		want           *Result
+		wantIncoming   string
 		wantErr        bool
 	}{
 		{
-			"EXPLAIN ANALYZE",
+			"node with incoming parent link",
 			&ShowPlanNodeStatement{NodeID: 1},
 			&LastQueryCache{
 				QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
 				QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
 			},
-			&Result{
-				Rows: sliceOf(toRow(heredoc.Doc(`
-index: 1
-kind: 1
-display_name: Unit Relation
-child_links:
-- {child_index: 2}
-metadata: {execution_method: Row}
-execution_stats:
-  cpu_time: {total: "0", unit: msecs}
-  execution_summary: {num_executions: "1"}
-  latency: {total: "0", unit: msecs}
-  rows: {total: "1", unit: rows}
-`))),
-				AffectedRows: 1,
-				TableHeader:  toTableHeader("Content of Node 1"),
-			}, false,
+			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Serialize Result (execution_method: Row)\n    Child Link Type: (not set)",
+			false,
+		},
+		{
+			"node with parent link including variable",
+			&ShowPlanNodeStatement{NodeID: 1},
+			&LastQueryCache{
+				QueryPlan: &sppb.QueryPlan{
+					PlanNodes: []*sppb.PlanNode{
+						{
+							Index:       0,
+							DisplayName: "Root",
+							Kind:        sppb.PlanNode_RELATIONAL,
+							ChildLinks: []*sppb.PlanNode_ChildLink{
+								{
+									ChildIndex: 1,
+									Type:       "Map",
+									Variable:   "v",
+								},
+							},
+						},
+						{
+							Index:       1,
+							DisplayName: "Child",
+							Kind:        sppb.PlanNode_RELATIONAL,
+						},
+					},
+				},
+			},
+			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Root\n    Child Link Type: Map\n    Variable: v",
+			false,
+		},
+		{
+			"node without incoming parent links",
+			&ShowPlanNodeStatement{NodeID: 0},
+			&LastQueryCache{
+				QueryPlan: &sppb.QueryPlan{
+					PlanNodes: []*sppb.PlanNode{
+						{
+							Index:       0,
+							DisplayName: "Root",
+							Kind:        sppb.PlanNode_RELATIONAL,
+						},
+						{
+							Index:       1,
+							DisplayName: "Child",
+							Kind:        sppb.PlanNode_RELATIONAL,
+						},
+					},
+				},
+			},
+			"Incoming Parent Links:\n  - No incoming parent links",
+			false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
-				Display:  DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
-				Internal: InternalVars{LastQueryCache: tt.lastQueryCache},
+				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
+				LastResult: LastResult{QueryCache: tt.lastQueryCache},
 			}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if diff := cmp.Diff(got, tt.want); diff != "" {
+			if tt.wantErr {
+				if got != nil {
+					t.Errorf("Execute() got = %v, want nil", got)
+				}
+				return
+			}
+
+			planNode := tt.lastQueryCache.QueryPlan.GetPlanNodes()[tt.statement.NodeID]
+			y, err := protoyaml.Marshal(planNode, getGlobalOpts()...)
+			if err != nil {
+				t.Fatalf("yaml.Marshal(planNode, getGlobalOpts()) error = %v", err)
+			}
+
+			want := &Result{
+				Rows:         sliceOf(toRow(string(y)), toRow(tt.wantIncoming)),
+				AffectedRows: 2,
+				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)),
+			}
+			if diff := cmp.Diff(got, want); diff != "" {
 				t.Errorf("Execute() diff = %v", diff)
 				return
 			}

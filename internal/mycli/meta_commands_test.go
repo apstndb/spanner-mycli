@@ -346,7 +346,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 
 	t.Run("system commands disabled", func(t *testing.T) {
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Feature.SkipSystemCommand = true
+		sysVars.Config.SkipSystemCommand = true
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, io.Discard, io.Discard)
 		session := &Session{
 			systemVariables: &sysVars,
@@ -366,7 +366,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var output bytes.Buffer
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Feature.SkipSystemCommand = false
+		sysVars.Config.SkipSystemCommand = false
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,
@@ -390,7 +390,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		var output bytes.Buffer
 		var errOutput bytes.Buffer
 		sysVars := newSystemVariablesWithDefaults()
-		sysVars.Feature.SkipSystemCommand = false
+		sysVars.Config.SkipSystemCommand = false
 		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, &errOutput)
 		session := &Session{
 			systemVariables: &sysVars,

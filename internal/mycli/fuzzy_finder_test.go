@@ -69,11 +69,16 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    6,
 		},
-		// Argument completion: SET → variable (with " = " suffix)
+		// Argument completion: SET → one merged candidate list (system
+		// variables with " = " suffix, plus the PARAM/LOCAL keywords with a
+		// per-item " " suffix). A separate keyword-only completion for bare
+		// `SET ` would have exactly one candidate, which fzf's --select-1
+		// auto-accepts without showing a picker (regression: `SET ` + Ctrl+T
+		// force-inserted `SET PARAM `).
 		{
 			name:               "SET with partial name",
 			input:              "SET CLI_",
-			wantCompletionType: fuzzyCompleteVariable,
+			wantCompletionType: fuzzyCompleteSetTarget,
 			wantArgPrefix:      "CLI_",
 			wantArgStartPos:    4,
 			wantSuffix:         " = ",
@@ -81,7 +86,7 @@ func TestDetectFuzzyContext(t *testing.T) {
 		{
 			name:               "SET with no name",
 			input:              "SET ",
-			wantCompletionType: fuzzyCompleteVariable,
+			wantCompletionType: fuzzyCompleteSetTarget,
 			wantArgPrefix:      "",
 			wantArgStartPos:    4,
 			wantSuffix:         " = ",
@@ -89,7 +94,7 @@ func TestDetectFuzzyContext(t *testing.T) {
 		{
 			name:               "set lowercase",
 			input:              "set cli_f",
-			wantCompletionType: fuzzyCompleteVariable,
+			wantCompletionType: fuzzyCompleteSetTarget,
 			wantArgPrefix:      "cli_f",
 			wantArgStartPos:    4,
 			wantSuffix:         " = ",
@@ -516,6 +521,18 @@ func TestDetectFuzzyContext(t *testing.T) {
 		},
 		// Argument completion: SET PARAM → param
 		{
+			// Without a trailing space the PARAM token itself is still being
+			// typed: it is re-completed as a SET target from position 4
+			// (completing a param name from position 9 would glue it into
+			// "SET PARAMname").
+			name:               "SET PARAM without trailing space re-completes the keyword",
+			input:              "SET PARAM",
+			wantCompletionType: fuzzyCompleteSetTarget,
+			wantArgPrefix:      "PARAM",
+			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
+		{
 			name:               "SET PARAM with trailing space",
 			input:              "SET PARAM ",
 			wantCompletionType: fuzzyCompleteParam,
@@ -538,6 +555,22 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    10,
 			wantSuffix:         " ",
+		},
+		{
+			name:               "SET PARAMETER stays target completion",
+			input:              "SET PARAMETER",
+			wantCompletionType: fuzzyCompleteSetTarget,
+			wantArgPrefix:      "PARAMETER",
+			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET PARAM_FOO stays target completion",
+			input:              "SET PARAM_FOO",
+			wantCompletionType: fuzzyCompleteSetTarget,
+			wantArgPrefix:      "PARAM_FOO",
+			wantArgStartPos:    4,
+			wantSuffix:         " = ",
 		},
 		// Argument completion: UNSET PARAM → param
 		{
@@ -1096,6 +1129,60 @@ func TestRunFzfFilter_SQLSkeletons(t *testing.T) {
 				assert.Contains(t, results, want)
 			}
 		})
+	}
+}
+
+// TestFetchSetTargetCandidates verifies the merged SET completion list:
+// the PARAM and LOCAL keywords (with per-item " " suffix) followed by all
+// system variables (no per-item suffix; the entry default " = " applies).
+// A keyword-only list would be auto-accepted by fzf's --select-1 with no
+// picker, which is the regression this list shape prevents.
+func TestFetchSetTargetCandidates(t *testing.T) {
+	t.Parallel()
+
+	sysVars := newSystemVariablesWithDefaults()
+	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sysVars}}
+
+	items := f.fetchSetTargetCandidates()
+	if len(items) < 3 {
+		t.Fatalf("got %d candidates, want keywords plus variables", len(items))
+	}
+	if items[0].Value != "PARAM" || items[0].Suffix != " " {
+		t.Errorf("items[0] = %+v, want PARAM with per-item suffix %q", items[0], " ")
+	}
+	if items[1].Value != "LOCAL" || items[1].Suffix != " " {
+		t.Errorf("items[1] = %+v, want LOCAL with per-item suffix %q", items[1], " ")
+	}
+	sawVariable := false
+	for _, it := range items[2:] {
+		if it.Suffix != "" {
+			t.Errorf("variable item %q has per-item suffix %q, want none (entry default applies)", it.Value, it.Suffix)
+		}
+		if it.Value == "CLI_FORMAT" {
+			sawVariable = true
+		}
+	}
+	if !sawVariable {
+		t.Errorf("candidates do not include system variable CLI_FORMAT")
+	}
+}
+
+// TestResolveCompletionSuffix verifies per-item suffix override resolution.
+func TestResolveCompletionSuffix(t *testing.T) {
+	t.Parallel()
+
+	candidates := []fzfItem{
+		{Value: "PARAM", Suffix: " "},
+		{Value: "CLI_FORMAT"},
+	}
+	if got := resolveCompletionSuffix(candidates, "PARAM", " = "); got != " " {
+		t.Errorf("PARAM suffix = %q, want %q", got, " ")
+	}
+	if got := resolveCompletionSuffix(candidates, "CLI_FORMAT", " = "); got != " = " {
+		t.Errorf("CLI_FORMAT suffix = %q, want %q (entry default)", got, " = ")
+	}
+	if got := resolveCompletionSuffix(candidates, "not-in-list", " = "); got != " = " {
+		t.Errorf("unknown suffix = %q, want %q (entry default)", got, " = ")
 	}
 }
 

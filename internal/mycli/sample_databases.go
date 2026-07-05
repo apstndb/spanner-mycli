@@ -25,7 +25,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -178,7 +177,9 @@ func discoverBuiltinSamples() map[string]SampleDatabase {
 
 // loadSampleFromMetadata loads sample from metadata file path (JSON or YAML)
 func loadSampleFromMetadata(metadataPath string) (*SampleDatabase, error) {
-	data, err := os.ReadFile(metadataPath)
+	data, err := filesafety.SafeReadFile(metadataPath, &filesafety.FileSafetyOptions{
+		MaxSize: filesafety.SampleDatabaseMaxFileSize,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read metadata: %w", err)
 	}

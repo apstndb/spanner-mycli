@@ -36,7 +36,6 @@ import (
 	"golang.org/x/term"
 	"google.golang.org/api/option"
 
-	_ "github.com/apstndb/spanner-mycli/internal/mycli/formatsql" // Register SQL export formatters
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
@@ -153,6 +152,11 @@ func writeUsageTo(ctx *kong.Context, _ *kong.Kong, w io.Writer) {
 func run(ctx context.Context, opts *spannerOptions) error {
 	if opts.StatementHelp {
 		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
+		return nil
+	}
+
+	if opts.SysVarsHelp {
+		fmt.Print(renderSystemVariablesHelp())
 		return nil
 	}
 
@@ -304,13 +308,13 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		runtimePlatform, err := spanemuboost.RuntimePlatform(ctx, embeddedRuntime)
 		if err != nil {
 			slog.Warn("failed to detect embedded runtime platform", "error", err)
-			sysVars.Connection.EmulatorPlatform = "unknown"
+			sysVars.Config.EmulatorPlatform = "unknown"
 		} else {
-			sysVars.Connection.EmulatorPlatform = runtimePlatform
+			sysVars.Config.EmulatorPlatform = runtimePlatform
 		}
 		slog.Debug("Detected container platform",
 			"requested", opts.EmulatorPlatform,
-			"actual", sysVars.Connection.EmulatorPlatform)
+			"actual", sysVars.Config.EmulatorPlatform)
 
 		// Parse container URI into host and port
 		host, port, err := parseEndpoint(embeddedRuntime.URI())
@@ -318,14 +322,14 @@ func run(ctx context.Context, opts *spannerOptions) error {
 			// This should not happen with a valid URI from testcontainers, but handle defensively.
 			return fmt.Errorf("failed to parse embedded runtime endpoint URI %q: %w", embeddedRuntime.URI(), err)
 		}
-		sysVars.Connection.Host, sysVars.Connection.Port = host, port
+		sysVars.Config.Host, sysVars.Config.Port = host, port
 		switch backend {
 		case spanemuboost.BackendEmulator:
-			sysVars.Connection.WithoutAuthentication = true
+			sysVars.Config.WithoutAuthentication = true
 		case spanemuboost.BackendOmni:
-			sysVars.Internal.EmbeddedClientOptions = append([]option.ClientOption(nil), embeddedRuntime.ClientOptions()...)
+			sysVars.Config.EmbeddedClientOptions = append([]option.ClientOption(nil), embeddedRuntime.ClientOptions()...)
 			omniClientConfig := spanemuboost.RecommendedOmniClientConfig()
-			sysVars.Internal.EmbeddedClientConfig = &omniClientConfig
+			sysVars.Config.EmbeddedClientConfig = &omniClientConfig
 		}
 	}
 
@@ -408,6 +412,40 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 			if err != nil {
 				slog.Error("tablewriter.Table.Append() failed", "err", err)
 			}
+		}
+	}
+
+	if err := table.Render(); err != nil {
+		slog.Error("tablewriter.Table.Render() failed", "err", err)
+	}
+
+	return sb.String()
+}
+
+// renderSystemVariablesHelp generates a markdown table of all system variables
+// from the variable registry. It backs the hidden --sysvars-help flag, which
+// `make docs-update` uses to regenerate the reference table in
+// docs/system_variables.md.
+func renderSystemVariablesHelp() string {
+	sysVars := newSystemVariablesWithDefaults()
+	sysVars.ensureRegistry()
+
+	var sb strings.Builder
+
+	table := tablewriter.NewTable(&sb,
+		tablewriter.WithRenderer(renderer.NewMarkdown()),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft))
+
+	table.Header([]string{"Name", "Operations", "Description"})
+
+	// Escape characters that would break markdown table cells or be eaten by
+	// HTML sanitizers (e.g. literal <name> placeholders in descriptions).
+	escaper := strings.NewReplacer("|", `\|`, "<", `\<`, ">", `\>`)
+	for _, row := range helpVariableRows(&sysVars) {
+		err := table.Append([]string{"`" + row.Name + "`", row.Operations, escaper.Replace(row.Description)})
+		if err != nil {
+			slog.Error("tablewriter.Table.Append() failed", "err", err)
 		}
 	}
 

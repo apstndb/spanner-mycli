@@ -69,6 +69,10 @@ func (e *fuzzyCacheEntry) valid(session *Session, checkSchema bool) bool {
 type fzfItem struct {
 	Value string // inserted into buffer
 	Label string // displayed/searched in fzf; empty means use Value
+	// Suffix, when non-empty, overrides the completion entry's Suffix for
+	// this item. Used when one candidate list mixes insertion shapes (e.g.
+	// SET completion: variables insert "<name> = " but PARAM inserts "PARAM ").
+	Suffix string
 }
 
 // toFzfItems converts a plain string slice to fzfItems where Value == Label.
@@ -140,8 +144,8 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 
 	var selected string
 	if result.completionType != 0 {
-		// Argument completion: insert the candidate with optional suffix
-		selected = chosen + result.suffix
+		// Argument completion: insert the candidate with optional suffix.
+		selected = chosen + resolveCompletionSuffix(candidates, chosen, result.suffix)
 	} else {
 		// Statement name completion: insert the fixed prefix text.
 		// No-arg statements (no trailing space) get a semicolon for immediate submit.
@@ -162,6 +166,20 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	B.InsertAndRepaint(selected)
 
 	return readline.CONTINUE
+}
+
+// resolveCompletionSuffix returns the suffix to append after the chosen
+// candidate: the candidate's own Suffix when set, otherwise the completion
+// entry's default. Per-item suffixes let one candidate list mix insertion
+// shapes (SET completion: variables take " = ", the PARAM/LOCAL keywords
+// take " ").
+func resolveCompletionSuffix(candidates []fzfItem, chosen, defaultSuffix string) string {
+	for _, c := range candidates {
+		if c.Value == chosen && c.Suffix != "" {
+			return c.Suffix
+		}
+	}
+	return defaultSuffix
 }
 
 // fuzzyContextResult holds the detected context, the argument prefix typed so far,
@@ -246,6 +264,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Schemas"
 	case fuzzyCompleteParam:
 		return "Query Parameters"
+	case fuzzyCompleteSetTarget:
+		return "System Variables / PARAM"
 	default:
 		return "Statements"
 	}
@@ -774,6 +794,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchSchemaCandidates(ctx)
 	case fuzzyCompleteParam:
 		return f.fetchParamCandidates(), nil
+	case fuzzyCompleteSetTarget:
+		return f.fetchSetTargetCandidates(), nil
 	default:
 		return nil, nil
 	}
@@ -801,6 +823,23 @@ func (f *fuzzyFinderCommand) fetchDatabaseCandidates(ctx context.Context) ([]fzf
 		}
 	}
 	return items, nil
+}
+
+// fetchSetTargetCandidates returns the candidates for `SET <target>`: the
+// PARAM keyword (query parameter definition) followed by all system variable
+// names. PARAM carries a per-item suffix because it is followed by a name,
+// not by " = " like variables. Keeping both in one list preserves variable
+// completion on bare `SET ` (a single-candidate list would be auto-accepted
+// by fzf's --select-1 with no picker shown) while keeping PARAM discoverable.
+func (f *fuzzyFinderCommand) fetchSetTargetCandidates() []fzfItem {
+	items := []fzfItem{
+		{Value: "PARAM", Label: "PARAM (define query parameter)", Suffix: " "},
+		{Value: "LOCAL", Label: "LOCAL (transaction-scoped SET)", Suffix: " "},
+	}
+	for _, name := range f.fetchVariableCandidates() {
+		items = append(items, fzfItem{Value: name})
+	}
+	return items
 }
 
 // fetchVariableCandidates returns sorted system variable names from the registry.

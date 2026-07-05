@@ -69,7 +69,7 @@ var defaultClientOpts = []option.ClientOption{
 }
 
 func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConfig {
-	if override := sysVars.Internal.EmbeddedClientConfig; override != nil {
+	if override := sysVars.Config.EmbeddedClientConfig; override != nil {
 		return *override
 	}
 	return defaultClientConfig
@@ -78,7 +78,12 @@ func clientConfigForSystemVariables(sysVars *systemVariables) spanner.ClientConf
 // Use MEDIUM priority not to disturb regular workloads on the database.
 const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 
-// getTimeoutForStatement returns the appropriate timeout for the given statement type
+// getTimeoutForStatement returns the timeout applied at the statement execution
+// boundary: ExecuteStatement wraps the context with this value exactly once, so
+// individual operations must not layer their own timeouts on top. A user-set
+// STATEMENT_TIMEOUT (nil until set) overrides the defaults: 10 minutes for
+// ordinary statements, and 24 hours for partitioned DML to accommodate its
+// long-running semantics.
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
 	// For partitioned DML, use longer default if no custom timeout is set
 	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.Query.StatementTimeout == nil {
@@ -123,8 +128,21 @@ type Session struct {
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
 
-	bigQueryClientOpts []option.ClientOption
-	bqClient           *bigquery.Client
+	// BigQuery client cached across BIGQUERY statements. The client and its
+	// auth options are built lazily on the first BIGQUERY statement (never in
+	// createSession) so ordinary Spanner/emulator sessions never touch BigQuery
+	// credentials. bqCredential holds the raw credential for that lazy build,
+	// and bqClientKey records the (project, location) the cached client was
+	// built with so it can be rebuilt when CLI_BIGQUERY_PROJECT/LOCATION change.
+	bqCredential []byte
+	bqClient     *bigquery.Client
+	bqClientKey  bigQueryClientKey
+
+	// output is the per-statement output destination for streamed results,
+	// set for the duration of one statement execution via withOutput /
+	// ExecuteStatementWithOutput. See outputContext in output_context.go.
+	// Zero value means "fall back to the StreamManager writer".
+	output outputContext
 }
 
 // SchemaGeneration returns the current schema generation counter.
@@ -190,28 +208,57 @@ func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *sys
 	return NewSession(ctx, sysVars, h.clientOpts...)
 }
 
-func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
-	newSystemVariables := *h.systemVariables
-	newSystemVariables.Connection.Database = s.Database
-	newSystemVariables.Connection.Role = s.Role
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
+// validateSessionSwitch rejects USE/DETACH while a transaction or batch is
+// active. Switching sessions would silently abandon the transaction (its locks
+// would persist until client teardown) and drop any buffered batch statements.
+func (h *SessionHandler) validateSessionSwitch() error {
+	if h.Session == nil {
+		return nil
+	}
+	if h.InTransaction() {
+		return errors.New("cannot switch session while a transaction is active; COMMIT, ROLLBACK, or CLOSE it first")
+	}
+	if h.batch.IsActive() {
+		return errors.New("cannot switch session while a batch is active; RUN BATCH or ABORT BATCH first")
+	}
+	return nil
+}
 
-	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
-	if err != nil {
+// switchSession mutates the single live systemVariables instance in place and
+// builds a replacement session around it. The registry holds pointers into this
+// struct and other components (Cli, StreamManager consumers) hold the same
+// pointer, so copying the struct would fork the state they read (split-brain).
+// On any failure the connection fields and the inTransaction hook (which
+// newSessionWithFactories points at the new session) are restored.
+func (h *SessionHandler) switchSession(ctx context.Context, database, role string, validate func(*Session) error) (*Result, error) {
+	if err := h.validateSessionSwitch(); err != nil {
 		return nil, err
 	}
 
-	// Check if the target database exists
-	exists, err := newSession.DatabaseExists(ctx)
+	sysVars := h.systemVariables
+	oldDatabase, oldRole := sysVars.Connection.Database, sysVars.Connection.Role
+	oldInTransaction := sysVars.inTransaction
+	sysVars.Connection.Database = database
+	sysVars.Connection.Role = role
+
+	restore := func() {
+		sysVars.Connection.Database = oldDatabase
+		sysVars.Connection.Role = oldRole
+		sysVars.inTransaction = oldInTransaction
+	}
+
+	newSession, err := h.createSessionWithOpts(ctx, sysVars)
 	if err != nil {
-		newSession.Close()
+		restore()
 		return nil, err
 	}
 
-	if !exists {
-		newSession.Close()
-		return nil, fmt.Errorf("unknown database %q", s.Database)
+	if validate != nil {
+		if err := validate(newSession); err != nil {
+			newSession.Close()
+			restore()
+			return nil, err
+		}
 	}
 
 	// Replace the old session with the new one
@@ -221,25 +268,22 @@ func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Resul
 	return &Result{}, nil
 }
 
+func (h *SessionHandler) handleUse(ctx context.Context, s *UseStatement) (*Result, error) {
+	return h.switchSession(ctx, s.Database, s.Role, func(newSession *Session) error {
+		exists, err := newSession.DatabaseExists(ctx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("unknown database %q", s.Database)
+		}
+		return nil
+	})
+}
+
 func (h *SessionHandler) handleDetach(ctx context.Context, s *DetachStatement) (*Result, error) {
-	newSystemVariables := *h.systemVariables
-
 	// Clear database and role to switch to detached mode
-	newSystemVariables.Connection.Database = ""
-	newSystemVariables.Connection.Role = ""
-	// Clear the registry so it gets recreated with the new systemVariables instance
-	newSystemVariables.Registry = nil
-
-	newSession, err := h.createSessionWithOpts(ctx, &newSystemVariables)
-	if err != nil {
-		return nil, err
-	}
-
-	// Replace the old session with the new one
-	h.Session.Close()
-	h.Session = newSession
-
-	return &Result{}, nil
+	return h.switchSession(ctx, "", "", nil)
 }
 
 type SessionMode int
@@ -300,11 +344,11 @@ func newSessionWithFactories(
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.Feature.LogGrpc {
+	if sysVars.Config.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -339,11 +383,11 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	clientConfig.DatabaseRole = sysVars.Connection.Role
 	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
 
-	if sysVars.Connection.Insecure && len(sysVars.Internal.EmbeddedClientOptions) == 0 {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
-	if sysVars.Feature.LogGrpc {
+	if sysVars.Config.LogGrpc {
 		opts = append(opts, logGrpcClientOptions()...)
 	}
 
@@ -411,38 +455,6 @@ func (s *Session) ValidateStatementExecution(stmt Statement) error {
 		}
 	}
 	// In DatabaseConnected mode, all statements can be executed
-	return nil
-}
-
-func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) error {
-	if s.mode == DatabaseConnected && s.client != nil {
-		return errors.New("session is already connected to a database")
-	}
-
-	// Construct database path directly to avoid modifying state before success
-	dbPath := databasePath(s.systemVariables.Connection.Project, s.systemVariables.Connection.Instance, databaseId)
-
-	clientConfig := s.clientConfig
-
-	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
-	if err != nil {
-		return err
-	}
-
-	// Close existing client if any
-	if s.client != nil {
-		s.client.Close()
-	}
-
-	// Update state only after successful client creation
-	s.systemVariables.Connection.Database = databaseId
-	s.client = client
-	s.txn.client = client
-	s.mode = DatabaseConnected
-
-	// Heartbeat is now managed per-transaction, not per-session
-	// so we don't need to start it here anymore
-
 	return nil
 }
 
@@ -570,8 +582,8 @@ func (s *Session) ClosePendingTransaction() error {
 	return s.txn.ClosePendingTransaction()
 }
 
-func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-	return s.txn.RunQueryWithStats(ctx, stmt, implicit)
+func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+	return s.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
 }
 
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
@@ -885,9 +897,17 @@ func (s *Session) RecreateClient() error {
 	if err != nil {
 		return err
 	}
+	// Refuse the swap if a transaction context is still live: SetClient enforces
+	// the lifecycle invariant that the old client must not be closed while a
+	// transaction (and its heartbeat goroutine) could still use it. On refusal,
+	// close the NEW client and surface the error (it joins the Aborted error at
+	// the caller). Only on success close the OLD client and update Session.client.
+	if err := s.txn.SetClient(c); err != nil {
+		c.Close()
+		return err
+	}
 	s.client.Close()
 	s.client = c
-	s.txn.client = c
 	return nil
 }
 
@@ -950,15 +970,20 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 			result.BatchInfo = s.batch.Info()
 		}
 	}()
+	// SET LOCAL values revert when the transaction ends for any reason:
+	// COMMIT/ROLLBACK/CLOSE statements, or automatic rollback on statement error.
+	// All those paths funnel through here, so one post-statement check suffices.
+	defer func() {
+		if s.txn != nil {
+			s.txn.restoreLocalVarsIfIdle()
+		}
+	}()
 	if _, ok := stmt.(MutationStatement); ok {
 		result := &Result{}
-		_, err := s.DetermineTransaction(ctx)
-		if err != nil {
+		if err := s.failStatementIfReadOnly(); err != nil {
 			return result, err
 		}
-
-		err = s.failStatementIfReadOnly()
-		if err != nil {
+		if _, err := s.DetermineTransaction(ctx); err != nil {
 			return result, err
 		}
 		return stmt.Execute(ctx, s)
@@ -968,14 +993,15 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 }
 
 // createAuthClientOptions builds credential-related client options.
-// When allowWithoutAuthentication is false, Spanner emulator auth is skipped so
-// non-Spanner clients (e.g. BigQuery) use real credentials instead.
+// When allowWithoutAuthentication is false, Spanner emulator auth
+// (WithoutAuthentication) is skipped so non-Spanner clients (e.g. BigQuery) use
+// real credentials instead.
 func createAuthClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables, allowWithoutAuthentication bool) ([]option.ClientOption, error) {
 	switch {
-	case allowWithoutAuthentication && sysVars.Connection.WithoutAuthentication:
+	case allowWithoutAuthentication && sysVars.Config.WithoutAuthentication:
 		return []option.ClientOption{option.WithoutAuthentication()}, nil
-	case sysVars.Connection.EnableADCPlus:
-		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.Connection.ImpersonateServiceAccount))
+	case sysVars.Config.EnableADCPlus:
+		source, err := tokensource.SmartAccessTokenSource(ctx, adcplus.WithCredentialsJSON(credential), adcplus.WithTargetPrincipal(sysVars.Config.ImpersonateServiceAccount))
 		if err != nil {
 			return nil, err
 		}
@@ -993,14 +1019,14 @@ func createAuthClientOptions(ctx context.Context, credential []byte, sysVars *sy
 
 // createClientOptions creates client options based on credential and system variables
 func createClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
-	if len(sysVars.Internal.EmbeddedClientOptions) > 0 {
-		return append([]option.ClientOption(nil), sysVars.Internal.EmbeddedClientOptions...), nil
+	if len(sysVars.Config.EmbeddedClientOptions) > 0 {
+		return append([]option.ClientOption(nil), sysVars.Config.EmbeddedClientOptions...), nil
 	}
 
 	var opts []option.ClientOption
-	if sysVars.Connection.Host != "" && sysVars.Connection.Port != 0 {
+	if sysVars.Config.Host != "" && sysVars.Config.Port != 0 {
 		// Reconstruct the endpoint, adding brackets back for IPv6 addresses
-		endpoint := net.JoinHostPort(sysVars.Connection.Host, strconv.Itoa(sysVars.Connection.Port))
+		endpoint := net.JoinHostPort(sysVars.Config.Host, strconv.Itoa(sysVars.Config.Port))
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
@@ -1024,24 +1050,60 @@ func bigQueryProject(sysVars *systemVariables) string {
 	return sysVars.Connection.Project
 }
 
-func (s *Session) bigQueryClient(ctx context.Context) (*bigquery.Client, error) {
-	if s.bqClient != nil {
-		return s.bqClient, nil
-	}
+// bigQueryClientKey identifies the effective BigQuery client configuration.
+// A cached client is reused only while these values are unchanged; a SET of
+// CLI_BIGQUERY_PROJECT/CLI_BIGQUERY_LOCATION produces a new key and forces a
+// rebuild.
+type bigQueryClientKey struct {
+	project  string
+	location string
+}
 
+// bigQueryClient returns a BigQuery client for the current
+// CLI_BIGQUERY_PROJECT/CLI_BIGQUERY_LOCATION, building auth options lazily on
+// first use. Deferring option construction until the first BIGQUERY statement
+// keeps BigQuery credential resolution (ADC/ADCPlus/impersonation) out of
+// ordinary Spanner/emulator session creation, which must succeed without any
+// BigQuery credentials.
+//
+// The check-then-act on s.bqClient below is intentionally lock-free: BIGQUERY
+// statements run on the single-threaded statement execution path (same
+// rationale as cqlSession), so no other goroutine reads or mutates these
+// fields concurrently.
+func (s *Session) bigQueryClient(ctx context.Context) (*bigquery.Client, error) {
 	project := bigQueryProject(s.systemVariables)
 	if project == "" {
 		return nil, fmt.Errorf("BigQuery project not configured: set CLI_BIGQUERY_PROJECT or CLI_PROJECT")
 	}
+	location := s.systemVariables.Feature.BigQueryLocation
+	key := bigQueryClientKey{project: project, location: location}
 
-	client, err := bigquery.NewClient(ctx, project, s.bigQueryClientOpts...)
+	if s.bqClient != nil {
+		if s.bqClientKey == key {
+			return s.bqClient, nil
+		}
+		// CLI_BIGQUERY_PROJECT/LOCATION changed since the client was built;
+		// drop the stale client and rebuild for the new configuration.
+		if err := s.bqClient.Close(); err != nil {
+			slog.Warn("error on bigquery.Client.Close() during reconfigure", "err", err)
+		}
+		s.bqClient = nil
+		s.bqClientKey = bigQueryClientKey{}
+	}
+
+	opts, err := createBigQueryClientOptions(ctx, s.bqCredential, s.systemVariables)
 	if err != nil {
 		return nil, err
 	}
-	if loc := s.systemVariables.Feature.BigQueryLocation; loc != "" {
-		client.Location = loc
+	client, err := bigquery.NewClient(ctx, project, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if location != "" {
+		client.Location = location
 	}
 	s.bqClient = client
+	s.bqClientKey = key
 	return client, nil
 }
 
@@ -1076,11 +1138,6 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 		return nil, err
 	}
 
-	bqOpts, err := createBigQueryClientOptions(ctx, credential, sysVars)
-	if err != nil {
-		return nil, err
-	}
-
 	var session *Session
 	// Create admin-only session if no database is specified
 	if sysVars.Connection.Database == "" {
@@ -1091,6 +1148,8 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if err != nil {
 		return nil, err
 	}
-	session.bigQueryClientOpts = bqOpts
+	// Retain the raw credential for lazy BigQuery client construction on the
+	// first BIGQUERY statement; no BigQuery auth is resolved here.
+	session.bqCredential = credential
 	return session, nil
 }

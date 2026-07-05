@@ -9,17 +9,25 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
     steps:
+      # Checkout must run before setup-go so go-version-file can read go.mod.
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25.x'
-      - uses: actions/checkout@v6
-      - uses: ko-build/setup-ko@v0.9
+          go-version-file: go.mod
+      - uses: ko-build/setup-ko@v0.10
       - run: |
-          tag=$(echo ${{ github.ref }} | cut -c11-)
-          ko build -t latest,${tag} --bare
+          tag="${GITHUB_REF#refs/tags/}"
+          export VERSION="${tag#v}"
+          # Prerelease tags (v1.2.3-alpha.1 etc.) must not move the latest tag.
+          case "${tag}" in
+            *-*) tags="${tag}" ;;
+            *)   tags="latest,${tag}" ;;
+          esac
+          ko build -t "${tags}" --bare

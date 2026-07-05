@@ -92,11 +92,11 @@ type ExplainLastQueryStatement struct {
 }
 
 func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.systemVariables.Internal.LastQueryCache == nil {
+	if session.systemVariables.LastResult.QueryCache == nil {
 		return nil, fmt.Errorf("last query cache missing because query not executed")
 	}
 
-	if session.systemVariables.Internal.LastQueryCache.QueryPlan == nil || len(session.systemVariables.Internal.LastQueryCache.QueryPlan.GetPlanNodes()) == 0 {
+	if session.systemVariables.LastResult.QueryCache.QueryPlan == nil || len(session.systemVariables.LastResult.QueryCache.QueryPlan.GetPlanNodes()) == 0 {
 		return nil, fmt.Errorf("missing last query plan. This may happen if the Cloud Spanner Emulator is used, as it may not fully support EXPLAIN and EXPLAIN ANALYZE features")
 	}
 
@@ -104,12 +104,12 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 	var result *Result
 	if s.Analyze {
 		result, err = generateExplainAnalyzeResult(session.systemVariables,
-			session.systemVariables.Internal.LastQueryCache.QueryPlan,
-			session.systemVariables.Internal.LastQueryCache.QueryStats,
+			session.systemVariables.LastResult.QueryCache.QueryPlan,
+			session.systemVariables.LastResult.QueryCache.QueryStats,
 			s.Format, s.Width, s.PrintSections)
 	} else {
 		result, err = generateExplainResult(session.systemVariables,
-			session.systemVariables.Internal.LastQueryCache.QueryPlan, s.Format, s.Width, s.PrintSections)
+			session.systemVariables.LastResult.QueryCache.QueryPlan, s.Format, s.Width, s.PrintSections)
 	}
 
 	if err != nil {
@@ -117,8 +117,8 @@ func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Sessio
 	}
 
 	// Restore the appropriate timestamp from cache
-	result.ReadTimestamp = session.systemVariables.Internal.LastQueryCache.ReadTimestamp
-	result.CommitTimestamp = session.systemVariables.Internal.LastQueryCache.CommitTimestamp
+	result.ReadTimestamp = session.systemVariables.LastResult.QueryCache.ReadTimestamp
+	result.CommitTimestamp = session.systemVariables.LastResult.QueryCache.CommitTimestamp
 	return result, nil
 }
 
@@ -127,11 +127,11 @@ type ShowPlanNodeStatement struct {
 }
 
 func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.systemVariables.Internal.LastQueryCache == nil || session.systemVariables.Internal.LastQueryCache.QueryPlan == nil {
+	if session.systemVariables.LastResult.QueryCache == nil || session.systemVariables.LastResult.QueryCache.QueryPlan == nil {
 		return nil, errors.New("no query plan cached. Run query or EXPLAIN ANALYZE first")
 	}
 
-	planNodes := session.systemVariables.Internal.LastQueryCache.QueryPlan.GetPlanNodes()
+	planNodes := session.systemVariables.LastResult.QueryCache.QueryPlan.GetPlanNodes()
 	if s.NodeID >= len(planNodes) {
 		return nil, fmt.Errorf("node with ID %d not found in the cached query plan", s.NodeID)
 	}
@@ -142,11 +142,49 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
+	queryPlan, err := spannerplan.New(planNodes)
+	if err != nil {
+		return nil, err
+	}
+	parentLinksInfo := formatShowPlanNodeIncomingLinks(queryPlan.ParentLinks(int32(s.NodeID)))
+
 	return &Result{
 		TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", s.NodeID)),
-		Rows:         sliceOf(toRow(string(y))),
-		AffectedRows: 1,
+		Rows:         sliceOf(toRow(string(y)), toRow(parentLinksInfo)),
+		AffectedRows: 2,
 	}, nil
+}
+
+func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) string {
+	if len(links) == 0 {
+		return "Incoming Parent Links:\n  - No incoming parent links"
+	}
+
+	var lines []string
+	lines = append(lines, "Incoming Parent Links:")
+
+	for _, link := range links {
+		childType := link.ChildLink.GetType()
+		if childType == "" {
+			childType = "(not set)"
+		}
+
+		parentNodeIndex := -1
+		parentTitle := "unknown"
+		if link.Parent != nil {
+			parentNodeIndex = int(link.Parent.GetIndex())
+			parentTitle = spannerplan.NodeTitle(link.Parent)
+		}
+
+		lines = append(lines, fmt.Sprintf("  - Parent Node Index: %d", parentNodeIndex))
+		lines = append(lines, fmt.Sprintf("    Parent Node Title: %s", parentTitle))
+		lines = append(lines, fmt.Sprintf("    Child Link Type: %s", childType))
+		if link.ChildLink.GetVariable() != "" {
+			lines = append(lines, fmt.Sprintf("    Variable: %s", link.ChildLink.GetVariable()))
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func hasCompound(fields map[string]*structpb.Value) bool {
@@ -284,7 +322,9 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, err
 	}
 
-	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false)
+	// EXPLAIN ANALYZE requires the query plan, so PROFILE is forced here
+	// regardless of CLI_QUERY_MODE.
+	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +365,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		}
 	}
 
-	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
+	session.systemVariables.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:     plan,
 		QueryStats:    stats,
 		ReadTimestamp: result.ReadTimestamp,
@@ -426,7 +466,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	result.CommitTimestamp = dmlResult.CommitResponse.CommitTs
 
 	// Update LastQueryCache to maintain consistency with other DML execution functions
-	session.systemVariables.Internal.LastQueryCache = &LastQueryCache{
+	session.systemVariables.LastResult.QueryCache = &LastQueryCache{
 		QueryPlan:       dmlResult.Plan,
 		QueryStats:      queryStats,
 		CommitTimestamp: dmlResult.CommitResponse.CommitTs,

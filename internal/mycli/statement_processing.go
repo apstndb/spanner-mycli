@@ -33,6 +33,7 @@ import (
 	"github.com/apstndb/spanstats"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/olekukonko/tablewriter/tw"
 )
 
@@ -45,6 +46,26 @@ type Statement interface {
 type MutationStatement interface {
 	isMutationStatement()
 }
+
+// Compile-time assertions for every MutationStatement implementation.
+// The marker method is unexported, so a typo (e.g. an exported
+// IsMutationStatement) silently drops the type out of the interface and
+// bypasses the READONLY guard in Session.ExecuteStatement (issue #695).
+// Keep this list in sync when adding a mutation statement.
+var (
+	_ MutationStatement = (*MutateStatement)(nil)
+	_ MutationStatement = (*ExplainAnalyzeDmlStatement)(nil)
+	_ MutationStatement = (*BeginRwStatement)(nil)
+	_ MutationStatement = (*DmlStatement)(nil)
+	_ MutationStatement = (*DdlStatement)(nil)
+	_ MutationStatement = (*CreateDatabaseStatement)(nil)
+	_ MutationStatement = (*DropDatabaseStatement)(nil)
+	_ MutationStatement = (*TruncateTableStatement)(nil)
+	_ MutationStatement = (*PartitionedDmlStatement)(nil)
+	_ MutationStatement = (*BulkDdlStatement)(nil)
+	_ MutationStatement = (*BatchDMLStatement)(nil)
+	_ MutationStatement = (*SyncProtoStatement)(nil)
+)
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
 // Statements implementing this interface can execute when session.IsDetached() is true.
@@ -408,21 +429,126 @@ func BuildNativeStatementLexical(stripped string, raw string) (Statement, error)
 	}
 }
 
+// unquoteIdentifier strips surrounding backquotes from an argument.
+// It is intentionally NOT GoogleSQL identifier parsing: it is kept for
+// arguments that are not GoogleSQL identifiers (database IDs may contain "-",
+// role names, ...). Statement arguments that are real GoogleSQL
+// identifiers/FQNs must use parseIdentifierArg / parseSchemaAndName /
+// parseTableNameList instead, which validate the input with the memefish
+// lexer.
 func unquoteIdentifier(input string) string {
 	return strings.Trim(strings.TrimSpace(input), "`")
 }
 
-// splitTableNames parses a comma-separated list of table names
-func splitTableNames(input string) []string {
-	parts := strings.Split(input, ",")
-	tables := make([]string, 0, len(parts))
-	for _, part := range parts {
-		table := unquoteIdentifier(part)
-		if table != "" {
-			tables = append(tables, table)
+// parseFQNParts parses a dot-separated path of (possibly backquoted)
+// identifiers at the current parser position and returns its components.
+// Unlike parseFQN, it consumes the trailing identifier token, leaving the
+// parser on the token that follows the path.
+// Note: following GoogleSQL quoted identifier semantics, a backquoted
+// identifier containing dots (e.g. `a.b`) is a single component.
+func parseFQNParts(p *memefish.Parser) ([]string, error) {
+	var idents []string
+	for {
+		if p.Token.Kind == token.TokenEOF {
+			return nil, errors.New("expected identifier, but got end of input")
+		}
+		s, dot, err := parseIdentLikeWithOptDot(p)
+		if err != nil {
+			return nil, err
+		}
+		idents = append(idents, s)
+		if !dot {
+			break
 		}
 	}
-	return tables
+
+	// parseIdentLikeWithOptDot leaves the last identifier token unconsumed.
+	if err := p.NextToken(); err != nil {
+		return nil, err
+	}
+	return idents, nil
+}
+
+// parseIdentifierPath parses the whole input as a dot-separated path of
+// (possibly backquoted) identifiers and returns its components. It fails on
+// empty input, non-identifier tokens, and trailing input after the path.
+func parseIdentifierPath(input string) ([]string, error) {
+	p := newParser("", input)
+	if err := p.NextToken(); err != nil {
+		return nil, err
+	}
+
+	idents, err := parseFQNParts(p)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Token.Kind != token.TokenEOF {
+		return nil, fmt.Errorf("unexpected input %q after identifier", p.Token.Raw)
+	}
+	return idents, nil
+}
+
+// parseIdentifierArg parses the whole input as exactly one (possibly
+// backquoted) identifier.
+func parseIdentifierArg(input string) (string, error) {
+	idents, err := parseIdentifierPath(input)
+	if err != nil {
+		return "", err
+	}
+	if len(idents) != 1 {
+		return "", fmt.Errorf("expected a single identifier, but %q has %d components", input, len(idents))
+	}
+	return idents[0], nil
+}
+
+// parseSchemaAndName parses the whole input as [<schema>.]<name> and returns
+// the schema (empty when unqualified) and the object name.
+func parseSchemaAndName(input string) (schema, name string, err error) {
+	idents, err := parseIdentifierPath(input)
+	if err != nil {
+		return "", "", err
+	}
+	switch len(idents) {
+	case 1:
+		return "", idents[0], nil
+	case 2:
+		return idents[0], idents[1], nil
+	default:
+		return "", "", fmt.Errorf("expected [<schema>.]<name>, but %q has %d components", input, len(idents))
+	}
+}
+
+// parseTableNameList parses the whole input as a comma-separated list of
+// possibly-qualified table names. Empty elements (leading, trailing, or
+// doubled commas) are errors so that a typo can't silently change the
+// statement's meaning (e.g. DUMP TABLES with an empty list would previously
+// fall back to dumping the whole database).
+func parseTableNameList(input string) ([]string, error) {
+	p := newParser("", input)
+	if err := p.NextToken(); err != nil {
+		return nil, err
+	}
+
+	var tables []string
+	for {
+		idents, err := parseFQNParts(p)
+		if err != nil {
+			return nil, fmt.Errorf("expected table name: %w", err)
+		}
+		tables = append(tables, strings.Join(idents, "."))
+
+		switch p.Token.Kind {
+		case token.TokenEOF:
+			return tables, nil
+		case ",":
+			if err := p.NextToken(); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("expected ',' or end of input after table name, but got %q", p.Token.Raw)
+		}
+	}
 }
 
 // buildCommands parses the input and builds a list of commands for batch execution.
