@@ -1149,3 +1149,27 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		})
 	})
 }
+
+func TestRenderSystemVariablesHelp(t *testing.T) {
+	t.Parallel()
+
+	got := renderSystemVariablesHelp()
+
+	for _, want := range []string{
+		"| Name",
+		"`CLI_FORMAT`",
+		// Special variables handled outside the registry.
+		"`COMMIT_RESPONSE`",
+		"`CLI_DIRECT_READ`",
+		// Description content with angle brackets must be markdown-escaped.
+		`\<name\>:\<template\>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderSystemVariablesHelp() must contain %q", want)
+		}
+	}
+
+	if strings.Contains(got, "<name>") {
+		t.Error("renderSystemVariablesHelp() must escape angle brackets in descriptions")
+	}
+}
