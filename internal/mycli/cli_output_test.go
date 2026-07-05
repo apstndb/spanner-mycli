@@ -200,9 +200,9 @@ func TestPrintTableDataStreamsBufferedRowsForNonTableModes(t *testing.T) {
 			name: "SQL export without SQL literals falls back to table",
 			mode: enums.DisplayModeSQLInsert,
 			result: &Result{
-				TableHeader:           toTableHeader("col1"),
-				Rows:                  []Row{toRow("value")},
-				HasSQLFormattedValues: false,
+				TableHeader:      toTableHeader("col1"),
+				Rows:             []Row{toRow("value")},
+				SQLExportAllowed: false,
 			},
 			wantOutput: "+-------+\n| col1  |\n+-------+\n| value |\n+-------+\n",
 		},
