@@ -2,7 +2,6 @@ package mycli
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +37,10 @@ type varDef struct {
 
 	scope    varScope
 	readOnly bool // for scopeSession exceptions only; other scopes are implicitly read-only
+	initOnly bool // settable only before session creation
+	txnGuard bool // SET rejected while a transaction is active
+	noLocal  bool // opt-out of SET LOCAL for otherwise-eligible vars
+	noReset  bool // opt-out of RESET ALL for otherwise-eligible vars
 
 	// bind constructs the live handler bound to the given systemVariables.
 	bind func(sv *systemVariables) Variable
@@ -49,6 +52,21 @@ type varDef struct {
 // implicitly read-only; scopeSession vars are settable unless readOnly is set.
 func (d *varDef) settable() bool { return d.scope == scopeSession && !d.readOnly }
 
+// localAllowed reports whether SET LOCAL may target this variable. It excludes
+// read-only, session-init-only, transaction-guarded, and explicitly opted-out
+// (noLocal) variables, because none of those can be safely set inside a
+// transaction and reverted when it ends.
+func (d *varDef) localAllowed() bool {
+	return d.settable() && !d.initOnly && !d.txnGuard && !d.noLocal
+}
+
+// resettable reports whether RESET ALL should restore this variable to its
+// session-startup value. Session-init-only and explicitly opted-out (noReset)
+// variables are excluded. (Consumed by RESET ALL; see #484.)
+func (d *varDef) resettable() bool {
+	return d.settable() && !d.initOnly && !d.noReset
+}
+
 // varDefs is the declarative table of all system variables. Order is not
 // significant (listings sort by name); it mirrors the historical grouping for
 // readability.
@@ -58,26 +76,14 @@ func (d *varDef) settable() bool { return d.scope == scopeSession && !d.readOnly
 var varDefs = []varDef{
 	// === Simple boolean variables ===
 	{
-		name:  "READONLY",
-		desc:  "A boolean indicating whether or not the connection is in read-only mode",
-		scope: scopeSession,
-		bind: func(sv *systemVariables) Variable {
-			return &CustomVar{
-				base: BoolVar(&sv.Transaction.ReadOnly),
-				customSetter: func(value string) error {
-					// Custom validation for READONLY
-					if sv.inTransaction != nil && sv.inTransaction() {
-						return errSetterInTransaction
-					}
-					b, err := strconv.ParseBool(value)
-					if err != nil {
-						return err
-					}
-					sv.Transaction.ReadOnly = b
-					return nil
-				},
-			}
-		},
+		// txnGuard: READONLY switches the transaction mode, which is meaningless
+		// (and unsafe) while a transaction is already open. The check is enforced
+		// centrally in VarRegistry.Set.
+		name:     "READONLY",
+		desc:     "A boolean indicating whether or not the connection is in read-only mode",
+		scope:    scopeSession,
+		txnGuard: true,
+		bind:     func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.ReadOnly) },
 	},
 	{
 		name:  "AUTO_PARTITION_MODE",
@@ -629,9 +635,13 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return &TimestampBoundVar{ptr: &sv.Query.ReadOnlyStaleness} },
 	},
 	{
-		name:  "CLI_PROTO_DESCRIPTOR_FILE",
-		desc:  "Comma-separated list of proto descriptor files. Supports ADD to append files.",
-		scope: scopeSession,
+		// noLocal: this setter reads files from disk as a side effect; restoring
+		// the old value at transaction end would re-read those files, so it opts
+		// out of SET LOCAL.
+		name:    "CLI_PROTO_DESCRIPTOR_FILE",
+		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files.",
+		scope:   scopeSession,
+		noLocal: true,
 		bind: func(sv *systemVariables) Variable {
 			return &ProtoDescriptorVar{
 				filesPtr:      &sv.Internal.ProtoDescriptorFile,
@@ -687,9 +697,13 @@ var varDefs = []varDef{
 		},
 	},
 	{
-		name:  "CLI_OUTPUT_TEMPLATE_FILE",
-		desc:  "Go text/template for formatting the output of the CLI.",
-		scope: scopeSession,
+		// noLocal: this setter reads a template file from disk as a side effect;
+		// restoring the old value at transaction end would re-read it, so it opts
+		// out of SET LOCAL.
+		name:    "CLI_OUTPUT_TEMPLATE_FILE",
+		desc:    "Go text/template for formatting the output of the CLI.",
+		scope:   scopeSession,
+		noLocal: true,
 		bind: func(sv *systemVariables) Variable {
 			return &CustomVar{
 				base: StringVar(&sv.Display.OutputTemplateFile),
@@ -747,6 +761,14 @@ var varDefs = []varDef{
 				stringPtr: &sv.Display.InlineStats,
 				parsedPtr: &sv.Display.ParsedInlineStats,
 				parseFunc: func(value string) error {
+					// Empty means "no inline stats". parseInlineStats would reject
+					// "" (it requires "<name>:<template>"), which would make the
+					// default value fail to Set back and break the SET LOCAL
+					// Get->Set round-trip; treat it as clearing instead.
+					if value == "" {
+						sv.Display.ParsedInlineStats = nil
+						return nil
+					}
 					parsed, err := parseInlineStats(value)
 					if err != nil {
 						return err
@@ -758,29 +780,14 @@ var varDefs = []varDef{
 		},
 	},
 	{
-		// CLI_ENABLE_ADC_PLUS is a session-init-only variable.
-		// Currently implemented using a custom setter that checks inTransaction != nil
-		// to detect whether a session has been created. Could use native support
-		// for session-init-only behavior if added to the varDef metadata.
-		name:  "CLI_ENABLE_ADC_PLUS",
-		desc:  "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
-		scope: scopeSession,
-		bind: func(sv *systemVariables) Variable {
-			return &CustomVar{
-				base: BoolVar(&sv.Config.EnableADCPlus),
-				customSetter: func(value string) error {
-					if sv.inTransaction != nil {
-						return fmt.Errorf("CLI_ENABLE_ADC_PLUS cannot be changed after session creation")
-					}
-					b, err := strconv.ParseBool(value)
-					if err != nil {
-						return err
-					}
-					sv.Config.EnableADCPlus = b
-					return nil
-				},
-			}
-		},
+		// initOnly: CLI_ENABLE_ADC_PLUS must be fixed before session creation so
+		// authentication behavior stays consistent for the session's lifetime.
+		// The "session exists" check is enforced centrally in VarRegistry.Set.
+		name:     "CLI_ENABLE_ADC_PLUS",
+		desc:     "A boolean indicating whether to enable enhanced Application Default Credentials. Must be set before session creation. The default is true.",
+		scope:    scopeSession,
+		initOnly: true,
+		bind:     func(sv *systemVariables) Variable { return BoolVar(&sv.Config.EnableADCPlus) },
 	},
 	{
 		name:  "CLI_MCP",

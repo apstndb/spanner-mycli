@@ -110,6 +110,7 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Res
 	}
 
 	sysVars := session.systemVariables
+	sysVars.ensureRegistry()
 	upperName := strings.ToUpper(s.VarName)
 
 	// Mirror the SET special cases for variables living outside the registry.
@@ -117,21 +118,29 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Res
 		return nil, errSetterUnimplemented{s.VarName}
 	}
 
-	oldValue, err := sysVars.Registry.Get(upperName)
-	if err != nil {
-		var unknownErr *ErrUnknownVariable
-		if errors.As(err, &unknownErr) {
-			return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
-		}
-		return nil, err
+	// Eligibility is decided from the def's metadata, not by a pre-flight
+	// Set(old) round-trip. localAllowed() already excludes read-only,
+	// session-init-only, transaction-guarded, and file-backed (noLocal) vars,
+	// so the saved value is guaranteed to round-trip through Registry.Set when
+	// the transaction ends.
+	def := sysVars.Registry.lookupDef(upperName)
+	if def == nil {
+		return nil, fmt.Errorf("unknown variable name: %v", s.VarName)
+	}
+	switch {
+	case !def.settable():
+		return nil, fmt.Errorf("%s does not support SET LOCAL: variable is read-only", upperName)
+	case def.initOnly:
+		return nil, fmt.Errorf("%s does not support SET LOCAL: settable only before session creation", upperName)
+	case def.txnGuard:
+		return nil, fmt.Errorf("%s does not support SET LOCAL: cannot be changed within a transaction", upperName)
+	case def.noLocal:
+		return nil, fmt.Errorf("%s does not support SET LOCAL", upperName)
 	}
 
-	// Pre-flight: verify the saved value can be set back, so the restore at
-	// transaction end cannot fail. This also rejects read-only variables and
-	// variables whose setter refuses writes mid-transaction, before any state
-	// changes. Setting the current value again is semantically a no-op.
-	if err := sysVars.Registry.Set(upperName, oldValue, false); err != nil {
-		return nil, fmt.Errorf("%s does not support SET LOCAL: %w", upperName, err)
+	oldValue, err := sysVars.Registry.Get(upperName)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := sysVars.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
