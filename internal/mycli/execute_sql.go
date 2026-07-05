@@ -135,7 +135,7 @@ type queryExecution struct {
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
 func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error) {
-	useStreaming, processor, err := decideExecutionMode(qe.SysVars)
+	useStreaming, processor, err := decideExecutionMode(qe)
 	if err != nil {
 		if qe.Iter != nil {
 			qe.Iter.Stop()
@@ -249,17 +249,18 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 // decideExecutionMode determines whether to use streaming or buffered mode.
 // Returns true and a processor if streaming should be used, false and nil otherwise.
-func decideExecutionMode(sysVars *systemVariables) (bool, RowProcessor, error) {
-	// Get output writer from StreamManager (respects tee/redirect settings)
-	outStream := sysVars.StreamManager.GetWriter()
+func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
+	// The per-statement output destination (respects tee/redirect settings
+	// and the MCP handler's capture buffer).
+	outStream := qe.Session.outputWriter()
 	if outStream == nil {
 		return false, nil, nil
 	}
 
-	screenWidth := displayScreenWidth(sysVars)
+	screenWidth := qe.Session.displayWidthFor(qe.SysVars)
 
 	// Try to create streaming processor based on settings
-	processor, err := createStreamingProcessor(sysVars, outStream, screenWidth)
+	processor, err := createStreamingProcessor(qe.SysVars, outStream, screenWidth)
 	if err != nil {
 		return false, nil, err
 	}

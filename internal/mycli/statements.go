@@ -221,7 +221,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
-	return executeStructRows(showDatabasesRowEncoder, items, session.systemVariables)
+	return executeStructRows(showDatabasesRowEncoder, items, session)
 }
 
 // Split Points
@@ -762,11 +762,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 	}
 
 	// session is nil when HELP is rendered without a connection.
-	var sysVars *systemVariables
-	if session != nil {
-		sysVars = session.systemVariables
-	}
-	result, err := executeStructRows(helpRowEncoder, items, sysVars)
+	result, err := executeStructRows(helpRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}

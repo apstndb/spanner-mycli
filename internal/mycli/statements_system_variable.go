@@ -72,7 +72,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	result, err := executeStructRows(nameValueRowEncoder, items, session.systemVariables)
+	result, err := executeStructRows(nameValueRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}
@@ -228,11 +228,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	var sysVars *systemVariables
-	if session != nil {
-		sysVars = session.systemVariables
-	}
-	result, err := executeStructRows(helpVariablesRowEncoder, merged, sysVars)
+	result, err := executeStructRows(helpVariablesRowEncoder, merged, session)
 	if err != nil {
 		return nil, err
 	}

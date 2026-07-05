@@ -197,7 +197,7 @@ func TestExecuteStructRows_streaming(t *testing.T) {
 			var buf bytes.Buffer
 			sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), &buf, &buf)
 
-			result, err := executeStructRows(nameValueRowEncoder, items, &sysVars)
+			result, err := executeStructRows(nameValueRowEncoder, items, &Session{systemVariables: &sysVars})
 			if err != nil {
 				t.Fatalf("executeStructRows: %v", err)
 			}
