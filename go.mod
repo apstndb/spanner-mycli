@@ -34,7 +34,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/googleapis/go-spanner-cassandra v0.7.0
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/hymkor/go-multiline-ny v0.23.1
 	github.com/junegunn/fzf v0.73.0
 	github.com/k0kubun/pp/v3 v3.5.1
@@ -50,7 +50,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/vbauerster/mpb/v8 v8.12.1
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.44.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.287.0
