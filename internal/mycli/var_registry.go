@@ -48,6 +48,12 @@ func (r *VarRegistry) registerAll() {
 			rv.add = def.bindAdd(sv)
 		}
 		r.vars[strings.ToUpper(def.name)] = rv
+		// Aliases are extra keys pointing at the same registeredVar so lookups
+		// (Get/Set/Add) resolve them, but listings iterate varDefs by canonical
+		// name and therefore never surface aliases.
+		for _, alias := range def.aliases {
+			r.vars[strings.ToUpper(alias)] = rv
+		}
 	}
 }
 
@@ -154,14 +160,38 @@ func (r *VarRegistry) IsReadOnly(name string) (bool, error) {
 	return !rv.def.settable(), nil
 }
 
-// ListVariables returns a map of all variables with their current values
+// ListVariables returns a map of all variables with their current values.
+// It iterates varDefs by canonical name so aliases are excluded, and skips
+// variables whose Get reports the value as unavailable (e.g. multi-valued
+// COMMIT_RESPONSE, whose columns are merged in separately via ListMultiValues).
 func (r *VarRegistry) ListVariables() map[string]string {
 	result := make(map[string]string)
-	for name, rv := range r.vars {
-		value, err := rv.v.Get()
+	for i := range varDefs {
+		name := strings.ToUpper(varDefs[i].name)
+		value, err := r.vars[name].v.Get()
 		if err == nil {
 			result[name] = value
 		}
+	}
+	return result
+}
+
+// ListMultiValues returns the merged GetMulti() output of every registered
+// MultiValueVar whose value is currently available. Keys may intentionally
+// collide with single-valued variables (COMMIT_RESPONSE's COMMIT_TIMESTAMP
+// overrides the plain COMMIT_TIMESTAMP row in SHOW VARIABLES).
+func (r *VarRegistry) ListMultiValues() map[string]string {
+	result := make(map[string]string)
+	for i := range varDefs {
+		mv, ok := r.vars[strings.ToUpper(varDefs[i].name)].v.(MultiValueVar)
+		if !ok {
+			continue
+		}
+		values, err := mv.GetMulti()
+		if err != nil {
+			continue
+		}
+		maps.Copy(result, values)
 	}
 	return result
 }
@@ -178,7 +208,10 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 		CanAdd      bool
 	})
 
-	for name, rv := range r.vars {
+	// Iterate varDefs by canonical name so aliases are excluded from the listing.
+	for i := range varDefs {
+		name := strings.ToUpper(varDefs[i].name)
+		rv := r.vars[name]
 		result[name] = struct {
 			Description string
 			ReadOnly    bool

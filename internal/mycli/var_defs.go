@@ -42,6 +42,11 @@ type varDef struct {
 	noLocal  bool // opt-out of SET LOCAL for otherwise-eligible vars
 	noReset  bool // opt-out of RESET ALL for otherwise-eligible vars
 
+	// aliases are additional (typically deprecated) names accepted by
+	// SET/SHOW/ADD. They resolve to the same handler as name but are excluded
+	// from listings and completion. Used for one-release renames.
+	aliases []string
+
 	// bind constructs the live handler bound to the given systemVariables.
 	bind func(sv *systemVariables) Variable
 	// bindAdd, when non-nil, constructs the variable's ADD handler.
@@ -625,6 +630,15 @@ var varDefs = []varDef{
 		desc:  "The commit timestamp of the last read-write transaction that Spanner committed.",
 		scope: scopeResult,
 		bind:  func(sv *systemVariables) Variable { return &TimestampVar{ptr: &sv.LastResult.CommitTimestamp} },
+	},
+	{
+		// COMMIT_RESPONSE is multi-valued: SHOW VARIABLE / SHOW VARIABLES expose
+		// its COMMIT_TIMESTAMP and MUTATION_COUNT columns via the MultiValueVar
+		// capability (commitResponseVar.GetMulti). It is read-only (scopeResult).
+		name:  "COMMIT_RESPONSE",
+		desc:  "The most recent response for a read-write transaction. This is a virtual variable: it can be used in SHOW COMMIT_RESPONSE and SHOW COMMIT_RESPONSE.COMMIT_TIMESTAMP and SHOW COMMIT_RESPONSE.MUTATION_COUNT, but attempting to read its value directly will give an error. Instead use the sub-fields COMMIT_TIMESTAMP and MUTATION_COUNT.",
+		scope: scopeResult,
+		bind:  func(sv *systemVariables) Variable { return &commitResponseVar{sv: sv} },
 	},
 
 	// === Complex variables ===

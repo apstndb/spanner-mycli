@@ -252,6 +252,40 @@ func (u *UnimplementedVar) Set(value string) error {
 	return errSetterUnimplemented{u.name}
 }
 
+// commitResponseVar is the registry handler for COMMIT_RESPONSE, the one
+// genuinely multi-valued system variable. It reports the last read-write
+// transaction's commit result as two columns (COMMIT_TIMESTAMP, MUTATION_COUNT)
+// via GetMulti; a plain Get is unavailable, mirroring java-spanner where
+// COMMIT_RESPONSE cannot be read as a single value.
+type commitResponseVar struct {
+	sv *systemVariables
+}
+
+// Get always reports the value as unavailable so COMMIT_RESPONSE stays out of
+// the flat ListVariables()/SHOW VARIABLES rows; its columns are merged in
+// separately from GetMulti. errIgnored is the established "skip me" sentinel.
+func (c *commitResponseVar) Get() (string, error) {
+	return "", errIgnored
+}
+
+// Set is never reached through Registry.Set (scopeResult is read-only, rejected
+// centrally before the handler), but is implemented for completeness.
+func (c *commitResponseVar) Set(string) error {
+	return errSetterReadOnly
+}
+
+// GetMulti returns COMMIT_TIMESTAMP and MUTATION_COUNT from the last commit, or
+// errIgnored when no read-write transaction has committed yet.
+func (c *commitResponseVar) GetMulti() (map[string]string, error) {
+	if c.sv.LastResult.CommitResponse == nil {
+		return nil, errIgnored
+	}
+	return map[string]string{
+		"COMMIT_TIMESTAMP": formatTimestamp(c.sv.LastResult.CommitTimestamp, "NULL"),
+		"MUTATION_COUNT":   strconv.FormatInt(c.sv.LastResult.CommitResponse.GetCommitStats().GetMutationCount(), 10),
+	}, nil
+}
+
 // TimestampVar handles timestamp formatting for read-only timestamp variables
 type TimestampVar struct {
 	ptr *time.Time

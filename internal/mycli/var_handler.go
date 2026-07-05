@@ -16,6 +16,16 @@ type Variable interface {
 	Set(string) error
 }
 
+// MultiValueVar is an optional capability for a Variable whose SHOW VARIABLE
+// result has multiple columns (e.g. COMMIT_RESPONSE, which surfaces
+// COMMIT_TIMESTAMP and MUTATION_COUNT). Such a variable's plain Get returns an
+// error (the value cannot be rendered as a single string); SHOW VARIABLE and
+// SHOW VARIABLES consult GetMulti instead. Returning errIgnored signals that
+// the value is currently unavailable and should be omitted.
+type MultiValueVar interface {
+	GetMulti() (map[string]string, error)
+}
+
 // ValidValuesEnumerator is implemented by variables that have a constrained set of valid values.
 // Used by fuzzy completion to offer value candidates for SET <name> = <Ctrl+T>.
 // Values must be returned as valid GoogleSQL literals (e.g., 'TABLE' for strings, TRUE for booleans).

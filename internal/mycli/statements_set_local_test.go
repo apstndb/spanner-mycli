@@ -127,7 +127,11 @@ func TestSetLocalRejectsUnsupportedVariables(t *testing.T) {
 	}{
 		{desc: "read-only variable", varName: "CLI_VERSION", value: "'v1'", wantErr: "does not support SET LOCAL"},
 		{desc: "unknown variable", varName: "NO_SUCH_VARIABLE", value: "1", wantErr: "unknown variable name"},
-		{desc: "virtual variable", varName: "COMMIT_RESPONSE", value: "1", wantErr: "unimplemented setter"},
+		// COMMIT_RESPONSE is now a read-only registry def (scopeResult), so SET
+		// LOCAL rejects it via localAllowed() rather than the old name check.
+		{desc: "multi-valued read-only variable", varName: "COMMIT_RESPONSE", value: "1", wantErr: "does not support SET LOCAL"},
+		// CLI_DIRECT_READ still lives outside the registry with no setter.
+		{desc: "unregistered special variable", varName: "CLI_DIRECT_READ", value: "1", wantErr: "unimplemented setter"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
