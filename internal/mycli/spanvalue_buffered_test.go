@@ -255,7 +255,7 @@ func TestWriteBufferedRowsWithSpanvalueWriter(t *testing.T) {
 
 // TestPrintTableDataBufferedSpanvalueReplay verifies that printTableData
 // routes buffered non-table results through the spanvalue writers, including
-// the SQL export mode gate on HasSQLFormattedValues.
+// the SQL export mode gate on SQLExportAllowed.
 func TestPrintTableDataBufferedSpanvalueReplay(t *testing.T) {
 	t.Parallel()
 
@@ -280,7 +280,7 @@ func TestPrintTableDataBufferedSpanvalueReplay(t *testing.T) {
 			result: &Result{
 				TableHeader:           toTableHeader("id"),
 				Rows:                  []Row{toRow("1")},
-				HasSQLFormattedValues: true,
+				SQLExportAllowed:      true,
 				SQLTableNameForExport: "Users",
 			},
 			want: "INSERT INTO `Users` (`id`) VALUES (1);\n",

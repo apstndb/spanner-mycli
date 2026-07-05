@@ -47,11 +47,11 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 
 	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
-		Rows:                  nil,
-		TableHeader:           toTableHeader(fields),
-		AffectedRows:          int(rowCount),
-		Streamed:              true,
-		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
+		Rows:             nil,
+		TableHeader:      toTableHeader(fields),
+		AffectedRows:     int(rowCount),
+		Streamed:         true,
+		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := finalizeQueryResult(
@@ -90,11 +90,11 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 
 	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
-		Rows:                  nil,
-		TableHeader:           toTableHeader(fields),
-		AffectedRows:          int(rowCount),
-		Streamed:              true,
-		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
+		Rows:             nil,
+		TableHeader:      toTableHeader(fields),
+		AffectedRows:     int(rowCount),
+		Streamed:         true,
+		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := finalizeQueryResult(
