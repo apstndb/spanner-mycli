@@ -833,14 +833,6 @@ func usedQueryParameterNames(s string) ([]string, error) {
 	return slices.Sorted(maps.Keys(set)), nil
 }
 
-func extractSchemaAndName(s string) (string, string) {
-	schema, name, found := strings.Cut(s, ".")
-	if !found {
-		return "", unquoteIdentifier(s)
-	}
-	return unquoteIdentifier(schema), unquoteIdentifier(name)
-}
-
 // formatUpdateDatabaseDdlRows formats UpdateDatabaseDdlMetadata into rows for SHOW OPERATION format
 func formatUpdateDatabaseDdlRows(operationId string, md *databasepb.UpdateDatabaseDdlMetadata, done bool, errorMessage string) []Row {
 	var rows []Row
