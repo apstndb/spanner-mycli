@@ -14,9 +14,8 @@ import (
 
 // EnumVar handles enum-like variables
 type EnumVar[T comparable] struct {
-	ptr         *T
-	values      map[string]T
-	description string
+	ptr    *T
+	values map[string]T
 }
 
 func (e *EnumVar[T]) Get() (string, error) {
@@ -47,14 +46,6 @@ func (e *EnumVar[T]) Set(value string) error {
 	return nil
 }
 
-func (e *EnumVar[T]) Description() string {
-	return e.description
-}
-
-func (e *EnumVar[T]) IsReadOnly() bool {
-	return false
-}
-
 // ValidValues returns sorted valid values as GoogleSQL string literals.
 func (e *EnumVar[T]) ValidValues() []string {
 	keys := slices.Sorted(maps.Keys(e.values))
@@ -66,11 +57,10 @@ func (e *EnumVar[T]) ValidValues() []string {
 
 // ProtoEnumVar handles Protocol Buffer enum variables
 type ProtoEnumVar[T ~int32] struct {
-	ptr         *T
-	values      map[string]int32
-	prefix      string
-	aliases     map[string]string // Additional aliases for enum values
-	description string
+	ptr     *T
+	values  map[string]int32
+	prefix  string
+	aliases map[string]string // Additional aliases for enum values
 }
 
 func (p *ProtoEnumVar[T]) Get() (string, error) {
@@ -142,14 +132,6 @@ func (p *ProtoEnumVar[T]) Set(value string) error {
 	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
 }
 
-func (p *ProtoEnumVar[T]) Description() string {
-	return p.description
-}
-
-func (p *ProtoEnumVar[T]) IsReadOnly() bool {
-	return false
-}
-
 // ValidValues returns sorted prefix-stripped valid values as GoogleSQL string literals.
 func (p *ProtoEnumVar[T]) ValidValues() []string {
 	values := make([]string, 0, len(p.values))
@@ -166,16 +148,15 @@ func (p *ProtoEnumVar[T]) ValidValues() []string {
 
 // Helper functions to create proto enum handlers for common types
 
-func RPCPriorityVar(ptr *sppb.RequestOptions_Priority, desc string) *ProtoEnumVar[sppb.RequestOptions_Priority] {
+func RPCPriorityVar(ptr *sppb.RequestOptions_Priority) *ProtoEnumVar[sppb.RequestOptions_Priority] {
 	return &ProtoEnumVar[sppb.RequestOptions_Priority]{
-		ptr:         ptr,
-		values:      sppb.RequestOptions_Priority_value,
-		prefix:      "PRIORITY_",
-		description: desc,
+		ptr:    ptr,
+		values: sppb.RequestOptions_Priority_value,
+		prefix: "PRIORITY_",
 	}
 }
 
-func IsolationLevelVar(ptr *sppb.TransactionOptions_IsolationLevel, desc string) *ProtoEnumVar[sppb.TransactionOptions_IsolationLevel] {
+func IsolationLevelVar(ptr *sppb.TransactionOptions_IsolationLevel) *ProtoEnumVar[sppb.TransactionOptions_IsolationLevel] {
 	return &ProtoEnumVar[sppb.TransactionOptions_IsolationLevel]{
 		ptr:    ptr,
 		values: sppb.TransactionOptions_IsolationLevel_value,
@@ -183,26 +164,23 @@ func IsolationLevelVar(ptr *sppb.TransactionOptions_IsolationLevel, desc string)
 		aliases: map[string]string{
 			"UNSPECIFIED": "ISOLATION_LEVEL_UNSPECIFIED",
 		},
-		description: desc,
 	}
 }
 
-func DatabaseDialectVar(ptr *databasepb.DatabaseDialect, desc string) *ProtoEnumVar[databasepb.DatabaseDialect] {
+func DatabaseDialectVar(ptr *databasepb.DatabaseDialect) *ProtoEnumVar[databasepb.DatabaseDialect] {
 	return &ProtoEnumVar[databasepb.DatabaseDialect]{
 		ptr:    ptr,
 		values: databasepb.DatabaseDialect_value,
 		aliases: map[string]string{
 			"": "DATABASE_DIALECT_UNSPECIFIED",
 		},
-		description: desc,
 	}
 }
 
-func QueryModeVar(ptr *sppb.ExecuteSqlRequest_QueryMode, desc string) *ProtoEnumVar[sppb.ExecuteSqlRequest_QueryMode] {
+func QueryModeVar(ptr *sppb.ExecuteSqlRequest_QueryMode) *ProtoEnumVar[sppb.ExecuteSqlRequest_QueryMode] {
 	return &ProtoEnumVar[sppb.ExecuteSqlRequest_QueryMode]{
-		ptr:         ptr,
-		values:      sppb.ExecuteSqlRequest_QueryMode_value,
-		description: desc,
+		ptr:    ptr,
+		values: sppb.ExecuteSqlRequest_QueryMode_value,
 	}
 }
 
@@ -214,64 +192,57 @@ func enumerValues[T fmt.Stringer](values []T) map[string]T {
 }
 
 // DisplayModeVar creates an enum handler for DisplayMode
-func DisplayModeVar(ptr *enums.DisplayMode, desc string) *EnumVar[enums.DisplayMode] {
+func DisplayModeVar(ptr *enums.DisplayMode) *EnumVar[enums.DisplayMode] {
 	return &EnumVar[enums.DisplayMode]{
-		ptr:         ptr,
-		values:      enumerValues(enums.DisplayModeValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.DisplayModeValues()),
 	}
 }
 
 // ParseModeVar creates an enum handler for ParseMode
-func ParseModeVar(ptr *enums.ParseMode, desc string) *EnumVar[enums.ParseMode] {
+func ParseModeVar(ptr *enums.ParseMode) *EnumVar[enums.ParseMode] {
 	return &EnumVar[enums.ParseMode]{
-		ptr:         ptr,
-		values:      enumerValues(enums.ParseModeValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.ParseModeValues()),
 	}
 }
 
 // ExplainFormatVar creates an enum handler for ExplainFormat
-func ExplainFormatVar(ptr *enums.ExplainFormat, desc string) *EnumVar[enums.ExplainFormat] {
+func ExplainFormatVar(ptr *enums.ExplainFormat) *EnumVar[enums.ExplainFormat] {
 	return &EnumVar[enums.ExplainFormat]{
-		ptr:         ptr,
-		values:      enumerValues(enums.ExplainFormatValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.ExplainFormatValues()),
 	}
 }
 
 // ReadLockModeVar creates an enum handler for ReadLockMode
-func ReadLockModeVar(ptr *sppb.TransactionOptions_ReadWrite_ReadLockMode, desc string) *ProtoEnumVar[sppb.TransactionOptions_ReadWrite_ReadLockMode] {
+func ReadLockModeVar(ptr *sppb.TransactionOptions_ReadWrite_ReadLockMode) *ProtoEnumVar[sppb.TransactionOptions_ReadWrite_ReadLockMode] {
 	return &ProtoEnumVar[sppb.TransactionOptions_ReadWrite_ReadLockMode]{
-		ptr:         ptr,
-		values:      sppb.TransactionOptions_ReadWrite_ReadLockMode_value,
-		prefix:      "READ_LOCK_MODE_",
-		description: desc,
+		ptr:    ptr,
+		values: sppb.TransactionOptions_ReadWrite_ReadLockMode_value,
+		prefix: "READ_LOCK_MODE_",
 	}
 }
 
 // StreamingModeVar creates an enum handler for StreamingMode
-func StreamingModeVar(ptr *enums.StreamingMode, desc string) *EnumVar[enums.StreamingMode] {
+func StreamingModeVar(ptr *enums.StreamingMode) *EnumVar[enums.StreamingMode] {
 	return &EnumVar[enums.StreamingMode]{
-		ptr:         ptr,
-		values:      enumerValues(enums.StreamingModeValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.StreamingModeValues()),
 	}
 }
 
-func StyledModeVar(ptr *enums.StyledMode, desc string) *EnumVar[enums.StyledMode] {
+func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	return &EnumVar[enums.StyledMode]{
-		ptr:         ptr,
-		values:      enumerValues(enums.StyledModeValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.StyledModeValues()),
 	}
 }
 
 // WidthStrategyVar creates an enum handler for WidthStrategy
-func WidthStrategyVar(ptr *enums.WidthStrategy, desc string) *EnumVar[enums.WidthStrategy] {
+func WidthStrategyVar(ptr *enums.WidthStrategy) *EnumVar[enums.WidthStrategy] {
 	return &EnumVar[enums.WidthStrategy]{
-		ptr:         ptr,
-		values:      enumerValues(enums.WidthStrategyValues()),
-		description: desc,
+		ptr:    ptr,
+		values: enumerValues(enums.WidthStrategyValues()),
 	}
 }
