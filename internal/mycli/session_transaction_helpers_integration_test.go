@@ -41,10 +41,10 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 			name:     "readwrite/valid transaction",
 			testType: "readwrite",
 			setupTx: func() error {
-				return session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+				return session.txn.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 			},
 			cleanup: func() {
-				_ = session.RollbackReadWriteTransaction(ctx)
+				_ = session.txn.RollbackReadWriteTransaction(ctx)
 			},
 			wantErr:     nil,
 			checkCalled: true,
@@ -53,11 +53,11 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 			name:     "readwrite/wrong type - read-only",
 			testType: "readwrite",
 			setupTx: func() error {
-				_, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+				_, err := session.txn.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 				return err
 			},
 			cleanup: func() {
-				_ = session.CloseReadOnlyTransaction()
+				_ = session.txn.CloseReadOnlyTransaction()
 			},
 			wantErr: ErrNotInReadWriteTransaction,
 		},
@@ -73,11 +73,11 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 			name:     "readonly/valid transaction",
 			testType: "readonly",
 			setupTx: func() error {
-				_, err := session.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+				_, err := session.txn.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 				return err
 			},
 			cleanup: func() {
-				_ = session.CloseReadOnlyTransaction()
+				_ = session.txn.CloseReadOnlyTransaction()
 			},
 			wantErr:     nil,
 			checkCalled: true,
@@ -86,10 +86,10 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 			name:     "readonly/wrong type - read-write",
 			testType: "readonly",
 			setupTx: func() error {
-				return session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+				return session.txn.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 			},
 			cleanup: func() {
-				_ = session.RollbackReadWriteTransaction(ctx)
+				_ = session.txn.RollbackReadWriteTransaction(ctx)
 			},
 			wantErr: ErrNotInReadOnlyTransaction,
 		},
@@ -107,7 +107,7 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 
 			switch tt.testType {
 			case "readwrite":
-				err = session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+				err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 					called = true
 					// Verify we can use the transaction
 					iter := tx.Query(ctx, spanner.NewStatement("SELECT 1"))
@@ -116,7 +116,7 @@ func TestTransactionHelpersIntegration(t *testing.T) {
 					return err
 				})
 			case "readonly":
-				err = session.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
+				err = session.txn.withReadOnlyTransaction(func(tx *spanner.ReadOnlyTransaction) error {
 					called = true
 					// Verify we can use the transaction
 					iter := tx.Query(ctx, spanner.NewStatement("SELECT 1"))
@@ -149,16 +149,16 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	// Start a read-write transaction
-	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+	err := session.txn.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
 	defer func() {
-		_ = session.RollbackReadWriteTransaction(ctx)
+		_ = session.txn.RollbackReadWriteTransaction(ctx)
 	}()
 
 	// Test modifying context
-	err = session.withReadWriteTransactionContext(func(tx *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+	err = session.txn.withReadWriteTransactionContext(func(tx *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 		// Verify initial state
 		if tc.IsHeartbeatEnabled() {
 			t.Error("expected sendHeartbeat to be false initially")
@@ -173,7 +173,7 @@ func TestWithReadWriteTransactionContextIntegration(t *testing.T) {
 	}
 
 	// Verify modifications persisted
-	attrs := session.TransactionAttrsWithLock()
+	attrs := session.txn.TransactionAttrsWithLock()
 	if !attrs.sendHeartbeat {
 		t.Error("expected sendHeartbeat to be true after modification")
 	}
@@ -190,12 +190,12 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
 
 	// Start a read-write transaction
-	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+	err := session.txn.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
 	defer func() {
-		_ = session.RollbackReadWriteTransaction(ctx)
+		_ = session.txn.RollbackReadWriteTransaction(ctx)
 	}()
 
 	// Test concurrent access
@@ -204,7 +204,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 
 	// Goroutine 1: Read and modify sendHeartbeat
 	wg.Go(func() {
-		err := session.withReadWriteTransactionContext(func(tx *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+		err := session.txn.withReadWriteTransactionContext(func(tx *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
 			// Simulate some work
 			time.Sleep(10 * time.Millisecond)
 			tc.EnableHeartbeat()
@@ -217,7 +217,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 
 	// Goroutine 2: Query using the transaction
 	wg.Go(func() {
-		err := session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+		err := session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 			// Simulate some work
 			time.Sleep(5 * time.Millisecond)
 			iter := tx.Query(ctx, spanner.NewStatement("SELECT 1"))
@@ -234,7 +234,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	wg.Go(func() {
 		// This should not block or race
 		for i := 0; i < 10; i++ {
-			attrs := session.TransactionAttrsWithLock()
+			attrs := session.txn.TransactionAttrsWithLock()
 			if attrs.mode != transactionModeReadWrite {
 				errors <- fmt.Errorf("unexpected transaction mode")
 				break
@@ -253,7 +253,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	}
 
 	// Verify final state
-	attrs := session.TransactionAttrsWithLock()
+	attrs := session.txn.TransactionAttrsWithLock()
 	if !attrs.sendHeartbeat {
 		t.Error("expected sendHeartbeat to be true after concurrent operations")
 	}
@@ -269,14 +269,14 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 	_, session := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true)"))
 
 	// Start a read-write transaction
-	err := session.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+	err := session.txn.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
 
 	// Test successful operation that returns a result
 	var updateCount int64
-	err = session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+	err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 		// Do some work in the transaction
 		updateCount, err = tx.Update(ctx, spanner.NewStatement("UPDATE tbl SET active = false WHERE id = 1"))
 		return err
@@ -290,7 +290,7 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 	}
 
 	// Commit the transaction
-	resp, err := session.CommitReadWriteTransaction(ctx)
+	resp, err := session.txn.CommitReadWriteTransaction(ctx)
 	if err != nil {
 		t.Errorf("unexpected error during commit: %v", err)
 	}
@@ -300,12 +300,12 @@ func TestCommitReadWriteTransactionIntegration(t *testing.T) {
 	}
 
 	// Verify the transaction was cleared after commit
-	if session.InTransaction() {
+	if session.txn.InTransaction() {
 		t.Error("expected transaction to be cleared after commit")
 	}
 
 	// Test that we can't use transaction helpers after commit
-	err = session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+	err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 		return nil
 	})
 
@@ -325,33 +325,33 @@ func TestTransactionStateTransitionsIntegration(t *testing.T) {
 
 	// Test state transitions with real transactions
 	// 1. Initially no transaction
-	if session.InTransaction() {
+	if session.txn.InTransaction() {
 		t.Error("expected no transaction initially")
 	}
 
 	// 2. Begin pending transaction
-	err := session.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_HIGH)
+	err := session.txn.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_HIGH)
 	if err != nil {
 		t.Fatalf("failed to begin pending transaction: %v", err)
 	}
 
-	if !session.InPendingTransaction() {
+	if !session.txn.InPendingTransaction() {
 		t.Error("expected pending transaction")
 	}
 
 	// 3. Determine transaction (convert to read-write)
-	_, err = session.DetermineTransaction(ctx)
+	_, err = session.txn.DetermineTransaction(ctx)
 	if err != nil {
 		t.Fatalf("failed to determine transaction: %v", err)
 	}
 
-	if !session.InReadWriteTransaction() {
+	if !session.txn.InReadWriteTransaction() {
 		t.Error("expected read-write transaction after determine")
 	}
 
 	// 4. Use the transaction through helpers
 	var queryExecuted bool
-	err = session.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+	err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
 		queryExecuted = true
 		iter := tx.Query(ctx, spanner.NewStatement("SELECT 1"))
 		defer iter.Stop()
@@ -367,12 +367,12 @@ func TestTransactionStateTransitionsIntegration(t *testing.T) {
 	}
 
 	// 5. Rollback
-	err = session.RollbackReadWriteTransaction(ctx)
+	err = session.txn.RollbackReadWriteTransaction(ctx)
 	if err != nil {
 		t.Errorf("failed to rollback: %v", err)
 	}
 
-	if session.InTransaction() {
+	if session.txn.InTransaction() {
 		t.Error("expected no transaction after rollback")
 	}
 }

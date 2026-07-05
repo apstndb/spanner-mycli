@@ -146,7 +146,7 @@ func executeInformationSchemaBasedStatement(ctx context.Context, session *Sessio
 }
 
 func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Session, stmtName string, stmt spanner.Statement, forceVerbose bool, emptyErrorF func() error) (*Result, error) {
-	if session.InReadWriteTransaction() {
+	if session.txn.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, stmtName)
@@ -157,7 +157,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		return nil, err
 	}
 
-	iter, _, err := session.RunQuery(ctx, stmt)
+	iter, _, err := session.txn.RunQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}

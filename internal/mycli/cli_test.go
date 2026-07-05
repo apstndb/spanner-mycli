@@ -1021,6 +1021,13 @@ func TestCli_getInterpolatedPrompt(t *testing.T) {
 			}
 
 			tt.session.systemVariables = tt.sysVars
+			// Zero-value &Session{} fixtures previously relied on the delegation
+			// mirror's nil-guards; now that callers dispatch to session.txn
+			// directly, give the fixture a real (client-less) manager unless the
+			// case already supplied one (e.g. to preset a transaction context).
+			if tt.session.txn == nil {
+				tt.session.txn = NewTransactionManager(nil, tt.sysVars, spanner.ClientConfig{})
+			}
 			cli := &Cli{
 				SessionHandler:  NewSessionHandler(tt.session),
 				SystemVariables: tt.sysVars,
