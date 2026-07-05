@@ -27,7 +27,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/samber/lo"
 )
 
@@ -60,7 +59,9 @@ type QueryResult struct {
 
 // UpdateResult holds the complete result of an update operation.
 type UpdateResult struct {
-	Rows     []Row                   // Rows returned by the update operation (e.g., from RETURNING clause)
+	// Rows holds the raw typed rows returned by the operation (e.g., THEN
+	// RETURN); display formatting is deferred to display time (issue #738 PR2).
+	Rows     []*spanner.Row
 	Stats    map[string]any          // Query statistics from the operation
 	Count    int64                   // Number of rows affected by the update
 	Metadata *sppb.ResultSetMetadata // Metadata about the result set
@@ -907,11 +908,6 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 // Using non-locked versions of methods like TransactionAttrsWithLock() or currentPriorityWithLock()
 // here will cause a deadlock. Always use the *Locked variants.
 func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	fc, err := decoder.FormatConfigWithProto(tm.sysVars.Internal.ProtoDescriptor, tm.sysVars.Display.MultilineProtoText)
-	if err != nil {
-		return nil, err
-	}
-
 	// Respect a user-specified CLI_QUERY_MODE (WITH_STATS / WITH_PLAN_AND_STATS);
 	// otherwise default to PROFILE to get execution statistics.
 	opts := tm.queryOptionsLocked(effectiveQueryMode(tm.sysVars.Query.QueryMode).Enum())
@@ -920,9 +916,12 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 	// Reset STATEMENT_TAG
 	tm.sysVars.Transaction.RequestTag = ""
 
+	// Capture the raw typed THEN RETURN rows (identity transform); display
+	// formatting is deferred to renderDMLReturnedRows so the value types are
+	// preserved for the active CLI_FORMAT (issue #738 PR2).
 	rows, stats, count, metadata, plan, err := consumeRowIterCollect(
 		tx.QueryWithOptions(ctx, stmt, opts),
-		spannerRowToRow(fc, tm.sysVars.typeStyles, tm.sysVars.nullStyle),
+		func(r *spanner.Row) (*spanner.Row, error) { return r, nil },
 	)
 	if err != nil {
 		return nil, err
