@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -51,6 +52,9 @@ func newDetachedTestSession(global io.Writer) *Session {
 		mode:            Detached,
 		systemVariables: &sysVars,
 	}
+	// Zero-value &Session{} needs a real (client-less) manager now that
+	// callers dispatch to session.txn directly instead of the deleted mirror.
+	session.txn = NewTransactionManager(nil, &sysVars, spanner.ClientConfig{})
 	sysVars.inTransaction = session.txn.InTransaction
 	return session
 }

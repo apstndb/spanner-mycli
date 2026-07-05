@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
@@ -41,6 +42,9 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 		adminClient:     nil, // we won't actually use the admin client in these tests
 		systemVariables: sysVars,
 	}
+	// Zero-value &Session{} needs a real (client-less) manager now that
+	// callers dispatch to session.txn directly instead of the deleted mirror.
+	session.txn = NewTransactionManager(nil, sysVars, spanner.ClientConfig{})
 	sysVars.inTransaction = session.txn.InTransaction
 
 	// Just test that SHOW VARIABLES works without error
