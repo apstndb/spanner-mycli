@@ -434,10 +434,14 @@ func (r *VarRegistry) registerAll() {
 			return sv.Display.OutputTemplateFile, nil
 		},
 		customSetter: func(value string) error {
-			// Parse and set template
+			// Parse and set template.
+			// An empty value (or NULL) restores the built-in default template
+			// (defaultOutputFormat), matching the startup default when no
+			// --output-template flag is given. This keeps SET and startup in
+			// sync so Get/Set round-trips (relied on by RESET ALL) hold.
 			if value == "" || strings.EqualFold(value, "NULL") {
 				sv.Display.OutputTemplateFile = ""
-				sv.Display.OutputTemplate = nil
+				sv.Display.OutputTemplate = defaultOutputFormat
 				return nil
 			}
 
