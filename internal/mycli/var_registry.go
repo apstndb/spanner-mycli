@@ -335,7 +335,7 @@ func (r *VarRegistry) registerAll() {
 	r.Register("AUTOCOMMIT_DML_MODE", AutocommitDMLModeVar(&sv.Transaction.AutocommitDMLMode,
 		"A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements."))
 	r.Register("CLI_FORMAT", DisplayModeVar(&sv.Display.CLIFormat,
-		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated), HTML (HTML table), XML (XML format), CSV (comma-separated values)."))
+		"Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated, raw values), TSV (tab-separated with tab/newline/backslash escaping), HTML (HTML table), XML (XML format), CSV (comma-separated values)."))
 	r.Register("CLI_PARSE_MODE", ParseModeVar(&sv.Query.BuildStatementMode,
 		"Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED"))
 	r.Register("CLI_EXPLAIN_FORMAT", &CustomVar{

@@ -126,6 +126,85 @@ func (f *TabFormatter) FinishFormat() error {
 	return nil
 }
 
+// tsvEscaper escapes characters that would break the TSV row/field structure.
+// This is the conventional lossless TSV escaping (as used by MySQL's tab output,
+// Postgres COPY text format, etc.): backslash, tab, newline, and carriage return
+// are replaced by two-character backslash sequences. Quotes are NOT special in
+// TSV and are emitted verbatim.
+var tsvEscaper = strings.NewReplacer(
+	"\\", `\\`,
+	"\t", `\t`,
+	"\n", `\n`,
+	"\r", `\r`,
+)
+
+// escapeTSVFields escapes each field with tsvEscaper.
+func escapeTSVFields(fields []string) []string {
+	escaped := make([]string, len(fields))
+	for i, field := range fields {
+		escaped[i] = tsvEscaper.Replace(field)
+	}
+	return escaped
+}
+
+// TSVFormatter provides tab-separated formatting with escaping.
+// Unlike TabFormatter (which joins raw cell text and is kept for backward
+// compatibility), TSVFormatter guarantees one row per line and one field per
+// tab-separated column by escaping tab, newline, carriage return, and
+// backslash within values (and header names).
+type TSVFormatter struct {
+	out         io.Writer
+	skipHeaders bool
+	initialized bool
+}
+
+// NewTSVFormatter creates a new escaping tab-separated (TSV) formatter.
+func NewTSVFormatter(out io.Writer, skipHeaders bool) *TSVFormatter {
+	return &TSVFormatter{
+		out:         out,
+		skipHeaders: skipHeaders,
+	}
+}
+
+// InitFormat writes escaped tab-separated headers if needed.
+func (f *TSVFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
+	if f.initialized {
+		return nil
+	}
+
+	if len(columnNames) == 0 {
+		return nil
+	}
+
+	// Write headers unless skipping
+	if !f.skipHeaders {
+		if _, err := fmt.Fprintln(f.out, strings.Join(escapeTSVFields(columnNames), "\t")); err != nil {
+			return fmt.Errorf("failed to write TSV header: %w", err)
+		}
+	}
+
+	f.initialized = true
+	return nil
+}
+
+// WriteRow writes a single escaped tab-separated row.
+func (f *TSVFormatter) WriteRow(row Row) error {
+	if !f.initialized {
+		return fmt.Errorf("TSV formatter not initialized")
+	}
+
+	if _, err := fmt.Fprintln(f.out, strings.Join(escapeTSVFields(Texts(row)), "\t")); err != nil {
+		return fmt.Errorf("failed to write TSV row: %w", err)
+	}
+
+	return nil
+}
+
+// FinishFormat completes tab-separated output.
+func (f *TSVFormatter) FinishFormat() error {
+	return nil
+}
+
 // VerticalFormatter provides shared vertical formatting logic.
 type VerticalFormatter struct {
 	out         io.Writer

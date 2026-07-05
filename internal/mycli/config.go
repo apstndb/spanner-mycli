@@ -111,7 +111,7 @@ type spannerOptions struct {
 	HTML                bool              `name:"html" help:"Display output in HTML format."`
 	XML                 bool              `name:"xml" help:"Display output in XML format."`
 	CSV                 bool              `name:"csv" help:"Display output in CSV format."`
-	Format              string            `name:"format" help:"Output format (table, tab, vertical, html, xml, csv, jsonl)"`
+	Format              string            `name:"format" help:"Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)"`
 	Verbose             bool              `name:"verbose" short:"v" help:"Display verbose output."`
 	Credential          string            `name:"credential" help:"Use the specific credential file"`
 	Prompt              *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`

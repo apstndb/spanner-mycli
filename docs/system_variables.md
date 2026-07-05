@@ -72,7 +72,8 @@ TODO
   - `TABLE_COMMENT` - Table wrapped in `/* */` comments
   - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in `/* */` comments (useful for embedding results in SQL code blocks)
   - `VERTICAL` - Vertical format with column:value pairs
-  - `TAB` - Tab-separated values
+  - `TAB` - Tab-separated values (raw; values are joined with tabs as-is, so values containing tabs or newlines break the row/column structure)
+  - `TSV` - Tab-separated values with escaping (tab, newline, carriage return, and backslash inside values are escaped as `\t`, `\n`, `\r`, and `\\`, guaranteeing one row per line and one field per column)
   - `HTML` - HTML table format
   - `XML` - XML format
   - `CSV` - Comma-separated values (RFC 4180 compliant)
@@ -109,6 +110,7 @@ TODO
   - HTML and XML formats are compatible with Google Cloud Spanner CLI
   - All special characters are properly escaped in HTML, XML, and CSV formats for security
   - CSV format follows RFC 4180 standard with automatic escaping of commas, quotes, and newlines
+  - TSV format escapes `\` as `\\`, tab as `\t`, newline as `\n`, and carriage return as `\r` in both header names and values; double quotes are not special and are emitted verbatim; empty strings produce empty fields; NULL is rendered as the literal text `NULL` (same as TAB/TABLE). Use TAB if you need the historical raw (unescaped) behavior
   - JSONL format produces type-aware JSON: INT64/ENUM as numbers, BOOL as booleans, ARRAY as JSON arrays, STRUCT as JSON objects, NULL as null
   - The format affects how query results are displayed, not how they are executed
   - `TABLE_DETAIL_COMMENT` is particularly useful with `CLI_ECHO_INPUT=TRUE` and `CLI_MARKDOWN_CODEBLOCK=TRUE` for documentation
