@@ -456,11 +456,11 @@ func (c *Cli) getInterpolatedPrompt(prompt string) string {
 			return sysVars.Connection.Database
 		case "%t":
 			switch {
-			case c.SessionHandler.InReadWriteTransaction():
+			case c.SessionHandler.txn.InReadWriteTransaction():
 				return "(rw txn)"
-			case c.SessionHandler.InReadOnlyTransaction():
+			case c.SessionHandler.txn.InReadOnlyTransaction():
 				return "(ro txn)"
-			case c.SessionHandler.InPendingTransaction():
+			case c.SessionHandler.txn.InPendingTransaction():
 				return "(txn)"
 			default:
 				return ""

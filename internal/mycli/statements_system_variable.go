@@ -105,7 +105,7 @@ type SetLocalStatement struct {
 }
 
 func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.txn == nil || !session.InTransaction() {
+	if session.txn == nil || !session.txn.InTransaction() {
 		return nil, errors.New("SET LOCAL requires an active transaction; start one with BEGIN")
 	}
 

@@ -18,7 +18,7 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 		return nil, err
 	}
 
-	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	partitions, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 		return nil, err
 	}
 
-	_, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	_, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}

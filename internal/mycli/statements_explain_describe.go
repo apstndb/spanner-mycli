@@ -324,7 +324,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 
 	// EXPLAIN ANALYZE requires the query plan, so PROFILE is forced here
 	// regardless of CLI_QUERY_MODE.
-	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
+	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
 		return nil, err
 	}
@@ -445,8 +445,8 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	}
 
 	var queryStats map[string]any
-	dmlResult, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter := session.runQueryWithStatsOnTransaction(ctx, tx, stmt, implicit)
+	dmlResult, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		iter := session.txn.runQueryWithStatsOnTransaction(ctx, tx, stmt, implicit)
 		qs, count, metadata, plan, err := consumeRowIterDiscard(iter)
 		queryStats = qs
 		return count, plan, metadata, err
@@ -606,12 +606,12 @@ func customListToTableRenderDefs(custom string) ([]columnRenderDef, error) {
 
 func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Statement, isDML bool) (queryPlan *sppb.QueryPlan, commitTimestamp time.Time, metadata *sppb.ResultSetMetadata, err error) {
 	if !isDML {
-		queryPlan, metadata, err := session.RunAnalyzeQuery(ctx, stmt)
+		queryPlan, metadata, err := session.txn.RunAnalyzeQuery(ctx, stmt)
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		plan, metadata, err := session.runAnalyzeQueryOnTransaction(ctx, tx, stmt)
+	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+		plan, metadata, err := session.txn.runAnalyzeQueryOnTransaction(ctx, tx, stmt)
 		return 0, plan, metadata, err
 	})
 	if err != nil {

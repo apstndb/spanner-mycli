@@ -24,7 +24,7 @@ func newSessionForLocalVarTest(t *testing.T) *Session {
 		systemVariables: sysVars,
 		txn:             NewTransactionManager(nil, sysVars, spanner.ClientConfig{}),
 	}
-	sysVars.inTransaction = session.InTransaction
+	sysVars.inTransaction = session.txn.InTransaction
 	return session
 }
 

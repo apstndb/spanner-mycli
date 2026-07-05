@@ -215,7 +215,7 @@ func (h *SessionHandler) validateSessionSwitch() error {
 	if h.Session == nil {
 		return nil
 	}
-	if h.InTransaction() {
+	if h.txn.InTransaction() {
 		return errors.New("cannot switch session while a transaction is active; COMMIT, ROLLBACK, or CLOSE it first")
 	}
 	if h.batch.IsActive() {
@@ -373,7 +373,7 @@ func newSessionWithFactories(
 		txn:             NewTransactionManager(client, sysVars, clientConfig),
 		systemVariables: sysVars,
 	}
-	sysVars.inTransaction = session.InTransaction
+	sysVars.inTransaction = session.txn.InTransaction
 
 	return session, nil
 }
@@ -407,7 +407,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 		txn:             NewTransactionManager(nil, sysVars, clientConfig),
 		systemVariables: sysVars,
 	}
-	sysVars.inTransaction = session.InTransaction
+	sysVars.inTransaction = session.txn.InTransaction
 
 	// Validate instance exists
 	exists, err := session.InstanceExists()
@@ -457,192 +457,6 @@ func (s *Session) ValidateStatementExecution(stmt Statement) error {
 	// In DatabaseConnected mode, all statements can be executed
 	return nil
 }
-
-// --- Delegation methods to TransactionManager ---
-// These one-liner methods preserve the existing Session API so callers
-// (statement files, fuzzy finder, etc.) don't need to change.
-
-func (s *Session) TransactionState() (mode transactionMode, isActive bool) {
-	if s.txn == nil {
-		return transactionModeUndetermined, false
-	}
-	return s.txn.TransactionState()
-}
-
-func (s *Session) TransactionAttrsWithLock() transactionAttributes {
-	if s.txn == nil {
-		return transactionAttributes{}
-	}
-	return s.txn.TransactionAttrsWithLock()
-}
-
-func (s *Session) TransactionMode() transactionMode {
-	if s.txn == nil {
-		return transactionModeUndetermined
-	}
-	return s.txn.TransactionMode()
-}
-
-func (s *Session) InReadWriteTransaction() bool {
-	if s.txn == nil {
-		return false
-	}
-	return s.txn.InReadWriteTransaction()
-}
-
-func (s *Session) InReadOnlyTransaction() bool {
-	if s.txn == nil {
-		return false
-	}
-	return s.txn.InReadOnlyTransaction()
-}
-
-func (s *Session) InPendingTransaction() bool {
-	if s.txn == nil {
-		return false
-	}
-	return s.txn.InPendingTransaction()
-}
-
-func (s *Session) InTransaction() bool {
-	if s.txn == nil {
-		return false
-	}
-	return s.txn.InTransaction()
-}
-
-func (s *Session) GetTransactionFlagsWithLock() (inTransaction bool, inReadWriteTransaction bool) {
-	if s.txn == nil {
-		return false, false
-	}
-	return s.txn.GetTransactionFlagsWithLock()
-}
-
-func (s *Session) NewTransactionOptionsBuilder() *TransactionOptionsBuilder {
-	return s.txn.NewTransactionOptionsBuilder()
-}
-
-func (s *Session) TransitTransaction(ctx context.Context, fn func(tc *transactionContext) (*transactionContext, error)) error {
-	return s.txn.TransitTransaction(ctx, fn)
-}
-
-func (s *Session) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	return s.txn.BeginPendingTransaction(ctx, isolationLevel, priority)
-}
-
-func (s *Session) DetermineTransactionLocked(ctx context.Context) (time.Time, error) {
-	return s.txn.DetermineTransactionLocked(ctx)
-}
-
-func (s *Session) DetermineTransaction(ctx context.Context) (time.Time, error) {
-	return s.txn.DetermineTransaction(ctx)
-}
-
-func (s *Session) DetermineTransactionAndState(ctx context.Context) (time.Time, bool, error) {
-	return s.txn.DetermineTransactionAndState(ctx)
-}
-
-func (s *Session) BeginReadWriteTransactionLocked(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	return s.txn.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
-}
-
-func (s *Session) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	return s.txn.BeginReadWriteTransaction(ctx, isolationLevel, priority)
-}
-
-func (s *Session) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
-	return s.txn.CommitReadWriteTransactionLocked(ctx)
-}
-
-func (s *Session) CommitReadWriteTransaction(ctx context.Context) (spanner.CommitResponse, error) {
-	return s.txn.CommitReadWriteTransaction(ctx)
-}
-
-func (s *Session) RollbackReadWriteTransactionLocked(ctx context.Context) error {
-	return s.txn.RollbackReadWriteTransactionLocked(ctx)
-}
-
-func (s *Session) RollbackReadWriteTransaction(ctx context.Context) error {
-	return s.txn.RollbackReadWriteTransaction(ctx)
-}
-
-func (s *Session) BeginReadOnlyTransactionLocked(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
-	return s.txn.BeginReadOnlyTransactionLocked(ctx, typ, staleness, timestamp, priority)
-}
-
-func (s *Session) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
-	return s.txn.BeginReadOnlyTransaction(ctx, typ, staleness, timestamp, priority)
-}
-
-func (s *Session) CloseReadOnlyTransaction() error {
-	return s.txn.CloseReadOnlyTransaction()
-}
-
-func (s *Session) ClosePendingTransaction() error {
-	return s.txn.ClosePendingTransaction()
-}
-
-func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-	return s.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
-}
-
-func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-	return s.txn.RunQuery(ctx, stmt)
-}
-
-func (s *Session) RunAnalyzeQuery(ctx context.Context, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-	return s.txn.RunAnalyzeQuery(ctx, stmt)
-}
-
-func (s *Session) RunInNewOrExistRwTxLocked(ctx context.Context,
-	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
-) (*DMLResult, error) {
-	return s.txn.RunInNewOrExistRwTxLocked(ctx, f)
-}
-
-func (s *Session) RunInNewOrExistRwTx(ctx context.Context,
-	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
-) (*DMLResult, error) {
-	return s.txn.RunInNewOrExistRwTx(ctx, f)
-}
-
-func (s *Session) RunPartitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
-	return s.txn.RunPartitionQuery(ctx, stmt)
-}
-
-func (s *Session) withReadOnlyTransactionOrStart(ctx context.Context, fn func(*spanner.ReadOnlyTransaction) error) error {
-	return s.txn.withReadOnlyTransactionOrStart(ctx, fn)
-}
-
-func (s *Session) withReadWriteTransaction(fn func(*spanner.ReadWriteStmtBasedTransaction) error) error {
-	return s.txn.withReadWriteTransaction(fn)
-}
-
-func (s *Session) withReadWriteTransactionContext(fn func(*spanner.ReadWriteStmtBasedTransaction, *transactionContext) error) error {
-	return s.txn.withReadWriteTransactionContext(fn)
-}
-
-func (s *Session) withReadOnlyTransaction(fn func(*spanner.ReadOnlyTransaction) error) error {
-	return s.txn.withReadOnlyTransaction(fn)
-}
-
-func (s *Session) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
-	return s.txn.runQueryWithStatsOnTransaction(ctx, tx, stmt, implicit)
-}
-
-func (s *Session) runAnalyzeQueryOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement) (*sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-	return s.txn.runAnalyzeQueryOnTransaction(ctx, tx, stmt)
-}
-
-func (s *Session) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	return s.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
-}
-
-func (s *Session) currentPriorityWithLock() sppb.RequestOptions_Priority {
-	return s.txn.currentPriorityWithLock()
-}
-
-// --- End of delegation methods ---
 
 // ddlCacheEntry stores a cached GetDatabaseDdl response.
 type ddlCacheEntry struct {
@@ -869,7 +683,7 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().
-		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.currentPriorityWithLock()})
+		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.txn.currentPriorityWithLock()})
 	defer iter.Stop()
 
 	_, err := iter.Next()
@@ -983,7 +797,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 		if err := s.failStatementIfReadOnly(); err != nil {
 			return result, err
 		}
-		if _, err := s.DetermineTransaction(ctx); err != nil {
+		if _, err := s.txn.DetermineTransaction(ctx); err != nil {
 			return result, err
 		}
 		return stmt.Execute(ctx, s)

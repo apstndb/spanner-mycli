@@ -176,7 +176,7 @@ func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, s
 	}
 
 	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
-	err := session.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
+	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
 		// Get tables to export (this queries INFORMATION_SCHEMA)
 		if !mode.shouldExportData() {
 			return nil
@@ -287,7 +287,7 @@ func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, 
 
 	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
 	var totalAffectedRows int
-	err := session.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
+	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
 		// Get tables to export (this queries INFORMATION_SCHEMA)
 		if !mode.shouldExportData() {
 			return nil
