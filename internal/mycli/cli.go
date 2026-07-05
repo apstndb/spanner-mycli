@@ -522,7 +522,9 @@ func confirm(in io.Reader, out io.Writer, msg string) bool {
 
 	s := bufio.NewScanner(in)
 	for {
-		s.Scan()
+		if !s.Scan() {
+			return false
+		}
 		switch strings.ToLower(s.Text()) {
 		case "yes":
 			return true

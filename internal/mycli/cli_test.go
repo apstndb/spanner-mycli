@@ -1189,6 +1189,11 @@ func Test_confirm(t *testing.T) {
 			input:    "invalid\nno\n",
 			expected: false,
 		},
+		{
+			desc:     "EOF returns false",
+			input:    "",
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {
