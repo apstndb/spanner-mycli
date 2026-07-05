@@ -11,12 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-
       # Auto-merge all Dependabot updates as a rule; CI checks are the merge gate.
       # Squash merge is mandatory (enforced via Repository Ruleset).
       - name: Enable auto-merge for Dependabot PR
