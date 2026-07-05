@@ -357,3 +357,63 @@ func TestTransactionValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSetClient(t *testing.T) {
+	t.Parallel()
+
+	oldClient := &spanner.Client{}
+	newClient := &spanner.Client{}
+
+	tests := []struct {
+		name    string
+		tc      *transactionContext
+		wantErr bool
+	}{
+		{
+			name:    "idle swaps successfully",
+			tc:      nil,
+			wantErr: false,
+		},
+		{
+			name:    "refuses during active read-write transaction",
+			tc:      &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}},
+			wantErr: true,
+		},
+		{
+			name:    "refuses during active read-only transaction",
+			tc:      &transactionContext{attrs: transactionAttributes{mode: transactionModeReadOnly}},
+			wantErr: true,
+		},
+		{
+			name:    "refuses during pending transaction",
+			tc:      &transactionContext{attrs: transactionAttributes{mode: transactionModePending}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tm := &TransactionManager{
+				tc:     tt.tc,
+				client: oldClient,
+			}
+
+			err := tm.SetClient(newClient)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("SetClient() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				// On refusal the client must be left untouched so the caller can
+				// close the new client without orphaning the live transaction.
+				if tm.client != oldClient {
+					t.Errorf("SetClient() replaced client on refusal: got %p, want %p", tm.client, oldClient)
+				}
+			} else {
+				if tm.client != newClient {
+					t.Errorf("SetClient() did not swap client: got %p, want %p", tm.client, newClient)
+				}
+			}
+		})
+	}
+}
