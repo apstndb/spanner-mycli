@@ -384,6 +384,75 @@ func TestDocCache_BatchGet_FallbackToIndividual(t *testing.T) {
 	}
 }
 
+func TestDocCache_BatchGet_FreshEntryCorruptDataRefetchesFromAPI(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t,
+		withDocBatchFetcher(func(_ context.Context, names []string) ([]DocResult, error) {
+			return []DocResult{{Name: "documents/test/doc", Content: "fresh from API"}}, nil
+		}),
+	)
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: now.Add(-time.Minute),
+	}
+
+	results := c.BatchGet(context.Background(), []string{"documents/test/doc"})
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Content != "fresh from API" {
+		t.Errorf("content = %q", results[0].Content)
+	}
+	if _, exists := c.entries["documents/test/doc"]; !exists {
+		t.Fatal("expected refreshed cache entry")
+	}
+}
+
+func TestDocCache_BatchGet_FreshEntryCorruptDataWithoutAPIReturnsMiss(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	c := newTestCache(t,
+		withNowFunc(func() time.Time { return now }),
+	)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: now.Add(-time.Minute),
+	}
+
+	results := c.BatchGet(context.Background(), []string{"documents/test/doc"})
+	if len(results) != 0 {
+		t.Fatalf("got %d results, want 0", len(results))
+	}
+	if _, exists := c.entries["documents/test/doc"]; exists {
+		t.Fatal("expected corrupted cache entry to be deleted")
+	}
+}
+
+func TestDocCache_BatchGet_StaleCorruptEntryDeletedOnFetchFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	c := newTestCache(t,
+		withCacheTTL(1*time.Hour),
+		withNowFunc(func() time.Time { return now }),
+		withDocFetcher(func(_ context.Context, _ string) (string, error) {
+			return "", fmt.Errorf("API down")
+		}),
+	)
+	c.entries["documents/test/doc"] = docCacheEntry{
+		data:      []byte("bad zstd data"),
+		fetchedAt: now.Add(-2 * time.Hour),
+	}
+
+	results := c.BatchGet(context.Background(), []string{"documents/test/doc"})
+	if len(results) != 0 {
+		t.Fatalf("got %d results, want 0", len(results))
+	}
+	if _, exists := c.entries["documents/test/doc"]; exists {
+		t.Fatal("expected corrupted stale cache entry to be deleted")
+	}
+}
+
 func TestDocCache_BatchGet_StaleOnFetchFailure(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
