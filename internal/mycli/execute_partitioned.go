@@ -52,7 +52,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		return result, nil
 	}
 
-	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, sysVars, fc, vfm)
+	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, vfm)
 }
 
 // streamPartitionedQuery streams merged partition rows through the same
@@ -99,27 +99,30 @@ func streamPartitionedQuery(
 	}, true, nil
 }
 
-// bufferPartitionedQuery collects all partition rows into memory for formats
-// that need the full result set (table width calculation) or have no
-// streaming writer.
+// bufferPartitionedQuery collects all partition rows into memory as a typed
+// buffered Result (Result.Typed) for formats that need the full result set
+// (table width calculation) or have no streaming writer. Rows are captured raw
+// via the identity transform; printTableData derives display cells (or replays
+// export formats through the single spanvalue emitters) lazily, exactly like
+// the buffered server query path (issue #738).
+//
+// Only table and processor-based formats reach this path: writer formats
+// (CSV/JSONL/SQL_INSERT*) stream via streamPartitionedQuery. vfm still feeds
+// TypedRows.SQLExportAllowed so the field mirrors the streaming path, though
+// SQL-literal modes never buffer here in practice.
 func bufferPartitionedQuery(
 	ctx context.Context,
 	batchROTx *spanner.BatchReadOnlyTransaction,
 	partitions []*spanner.Partition,
 	parallelism int,
-	sysVars *systemVariables,
-	fc *spanvalue.FormatConfig,
 	vfm format.ValueFormatMode,
 ) (*Result, error) {
-	transform := spannerRowToRow(fc, sysVars.typeStyles, sysVars.nullStyle)
-	if vfm == format.JSONValues {
-		transform = withRawJSONMarker(transform)
-	}
-
 	type partitionQueryResult struct {
 		Metadata *sppb.ResultSetMetadata
-		Rows     []Row
+		Rows     []*spanner.Row
 	}
+
+	identity := func(r *spanner.Row) (*spanner.Row, error) { return r, nil }
 
 	p := pool.NewWithResults[*partitionQueryResult]().
 		WithContext(ctx).
@@ -128,7 +131,7 @@ func bufferPartitionedQuery(
 	for _, partition := range partitions {
 		p.Go(func(ctx context.Context) (*partitionQueryResult, error) {
 			iter := batchROTx.Execute(ctx, partition)
-			rows, _, _, md, _, err := consumeRowIterCollect(iter, transform)
+			rows, _, _, md, _, err := consumeRowIterCollect(iter, identity)
 			if err != nil {
 				return nil, err
 			}
@@ -141,19 +144,23 @@ func bufferPartitionedQuery(
 		return nil, err
 	}
 
-	var allRows []Row
-	var rowType *sppb.StructType
+	var allRows []*spanner.Row
+	var metadata *sppb.ResultSetMetadata
 	for _, result := range results {
 		allRows = append(allRows, result.Rows...)
 
 		if len(result.Metadata.GetRowType().GetFields()) > 0 {
-			rowType = result.Metadata.GetRowType()
+			metadata = result.Metadata
 		}
 	}
 
 	return &Result{
-		Rows:           allRows,
-		TableHeader:    toTableHeader(rowType.GetFields()),
+		Typed: &TypedRows{
+			Metadata:         metadata,
+			Rows:             allRows,
+			SQLExportAllowed: vfm == format.SQLLiteralValues,
+		},
+		TableHeader:    toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:   len(allRows),
 		PartitionCount: len(partitions),
 	}, nil
