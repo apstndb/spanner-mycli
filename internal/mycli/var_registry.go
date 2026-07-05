@@ -51,6 +51,17 @@ func (r *VarRegistry) registerAll() {
 	}
 }
 
+// lookupDef returns the declarative metadata for name (case-insensitive), or
+// nil if the variable is unknown. Used by callers that need to consult policy
+// (e.g. SET LOCAL eligibility) before touching the handler.
+func (r *VarRegistry) lookupDef(name string) *varDef {
+	rv, ok := r.vars[strings.ToUpper(name)]
+	if !ok {
+		return nil
+	}
+	return rv.def
+}
+
 // GetVariable retrieves the Variable handler by name, or nil if not found.
 func (r *VarRegistry) GetVariable(name string) Variable {
 	rv, ok := r.vars[strings.ToUpper(name)]
@@ -82,10 +93,17 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 		return &ErrUnknownVariable{Name: name}
 	}
 
-	// Read-only enforcement lives here, driven by the def's scope/readOnly
-	// metadata, rather than inside each handler's Set.
-	if !rv.def.settable() {
+	// Policy enforcement lives here, driven by the def's metadata, rather than
+	// inside each handler's Set. r.sv.inTransaction is nil until a session is
+	// created, so it doubles as the "session exists" signal for initOnly.
+	def := rv.def
+	switch {
+	case !def.settable():
 		return errSetterReadOnly
+	case def.initOnly && r.sv.inTransaction != nil:
+		return &errSetterInitOnly{Name: def.name}
+	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
+		return errSetterInTransaction
 	}
 
 	// Parse GoogleSQL value if needed
