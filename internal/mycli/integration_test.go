@@ -286,8 +286,53 @@ func n(text string) format.NoWrapCell {
 	return format.NoWrapCell{Cell: format.StyledCell{Text: text, Style: "\033[2m"}}
 }
 
+// defaultCompareSysVars derives display cells the way a default-configured
+// session does. Integration expectations are written as display Rows, so a
+// typed buffered result (Result.Typed, issue #738 PR1) is normalized to its
+// display Rows through this before comparison. The test sessions use default
+// display formatting, so this reproduces exactly what the pre-PR1 buffered
+// query path stored in Result.Rows.
+var defaultCompareSysVars = func() *systemVariables {
+	sv := newSystemVariablesWithDefaults()
+	return &sv
+}()
+
+// normalizeResultForCompare materializes any typed buffered payload into display
+// Rows so expectations written before the Result.Typed split keep working. It is
+// a no-op for non-Result values (compareResult is also used with bools/slices).
+func normalizeResultForCompare[T any](t *testing.T, v T) T {
+	t.Helper()
+	normalize := func(r *Result) *Result {
+		if r == nil || r.Typed == nil {
+			return r
+		}
+		rows, err := deriveDisplayRows(defaultCompareSysVars, r.Typed)
+		if err != nil {
+			t.Fatalf("normalizeResultForCompare: deriveDisplayRows: %v", err)
+		}
+		cp := *r
+		cp.Rows = rows
+		cp.Typed = nil
+		return &cp
+	}
+	switch r := any(v).(type) {
+	case *Result:
+		return any(normalize(r)).(T)
+	case []*Result:
+		out := make([]*Result, len(r))
+		for i, e := range r {
+			out[i] = normalize(e)
+		}
+		return any(out).(T)
+	default:
+		return v
+	}
+}
+
 func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...cmp.Option) {
 	t.Helper()
+	got = normalizeResultForCompare(t, got)
+	expected = normalizeResultForCompare(t, expected)
 	opts := sliceOf[cmp.Option](
 		cmpopts.IgnoreFields(Result{}, "Stats"),
 		cmpopts.IgnoreFields(Result{}, "ReadTimestamp"),

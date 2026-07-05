@@ -380,11 +380,11 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 
 	slog.Debug("Using buffered mode", "startTime", time.Now().Format(time.RFC3339Nano))
 
-	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
-	if qe.ValueFmtMode == format.JSONValues {
-		rowTransform = withRawJSONMarker(rowTransform)
-	}
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(qe.Iter, rowTransform, qe.Metrics)
+	// Capture the raw typed rows (identity transform); display formatting is
+	// deferred to printTableData so every CLI_FORMAT re-renders from values
+	// (issue #738). Format is therefore no longer decided at collection time.
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(
+		qe.Iter, func(r *spanner.Row) (*spanner.Row, error) { return r, nil }, qe.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -394,10 +394,13 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 		"rowCount", len(rows))
 
 	result := &Result{
-		Rows:                  rows,
-		TableHeader:           toTableHeader(metadata.GetRowType().GetFields()),
-		AffectedRows:          len(rows),
-		HasSQLFormattedValues: qe.ValueFmtMode == format.SQLLiteralValues,
+		Typed: &TypedRows{
+			Metadata:         metadata,
+			Rows:             rows,
+			SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
+		},
+		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
+		AffectedRows: len(rows),
 	}
 
 	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
