@@ -477,12 +477,12 @@ func applyOptionMappings(sysVars *systemVariables, mappings []optionMapping) err
 }
 
 func applyOutputTemplate(sysVars *systemVariables, opts *spannerOptions) error {
-	if opts.OutputTemplate == "" {
-		setDefaultOutputTemplate(sysVars)
-	} else {
-		if err := setOutputTemplateFile(sysVars, opts.OutputTemplate); err != nil {
-			return fmt.Errorf("parse error of output template: %w", err)
-		}
+	// Route startup through the single registry-side loader so that startup and
+	// SET CLI_OUTPUT_TEMPLATE_FILE share identical semantics (an empty value
+	// restores the built-in default template). This is the sole output-template
+	// loader; setDefaultOutputTemplate/setOutputTemplateFile were removed.
+	if err := sysVars.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", opts.OutputTemplate); err != nil {
+		return fmt.Errorf("parse error of output template: %w", err)
 	}
 	return nil
 }

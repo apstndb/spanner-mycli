@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -466,27 +465,6 @@ func parseTimeString(s string) (time.Time, error) {
 }
 
 var defaultOutputFormat = template.Must(template.New("").Funcs(sproutFuncMap()).Parse(outputTemplateStr))
-
-func setDefaultOutputTemplate(sysVars *systemVariables) {
-	sysVars.Display.OutputTemplateFile = ""
-	sysVars.Display.OutputTemplate = defaultOutputFormat
-}
-
-func setOutputTemplateFile(sysVars *systemVariables, filename string) error {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-
-	tmpl, err := template.New("").Funcs(sproutFuncMap()).Parse(string(b))
-	if err != nil {
-		return err
-	}
-
-	sysVars.Display.OutputTemplateFile = filename
-	sysVars.Display.OutputTemplate = tmpl
-	return nil
-}
 
 func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
 	result := slices.Clone(left.GetFile())
