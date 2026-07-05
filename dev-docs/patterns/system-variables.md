@@ -32,8 +32,10 @@ struct must never be copied. USE/DETACH mutate it in place
    - User-settable -> the matching `*Vars` group + writable registration.
    - Produced by statement execution -> `LastResult` field + read-only
      registration (or a getter-only handler).
-3. **Register** in `registerAll` in `internal/mycli/var_registry.go`
-   (NOT system_variables_registry.go, which holds the set/get plumbing).
+3. **Add a `varDef` entry** to the `varDefs` table in
+   `internal/mycli/var_defs.go`. `registerAll`
+   (`internal/mycli/var_registry.go`) iterates the table to build the
+   registry; `system_variables_registry.go` holds the set/get plumbing.
 4. **Document**: the reference table in docs/system_variables.md is generated
    from the registry (via the hidden `--sysvars-help` flag); run
    `make docs-update` after registering, so the description doubles as user
@@ -42,32 +44,55 @@ struct must never be copied. USE/DETACH mutate it in place
    variable needs more than one line of explanation.
 5. **Test**: see Testing below.
 
-## Registration API (var_handler.go, var_enum_handlers.go, var_custom_handlers.go)
+## Registration API (var_defs.go + var_handler.go, var_enum_handlers.go, var_custom_handlers.go)
 
-Descriptions are constructor arguments; there is no `WithDescription`.
+Every variable is one `varDef` entry in the `varDefs` table (var_defs.go).
+Metadata (name, `desc`, `scope`/`readOnly`) lives in the def; the `bind`
+closure constructs the live handler bound to the process-wide
+`systemVariables`. Handlers implement only `Get`/`Set` — read-only enforcement
+is driven by the def's scope in `VarRegistry.Set`, not by the handler. `scope`
+values: `scopeSession` (SET-able), `scopeStartup` (StartupConfig-backed,
+read-only), `scopeConnection` (connection identity, read-only), `scopeResult`
+(LastResult output, read-only).
 
 ```go
-// In registerAll (internal/mycli/var_registry.go):
+// In the varDefs table (internal/mycli/var_defs.go):
 
 // Writable bool/string/int
-r.Register("CLI_VERBOSE", BoolVar(&sv.Display.Verbose, "Display verbose output."))
+{
+	name: "CLI_VERBOSE", desc: "Display verbose output.", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable { return BoolVar(&sv.Display.Verbose) },
+},
 
-// Read-only (StartupConfig-backed): same constructors + AsReadOnly()
-r.Register("CLI_INSECURE", BoolVar(&sv.Config.Insecure,
-	"Skip TLS certificate verification (insecure).").AsReadOnly())
-
-// Nullable types display and accept the literal NULL
-r.Register("MAX_COMMIT_DELAY", NullableDurationVar(&sv.Transaction.MaxCommitDelay, "..."))
+// Read-only (StartupConfig-backed): a non-session scope makes it non-settable
+{
+	name: "CLI_INSECURE", desc: "Skip TLS certificate verification (insecure).",
+	scope: scopeStartup,
+	bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.Insecure) },
+},
 
 // Computed read-only value: getter is func() string (it cannot fail)
-r.Register("CLI_VERSION", NewReadOnlyVar(getVersion, "The version of spanner-mycli."))
+{
+	name: "CLI_VERSION", desc: "The version of spanner-mycli.", scope: scopeStartup,
+	bind: func(sv *systemVariables) Variable { return NewReadOnlyVar(getVersion) },
+},
 
 // Enums: enumer-generated types in enums/ with a small typed constructor
-r.Register("CLI_FORMAT", DisplayModeVar(&sv.Display.CLIFormat, "..."))
+{
+	name: "CLI_FORMAT", desc: "...", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable { return DisplayModeVar(&sv.Display.CLIFormat) },
+},
 
 // Validation hook (duration bounds via WithValidator)
-r.Register("STATEMENT_TIMEOUT", NullableDurationVar(&sv.Query.StatementTimeout, "...").
-	WithValidator(durationValidator(durationPtr(0), nil)))
+{
+	name: "STATEMENT_TIMEOUT", desc: "...", scope: scopeSession,
+	bind: func(sv *systemVariables) Variable {
+		return NullableDurationVar(&sv.Query.StatementTimeout).
+			WithValidator(durationValidator(durationPtr(0), nil))
+	},
+},
+
+// ADD support: set bindAdd to construct the ADD handler (see CLI_PROTO_DESCRIPTOR_FILE)
 ```
 
 ### Session-init-only variables
@@ -76,7 +101,7 @@ Variables that control client initialization can be set via `--set` before the
 session exists but must reject later writes. The actual pattern is a
 `CustomVar` whose setter checks `sv.inTransaction` as a session-existence
 proxy (it is nil until the first session is created); see the
-`CLI_ENABLE_ADC_PLUS` registration in `registerAll` for the canonical example.
+`CLI_ENABLE_ADC_PLUS` entry in the `varDefs` table for the canonical example.
 
 ### Raw + parsed variables
 
