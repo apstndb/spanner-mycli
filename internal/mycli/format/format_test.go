@@ -17,6 +17,10 @@ func formatTab(out io.Writer, rows []Row, columnNames []string, config FormatCon
 	return ExecuteWithFormatter(NewTabFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
 
+func formatTSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
+	return ExecuteWithFormatter(NewTSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
+}
+
 func formatCSV(out io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int) error {
 	return ExecuteWithFormatter(NewCSVFormatter(out, config.SkipColumnNames), rows, columnNames, config)
 }
@@ -45,6 +49,7 @@ func TestNewStreamingFormatter(t *testing.T) {
 	}{
 		{name: "csv", mode: ModeCSV, out: io.Discard},
 		{name: "tab", mode: ModeTab, out: io.Discard},
+		{name: "tsv", mode: ModeTSV, out: io.Discard},
 		{name: "vertical", mode: ModeVertical, out: io.Discard},
 		{name: "html", mode: ModeHTML, out: io.Discard},
 		{name: "xml", mode: ModeXML, out: io.Discard},
@@ -99,7 +104,7 @@ func TestValueFormatModeFor(t *testing.T) {
 	// No t.Parallel(): mutates global registry
 
 	// Built-in modes should return DisplayValues
-	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeVertical, ModeHTML, ModeXML} {
+	for _, mode := range []Mode{ModeTable, ModeCSV, ModeTab, ModeTSV, ModeVertical, ModeHTML, ModeXML} {
 		if got := ValueFormatModeFor(mode); got != DisplayValues {
 			t.Errorf("ValueFormatModeFor(%s) = %d, want DisplayValues", mode, got)
 		}
@@ -233,6 +238,15 @@ func TestFormatTab(t *testing.T) {
 			rows:    nil,
 			want:    "id\n",
 		},
+		{
+			// TAB is intentionally raw (backward compatible): special characters
+			// pass through unescaped even though they break the row/column structure.
+			// TSV provides the escaped variant.
+			name:    "special characters pass through raw",
+			columns: []string{"a", "b"},
+			rows:    []Row{StringsToRow("tab\there", "line\nbreak"), StringsToRow("back\\slash", "cr\rhere")},
+			want:    "a\tb\ntab\there\tline\nbreak\nback\\slash\tcr\rhere\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +255,100 @@ func TestFormatTab(t *testing.T) {
 			var buf bytes.Buffer
 			config := FormatConfig{SkipColumnNames: tt.skipHeaders}
 			err := formatTab(&buf, tt.rows, tt.columns, config, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
+				t.Errorf("output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFormatTSV(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		columns     []string
+		rows        []Row
+		skipHeaders bool
+		want        string
+	}{
+		{
+			name:    "basic",
+			columns: []string{"id", "name"},
+			rows:    []Row{StringsToRow("1", "Alice"), StringsToRow("2", "Bob")},
+			want:    "id\tname\n1\tAlice\n2\tBob\n",
+		},
+		{
+			name:        "skip headers",
+			columns:     []string{"id", "name"},
+			rows:        []Row{StringsToRow("1", "Alice")},
+			skipHeaders: true,
+			want:        "1\tAlice\n",
+		},
+		{
+			name:    "empty rows",
+			columns: []string{"id"},
+			rows:    nil,
+			want:    "id\n",
+		},
+		{
+			name:    "tab in value",
+			columns: []string{"a", "b"},
+			rows:    []Row{StringsToRow("tab\there", "plain")},
+			want:    "a\tb\ntab\\there\tplain\n",
+		},
+		{
+			name:    "newline in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow("line\nbreak")},
+			want:    "a\nline\\nbreak\n",
+		},
+		{
+			name:    "carriage return in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow("cr\rhere"), StringsToRow("crlf\r\nhere")},
+			want:    "a\ncr\\rhere\ncrlf\\r\\nhere\n",
+		},
+		{
+			name:    "backslash in value",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow(`back\slash`), StringsToRow(`literal\t`)},
+			want:    "a\nback\\\\slash\nliteral\\\\t\n",
+		},
+		{
+			// Quotes are not special in TSV; they pass through verbatim.
+			name:    "quotes are not escaped",
+			columns: []string{"a"},
+			rows:    []Row{StringsToRow(`say "hi" and 'bye'`)},
+			want:    "a\nsay \"hi\" and 'bye'\n",
+		},
+		{
+			// Empty strings produce empty fields; NULL is whatever text the value
+			// formatter produced (the same "NULL" literal as TAB/TABLE), so an
+			// empty string and NULL remain distinguishable only if the NULL
+			// literal is non-empty (the display default).
+			name:    "empty string and NULL literal",
+			columns: []string{"a", "b", "c"},
+			rows:    []Row{StringsToRow("", "NULL", "x")},
+			want:    "a\tb\tc\n\tNULL\tx\n",
+		},
+		{
+			name:    "header names are escaped",
+			columns: []string{"col\twith\ttabs", "col\nwith\nnewlines"},
+			rows:    []Row{StringsToRow("1", "2")},
+			want:    "col\\twith\\ttabs\tcol\\nwith\\nnewlines\n1\t2\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			config := FormatConfig{SkipColumnNames: tt.skipHeaders}
+			err := formatTSV(&buf, tt.rows, tt.columns, config, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -577,6 +685,19 @@ func TestTabFormatterLifecycle(t *testing.T) {
 	})
 }
 
+func TestTSVFormatterLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write before init", func(t *testing.T) {
+		t.Parallel()
+		f := NewTSVFormatter(io.Discard, false)
+		err := f.WriteRow(StringsToRow("1"))
+		if err == nil {
+			t.Error("expected error writing before init")
+		}
+	})
+}
+
 func TestVerticalFormatterLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -855,6 +976,7 @@ func TestStyledCellInNonTableFormats(t *testing.T) {
 	}{
 		{"csv", formatCSV},
 		{"tab", formatTab},
+		{"tsv", formatTSV},
 		{"vertical", formatVertical},
 		{"html", formatHTML},
 		{"xml", formatXML},
@@ -1084,6 +1206,7 @@ func TestNullStyledInNonTableFormats(t *testing.T) {
 		wantNoESC bool
 	}{
 		{"tab", formatTab, true},
+		{"tsv", formatTSV, true},
 		{"vertical", formatVertical, true},
 		{"html", formatHTML, true},
 		{"xml", formatXML, true},

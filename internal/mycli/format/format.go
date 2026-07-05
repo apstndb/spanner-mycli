@@ -117,6 +117,8 @@ func NewStreamingFormatter(mode Mode, out io.Writer, config FormatConfig) (Strea
 		return NewCSVFormatter(out, config.SkipColumnNames), nil
 	case ModeTab:
 		return NewTabFormatter(out, config.SkipColumnNames), nil
+	case ModeTSV:
+		return NewTSVFormatter(out, config.SkipColumnNames), nil
 	case ModeVertical:
 		return NewVerticalFormatter(out), nil
 	case ModeHTML:
