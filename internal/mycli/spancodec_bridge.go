@@ -13,6 +13,8 @@
 package mycli
 
 import (
+	"io"
+
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
@@ -63,9 +65,17 @@ func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig,
 // executeStructRows renders a client-side (virtual) result set from rows of
 // struct type T: streamed through the same spanvalue writers as server query
 // results when the current format has one, or as a buffered Result otherwise.
-// sysVars may be nil (e.g., HELP VARIABLES without a session); defaults apply.
-func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, error) {
-	result, handled, err := streamStructRows(enc, items, sysVars)
+// session may be nil (e.g., HELP without a connection); defaults apply and
+// the result is buffered.
+func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, session *Session) (*Result, error) {
+	var sysVars *systemVariables
+	var out io.Writer
+	if session != nil {
+		sysVars = session.systemVariables
+		out = session.outputWriter()
+	}
+
+	result, handled, err := streamStructRows(enc, items, sysVars, out)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +91,8 @@ func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *
 // SQL export modes deliberately keep the buffered table-format fallback
 // (client-side results have no source table), and the remaining formats keep
 // the buffered cell pipeline. Returns handled=false to request that fallback.
-func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables) (*Result, bool, error) {
-	if sysVars == nil || sysVars.StreamManager == nil {
+func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *systemVariables, out io.Writer) (*Result, bool, error) {
+	if sysVars == nil || out == nil {
 		return nil, false, nil
 	}
 	switch sysVars.Display.CLIFormat {
@@ -95,7 +105,7 @@ func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *s
 	if err != nil {
 		return nil, false, err
 	}
-	w, handled, err := newSpanvalueRowIteratorWriterFor(sysVars, fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sysVars, fc)
 	if err != nil || !handled {
 		return nil, handled, err
 	}

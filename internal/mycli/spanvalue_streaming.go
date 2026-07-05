@@ -17,6 +17,7 @@ package mycli
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -103,14 +104,14 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	return newSpanvalueRowIteratorWriterFor(qe.SysVars, qe.FormatConfig)
+	return newSpanvalueRowIteratorWriterFor(qe.Session.outputWriter(), qe.SysVars, qe.FormatConfig)
 }
 
 // newSpanvalueRowIteratorWriterFor builds the spanvalue RowIteratorWriter for
-// the current CLI_FORMAT, shared by the query streaming path and the
-// client-side virtual result set path (streamStructRows).
-func newSpanvalueRowIteratorWriterFor(sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
-	out := sysVars.StreamManager.GetWriter()
+// the current CLI_FORMAT writing to out, shared by the query streaming path
+// and the client-side virtual result set path (streamStructRows). A nil out
+// requests the buffered fallback.
+func newSpanvalueRowIteratorWriterFor(out io.Writer, sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
 	if out == nil {
 		return nil, false, nil
 	}

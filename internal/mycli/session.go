@@ -125,6 +125,12 @@ type Session struct {
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
+
+	// output is the per-statement output destination for streamed results,
+	// set for the duration of one statement execution via withOutput /
+	// ExecuteStatementWithOutput. See outputContext in output_context.go.
+	// Zero value means "fall back to the StreamManager writer".
+	output outputContext
 }
 
 // SchemaGeneration returns the current schema generation counter.

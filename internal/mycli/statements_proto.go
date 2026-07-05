@@ -87,7 +87,7 @@ type ShowLocalProtoStatement struct{}
 func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	fds := session.systemVariables.Internal.ProtoDescriptor
 
-	result, err := executeStructRows(localProtoRowEncoder, slices.Collect(fdsToInfoSeq(fds)), session.systemVariables)
+	result, err := executeStructRows(localProtoRowEncoder, slices.Collect(fdsToInfoSeq(fds)), session)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	result, err := executeStructRows(remoteProtoRowEncoder, slices.Collect(fdsToInfoSeq(&fds)), session.systemVariables)
+	result, err := executeStructRows(remoteProtoRowEncoder, slices.Collect(fdsToInfoSeq(&fds)), session)
 	if err != nil {
 		return nil, err
 	}
