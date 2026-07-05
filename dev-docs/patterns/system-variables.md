@@ -34,9 +34,12 @@ struct must never be copied. USE/DETACH mutate it in place
      registration (or a getter-only handler).
 3. **Register** in `registerAll` in `internal/mycli/var_registry.go`
    (NOT system_variables_registry.go, which holds the set/get plumbing).
-4. **Document**: the README system-variables table is hand-maintained; add a
-   row there. Add a section to docs/system_variables.md if the variable needs
-   more than one line of explanation.
+4. **Document**: the reference table in docs/system_variables.md is generated
+   from the registry (via the hidden `--sysvars-help` flag); run
+   `make docs-update` after registering, so the description doubles as user
+   documentation. The README system-variables table is hand-maintained; add a
+   row there. Add a detailed section to docs/system_variables.md if the
+   variable needs more than one line of explanation.
 5. **Test**: see Testing below.
 
 ## Registration API (var_handler.go, var_enum_handlers.go, var_custom_handlers.go)

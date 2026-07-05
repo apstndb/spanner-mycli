@@ -152,6 +152,7 @@ type spannerOptions struct {
 	Help                      showHelpFlag              `name:"help" short:"h" help:"Show this help message and exit."`
 	Version                   showVersionFlag           `name:"version" help:"Show version string."`
 	StatementHelp             bool                      `name:"statement-help" hidden:"" help:"Show statement help."`
+	SysVarsHelp               bool                      `name:"sysvars-help" hidden:"" help:"Show system variables help in markdown format."`
 	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
