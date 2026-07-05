@@ -342,6 +342,24 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.VertexAILocation) },
 	},
 	{
+		name:  "CLI_BIGQUERY_PROJECT",
+		desc:  "GCP project for BigQuery queries. Defaults to CLI_PROJECT when empty.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.BigQueryProject) },
+	},
+	{
+		name:  "CLI_BIGQUERY_LOCATION",
+		desc:  "BigQuery location for queries (e.g. US, EU).",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.BigQueryLocation) },
+	},
+	{
+		name:  "CLI_BIGQUERY_MAX_BYTES_BILLED",
+		desc:  "Maximum bytes billed per BigQuery query.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return NullableIntVar(&sv.Feature.BigQueryMaxBytesBilled) },
+	},
+	{
 		name:  "CLI_ROLE",
 		desc:  "Cloud Spanner database role.",
 		scope: scopeConnection,
