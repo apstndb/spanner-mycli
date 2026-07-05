@@ -14,9 +14,12 @@ The suite has two tiers, selected with the standard `-short` flag:
 Conventions:
 
 - Gate emulator-dependent tests with `testing.Short()` (usually via the
-  `runStatementTests` helper). Do NOT introduce new build tags for this:
-  tag-gated files (`//go:build integration`, `skip_slow_test`) are not built
-  by default and silently rot because nothing compiles them in CI.
+  `runStatementTests` helper). Do NOT introduce new build tags for this.
+  Legacy tags remain in a few files: `//go:build integration` excludes
+  those files from default `go test` (CI compile-checks them with
+  `go vet -tags integration,skip_slow_test`). Files marked
+  `//go:build !skip_slow_test` are built by default and excluded only when
+  the `skip_slow_test` tag is defined (as in that CI vet step).
 - For statement-level integration tests, prefer the `statementTestCase` /
   `runStatementTests` table in integration_test.go with the `sr` / `srEmpty` /
   `srKeep` / `srDML` result helpers. `compareResult` already ignores
