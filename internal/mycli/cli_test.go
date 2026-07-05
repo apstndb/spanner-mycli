@@ -415,6 +415,30 @@ bar: 4
 		}
 	})
 
+	t.Run("DisplayModeTSV", func(t *testing.T) {
+		out := &bytes.Buffer{}
+		result := &Result{
+			TableHeader: toTableHeader("foo", "bar"),
+			Rows: sliceOf(
+				toRow("tab\there", "line\nbreak"),
+				toRow("back\\slash", "NULL"),
+			),
+		}
+		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTSV}}, math.MaxInt, out, result, false, "")
+		if err != nil {
+			t.Errorf("printResult() unexpected error: %v", err)
+		}
+
+		expected := "foo\tbar\n" +
+			"tab\\there\tline\\nbreak\n" +
+			"back\\\\slash\tNULL\n"
+
+		got := out.String()
+		if got != expected {
+			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
+		}
+	})
+
 	t.Run("SkipColumnNames with DisplayModeTable", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{

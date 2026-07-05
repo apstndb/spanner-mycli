@@ -76,6 +76,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyze(ctx, session, s.Query, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular execution;
+		// effectiveQueryMode() resolves the request-level mode and
+		// finalizeQueryResult() adjusts stats/plan rendering.
 		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
 			return runPartitionedQuery(ctx, session, s.Query)
 		}
@@ -102,6 +105,8 @@ func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, 
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
 		return executeExplainAnalyzeDML(ctx, session, s.Dml, enums.ExplainFormatUnspecified, 0, nil)
 	default:
+		// NORMAL, WITH_STATS, and WITH_PLAN_AND_STATS use regular DML
+		// execution; effectiveQueryMode() resolves the request-level mode.
 		return bufferOrExecuteDML(ctx, session, s.Dml)
 	}
 }

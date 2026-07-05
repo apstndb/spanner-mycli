@@ -6,8 +6,18 @@ formatters:
     - gofumpt  # gofumpt is a superset of gofmt with -s always enabled
 
 linters:
+  # The "standard" default group (errcheck, govet, ineffassign, staticcheck,
+  # unused) is already active in golangci-lint v2. The five linters below are
+  # listed explicitly so they stay enabled (and the codebase stays clean of
+  # their findings) even if `default` is ever changed. All five report zero
+  # violations as of enabling.
   enable:
     - copyloopvar  # Detects unnecessary loop variable copies (Go 1.22+)
+    - errcheck     # Unchecked errors (see exclude-functions below)
+    - govet        # Suspicious constructs (roughly `go vet`)
+    - ineffassign  # Assignments whose values are never used
+    - staticcheck  # staticcheck rule set
+    - unused       # Unused constants, variables, functions, and types
   settings:
     copyloopvar:
       check-alias: true  # Also check aliased loop variables

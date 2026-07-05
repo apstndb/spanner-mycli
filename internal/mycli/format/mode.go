@@ -15,6 +15,7 @@ const (
 	ModeTableDetailComment Mode = "TABLE_DETAIL_COMMENT"
 	ModeVertical           Mode = "VERTICAL"
 	ModeTab                Mode = "TAB"
+	ModeTSV                Mode = "TSV"
 	ModeHTML               Mode = "HTML"
 	ModeXML                Mode = "XML"
 	ModeCSV                Mode = "CSV"

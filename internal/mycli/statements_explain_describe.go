@@ -322,7 +322,9 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		return nil, err
 	}
 
-	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false)
+	// EXPLAIN ANALYZE requires the query plan, so PROFILE is forced here
+	// regardless of CLI_QUERY_MODE.
+	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
 		return nil, err
 	}

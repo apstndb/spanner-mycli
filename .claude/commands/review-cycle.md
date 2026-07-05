@@ -1,21 +1,16 @@
 ---
 name: Review Cycle
-description: Wait for Gemini review and check feedback
+description: Wait for CI checks and address any review feedback
 ---
 
 # Review Cycle Management
 
 Please execute the following steps:
 
-1. Wait for Gemini code review:
-!go tool gh-helper reviews wait
+1. Wait for CI checks to complete — they are the merge gate:
+!go tool gh-helper reviews wait --exclude-reviews
 
-**IMPORTANT**: `/gemini summary` and `/gemini review` are DIFFERENT commands.
-- `/gemini summary` generates a "Summary of Changes" — this is posted **automatically** on PR creation. Never request it manually.
-- `/gemini review` triggers an **inline code review** — this is also automatic but may take several minutes for large PRs.
-- If the wait times out without a review, **wait longer or request `/gemini review`** (NOT `/gemini summary`).
-
-**Gemini sunset (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17**. On or after that date (or whenever reviews stop arriving), skip the retry advice above: do not re-request `/gemini review` or extend the wait. Verify CI checks pass and continue; checks are the merge gate until the replacement flow in #693 is decided.
+**Gemini review is best-effort (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17** and is unavailable after. Until then a review may still arrive automatically; if one has, address its feedback in the steps below. Never wait for a review, extend the timeout for one, or request one (no `/gemini review`, no `/gemini summary`, no `--request-review`).
 
 2. Check for unresolved threads:
 !go tool gh-helper reviews fetch --unresolved-only
@@ -52,7 +47,7 @@ go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
 
 5. After addressing all threads with code changes, commit and push the fixes.
 
-6. With the new commit hash, reply to and resolve all code-fix threads, then request a new review to re-validate:
-!go tool gh-helper reviews wait --request-review
+6. With the new commit hash, reply to and resolve all code-fix threads, then wait for CI checks on the new commits:
+!go tool gh-helper reviews wait --exclude-reviews
 
-7. Repeat from step 2 until there are no unresolved threads.
+7. Repeat from step 2 until there are no unresolved threads and checks are green.

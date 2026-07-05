@@ -602,8 +602,8 @@ func (s *Session) ClosePendingTransaction() error {
 	return s.txn.ClosePendingTransaction()
 }
 
-func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-	return s.txn.RunQueryWithStats(ctx, stmt, implicit)
+func (s *Session) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+	return s.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
 }
 
 func (s *Session) RunQuery(ctx context.Context, stmt spanner.Statement) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {

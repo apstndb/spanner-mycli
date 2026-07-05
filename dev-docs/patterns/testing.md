@@ -29,9 +29,13 @@ Conventions:
 
 ## Test Style
 
-- Standard `testing` package plus `github.com/google/go-cmp` for comparisons;
-  this repository does not use testify. Report diffs as
+- Standard `testing` package plus `github.com/google/go-cmp` for comparisons
+  is the primary style. Report diffs as
   `t.Errorf("mismatch (-want +got):\n%s", diff)`.
+- A handful of test files use `github.com/stretchr/testify`
+  (`assert`/`require`), so it is a direct dependency in go.mod. Prefer
+  std `testing` + go-cmp for new tests; within a file that already uses
+  testify, matching its existing style is fine.
 - Table-driven tests with `t.Run()` subtests and descriptive case names.
 - Naming: `Test<Function>`, `Test<Type>_<Method>`, or `Test<Type>_<Scenario>`.
 - Mark helpers with `t.Helper()` so failures point at the caller.

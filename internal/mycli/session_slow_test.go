@@ -133,7 +133,7 @@ func TestRequestPriority(t *testing.T) {
 			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read only transaction: %v", err)
 			}
-			iter, _, err = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false)
+			iter, _, err = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false, sppb.ExecuteSqlRequest_PROFILE)
 			if err != nil {
 				t.Fatalf("failed to run query with stats: %v", err)
 			}

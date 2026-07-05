@@ -42,12 +42,14 @@ func TestCLIFormatSystemVariable(t *testing.T) {
 		{"set TABLE", "TABLE", enums.DisplayModeTable, false},
 		{"set VERTICAL", "VERTICAL", enums.DisplayModeVertical, false},
 		{"set TAB", "TAB", enums.DisplayModeTab, false},
+		{"set TSV", "TSV", enums.DisplayModeTSV, false},
 		{"set HTML", "HTML", enums.DisplayModeHTML, false},
 		{"set XML", "XML", enums.DisplayModeXML, false},
 		{"set CSV", "CSV", enums.DisplayModeCSV, false},
 		{"set html lowercase", "html", enums.DisplayModeHTML, false},
 		{"set xml lowercase", "xml", enums.DisplayModeXML, false},
 		{"set csv lowercase", "csv", enums.DisplayModeCSV, false},
+		{"set tsv lowercase", "tsv", enums.DisplayModeTSV, false},
 		{"set invalid", "INVALID", enums.DisplayModeTable, true},
 	}
 
@@ -80,6 +82,7 @@ func TestCLIFormatSystemVariableGetter(t *testing.T) {
 		{enums.DisplayModeTableDetailComment, "TABLE_DETAIL_COMMENT"},
 		{enums.DisplayModeVertical, "VERTICAL"},
 		{enums.DisplayModeTab, "TAB"},
+		{enums.DisplayModeTSV, "TSV"},
 		{enums.DisplayModeHTML, "HTML"},
 		{enums.DisplayModeXML, "XML"},
 		{enums.DisplayModeCSV, "CSV"},
