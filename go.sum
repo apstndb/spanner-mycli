@@ -2991,10 +2991,10 @@ github.com/modelcontextprotocol/go-sdk v1.4.1/go.mod h1:Bo/mS87hPQqHSRkMv4dQq1XC
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/nyaosorg/go-readline-ny v1.14.3 h1:HcmGfGgq6M7n7U6Cncd6KwghP84NCLeHzewJ4Hl0M6E=
-github.com/nyaosorg/go-readline-ny v1.14.3/go.mod h1:/BDf3/H/AScnvey4LoDws1bjTZDB76EE7uKnW2apoKU=
-github.com/nyaosorg/go-ttyadapter v0.3.0 h1:/Y7+rGJ0LEcs+AExevwNmND2VJvvpBmgbMuCbntKq3c=
-github.com/nyaosorg/go-ttyadapter v0.3.0/go.mod h1:w6ySb/Y8rpr0uIju4vN/TMRHC/6ayabORHmEVs6d/qE=
+github.com/nyaosorg/go-readline-ny v1.15.1 h1:12TFVSqjkhkzJ1z3CSpLjC/+bFPKChnNo9vvwTu6Zvk=
+github.com/nyaosorg/go-readline-ny v1.15.1/go.mod h1:2VID1NHwImx7IASi6gNrR2WOwsFTlQ79p2D/oL1rsJ0=
+github.com/nyaosorg/go-ttyadapter v0.6.2 h1:d1MJTmp/xZhh7rHN81mxVX9aBka70xKWX03q4Grw/ec=
+github.com/nyaosorg/go-ttyadapter v0.6.2/go.mod h1:w6ySb/Y8rpr0uIju4vN/TMRHC/6ayabORHmEVs6d/qE=
 github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 h1:zrbMGy9YXpIeTnGj4EljqMiZsIcE09mmF8XsD5AYOJc=
 github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6/go.mod h1:rEKTHC9roVVicUIfZK7DYrdIoM0EOr8mK1Hj5s3JjH0=
 github.com/olekukonko/errors v1.1.0 h1:RNuGIh15QdDenh+hNvKrJkmxxjV4hcS50Db478Ou5sM=
