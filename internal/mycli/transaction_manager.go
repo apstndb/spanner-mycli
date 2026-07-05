@@ -418,7 +418,7 @@ func (tm *TransactionManager) GetTransactionFlagsWithLock() (inTransaction bool,
 
 	inTransaction = true
 	inReadWriteTransaction = tm.tc.attrs.mode == transactionModeReadWrite
-	return
+	return inTransaction, inReadWriteTransaction
 }
 
 // TransactionOptionsBuilder helps build transaction options with proper defaults.
@@ -854,6 +854,8 @@ func (tm *TransactionManager) ClosePendingTransaction() error {
 // runQueryWithStatsOnTransaction executes a query on the given transaction with statistics
 // This is a helper function to be used within transaction closures to avoid direct tc access
 // NOTE: This method is called from within transaction callbacks where mu is already held.
+// PROFILE is intentionally hardcoded: this path serves EXPLAIN ANALYZE for DML,
+// which requires the query plan regardless of CLI_QUERY_MODE.
 func (tm *TransactionManager) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
 	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
@@ -894,7 +896,9 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		return nil, err
 	}
 
-	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	// Respect a user-specified CLI_QUERY_MODE (WITH_STATS / WITH_PLAN_AND_STATS);
+	// otherwise default to PROFILE to get execution statistics.
+	opts := tm.queryOptionsLocked(effectiveQueryMode(tm.sysVars.Query.QueryMode).Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
@@ -919,15 +923,18 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 
 // RunQueryWithStats executes a statement with stats either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
+// The mode must be a QueryMode that returns execution statistics: PROFILE,
+// WITH_STATS, or WITH_PLAN_AND_STATS. Callers that need the query plan
+// (e.g. EXPLAIN ANALYZE) must pass PROFILE; regular execution should pass
+// effectiveQueryMode() so a user-specified CLI_QUERY_MODE is respected.
 // An error is returned when no database connection is available; this should not
 // happen if DetachedCompatible interface validation is working correctly.
-func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Validate that we have a database client for query operations
 	if err := tm.ValidateDatabaseOperation(); err != nil {
 		return nil, nil, err
 	}
 
-	mode := sppb.ExecuteSqlRequest_PROFILE
 	opts := tm.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
 	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)

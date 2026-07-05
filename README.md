@@ -164,7 +164,7 @@ Flags:
       --log-level=STRING
       --log-grpc                               Show gRPC logs
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
-                                               PROFILE.
+                                               PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
       --read-timestamp=STRING                  Perform a query at the given timestamp.
       --vertexai-project=STRING                Vertex AI project

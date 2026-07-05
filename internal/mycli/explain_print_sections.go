@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 )
@@ -109,6 +110,29 @@ func buildPlanAppendices(rows []plantree.RowWithPredicates, sections planref.Pri
 		}
 	}
 	return predicates, appendices
+}
+
+// buildQueryPlanAppendix renders a query plan as a titled result appendix.
+// It is used for CLI_QUERY_MODE='WITH_PLAN_AND_STATS', where the main table is
+// occupied by the query result rows, so the plan tree is rendered after the
+// table reusing the plan tree processing shared with EXPLAIN [ANALYZE].
+func buildQueryPlanAppendix(sysVars *systemVariables, plan *sppb.QueryPlan) (ResultAppendix, error) {
+	rows, err := processPlanNodes(plan.GetPlanNodes(), sysVars.Display.ParsedInlineStats,
+		sysVars.Display.ExplainFormat, sysVars.Display.ExplainWrapWidth, sysVars.Display.ExplainHangingIndent)
+	if err != nil {
+		return ResultAppendix{}, err
+	}
+
+	var maxIDLength int
+	for _, row := range rows {
+		maxIDLength = max(maxIDLength, len(fmt.Sprint(row.ID)))
+	}
+
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, fmt.Sprintf("%*d: %s", maxIDLength, row.ID, row.Text()))
+	}
+	return ResultAppendix{Title: "Query Plan(identified by ID):", Lines: lines}, nil
 }
 
 func formatPlanRowID(row plantree.RowWithPredicates, sections planref.PrintSections) string {
