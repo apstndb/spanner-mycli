@@ -446,38 +446,6 @@ func (s *Session) ValidateStatementExecution(stmt Statement) error {
 	return nil
 }
 
-func (s *Session) ConnectToDatabase(ctx context.Context, databaseId string) error {
-	if s.mode == DatabaseConnected && s.client != nil {
-		return errors.New("session is already connected to a database")
-	}
-
-	// Construct database path directly to avoid modifying state before success
-	dbPath := databasePath(s.systemVariables.Connection.Project, s.systemVariables.Connection.Instance, databaseId)
-
-	clientConfig := s.clientConfig
-
-	client, err := spanner.NewClientWithConfig(ctx, dbPath, clientConfig, s.clientOpts...)
-	if err != nil {
-		return err
-	}
-
-	// Close existing client if any
-	if s.client != nil {
-		s.client.Close()
-	}
-
-	// Update state only after successful client creation
-	s.systemVariables.Connection.Database = databaseId
-	s.client = client
-	s.txn.client = client
-	s.mode = DatabaseConnected
-
-	// Heartbeat is now managed per-transaction, not per-session
-	// so we don't need to start it here anymore
-
-	return nil
-}
-
 // --- Delegation methods to TransactionManager ---
 // These one-liner methods preserve the existing Session API so callers
 // (statement files, fuzzy finder, etc.) don't need to change.
@@ -911,9 +879,17 @@ func (s *Session) RecreateClient() error {
 	if err != nil {
 		return err
 	}
+	// Refuse the swap if a transaction context is still live: SetClient enforces
+	// the lifecycle invariant that the old client must not be closed while a
+	// transaction (and its heartbeat goroutine) could still use it. On refusal,
+	// close the NEW client and surface the error (it joins the Aborted error at
+	// the caller). Only on success close the OLD client and update Session.client.
+	if err := s.txn.SetClient(c); err != nil {
+		c.Close()
+		return err
+	}
 	s.client.Close()
 	s.client = c
-	s.txn.client = c
 	return nil
 }
 

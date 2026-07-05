@@ -150,6 +150,22 @@ func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, cli
 	}
 }
 
+// SetClient replaces the Spanner client under tm.mu. It refuses to replace
+// the client while any transaction context exists: the old client is closed
+// by the caller, so a live tc (and its heartbeat goroutine) would be left
+// using a closed client. All Aborted paths that trigger RecreateClient roll
+// back or clear the transaction first; this guard turns that ordering from
+// an emergent property into an enforced invariant.
+func (tm *TransactionManager) SetClient(client *spanner.Client) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil {
+		return fmt.Errorf("cannot replace client during %s transaction", tm.tc.attrs.mode)
+	}
+	tm.client = client
+	return nil
+}
+
 // withTransactionContextWithLock is the most generic base method for transaction context manipulation.
 // It acquires a write lock and provides direct access to the transaction context pointer,
 // allowing atomic read-modify-write operations.

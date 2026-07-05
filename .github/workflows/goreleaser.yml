@@ -27,7 +27,7 @@ jobs:
         run: |
           go install tool
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7.2.2
+        uses: goreleaser/goreleaser-action@v7.2.3
         with:
           args: release --clean
         env:
