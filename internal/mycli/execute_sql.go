@@ -341,20 +341,28 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 		ReadTimestamp: result.ReadTimestamp,
 	}
 
-	// Reflect the user-specified stats query modes in the presentation:
-	// stats are rendered even without CLI_VERBOSE, and WITH_PLAN_AND_STATS
-	// additionally renders the query plan after the result rows.
+	return applyQueryModeStatsRendering(result, plan, sysVars)
+}
+
+// applyQueryModeStatsRendering reflects the user-specified stats query modes
+// in the presentation of result: stats are rendered even without
+// CLI_VERBOSE, and WITH_PLAN_AND_STATS additionally renders the query plan as
+// a result appendix, when a plan is available (e.g. absent for the Cloud
+// Spanner Emulator). This is shared between SELECT result construction
+// (finalizeQueryResult) and DML result construction (buildDMLResult) so both
+// honor CLI_QUERY_MODE identically.
+func applyQueryModeStatsRendering(result *Result, plan *sppb.QueryPlan, sysVars *systemVariables) error {
 	switch lo.FromPtr(sysVars.Query.QueryMode) {
 	case sppb.ExecuteSqlRequest_WITH_STATS:
 		result.ForceVerbose = true
 	case sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS:
 		result.ForceVerbose = true
 		if plan != nil {
-			appendix, err := buildQueryPlanAppendix(sysVars, plan)
+			appendices, err := buildQueryPlanAppendix(sysVars, plan)
 			if err != nil {
 				return err
 			}
-			result.Appendices = append(result.Appendices, appendix)
+			result.Appendices = append(result.Appendices, appendices...)
 		}
 	}
 	return nil

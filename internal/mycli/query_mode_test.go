@@ -136,10 +136,17 @@ func TestBuildQueryPlanAppendix(t *testing.T) {
 	t.Parallel()
 
 	sysVars := newSystemVariablesWithDefaultsForTest()
-	appendix, err := buildQueryPlanAppendix(sysVars, testQueryPlan(t))
+	appendices, err := buildQueryPlanAppendix(sysVars, testQueryPlan(t))
 	if err != nil {
 		t.Fatalf("buildQueryPlanAppendix() error = %v, want nil", err)
 	}
+
+	// testQueryPlan has no predicates, so the default CLI_EXPLAIN_PRINT_SECTIONS
+	// (basic preset, predicates only) yields no additional section appendices.
+	if len(appendices) != 1 {
+		t.Fatalf("len(appendices) = %d, want 1; appendices: %+v", len(appendices), appendices)
+	}
+	appendix := appendices[0]
 
 	if want := "Query Plan(identified by ID):"; appendix.Title != want {
 		t.Errorf("appendix.Title = %q, want %q", appendix.Title, want)
@@ -152,6 +159,64 @@ func TestBuildQueryPlanAppendix(t *testing.T) {
 	}
 	if !strings.HasPrefix(appendix.Lines[1], "1: ") || !strings.Contains(appendix.Lines[1], "Scan") {
 		t.Errorf("appendix.Lines[1] = %q, want prefix \"1: \" and operator \"Scan\"", appendix.Lines[1])
+	}
+}
+
+// TestBuildQueryPlanAppendixHonorsPrintSections verifies that WITH_PLAN_AND_STATS
+// plan rendering (buildQueryPlanAppendix) reuses resolveExplainPrintSections and
+// buildPlanAppendices, so CLI_EXPLAIN_PRINT_SECTIONS is respected the same way it
+// is for EXPLAIN / EXPLAIN ANALYZE, instead of always ignoring it.
+func TestBuildQueryPlanAppendixHonorsPrintSections(t *testing.T) {
+	t.Parallel()
+
+	// filter.input.json contains a Filter operator with a predicate, and a
+	// FilterScan with a seek condition, so it exercises the Predicates section.
+	plan := loadTestPlan(t, "testdata/plans/filter.input.json")
+
+	for _, tt := range []struct {
+		desc               string
+		explicitEmptyPrint bool // SetFromSimple(CLI_EXPLAIN_PRINT_SECTIONS, "") to suppress all sections
+		wantPredicates     bool
+	}{
+		{
+			desc:           "default basic preset includes a predicates appendix",
+			wantPredicates: true,
+		},
+		{
+			desc:               "CLI_EXPLAIN_PRINT_SECTIONS='' suppresses the predicates appendix",
+			explicitEmptyPrint: true,
+			wantPredicates:     false,
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			if tt.explicitEmptyPrint {
+				if err := sysVars.SetFromSimple("CLI_EXPLAIN_PRINT_SECTIONS", ""); err != nil {
+					t.Fatalf("SetFromSimple(CLI_EXPLAIN_PRINT_SECTIONS, \"\") error = %v", err)
+				}
+			}
+
+			appendices, err := buildQueryPlanAppendix(sysVars, plan)
+			if err != nil {
+				t.Fatalf("buildQueryPlanAppendix() error = %v, want nil", err)
+			}
+
+			if len(appendices) == 0 || appendices[0].Title != "Query Plan(identified by ID):" {
+				t.Fatalf("appendices[0] missing or wrong title; appendices: %+v", appendices)
+			}
+
+			var gotPredicates bool
+			for _, appendix := range appendices[1:] {
+				if appendix.Title == "Predicates(identified by ID):" {
+					gotPredicates = true
+				}
+			}
+			if gotPredicates != tt.wantPredicates {
+				t.Errorf("predicates appendix present = %v, want %v; appendices: %+v", gotPredicates, tt.wantPredicates, appendices)
+			}
+		})
 	}
 }
 
@@ -237,6 +302,86 @@ func TestFinalizeQueryResultQueryModeRendering(t *testing.T) {
 
 			if sysVars.LastResult.QueryCache == nil {
 				t.Error("LastResult.QueryCache = nil, want non-nil")
+			}
+		})
+	}
+}
+
+// TestBuildDMLResultQueryModeRendering verifies that DML results honor
+// CLI_QUERY_MODE the same way SELECT results do (finalizeQueryResult):
+// WITH_STATS must force verbose stats rendering, and WITH_PLAN_AND_STATS must
+// additionally append the query plan collected by runUpdateOnTransaction,
+// when a plan is available. Before this fix, buildDMLResult's predecessor
+// ignored CLI_QUERY_MODE entirely for DML.
+func TestBuildDMLResultQueryModeRendering(t *testing.T) {
+	t.Parallel()
+
+	stats := QueryStats{ElapsedTime: "1 msec"}
+
+	for _, tt := range []struct {
+		desc             string
+		userMode         *sppb.ExecuteSqlRequest_QueryMode
+		plan             *sppb.QueryPlan
+		wantForceVerbose bool
+		wantPlanAppendix bool
+	}{
+		{
+			desc:     "default mode keeps normal rendering",
+			userMode: nil,
+		},
+		{
+			desc:     "NORMAL keeps normal rendering",
+			userMode: sppb.ExecuteSqlRequest_NORMAL.Enum(),
+		},
+		{
+			desc:             "WITH_STATS forces verbose stats rendering",
+			userMode:         sppb.ExecuteSqlRequest_WITH_STATS.Enum(),
+			wantForceVerbose: true,
+		},
+		{
+			desc:             "WITH_PLAN_AND_STATS forces verbose stats and appends the plan appendix",
+			userMode:         sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS.Enum(),
+			plan:             testQueryPlan(t),
+			wantForceVerbose: true,
+			wantPlanAppendix: true,
+		},
+		{
+			desc:             "WITH_PLAN_AND_STATS tolerates a missing plan (emulator)",
+			userMode:         sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS.Enum(),
+			plan:             nil,
+			wantForceVerbose: true,
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			sysVars.Query.QueryMode = tt.userMode
+
+			dmlResult := &DMLResult{Affected: 3, Plan: tt.plan}
+			result, err := buildDMLResult(dmlResult, stats, nil, nil, false, sysVars)
+			if err != nil {
+				t.Fatalf("buildDMLResult() error = %v, want nil", err)
+			}
+
+			if !result.IsExecutedDML {
+				t.Error("result.IsExecutedDML = false, want true")
+			}
+			if result.AffectedRows != 3 {
+				t.Errorf("result.AffectedRows = %d, want 3", result.AffectedRows)
+			}
+			if result.ForceVerbose != tt.wantForceVerbose {
+				t.Errorf("result.ForceVerbose = %v, want %v", result.ForceVerbose, tt.wantForceVerbose)
+			}
+
+			var gotPlanAppendix bool
+			for _, appendix := range result.Appendices {
+				if appendix.Title == "Query Plan(identified by ID):" {
+					gotPlanAppendix = true
+				}
+			}
+			if gotPlanAppendix != tt.wantPlanAppendix {
+				t.Errorf("plan appendix rendered = %v, want %v; appendices: %+v", gotPlanAppendix, tt.wantPlanAppendix, result.Appendices)
 			}
 		})
 	}
