@@ -41,7 +41,7 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 		adminClient:     nil, // we won't actually use the admin client in these tests
 		systemVariables: sysVars,
 	}
-	sysVars.inTransaction = session.InTransaction
+	sysVars.inTransaction = session.txn.InTransaction
 
 	// Just test that SHOW VARIABLES works without error
 	t.Run("SHOW VARIABLES works in AdminOnly session", func(t *testing.T) {

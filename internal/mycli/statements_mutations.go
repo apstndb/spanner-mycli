@@ -35,7 +35,7 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Resul
 	if err != nil {
 		return nil, err
 	}
-	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		err = tx.BufferWrite(mutations)
 		if err != nil {
 			return 0, nil, nil, err

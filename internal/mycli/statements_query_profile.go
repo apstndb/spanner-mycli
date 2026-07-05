@@ -61,7 +61,7 @@ optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
 type ShowQueryProfilesStatement struct{}
 
 func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
+	if session.txn.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
@@ -71,7 +71,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`,
 	}
 
-	iter, _, err := session.RunQuery(ctx, stmt)
+	iter, _, err := session.txn.RunQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ type ShowQueryProfileStatement struct {
 }
 
 func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
+	if session.txn.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
 		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
@@ -157,7 +157,7 @@ ORDER BY INTERVAL_END DESC`,
 		Params: map[string]interface{}{"fprint": s.Fprint},
 	}
 
-	iter, _, err := session.RunQuery(ctx, stmt)
+	iter, _, err := session.txn.RunQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}

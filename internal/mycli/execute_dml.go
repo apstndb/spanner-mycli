@@ -38,7 +38,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 		return nil, errors.New("there is active batch DDL")
 	default:
 		// Get both transaction flags in a single lock acquisition
-		inTransaction, inReadWriteTransaction := session.GetTransactionFlagsWithLock()
+		inTransaction, inReadWriteTransaction := session.txn.GetTransactionFlagsWithLock()
 
 		if inReadWriteTransaction && session.systemVariables.Transaction.AutoBatchDML {
 			stmt, err := newStatement(sql, session.systemVariables.Params, false)
@@ -61,7 +61,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
-	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
@@ -92,8 +92,8 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	var hasRenderedOutput bool
 	var queryStats map[string]any
 	var tableHeader TableHeader
-	result, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		updateResult, err := session.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
 		if err != nil {
 			return 0, nil, nil, err
 		}

@@ -51,7 +51,7 @@ func newDetachedTestSession(global io.Writer) *Session {
 		mode:            Detached,
 		systemVariables: &sysVars,
 	}
-	sysVars.inTransaction = session.InTransaction
+	sysVars.inTransaction = session.txn.InTransaction
 	return session
 }
 

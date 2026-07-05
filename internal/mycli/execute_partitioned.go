@@ -29,7 +29,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		return nil, err
 	}
 
-	partitions, batchROTx, err := session.RunPartitionQuery(ctx, stmt)
+	partitions, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}

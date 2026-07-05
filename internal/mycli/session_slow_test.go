@@ -106,10 +106,10 @@ func TestRequestPriority(t *testing.T) {
 			}
 
 			// Read-Write Transaction.
-			if err := session.BeginReadWriteTransaction(ctx, 0, test.transactionPriority); err != nil {
+			if err := session.txn.BeginReadWriteTransaction(ctx, 0, test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
-			iter, _, err := session.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
+			iter, _, err := session.txn.RunQuery(ctx, spanner.NewStatement("SELECT * FROM t1"))
 			if err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
@@ -118,22 +118,22 @@ func TestRequestPriority(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
-			if _, err := session.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-				iter := session.runQueryWithStatsOnTransaction(ctx, tx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), implicit)
+			if _, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+				iter := session.txn.runQueryWithStatsOnTransaction(ctx, tx, spanner.NewStatement("DELETE FROM t1 WHERE Id = 1"), implicit)
 				_, count, metadata, plan, err := consumeRowIterDiscard(iter)
 				return count, plan, metadata, err
 			}); err != nil {
 				t.Fatalf("failed to run update: %v", err)
 			}
-			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {
+			if _, err := session.txn.CommitReadWriteTransaction(ctx); err != nil {
 				t.Fatalf("failed to commit: %v", err)
 			}
 
 			// Read-Only Transaction.
-			if _, err := session.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
+			if _, err := session.txn.BeginReadOnlyTransaction(ctx, strong, 0, time.Now(), test.transactionPriority); err != nil {
 				t.Fatalf("failed to begin read only transaction: %v", err)
 			}
-			iter, _, err = session.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false, sppb.ExecuteSqlRequest_PROFILE)
+			iter, _, err = session.txn.RunQueryWithStats(ctx, spanner.NewStatement("SELECT * FROM t1"), false, sppb.ExecuteSqlRequest_PROFILE)
 			if err != nil {
 				t.Fatalf("failed to run query with stats: %v", err)
 			}
@@ -142,7 +142,7 @@ func TestRequestPriority(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to run query with stats: %v", err)
 			}
-			if err := session.CloseReadOnlyTransaction(); err != nil {
+			if err := session.txn.CloseReadOnlyTransaction(); err != nil {
 				t.Fatalf("failed to close read only transaction: %v", err)
 			}
 
@@ -250,10 +250,10 @@ func TestIsolationLevel(t *testing.T) {
 			}
 
 			// Read-Write Transaction.
-			if err := session.BeginReadWriteTransaction(ctx, test.transactionIsolationLevel, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			if err := session.txn.BeginReadWriteTransaction(ctx, test.transactionIsolationLevel, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
 				t.Fatalf("failed to begin read write transaction: %v", err)
 			}
-			iter, _, err := session.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+			iter, _, err := session.txn.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
 			if err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
@@ -262,7 +262,7 @@ func TestIsolationLevel(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to run query: %v", err)
 			}
-			if _, err := session.CommitReadWriteTransaction(ctx); err != nil {
+			if _, err := session.txn.CommitReadWriteTransaction(ctx); err != nil {
 				t.Fatalf("failed to commit: %v", err)
 			}
 

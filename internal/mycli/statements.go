@@ -62,7 +62,7 @@ func (s *SelectStatement) String() string {
 
 func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	// Single lock acquisition for both DetermineTransaction and InTransaction check
-	_, inTransaction, err := session.DetermineTransactionAndState(ctx)
+	_, inTransaction, err := session.txn.DetermineTransactionAndState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -530,11 +530,11 @@ type TruncateTableStatement struct {
 func (TruncateTableStatement) isMutationStatement() {}
 
 func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
+	if session.txn.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-write transaction`)
 	}
-	if session.InReadOnlyTransaction() {
+	if session.txn.InReadOnlyTransaction() {
 		// Just for user-friendly.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-only transaction`)
 	}
@@ -559,11 +559,11 @@ type PartitionedDmlStatement struct {
 func (PartitionedDmlStatement) isMutationStatement() {}
 
 func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if session.InReadWriteTransaction() {
+	if session.txn.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`partitioned DML statement can not be run in a read-write transaction`)
 	}
-	if session.InReadOnlyTransaction() {
+	if session.txn.InReadOnlyTransaction() {
 		// Just for user-friendly.
 		return nil, errors.New(`partitioned DML statement can not be run in a read-only transaction`)
 	}

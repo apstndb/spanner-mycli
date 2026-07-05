@@ -227,7 +227,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	iter, roTxn, err := session.RunQueryWithStats(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
+	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	})
 	if err != nil {
 		// Handle aborted transaction
-		if session.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
+		if session.txn.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			rollback := &RollbackStatement{}
 			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
