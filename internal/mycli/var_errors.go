@@ -22,10 +22,21 @@ type (
 	ErrAddNotSupported struct {
 		Name string
 	}
+
+	// errSetterInitOnly is returned when an init-only variable (initOnly) is set
+	// after the session has been created. It replaces the ad-hoc error the
+	// CLI_ENABLE_ADC_PLUS custom setter used to return.
+	errSetterInitOnly struct {
+		Name string
+	}
 )
 
 func (e *ErrUnknownVariable) Error() string {
 	return fmt.Sprintf("unknown variable: %s", e.Name)
+}
+
+func (e *errSetterInitOnly) Error() string {
+	return fmt.Sprintf("%s cannot be changed after session creation", e.Name)
 }
 
 func (e *ErrAddNotSupported) Error() string {
