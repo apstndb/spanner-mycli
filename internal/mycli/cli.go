@@ -557,8 +557,14 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		stop = func() {}
 	}
 
-	// Execute the statement
-	result, err := c.SessionHandler.ExecuteStatement(ctx, stmt)
+	// Execute the statement, routing streamed output to the caller-provided
+	// writer. This keeps streaming formats and DUMP on the same destination
+	// as buffered display (notably the MCP handler's capture buffer).
+	out := outputContext{
+		w:           w,
+		screenWidth: func() int { return c.resolveScreenWidth(w) },
+	}
+	result, err := c.SessionHandler.ExecuteStatementWithOutput(ctx, stmt, out)
 
 	// Stop progress mark
 	stop()
@@ -684,6 +690,26 @@ func (c *Cli) GetTerminalSizeWithTty(w io.Writer) (int, error) {
 	return width, nil
 }
 
+// resolveScreenWidth returns the display width used for wrapping: the fixed
+// width when configured, the terminal width when CLI_AUTOWRAP is on and a
+// terminal is available, and effectively unlimited otherwise. It is the
+// single width source for both buffered display and streamed rendering.
+func (c *Cli) resolveScreenWidth(w io.Writer) int {
+	if !c.SystemVariables.Display.AutoWrap {
+		return math.MaxInt
+	}
+	if c.SystemVariables.Display.FixedWidth != nil {
+		return int(*c.SystemVariables.Display.FixedWidth)
+	}
+	width, err := c.GetTerminalSizeWithTty(w)
+	if err != nil {
+		// Warn because CLI_AUTOWRAP = TRUE cannot be honored without a width.
+		slog.Warn("failed to get terminal size", "err", err)
+		return math.MaxInt
+	}
+	return width
+}
+
 // displayResult displays the result of the statement execution.
 // It returns an error if the output operation fails.
 func (c *Cli) displayResult(result *Result, interactive bool, input string, w io.Writer) error {
@@ -692,26 +718,7 @@ func (c *Cli) displayResult(result *Result, interactive bool, input string, w io
 		w = c.GetWriter()
 	}
 
-	size := math.MaxInt
-	if c.SystemVariables.Display.AutoWrap {
-		if c.SystemVariables.Display.FixedWidth != nil {
-			// Use fixed width if set
-			size = int(*c.SystemVariables.Display.FixedWidth)
-		} else {
-			// Otherwise get terminal width
-			width, err := c.GetTerminalSizeWithTty(w)
-			if err != nil {
-				// Add warning log when terminal size cannot be obtained
-				// and CLI_AUTOWRAP = TRUE
-				slog.Warn("failed to get terminal size", "err", err)
-				size = math.MaxInt
-			} else {
-				size = width
-			}
-		}
-	}
-
-	if err := c.PrintResult(size, result, interactive, input, w); err != nil {
+	if err := c.PrintResult(c.resolveScreenWidth(w), result, interactive, input, w); err != nil {
 		return err
 	}
 

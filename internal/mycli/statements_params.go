@@ -45,7 +45,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 	})
 	slices.SortFunc(items, func(lhs, rhs paramRow) int { return cmp.Compare(lhs.Name, rhs.Name) })
 
-	result, err := executeStructRows(showParamsRowEncoder, items, session.systemVariables)
+	result, err := executeStructRows(showParamsRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}

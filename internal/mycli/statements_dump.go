@@ -10,7 +10,6 @@ import (
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/apstndb/spanvalue"
 )
 
@@ -63,7 +62,7 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	if session.systemVariables.Feature.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
-	outStream := session.systemVariables.StreamManager.GetWriter()
+	outStream := session.outputWriter()
 	// Use streaming whenever there is a real output stream. DUMP output is not a
 	// table layout, so CLI_TABLE_STREAMING=false should not force row buffering here.
 	if outStream != nil && outStream != io.Discard {
@@ -258,16 +257,16 @@ func writeCapturedDumpOutput(out io.Writer, output string) error {
 
 func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
 	var buf bytes.Buffer
-	originalStreamManager := session.systemVariables.StreamManager
-	session.systemVariables.StreamManager = streamio.NewStreamManager(nil, &buf, originalStreamManager.GetErrStream())
-	defer func() {
-		session.systemVariables.StreamManager = originalStreamManager
-	}()
-
 	// SQL export is a non-table format and streams into the temporary
-	// StreamManager above; that capture is what makes this DUMP path buffered.
-	result, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-		enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
+	// per-statement output below; that capture is what makes this DUMP path
+	// buffered.
+	var result *Result
+	err := session.withOutput(outputContext{w: &buf}, func() error {
+		var err error
+		result, err = executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
+		return err
+	})
 	return result, buf.String(), err
 }
 

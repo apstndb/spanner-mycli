@@ -72,7 +72,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	result, err := executeStructRows(nameValueRowEncoder, items, session.systemVariables)
+	result, err := executeStructRows(nameValueRowEncoder, items, session)
 	if err != nil {
 		return nil, err
 	}
@@ -234,12 +234,9 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	merged := helpVariableRows(sysVars)
 
-	// Keep the original behavior of passing nil format config when detached.
-	var formatSysVars *systemVariables
-	if session != nil {
-		formatSysVars = session.systemVariables
-	}
-	result, err := executeStructRows(helpVariablesRowEncoder, merged, formatSysVars)
+	// executeStructRows handles a nil session by rendering a buffered result
+	// with default formatting, preserving the pre-existing detached behavior.
+	result, err := executeStructRows(helpVariablesRowEncoder, merged, session)
 	if err != nil {
 		return nil, err
 	}
