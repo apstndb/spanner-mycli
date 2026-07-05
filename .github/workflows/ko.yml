@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: ko-build/setup-ko@v0.9
+      - uses: ko-build/setup-ko@v0.10
       - run: |
           tag=$(echo ${{ github.ref }} | cut -c11-)
           ko build -t latest,${tag} --bare
