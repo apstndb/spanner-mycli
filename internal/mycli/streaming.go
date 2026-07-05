@@ -7,8 +7,13 @@ import (
 )
 
 // shouldUseStreaming determines whether to use streaming mode based on system variables and format.
-// This delegates to createStreamingProcessor to maintain a single source of truth for the streaming decision logic.
+// It mirrors decideExecutionMode: spanvalue-writer formats always stream, and
+// other formats delegate to createStreamingProcessor to keep a single source
+// of truth for the processor-based streaming decision.
 func shouldUseStreaming(sysVars *systemVariables) bool {
+	if usesSpanvalueWriter(sysVars.Display.CLIFormat) {
+		return true
+	}
 	// Use a dummy writer to test if streaming would be enabled
 	processor, err := createStreamingProcessor(sysVars, io.Discard, 80)
 	if err != nil {

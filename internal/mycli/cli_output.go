@@ -79,11 +79,17 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		fmtMode = format.ModeTable
 	}
 
-	if format.ValueFormatModeFor(fmtMode) == format.SQLLiteralValues && result.SQLTableNameForExport != "" {
-		config.SQLTableName = result.SQLTableNameForExport
-	}
-
 	if !fmtMode.IsTableMode() {
+		// CSV/JSONL/SQL_INSERT* replay buffered rows through the spanvalue
+		// writers so those formats have a single byte-emitting implementation
+		// shared with the streaming paths. The fallback above guarantees the
+		// SQL modes only reach this replay with SQL-literal formatted cells.
+		if handled, err := writeBufferedRowsWithSpanvalueWriter(out, sysVars, result.SQLTableNameForExport, columnNames, result.Rows); handled || err != nil {
+			if err != nil {
+				return fmt.Errorf("spanvalue writer failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
+			}
+			return nil
+		}
 		formatter, err := format.NewStreamingFormatter(fmtMode, out, config)
 		if err != nil {
 			return fmt.Errorf("failed to create streaming formatter for buffered rows: %w", err)

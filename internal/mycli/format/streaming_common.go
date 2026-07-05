@@ -1,73 +1,10 @@
 package format
 
 import (
-	"encoding/csv"
 	"fmt"
 	"io"
 	"strings"
 )
-
-// CSVFormatter provides shared CSV formatting logic for both buffered and streaming modes.
-type CSVFormatter struct {
-	writer      *csv.Writer
-	out         io.Writer
-	skipHeaders bool
-	initialized bool
-}
-
-// NewCSVFormatter creates a new CSV formatter.
-func NewCSVFormatter(out io.Writer, skipHeaders bool) *CSVFormatter {
-	return &CSVFormatter{
-		out:         out,
-		writer:      csv.NewWriter(out),
-		skipHeaders: skipHeaders,
-	}
-}
-
-// InitFormat writes CSV headers if needed.
-func (f *CSVFormatter) InitFormat(columnNames []string, config FormatConfig, previewRows []Row) error {
-	if f.initialized {
-		return nil
-	}
-
-	if len(columnNames) == 0 {
-		return nil
-	}
-
-	// Write headers unless skipping
-	if !f.skipHeaders {
-		if err := f.writer.Write(columnNames); err != nil {
-			return fmt.Errorf("failed to write CSV header: %w", err)
-		}
-	}
-
-	f.initialized = true
-	return nil
-}
-
-// WriteRow writes a single CSV row.
-func (f *CSVFormatter) WriteRow(row Row) error {
-	if !f.initialized {
-		return fmt.Errorf("CSV formatter not initialized")
-	}
-
-	if err := f.writer.Write(Texts(row)); err != nil {
-		return fmt.Errorf("failed to write CSV row: %w", err)
-	}
-
-	// Flush after each row for streaming
-	f.writer.Flush()
-	return f.writer.Error()
-}
-
-// FinishFormat completes CSV output.
-func (f *CSVFormatter) FinishFormat() error {
-	f.writer.Flush()
-	if err := f.writer.Error(); err != nil {
-		return fmt.Errorf("CSV writer error: %w", err)
-	}
-	return nil
-}
 
 // TabFormatter provides shared tab-separated formatting logic.
 type TabFormatter struct {
