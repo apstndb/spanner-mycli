@@ -418,7 +418,7 @@ func (tm *TransactionManager) GetTransactionFlagsWithLock() (inTransaction bool,
 
 	inTransaction = true
 	inReadWriteTransaction = tm.tc.attrs.mode == transactionModeReadWrite
-	return
+	return inTransaction, inReadWriteTransaction
 }
 
 // TransactionOptionsBuilder helps build transaction options with proper defaults.
