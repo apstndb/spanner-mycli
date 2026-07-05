@@ -252,8 +252,6 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		TabWidth:        int(sv.Display.TabWidth),
 		Verbose:         sv.Display.Verbose,
 		SkipColumnNames: sv.Display.SkipColumnNames,
-		SQLTableName:    sv.Display.SQLTableName,
-		SQLBatchSize:    sv.Display.SQLBatchSize,
 		PreviewRows:     sv.Query.TablePreviewRows,
 		Styled:          styled,
 		WidthStrategy:   sv.Display.WidthStrategy,
