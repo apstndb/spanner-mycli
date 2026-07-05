@@ -331,13 +331,14 @@ CREATE TABLE test (id INT64);
    comment */
 INSERT INTO test VALUES (1);`,
 			filename: "mixed.sql",
-			// memefish.SplitRawStatements returns:
-			// - First statement includes the leading line comment
-			// - Second statement does not include the block comment that appears before it
-			// TODO: This behavior may change when https://github.com/cloudspannerecosystem/memefish/pull/322 is merged
+			// memefish.SplitRawStatements preserves all comments as of memefish v0.7.0
+			// (https://github.com/cloudspannerecosystem/memefish/pull/322), so each
+			// statement includes the comment(s) that immediately precede it. These
+			// leading comments are harmless when the statements are executed against
+			// Spanner.
 			want: []string{
 				"-- This is a comment\nCREATE TABLE test (id INT64)",
-				"INSERT INTO test VALUES (1)",
+				"/* Multi-line\n   comment */\nINSERT INTO test VALUES (1)",
 			},
 		},
 		{
