@@ -27,6 +27,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Test root-partitionable with [`TRY PARTITIONED QUERY <sql>` command](#test-root-partitionable)
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
+  * BigQuery support (`BIGQUERY` statement).
   * Interactive DDL batching
   * Async DDL execution support (`--async` flag and `CLI_ASYNC_DDL` system variable)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
@@ -629,6 +630,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show sampled query plans                                        | `SHOW QUERY PROFILES;`                                                                                     | EARLY EXPERIMENTAL                                                                                                                                                                        |
 | Show the single sampled query plan                              | `SHOW QUERY PROFILE <fingerprint>;`                                                                        | EARLY EXPERIMENTAL                                                                                                                                                                        |
 | Compose query using LLM                                         | `GEMINI "<prompt>";`                                                                                       |                                                                                                                                                                                           |
+| Execute BigQuery SQL                                            | `BIGQUERY <sql>;`                                                                                          |                                                                                                                                                                                           |
 | Execute CQL                                                     | `CQL ...;`                                                                                                 | EARLY EXPERIMENTAL                                                                                                                                                                        |
 | Show help                                                       | `HELP;`                                                                                                    |                                                                                                                                                                                           |
 | Show help for variables                                         | `HELP VARIABLES;`                                                                                          |                                                                                                                                                                                           |
@@ -987,6 +989,11 @@ They have almost same semantics with [Spanner JDBC properties](https://cloud.goo
 | CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
 | CLI_TYPE_STYLES            | READ_WRITE | `"NULL=dim"`                                   |
+| CLI_BIGQUERY_PROJECT       | READ_WRITE | `"my-gcp-project"`                             |
+| CLI_BIGQUERY_LOCATION      | READ_WRITE | `"US"`                                         |
+| CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
+
+> **Note**: `CLI_BIGQUERY_PROJECT` defaults to `CLI_PROJECT` when empty. `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED` are optional BigQuery job settings.
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
@@ -1589,14 +1596,16 @@ spanner> SHOW SPLIT POINTS;
 
 The detail lines are customizable using Go text/template.
 Note: You need to know `OutputContext` in spanner-mycli and `spanstats.QueryStats`.
-`OutputContext.Timestamp` is a compatibility alias for whichever of `ReadTimestamp` or `CommitTimestamp` is present.
-The explicit `ReadTimestamp` and `CommitTimestamp` fields are also available when the label matters; the bundled [output_full.tmpl](internal/mycli/output_full.tmpl) uses those explicit fields.
+Prefer `OutputContext.ReadTimestamp` and `OutputContext.CommitTimestamp` in custom templates.
+`OutputContext.Timestamp` remains a compatibility alias for whichever of those fields is present.
+The bundled [output_full.tmpl](internal/mycli/output_full.tmpl) uses the explicit fields.
 
 ```
 $ cat output_timestamp.tmpl
 {{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
 {{if .Verbose -}}
-{{with .Timestamp -}}                       timestamp:            {{.}}{{"\n"}}{{end -}}
+{{with .ReadTimestamp -}}                   read_timestamp:       {{.}}{{"\n"}}{{end -}}
+{{with .CommitTimestamp -}}                 commit_timestamp:     {{.}}{{"\n"}}{{end -}}
 {{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
 {{with .Stats.ElapsedTime -}}               elapsed time:         {{.}}{{"\n"}}{{end -}}
 {{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
@@ -2057,6 +2066,26 @@ spanner> GEMINI "Generate query to show all table with table_schema concat by do
 Empty set (5.72 sec)
 
 spanner> SELECT IF(table_schema != '', CONCAT(table_schema, '.', table_name), table_name) AS table_name_with_schema FROM INFORMATION_SCHEMA.TABLES;
+```
+
+### BigQuery support
+
+spanner-mycli can execute BigQuery SQL with the `BIGQUERY` client-side statement.
+Configure the target project with `CLI_BIGQUERY_PROJECT` (defaults to `CLI_PROJECT` when empty).
+Optional job settings are available via `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED`.
+
+```
+spanner> SET CLI_BIGQUERY_PROJECT = 'my-gcp-project';
+Empty set (0.00 sec)
+
+spanner> BIGQUERY SELECT 1 AS n;
++-----+
+| n   |
+| INT |
++-----+
+| 1   |
++-----+
+1 rows in set (0.42 sec)
 ```
 
 ### Markdown output
