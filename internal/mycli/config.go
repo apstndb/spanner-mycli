@@ -141,7 +141,7 @@ type spannerOptions struct {
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
-	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE." enum:"NORMAL,PLAN,PROFILE"`
+	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS." enum:"NORMAL,PLAN,PROFILE,WITH_STATS,WITH_PLAN_AND_STATS"`
 	Strong                    bool                      `name:"strong" help:"Perform a strong query."`
 	ReadTimestamp             string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
 	VertexAIProject           string                    `name:"vertexai-project" help:"Vertex AI project"`
