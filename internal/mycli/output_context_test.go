@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -159,6 +160,42 @@ func TestMCPHandler_streamedFormatDoesNotLeakToGlobalStream(t *testing.T) {
 	}
 	if strings.HasPrefix(text, "ERROR:") {
 		t.Errorf("tool result is an error: %q", text)
+	}
+	if global.Len() != 0 {
+		t.Errorf("StreamManager writer got %q, want empty (would corrupt the MCP protocol stream)", global.String())
+	}
+}
+
+// TestMCPHandler_shellMetaCommandDoesNotLeakToGlobalStream pins that \!
+// shell command stdout goes to the per-statement writer, not the global
+// stream: the MCP handler can parse and execute meta commands, so shell
+// output written to the StreamManager writer would corrupt the JSON-RPC
+// stream under --mcp.
+func TestMCPHandler_shellMetaCommandDoesNotLeakToGlobalStream(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command syntax differs on Windows")
+	}
+
+	var global bytes.Buffer
+	session := newDetachedTestSession(&global)
+	// ShellMetaCommand is not detached-compatible; the shell command itself
+	// never touches the (nil) client.
+	session.mode = DatabaseConnected
+	cli := &Cli{
+		SessionHandler:  NewSessionHandler(session),
+		SystemVariables: session.systemVariables,
+	}
+
+	handler := executeStatementHandler(cli)
+	result, _, err := handler(context.Background(), nil, ExecuteStatementArgs{Statement: `\! echo mcp-shell-probe`})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	text := mcpResultText(t, result)
+	if !strings.Contains(text, "mcp-shell-probe") {
+		t.Errorf("tool result %q does not contain shell output", text)
 	}
 	if global.Len() != 0 {
 		t.Errorf("StreamManager writer got %q, want empty (would corrupt the MCP protocol stream)", global.String())
