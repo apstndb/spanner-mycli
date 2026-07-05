@@ -38,6 +38,8 @@ type SyncProtoStatement struct {
 	DeletePaths []string
 }
 
+func (SyncProtoStatement) isMutationStatement() {}
+
 func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	_, fds, err := session.GetDatabaseSchema(ctx)
 	if err != nil {

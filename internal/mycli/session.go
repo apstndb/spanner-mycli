@@ -986,13 +986,10 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 	}()
 	if _, ok := stmt.(MutationStatement); ok {
 		result := &Result{}
-		_, err := s.DetermineTransaction(ctx)
-		if err != nil {
+		if err := s.failStatementIfReadOnly(); err != nil {
 			return result, err
 		}
-
-		err = s.failStatementIfReadOnly()
-		if err != nil {
+		if _, err := s.DetermineTransaction(ctx); err != nil {
 			return result, err
 		}
 		return stmt.Execute(ctx, s)

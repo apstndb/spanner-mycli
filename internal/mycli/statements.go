@@ -633,6 +633,9 @@ func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Res
 }
 
 func runBatch(ctx context.Context, session *Session) (*Result, error) {
+	if err := session.failStatementIfReadOnly(); err != nil {
+		return nil, err
+	}
 	batch, err := session.batch.TakeForExecution()
 	if err != nil {
 		return nil, err
