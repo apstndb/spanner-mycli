@@ -15,17 +15,17 @@ require (
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.3
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
-	github.com/apstndb/memebridge v0.6.0
+	github.com/apstndb/memebridge v0.6.2
 	github.com/apstndb/spancodec v0.1.1
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.1.11
 	github.com/apstndb/spanstats v0.1.0
-	github.com/apstndb/spantype v0.3.11
-	github.com/apstndb/spanvalue v0.8.0
+	github.com/apstndb/spantype v0.3.13
+	github.com/apstndb/spanvalue v0.8.2
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.6.2
+	github.com/cloudspannerecosystem/memefish v0.7.0
 	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.19.0
 	github.com/go-sprout/sprout v1.0.3
