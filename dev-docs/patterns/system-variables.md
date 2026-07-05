@@ -110,7 +110,8 @@ contract on every writable variable:
 
 ## Testing
 
-Match the existing test style (std testing + go-cmp; no testify):
+Match the existing test style (std testing + go-cmp preferred; see
+[testing.md](testing.md#test-style) for notes on testify usage):
 
 ```go
 func TestMyVariable(t *testing.T) {
