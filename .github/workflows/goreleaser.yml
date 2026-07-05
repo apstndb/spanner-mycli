@@ -32,3 +32,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin the release version to the pushed tag. Without this, goreleaser
+          # derives the version via git describe, which is ambiguous when multiple
+          # tags point at the same commit: v0.32.0's first run released to
+          # v0.32.0-alpha.1 because both tags shared one commit.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
