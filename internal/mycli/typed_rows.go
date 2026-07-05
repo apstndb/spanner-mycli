@@ -20,6 +20,7 @@ import (
 	"iter"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanvalue"
@@ -68,8 +69,8 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		return err
 	}
 
-	// Apply the per-query auto-detected table name for SQL export, mirroring
-	// writeBufferedRowsWithSpanvalueWriter.
+	// Apply the per-query auto-detected table name (Result.SQLTableNameForExport)
+	// for SQL export without mutating the caller's systemVariables.
 	sv := sysVars
 	if n := result.SQLTableNameForExport; n != "" && sv.Display.SQLTableName != n {
 		tmp := *sv
@@ -115,4 +116,60 @@ func deriveDisplayRows(sysVars *systemVariables, t *TypedRows) ([]Row, error) {
 		rows = append(rows, cells)
 	}
 	return rows, nil
+}
+
+// writeDisplayRows replays a presentation Result's display-text cells (kind (a):
+// EXPLAIN trees, SHOW OPERATION, batch summaries, ...) through the single
+// spanvalue writer for the current export format. It wraps the display texts as
+// STRING-typed synthetic rows and routes them through writeTypedRows, so CSV,
+// JSONL, and SQL_INSERT* bytes are emitted by exactly one implementation shared
+// with the streaming and typed-buffered paths (issue #738 PR5 removes the former
+// pass-through-GCV replay).
+//
+// Presentation tables never allow SQL export (Result.SQLExportAllowed is false
+// and they carry no Typed payload), so printTableData falls back to TABLE before
+// a SQL mode reaches here; only CSV and JSONL are handled in practice. Under
+// those modes a STRING value renders identically to the previous SimpleFormatConfig
+// (CSV: raw text) / JSONFormatConfig (JSONL: JSON string) replay. Returns
+// handled=false when the current format has no spanvalue writer (TAB/VERTICAL/
+// HTML/XML), matching the prior contract so the caller falls back to the
+// streaming formatter.
+func writeDisplayRows(out io.Writer, sysVars *systemVariables, columnNames []string, rows []Row) (bool, error) {
+	if out == nil || !usesSpanvalueWriter(sysVars.Display.CLIFormat) {
+		return false, nil
+	}
+	typed, err := stringRowsToTyped(columnNames, rows)
+	if err != nil {
+		return true, err
+	}
+	return true, writeTypedRows(out, sysVars, &Result{Typed: typed})
+}
+
+// stringRowsToTyped builds a TypedRows whose columns are all STRING and whose
+// values are the raw display texts of the given cells, so display-text rows can
+// reuse the typed replay writers. It errors if any row's cell count does not
+// match columnNames.
+func stringRowsToTyped(columnNames []string, rows []Row) (*TypedRows, error) {
+	fields := make([]*sppb.StructType_Field, len(columnNames))
+	for i, name := range columnNames {
+		fields[i] = &sppb.StructType_Field{Name: name, Type: &sppb.Type{Code: sppb.TypeCode_STRING}}
+	}
+	metadata := &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: fields}}
+
+	typedRows := make([]*spanner.Row, len(rows))
+	for i, row := range rows {
+		if len(row) != len(columnNames) {
+			return nil, fmt.Errorf("row %d has %d cells, want %d columns", i+1, len(row), len(columnNames))
+		}
+		values := make([]any, len(row))
+		for j, cell := range row {
+			values[j] = cell.RawText()
+		}
+		r, err := spanner.NewRow(columnNames, values)
+		if err != nil {
+			return nil, err
+		}
+		typedRows[i] = r
+	}
+	return &TypedRows{Metadata: metadata, Rows: typedRows}, nil
 }

@@ -112,11 +112,12 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	if !fmtMode.IsTableMode() {
-		// CSV/JSONL/SQL_INSERT* replay buffered rows through the spanvalue
-		// writers so those formats have a single byte-emitting implementation
-		// shared with the streaming paths. The fallback above guarantees the
-		// SQL modes only reach this replay with SQL-literal formatted cells.
-		if handled, err := writeBufferedRowsWithSpanvalueWriter(out, sysVars, result.SQLTableNameForExport, columnNames, rows); handled || err != nil {
+		// CSV/JSONL/SQL_INSERT* replay display-text presentation rows through the
+		// spanvalue writers so those formats have a single byte-emitting
+		// implementation shared with the streaming and typed-buffered paths. The
+		// SQL fallback above guarantees presentation tables (SQLExportAllowed
+		// false) never reach this replay in a SQL mode.
+		if handled, err := writeDisplayRows(out, sysVars, columnNames, rows); handled || err != nil {
 			if err != nil {
 				return fmt.Errorf("spanvalue writer failed for buffered rows in mode %v: %w", sysVars.Display.CLIFormat, err)
 			}
@@ -148,7 +149,7 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 	// Skip table data if already streamed or pre-rendered by an execution path
 	// that needs atomic output after side effects such as implicit DML commit.
 	if !result.Streamed {
-		if result.HasRenderedOutput {
+		if result.RenderedOutput != nil {
 			if _, err := out.Write(result.RenderedOutput); err != nil {
 				return err
 			}

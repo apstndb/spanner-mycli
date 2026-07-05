@@ -117,8 +117,9 @@ func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter
 // usesSpanvalueWriter reports whether mode is emitted by a spanvalue writer
 // (newSpanvalueRowIteratorWriterFor). These formats have exactly one
 // byte-emitting implementation: streaming query results, partitioned query
-// fan-in, client-side virtual result sets, and buffered Result replay
-// (writeBufferedRowsWithSpanvalueWriter) all go through the same writers.
+// fan-in, client-side virtual result sets, typed buffered results
+// (writeTypedRows), and display-text presentation replay (writeDisplayRows) all
+// go through the same writers.
 func usesSpanvalueWriter(mode enums.DisplayMode) bool {
 	switch mode {
 	case enums.DisplayModeCSV, enums.DisplayModeJSONL,

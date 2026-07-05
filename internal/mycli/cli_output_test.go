@@ -225,11 +225,10 @@ func TestPrintResultWritesRenderedOutput(t *testing.T) {
 	t.Parallel()
 
 	result := &Result{
-		TableHeader:       toTableHeader("col1"),
-		Rows:              []Row{toRow("should not be formatted")},
-		RenderedOutput:    []byte("rendered output\n"),
-		HasRenderedOutput: true,
-		AffectedRows:      1,
+		TableHeader:    toTableHeader("col1"),
+		Rows:           []Row{toRow("should not be formatted")},
+		RenderedOutput: []byte("rendered output\n"),
+		AffectedRows:   1,
 	}
 	sysVars := &systemVariables{
 		Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
@@ -245,7 +244,7 @@ func TestPrintResultWritesRenderedOutput(t *testing.T) {
 		t.Fatalf("printResult() = %q, want rendered output", got)
 	}
 	if strings.Contains(got, "should not be formatted") {
-		t.Fatalf("printResult() formatted Rows despite HasRenderedOutput: %q", got)
+		t.Fatalf("printResult() formatted Rows despite RenderedOutput: %q", got)
 	}
 }
 

@@ -359,7 +359,7 @@ func TestBuildDMLResultQueryModeRendering(t *testing.T) {
 			sysVars.Query.QueryMode = tt.userMode
 
 			dmlResult := &DMLResult{Affected: 3, Plan: tt.plan}
-			result, err := buildDMLResult(dmlResult, stats, nil, nil, false, sysVars)
+			result, err := buildDMLResult(dmlResult, stats, nil, nil, sysVars)
 			if err != nil {
 				t.Fatalf("buildDMLResult() error = %v, want nil", err)
 			}
