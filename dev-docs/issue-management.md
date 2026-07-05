@@ -16,7 +16,6 @@ Tools are managed via the Go tool directive (`go install tool` installs them).
 # Review operations
 go tool gh-helper reviews fetch <PR>                     # Fetch review data including threads
 go tool gh-helper reviews fetch <PR> --unresolved-only   # Only unresolved threads
-go tool gh-helper reviews fetch <PR> --needs-reply-only  # Only threads needing replies
 go tool gh-helper reviews fetch <PR> --no-bodies         # Exclude review bodies (lightweight)
 go tool gh-helper reviews wait <PR>                      # Wait for reviews and checks
 go tool gh-helper reviews wait <PR> --async              # Check once (non-blocking)

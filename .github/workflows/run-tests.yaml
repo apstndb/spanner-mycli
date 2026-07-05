@@ -47,9 +47,10 @@ jobs:
         with:
           version: v2.4
           args: --timeout=5m
-      # Compile-only guard: tag-gated test files (integration, skip_slow_test)
-      # are not built by default and have silently rotted before. This makes
-      # them at least compile without wiring them into any test run.
+      # Compile-only guard: integration-tagged files are excluded from default
+      # go test; this vet step builds them. skip_slow_test is defined here so
+      # !skip_slow_test files are excluded from this check (they still compile
+      # in the default test and lint jobs above).
       - name: vet tag-gated test files
         run: go vet -tags integration,skip_slow_test ./...
 

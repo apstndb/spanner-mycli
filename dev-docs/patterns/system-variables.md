@@ -65,9 +65,9 @@ r.Register("CLI_VERSION", NewReadOnlyVar(getVersion, "The version of spanner-myc
 // Enums: enumer-generated types in enums/ with a small typed constructor
 r.Register("CLI_FORMAT", DisplayModeVar(&sv.Display.CLIFormat, "..."))
 
-// Validation hook
-r.Register("CLI_PROMPT2", StringVar(&sv.Display.Prompt2, "...").
-	WithValidator(func(s string) error { /* reject invalid values */ return nil }))
+// Validation hook (duration bounds via WithValidator)
+r.Register("STATEMENT_TIMEOUT", NullableDurationVar(&sv.Query.StatementTimeout, "...").
+	WithValidator(durationValidator(durationPtr(0), nil)))
 ```
 
 ### Session-init-only variables
