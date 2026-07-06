@@ -400,7 +400,15 @@ var varDefs = []varDef{
 		name:  "MAX_PARTITIONED_PARALLELISM",
 		desc:  "A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return IntVar(&sv.Query.MaxPartitionedParallelism) },
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Query.MaxPartitionedParallelism).
+				WithValidator(func(value int64) error {
+					if value < 0 {
+						return fmt.Errorf("MAX_PARTITIONED_PARALLELISM must be non-negative, got %d", value)
+					}
+					return nil
+				})
+		},
 	},
 	{
 		name:  "CLI_TAB_WIDTH",

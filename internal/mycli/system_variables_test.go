@@ -15,6 +15,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -1236,5 +1237,71 @@ func TestOutputTemplateFileEmptyRestoresDefault(t *testing.T) {
 				t.Errorf("get mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestOutputTemplateFileRejectsUnsafeReads(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-regular file", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("os.DevNull mode is not portable enough for this regular-file check")
+		}
+
+		sv := newSystemVariablesWithDefaultsForTest()
+		err := sv.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", os.DevNull)
+		if err == nil {
+			t.Fatal("SET CLI_OUTPUT_TEMPLATE_FILE to os.DevNull succeeded, want error")
+		}
+		if !strings.Contains(err.Error(), "cannot read character device") {
+			t.Fatalf("error = %v, want character device rejection", err)
+		}
+	})
+
+	t.Run("over max size", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "too-large.tmpl")
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatalf("create template: %v", err)
+		}
+		if err := f.Truncate(filesafety.DefaultMaxFileSize + 1); err != nil {
+			_ = f.Close()
+			t.Fatalf("truncate template: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("close template: %v", err)
+		}
+
+		sv := newSystemVariablesWithDefaultsForTest()
+		err = sv.SetFromSimple("CLI_OUTPUT_TEMPLATE_FILE", path)
+		if err == nil {
+			t.Fatal("SET CLI_OUTPUT_TEMPLATE_FILE to oversized file succeeded, want error")
+		}
+		if !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("error = %v, want size rejection", err)
+		}
+	})
+}
+
+func TestMaxPartitionedParallelismRejectsNegative(t *testing.T) {
+	t.Parallel()
+
+	sv := newSystemVariablesWithDefaultsForTest()
+	err := sv.SetFromSimple("MAX_PARTITIONED_PARALLELISM", "-1")
+	if err == nil {
+		t.Fatal("SET MAX_PARTITIONED_PARALLELISM=-1 succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "must be non-negative") {
+		t.Fatalf("error = %v, want non-negative rejection", err)
+	}
+
+	got, err := sv.Get("MAX_PARTITIONED_PARALLELISM")
+	if err != nil {
+		t.Fatalf("Get(MAX_PARTITIONED_PARALLELISM): %v", err)
+	}
+	if diff := cmp.Diff(singletonMap("MAX_PARTITIONED_PARALLELISM", "0"), got); diff != "" {
+		t.Errorf("Get(MAX_PARTITIONED_PARALLELISM) mismatch (-want +got):\n%s", diff)
 	}
 }
