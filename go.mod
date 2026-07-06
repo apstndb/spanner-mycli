@@ -37,7 +37,7 @@ require (
 	github.com/googleapis/go-spanner-cassandra v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/hymkor/go-multiline-ny v0.23.1
-	github.com/junegunn/fzf v0.73.0
+	github.com/junegunn/fzf v0.73.1
 	github.com/k0kubun/pp/v3 v3.5.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.19.0
