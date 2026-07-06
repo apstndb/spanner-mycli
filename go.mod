@@ -82,13 +82,13 @@ require (
 	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
-	github.com/apstndb/ptyhelp v0.2.1 // indirect
+	github.com/apstndb/ptyhelp v0.2.3 // indirect
 	github.com/apstndb/structfields v0.1.0 // indirect
 	github.com/apstndb/structfields/spannertag v0.1.0 // indirect
-	github.com/aymanbagabas/go-pty v0.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charlievieth/fastwalk v1.0.14 // indirect
+	github.com/charmbracelet/x/conpty v0.2.0 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
@@ -171,7 +171,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
-	github.com/u-root/u-root v0.11.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
