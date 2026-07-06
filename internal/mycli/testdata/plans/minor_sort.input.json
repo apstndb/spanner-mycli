@@ -1,0 +1,46 @@
+{
+  "planNodes": [
+    {
+      "childLinks": [
+        {
+          "childIndex": 1
+        },
+        {
+          "childIndex": 2,
+          "type": "MajorKey"
+        },
+        {
+          "childIndex": 3,
+          "type": "MinorKey"
+        }
+      ],
+      "displayName": "Minor Sort",
+      "kind": "RELATIONAL"
+    },
+    {
+      "displayName": "Scan",
+      "index": 1,
+      "kind": "RELATIONAL",
+      "metadata": {
+        "scan_target": "Singers",
+        "scan_type": "TableScan"
+      }
+    },
+    {
+      "displayName": "Reference",
+      "index": 2,
+      "kind": "SCALAR",
+      "shortRepresentation": {
+        "description": "$SingerId ASC"
+      }
+    },
+    {
+      "displayName": "Reference",
+      "index": 3,
+      "kind": "SCALAR",
+      "shortRepresentation": {
+        "description": "$AlbumId DESC"
+      }
+    }
+  ]
+}

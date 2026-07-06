@@ -1,0 +1,37 @@
+{
+  "planNodes": [
+    {
+      "childLinks": [
+        {
+          "childIndex": 1
+        },
+        {
+          "childIndex": 2,
+          "type": "Key"
+        }
+      ],
+      "displayName": "Aggregate",
+      "kind": "RELATIONAL",
+      "metadata": {
+        "iterator_type": "Hash"
+      }
+    },
+    {
+      "displayName": "Scan",
+      "index": 1,
+      "kind": "RELATIONAL",
+      "metadata": {
+        "scan_target": "Singers",
+        "scan_type": "TableScan"
+      }
+    },
+    {
+      "displayName": "Reference",
+      "index": 2,
+      "kind": "SCALAR",
+      "shortRepresentation": {
+        "description": "$SingerId"
+      }
+    }
+  ]
+}
