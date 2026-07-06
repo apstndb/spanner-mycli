@@ -99,17 +99,8 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 		return &ErrUnknownVariable{Name: name}
 	}
 
-	// Policy enforcement lives here, driven by the def's metadata, rather than
-	// inside each handler's Set. r.sv.inTransaction is nil until a session is
-	// created, so it doubles as the "session exists" signal for initOnly.
-	def := rv.def
-	switch {
-	case !def.settable():
-		return errSetterReadOnly
-	case def.initOnly && r.sv.inTransaction != nil:
-		return &errSetterInitOnly{Name: def.name}
-	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
-		return errSetterInTransaction
+	if err := r.checkSetPolicy(rv.def); err != nil {
+		return err
 	}
 
 	// Parse GoogleSQL value if needed
@@ -125,6 +116,24 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 	return err
 }
 
+// checkSetPolicy enforces the def's mutation policy (read-only, session-init-only,
+// transaction-guarded) that governs whether a value may be changed right now. It
+// is the single source of truth shared by both Set (`SET X = ...`) and Add
+// (`SET X += ...`) so the two entry points cannot diverge: an ADD must never
+// bypass a guard that a plain SET enforces. r.sv.inTransaction is nil until a
+// session is created, so it doubles as the "session exists" signal for initOnly.
+func (r *VarRegistry) checkSetPolicy(def *varDef) error {
+	switch {
+	case !def.settable():
+		return errSetterReadOnly
+	case def.initOnly && r.sv.inTransaction != nil:
+		return &errSetterInitOnly{Name: def.name}
+	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
+		return errSetterInTransaction
+	}
+	return nil
+}
+
 // Add performs ADD operation on a variable
 func (r *VarRegistry) Add(name, value string) error {
 	upperName := strings.ToUpper(name)
@@ -133,6 +142,14 @@ func (r *VarRegistry) Add(name, value string) error {
 	rv, ok := r.vars[upperName]
 	if !ok {
 		return &ErrUnknownVariable{Name: name}
+	}
+
+	// ADD is a mutation, so it must clear the same policy guards as SET; otherwise
+	// `SET X += ...` would be a latent bypass of read-only/init-only/txn-guard.
+	// There is no `SET LOCAL X += ...` grammar (the SET LOCAL pattern only accepts
+	// `=`), so localAllowed() has no ADD path to enforce here.
+	if err := r.checkSetPolicy(rv.def); err != nil {
+		return err
 	}
 
 	// Then check if it supports ADD
@@ -198,28 +215,35 @@ func (r *VarRegistry) ListMultiValues() map[string]string {
 
 // ListVariableInfo returns information about all variables
 func (r *VarRegistry) ListVariableInfo() map[string]struct {
-	Description string
-	ReadOnly    bool
-	CanAdd      bool
+	Description   string
+	ReadOnly      bool
+	CanAdd        bool
+	Unimplemented bool
 } {
 	result := make(map[string]struct {
-		Description string
-		ReadOnly    bool
-		CanAdd      bool
+		Description   string
+		ReadOnly      bool
+		CanAdd        bool
+		Unimplemented bool
 	})
 
 	// Iterate varDefs by canonical name so aliases are excluded from the listing.
 	for i := range varDefs {
 		name := strings.ToUpper(varDefs[i].name)
 		rv := r.vars[name]
+		// Unimplemented status is derived from the bound handler type, not from a
+		// hardcoded name list, so generated docs stay honest as vars come and go.
+		_, unimplemented := rv.v.(*UnimplementedVar)
 		result[name] = struct {
-			Description string
-			ReadOnly    bool
-			CanAdd      bool
+			Description   string
+			ReadOnly      bool
+			CanAdd        bool
+			Unimplemented bool
 		}{
-			Description: rv.def.desc,
-			ReadOnly:    !rv.def.settable(),
-			CanAdd:      rv.add != nil,
+			Description:   rv.def.desc,
+			ReadOnly:      !rv.def.settable(),
+			CanAdd:        rv.add != nil,
+			Unimplemented: unimplemented,
 		}
 	}
 

@@ -443,9 +443,10 @@ func (sv *systemVariables) ListVariables() map[string]string {
 
 // ListVariableInfo returns information about all variables
 func (sv *systemVariables) ListVariableInfo() map[string]struct {
-	Description string
-	ReadOnly    bool
-	CanAdd      bool
+	Description   string
+	ReadOnly      bool
+	CanAdd        bool
+	Unimplemented bool
 } {
 	sv.ensureRegistry()
 	return sv.Registry.ListVariableInfo()
