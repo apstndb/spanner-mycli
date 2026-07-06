@@ -803,6 +803,15 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 		return stmt.Execute(ctx, s)
 	}
 
+	// Conditionally mutating statements (e.g. mutating CQL) participate in the
+	// READONLY guard but do not determine a pending Spanner transaction, since
+	// they do not use the Spanner transaction machinery.
+	if cm, ok := stmt.(ConditionallyMutatingStatement); ok && cm.isConditionallyMutating() {
+		if err := s.failStatementIfReadOnly(); err != nil {
+			return &Result{}, err
+		}
+	}
+
 	return stmt.Execute(ctx, s)
 }
 

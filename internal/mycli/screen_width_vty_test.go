@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/creack/pty"
 )
@@ -179,23 +182,68 @@ func TestDisplayResultWithPty(t *testing.T) {
 				t.Fatalf("displayResult() failed: %v", err)
 			}
 
-			// Read from the master side of the PTY to get the output
-			buf := make([]byte, 1024)
-			n, err := ptmx.Read(buf)
-			if err != nil {
-				t.Fatalf("Failed to read from PTY: %v", err)
+			// Derive the expected rendered content from the test inputs. TAB
+			// format prints the header row followed by each data row. The PTY may
+			// translate "\n" to "\r\n" (ONLCR), so assert on the presence of each
+			// header name and cell value rather than on exact bytes.
+			var want []string
+			want = append(want, tt.result.TableHeader.Render(false)...)
+			for _, row := range tt.result.Rows {
+				want = append(want, format.Texts(row)...)
 			}
 
-			// Verify that the output was generated correctly
-			// This is a basic check that some output was produced
-			if n == 0 {
-				t.Errorf("No output was produced")
+			// Read from the master side of the PTY until all expected fragments
+			// appear. The read runs in a goroutine bounded by a timeout so the
+			// test can never hang, even if displayResult produced no output.
+			// PTY masters do not support SetReadDeadline on all platforms
+			// (e.g. macOS), so on timeout we close the PTY to unblock Read.
+			type readResult struct {
+				out string
+				err error
 			}
+			done := make(chan readResult, 1)
+			go func() {
+				var out bytes.Buffer
+				buf := make([]byte, 1024)
+				for {
+					n, readErr := ptmx.Read(buf)
+					if n > 0 {
+						out.Write(buf[:n])
+					}
+					if containsAll(out.String(), want) {
+						done <- readResult{out: out.String()}
+						return
+					}
+					if readErr != nil {
+						done <- readResult{out: out.String(), err: readErr}
+						return
+					}
+				}
+			}()
 
-			// We could add more specific checks here based on the expected output format
-			// but that would require detailed knowledge of the output format
+			select {
+			case res := <-done:
+				if !containsAll(res.out, want) {
+					t.Fatalf("PTY output missing expected content: want all of %q, got %q (read error: %v)",
+						want, res.out, res.err)
+				}
+			case <-time.After(5 * time.Second):
+				// Unblock the reader goroutine's pending Read.
+				ptmx.Close()
+				t.Fatalf("timed out reading PTY output: want all of %q", want)
+			}
 		})
 	}
+}
+
+// containsAll reports whether s contains every substring in subs.
+func containsAll(s string, subs []string) bool {
+	for _, sub := range subs {
+		if !strings.Contains(s, sub) {
+			return false
+		}
+	}
+	return true
 }
 
 // isUnixLike returns true if the current system is Unix-like (Linux, macOS, etc.)
