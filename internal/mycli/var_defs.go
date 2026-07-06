@@ -546,7 +546,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_FORMAT",
-		desc:  "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated, raw values), TSV (tab-separated with tab/newline/carriage-return/backslash escaping), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
+		desc:  "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated, raw values), TSV (tab-separated with tab/newline/carriage-return/backslash escaping), HTML (HTML table), XML (XML format), CSV (comma-separated values), JSONL (newline-delimited JSON), SQL_INSERT (INSERT statements), SQL_INSERT_OR_IGNORE (INSERT OR IGNORE statements), SQL_INSERT_OR_UPDATE (INSERT OR UPDATE statements).",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return DisplayModeVar(&sv.Display.CLIFormat) },
 	},
