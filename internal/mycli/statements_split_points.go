@@ -22,6 +22,11 @@ type AddSplitPointsStatement struct {
 	SplitPoints []*databasepb.SplitPoints
 }
 
+// ADD SPLIT POINTS mutates the database split state via the admin API, so it is
+// blocked in READONLY mode. See the compile-time assertion in
+// statement_processing.go.
+func (AddSplitPointsStatement) isMutationStatement() {}
+
 func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	_, err := session.adminClient.AddSplitPoints(ctx, &databasepb.AddSplitPointsRequest{
 		Database:    session.DatabasePath(),
