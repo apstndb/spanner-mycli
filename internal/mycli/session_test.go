@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
@@ -188,6 +189,33 @@ func TestCreateClientOptionsUsesEmbeddedClientOptions(t *testing.T) {
 	}
 	if len(opts) != 1 {
 		t.Fatalf("createClientOptions() len = %d, want 1", len(opts))
+	}
+}
+
+func TestSessionHandlerPreservesBigQueryCredentialForReplacementSessions(t *testing.T) {
+	t.Parallel()
+
+	credential := []byte(`{"type":"authorized_user","client_id":"operator"}`)
+	handler := newSessionHandlerWithCredential(&Session{}, credential)
+
+	if !bytes.Equal(handler.bqCredential, credential) {
+		t.Fatalf("current session bqCredential = %q, want %q", handler.bqCredential, credential)
+	}
+
+	credential[0] = '['
+	if bytes.Equal(handler.credential, credential) {
+		t.Fatal("SessionHandler retained caller-owned credential slice")
+	}
+
+	replacement := &Session{}
+	handler.applyBigQueryCredential(replacement)
+	if !bytes.Equal(replacement.bqCredential, []byte(`{"type":"authorized_user","client_id":"operator"}`)) {
+		t.Fatalf("replacement bqCredential = %q, want original credential", replacement.bqCredential)
+	}
+
+	replacement.bqCredential[0] = '['
+	if bytes.Equal(handler.credential, replacement.bqCredential) {
+		t.Fatal("replacement session owns the handler credential slice")
 	}
 }
 

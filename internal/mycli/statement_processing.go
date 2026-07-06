@@ -56,7 +56,8 @@ type MutationStatement interface {
 //
 // Unlike MutationStatement, implementing this interface does NOT determine a
 // pending Spanner transaction: it only participates in the READONLY guard,
-// because such statements (CQL) do not use the Spanner transaction machinery.
+// because such statements (CQL, BigQuery) do not use the Spanner transaction
+// machinery.
 type ConditionallyMutatingStatement interface {
 	isConditionallyMutating() bool
 }
@@ -87,6 +88,7 @@ var (
 // silently drops the type out of the interface and bypasses the READONLY guard.
 var (
 	_ ConditionallyMutatingStatement = (*CQLStatement)(nil)
+	_ ConditionallyMutatingStatement = (*BigQueryStatement)(nil)
 )
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
