@@ -696,13 +696,36 @@ func spannerConnectionEnvResolver() kong.Resolver {
 	})
 }
 
+// credentialFileMaxSize caps the credential JSON read. Service-account key
+// files are a few KiB; 4 MiB is a generous ceiling that still routes the read
+// through the filesafety layer (size/type limits) used for other file inputs.
+const credentialFileMaxSize = 4 * 1024 * 1024 // 4 MiB
+
 func readCredentialFile(filepath string) ([]byte, error) {
-	f, err := os.Open(filepath)
+	data, err := filesafety.SafeReadFile(filepath, &filesafety.FileSafetyOptions{MaxSize: credentialFileMaxSize})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read credential file %q failed: %w", filepath, err)
 	}
-	defer f.Close()
-	return io.ReadAll(f)
+	return data, nil
+}
+
+// stdinMaxSize caps batch input read from stdin. Batch/stdin input is otherwise
+// unbounded, so this mirrors the limit the CLI already enforces on SQL files
+// read from disk and prevents a hostile or accidental stream from exhausting
+// memory.
+const stdinMaxSize = int64(filesafety.DefaultMaxFileSize)
+
+// readStdinCapped reads from stdin but refuses input larger than maxSize,
+// returning a clear error that names the limit instead of silently truncating.
+func readStdinCapped(stdin io.Reader, maxSize int64) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(stdin, maxSize+1))
+	if err != nil {
+		return "", fmt.Errorf("read from stdin failed: %w", err)
+	}
+	if int64(len(data)) > maxSize {
+		return "", fmt.Errorf("stdin input too large: exceeded %d bytes", maxSize)
+	}
+	return string(data), nil
 }
 
 // determineInputAndMode decides whether to run in interactive or batch mode
@@ -732,11 +755,11 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 	case opts.SQL != "":
 		return opts.SQL, false, nil
 	case fileToRead == "-":
-		b, err := io.ReadAll(stdin)
+		s, err := readStdinCapped(stdin, stdinMaxSize)
 		if err != nil {
-			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+			return "", false, err
 		}
-		return string(b), false, nil
+		return s, false, nil
 	case fileToRead != "":
 		// AllowNonRegular keeps process substitution (--file <(...)) working;
 		// SafeReadFile still bounds the read for pipe-like inputs.
@@ -754,11 +777,11 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 		}
 
 		// No terminal - read from stdin for batch mode
-		b, err := io.ReadAll(stdin)
+		s, err := readStdinCapped(stdin, stdinMaxSize)
 		if err != nil {
-			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+			return "", false, err
 		}
-		return string(b), false, nil
+		return s, false, nil
 	}
 }
 

@@ -89,32 +89,58 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 	return nil
 }
 
-// SafeReadFile reads a file after performing safety checks. For regular files
-// the size limit is enforced up front from Stat. Non-regular inputs (only
-// reachable with AllowNonRegular, e.g. process substitution FIFOs) report a
-// meaningless Stat size, so the read itself is capped at the size limit and
-// exceeding it is an error rather than a truncation.
+// SafeReadFile reads a file after performing safety checks, validating the same
+// file descriptor it reads from so it never reads from an unexpected target.
+//
+// The flow mirrors streamio.openOutputFile's open-then-fstat pattern:
+//  1. A pre-open Stat rejects unsafe targets (e.g. non-regular files when
+//     AllowNonRegular is unset, or directories) before we open them. This
+//     matters because opening a FIFO O_RDONLY blocks until a writer appears, so
+//     we must not open one we are only going to reject.
+//  2. After os.Open, f.Stat() re-validates against the descriptor actually
+//     opened. If the path was swapped between the two stats (e.g. a regular
+//     file replaced by a device or FIFO), this catches it before we read.
+//
+// Scope of the guarantee: the fd re-validation ensures we never READ from a
+// swapped or unexpected file type. It does NOT eliminate an open-time block: a
+// hostile swap of a regular file to a FIFO in the window between the pre-open
+// Stat and os.Open can still block the blocking os.Open until a writer appears,
+// on platforms where opening a FIFO read-only blocks. This is an accepted
+// limitation for a local CLI. O_NONBLOCK open is deliberately not used so that
+// process-substitution FIFOs (--file <(...)) keep working with blocking reads.
+//
+// The read itself is always capped via io.LimitReader for BOTH regular and
+// allowed non-regular inputs. Stat sizes are meaningless for pipes and can be
+// stale for regular files, so the limit is enforced at read time rather than
+// only from the FileInfo size.
 func SafeReadFile(path string, opts *FileSafetyOptions) ([]byte, error) {
+	maxSize := maxFileSize(opts)
+
+	// Pre-open validation: reject unsafe targets before opening so we never
+	// block opening (e.g. a FIFO) a file we would only reject anyway.
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
-
 	if err := ValidateFileSafety(fi, path, opts); err != nil {
 		return nil, err
 	}
-
-	if fi.Mode().IsRegular() {
-		return os.ReadFile(path)
-	}
-
-	maxSize := maxFileSize(opts)
 
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 	defer f.Close()
+
+	// Re-validate against the opened descriptor to close the stat-then-reopen
+	// TOCTOU: the file we read from is exactly the one we validated here.
+	fi, err = f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat opened file %s: %w", path, err)
+	}
+	if err := ValidateFileSafety(fi, path, opts); err != nil {
+		return nil, err
+	}
 
 	data, err := io.ReadAll(io.LimitReader(f, maxSize+1))
 	if err != nil {
