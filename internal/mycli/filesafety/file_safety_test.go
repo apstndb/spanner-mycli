@@ -295,3 +295,41 @@ func TestSafeReadFile_directoryRejectedEvenWithAllowNonRegular(t *testing.T) {
 		t.Fatalf("error = %v, want cannot-read-directory error", err)
 	}
 }
+
+// TestSafeReadFile_openOnceRegularReadCap exercises the open-once path for
+// regular files: the size limit is enforced against the descriptor that is
+// actually read. A file at the limit is returned in full and a file over the
+// limit is rejected.
+func TestSafeReadFile_openOnceRegularReadCap(t *testing.T) {
+	t.Parallel()
+
+	const maxSize = 1024
+
+	t.Run("at limit", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "at_limit.txt")
+		content := strings.Repeat("a", maxSize)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		got, err := SafeReadFile(path, &FileSafetyOptions{MaxSize: maxSize})
+		if err != nil {
+			t.Fatalf("SafeReadFile: %v", err)
+		}
+		if string(got) != content {
+			t.Errorf("got %d bytes, want %d", len(got), len(content))
+		}
+	})
+
+	t.Run("over limit", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "over_limit.txt")
+		if err := os.WriteFile(path, []byte(strings.Repeat("a", maxSize+1)), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		_, err := SafeReadFile(path, &FileSafetyOptions{MaxSize: maxSize})
+		if err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("error = %v, want too-large error", err)
+		}
+	})
+}

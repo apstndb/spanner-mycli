@@ -1792,6 +1792,63 @@ func TestReadCredentialFile(t *testing.T) {
 	}
 }
 
+// TestReadCredentialFile_sizeCap verifies that credential files exceeding the
+// filesafety size cap are rejected instead of being read unbounded.
+func TestReadCredentialFile_sizeCap(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	credFile := filepath.Join(tempDir, "big-cred.json")
+	// One byte over the cap is enough to trigger rejection.
+	oversized := make([]byte, credentialFileMaxSize+1)
+	if err := os.WriteFile(credFile, oversized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readCredentialFile(credFile)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("readCredentialFile() error = %v, want too-large error", err)
+	}
+}
+
+// TestReadStdinCapped verifies the stdin size cap: input at the limit is
+// returned in full and input over the limit is rejected with a clear error.
+func TestReadStdinCapped(t *testing.T) {
+	t.Parallel()
+
+	const maxSize = int64(16)
+
+	t.Run("within limit", func(t *testing.T) {
+		t.Parallel()
+		got, err := readStdinCapped(strings.NewReader("SELECT 1;"), maxSize)
+		if err != nil {
+			t.Fatalf("readStdinCapped() error = %v", err)
+		}
+		if got != "SELECT 1;" {
+			t.Errorf("got %q, want %q", got, "SELECT 1;")
+		}
+	})
+
+	t.Run("at limit", func(t *testing.T) {
+		t.Parallel()
+		content := strings.Repeat("x", int(maxSize))
+		got, err := readStdinCapped(strings.NewReader(content), maxSize)
+		if err != nil {
+			t.Fatalf("readStdinCapped() error = %v", err)
+		}
+		if got != content {
+			t.Errorf("got %d bytes, want %d", len(got), len(content))
+		}
+	})
+
+	t.Run("over limit", func(t *testing.T) {
+		t.Parallel()
+		content := strings.Repeat("x", int(maxSize)+1)
+		_, err := readStdinCapped(strings.NewReader(content), maxSize)
+		if err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("readStdinCapped() error = %v, want too-large error", err)
+		}
+	})
+}
+
 func TestBatchModeTableFormatLogic(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
