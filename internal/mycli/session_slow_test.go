@@ -4,6 +4,7 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -325,6 +326,11 @@ func TestInstanceExists(t *testing.T) {
 		_, err := session.InstanceExists(cancelledCtx)
 		if err == nil {
 			t.Fatal("expected InstanceExists to fail with a cancelled context")
+		}
+		// The cancellation must be surfaced directly (short-circuited), not
+		// masked as a generic "checking instance existence failed" error.
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected error to wrap context.Canceled, got: %v", err)
 		}
 	})
 }

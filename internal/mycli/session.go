@@ -631,6 +631,17 @@ func (s *Session) InstanceExists(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	// If the failure is caused by context cancellation or deadline (either the
+	// caller's ctx or the layered 30s bound), short-circuit and return that
+	// error directly. Method 2 would only issue another RPC on the same dead
+	// ctx and mislabel a cancellation as "checking instance existence failed".
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	if status.Code(listErr) == codes.Canceled || status.Code(listErr) == codes.DeadlineExceeded {
+		return false, listErr
+	}
+
 	switch status.Code(listErr) {
 	case codes.NotFound:
 		return false, nil
@@ -644,10 +655,11 @@ func (s *Session) InstanceExists(ctx context.Context) (bool, error) {
 	// This works for users with spanner.instances.get permission (like Database Reader role)
 	instanceAdminClient, err := instanceapi.NewInstanceAdminClient(ctx, s.clientOpts...)
 	if err != nil {
-		// If we can't create the instance admin client, surface both failures:
-		// the original databases.list error (listErr) and the client creation error.
-		// errors.Join preserves both so the "tried both ..." message matches reality.
-		return false, fmt.Errorf("checking instance existence failed: tried both spanner.databases.list and spanner.instances.get: %w", errors.Join(listErr, err))
+		// instances.get was never attempted here because the admin client could
+		// not be created. Surface both the original databases.list error (listErr)
+		// and the client-creation error via errors.Join so the message reflects
+		// reality (do not claim instances.get was tried).
+		return false, fmt.Errorf("checking instance existence failed: spanner.databases.list failed and the instance admin client could not be created: %w", errors.Join(listErr, err))
 	}
 	defer func() {
 		if closeErr := instanceAdminClient.Close(); closeErr != nil {
