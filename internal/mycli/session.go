@@ -410,7 +410,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	sysVars.inTransaction = session.txn.InTransaction
 
 	// Validate instance exists
-	exists, err := session.InstanceExists()
+	exists, err := session.InstanceExists(ctx)
 	if err != nil {
 		session.Close()
 		return nil, err
@@ -604,8 +604,11 @@ func (s *Session) InstancePath() string {
 	return s.systemVariables.InstancePath()
 }
 
-func (s *Session) InstanceExists() (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+// InstanceExists reports whether the configured Spanner instance is reachable.
+// The caller's ctx is honored (including cancellation); a 30s timeout is layered
+// on top as an upper bound so a hung RPC cannot block indefinitely.
+func (s *Session) InstanceExists(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
 
 	// Method 1: Try listing databases (databases.list) first
@@ -616,19 +619,30 @@ func (s *Session) InstanceExists() (bool, error) {
 	})
 
 	// Try to get the first item from iterator
-	_, err := dbIter.Next()
+	_, listErr := dbIter.Next()
 
-	if err == nil {
+	if listErr == nil {
 		// Successfully got at least one database, instance exists
 		return true, nil
 	}
 
 	// Check if it's an iterator.Done error (no databases but instance exists)
-	if err == iterator.Done {
+	if listErr == iterator.Done {
 		return true, nil
 	}
 
-	switch status.Code(err) {
+	// If the failure is caused by context cancellation or deadline (either the
+	// caller's ctx or the layered 30s bound), short-circuit and return that
+	// error directly. Method 2 would only issue another RPC on the same dead
+	// ctx and mislabel a cancellation as "checking instance existence failed".
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	if status.Code(listErr) == codes.Canceled || status.Code(listErr) == codes.DeadlineExceeded {
+		return false, listErr
+	}
+
+	switch status.Code(listErr) {
 	case codes.NotFound:
 		return false, nil
 	case codes.PermissionDenied:
@@ -641,8 +655,11 @@ func (s *Session) InstanceExists() (bool, error) {
 	// This works for users with spanner.instances.get permission (like Database Reader role)
 	instanceAdminClient, err := instanceapi.NewInstanceAdminClient(ctx, s.clientOpts...)
 	if err != nil {
-		// If we can't create the instance admin client, return the original database list error
-		return false, fmt.Errorf("failed to create instance admin client: %v; original database list error: tried both spanner.databases.list and spanner.instances.get", err)
+		// instances.get was never attempted here because the admin client could
+		// not be created. Surface both the original databases.list error (listErr)
+		// and the client-creation error via errors.Join so the message reflects
+		// reality (do not claim instances.get was tried).
+		return false, fmt.Errorf("checking instance existence failed: spanner.databases.list failed and the instance admin client could not be created: %w", errors.Join(listErr, err))
 	}
 	defer func() {
 		if closeErr := instanceAdminClient.Close(); closeErr != nil {
@@ -667,7 +684,9 @@ func (s *Session) InstanceExists() (bool, error) {
 		// to verify its existence. Return an error to inform the user.
 		return false, fmt.Errorf("insufficient permissions to verify instance existence: tried both spanner.databases.list and spanner.instances.get")
 	default:
-		return false, fmt.Errorf("checking instance existence failed: %v", err)
+		// Wrap with %w to preserve the gRPC status so downstream printError can
+		// still extract the status code and details instead of a flattened string.
+		return false, fmt.Errorf("checking instance existence failed: %w", err)
 	}
 }
 
@@ -696,17 +715,18 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	case codes.InvalidArgument:
 		return false, nil
 	default:
-		return false, fmt.Errorf("checking database existence failed: %v", err)
+		// Wrap with %w to preserve the gRPC status for downstream printError.
+		return false, fmt.Errorf("checking database existence failed: %w", err)
 	}
 }
 
 // RecreateClient closes the current client and creates a new client for the session.
-func (s *Session) RecreateClient() error {
+// The caller's ctx governs client creation so cancellation is respected.
+func (s *Session) RecreateClient(ctx context.Context) error {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return err
 	}
 
-	ctx := context.Background()
 	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), s.clientConfig, s.clientOpts...)
 	if err != nil {
 		return err
@@ -801,6 +821,15 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 			return result, err
 		}
 		return stmt.Execute(ctx, s)
+	}
+
+	// Conditionally mutating statements (e.g. mutating CQL) participate in the
+	// READONLY guard but do not determine a pending Spanner transaction, since
+	// they do not use the Spanner transaction machinery.
+	if cm, ok := stmt.(ConditionallyMutatingStatement); ok && cm.isConditionallyMutating() {
+		if err := s.failStatementIfReadOnly(); err != nil {
+			return &Result{}, err
+		}
 	}
 
 	return stmt.Execute(ctx, s)

@@ -142,11 +142,18 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 		return nil, err
 	}
 
-	queryPlan, err := spannerplan.New(planNodes)
-	if err != nil {
-		return nil, err
+	// Computing incoming parent links requires reconstructing the whole plan,
+	// which can fail on a malformed or unexpected cached plan shape. SHOW PLAN
+	// NODE is a debugging command whose primary value is dumping the raw node
+	// YAML (already marshaled above), so degrade gracefully here: keep showing
+	// the node content and replace the parent-links row with a short note
+	// instead of failing the whole statement.
+	var parentLinksInfo string
+	if queryPlan, err := spannerplan.New(planNodes); err != nil {
+		parentLinksInfo = fmt.Sprintf("parent links unavailable: %v", err)
+	} else {
+		parentLinksInfo = formatShowPlanNodeIncomingLinks(queryPlan.ParentLinks(int32(s.NodeID)))
 	}
-	parentLinksInfo := formatShowPlanNodeIncomingLinks(queryPlan.ParentLinks(int32(s.NodeID)))
 
 	return &Result{
 		TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", s.NodeID)),

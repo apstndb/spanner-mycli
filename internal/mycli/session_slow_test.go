@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -275,6 +276,61 @@ func TestIsolationLevel(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInstanceExists exercises Session.InstanceExists against the emulator to
+// verify (1) the happy path for an existing instance, (2) NotFound handling for
+// a bogus instance name, and (3) that the caller's context is honored (a
+// pre-cancelled context must fail fast instead of being ignored, as it was when
+// the method used context.Background()).
+func TestInstanceExists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping emulator test in short mode")
+	}
+
+	ctx := t.Context()
+	_, session := initializeAdminSession(t)
+
+	t.Run("existing instance", func(t *testing.T) {
+		exists, err := session.InstanceExists(ctx)
+		if err != nil {
+			t.Fatalf("InstanceExists returned error: %v", err)
+		}
+		if !exists {
+			t.Error("expected InstanceExists to be true for the configured instance")
+		}
+	})
+
+	t.Run("nonexistent instance", func(t *testing.T) {
+		// Temporarily point the session at an instance that does not exist so
+		// the databases.list call resolves to NotFound.
+		orig := session.systemVariables.Connection.Instance
+		session.systemVariables.Connection.Instance = "nonexistent-instance"
+		defer func() { session.systemVariables.Connection.Instance = orig }()
+
+		exists, err := session.InstanceExists(ctx)
+		if err != nil {
+			t.Fatalf("InstanceExists returned error: %v", err)
+		}
+		if exists {
+			t.Error("expected InstanceExists to be false for a nonexistent instance")
+		}
+	})
+
+	t.Run("cancelled context is honored", func(t *testing.T) {
+		cancelledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		_, err := session.InstanceExists(cancelledCtx)
+		if err == nil {
+			t.Fatal("expected InstanceExists to fail with a cancelled context")
+		}
+		// The cancellation must be surfaced directly (short-circuited), not
+		// masked as a generic "checking instance existence failed" error.
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected error to wrap context.Canceled, got: %v", err)
+		}
+	})
 }
 
 // requestRecorder is a recorder to retain gRPC requests for spannertest.Server.
