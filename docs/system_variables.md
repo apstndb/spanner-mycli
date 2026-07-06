@@ -24,7 +24,9 @@ Variables can also be set at startup with `--set NAME=VALUE` command-line flags.
 
 The table below lists all system variables. The `operations` column shows
 whether a variable can be read (`SHOW`), written (`SET`), or appended to
-(`SET ... += ...`).
+(`SET ... += ...`). A variable marked `unimplemented` is recognized for
+compatibility with Spanner JDBC connection properties but currently rejects
+both `SHOW` and `SET`.
 
 <!-- The table between the markers below is generated from the variable
      registry by `make docs-update` (via the hidden --sysvars-help flag).
