@@ -109,7 +109,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	metadata, err := pollDdl()
 	if err != nil {
 		teardown()
-		return nil, err
+		return nil, handleDdlWaitError(session, op, err)
 	}
 
 	if metadata != nil && bars != nil {
@@ -133,13 +133,13 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 			// continue
 		case <-ctx.Done():
 			teardown()
-			return nil, ctx.Err()
+			return nil, handleDdlWaitError(session, op, ctx.Err())
 		}
 
 		metadata, err = pollDdl()
 		if err != nil {
 			teardown()
-			return nil, err
+			return nil, handleDdlWaitError(session, op, err)
 		}
 
 		if metadata != nil && bars != nil {
@@ -189,6 +189,35 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	return result, nil
+}
+
+// handleDdlWaitError post-processes an error that terminated the synchronous DDL wait loop.
+//
+// When the wait is aborted by context cancellation or deadline (typically Ctrl+C), the
+// UpdateDatabaseDdl long-running operation keeps running server-side and its schema changes
+// may still land. In that case we:
+//   - invalidate the schema cache (IncrementSchemaGeneration), because the schema may change
+//     regardless of whether we kept waiting; and
+//   - surface the still-running operation ID so the user can check progress later via
+//     SHOW OPERATION, instead of returning a bare context error with no handle.
+//
+// Non-cancellation errors (e.g. a DDL that actually failed server-side) are returned unchanged.
+func handleDdlWaitError(session *Session, op *adminapi.UpdateDatabaseDdlOperation, err error) error {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	session.IncrementSchemaGeneration()
+	return ddlCancellationError(op.Name(), err)
+}
+
+// ddlCancellationError builds the user-facing error for a canceled DDL wait. It extracts the
+// operation ID from the full operation name (same formatting as the async DDL path) and points
+// the user at SHOW OPERATION so they can attach to the still-running operation later. The
+// underlying cause is wrapped so errors.Is(err, context.Canceled) still holds for callers.
+func ddlCancellationError(opName string, cause error) error {
+	operationID := lo.LastOrEmpty(strings.Split(opName, "/"))
+	return fmt.Errorf("stopped waiting for DDL to complete; the operation may still be running server-side, check it with: SHOW OPERATION '%s': %w", operationID, cause)
 }
 
 // formatAsyncDdlResult formats the async DDL operation result in the same format as SHOW OPERATION
