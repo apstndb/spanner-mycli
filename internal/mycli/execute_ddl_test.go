@@ -17,8 +17,12 @@ package mycli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TestDdlCancellationError verifies that a canceled DDL wait produces an error that surfaces
@@ -69,6 +73,37 @@ func TestDdlCancellationError(t *testing.T) {
 			msg := err.Error()
 			if !strings.Contains(msg, "SHOW OPERATION '"+tt.wantOpID+"'") {
 				t.Errorf("error message does not contain SHOW OPERATION hint for %q\n  got: %s", tt.wantOpID, msg)
+			}
+		})
+	}
+}
+
+// TestIsCancellationError verifies that the classification that drives the SHOW OPERATION hint
+// recognizes cancellation both from the standard-library context sentinels and from plain gRPC /
+// Spanner status errors. The status-error cases matter because a context cancelled while a
+// GetOperation poll RPC is in flight surfaces as a bare status error that does NOT wrap
+// context.Canceled, so errors.Is alone would miss it.
+func TestIsCancellationError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "context canceled sentinel", err: context.Canceled, want: true},
+		{name: "context deadline exceeded sentinel", err: context.DeadlineExceeded, want: true},
+		{name: "wrapped context canceled", err: fmt.Errorf("poll failed: %w", context.Canceled), want: true},
+		{name: "grpc status canceled (in-flight RPC)", err: status.Error(codes.Canceled, "context canceled"), want: true},
+		{name: "grpc status deadline exceeded", err: status.Error(codes.DeadlineExceeded, "context deadline exceeded"), want: true},
+		{name: "wrapped grpc status canceled", err: fmt.Errorf("poll failed: %w", status.Error(codes.Canceled, "context canceled")), want: true},
+		{name: "genuine DDL failure", err: status.Error(codes.InvalidArgument, "bad DDL"), want: false},
+		{name: "plain non-status error", err: errors.New("boom"), want: false},
+		{name: "nil error", err: nil, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isCancellationError(tt.err); got != tt.want {
+				t.Errorf("isCancellationError(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}

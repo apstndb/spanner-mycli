@@ -8,12 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -161,7 +164,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	metadata, err = op.Metadata()
 	if err != nil {
 		teardown()
-		return nil, err
+		return nil, handleDdlWaitError(session, op, err)
 	}
 
 	if p != nil {
@@ -191,24 +194,55 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	return result, nil
 }
 
-// handleDdlWaitError post-processes an error that terminated the synchronous DDL wait loop.
+// handleDdlWaitError post-processes an error that terminated the synchronous DDL wait loop,
+// after the UpdateDatabaseDdl operation was already accepted by the server.
 //
-// When the wait is aborted by context cancellation or deadline (typically Ctrl+C), the
-// UpdateDatabaseDdl long-running operation keeps running server-side and its schema changes
-// may still land. In that case we:
-//   - invalidate the schema cache (IncrementSchemaGeneration), because the schema may change
-//     regardless of whether we kept waiting; and
-//   - surface the still-running operation ID so the user can check progress later via
-//     SHOW OPERATION, instead of returning a bare context error with no handle.
+// Two independent concerns are handled here, deliberately kept separate:
 //
-// Non-cancellation errors (e.g. a DDL that actually failed server-side) are returned unchanged.
+//   - Schema-cache invalidation is unconditional. Once the operation is accepted, ANY error exit
+//     may leave the schema changed server-side: a canceled wait whose operation later completes,
+//     or a multi-statement batch that fails at statement k after statements 1..k-1 already
+//     committed. Invalidation is cheap and always safe, and the schema-cache TTL bounds any
+//     residual staleness, so we always bump the generation rather than trying to prove the schema
+//     is unchanged.
+//   - Error-message classification is conditional. Only for cancellation/deadline errors do we
+//     replace the raw error with a hint that surfaces the still-running operation ID via
+//     SHOW OPERATION; genuine DDL failures are returned unchanged.
 func handleDdlWaitError(session *Session, op *adminapi.UpdateDatabaseDdlOperation, err error) error {
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	session.IncrementSchemaGeneration()
+
+	if !isCancellationError(err) {
 		return err
 	}
-
-	session.IncrementSchemaGeneration()
 	return ddlCancellationError(op.Name(), err)
+}
+
+// isCancellationError reports whether err represents a canceled or deadline-exceeded wait.
+//
+// It checks both the standard-library sentinels via errors.Is (matched when the context error is
+// wrapped) AND the gRPC/Spanner status codes. The status-code check is necessary because when the
+// context is canceled while a GetOperation poll RPC is in flight, grpc-go returns a plain status
+// error (codes.Canceled / "context canceled") that does NOT wrap context.Canceled, so errors.Is
+// alone would miss it and the cancellation hint would silently not fire.
+//
+// Tradeoff: a DDL that genuinely fails server-side could in principle carry codes.Canceled or
+// codes.DeadlineExceeded and be misreported as a user cancellation. This is accepted because the
+// in-flight-cancellation window is only reachable through those status codes, so code-based
+// classification is the only way to catch it; misclassification only changes the error text (the
+// invalidation above happens regardless).
+func isCancellationError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Canceled, codes.DeadlineExceeded:
+		return true
+	}
+	switch spanner.ErrCode(err) {
+	case codes.Canceled, codes.DeadlineExceeded:
+		return true
+	}
+	return false
 }
 
 // ddlCancellationError builds the user-facing error for a canceled DDL wait. It extracts the
