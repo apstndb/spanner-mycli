@@ -345,17 +345,19 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	operationDesc := s.getOperationDescription(op)
 
 	if session.systemVariables.Display.EnableProgressBar {
-		p = mpb.NewWithContext(ctx)
-		bar = p.AddBar(int64(100),
-			mpb.PrependDecorators(
-				decor.Spinner(nil, decor.WCSyncSpaceR),
-				decor.Name(tabwrap.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
-				decor.Percentage(decor.WCSyncSpace),
-				decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
-			mpb.BarRemoveOnComplete(),
-		)
-		bar.EnableTriggerComplete()
-		defer teardown()
+		p = newProgressWithTTY(ctx, session)
+		if p != nil {
+			bar = p.AddBar(int64(100),
+				mpb.PrependDecorators(
+					decor.Spinner(nil, decor.WCSyncSpaceR),
+					decor.Name(tabwrap.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
+					decor.Percentage(decor.WCSyncSpace),
+					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+				mpb.BarRemoveOnComplete(),
+			)
+			bar.EnableTriggerComplete()
+			defer teardown()
+		}
 	}
 
 	// Update progress bar with initial status
