@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -170,38 +169,133 @@ func TestMCPHandler_streamedFormatDoesNotLeakToGlobalStream(t *testing.T) {
 	}
 }
 
-// TestMCPHandler_shellMetaCommandDoesNotLeakToGlobalStream pins that \!
-// shell command stdout goes to the per-statement writer, not the global
-// stream: the MCP handler can parse and execute meta commands, so shell
-// output written to the StreamManager writer would corrupt the JSON-RPC
-// stream under --mcp.
-func TestMCPHandler_shellMetaCommandDoesNotLeakToGlobalStream(t *testing.T) {
+func TestMCPHandler_rejectsMetaCommands(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell command syntax differs on Windows")
+
+	tests := []struct {
+		name              string
+		statement         string
+		skipSystemCommand bool
+	}{
+		{
+			name:      "shell command",
+			statement: `\! echo mcp-shell-probe`,
+		},
+		{
+			name:              "shell command with skip system command",
+			statement:         `\! echo mcp-shell-probe`,
+			skipSystemCommand: true,
+		},
+		{
+			name:      "output redirect",
+			statement: `\o out.log`,
+		},
+		{
+			name:      "tee output",
+			statement: `\T out.log`,
+		},
 	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var global bytes.Buffer
+			session := newDetachedTestSession(&global)
+			session.systemVariables.Config.SkipSystemCommand = tt.skipSystemCommand
+			cli := &Cli{
+				SessionHandler:  NewSessionHandler(session),
+				SystemVariables: session.systemVariables,
+			}
+
+			handler := executeStatementHandler(cli)
+			result, _, err := handler(context.Background(), nil, ExecuteStatementArgs{Statement: tt.statement})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+
+			text := mcpResultText(t, result)
+			if !strings.Contains(text, "ERROR: meta commands are not supported by MCP execute_statement") {
+				t.Errorf("tool result = %q, want meta-command rejection", text)
+			}
+			if strings.Contains(text, "mcp-shell-probe") {
+				t.Errorf("tool result = %q, shell command appears to have executed", text)
+			}
+			if global.Len() != 0 {
+				t.Errorf("StreamManager writer got %q, want empty (would corrupt the MCP protocol stream)", global.String())
+			}
+		})
+	}
+}
+
+func TestMCPOutputCaptureTruncates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		limit      int
+		chunks     []string
+		wantPrefix string
+		notWant    string
+	}{
+		{
+			name:       "partial chunk at limit",
+			limit:      8,
+			chunks:     []string{"12345", "67890"},
+			wantPrefix: "12345678",
+			notWant:    "90",
+		},
+		{
+			name:       "discard writes after truncation",
+			limit:      10,
+			chunks:     []string{"12345", "67890", "overflow", "more"},
+			wantPrefix: "1234567890",
+			notWant:    "overflow",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			capture := newMCPOutputCapture(tt.limit)
+			for _, chunk := range tt.chunks {
+				n, err := capture.Write([]byte(chunk))
+				if err != nil {
+					t.Fatalf("Write(%q): %v", chunk, err)
+				}
+				if n != len(chunk) {
+					t.Fatalf("Write(%q) = %d, want %d", chunk, n, len(chunk))
+				}
+			}
+
+			got := capture.String()
+			if !strings.HasPrefix(got, tt.wantPrefix) {
+				t.Errorf("capture prefix = %q, want %q", got, tt.wantPrefix)
+			}
+			if !strings.Contains(got, "spanner-mycli MCP output truncated after") {
+				t.Errorf("capture = %q, want truncation marker", got)
+			}
+			if strings.Contains(got, tt.notWant) {
+				t.Errorf("capture = %q, should not contain discarded content %q", got, tt.notWant)
+			}
+		})
+	}
+}
+
+func TestProgressWithTTYDisabledWithoutTTY(t *testing.T) {
+	t.Parallel()
 
 	var global bytes.Buffer
 	session := newDetachedTestSession(&global)
-	// ShellMetaCommand is not detached-compatible; the shell command itself
-	// never touches the (nil) client.
-	session.mode = DatabaseConnected
-	cli := &Cli{
-		SessionHandler:  NewSessionHandler(session),
-		SystemVariables: session.systemVariables,
-	}
+	session.systemVariables.Display.EnableProgressBar = true
 
-	handler := executeStatementHandler(cli)
-	result, _, err := handler(context.Background(), nil, ExecuteStatementArgs{Statement: `\! echo mcp-shell-probe`})
-	if err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-
-	text := mcpResultText(t, result)
-	if !strings.Contains(text, "mcp-shell-probe") {
-		t.Errorf("tool result %q does not contain shell output", text)
+	progress := newProgressWithTTY(context.Background(), session)
+	if progress != nil {
+		progress.Wait()
+		t.Fatal("newProgressWithTTY returned a progress container without a TTY")
 	}
 	if global.Len() != 0 {
-		t.Errorf("StreamManager writer got %q, want empty (would corrupt the MCP protocol stream)", global.String())
+		t.Errorf("StreamManager writer got %q, want empty", global.String())
 	}
 }

@@ -41,6 +41,17 @@ var replacerForProgress = strings.NewReplacer(
 	"\t", " ",
 )
 
+func newProgressWithTTY(ctx context.Context, session *Session) *mpb.Progress {
+	if session == nil || session.systemVariables == nil || session.systemVariables.StreamManager == nil {
+		return nil
+	}
+	ttyStream := session.systemVariables.StreamManager.GetTtyStream()
+	if ttyStream == nil {
+		return nil
+	}
+	return mpb.NewWithContext(ctx, mpb.WithOutput(ttyStream))
+}
+
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
 		return &Result{
@@ -64,19 +75,21 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		}
 	}
 	if session.systemVariables.Display.EnableProgressBar {
-		p = mpb.NewWithContext(ctx)
+		p = newProgressWithTTY(ctx, session)
 
-		for _, ddl := range ddls {
-			bar := p.AddBar(int64(100),
-				mpb.PrependDecorators(
-					decor.Spinner(nil, decor.WCSyncSpaceR),
-					decor.Name(tabwrap.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
-					decor.Percentage(decor.WCSyncSpace),
-					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
-				mpb.BarRemoveOnComplete(),
-			)
-			bar.EnableTriggerComplete()
-			bars = append(bars, bar)
+		if p != nil {
+			for _, ddl := range ddls {
+				bar := p.AddBar(int64(100),
+					mpb.PrependDecorators(
+						decor.Spinner(nil, decor.WCSyncSpaceR),
+						decor.Name(tabwrap.Truncate(replacerForProgress.Replace(ddl), 40, "..."), decor.WCSyncSpaceR),
+						decor.Percentage(decor.WCSyncSpace),
+						decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+					mpb.BarRemoveOnComplete(),
+				)
+				bar.EnableTriggerComplete()
+				bars = append(bars, bar)
+			}
 		}
 	}
 
