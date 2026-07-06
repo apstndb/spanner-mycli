@@ -882,9 +882,13 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 		// It is a golden string on purpose: deriving it by calling the same
 		// protoyaml.Marshal the production code uses would make the test
 		// tautological (it could never catch a marshaling regression).
-		wantContent  string
-		wantIncoming string
-		wantErr      bool
+		wantContent string
+		// wantIncoming is the expected parent-links row. When
+		// wantIncomingIsPrefix is true, it is treated as a required prefix
+		// rather than an exact match (see the malformed-plan case).
+		wantIncoming         string
+		wantIncomingIsPrefix bool
+		wantErr              bool
 	}{
 		{
 			"node with incoming parent link",
@@ -905,6 +909,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				"  latency: {total: \"0\", unit: msecs}\n" +
 				"  rows: {total: \"1\", unit: rows}\n",
 			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Serialize Result (execution_method: Row)\n    Child Link Type: (not set)",
+			false,
 			false,
 		},
 		{
@@ -936,6 +941,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 			"index: 1\nkind: 1\ndisplay_name: Child\n",
 			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Root\n    Child Link Type: Map\n    Variable: v",
 			false,
+			false,
 		},
 		{
 			"node without incoming parent links",
@@ -958,6 +964,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 			},
 			"kind: 1\ndisplay_name: Root\n",
 			"Incoming Parent Links:\n  - No incoming parent links",
+			false,
 			false,
 		},
 		{
@@ -989,7 +996,16 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				},
 			},
 			"kind: 1\ndisplay_name: Root\nchild_links:\n- {child_index: 99}\n",
-			"parent links unavailable: spannerplan: childLink childIndex out of range: parent node 0 childLinks[0] has childIndex 99, len(planNodes)=2",
+			// Assert only spanner-mycli's own "parent links unavailable: "
+			// prefix, not spannerplan's internal validation-error text. The
+			// message wording is explicitly not part of spannerplan's stable
+			// API (only the ErrInvalidPlan sentinel and *ValidationError fields
+			// are), so pinning it verbatim made this test brittle across
+			// upstream upgrades. The error is stringified into a Result row, so
+			// errors.Is is unavailable here; prefix matching plus a non-empty
+			// remainder is the right assertion.
+			"parent links unavailable: ",
+			true,
 			false,
 		},
 	}
@@ -1010,8 +1026,26 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				return
 			}
 
+			wantIncoming := tt.wantIncoming
+			if tt.wantIncomingIsPrefix {
+				// The parent-links row carries a stringified upstream error
+				// whose exact wording is not stable; assert only our prefix and
+				// that some upstream detail follows, then compare the rest of
+				// the Result exactly by substituting the observed value.
+				gotIncoming := got.Rows[1][0].RawText()
+				if !strings.HasPrefix(gotIncoming, tt.wantIncoming) {
+					t.Errorf("incoming row = %q, want prefix %q", gotIncoming, tt.wantIncoming)
+					return
+				}
+				if remainder := strings.TrimPrefix(gotIncoming, tt.wantIncoming); remainder == "" {
+					t.Errorf("incoming row = %q, want non-empty remainder after prefix %q", gotIncoming, tt.wantIncoming)
+					return
+				}
+				wantIncoming = gotIncoming
+			}
+
 			want := &Result{
-				Rows:         sliceOf(toRow(tt.wantContent), toRow(tt.wantIncoming)),
+				Rows:         sliceOf(toRow(tt.wantContent), toRow(wantIncoming)),
 				AffectedRows: 2,
 				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)),
 			}
