@@ -48,6 +48,19 @@ type MutationStatement interface {
 	isMutationStatement()
 }
 
+// ConditionallyMutatingStatement is a marker interface for statements whose
+// mutation-ness cannot be decided statically from their Go type but only from
+// their content (e.g. a CQL statement text). The READONLY guard in
+// Session.ExecuteStatement consults isConditionallyMutating at the same single
+// call site as the static MutationStatement marker.
+//
+// Unlike MutationStatement, implementing this interface does NOT determine a
+// pending Spanner transaction: it only participates in the READONLY guard,
+// because such statements (CQL) do not use the Spanner transaction machinery.
+type ConditionallyMutatingStatement interface {
+	isConditionallyMutating() bool
+}
+
 // Compile-time assertions for every MutationStatement implementation.
 // The marker method is unexported, so a typo (e.g. an exported
 // IsMutationStatement) silently drops the type out of the interface and
@@ -66,6 +79,14 @@ var (
 	_ MutationStatement = (*BulkDdlStatement)(nil)
 	_ MutationStatement = (*BatchDMLStatement)(nil)
 	_ MutationStatement = (*SyncProtoStatement)(nil)
+	_ MutationStatement = (*AddSplitPointsStatement)(nil)
+)
+
+// Compile-time assertions for every ConditionallyMutatingStatement
+// implementation. As with the marker above, the method is unexported so a typo
+// silently drops the type out of the interface and bypasses the READONLY guard.
+var (
+	_ ConditionallyMutatingStatement = (*CQLStatement)(nil)
 )
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).

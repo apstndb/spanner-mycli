@@ -1,5 +1,3 @@
-//go:build !skip_slow_test
-
 package mycli
 
 import (
