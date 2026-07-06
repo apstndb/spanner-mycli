@@ -1,5 +1,3 @@
-//go:build !short
-
 package mycli
 
 import (
