@@ -1,0 +1,48 @@
+{
+  "planNodes": [
+    {
+      "childLinks": [
+        {
+          "childIndex": 1
+        },
+        {
+          "childIndex": 2,
+          "type": "Key"
+        }
+      ],
+      "displayName": "Sort",
+      "kind": "RELATIONAL"
+    },
+    {
+      "childLinks": [
+        {
+          "childIndex": 3,
+          "variable": "SingerId"
+        }
+      ],
+      "displayName": "Scan",
+      "index": 1,
+      "kind": "RELATIONAL",
+      "metadata": {
+        "scan_target": "Singers",
+        "scan_type": "TableScan"
+      }
+    },
+    {
+      "displayName": "Reference",
+      "index": 2,
+      "kind": "SCALAR",
+      "shortRepresentation": {
+        "description": "$SingerId DESC"
+      }
+    },
+    {
+      "displayName": "Reference",
+      "index": 3,
+      "kind": "SCALAR",
+      "shortRepresentation": {
+        "description": "SingerId"
+      }
+    }
+  ]
+}
