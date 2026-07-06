@@ -38,7 +38,7 @@ says otherwise; `java-spanner` versions are given where known.
 
 | Property | go-sql-spanner (version) | java-spanner (version) | spanner-mycli status |
 |----------|--------------------------|------------------------|----------------------|
-| `retry_aborts_internally` | yes (pre-v1.0; default `true`); `SET LOCAL` support in v6.83.0 | yes | `RETRY_ABORTS_INTERNALLY` placeholder (`UnimplementedVar`), tracked #293 |
+| `retry_aborts_internally` | yes (pre-v1.0; default `true`) | yes; `SET LOCAL retry_aborts_internally` support in v6.83.0 (2024-12-13) | `RETRY_ABORTS_INTERNALLY` placeholder (`UnimplementedVar`), tracked #293 |
 | `autocommit` | no explicit property (`database/sql` native) | JDBC `autocommit` | `AUTOCOMMIT` placeholder (`UnimplementedVar`), tracked #83 |
 | `autocommit_dml_mode` (`Transactional`/`PartitionedNonAtomic`) | yes | yes | `AUTOCOMMIT_DML_MODE` implemented |
 | `auto_batch_dml` | yes | yes | `AUTO_BATCH_DML` implemented |
