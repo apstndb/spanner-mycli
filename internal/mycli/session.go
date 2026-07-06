@@ -219,13 +219,19 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 
 // createSessionWithOpts creates a new session using current session's client options
 func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
+	var opts []option.ClientOption
+	current := h.Session
+	if current != nil {
+		opts = current.clientOpts
+	}
+
 	// Create admin-only session if no database is specified
 	var session *Session
 	var err error
 	if sysVars.Connection.Database == "" {
-		session, err = NewAdminSession(ctx, sysVars, h.clientOpts...)
+		session, err = NewAdminSession(ctx, sysVars, opts...)
 	} else {
-		session, err = NewSession(ctx, sysVars, h.clientOpts...)
+		session, err = NewSession(ctx, sysVars, opts...)
 	}
 	if err != nil {
 		return nil, err

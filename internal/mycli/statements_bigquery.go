@@ -43,11 +43,34 @@ func (s *BigQueryStatement) isConditionallyMutating() bool {
 // firstBigQueryKeyword returns the uppercased first whitespace-delimited token
 // of a BigQuery statement, or "" if there is none.
 func firstBigQueryKeyword(sql string) string {
-	fields := strings.Fields(sql)
-	if len(fields) == 0 {
+	start := -1
+	for i := range len(sql) {
+		if !isBigQueryKeywordWhitespace(sql[i]) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
 		return ""
 	}
-	return strings.ToUpper(fields[0])
+
+	end := len(sql)
+	for i := start; i < len(sql); i++ {
+		if isBigQueryKeywordWhitespace(sql[i]) {
+			end = i
+			break
+		}
+	}
+	return strings.ToUpper(sql[start:end])
+}
+
+func isBigQueryKeywordWhitespace(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
 }
 
 // bigQueryStatementMutates reports whether a BIGQUERY statement should be
