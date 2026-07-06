@@ -90,7 +90,7 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 }
 
 // SafeReadFile reads a file after performing safety checks, validating the same
-// file descriptor it reads from to avoid a stat-then-reopen TOCTOU.
+// file descriptor it reads from so it never reads from an unexpected target.
 //
 // The flow mirrors streamio.openOutputFile's open-then-fstat pattern:
 //  1. A pre-open Stat rejects unsafe targets (e.g. non-regular files when
@@ -99,8 +99,15 @@ func ValidateFileSafety(fi os.FileInfo, path string, opts *FileSafetyOptions) er
 //     we must not open one we are only going to reject.
 //  2. After os.Open, f.Stat() re-validates against the descriptor actually
 //     opened. If the path was swapped between the two stats (e.g. a regular
-//     file replaced by a device or FIFO), this catches it and we never read
-//     from an unexpected target.
+//     file replaced by a device or FIFO), this catches it before we read.
+//
+// Scope of the guarantee: the fd re-validation ensures we never READ from a
+// swapped or unexpected file type. It does NOT eliminate an open-time block: a
+// hostile swap of a regular file to a FIFO in the window between the pre-open
+// Stat and os.Open can still block the blocking os.Open until a writer appears,
+// on platforms where opening a FIFO read-only blocks. This is an accepted
+// limitation for a local CLI. O_NONBLOCK open is deliberately not used so that
+// process-substitution FIFOs (--file <(...)) keep working with blocking reads.
 //
 // The read itself is always capped via io.LimitReader for BOTH regular and
 // allowed non-regular inputs. Stat sizes are meaningless for pipes and can be
