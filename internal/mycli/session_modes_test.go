@@ -163,7 +163,7 @@ func TestInstanceValidation(t *testing.T) {
 		defer session.Close()
 
 		// Test InstanceExists method
-		exists, err := session.InstanceExists()
+		exists, err := session.InstanceExists(ctx)
 		if err != nil {
 			t.Skip("Skipping instance validation test:", err)
 		}

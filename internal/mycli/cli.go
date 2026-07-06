@@ -564,7 +564,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
 			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 			// the Cloud Spanner's session with new one to revert the lock priority of the session.
-			innerErr := c.SessionHandler.RecreateClient()
+			innerErr := c.SessionHandler.RecreateClient(ctx)
 			if innerErr != nil {
 				err = errors.Join(err, innerErr)
 			}
