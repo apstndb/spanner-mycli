@@ -13,7 +13,6 @@ import (
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
-	"github.com/apstndb/spannerplan/protoyaml"
 	"github.com/apstndb/spannerplan/stats"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -879,8 +878,13 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 		name           string
 		statement      *ShowPlanNodeStatement
 		lastQueryCache *LastQueryCache
-		wantIncoming   string
-		wantErr        bool
+		// wantContent is the literal expected YAML dump of the requested node.
+		// It is a golden string on purpose: deriving it by calling the same
+		// protoyaml.Marshal the production code uses would make the test
+		// tautological (it could never catch a marshaling regression).
+		wantContent  string
+		wantIncoming string
+		wantErr      bool
 	}{
 		{
 			"node with incoming parent link",
@@ -889,6 +893,17 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
 				QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
 			},
+			"index: 1\n" +
+				"kind: 1\n" +
+				"display_name: Unit Relation\n" +
+				"child_links:\n" +
+				"- {child_index: 2}\n" +
+				"metadata: {execution_method: Row}\n" +
+				"execution_stats:\n" +
+				"  cpu_time: {total: \"0\", unit: msecs}\n" +
+				"  execution_summary: {num_executions: \"1\"}\n" +
+				"  latency: {total: \"0\", unit: msecs}\n" +
+				"  rows: {total: \"1\", unit: rows}\n",
 			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Serialize Result (execution_method: Row)\n    Child Link Type: (not set)",
 			false,
 		},
@@ -918,6 +933,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 					},
 				},
 			},
+			"index: 1\nkind: 1\ndisplay_name: Child\n",
 			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Root\n    Child Link Type: Map\n    Variable: v",
 			false,
 		},
@@ -940,7 +956,40 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 					},
 				},
 			},
+			"kind: 1\ndisplay_name: Root\n",
 			"Incoming Parent Links:\n  - No incoming parent links",
+			false,
+		},
+		{
+			// Malformed cached plan: node 0 references a non-existent child
+			// index, so spannerplan.New fails. The node YAML must still be
+			// shown, with the parent-links row replaced by a note. This guards
+			// the graceful-degradation path: before it, the whole statement
+			// failed on such plans (regression introduced when incoming
+			// parent-link display was added).
+			"malformed plan degrades to note",
+			&ShowPlanNodeStatement{NodeID: 0},
+			&LastQueryCache{
+				QueryPlan: &sppb.QueryPlan{
+					PlanNodes: []*sppb.PlanNode{
+						{
+							Index:       0,
+							DisplayName: "Root",
+							Kind:        sppb.PlanNode_RELATIONAL,
+							ChildLinks: []*sppb.PlanNode_ChildLink{
+								{ChildIndex: 99},
+							},
+						},
+						{
+							Index:       1,
+							DisplayName: "Child",
+							Kind:        sppb.PlanNode_RELATIONAL,
+						},
+					},
+				},
+			},
+			"kind: 1\ndisplay_name: Root\nchild_links:\n- {child_index: 99}\n",
+			"parent links unavailable: spannerplan: childLink childIndex out of range: parent node 0 childLinks[0] has childIndex 99, len(planNodes)=2",
 			false,
 		},
 	}
@@ -961,14 +1010,8 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				return
 			}
 
-			planNode := tt.lastQueryCache.QueryPlan.GetPlanNodes()[tt.statement.NodeID]
-			y, err := protoyaml.Marshal(planNode, getGlobalOpts()...)
-			if err != nil {
-				t.Fatalf("yaml.Marshal(planNode, getGlobalOpts()) error = %v", err)
-			}
-
 			want := &Result{
-				Rows:         sliceOf(toRow(string(y)), toRow(tt.wantIncoming)),
+				Rows:         sliceOf(toRow(tt.wantContent), toRow(tt.wantIncoming)),
 				AffectedRows: 2,
 				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)),
 			}
