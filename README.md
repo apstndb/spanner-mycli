@@ -937,6 +937,8 @@ This section describes some notable features of spanner-mycli, they are not appe
 
 They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
 
+For how these and other connection properties map to the official Spanner drivers (Spanner JDBC and go-sql-spanner), including tracked and intentionally skipped deltas, see [docs/spanner-driver-compatibility.md](docs/spanner-driver-compatibility.md).
+
 | Name                            | Type       | Example                                             |
 |---------------------------------|------------|-----------------------------------------------------|
 | READONLY                        | READ_WRITE | `TRUE`                                              |
