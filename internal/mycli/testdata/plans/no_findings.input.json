@@ -1,0 +1,22 @@
+{
+  "planNodes": [
+    {
+      "childLinks": [
+        {
+          "childIndex": 1
+        }
+      ],
+      "displayName": "Serialize Result",
+      "kind": "RELATIONAL"
+    },
+    {
+      "displayName": "Scan",
+      "index": 1,
+      "kind": "RELATIONAL",
+      "metadata": {
+        "scan_target": "Singers",
+        "scan_type": "TableScan"
+      }
+    }
+  ]
+}
