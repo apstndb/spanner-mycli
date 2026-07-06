@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -155,7 +155,7 @@ func (e *EndpointVar) Set(value string) error {
 
 // parseOutputTemplate parses output template file
 func parseOutputTemplate(filename string) (*template.Template, error) {
-	b, err := os.ReadFile(filename)
+	b, err := filesafety.SafeReadFile(filename, nil)
 	if err != nil {
 		return nil, err
 	}
