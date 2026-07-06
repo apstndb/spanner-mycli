@@ -50,7 +50,6 @@ const (
 
 type Cli struct {
 	SessionHandler  *SessionHandler
-	Credential      []byte
 	SystemVariables *systemVariables
 	waitingStatus   string
 }
@@ -61,13 +60,12 @@ func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*
 		return nil, err
 	}
 
-	sessionHandler := NewSessionHandler(session)
+	sessionHandler := newSessionHandlerWithCredential(session, credential)
 
 	// StreamManager now manages the TTY stream internally
 
 	return &Cli{
 		SessionHandler:  sessionHandler,
-		Credential:      credential,
 		SystemVariables: sysVars,
 	}, nil
 }

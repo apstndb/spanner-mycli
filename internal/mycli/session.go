@@ -159,12 +159,31 @@ func (s *Session) IncrementSchemaGeneration() {
 // SessionHandler manages a session pointer and can handle session-changing statements
 type SessionHandler struct {
 	*Session
+	credential []byte
 }
 
 func NewSessionHandler(session *Session) *SessionHandler {
-	return &SessionHandler{
-		Session: session,
+	var credential []byte
+	if session != nil {
+		credential = session.bqCredential
 	}
+	return newSessionHandlerWithCredential(session, credential)
+}
+
+func newSessionHandlerWithCredential(session *Session, credential []byte) *SessionHandler {
+	h := &SessionHandler{
+		Session:    session,
+		credential: append([]byte(nil), credential...),
+	}
+	h.applyBigQueryCredential(session)
+	return h
+}
+
+func (h *SessionHandler) applyBigQueryCredential(session *Session) {
+	if session == nil {
+		return
+	}
+	session.bqCredential = append([]byte(nil), h.credential...)
 }
 
 func (h *SessionHandler) GetSession() *Session {
@@ -200,12 +219,25 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 
 // createSessionWithOpts creates a new session using current session's client options
 func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
-	// Create admin-only session if no database is specified
-	if sysVars.Connection.Database == "" {
-		return NewAdminSession(ctx, sysVars, h.clientOpts...)
+	var opts []option.ClientOption
+	current := h.Session
+	if current != nil {
+		opts = current.clientOpts
 	}
 
-	return NewSession(ctx, sysVars, h.clientOpts...)
+	// Create admin-only session if no database is specified
+	var session *Session
+	var err error
+	if sysVars.Connection.Database == "" {
+		session, err = NewAdminSession(ctx, sysVars, opts...)
+	} else {
+		session, err = NewSession(ctx, sysVars, opts...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.applyBigQueryCredential(session)
+	return session, nil
 }
 
 // validateSessionSwitch rejects USE/DETACH while a transaction or batch is
@@ -993,6 +1025,6 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	}
 	// Retain the raw credential for lazy BigQuery client construction on the
 	// first BIGQUERY statement; no BigQuery auth is resolved here.
-	session.bqCredential = credential
+	session.bqCredential = append([]byte(nil), credential...)
 	return session, nil
 }

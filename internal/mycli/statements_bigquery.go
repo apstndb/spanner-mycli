@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -34,6 +35,59 @@ type BigQueryStatement struct {
 }
 
 func (s *BigQueryStatement) isDetachedCompatible() {}
+
+func (s *BigQueryStatement) isConditionallyMutating() bool {
+	return bigQueryStatementMutates(s.SQL)
+}
+
+// firstBigQueryKeyword returns the uppercased first whitespace-delimited token
+// of a BigQuery statement, or "" if there is none.
+func firstBigQueryKeyword(sql string) string {
+	start := -1
+	for i := range len(sql) {
+		if !isBigQueryKeywordWhitespace(sql[i]) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return ""
+	}
+
+	end := len(sql)
+	for i := start; i < len(sql); i++ {
+		if isBigQueryKeywordWhitespace(sql[i]) {
+			end = i
+			break
+		}
+	}
+	return strings.ToUpper(sql[start:end])
+}
+
+func isBigQueryKeywordWhitespace(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
+}
+
+// bigQueryStatementMutates reports whether a BIGQUERY statement should be
+// treated as mutating for the READONLY guard.
+//
+// The classifier is deliberately fail-closed: only BigQuery statements whose
+// first keyword is a known read-only query verb are allowed under READONLY.
+// Everything else, including unrecognized, empty, DML, DDL, and script-control
+// statements, is treated as mutating and blocked before it can reach BigQuery.
+func bigQueryStatementMutates(sql string) bool {
+	switch firstBigQueryKeyword(sql) {
+	case "SELECT", "WITH":
+		return false
+	default:
+		return true
+	}
+}
 
 func (s *BigQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	client, err := session.bigQueryClient(ctx)
