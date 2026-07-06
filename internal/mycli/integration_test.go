@@ -1742,7 +1742,13 @@ func TestReadWriteTransaction(t *testing.T) {
 			t.Fatalf("unexpected error happened: %s", err)
 		}
 
-		// default transaction idle time is 10 secs
+		// This sleep is genuinely required by server-side semantics and cannot be
+		// replaced by condition polling. The point of the test is to keep the
+		// read-write transaction idle for longer than the server's ~10s idle
+		// timeout and prove the background heartbeat keeps it alive; the only way
+		// to exercise that is to let real wall-clock time pass. Polling would
+		// observe "still alive" immediately on every tick and prove nothing, and
+		// the wait cannot be shortened below the idle timeout it must exceed.
 		time.Sleep(10 * time.Second)
 
 		// second query
@@ -1753,6 +1759,30 @@ func TestReadWriteTransaction(t *testing.T) {
 			t.Fatalf("error should not happen: %s", err)
 		}
 	})
+}
+
+// waitForCondition polls fn every interval until it returns true or timeout
+// elapses (or ctx is cancelled), then fails the test with a clear message.
+// The last error returned by fn is surfaced in the failure to aid debugging.
+func waitForCondition(t *testing.T, ctx context.Context, timeout, interval time.Duration, what string, fn func() (bool, error)) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		ok, err := fn()
+		if ok {
+			return
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %s waiting for %s (last error: %v)", timeout, what, lastErr)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("context done while waiting for %s: %v (last error: %v)", what, ctx.Err(), lastErr)
+		case <-time.After(interval):
+		}
+	}
 }
 
 func TestReadOnlyTransaction(t *testing.T) {
@@ -1825,9 +1855,44 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 		_, session := initializeWithRandomDB(t, testTableDDLs, sliceOf("INSERT INTO tbl (id, active) VALUES (1, true), (2, false)"))
 
-		// stale read also can't recognize the recent created table itself,
-		// so sleep for a while
-		time.Sleep(10 * time.Second)
+		// A stale read at (now - 5s) cannot observe the table (or its initial
+		// rows) until at least 5s have elapsed since the table was created just
+		// above. Instead of a fixed 10s sleep, poll an exact-staleness read until
+		// it can see the two initial rows, which proves enough wall-clock time has
+		// passed. This lets the test proceed as soon as the stale timestamp is
+		// valid (typically ~5s) rather than always waiting a fixed 10s.
+		staleReadInitialRows := func() (bool, error) {
+			stmt, err := BuildStatement("BEGIN RO 5")
+			if err != nil {
+				return false, err
+			}
+			if _, err := stmt.Execute(ctx, session); err != nil {
+				return false, err
+			}
+			// Always close the read-only transaction before the next attempt,
+			// including when the staleness timestamp predates the table.
+			defer func() {
+				if closeStmt, err := BuildStatement("CLOSE"); err == nil {
+					_, _ = closeStmt.Execute(ctx, session)
+				}
+			}()
+
+			stmt, err = BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
+			if err != nil {
+				return false, err
+			}
+			result, err := stmt.Execute(ctx, session)
+			if err != nil {
+				// Typically "Table not found" because now-5s predates creation.
+				return false, err
+			}
+			// AffectedRows counts the rows read by the SELECT. It reaches 2 only
+			// once the stale timestamp can observe both initial rows; before that
+			// it is 0 (table not yet created, or created but rows not yet visible).
+			return result.AffectedRows == 2, nil
+		}
+		waitForCondition(t, ctx, 30*time.Second, 100*time.Millisecond,
+			"5s-stale read to observe the freshly created table", staleReadInitialRows)
 
 		// insert more fixture
 		stmt, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (3, true), (4, false)")
