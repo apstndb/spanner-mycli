@@ -87,13 +87,9 @@ docs-update:
 	@echo "Updating help output for README.md..."
 	@mkdir -p tmp
 	@go tool ptyhelp patch -file README.md -marker readme-help -cols 120 -o tmp/help_clean.txt -normalize-eol=lf -- go run . --help
-	@go run . --statement-help > tmp/statement_help.txt
-	@awk 'NR==FNR { new = new $$0 ORS; next } /<!-- statement-help begin -->/ { print; printf "%s", new; skip=1; next } /<!-- statement-help end -->/ { skip=0; print; next } !skip { print }' tmp/statement_help.txt README.md > tmp/README.md
-	@mv tmp/README.md README.md
+	@go tool ptyhelp patch -file README.md -marker statement-help -fence=none -o tmp/statement_help.txt -- go run . --statement-help
 	@echo "Updating system variables reference for docs/system_variables.md..."
-	@go run . --sysvars-help > tmp/sysvars_help.txt
-	@awk 'NR==FNR { new = new $$0 ORS; next } /<!-- sysvars-help begin -->/ { print; printf "%s", new; skip=1; next } /<!-- sysvars-help end -->/ { skip=0; print; next } !skip { print }' tmp/sysvars_help.txt docs/system_variables.md > tmp/system_variables.md
-	@mv tmp/system_variables.md docs/system_variables.md
+	@go tool ptyhelp patch -file docs/system_variables.md -marker sysvars-help -fence=none -o tmp/sysvars_help.txt -- go run . --sysvars-help
 	@echo "Generated files:"
 	@echo "  - tmp/help_clean.txt: --help output for README.md"
 	@echo "  - tmp/statement_help.txt: --statement-help output for README.md"
