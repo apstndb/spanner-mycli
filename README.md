@@ -168,9 +168,6 @@ Flags:
                                                PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
       --read-timestamp=STRING                  Perform a query at the given timestamp.
-      --vertexai-project=STRING                Vertex AI project
-      --vertexai-model=VERTEXAI-MODEL          Vertex AI model (default: gemini-3-flash-preview)
-      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location (default: global)
       --database-dialect=DATABASE-DIALECT      The SQL dialect of the Cloud Spanner Database. Allowed values:
                                                POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this
                                                flag to leave it unset.
@@ -194,6 +191,9 @@ Flags:
       --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
                                                FALSE (never styled)
   -q, --quiet                                  Suppress result lines like 'rows in set' for clean output
+      --vertexai-project=STRING                Vertex AI project
+      --vertexai-model=VERTEXAI-MODEL          Vertex AI model (default: gemini-3-flash-preview)
+      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location (default: global)
 ```
 <!-- readme-help end -->
 

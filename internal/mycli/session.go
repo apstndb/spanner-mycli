@@ -115,12 +115,6 @@ type Session struct {
 	// Invalidated on schemaGeneration change (DDL execution) and TTL expiry.
 	ddlCache ddlCacheEntry
 
-	// docCache caches Spanner reference documents across GEMINI invocations.
-	// Lazily initialized on first GEMINI call; closed when session closes.
-	// Protected by docCacheMu per .gemini/styleguide.md §Concurrency.
-	docCacheMu sync.Mutex
-	docCache   *docCache
-
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
@@ -503,45 +497,9 @@ func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabas
 	return resp, nil
 }
 
-// getOrCreateDocCache returns the session-scoped docCache, creating it on
-// first call. The cache persists across GEMINI invocations so that API-fetched
-// documents are reused. Closed when the session closes.
-// The check-then-act is protected by docCacheMu (see .gemini/styleguide.md §Concurrency).
-func (s *Session) getOrCreateDocCache(apiKey string) (*docCache, error) {
-	s.docCacheMu.Lock()
-	defer s.docCacheMu.Unlock()
-
-	if s.docCache != nil {
-		return s.docCache, nil
-	}
-
-	var opts []docCacheOption
-	if apiKey != "" {
-		apiClient := newDevKnowledgeClient(apiKey)
-		searcher := &devKnowledgeDocSearcher{client: apiClient}
-		opts = append(opts,
-			withDocFetcher(searcher.GetDocument),
-			withDocBatchFetcher(searcher.BatchGetDocuments),
-			withDocAPISearcher(searcher.Search),
-		)
-		slog.Debug("Developer Knowledge API enabled for documentation")
-	} else {
-		slog.Debug("No API key set, using embedded docs only")
-	}
-
-	cache, err := newDocCache(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("create doc cache: %w", err)
-	}
-
-	if err := loadEmbeddedDocs(cache); err != nil {
-		cache.Close()
-		return nil, fmt.Errorf("load embedded docs: %w", err)
-	}
-
-	s.docCache = cache
-	return cache, nil
-}
+// The GEMINI doc cache moved to internal/mycli/feature/llm (#778): it now lives
+// in the per-Session feature store (mycli.FeatureState, key "llm.doccache") and
+// is closed via the io.Closer contract at the end of Session.Close.
 
 func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorpb.FileDescriptorSet, error) {
 	resp, err := s.GetDatabaseDdlCached(ctx)
@@ -574,15 +532,8 @@ func (s *Session) Close() {
 		}
 	}
 
-	s.docCacheMu.Lock()
-	dc := s.docCache
-	s.docCacheMu.Unlock()
-	if dc != nil {
-		dc.Close()
-	}
-
 	// Feature-seam state closes last (after the core clients above), in reverse
-	// creation order. Empty until features register per-session state (#778).
+	// creation order. This includes the GEMINI doc cache (#778).
 	s.featureState.closeAll()
 
 	// No need to close tee file here as it's managed by StreamManager

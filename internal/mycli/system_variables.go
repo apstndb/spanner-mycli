@@ -175,12 +175,11 @@ type TransactionVars struct {
 
 // FeatureVars holds feature flags and experimental configuration.
 type FeatureVars struct {
-	FuzzyFinderKey         string                     // CLI_FUZZY_FINDER_KEY (empty = disabled)
-	FuzzyFinderOptions     string                     // CLI_FUZZY_FINDER_OPTIONS
-	MCP                    bool                       // CLI_MCP
-	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
-	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
-	VertexAILocation       string                     // CLI_VERTEXAI_LOCATION
+	FuzzyFinderKey     string // CLI_FUZZY_FINDER_KEY (empty = disabled)
+	FuzzyFinderOptions string // CLI_FUZZY_FINDER_OPTIONS
+	MCP                bool   // CLI_MCP
+	// CLI_VERTEXAI_PROJECT/MODEL/LOCATION state moved to the GEMINI feature's own
+	// config struct in internal/mycli/feature/llm (#778).
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
@@ -356,10 +355,8 @@ func newSystemVariablesWithDefaults() systemVariables {
 			ReturnCommitStats: true,
 		},
 		Feature: FeatureVars{
-			VertexAIModel:    defaultVertexAIModel,
-			VertexAILocation: defaultVertexAILocation,
-			LogLevel:         slog.LevelWarn,
-			FuzzyFinderKey:   "C_T",
+			LogLevel:       slog.LevelWarn,
+			FuzzyFinderKey: "C_T",
 		},
 
 		// Initialize empty maps to avoid nil

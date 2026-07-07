@@ -964,8 +964,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_INLINE_STATS":             "name:{{.template}}",
 			"CLI_PARSE_MODE":               "FALLBACK",
 			"CLI_LOG_LEVEL":                "INFO",
-			"CLI_VERTEXAI_MODEL":           "test",
-			"CLI_VERTEXAI_PROJECT":         "example-project",
 			"CLI_PROTO_DESCRIPTOR_FILE":    "testdata/protos/order_descriptors.pb",
 			"STATEMENT_TIMEOUT":            "30s",
 			"MAX_PARTITIONED_PARALLELISM":  "10",

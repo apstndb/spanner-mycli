@@ -1191,25 +1191,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ExitStatement{}, nil
 		},
 	},
-	// The optional statement family GEMINI/LLM sits at the end of the table.
-	// BIGQUERY (#778) and CQL (#778) were extracted into internal/mycli/feature/
-	// {bigquery,cql}; GEMINI/LLM follows in PR3. Feature-contributed defs are
-	// appended after this core table in feature/all.All() order (llm, cql,
-	// bigquery).
-	// LLM
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Compose query using LLM`,
-				Syntax: `GEMINI "<prompt>"`,
-			},
-		},
-
-		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
-		},
-	},
+	// The optional statement families GEMINI/LLM, CQL, and BIGQUERY were all
+	// extracted into internal/mycli/feature/{llm,cql,bigquery} (#778). Their defs
+	// are appended after this core table in feature/all.All() order (llm, cql,
+	// bigquery), so dispatch order and generated statement help stay byte-identical
+	// across the move.
 }
 
 // Helper functions for HandleGroups implementations

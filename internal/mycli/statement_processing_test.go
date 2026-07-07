@@ -1011,11 +1011,6 @@ TABLE Singers (42)
 			want:  &ShowDdlsStatement{},
 		},
 		{
-			desc:  "GEMINI statement",
-			input: `GEMINI "Show all tables"`,
-			want:  &GeminiStatement{Text: "Show all tables"},
-		},
-		{
 			desc:  "START BATCH DDL statement",
 			input: `START BATCH DDL`,
 			want:  &StartBatchStatement{Mode: batchModeDDL},
