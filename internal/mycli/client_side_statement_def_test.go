@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package mycli
+package mycli_test
 
-// Registry invariant tests for clientSideStatementDefs.
+// Registry invariant tests for the merged client-side statement table.
+//
+// These live in the external test package (issue #778) and iterate
+// MergedStatementDefs() so the #728 invariants hold over the same merged table
+// (core + features) that every consumer dispatches against. In PR0 the feature
+// set is empty, so the table is identical to the core table.
 //
 // Dispatch over the defs is first-match-wins, so the table order is
 // load-bearing (e.g. BEGIN RW must precede BEGIN, SET LOCAL must precede the
@@ -34,7 +39,13 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli"
 )
+
+// mergedDefs is the merged (core + feature) client-side statement table the
+// invariants run over. With no features it is a copy of the core table.
+var mergedDefs = mycli.MergedStatementDefs()
 
 // syntaxPlaceholderValues maps <placeholder> tokens appearing in
 // Description.Syntax strings to plausible example values. The expander fails
@@ -147,7 +158,7 @@ func firstAlternative(s string) string {
 // firstMatchingDefIndex mirrors BuildCLIStatement's first-match dispatch and
 // returns the index of the first def whose Pattern matches, or -1.
 func firstMatchingDefIndex(stmt string) int {
-	for i, def := range clientSideStatementDefs {
+	for i, def := range mergedDefs {
 		if def.Pattern.MatchString(stmt) {
 			return i
 		}
@@ -159,7 +170,7 @@ func firstMatchingDefIndex(stmt string) int {
 // the given Syntax.
 func defIndexBySyntax(t *testing.T, syntax string) int {
 	t.Helper()
-	for i, def := range clientSideStatementDefs {
+	for i, def := range mergedDefs {
 		for _, desc := range def.Descriptions {
 			if desc.Syntax == syntax {
 				return i
@@ -178,7 +189,7 @@ func defIndexBySyntax(t *testing.T, syntax string) int {
 func TestClientSideStatementDefsNonShadowing(t *testing.T) {
 	t.Parallel()
 
-	for i, def := range clientSideStatementDefs {
+	for i, def := range mergedDefs {
 		for _, desc := range def.Descriptions {
 			for _, keepOptional := range []bool{false, true} {
 				t.Run(fmt.Sprintf("def%02d/%s/keepOptional=%v", i, desc.Syntax, keepOptional), func(t *testing.T) {
@@ -188,9 +199,9 @@ func TestClientSideStatementDefsNonShadowing(t *testing.T) {
 						t.Fatalf("example %q derived from syntax %q does not match its own pattern %q", example, desc.Syntax, def.Pattern)
 					}
 					for j := range i {
-						if clientSideStatementDefs[j].Pattern.MatchString(example) {
+						if mergedDefs[j].Pattern.MatchString(example) {
 							t.Errorf("example %q derived from syntax %q is shadowed by earlier def %d (syntax %q, pattern %q)",
-								example, desc.Syntax, j, firstSyntax(clientSideStatementDefs[j]), clientSideStatementDefs[j].Pattern)
+								example, desc.Syntax, j, firstSyntax(mergedDefs[j]), mergedDefs[j].Pattern)
 						}
 					}
 				})
@@ -199,7 +210,7 @@ func TestClientSideStatementDefsNonShadowing(t *testing.T) {
 	}
 }
 
-func firstSyntax(def *clientSideStatementDef) string {
+func firstSyntax(def *mycli.StatementDef) string {
 	if len(def.Descriptions) > 0 {
 		return def.Descriptions[0].Syntax
 	}
@@ -207,22 +218,25 @@ func firstSyntax(def *clientSideStatementDef) string {
 }
 
 // completionSampleValues provides one plausible candidate per completion type
-// (as the fuzzy finder would insert it). fuzzyCompleteSetTarget is handled by
-// an explicit override because its candidate list mixes insertion shapes.
-var completionSampleValues = map[fuzzyCompletionType]string{
-	fuzzyCompleteDatabase:      "mydb",
-	fuzzyCompleteVariable:      "CLI_FORMAT",
-	fuzzyCompleteTable:         "mytable",
-	fuzzyCompleteVariableValue: "'TABLE'",
-	fuzzyCompleteRole:          "myrole",
-	fuzzyCompleteOperation:     "operation123",
-	fuzzyCompleteView:          "myview",
-	fuzzyCompleteIndex:         "myindex",
-	fuzzyCompleteChangeStream:  "mystream",
-	fuzzyCompleteSequence:      "mysequence",
-	fuzzyCompleteModel:         "mymodel",
-	fuzzyCompleteSchema:        "myschema",
-	fuzzyCompleteParam:         "myparam",
+// (as the fuzzy finder would insert it), keyed by the completion type's
+// String() name. The external test package cannot name the unexported
+// fuzzyCompletionType, so it keys by the exported String() representation
+// instead. The set_target type is handled by an explicit override because its
+// candidate list mixes insertion shapes.
+var completionSampleValues = map[string]string{
+	"database":       "mydb",
+	"variable":       "CLI_FORMAT",
+	"table":          "mytable",
+	"variable_value": "'TABLE'",
+	"role":           "myrole",
+	"operation":      "operation123",
+	"view":           "myview",
+	"index":          "myindex",
+	"change_stream":  "mystream",
+	"sequence":       "mysequence",
+	"model":          "mymodel",
+	"schema":         "myschema",
+	"param":          "myparam",
 }
 
 // completionCase describes one candidate insertion to simulate for a
@@ -320,7 +334,7 @@ func synthesizePrefixInput(t *testing.T, re *regexp.Regexp) string {
 // findFirstCompletionEntry mirrors detectFuzzyContext's first-match iteration
 // and returns the identity of the entry that would handle the input.
 func findFirstCompletionEntry(input string) (defIdx, entryIdx int, ok bool) {
-	for i, def := range clientSideStatementDefs {
+	for i, def := range mergedDefs {
 		for j, comp := range def.Completion {
 			if comp.PrefixPattern.MatchString(input) {
 				return i, j, true
@@ -341,7 +355,7 @@ func findFirstCompletionEntry(input string) (defIdx, entryIdx int, ok bool) {
 func TestClientSideStatementDefsCompletionConsistency(t *testing.T) {
 	t.Parallel()
 
-	for i, def := range clientSideStatementDefs {
+	for i, def := range mergedDefs {
 		for j, comp := range def.Completion {
 			t.Run(fmt.Sprintf("def%02d/%s/entry%d(%s)", i, firstSyntax(def), j, comp.CompletionType), func(t *testing.T) {
 				input := synthesizePrefixInput(t, comp.PrefixPattern)
@@ -367,7 +381,7 @@ func TestClientSideStatementDefsCompletionConsistency(t *testing.T) {
 
 				cases, hasOverride := completionCaseOverrides[comp.PrefixPattern.String()]
 				if !hasOverride {
-					sample, ok := completionSampleValues[comp.CompletionType]
+					sample, ok := completionSampleValues[comp.CompletionType.String()]
 					if !ok {
 						t.Fatalf("no sample candidate for completion type %s; add it to completionSampleValues or completionCaseOverrides", comp.CompletionType)
 					}
@@ -396,10 +410,10 @@ func TestClientSideStatementDefsCompletionConsistency(t *testing.T) {
 
 					if got := firstMatchingDefIndex(full); got != expectedDef {
 						t.Errorf("completing %q with candidate %q yields %q, which dispatches to def %d (%s), want def %d (%s): completion pattern drifted from statement pattern",
-							input, c.candidate, full, got, syntaxOfIndex(got), expectedDef, firstSyntax(clientSideStatementDefs[expectedDef]))
+							input, c.candidate, full, got, syntaxOfIndex(got), expectedDef, firstSyntax(mergedDefs[expectedDef]))
 						continue
 					}
-					if _, err := BuildCLIStatement(full, full); err != nil {
+					if _, err := mycli.BuildCLIStatement(full, full); err != nil {
 						t.Errorf("completing %q with candidate %q yields %q, which fails to parse: %v", input, c.candidate, full, err)
 					}
 				}
@@ -409,8 +423,8 @@ func TestClientSideStatementDefsCompletionConsistency(t *testing.T) {
 }
 
 func syntaxOfIndex(i int) string {
-	if i < 0 || i >= len(clientSideStatementDefs) {
+	if i < 0 || i >= len(mergedDefs) {
 		return "<no match>"
 	}
-	return firstSyntax(clientSideStatementDefs[i])
+	return firstSyntax(mergedDefs[i])
 }

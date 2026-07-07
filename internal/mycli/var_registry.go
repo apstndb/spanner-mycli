@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"fmt"
 	"log/slog"
 	"maps"
 	"strconv"
@@ -35,11 +36,14 @@ func NewVarRegistry(sv *systemVariables) *VarRegistry {
 	return r
 }
 
-// registerAll builds the live registry from the declarative varDefs table.
+// registerAll builds the live registry from the declarative varDefs table
+// followed by any feature-contributed varDefs (issue #778). Names and aliases
+// must be unique case-folded across the whole set; a collision is a programming
+// error (a core/core or core/feature name clash that would otherwise silently
+// overwrite a handler) and panics rather than corrupting the registry.
 func (r *VarRegistry) registerAll() {
 	sv := r.sv
-	for i := range varDefs {
-		def := &varDefs[i]
+	register := func(def *varDef) {
 		rv := &registeredVar{
 			def: def,
 			v:   def.bind(sv),
@@ -47,14 +51,31 @@ func (r *VarRegistry) registerAll() {
 		if def.bindAdd != nil {
 			rv.add = def.bindAdd(sv)
 		}
-		r.vars[strings.ToUpper(def.name)] = rv
+		r.putUnique(def.name, def.name, rv)
 		// Aliases are extra keys pointing at the same registeredVar so lookups
 		// (Get/Set/Add) resolve them, but listings iterate varDefs by canonical
 		// name and therefore never surface aliases.
 		for _, alias := range def.aliases {
-			r.vars[strings.ToUpper(alias)] = rv
+			r.putUnique(alias, def.name, rv)
 		}
 	}
+	for i := range varDefs {
+		register(&varDefs[i])
+	}
+	for i := range sv.featureVarDefs {
+		register(&sv.featureVarDefs[i])
+	}
+}
+
+// putUnique inserts rv under the case-folded key, panicking if the key is
+// already registered. sourceName is the canonical variable name being
+// registered, for a clearer diagnostic when name != key (an alias collision).
+func (r *VarRegistry) putUnique(key, sourceName string, rv *registeredVar) {
+	upper := strings.ToUpper(key)
+	if _, exists := r.vars[upper]; exists {
+		panic(fmt.Sprintf("var registry: duplicate variable name %q (case-folded) while registering %q", upper, sourceName))
+	}
+	r.vars[upper] = rv
 }
 
 // lookupDef returns the declarative metadata for name (case-insensitive), or

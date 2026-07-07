@@ -124,6 +124,11 @@ type Session struct {
 	docCacheMu sync.Mutex
 	docCache   *docCache
 
+	// featureState is the keyed per-session store for feature state contributed
+	// through the Feature seam (issue #778). Values implementing io.Closer are
+	// closed at the end of Close in reverse creation order.
+	featureState featureStore
+
 	// experimental support of Cassandra interface
 	cqlCluster *gocql.ClusterConfig
 	cqlSession *gocql.Session
@@ -624,6 +629,10 @@ func (s *Session) Close() {
 	if dc != nil {
 		dc.Close()
 	}
+
+	// Feature-seam state closes last (after the core clients above), in reverse
+	// creation order. Empty until features register per-session state (#778).
+	s.featureState.closeAll()
 
 	// No need to close tee file here as it's managed by StreamManager
 }

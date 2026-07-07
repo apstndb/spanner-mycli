@@ -97,11 +97,19 @@ func SetLogLevel(logLevel string) (slog.Level, error) {
 }
 
 // Main is the entry point called from the root main package.
-// version and installFrom are passed from main via ldflags.
-func Main(version, installFrom string) {
+// version and installFrom are passed from main via ldflags. features are the
+// optional statement families (GEMINI/BIGQUERY/CQL, in All() order) contributed
+// through the registration seam (issue #778); the full binary passes all of
+// them and a slim variant passes none.
+func Main(version, installFrom string, features ...Feature) {
 	buildVersion = version
 
-	gopts, parser, err := parseFlags(installFrom)
+	// Merge feature statement defs into the table every consumer iterates
+	// (dispatch, HELP, --statement-help, fuzzy completion), before any of those
+	// paths runs. With no features this is a copy of the core table.
+	activeStatementDefs = MergedStatementDefs(features...)
+
+	gopts, parser, err := parseFlags(installFrom, features...)
 
 	if errors.Is(err, helpRequestedError{}) || errors.Is(err, versionRequestedError{}) {
 		// exit successfully
@@ -120,7 +128,7 @@ func Main(version, installFrom string) {
 	// and determining the exit code based on the error type using
 	// the GetExitCode function in errors.go.
 
-	if err := run(context.Background(), &gopts.Spanner); err != nil {
+	if err := run(context.Background(), &gopts.Spanner, features...); err != nil {
 		var exitCodeErr *ExitCodeError
 		if !errors.As(err, &exitCodeErr) {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -149,9 +157,9 @@ func writeUsageTo(ctx *kong.Context, _ *kong.Kong, w io.Writer) {
 // run executes the main functionality of the application.
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
-func run(ctx context.Context, opts *spannerOptions) error {
+func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 	if opts.StatementHelp {
-		fmt.Print(renderClientStatementHelp(clientSideStatementDefs))
+		fmt.Print(renderClientStatementHelp(activeStatementDefs))
 		return nil
 	}
 
@@ -169,7 +177,7 @@ func run(ctx context.Context, opts *spannerOptions) error {
 		return err
 	}
 
-	sysVars, err := initializeSystemVariables(opts)
+	sysVars, err := initializeSystemVariables(opts, features...)
 	if err != nil {
 		return err
 	}
