@@ -66,3 +66,37 @@ func TestLLMVariables(t *testing.T) {
 		}
 	}
 }
+
+// TestGeminiStatementDispatch relocates the pre-extraction GEMINI parse case
+// (statement_processing_test.go) to the merged def table: the dispatch-built
+// statement must be an *llm.GeminiStatement with the prompt unquoted, and it
+// must keep implementing NO marker interfaces — not a static MutationStatement,
+// not conditionally mutating, and not detached-compatible — exactly like the
+// pre-extraction in-core type.
+func TestGeminiStatementDispatch(t *testing.T) {
+	t.Parallel()
+
+	feat := llm.Feature()
+	defs := mycli.MergedStatementDefs(feat)
+	stmt, err := mycli.BuildStatementWithDefs(defs, `GEMINI "make a query"`)
+	if err != nil {
+		t.Fatalf("BuildStatementWithDefs(GEMINI ...) error: %v", err)
+	}
+	gs, ok := stmt.(*llm.GeminiStatement)
+	if !ok {
+		t.Fatalf("dispatch returned %T, want *llm.GeminiStatement", stmt)
+	}
+	if gs.Text != "make a query" {
+		t.Errorf("GeminiStatement.Text = %q, want unquoted prompt", gs.Text)
+	}
+
+	if _, isMutation := stmt.(mycli.MutationStatement); isMutation {
+		t.Error("GeminiStatement must not be a static MutationStatement")
+	}
+	if conditional, _ := mycli.ClassifyForTest(stmt); conditional {
+		t.Error("GeminiStatement must not be a ConditionallyMutatingStatement")
+	}
+	if _, detached := stmt.(mycli.DetachedCompatible); detached {
+		t.Error("GeminiStatement must not be DetachedCompatible")
+	}
+}

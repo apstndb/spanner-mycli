@@ -2030,9 +2030,10 @@ func TestTOMLConfigKeyAliases(t *testing.T) {
 	// (hyphen/underscore alias acceptance, duplicate detection, nested-typo
 	// rejection) using the core --impersonate-service-account flag. They
 	// previously used --vertexai-project, which moved to the GEMINI feature (#778)
-	// and is therefore not registered by the feature-less parseTestFlags; the
-	// vertexai-specific TOML/flag/--set precedence is covered in the external
-	// mycli_test package with llm.Feature() registered.
+	// and is therefore not registered by the feature-less parseTestFlags.
+	// Feature-flag TOML resolution and CLI precedence are pinned generically in
+	// feature_flags_toml_test.go; the llm variables themselves are covered in the
+	// external llm_variables_test.go with llm.Feature() registered.
 	t.Run("hyphenated key is accepted", func(t *testing.T) {
 		t.Parallel()
 
