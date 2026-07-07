@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -43,6 +44,11 @@ import (
 
 type globalOptions struct {
 	Spanner spannerOptions `embed:""`
+
+	// Plugins carries feature-contributed kong-tagged flag structs (issue #778).
+	// kong flattens each element's fields into the parser. Empty until a feature
+	// contributes flags, so the full binary's flag surface is unchanged.
+	kong.Plugins
 }
 
 // Alias flags handling:
@@ -339,7 +345,7 @@ func getFormatFromOptions(opts *spannerOptions) enums.DisplayMode {
 }
 
 // createSystemVariablesFromOptions creates a systemVariables instance from spannerOptions.
-func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, error) {
+func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature) (*systemVariables, error) {
 	params, err := parseParams(opts.Param)
 	if err != nil {
 		return nil, err
@@ -353,7 +359,10 @@ func createSystemVariablesFromOptions(opts *spannerOptions) (*systemVariables, e
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
 	// Don't initialize registry here - it needs to be done after the final
-	// systemVariables is in its permanent location to avoid closure issues
+	// systemVariables is in its permanent location to avoid closure issues.
+	// Feature-contributed variable defs must be set before the registry is first
+	// built (issue #778); empty until a feature contributes variables.
+	sysVars.featureVarDefs = featureVarDefs(features)
 
 	// Override with command-line options (only when explicitly provided)
 	sysVars.Connection.Project = opts.ProjectId
@@ -575,8 +584,8 @@ func applyEmbeddedRuntimeDefaults(sysVars *systemVariables, opts *spannerOptions
 
 // initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
 // It extracts the logic for setting default values and applying flag values.
-func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
-	sysVars, err := createSystemVariablesFromOptions(opts)
+func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*systemVariables, error) {
+	sysVars, err := createSystemVariablesFromOptions(opts, features...)
 	if err != nil {
 		return nil, err
 	}
@@ -613,13 +622,13 @@ func initializeSystemVariables(opts *spannerOptions) (*systemVariables, error) {
 	return sysVars, nil
 }
 
-func parseFlags(installFrom string) (globalOptions, *kong.Kong, error) {
-	return parseFlagsArgs(os.Args[1:], installFrom, defaultConfigFiles(), os.Stdout, os.Stderr)
+func parseFlags(installFrom string, features ...Feature) (globalOptions, *kong.Kong, error) {
+	return parseFlagsArgs(os.Args[1:], installFrom, defaultConfigFiles(), os.Stdout, os.Stderr, features...)
 }
 
-func parseFlagsArgs(args []string, installFrom string, configFiles []string, stdout, stderr io.Writer) (globalOptions, *kong.Kong, error) {
+func parseFlagsArgs(args []string, installFrom string, configFiles []string, stdout, stderr io.Writer, features ...Feature) (globalOptions, *kong.Kong, error) {
 	gopts := newGlobalOptions()
-	parser, err := newFlagParser(&gopts, installFrom, configFiles, stdout, stderr)
+	parser, err := newFlagParser(&gopts, installFrom, configFiles, stdout, stderr, features...)
 	if err != nil {
 		return globalOptions{}, nil, err
 	}
@@ -644,20 +653,31 @@ func defaultConfigFiles() []string {
 	return files
 }
 
-func newFlagParser(gopts *globalOptions, installFrom string, configFiles []string, stdout, stderr io.Writer) (*kong.Kong, error) {
+func newFlagParser(gopts *globalOptions, installFrom string, configFiles []string, stdout, stderr io.Writer, features ...Feature) (*kong.Kong, error) {
+	kongVars := kong.Vars{
+		"version":                 getVersion(),
+		"installFrom":             installFrom,
+		"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
+		"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
+		"defaultHistoryFile":      "~/.spanner_mycli_history", // display-only; keep environment-independent for README sync
+		"defaultVertexAIModel":    defaultVertexAIModel,
+		"defaultVertexAILocation": defaultVertexAILocation,
+	}
+	// Feature flag structs are appended to the parser via kong.Plugins and their
+	// help-template values via kong.Vars (issue #778). Both are empty until a
+	// feature contributes flags, so the full binary's flag surface is unchanged.
+	for _, f := range features {
+		if f.Flags != nil {
+			gopts.Plugins = append(gopts.Plugins, f.Flags)
+		}
+		maps.Copy(kongVars, f.KongVars)
+	}
+
 	options := []kong.Option{
 		kong.Name("spanner-mycli"),
 		kong.NoDefaultHelp(),
 		kong.Writers(stdout, stderr),
-		kong.Vars{
-			"version":                 getVersion(),
-			"installFrom":             installFrom,
-			"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
-			"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
-			"defaultHistoryFile":      "~/.spanner_mycli_history", // display-only; keep environment-independent for README sync
-			"defaultVertexAIModel":    defaultVertexAIModel,
-			"defaultVertexAILocation": defaultVertexAILocation,
-		},
+		kongVars,
 	}
 
 	if len(configFiles) > 0 {
@@ -696,13 +716,36 @@ func spannerConnectionEnvResolver() kong.Resolver {
 	})
 }
 
+// credentialFileMaxSize caps the credential JSON read. Service-account key
+// files are a few KiB; 4 MiB is a generous ceiling that still routes the read
+// through the filesafety layer (size/type limits) used for other file inputs.
+const credentialFileMaxSize = 4 * 1024 * 1024 // 4 MiB
+
 func readCredentialFile(filepath string) ([]byte, error) {
-	f, err := os.Open(filepath)
+	data, err := filesafety.SafeReadFile(filepath, &filesafety.FileSafetyOptions{MaxSize: credentialFileMaxSize})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read credential file %q failed: %w", filepath, err)
 	}
-	defer f.Close()
-	return io.ReadAll(f)
+	return data, nil
+}
+
+// stdinMaxSize caps batch input read from stdin. Batch/stdin input is otherwise
+// unbounded, so this mirrors the limit the CLI already enforces on SQL files
+// read from disk and prevents a hostile or accidental stream from exhausting
+// memory.
+const stdinMaxSize = int64(filesafety.DefaultMaxFileSize)
+
+// readStdinCapped reads from stdin but refuses input larger than maxSize,
+// returning a clear error that names the limit instead of silently truncating.
+func readStdinCapped(stdin io.Reader, maxSize int64) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(stdin, maxSize+1))
+	if err != nil {
+		return "", fmt.Errorf("read from stdin failed: %w", err)
+	}
+	if int64(len(data)) > maxSize {
+		return "", fmt.Errorf("stdin input too large: exceeded %d bytes", maxSize)
+	}
+	return string(data), nil
 }
 
 // determineInputAndMode decides whether to run in interactive or batch mode
@@ -732,11 +775,11 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 	case opts.SQL != "":
 		return opts.SQL, false, nil
 	case fileToRead == "-":
-		b, err := io.ReadAll(stdin)
+		s, err := readStdinCapped(stdin, stdinMaxSize)
 		if err != nil {
-			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+			return "", false, err
 		}
-		return string(b), false, nil
+		return s, false, nil
 	case fileToRead != "":
 		// AllowNonRegular keeps process substitution (--file <(...)) working;
 		// SafeReadFile still bounds the read for pipe-like inputs.
@@ -754,11 +797,11 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 		}
 
 		// No terminal - read from stdin for batch mode
-		b, err := io.ReadAll(stdin)
+		s, err := readStdinCapped(stdin, stdinMaxSize)
 		if err != nil {
-			return "", false, fmt.Errorf("read from stdin failed: %w", err)
+			return "", false, err
 		}
-		return string(b), false, nil
+		return s, false, nil
 	}
 }
 

@@ -1082,7 +1082,7 @@ func TestSQLSkeletonItemsNoDuplicateWithClientSide(t *testing.T) {
 func TestStatementNameItemsIncludesSQLSkeletons(t *testing.T) {
 	// statementNameItems should contain both client-side and SQL skeleton items.
 	valueSet := make(map[string]bool)
-	for _, item := range statementNameItems {
+	for _, item := range statementNameItems() {
 		valueSet[item.Value] = true
 	}
 
@@ -1124,7 +1124,7 @@ func TestRunFzfFilter_SQLSkeletons(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := runFzfFilter(statementNameItems, tt.filter, "Statements", "")
+			results := runFzfFilter(statementNameItems(), tt.filter, "Statements", "")
 			for _, want := range tt.wantValues {
 				assert.Contains(t, results, want)
 			}

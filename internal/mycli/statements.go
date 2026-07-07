@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -38,12 +37,9 @@ import (
 	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
-	"github.com/gocql/gocql"
-	spancql "github.com/googleapis/go-spanner-cassandra/cassandra/gocql"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
-	"go.uber.org/zap/zapcore"
 )
 
 var transactionRe = regexp.MustCompile(`(?is)^(?:(READ\s+ONLY)|(READ\s+WRITE))$`)
@@ -345,17 +341,19 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	operationDesc := s.getOperationDescription(op)
 
 	if session.systemVariables.Display.EnableProgressBar {
-		p = mpb.NewWithContext(ctx)
-		bar = p.AddBar(int64(100),
-			mpb.PrependDecorators(
-				decor.Spinner(nil, decor.WCSyncSpaceR),
-				decor.Name(tabwrap.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
-				decor.Percentage(decor.WCSyncSpace),
-				decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
-			mpb.BarRemoveOnComplete(),
-		)
-		bar.EnableTriggerComplete()
-		defer teardown()
+		p = newProgressWithTTY(ctx, session)
+		if p != nil {
+			bar = p.AddBar(int64(100),
+				mpb.PrependDecorators(
+					decor.Spinner(nil, decor.WCSyncSpaceR),
+					decor.Name(tabwrap.Truncate(replacerForProgress.Replace(operationDesc), 40, "..."), decor.WCSyncSpaceR),
+					decor.Percentage(decor.WCSyncSpace),
+					decor.Elapsed(decor.ET_STYLE_MMSS, decor.WCSyncSpace)),
+				mpb.BarRemoveOnComplete(),
+			)
+			bar.EnableTriggerComplete()
+			defer teardown()
+		}
 	}
 
 	// Update progress bar with initial status
@@ -658,133 +656,9 @@ func runBatch(ctx context.Context, session *Session) (*Result, error) {
 
 // LLM related statements are defined in statements_llm.go
 
-// BigQuery related statements are defined in statements_bigquery.go
+// BigQuery related statements live in internal/mycli/feature/bigquery (#778).
 
-// Cassandra interface
-type CQLStatement struct {
-	CQL string
-}
-
-// firstCQLKeyword returns the uppercased first whitespace-delimited token of a
-// CQL statement, or "" if there is none.
-func firstCQLKeyword(cql string) string {
-	fields := strings.Fields(cql)
-	if len(fields) == 0 {
-		return ""
-	}
-	return strings.ToUpper(fields[0])
-}
-
-// cqlStatementMutates reports whether a CQL statement should be treated as
-// mutating for the purpose of the READONLY guard.
-//
-// It classifies by the statement's first keyword and is deliberately
-// fail-closed: only statements whose first keyword is a known read-only verb
-// are allowed under READONLY. Everything else - data mutations
-// (INSERT/UPDATE/DELETE), batches (BATCH), DDL (CREATE/DROP/ALTER/TRUNCATE),
-// permission changes (GRANT/REVOKE), and any unrecognized or empty keyword - is
-// treated as mutating so the guard blocks it. This avoids silently allowing an
-// unknown CQL verb to bypass READONLY.
-//
-// SELECT is the only clearly read-only data verb in the Spanner Cassandra
-// adapter's supported surface. Other Cassandra read verbs (e.g. LIST, DESCRIBE)
-// are not part of that surface, so they are intentionally not allow-listed.
-func cqlStatementMutates(cql string) bool {
-	switch firstCQLKeyword(cql) {
-	case "SELECT":
-		return false
-	default:
-		return true
-	}
-}
-
-func (cs *CQLStatement) isConditionallyMutating() bool {
-	return cqlStatementMutates(cs.CQL)
-}
-
-func (cs *CQLStatement) Execute(ctx context.Context, session *Session) (result *Result, err error) {
-	// lazy initialize gocql.ClusterConfig
-	if session.cqlCluster == nil {
-		cluster := spancql.NewCluster(&spancql.Options{
-			LogLevel:    zapcore.WarnLevel.String(),
-			DatabaseUri: session.DatabasePath(),
-		})
-		if cluster == nil {
-			return nil, fmt.Errorf("failed to create cluster")
-		}
-
-		session.cqlCluster = cluster
-
-		// You can still configure your cluster as usual after connecting to your
-		// spanner database
-		cluster.Timeout = 5 * time.Second
-	}
-	// lazy initialize gocql.Session
-	if session.cqlSession == nil {
-		s, err := session.cqlCluster.CreateSession()
-		if err != nil {
-			return nil, err
-		}
-		session.cqlSession = s
-	}
-
-	s := session.cqlSession
-
-	q := s.Query(cs.CQL)
-	it := q.WithContext(ctx).Iter()
-	defer func() {
-		closeErr := it.Close()
-		if closeErr == nil {
-			return
-		}
-		if err == nil {
-			err = closeErr
-			return
-		}
-		if errors.Is(err, closeErr) {
-			return
-		}
-		err = errors.Join(err, closeErr)
-	}()
-
-	var headers []string
-	for _, col := range it.Columns() {
-		headers = append(headers, col.Name+"\n"+formatCassandraTypeName(col.TypeInfo))
-	}
-
-	var rows []Row
-	for {
-		rd, err := it.RowData()
-		if err != nil {
-			return nil, err
-		}
-
-		if !it.Scan(rd.Values...) {
-			break
-		}
-
-		var rowStrs []string
-		for _, value := range rd.Values {
-			rowStrs = append(rowStrs, fmt.Sprint(reflect.Indirect(reflect.ValueOf(value)).Interface()))
-		}
-		row := toRow(rowStrs...)
-		rows = append(rows, row)
-	}
-
-	result = &Result{TableHeader: toTableHeader(headers), Rows: rows, AffectedRows: len(rows)}
-	return result, nil
-}
-
-func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
-	if ct, ok := typeInfo.(gocql.CollectionType); ok {
-		return fmt.Sprintf("%v<%v%v>",
-			ct.Type(),
-			lo.Ternary(ct.Key != nil, fmt.Sprint(ct.Key)+", ", ""),
-			ct.Elem)
-	} else {
-		return fmt.Sprint(typeInfo)
-	}
-}
+// CQL statements live in internal/mycli/feature/cql (#778).
 
 // CLI control
 
@@ -802,7 +676,7 @@ var helpRowEncoder = spancodec.MustNewRowEncoder[helpRow]()
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var items []helpRow
-	for _, stmt := range clientSideStatementDefs {
+	for _, stmt := range activeStatementDefs {
 		for _, desc := range stmt.Descriptions {
 			items = append(items, helpRow{Usage: desc.Usage, Syntax: desc.Syntax + ";"})
 		}

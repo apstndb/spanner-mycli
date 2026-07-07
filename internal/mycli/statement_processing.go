@@ -56,7 +56,8 @@ type MutationStatement interface {
 //
 // Unlike MutationStatement, implementing this interface does NOT determine a
 // pending Spanner transaction: it only participates in the READONLY guard,
-// because such statements (CQL) do not use the Spanner transaction machinery.
+// because such statements (CQL, BigQuery) do not use the Spanner transaction
+// machinery.
 type ConditionallyMutatingStatement interface {
 	isConditionallyMutating() bool
 }
@@ -82,12 +83,13 @@ var (
 	_ MutationStatement = (*AddSplitPointsStatement)(nil)
 )
 
-// Compile-time assertions for every ConditionallyMutatingStatement
-// implementation. As with the marker above, the method is unexported so a typo
-// silently drops the type out of the interface and bypasses the READONLY guard.
-var (
-	_ ConditionallyMutatingStatement = (*CQLStatement)(nil)
-)
+// No core statement implements ConditionallyMutatingStatement any more: both
+// implementations were extracted into feature packages, where each carries its
+// own compile-time assertion. BigQueryStatement moved to
+// internal/mycli/feature/bigquery and CQLStatement to internal/mycli/feature/cql
+// (#778); both embed mycli.MutationClassifier there. The unexported marker
+// method means a feature that drops the embed silently bypasses the READONLY
+// guard, so the assertion travels with the type.
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
 // Statements implementing this interface can execute when session.IsDetached() is true.
@@ -339,23 +341,9 @@ func BuildStatement(input string) (Statement, error) {
 }
 
 func BuildCLIStatement(stripped, raw string) (Statement, error) {
-	trimmed := strings.TrimSpace(stripped)
-	if trimmed == "" {
-		return nil, errors.New("empty statement")
-	}
-
-	for _, cs := range clientSideStatementDefs {
-		// FindStringSubmatch returns nil on no match, so MatchString is unnecessary.
-		if matches := cs.Pattern.FindStringSubmatch(trimmed); matches != nil {
-			stmt, err := cs.HandleGroups(namedGroups(cs.Pattern, matches))
-			if err != nil {
-				return nil, err
-			}
-			return stmt, nil
-		}
-	}
-
-	return nil, errStatementNotMatched
+	// activeStatementDefs is the merged (core + feature) table set by Main;
+	// it defaults to the core table so pre-Main paths and tests still dispatch.
+	return BuildStatementWithDefs(activeStatementDefs, stripped)
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {

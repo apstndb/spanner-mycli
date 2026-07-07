@@ -353,24 +353,6 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.VertexAILocation) },
 	},
 	{
-		name:  "CLI_BIGQUERY_PROJECT",
-		desc:  "GCP project for BigQuery queries. Defaults to CLI_PROJECT when empty.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.BigQueryProject) },
-	},
-	{
-		name:  "CLI_BIGQUERY_LOCATION",
-		desc:  "BigQuery location for queries (e.g. US, EU).",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.BigQueryLocation) },
-	},
-	{
-		name:  "CLI_BIGQUERY_MAX_BYTES_BILLED",
-		desc:  "Maximum bytes billed per BigQuery query.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return NullableIntVar(&sv.Feature.BigQueryMaxBytesBilled) },
-	},
-	{
 		name:  "CLI_ROLE",
 		desc:  "Cloud Spanner database role.",
 		scope: scopeConnection,
@@ -400,7 +382,15 @@ var varDefs = []varDef{
 		name:  "MAX_PARTITIONED_PARALLELISM",
 		desc:  "A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return IntVar(&sv.Query.MaxPartitionedParallelism) },
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Query.MaxPartitionedParallelism).
+				WithValidator(func(value int64) error {
+					if value < 0 {
+						return fmt.Errorf("MAX_PARTITIONED_PARALLELISM must be non-negative, got %d", value)
+					}
+					return nil
+				})
+		},
 	},
 	{
 		name:  "CLI_TAB_WIDTH",
@@ -546,7 +536,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_FORMAT",
-		desc:  "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated, raw values), TSV (tab-separated with tab/newline/carriage-return/backslash escaping), HTML (HTML table), XML (XML format), CSV (comma-separated values).",
+		desc:  "Controls output format for query results. Valid values: TABLE (ASCII table), TABLE_COMMENT (table in comments), TABLE_DETAIL_COMMENT, VERTICAL (column:value pairs), TAB (tab-separated, raw values), TSV (tab-separated with tab/newline/carriage-return/backslash escaping), HTML (HTML table), XML (XML format), CSV (comma-separated values), JSONL (newline-delimited JSON), SQL_INSERT (INSERT statements), SQL_INSERT_OR_IGNORE (INSERT OR IGNORE statements), SQL_INSERT_OR_UPDATE (INSERT OR UPDATE statements).",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return DisplayModeVar(&sv.Display.CLIFormat) },
 	},

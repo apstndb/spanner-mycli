@@ -65,6 +65,13 @@ type StartupConfig struct {
 	MCP                       bool   // CLI_MCP
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 
+	// Credential holds the raw --credential file bytes, if any. It is the durable
+	// home for the credential (read-only, not a registered variable): features
+	// that build non-Spanner clients read it via Session.CredentialBytes(), and
+	// it survives USE/DETACH because startup config is not replaced on session
+	// switch (#778 §4.6). Do not mutate after startup.
+	Credential []byte
+
 	// Embedded runtime overrides used by tests and the embedded emulator.
 	EmbeddedClientOptions []option.ClientOption
 	EmbeddedClientConfig  *spanner.ClientConfig
@@ -174,9 +181,6 @@ type FeatureVars struct {
 	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
 	VertexAILocation       string                     // CLI_VERTEXAI_LOCATION
-	BigQueryProject        string                     // CLI_BIGQUERY_PROJECT (defaults to CLI_PROJECT when empty)
-	BigQueryLocation       string                     // CLI_BIGQUERY_LOCATION
-	BigQueryMaxBytesBilled *int64                     // CLI_BIGQUERY_MAX_BYTES_BILLED
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
@@ -227,6 +231,12 @@ type systemVariables struct {
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
+
+	// featureVarDefs holds the varDefs converted from feature-contributed
+	// FeatureVars (issue #778). They are registered alongside the core varDefs
+	// table when the registry is built. Empty until a feature contributes
+	// variables. Must be populated before the registry is first constructed.
+	featureVarDefs []varDef
 
 	// typeStyles maps Spanner type codes to ANSI SGR sequences for styled output.
 	// When nil or empty, all non-NULL values use PlainCell (default behavior).
@@ -443,9 +453,10 @@ func (sv *systemVariables) ListVariables() map[string]string {
 
 // ListVariableInfo returns information about all variables
 func (sv *systemVariables) ListVariableInfo() map[string]struct {
-	Description string
-	ReadOnly    bool
-	CanAdd      bool
+	Description   string
+	ReadOnly      bool
+	CanAdd        bool
+	Unimplemented bool
 } {
 	sv.ensureRegistry()
 	return sv.Registry.ListVariableInfo()

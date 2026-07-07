@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"fmt"
 	"log/slog"
 	"maps"
 	"strconv"
@@ -35,11 +36,14 @@ func NewVarRegistry(sv *systemVariables) *VarRegistry {
 	return r
 }
 
-// registerAll builds the live registry from the declarative varDefs table.
+// registerAll builds the live registry from the declarative varDefs table
+// followed by any feature-contributed varDefs (issue #778). Names and aliases
+// must be unique case-folded across the whole set; a collision is a programming
+// error (a core/core or core/feature name clash that would otherwise silently
+// overwrite a handler) and panics rather than corrupting the registry.
 func (r *VarRegistry) registerAll() {
 	sv := r.sv
-	for i := range varDefs {
-		def := &varDefs[i]
+	register := func(def *varDef) {
 		rv := &registeredVar{
 			def: def,
 			v:   def.bind(sv),
@@ -47,14 +51,31 @@ func (r *VarRegistry) registerAll() {
 		if def.bindAdd != nil {
 			rv.add = def.bindAdd(sv)
 		}
-		r.vars[strings.ToUpper(def.name)] = rv
+		r.putUnique(def.name, def.name, rv)
 		// Aliases are extra keys pointing at the same registeredVar so lookups
 		// (Get/Set/Add) resolve them, but listings iterate varDefs by canonical
 		// name and therefore never surface aliases.
 		for _, alias := range def.aliases {
-			r.vars[strings.ToUpper(alias)] = rv
+			r.putUnique(alias, def.name, rv)
 		}
 	}
+	for i := range varDefs {
+		register(&varDefs[i])
+	}
+	for i := range sv.featureVarDefs {
+		register(&sv.featureVarDefs[i])
+	}
+}
+
+// putUnique inserts rv under the case-folded key, panicking if the key is
+// already registered. sourceName is the canonical variable name being
+// registered, for a clearer diagnostic when name != key (an alias collision).
+func (r *VarRegistry) putUnique(key, sourceName string, rv *registeredVar) {
+	upper := strings.ToUpper(key)
+	if _, exists := r.vars[upper]; exists {
+		panic(fmt.Sprintf("var registry: duplicate variable name %q (case-folded) while registering %q", upper, sourceName))
+	}
+	r.vars[upper] = rv
 }
 
 // lookupDef returns the declarative metadata for name (case-insensitive), or
@@ -99,17 +120,8 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 		return &ErrUnknownVariable{Name: name}
 	}
 
-	// Policy enforcement lives here, driven by the def's metadata, rather than
-	// inside each handler's Set. r.sv.inTransaction is nil until a session is
-	// created, so it doubles as the "session exists" signal for initOnly.
-	def := rv.def
-	switch {
-	case !def.settable():
-		return errSetterReadOnly
-	case def.initOnly && r.sv.inTransaction != nil:
-		return &errSetterInitOnly{Name: def.name}
-	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
-		return errSetterInTransaction
+	if err := r.checkSetPolicy(rv.def); err != nil {
+		return err
 	}
 
 	// Parse GoogleSQL value if needed
@@ -125,6 +137,24 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 	return err
 }
 
+// checkSetPolicy enforces the def's mutation policy (read-only, session-init-only,
+// transaction-guarded) that governs whether a value may be changed right now. It
+// is the single source of truth shared by both Set (`SET X = ...`) and Add
+// (`SET X += ...`) so the two entry points cannot diverge: an ADD must never
+// bypass a guard that a plain SET enforces. r.sv.inTransaction is nil until a
+// session is created, so it doubles as the "session exists" signal for initOnly.
+func (r *VarRegistry) checkSetPolicy(def *varDef) error {
+	switch {
+	case !def.settable():
+		return errSetterReadOnly
+	case def.initOnly && r.sv.inTransaction != nil:
+		return &errSetterInitOnly{Name: def.name}
+	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
+		return errSetterInTransaction
+	}
+	return nil
+}
+
 // Add performs ADD operation on a variable
 func (r *VarRegistry) Add(name, value string) error {
 	upperName := strings.ToUpper(name)
@@ -133,6 +163,14 @@ func (r *VarRegistry) Add(name, value string) error {
 	rv, ok := r.vars[upperName]
 	if !ok {
 		return &ErrUnknownVariable{Name: name}
+	}
+
+	// ADD is a mutation, so it must clear the same policy guards as SET; otherwise
+	// `SET X += ...` would be a latent bypass of read-only/init-only/txn-guard.
+	// There is no `SET LOCAL X += ...` grammar (the SET LOCAL pattern only accepts
+	// `=`), so localAllowed() has no ADD path to enforce here.
+	if err := r.checkSetPolicy(rv.def); err != nil {
+		return err
 	}
 
 	// Then check if it supports ADD
@@ -160,19 +198,35 @@ func (r *VarRegistry) IsReadOnly(name string) (bool, error) {
 	return !rv.def.settable(), nil
 }
 
+// forEachDef invokes fn for every registered declarative def by canonical name
+// (aliases excluded): the core varDefs table followed by feature-contributed
+// defs (issue #778). Every enumeration surface (SHOW VARIABLES via
+// ListVariables, fuzzy variable-name completion, HELP VARIABLES and generated
+// docs via ListVariableInfo, ListMultiValues) iterates through this single
+// helper so feature variables can never drop out of one surface while
+// remaining visible on another.
+func (r *VarRegistry) forEachDef(fn func(*varDef)) {
+	for i := range varDefs {
+		fn(&varDefs[i])
+	}
+	for i := range r.sv.featureVarDefs {
+		fn(&r.sv.featureVarDefs[i])
+	}
+}
+
 // ListVariables returns a map of all variables with their current values.
-// It iterates varDefs by canonical name so aliases are excluded, and skips
+// It iterates defs by canonical name so aliases are excluded, and skips
 // variables whose Get reports the value as unavailable (e.g. multi-valued
 // COMMIT_RESPONSE, whose columns are merged in separately via ListMultiValues).
 func (r *VarRegistry) ListVariables() map[string]string {
 	result := make(map[string]string)
-	for i := range varDefs {
-		name := strings.ToUpper(varDefs[i].name)
+	r.forEachDef(func(def *varDef) {
+		name := strings.ToUpper(def.name)
 		value, err := r.vars[name].v.Get()
 		if err == nil {
 			result[name] = value
 		}
-	}
+	})
 	return result
 }
 
@@ -182,46 +236,53 @@ func (r *VarRegistry) ListVariables() map[string]string {
 // overrides the plain COMMIT_TIMESTAMP row in SHOW VARIABLES).
 func (r *VarRegistry) ListMultiValues() map[string]string {
 	result := make(map[string]string)
-	for i := range varDefs {
-		mv, ok := r.vars[strings.ToUpper(varDefs[i].name)].v.(MultiValueVar)
+	r.forEachDef(func(def *varDef) {
+		mv, ok := r.vars[strings.ToUpper(def.name)].v.(MultiValueVar)
 		if !ok {
-			continue
+			return
 		}
 		values, err := mv.GetMulti()
 		if err != nil {
-			continue
+			return
 		}
 		maps.Copy(result, values)
-	}
+	})
 	return result
 }
 
 // ListVariableInfo returns information about all variables
 func (r *VarRegistry) ListVariableInfo() map[string]struct {
-	Description string
-	ReadOnly    bool
-	CanAdd      bool
+	Description   string
+	ReadOnly      bool
+	CanAdd        bool
+	Unimplemented bool
 } {
 	result := make(map[string]struct {
-		Description string
-		ReadOnly    bool
-		CanAdd      bool
+		Description   string
+		ReadOnly      bool
+		CanAdd        bool
+		Unimplemented bool
 	})
 
-	// Iterate varDefs by canonical name so aliases are excluded from the listing.
-	for i := range varDefs {
-		name := strings.ToUpper(varDefs[i].name)
+	addRow := func(def *varDef) {
+		name := strings.ToUpper(def.name)
 		rv := r.vars[name]
+		// Unimplemented status is derived from the bound handler type, not from a
+		// hardcoded name list, so generated docs stay honest as vars come and go.
+		_, unimplemented := rv.v.(*UnimplementedVar)
 		result[name] = struct {
-			Description string
-			ReadOnly    bool
-			CanAdd      bool
+			Description   string
+			ReadOnly      bool
+			CanAdd        bool
+			Unimplemented bool
 		}{
-			Description: rv.def.desc,
-			ReadOnly:    !rv.def.settable(),
-			CanAdd:      rv.add != nil,
+			Description:   rv.def.desc,
+			ReadOnly:      !rv.def.settable(),
+			CanAdd:        rv.add != nil,
+			Unimplemented: unimplemented,
 		}
 	}
+	r.forEachDef(addRow)
 
 	return result
 }

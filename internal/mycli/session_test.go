@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
@@ -188,6 +189,72 @@ func TestCreateClientOptionsUsesEmbeddedClientOptions(t *testing.T) {
 	}
 	if len(opts) != 1 {
 		t.Fatalf("createClientOptions() len = %d, want 1", len(opts))
+	}
+}
+
+// TestAuthOptionsSkipsEmulatorAuthForNonSpannerClients verifies that
+// Session.AuthOptions with allowWithoutAuthentication=false — the path features
+// like BigQuery use to build non-Spanner clients — does NOT apply the Spanner
+// emulator's WithoutAuthentication option, so it falls back to ADC. This
+// preserves the coverage of the removed createBigQueryClientOptions helper.
+func TestAuthOptionsSkipsEmulatorAuthForNonSpannerClients(t *testing.T) {
+	t.Parallel()
+
+	sysVars := &systemVariables{
+		Config: StartupConfig{
+			Host:                  "localhost",
+			Port:                  9010,
+			WithoutAuthentication: true,
+		},
+	}
+	session := &Session{systemVariables: sysVars}
+
+	opts, err := session.AuthOptions(t.Context(), nil, false)
+	if err != nil {
+		t.Fatalf("AuthOptions() error = %v", err)
+	}
+	if len(opts) != 0 {
+		t.Fatalf("AuthOptions() len = %d, want 0 (ADC, not emulator auth)", len(opts))
+	}
+}
+
+// TestSessionCredentialBytesFromDurableConfig is the #775 credential-handoff
+// regression, now proven by construction (#778 §4.6): the raw --credential lives
+// on the durable startup config, so Session.CredentialBytes() returns it (a
+// defensive copy) and every session sharing that config — including USE/DETACH
+// replacement sessions — resolves the same credential without any carry-over
+// machinery.
+func TestSessionCredentialBytesFromDurableConfig(t *testing.T) {
+	t.Parallel()
+
+	credential := []byte(`{"type":"authorized_user","client_id":"operator"}`)
+	sysVars := &systemVariables{}
+	sysVars.Config.Credential = append([]byte(nil), credential...)
+
+	session := &Session{systemVariables: sysVars}
+
+	got := session.CredentialBytes()
+	if !bytes.Equal(got, credential) {
+		t.Fatalf("CredentialBytes() = %q, want %q", got, credential)
+	}
+
+	// Defensive copy out: mutating the returned slice must not affect the stored
+	// credential or later reads.
+	got[0] = '['
+	if !bytes.Equal(session.CredentialBytes(), credential) {
+		t.Fatal("CredentialBytes() returned a slice aliasing the durable config")
+	}
+
+	// A replacement session built around the same systemVariables (USE/DETACH)
+	// resolves the identical credential by construction.
+	replacement := &Session{systemVariables: sysVars}
+	if !bytes.Equal(replacement.CredentialBytes(), credential) {
+		t.Fatalf("replacement CredentialBytes() = %q, want %q", replacement.CredentialBytes(), credential)
+	}
+
+	// No credential configured yields nil (not an empty non-nil slice).
+	if got := (&Session{systemVariables: &systemVariables{}}).CredentialBytes(); got != nil {
+		t.Fatalf("CredentialBytes() with no credential = %q, want nil", got)
 	}
 }
 

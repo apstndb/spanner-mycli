@@ -185,24 +185,35 @@ func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 
 	var merged []helpVariableRow
 	for name, info := range varInfo {
-		var ops []string
+		var operations string
+		switch {
+		case info.Unimplemented:
+			// Unimplemented variables reject both Get and Set, so neither "read"
+			// nor "write" is truthful. Report "unimplemented" instead of the
+			// read,write default so generated docs and HELP VARIABLES don't
+			// advertise operations that always error.
+			operations = "unimplemented"
+		default:
+			var ops []string
 
-		// All variables support read
-		ops = append(ops, "read")
+			// All variables support read
+			ops = append(ops, "read")
 
-		// Check if variable supports write
-		if !info.ReadOnly {
-			ops = append(ops, "write")
-		}
+			// Check if variable supports write
+			if !info.ReadOnly {
+				ops = append(ops, "write")
+			}
 
-		// Check if variable supports ADD
-		if info.CanAdd {
-			ops = append(ops, "add")
+			// Check if variable supports ADD
+			if info.CanAdd {
+				ops = append(ops, "add")
+			}
+			operations = strings.Join(ops, ",")
 		}
 
 		merged = append(merged, helpVariableRow{
 			Name:        name,
-			Operations:  strings.Join(ops, ","),
+			Operations:  operations,
 			Description: info.Description,
 		})
 	}

@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -197,7 +198,7 @@ type fuzzyContextResult struct {
 // Priority: argument completion (if input matches a completable statement) > statement name completion.
 func detectFuzzyContext(input string) fuzzyContextResult {
 	// Try argument completion first: iterate all defs with Completion entries.
-	for _, def := range clientSideStatementDefs {
+	for _, def := range activeStatementDefs {
 		for _, comp := range def.Completion {
 			loc := comp.PrefixPattern.FindStringSubmatchIndex(input)
 			if loc == nil {
@@ -498,7 +499,7 @@ func runFzfFilter(candidates []fzfItem, filter string, header string, extraOptio
 // buildStatementNameItems builds fzfItem candidates from all client-side statement defs.
 func buildStatementNameItems() []fzfItem {
 	var items []fzfItem
-	for _, def := range clientSideStatementDefs {
+	for _, def := range activeStatementDefs {
 		for _, desc := range def.Descriptions {
 			if desc.Syntax == "" {
 				continue
@@ -597,12 +598,12 @@ var sqlSkeletonItems = []fzfItem{
 	{Value: "GRAPH ", Label: "GRAPH <property_graph> MATCH ..."},
 }
 
-// statementNameItems is built at init time from clientSideStatementDefs and sqlSkeletonItems.
-var statementNameItems []fzfItem
-
-func init() {
-	statementNameItems = append(buildStatementNameItems(), sqlSkeletonItems...)
-}
+// statementNameItems is computed once on first use from activeStatementDefs and
+// sqlSkeletonItems. It is a sync.OnceValue (not an init()) because init() runs
+// before Main can merge feature statement defs into activeStatementDefs.
+var statementNameItems = sync.OnceValue(func() []fzfItem {
+	return append(buildStatementNameItems(), sqlSkeletonItems...)
+})
 
 // extractFixedPrefix walks words in a syntax string until it hits a placeholder
 // indicator (<, [, {, or ...), returning the keyword prefix.
@@ -724,7 +725,7 @@ func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candida
 // For network-dependent types, checks cache first, then shows a loading indicator and fetches.
 func (f *fuzzyFinderCommand) resolveCandidates(ctx context.Context, ct fuzzyCompletionType, completionContext string) ([]fzfItem, error) {
 	if ct == 0 {
-		return statementNameItems, nil
+		return statementNameItems(), nil
 	}
 	if !requiresNetwork(ct) {
 		return f.fetchCandidates(ctx, ct, completionContext)

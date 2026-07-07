@@ -34,7 +34,6 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
-	"github.com/gocql/gocql"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -56,8 +55,6 @@ import (
 
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-
-	"cloud.google.com/go/bigquery"
 )
 
 var defaultClientConfig = spanner.ClientConfig{
@@ -124,19 +121,10 @@ type Session struct {
 	docCacheMu sync.Mutex
 	docCache   *docCache
 
-	// experimental support of Cassandra interface
-	cqlCluster *gocql.ClusterConfig
-	cqlSession *gocql.Session
-
-	// BigQuery client cached across BIGQUERY statements. The client and its
-	// auth options are built lazily on the first BIGQUERY statement (never in
-	// createSession) so ordinary Spanner/emulator sessions never touch BigQuery
-	// credentials. bqCredential holds the raw credential for that lazy build,
-	// and bqClientKey records the (project, location) the cached client was
-	// built with so it can be rebuilt when CLI_BIGQUERY_PROJECT/LOCATION change.
-	bqCredential []byte
-	bqClient     *bigquery.Client
-	bqClientKey  bigQueryClientKey
+	// featureState is the keyed per-session store for feature state contributed
+	// through the Feature seam (issue #778). Values implementing io.Closer are
+	// closed at the end of Close in reverse creation order.
+	featureState featureStore
 
 	// output is the per-statement output destination for streamed results,
 	// set for the duration of one statement execution via withOutput /
@@ -162,9 +150,7 @@ type SessionHandler struct {
 }
 
 func NewSessionHandler(session *Session) *SessionHandler {
-	return &SessionHandler{
-		Session: session,
-	}
+	return &SessionHandler{Session: session}
 }
 
 func (h *SessionHandler) GetSession() *Session {
@@ -200,12 +186,24 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 
 // createSessionWithOpts creates a new session using current session's client options
 func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
-	// Create admin-only session if no database is specified
-	if sysVars.Connection.Database == "" {
-		return NewAdminSession(ctx, sysVars, h.clientOpts...)
+	var opts []option.ClientOption
+	current := h.Session
+	if current != nil {
+		opts = current.clientOpts
 	}
 
-	return NewSession(ctx, sysVars, h.clientOpts...)
+	// Create admin-only session if no database is specified
+	var session *Session
+	var err error
+	if sysVars.Connection.Database == "" {
+		session, err = NewAdminSession(ctx, sysVars, opts...)
+	} else {
+		session, err = NewSession(ctx, sysVars, opts...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // validateSessionSwitch rejects USE/DETACH while a transaction or batch is
@@ -576,22 +574,16 @@ func (s *Session) Close() {
 		}
 	}
 
-	if s.cqlSession != nil {
-		s.cqlSession.Close()
-	}
-
-	if s.bqClient != nil {
-		if err := s.bqClient.Close(); err != nil {
-			slog.Error("error on bqClient.Close()", "err", err)
-		}
-	}
-
 	s.docCacheMu.Lock()
 	dc := s.docCache
 	s.docCacheMu.Unlock()
 	if dc != nil {
 		dc.Close()
 	}
+
+	// Feature-seam state closes last (after the core clients above), in reverse
+	// creation order. Empty until features register per-session state (#778).
+	s.featureState.closeAll()
 
 	// No need to close tee file here as it's managed by StreamManager
 }
@@ -880,76 +872,6 @@ func createClientOptions(ctx context.Context, credential []byte, sysVars *system
 	return append(opts, authOpts...), nil
 }
 
-// createBigQueryClientOptions creates auth options for BigQuery without Spanner
-// emulator endpoint or WithoutAuthentication settings.
-func createBigQueryClientOptions(ctx context.Context, credential []byte, sysVars *systemVariables) ([]option.ClientOption, error) {
-	return createAuthClientOptions(ctx, credential, sysVars, false)
-}
-
-func bigQueryProject(sysVars *systemVariables) string {
-	if p := sysVars.Feature.BigQueryProject; p != "" {
-		return p
-	}
-	return sysVars.Connection.Project
-}
-
-// bigQueryClientKey identifies the effective BigQuery client configuration.
-// A cached client is reused only while these values are unchanged; a SET of
-// CLI_BIGQUERY_PROJECT/CLI_BIGQUERY_LOCATION produces a new key and forces a
-// rebuild.
-type bigQueryClientKey struct {
-	project  string
-	location string
-}
-
-// bigQueryClient returns a BigQuery client for the current
-// CLI_BIGQUERY_PROJECT/CLI_BIGQUERY_LOCATION, building auth options lazily on
-// first use. Deferring option construction until the first BIGQUERY statement
-// keeps BigQuery credential resolution (ADC/ADCPlus/impersonation) out of
-// ordinary Spanner/emulator session creation, which must succeed without any
-// BigQuery credentials.
-//
-// The check-then-act on s.bqClient below is intentionally lock-free: BIGQUERY
-// statements run on the single-threaded statement execution path (same
-// rationale as cqlSession), so no other goroutine reads or mutates these
-// fields concurrently.
-func (s *Session) bigQueryClient(ctx context.Context) (*bigquery.Client, error) {
-	project := bigQueryProject(s.systemVariables)
-	if project == "" {
-		return nil, fmt.Errorf("BigQuery project not configured: set CLI_BIGQUERY_PROJECT or CLI_PROJECT")
-	}
-	location := s.systemVariables.Feature.BigQueryLocation
-	key := bigQueryClientKey{project: project, location: location}
-
-	if s.bqClient != nil {
-		if s.bqClientKey == key {
-			return s.bqClient, nil
-		}
-		// CLI_BIGQUERY_PROJECT/LOCATION changed since the client was built;
-		// drop the stale client and rebuild for the new configuration.
-		if err := s.bqClient.Close(); err != nil {
-			slog.Warn("error on bigquery.Client.Close() during reconfigure", "err", err)
-		}
-		s.bqClient = nil
-		s.bqClientKey = bigQueryClientKey{}
-	}
-
-	opts, err := createBigQueryClientOptions(ctx, s.bqCredential, s.systemVariables)
-	if err != nil {
-		return nil, err
-	}
-	client, err := bigquery.NewClient(ctx, project, opts...)
-	if err != nil {
-		return nil, err
-	}
-	if location != "" {
-		client.Location = location
-	}
-	s.bqClient = client
-	s.bqClientKey = key
-	return client, nil
-}
-
 func credentialsJSONOption(credential []byte) (option.ClientOption, error) {
 	var metadata struct {
 		Type string `json:"type"`
@@ -991,8 +913,5 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if err != nil {
 		return nil, err
 	}
-	// Retain the raw credential for lazy BigQuery client construction on the
-	// first BIGQUERY statement; no BigQuery auth is resolved here.
-	session.bqCredential = credential
 	return session, nil
 }

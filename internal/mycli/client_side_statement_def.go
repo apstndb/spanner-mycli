@@ -1153,47 +1153,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowQueryProfileStatement{Fprint: fprint}, nil
 		},
 	},
-	// LLM
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Compose query using LLM`,
-				Syntax: `GEMINI "<prompt>"`,
-			},
-		},
-
-		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
-		},
-	},
-	// BigQuery
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Execute BigQuery SQL`,
-				Syntax: `BIGQUERY <sql>`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^BIGQUERY\s+(?P<sql>\S.*)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &BigQueryStatement{SQL: groups["sql"]}, nil
-		},
-	},
-	// Cassandra interface
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Execute CQL`,
-				Syntax: `CQL ...`,
-				Note:   "EARLY EXPERIMENTAL",
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^CQL\s+(?P<cql>.+)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &CQLStatement{CQL: groups["cql"]}, nil
-		},
-	},
 	// CLI control
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -1230,6 +1189,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ExitStatement{}, nil
+		},
+	},
+	// The optional statement family GEMINI/LLM sits at the end of the table.
+	// BIGQUERY (#778) and CQL (#778) were extracted into internal/mycli/feature/
+	// {bigquery,cql}; GEMINI/LLM follows in PR3. Feature-contributed defs are
+	// appended after this core table in feature/all.All() order (llm, cql,
+	// bigquery).
+	// LLM
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Compose query using LLM`,
+				Syntax: `GEMINI "<prompt>"`,
+			},
+		},
+
+		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
 		},
 	},
 }

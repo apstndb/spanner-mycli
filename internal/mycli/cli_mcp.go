@@ -30,9 +30,46 @@ import (
 	"github.com/samber/lo"
 )
 
+const mcpMaxOutputBytes = 1 << 20
+
 // ExecuteStatementArgs represents the arguments for the execute_statement tool
 type ExecuteStatementArgs struct {
 	Statement string `json:"statement" jsonschema:"Valid spanner-mycli statement to execute"`
+}
+
+type mcpOutputCapture struct {
+	limit     int
+	builder   strings.Builder
+	truncated bool
+}
+
+func newMCPOutputCapture(limit int) *mcpOutputCapture {
+	if limit < 0 {
+		limit = 0
+	}
+	return &mcpOutputCapture{limit: limit}
+}
+
+func (c *mcpOutputCapture) Write(p []byte) (int, error) {
+	if c.truncated {
+		return len(p), nil
+	}
+
+	if remaining := c.limit - c.builder.Len(); remaining > 0 {
+		if len(p) <= remaining {
+			_, _ = c.builder.Write(p)
+			return len(p), nil
+		}
+		_, _ = c.builder.Write(p[:remaining])
+	}
+
+	c.truncated = true
+	fmt.Fprintf(&c.builder, "\n\n[spanner-mycli MCP output truncated after %d bytes]\n", c.limit)
+	return len(p), nil
+}
+
+func (c *mcpOutputCapture) String() string {
+	return c.builder.String()
 }
 
 // executeStatementHandler handles the execute_statement tool
@@ -72,11 +109,22 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 			}, nil, nil
 		}
 
-		// Create a string builder to capture the output
-		var sb strings.Builder
+		if _, ok := stmt.(MetaCommandStatement); ok {
+			slog.Debug("MCP request rejected meta command",
+				"duration", time.Since(start))
+			// Per MCP spec, return execution errors as tool output, not protocol errors.
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: "ERROR: meta commands are not supported by MCP execute_statement"},
+				},
+			}, nil, nil
+		}
 
-		// Execute the statement with the string builder as the output
-		_, err = cli.executeStatement(ctx, stmt, false, statement, &sb)
+		// Capture output without allowing one MCP call to grow memory unbounded.
+		output := newMCPOutputCapture(mcpMaxOutputBytes)
+
+		// Execute the statement with the capped capture as the output
+		_, err = cli.executeStatement(ctx, stmt, false, statement, output)
 		if err != nil {
 			slog.Debug("MCP execution failed",
 				"error", err.Error(),
@@ -89,17 +137,18 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 			}, nil, nil
 		}
 
+		text := output.String()
 		result := &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: sb.String()},
+				&mcp.TextContent{Text: text},
 			},
 		}
 
 		// Log response if debug logging is enabled
 		slog.Debug("MCP response sent",
-			"output_length", len(sb.String()),
+			"output_length", len(text),
 			"duration", time.Since(start),
-			"output_preview", tabwrap.Truncate(sb.String(), 100, "..."))
+			"output_preview", tabwrap.Truncate(text, 100, "..."))
 
 		return result, nil, nil
 	}
@@ -121,7 +170,9 @@ Supports:
 - GQL queries for graph-based data
 - Client-side commands: HELP, SHOW TABLES/COLUMNS/INDEX, SET variables, USE database
 
-The result is returned as an ASCII-formatted table. When displaying in Markdown, wrap the output in a code block.
+Backslash meta commands are not supported by this MCP tool.
+
+The result is returned as captured text using the active CLI output format (table by default). When displaying in Markdown, wrap the output in a code block.
 
 Use "HELP" command to see all available statements and their syntax.`)
 

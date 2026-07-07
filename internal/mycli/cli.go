@@ -50,12 +50,19 @@ const (
 
 type Cli struct {
 	SessionHandler  *SessionHandler
-	Credential      []byte
 	SystemVariables *systemVariables
 	waitingStatus   string
 }
 
 func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*Cli, error) {
+	// Store the raw credential once on the durable startup config so features
+	// (BigQuery) can build their own clients via Session.CredentialBytes()
+	// regardless of USE/DETACH session replacement (#778 §4.6). The defensive
+	// copy avoids retaining the caller-owned slice.
+	if len(credential) > 0 {
+		sysVars.Config.Credential = append([]byte(nil), credential...)
+	}
+
 	session, err := createSession(ctx, credential, sysVars)
 	if err != nil {
 		return nil, err
@@ -67,7 +74,6 @@ func NewCli(ctx context.Context, credential []byte, sysVars *systemVariables) (*
 
 	return &Cli{
 		SessionHandler:  sessionHandler,
-		Credential:      credential,
 		SystemVariables: sysVars,
 	}, nil
 }

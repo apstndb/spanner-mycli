@@ -17,8 +17,10 @@
 package mycli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,6 +29,9 @@ import (
 	"testing"
 
 	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"cloud.google.com/go/storage"
+	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
+	"google.golang.org/api/option"
 )
 
 func TestListAvailableSamples(t *testing.T) {
@@ -85,6 +90,50 @@ func TestLoadFromHTTP(t *testing.T) {
 	_, err = loadFromHTTP(ctx, server.URL+"/notfound.sql")
 	if err == nil {
 		t.Error("loadFromHTTP() expected error for 404, got nil")
+	}
+}
+
+func TestLoadFromGCSWithClientCapsBodyAfterAttrs(t *testing.T) {
+	const (
+		bucket = "test-bucket"
+		object = "schema.sql"
+	)
+
+	body := bytes.Repeat([]byte("x"), filesafety.SampleDatabaseMaxFileSize+1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.String() {
+		case "/b/test-bucket/o/schema.sql?alt=json&prettyPrint=false&projection=full":
+			_, _ = io.WriteString(w, `{
+				"bucket": "test-bucket",
+				"name": "schema.sql",
+				"size": "1",
+				"contentType": "text/plain",
+				"timeCreated": "2026-07-07T00:00:00Z",
+				"updated": "2026-07-07T00:00:00Z"
+			}`)
+		case "/test-bucket/schema.sql", "/b/test-bucket/o/schema.sql?alt=media&prettyPrint=false&projection=full":
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write(body)
+		default:
+			t.Errorf("unexpected GCS test request: %s", r.URL.String())
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithEndpoint(server.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("storage.NewClient: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	_, err = loadFromGCSWithClient(ctx, client, fmt.Sprintf("gs://%s/%s", bucket, object))
+	if err == nil {
+		t.Fatal("loadFromGCSWithClient succeeded for body over cap, want error")
+	}
+	if !strings.Contains(err.Error(), "too large: exceeded") {
+		t.Fatalf("error = %v, want read cap rejection", err)
 	}
 }
 
