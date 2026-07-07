@@ -164,7 +164,7 @@ func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 	}
 
 	if opts.SysVarsHelp {
-		fmt.Print(renderSystemVariablesHelp())
+		fmt.Print(renderSystemVariablesHelp(features...))
 		return nil
 	}
 
@@ -433,9 +433,12 @@ func renderClientStatementHelp(stmts []*clientSideStatementDef) string {
 // renderSystemVariablesHelp generates a markdown table of all system variables
 // from the variable registry. It backs the hidden --sysvars-help flag, which
 // `make docs-update` uses to regenerate the reference table in
-// docs/system_variables.md.
-func renderSystemVariablesHelp() string {
+// docs/system_variables.md. Feature-contributed variables (issue #778) are
+// registered too, so the generated reference documents the full binary's
+// surface (the full variant is what docs-update runs).
+func renderSystemVariablesHelp(features ...Feature) string {
 	sysVars := newSystemVariablesWithDefaults()
+	sysVars.featureVarDefs = featureVarDefs(features)
 	sysVars.ensureRegistry()
 
 	var sb strings.Builder

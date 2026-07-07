@@ -206,6 +206,20 @@ func UnquoteString(s string) string { return unquoteString(s) }
 // ProjectID returns the configured Spanner project for the session.
 func (s *Session) ProjectID() string { return s.systemVariables.Connection.Project }
 
+// CredentialBytes returns a defensive copy of the raw --credential bytes stored
+// on the durable startup config. Feature packages that build their own
+// (non-Spanner) clients use it as the credential source; because the bytes live
+// in the process-wide startup config rather than on the Session, they survive
+// USE/DETACH session replacement without any carry-over machinery (#778 §4.6).
+// Returns nil when no credential file was supplied.
+func (s *Session) CredentialBytes() []byte {
+	cred := s.systemVariables.Config.Credential
+	if len(cred) == 0 {
+		return nil
+	}
+	return append([]byte(nil), cred...)
+}
+
 // AuthOptions builds client auth options for the given credential using the
 // session's system variables. Exported wrapper over createAuthClientOptions for
 // feature packages that build their own (non-Spanner) clients.

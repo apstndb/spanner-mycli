@@ -41,11 +41,14 @@ import (
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/internal/mycli"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/all"
 )
 
 // mergedDefs is the merged (core + feature) client-side statement table the
-// invariants run over. With no features it is a copy of the core table.
-var mergedDefs = mycli.MergedStatementDefs()
+// invariants run over — the same table every consumer dispatches against in the
+// full binary. It includes the extracted feature families (e.g. BIGQUERY) via
+// all.All(), so the #728 invariants keep covering them after extraction (#778).
+var mergedDefs = mycli.MergedStatementDefs(all.All()...)
 
 // syntaxPlaceholderValues maps <placeholder> tokens appearing in
 // Description.Syntax strings to plausible example values. The expander fails

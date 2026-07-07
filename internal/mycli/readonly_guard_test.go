@@ -156,93 +156,9 @@ func TestReadOnlyGuardAllowsReadOnlyCQL(t *testing.T) {
 	}
 }
 
-// TestBigQueryStatementMutates exhaustively checks the fail-closed
-// classification of BIGQUERY statements: only SELECT and WITH are treated as
-// read-only; every other verb, comment-prefixed statement, unrecognized token,
-// or empty statement is treated as mutating.
-func TestBigQueryStatementMutates(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		desc string
-		sql  string
-		want bool
-	}{
-		{desc: "SELECT", sql: "SELECT 1", want: false},
-		{desc: "lowercase select", sql: "select 1", want: false},
-		{desc: "leading whitespace SELECT", sql: "  SELECT 1", want: false},
-		{desc: "WITH", sql: "WITH cte AS (SELECT 1) SELECT * FROM cte", want: false},
-		{desc: "lowercase with", sql: "with cte as (select 1) select * from cte", want: false},
-		{desc: "INSERT", sql: "INSERT dataset.table VALUES (1)", want: true},
-		{desc: "UPDATE", sql: "UPDATE dataset.table SET c = 1 WHERE TRUE", want: true},
-		{desc: "DELETE", sql: "DELETE FROM dataset.table WHERE TRUE", want: true},
-		{desc: "CREATE", sql: "CREATE TABLE dataset.table AS SELECT 1", want: true},
-		{desc: "script control", sql: "BEGIN SELECT 1; END", want: true},
-		{desc: "comment prefix", sql: "-- comment\nSELECT 1", want: true},
-		{desc: "unrecognized keyword", sql: "FROBNICATE dataset.table", want: true},
-		{desc: "empty", sql: "", want: true},
-		{desc: "whitespace only", sql: "   ", want: true},
-	} {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			if got := bigQueryStatementMutates(tt.sql); got != tt.want {
-				t.Errorf("bigQueryStatementMutates(%q) = %v, want %v", tt.sql, got, tt.want)
-			}
-		})
-	}
-}
-
-// TestReadOnlyGuardBlocksMutatingBigQuery verifies that mutating BIGQUERY SQL
-// is rejected by Session.ExecuteStatement in READONLY mode before
-// BigQueryStatement.Execute can create a BigQuery client.
-func TestReadOnlyGuardBlocksMutatingBigQuery(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		desc string
-		sql  string
-	}{
-		{desc: "DELETE blocked", sql: "DELETE FROM dataset.table WHERE TRUE"},
-		{desc: "CREATE blocked", sql: "CREATE TABLE dataset.table AS SELECT 1"},
-		{desc: "unrecognized keyword blocked", sql: "FROBNICATE dataset.table"},
-	} {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			session := newSessionForLocalVarTest(t)
-			session.systemVariables.Transaction.ReadOnly = true
-
-			_, err := session.ExecuteStatement(t.Context(), &BigQueryStatement{SQL: tt.sql})
-			if !errors.Is(err, errReadOnly) {
-				t.Errorf("%s in READONLY mode: got error %v, want errReadOnly", tt.desc, err)
-			}
-		})
-	}
-}
-
-// TestReadOnlyGuardAllowsReadOnlyBigQuery verifies that read-only BIGQUERY SQL
-// is not classified as mutating, so the READONLY guard lets it through. The
-// guard input is isConditionallyMutating; asserting it directly avoids running
-// BigQueryStatement.Execute, which would need BigQuery credentials and project
-// configuration.
-func TestReadOnlyGuardAllowsReadOnlyBigQuery(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		desc string
-		sql  string
-	}{
-		{desc: "SELECT", sql: "SELECT 1"},
-		{desc: "WITH", sql: "WITH cte AS (SELECT 1) SELECT * FROM cte"},
-	} {
-		t.Run(tt.desc, func(t *testing.T) {
-			t.Parallel()
-			stmt := &BigQueryStatement{SQL: tt.sql}
-			if _, isMutation := any(stmt).(MutationStatement); isMutation {
-				t.Fatal("BigQueryStatement must not be a static MutationStatement")
-			}
-			if stmt.isConditionallyMutating() {
-				t.Errorf("%s BIGQUERY classified as mutating; READONLY guard would wrongly block it", tt.desc)
-			}
-		})
-	}
-}
+// BIGQUERY READONLY guard coverage moved with the family to
+// internal/mycli/feature/bigquery (#778): the fail-closed classifier is unit
+// tested there (TestBigQueryStatementMutates), and the dispatch-level guard is
+// proven through real dispatch in the external mycli_test package
+// (bigquery_readonly_guard_test.go), which can import the feature package
+// without an import cycle.

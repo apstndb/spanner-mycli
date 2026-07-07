@@ -248,9 +248,11 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 		Unimplemented bool
 	})
 
-	// Iterate varDefs by canonical name so aliases are excluded from the listing.
-	for i := range varDefs {
-		name := strings.ToUpper(varDefs[i].name)
+	// Iterate by canonical name so aliases are excluded from the listing. Both
+	// the core varDefs table and any feature-contributed varDefs (issue #778) are
+	// listed, so generated docs and HELP VARIABLES cover the full registered set.
+	addRow := func(def *varDef) {
+		name := strings.ToUpper(def.name)
 		rv := r.vars[name]
 		// Unimplemented status is derived from the bound handler type, not from a
 		// hardcoded name list, so generated docs stay honest as vars come and go.
@@ -266,6 +268,12 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 			CanAdd:        rv.add != nil,
 			Unimplemented: unimplemented,
 		}
+	}
+	for i := range varDefs {
+		addRow(&varDefs[i])
+	}
+	for i := range r.sv.featureVarDefs {
+		addRow(&r.sv.featureVarDefs[i])
 	}
 
 	return result
