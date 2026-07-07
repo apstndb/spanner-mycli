@@ -83,14 +83,13 @@ var (
 	_ MutationStatement = (*AddSplitPointsStatement)(nil)
 )
 
-// Compile-time assertions for every ConditionallyMutatingStatement
-// implementation. As with the marker above, the method is unexported so a typo
-// silently drops the type out of the interface and bypasses the READONLY guard.
-// BigQueryStatement's assertion moved to internal/mycli/feature/bigquery when
-// the family was extracted (#778); it embeds mycli.MutationClassifier there.
-var (
-	_ ConditionallyMutatingStatement = (*CQLStatement)(nil)
-)
+// No core statement implements ConditionallyMutatingStatement any more: both
+// implementations were extracted into feature packages, where each carries its
+// own compile-time assertion. BigQueryStatement moved to
+// internal/mycli/feature/bigquery and CQLStatement to internal/mycli/feature/cql
+// (#778); both embed mycli.MutationClassifier there. The unexported marker
+// method means a feature that drops the embed silently bypasses the READONLY
+// guard, so the assertion travels with the type.
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).
 // Statements implementing this interface can execute when session.IsDetached() is true.
