@@ -1191,10 +1191,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ExitStatement{}, nil
 		},
 	},
-	// The optional statement families (GEMINI/CQL) sit at the end of the table.
-	// BIGQUERY was extracted into internal/mycli/feature/bigquery (#778); the
-	// remaining families follow in PR2/PR3. Feature-contributed defs are appended
-	// after this core table in feature/all.All() order (llm, cql, bigquery).
+	// The optional statement family GEMINI/LLM sits at the end of the table.
+	// BIGQUERY (#778) and CQL (#778) were extracted into internal/mycli/feature/
+	// {bigquery,cql}; GEMINI/LLM follows in PR3. Feature-contributed defs are
+	// appended after this core table in feature/all.All() order (llm, cql,
+	// bigquery).
 	// LLM
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -1207,20 +1208,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
-		},
-	},
-	// Cassandra interface
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Execute CQL`,
-				Syntax: `CQL ...`,
-				Note:   "EARLY EXPERIMENTAL",
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^CQL\s+(?P<cql>.+)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &CQLStatement{CQL: groups["cql"]}, nil
 		},
 	},
 }

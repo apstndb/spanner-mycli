@@ -1098,11 +1098,6 @@ TABLE Singers (42)
 			},
 		},
 		{
-			desc:  "CQL statement",
-			input: `CQL SELECT id, active, username FROM users`,
-			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},
-		},
-		{
 			desc:  "HELP statement",
 			input: `HELP`,
 			want:  &HelpStatement{},

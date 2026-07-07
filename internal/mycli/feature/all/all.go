@@ -20,6 +20,7 @@ package all
 import (
 	"github.com/apstndb/spanner-mycli/internal/mycli"
 	"github.com/apstndb/spanner-mycli/internal/mycli/feature/bigquery"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/cql"
 )
 
 // All returns every optional feature in a fixed, documented order: GEMINI/LLM,
@@ -30,16 +31,17 @@ import (
 // Order-contract note (#778 §7): features append AFTER the core table, so
 // extracting a family moves its statement-help row to the end of the merged
 // table in All() order. The final order is fixed as (llm, cql, bigquery) rather
-// than the pre-extraction core order (llm, bigquery, cql). This makes the single
-// BIGQUERY/CQL row swap in the generated statement help land in PR1 (BIGQUERY
-// extraction) alone; PR2 (CQL) and PR3 (LLM) then re-append at the same relative
-// positions and stay byte-identical.
+// than the pre-extraction core order (llm, bigquery, cql). The single
+// BIGQUERY/CQL row swap in the generated statement help landed in PR1 (BIGQUERY
+// extraction) alone; CQL now re-appends at the same relative position (before
+// BIGQUERY) and stays byte-identical.
 //
-// Only BIGQUERY is extracted so far; LLM and CQL still live in core and will be
-// added here (before BIGQUERY, preserving the llm, cql, bigquery order) as they
-// are extracted under internal/mycli/feature/{llm,cql}.
+// BIGQUERY and CQL are extracted; LLM still lives in core and will be added here
+// (before CQL, preserving the llm, cql, bigquery order) when it is extracted
+// under internal/mycli/feature/llm.
 func All() []mycli.Feature {
 	return []mycli.Feature{
+		cql.Feature(),
 		bigquery.Feature(),
 	}
 }

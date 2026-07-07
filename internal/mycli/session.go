@@ -34,7 +34,6 @@ import (
 	"github.com/apstndb/adcplus"
 	"github.com/apstndb/adcplus/tokensource"
 	"github.com/apstndb/go-grpcinterceptors/selectlogging"
-	"github.com/gocql/gocql"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -126,10 +125,6 @@ type Session struct {
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
 	featureState featureStore
-
-	// experimental support of Cassandra interface
-	cqlCluster *gocql.ClusterConfig
-	cqlSession *gocql.Session
 
 	// output is the per-statement output destination for streamed results,
 	// set for the duration of one statement execution via withOutput /
@@ -577,10 +572,6 @@ func (s *Session) Close() {
 		if err != nil {
 			slog.Error("error on adminClient.Close()", "err", err)
 		}
-	}
-
-	if s.cqlSession != nil {
-		s.cqlSession.Close()
 	}
 
 	s.docCacheMu.Lock()

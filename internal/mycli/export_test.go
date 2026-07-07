@@ -58,3 +58,16 @@ func NewSessionWithFeaturesForTest(t *testing.T, features ...Feature) *Session {
 func ListVariablesForTest(s *Session) map[string]string {
 	return s.systemVariables.ListVariables()
 }
+
+// ClassifyForTest reports how the READONLY guard would classify stmt:
+// conditional is true when stmt is a ConditionallyMutatingStatement, and
+// mutating is its runtime classification (false when not conditional). The
+// marker method is unexported, so external dispatch-level tests use this bridge
+// to assert the classification of statements built through the real def table.
+func ClassifyForTest(stmt Statement) (conditional, mutating bool) {
+	cm, ok := stmt.(ConditionallyMutatingStatement)
+	if !ok {
+		return false, false
+	}
+	return true, cm.isConditionallyMutating()
+}
