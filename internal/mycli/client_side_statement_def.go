@@ -1153,6 +1153,48 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowQueryProfileStatement{Fprint: fprint}, nil
 		},
 	},
+	// CLI control
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show help`,
+				Syntax: `HELP`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^HELP$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &HelpStatement{}, nil
+		},
+	},
+	{
+		// HELP VARIABLES is a System Variable statement, but placed here because of ordering in HELP
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show help for variables`,
+				Syntax: `HELP VARIABLES`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &HelpVariablesStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Exit CLI`,
+				Syntax: `EXIT`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &ExitStatement{}, nil
+		},
+	},
+	// The optional statement families (GEMINI/BIGQUERY/CQL) sit at the end of
+	// the table so their extraction into feature packages (issue #778) appends
+	// them at the same position in the merged table, keeping dispatch order and
+	// the generated statement help byte-identical across the move.
 	// LLM
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -1192,44 +1234,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Pattern: regexp.MustCompile(`(?is)^CQL\s+(?P<cql>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &CQLStatement{CQL: groups["cql"]}, nil
-		},
-	},
-	// CLI control
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Show help`,
-				Syntax: `HELP`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^HELP$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &HelpStatement{}, nil
-		},
-	},
-	{
-		// HELP VARIABLES is a System Variable statement, but placed here because of ordering in HELP
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Show help for variables`,
-				Syntax: `HELP VARIABLES`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^HELP\s+VARIABLES$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &HelpVariablesStatement{}, nil
-		},
-	},
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Exit CLI`,
-				Syntax: `EXIT`,
-			},
-		},
-		Pattern: regexp.MustCompile(`(?is)^EXIT$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &ExitStatement{}, nil
 		},
 	},
 }
