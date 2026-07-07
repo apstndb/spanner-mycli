@@ -198,19 +198,35 @@ func (r *VarRegistry) IsReadOnly(name string) (bool, error) {
 	return !rv.def.settable(), nil
 }
 
+// forEachDef invokes fn for every registered declarative def by canonical name
+// (aliases excluded): the core varDefs table followed by feature-contributed
+// defs (issue #778). Every enumeration surface (SHOW VARIABLES via
+// ListVariables, fuzzy variable-name completion, HELP VARIABLES and generated
+// docs via ListVariableInfo, ListMultiValues) iterates through this single
+// helper so feature variables can never drop out of one surface while
+// remaining visible on another.
+func (r *VarRegistry) forEachDef(fn func(*varDef)) {
+	for i := range varDefs {
+		fn(&varDefs[i])
+	}
+	for i := range r.sv.featureVarDefs {
+		fn(&r.sv.featureVarDefs[i])
+	}
+}
+
 // ListVariables returns a map of all variables with their current values.
-// It iterates varDefs by canonical name so aliases are excluded, and skips
+// It iterates defs by canonical name so aliases are excluded, and skips
 // variables whose Get reports the value as unavailable (e.g. multi-valued
 // COMMIT_RESPONSE, whose columns are merged in separately via ListMultiValues).
 func (r *VarRegistry) ListVariables() map[string]string {
 	result := make(map[string]string)
-	for i := range varDefs {
-		name := strings.ToUpper(varDefs[i].name)
+	r.forEachDef(func(def *varDef) {
+		name := strings.ToUpper(def.name)
 		value, err := r.vars[name].v.Get()
 		if err == nil {
 			result[name] = value
 		}
-	}
+	})
 	return result
 }
 
@@ -220,17 +236,17 @@ func (r *VarRegistry) ListVariables() map[string]string {
 // overrides the plain COMMIT_TIMESTAMP row in SHOW VARIABLES).
 func (r *VarRegistry) ListMultiValues() map[string]string {
 	result := make(map[string]string)
-	for i := range varDefs {
-		mv, ok := r.vars[strings.ToUpper(varDefs[i].name)].v.(MultiValueVar)
+	r.forEachDef(func(def *varDef) {
+		mv, ok := r.vars[strings.ToUpper(def.name)].v.(MultiValueVar)
 		if !ok {
-			continue
+			return
 		}
 		values, err := mv.GetMulti()
 		if err != nil {
-			continue
+			return
 		}
 		maps.Copy(result, values)
-	}
+	})
 	return result
 }
 
@@ -248,9 +264,8 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 		Unimplemented bool
 	})
 
-	// Iterate varDefs by canonical name so aliases are excluded from the listing.
-	for i := range varDefs {
-		name := strings.ToUpper(varDefs[i].name)
+	addRow := func(def *varDef) {
+		name := strings.ToUpper(def.name)
 		rv := r.vars[name]
 		// Unimplemented status is derived from the bound handler type, not from a
 		// hardcoded name list, so generated docs stay honest as vars come and go.
@@ -267,6 +282,7 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 			Unimplemented: unimplemented,
 		}
 	}
+	r.forEachDef(addRow)
 
 	return result
 }

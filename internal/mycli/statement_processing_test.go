@@ -1098,11 +1098,6 @@ TABLE Singers (42)
 			},
 		},
 		{
-			desc:  "BIGQUERY statement",
-			input: `BIGQUERY SELECT 1`,
-			want:  &BigQueryStatement{SQL: "SELECT 1"},
-		},
-		{
 			desc:  "CQL statement",
 			input: `CQL SELECT id, active, username FROM users`,
 			want:  &CQLStatement{CQL: "SELECT id, active, username FROM users"},

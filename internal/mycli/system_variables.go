@@ -65,6 +65,13 @@ type StartupConfig struct {
 	MCP                       bool   // CLI_MCP
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 
+	// Credential holds the raw --credential file bytes, if any. It is the durable
+	// home for the credential (read-only, not a registered variable): features
+	// that build non-Spanner clients read it via Session.CredentialBytes(), and
+	// it survives USE/DETACH because startup config is not replaced on session
+	// switch (#778 §4.6). Do not mutate after startup.
+	Credential []byte
+
 	// Embedded runtime overrides used by tests and the embedded emulator.
 	EmbeddedClientOptions []option.ClientOption
 	EmbeddedClientConfig  *spanner.ClientConfig
@@ -174,9 +181,6 @@ type FeatureVars struct {
 	VertexAIProject        string                     // CLI_VERTEXAI_PROJECT
 	VertexAIModel          string                     // CLI_VERTEXAI_MODEL
 	VertexAILocation       string                     // CLI_VERTEXAI_LOCATION
-	BigQueryProject        string                     // CLI_BIGQUERY_PROJECT (defaults to CLI_PROJECT when empty)
-	BigQueryLocation       string                     // CLI_BIGQUERY_LOCATION
-	BigQueryMaxBytesBilled *int64                     // CLI_BIGQUERY_MAX_BYTES_BILLED
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL

@@ -86,9 +86,10 @@ var (
 // Compile-time assertions for every ConditionallyMutatingStatement
 // implementation. As with the marker above, the method is unexported so a typo
 // silently drops the type out of the interface and bypasses the READONLY guard.
+// BigQueryStatement's assertion moved to internal/mycli/feature/bigquery when
+// the family was extracted (#778); it embeds mycli.MutationClassifier there.
 var (
 	_ ConditionallyMutatingStatement = (*CQLStatement)(nil)
-	_ ConditionallyMutatingStatement = (*BigQueryStatement)(nil)
 )
 
 // DetachedCompatible is a marker interface for statements that can run in Detached session mode (admin operation only mode).

@@ -17,15 +17,29 @@
 // registers no features.
 package all
 
-import "github.com/apstndb/spanner-mycli/internal/mycli"
+import (
+	"github.com/apstndb/spanner-mycli/internal/mycli"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/bigquery"
+)
 
-// All returns every optional feature in a fixed, documented order that mirrors
-// today's client-side statement table order: GEMINI/LLM, then BIGQUERY, then
-// CQL. The order is load-bearing: features are appended to the core statement
-// table in this order, and the #728 non-shadowing invariant is proven over the
-// resulting merged table.
+// All returns every optional feature in a fixed, documented order: GEMINI/LLM,
+// then CQL, then BIGQUERY. The order is load-bearing: features are appended to
+// the core statement table in this order, and the #728 non-shadowing invariant
+// is proven over the resulting merged table.
 //
-// It is empty in PR0 (the seam is introduced with zero behavior change; the
-// three families still live in core). Feature packages will be added under
-// internal/mycli/feature/{llm,bigquery,cql} as they are extracted.
-func All() []mycli.Feature { return nil }
+// Order-contract note (#778 §7): features append AFTER the core table, so
+// extracting a family moves its statement-help row to the end of the merged
+// table in All() order. The final order is fixed as (llm, cql, bigquery) rather
+// than the pre-extraction core order (llm, bigquery, cql). This makes the single
+// BIGQUERY/CQL row swap in the generated statement help land in PR1 (BIGQUERY
+// extraction) alone; PR2 (CQL) and PR3 (LLM) then re-append at the same relative
+// positions and stay byte-identical.
+//
+// Only BIGQUERY is extracted so far; LLM and CQL still live in core and will be
+// added here (before BIGQUERY, preserving the llm, cql, bigquery order) as they
+// are extracted under internal/mycli/feature/{llm,cql}.
+func All() []mycli.Feature {
+	return []mycli.Feature{
+		bigquery.Feature(),
+	}
+}
