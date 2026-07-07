@@ -16,7 +16,10 @@
 
 package main
 
-import "github.com/apstndb/spanner-mycli/internal/mycli"
+import (
+	"github.com/apstndb/spanner-mycli/internal/mycli"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/all"
+)
 
 var (
 	// version and installFrom are set via ldflags at build time.
@@ -25,4 +28,7 @@ var (
 	installFrom = "built from source"
 )
 
-func main() { mycli.Main(version, installFrom) }
+// This root main is the full variant: it registers every optional feature via
+// all.All() (issue #778). A slim variant (added later) will call
+// mycli.Main(version, installFrom) with no features.
+func main() { mycli.Main(version, installFrom, all.All()...) }

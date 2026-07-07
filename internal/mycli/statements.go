@@ -804,7 +804,7 @@ var helpRowEncoder = spancodec.MustNewRowEncoder[helpRow]()
 
 func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	var items []helpRow
-	for _, stmt := range clientSideStatementDefs {
+	for _, stmt := range activeStatementDefs {
 		for _, desc := range stmt.Descriptions {
 			items = append(items, helpRow{Usage: desc.Usage, Syntax: desc.Syntax + ";"})
 		}

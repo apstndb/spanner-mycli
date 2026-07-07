@@ -341,23 +341,9 @@ func BuildStatement(input string) (Statement, error) {
 }
 
 func BuildCLIStatement(stripped, raw string) (Statement, error) {
-	trimmed := strings.TrimSpace(stripped)
-	if trimmed == "" {
-		return nil, errors.New("empty statement")
-	}
-
-	for _, cs := range clientSideStatementDefs {
-		// FindStringSubmatch returns nil on no match, so MatchString is unnecessary.
-		if matches := cs.Pattern.FindStringSubmatch(trimmed); matches != nil {
-			stmt, err := cs.HandleGroups(namedGroups(cs.Pattern, matches))
-			if err != nil {
-				return nil, err
-			}
-			return stmt, nil
-		}
-	}
-
-	return nil, errStatementNotMatched
+	// activeStatementDefs is the merged (core + feature) table set by Main;
+	// it defaults to the core table so pre-Main paths and tests still dispatch.
+	return BuildStatementWithDefs(activeStatementDefs, stripped)
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {

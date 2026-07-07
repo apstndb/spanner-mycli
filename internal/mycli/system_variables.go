@@ -228,6 +228,12 @@ type systemVariables struct {
 	// Registry holds the system variable registry
 	Registry *VarRegistry
 
+	// featureVarDefs holds the varDefs converted from feature-contributed
+	// FeatureVars (issue #778). They are registered alongside the core varDefs
+	// table when the registry is built. Empty until a feature contributes
+	// variables. Must be populated before the registry is first constructed.
+	featureVarDefs []varDef
+
 	// typeStyles maps Spanner type codes to ANSI SGR sequences for styled output.
 	// When nil or empty, all non-NULL values use PlainCell (default behavior).
 	// Populated by parsing CLI_TYPE_STYLES system variable.
