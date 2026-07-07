@@ -214,7 +214,7 @@ func (s *Session) AuthOptions(ctx context.Context, credential []byte, allowWitho
 }
 
 // featureStore is a keyed per-Session store for feature state with lifecycle.
-// Each key is lazily initialized exactly once; values implementing io.Closer
+// Each key is lazily initialized on first use; values implementing io.Closer
 // are closed in reverse creation order at the end of Session.Close.
 type featureStore struct {
 	mu      sync.Mutex
@@ -223,10 +223,10 @@ type featureStore struct {
 }
 
 type featureEntry struct {
-	key  string
-	once sync.Once
-	val  any
-	err  error
+	key   string
+	mu    sync.Mutex // serializes init for this key; held across init
+	val   any
+	ready bool
 }
 
 // entry returns the store entry for key, creating it (and recording creation
@@ -256,7 +256,10 @@ func (st *featureStore) closeAll() {
 	st.mu.Unlock()
 	for i := len(order) - 1; i >= 0; i-- {
 		e := order[i]
-		if c, ok := e.val.(io.Closer); ok {
+		e.mu.Lock()
+		val := e.val
+		e.mu.Unlock()
+		if c, ok := val.(io.Closer); ok {
 			if err := c.Close(); err != nil {
 				slog.Error("error closing feature state", "key", e.key, "err", err)
 			}
@@ -265,23 +268,29 @@ func (st *featureStore) closeAll() {
 }
 
 // FeatureState returns the per-Session value stored under key, initializing it
-// exactly once via init on first use. Different keys initialize independently
-// (their inits do not serialize). A value implementing io.Closer is closed at
-// the end of Session.Close in reverse creation order.
+// via init on first use. A FAILED init is not cached: the error is returned and
+// the next call retries, matching the retry semantics of the lazy per-feature
+// fields this store replaces (BigQuery client, CQL session, doc cache) — a
+// transient build failure must not poison the session. Concurrent calls for the
+// same key serialize (init runs at most once at a time and successful init runs
+// exactly once); different keys initialize independently. A value implementing
+// io.Closer is closed at the end of Session.Close in reverse creation order.
 //
 // NOTE: the design sketch in issue #778 §4.6 wrote this signature without a
 // context parameter, but init requires one (its real callers, e.g. the lazy
 // BigQuery client and doc cache builds, all have a ctx in hand). ctx is
-// threaded through here so the once-guarded init receives it.
+// threaded through here so the guarded init receives it.
 func FeatureState[T any](ctx context.Context, s *Session, key string, init func(context.Context, *Session) (T, error)) (T, error) {
 	e := s.featureState.entry(key)
-	e.once.Do(func() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.ready {
 		v, err := init(ctx, s)
-		e.val, e.err = v, err
-	})
-	if e.err != nil {
-		var zero T
-		return zero, e.err
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		e.val, e.ready = v, true
 	}
 	v, ok := e.val.(T)
 	if !ok {

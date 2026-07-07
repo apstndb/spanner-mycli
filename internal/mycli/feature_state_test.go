@@ -82,25 +82,38 @@ func TestFeatureStateConcurrentSameKeyInitsOnce(t *testing.T) {
 	}
 }
 
-func TestFeatureStateErrorNotCached(t *testing.T) {
-	// once semantics: an init error is stored and returned; the once does not
-	// re-run. This documents the store's contract (a failed build is sticky for
-	// the session's lifetime, matching a lazily-built client).
+func TestFeatureStateRetriesAfterInitError(t *testing.T) {
+	// A failed init is not cached: the error is returned and the next call
+	// retries. This matches the lazy per-feature fields the store replaces
+	// (BigQuery client, CQL session, doc cache) — a transient build failure
+	// must not poison the session.
 	s := &Session{}
 	wantErr := errors.New("boom")
 	var calls atomic.Int32
 	init := func(ctx context.Context, s *Session) (int, error) {
-		calls.Add(1)
-		return 0, wantErr
-	}
-	for range 2 {
-		_, err := FeatureState(context.Background(), s, "k", init)
-		if !errors.Is(err, wantErr) {
-			t.Fatalf("FeatureState error = %v, want %v", err, wantErr)
+		if calls.Add(1) == 1 {
+			return 0, wantErr
 		}
+		return 42, nil
 	}
-	if n := calls.Load(); n != 1 {
-		t.Fatalf("init called %d times, want exactly 1", n)
+
+	if _, err := FeatureState(context.Background(), s, "k", init); !errors.Is(err, wantErr) {
+		t.Fatalf("first FeatureState error = %v, want %v", err, wantErr)
+	}
+	got, err := FeatureState(context.Background(), s, "k", init)
+	if err != nil {
+		t.Fatalf("second FeatureState error = %v, want success on retry", err)
+	}
+	if got != 42 {
+		t.Fatalf("second FeatureState = %d, want 42", got)
+	}
+
+	// The successful value is cached; init does not run again.
+	if _, err := FeatureState(context.Background(), s, "k", init); err != nil {
+		t.Fatalf("third FeatureState error = %v", err)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("init called %d times, want 2 (error retried, success cached)", n)
 	}
 }
 
