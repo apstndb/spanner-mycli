@@ -90,6 +90,50 @@ func TestFeatureVarConversionRegisters(t *testing.T) {
 	}
 }
 
+// stubMultiVar is a Variable whose value is only available via GetMulti, like
+// COMMIT_RESPONSE: plain Get reports the value as unavailable.
+type stubMultiVar struct{}
+
+func (v *stubMultiVar) Get() (string, error) { return "", errIgnored }
+func (v *stubMultiVar) Set(string) error     { return nil }
+func (v *stubMultiVar) GetMulti() (map[string]string, error) {
+	return map[string]string{"CLI_TEST_MULTI_COL": "42"}, nil
+}
+
+// TestFeatureVarsAppearInEnumerationSurfaces guards the regression found in the
+// #781 review: feature-contributed variables must appear in EVERY enumeration
+// surface — ListVariables (SHOW VARIABLES and fuzzy variable-name completion
+// read this map) and ListMultiValues — not only in ListVariableInfo
+// (HELP VARIABLES / generated docs).
+func TestFeatureVarsAppearInEnumerationSurfaces(t *testing.T) {
+	t.Parallel()
+
+	sv := newSystemVariablesWithDefaults()
+	sv.featureVarDefs = featureVarDefs([]Feature{
+		{
+			Name: "TESTFEAT",
+			Vars: []FeatureVar{
+				{Name: "CLI_TEST_ENUM_VAR", Desc: "enum", Var: &stubVar{val: "x"}},
+				{Name: "CLI_TEST_MULTI_VAR", Desc: "multi", Var: &stubMultiVar{}},
+			},
+		},
+	})
+	r := NewVarRegistry(&sv)
+
+	vars := r.ListVariables()
+	if got, ok := vars["CLI_TEST_ENUM_VAR"]; !ok || got != "x" {
+		t.Errorf("ListVariables()[CLI_TEST_ENUM_VAR] = %q, %v; want \"x\", true", got, ok)
+	}
+	if _, ok := vars["CLI_TEST_MULTI_VAR"]; ok {
+		t.Errorf("multi-value feature var must be omitted from ListVariables (Get unavailable)")
+	}
+
+	multi := r.ListMultiValues()
+	if got := multi["CLI_TEST_MULTI_COL"]; got != "42" {
+		t.Errorf("ListMultiValues()[CLI_TEST_MULTI_COL] = %q, want \"42\"", got)
+	}
+}
+
 // TestFeatureVarReadOnlyPolicyApplies confirms the converted varDef carries the
 // FeatureVar policy flags (ReadOnly here) through to registry enforcement.
 func TestFeatureVarReadOnlyPolicyApplies(t *testing.T) {

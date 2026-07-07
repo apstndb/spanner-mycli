@@ -163,6 +163,14 @@ func TestMutationClassifierDelegates(t *testing.T) {
 	if m.isConditionallyMutating() {
 		t.Fatal("isConditionallyMutating() = true, want false")
 	}
+
+	// The zero value (nil Classify) fails closed: classified as mutating, no
+	// panic, so a statement constructed without its constructor cannot bypass
+	// the READONLY guard.
+	m = MutationClassifier{}
+	if !m.isConditionallyMutating() {
+		t.Fatal("zero-value MutationClassifier must classify as mutating (fail closed)")
+	}
 }
 
 func TestFeatureStateNonCloserValuesSkippedOnClose(t *testing.T) {

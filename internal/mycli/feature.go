@@ -185,11 +185,15 @@ func (MarksDetachedCompatible) isDetachedCompatible() {}
 // MutationClassifier marks an embedding statement as a
 // ConditionallyMutatingStatement whose mutation-ness is decided at runtime by
 // Classify (e.g. CQL/BIGQUERY inspecting the statement's leading keyword).
+// A nil Classify classifies as mutating: the zero value of an embedding
+// statement fails closed under the READONLY guard instead of panicking.
 type MutationClassifier struct {
 	Classify func() bool
 }
 
-func (m MutationClassifier) isConditionallyMutating() bool { return m.Classify() }
+func (m MutationClassifier) isConditionallyMutating() bool {
+	return m.Classify == nil || m.Classify()
+}
 
 // NewRow builds a result Row from string cells. Exported wrapper over toRow for
 // feature packages.

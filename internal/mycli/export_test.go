@@ -39,3 +39,22 @@ func NewReadOnlySessionForTest(t *testing.T) *Session {
 // sentinel stays unexported in production; this bridge lets external tests
 // assert on it.
 func IsReadOnlyError(err error) bool { return errors.Is(err, errReadOnly) }
+
+// NewSessionWithFeaturesForTest builds a database-connected Session whose
+// variable registry includes the given features' variables, so external tests
+// can drive enumeration surfaces (SHOW VARIABLES, completion) with real
+// feature packages registered.
+func NewSessionWithFeaturesForTest(t *testing.T, features ...Feature) *Session {
+	t.Helper()
+	s := newSessionForLocalVarTest(t)
+	s.systemVariables.featureVarDefs = featureVarDefs(features)
+	s.systemVariables.Registry = NewVarRegistry(s.systemVariables)
+	return s
+}
+
+// ListVariablesForTest returns the single-value variable listing backing
+// SHOW VARIABLES and fuzzy variable-name completion, for external
+// enumeration-surface regression tests.
+func ListVariablesForTest(s *Session) map[string]string {
+	return s.systemVariables.ListVariables()
+}
