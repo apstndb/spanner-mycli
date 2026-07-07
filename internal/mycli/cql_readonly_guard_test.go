@@ -64,23 +64,39 @@ func TestReadOnlyGuardBlocksMutatingCQL(t *testing.T) {
 }
 
 // TestReadOnlyGuardAllowsReadOnlyCQL verifies, at the dispatch level, that a
-// read-only CQL SELECT is not classified as a static MutationStatement, so the
-// READONLY guard does not statically block it.
+// read-only CQL SELECT is not classified as a static MutationStatement and that
+// the DISPATCH-BUILT statement's conditional classifier reports non-mutating,
+// so the READONLY guard lets it through. Asserting the classification on the
+// statement produced by the real def table (not one built via the constructor)
+// catches a HandleGroups regression that returns a zero-value CQLStatement:
+// with the fail-closed nil-Classify default, that regression would silently
+// block CQL SELECT in READONLY mode (#782 review nit).
 //
 // Unlike the BigQuery counterpart, this does NOT run the SELECT through
 // Session.ExecuteStatement: a passing SELECT proceeds to CQLStatement.Execute,
 // which builds the Cassandra adapter via spancql.NewCluster. That call panics
 // when the adapter client cannot be constructed (no live Spanner backend in
 // tests), so it cannot "fail later for a non-READONLY reason" the way BigQuery's
-// project-not-configured guard does. The complementary proof that a wired SELECT
-// classifier reports non-mutating (so the conditional guard lets it through)
-// lives in feature/cql (TestCQLStatementConditionalMutation), which asserts the
-// classification directly without touching the adapter.
+// project-not-configured guard does.
 func TestReadOnlyGuardAllowsReadOnlyCQL(t *testing.T) {
 	t.Parallel()
 
 	stmt := buildCQL(t, "SELECT * FROM t")
 	if _, isMutation := stmt.(mycli.MutationStatement); isMutation {
 		t.Fatal("CQLStatement must not be a static MutationStatement")
+	}
+	conditional, mutating := mycli.ClassifyForTest(stmt)
+	if !conditional {
+		t.Fatal("dispatch-built CQLStatement must be a ConditionallyMutatingStatement")
+	}
+	if mutating {
+		t.Fatal("dispatch-built CQL SELECT classifies as mutating; READONLY mode would wrongly block it (HandleGroups regression?)")
+	}
+
+	// The mutating counterpart, classified on the dispatch-built statement.
+	del := buildCQL(t, "DELETE FROM t WHERE id = 1")
+	conditional, mutating = mycli.ClassifyForTest(del)
+	if !conditional || !mutating {
+		t.Fatalf("dispatch-built CQL DELETE: conditional=%v mutating=%v, want true/true", conditional, mutating)
 	}
 }
