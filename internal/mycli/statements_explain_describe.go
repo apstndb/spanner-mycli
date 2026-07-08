@@ -25,19 +25,16 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/protoyaml"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
-	"github.com/apstndb/spannerplan/protoyaml"
 	spstats "github.com/apstndb/spannerplan/stats"
-	"github.com/goccy/go-yaml"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ExplainStatement struct {
@@ -137,7 +134,7 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 	}
 
 	planNode := planNodes[s.NodeID]
-	y, err := protoyaml.Marshal(planNode, getGlobalOpts()...)
+	y, err := protoyaml.Marshal(planNode, protoyaml.WithFlowLeafCollections())
 	if err != nil {
 		return nil, err
 	}
@@ -192,52 +189,6 @@ func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) str
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-func hasCompound(fields map[string]*structpb.Value) bool {
-	for _, v := range fields {
-		switch v.GetKind().(type) {
-		case *structpb.Value_ListValue, *structpb.Value_StructValue:
-			return true
-		}
-	}
-	return false
-}
-
-func getStructOpts() []yaml.EncodeOption {
-	return []yaml.EncodeOption{
-		yaml.CustomMarshaler[*structpb.Value](func(value *structpb.Value) ([]byte, error) {
-			switch kind := value.GetKind().(type) {
-			case *structpb.Value_ListValue:
-				return yaml.MarshalWithOptions(kind.ListValue.GetValues(), getStructOpts()...)
-			case *structpb.Value_StructValue:
-				return yaml.MarshalWithOptions(kind.StructValue, getStructOpts()...)
-			case *structpb.Value_StringValue:
-				// Use yaml.Marshal() to follow YAML quotation rule
-				return yaml.Marshal(kind.StringValue)
-			default:
-				return protojson.Marshal(value)
-			}
-		}),
-		yaml.CustomMarshaler[*structpb.Struct](func(value *structpb.Struct) ([]byte, error) {
-			opts := getStructOpts()
-			if !hasCompound(value.GetFields()) {
-				opts = append(opts, yaml.Flow(true))
-			}
-			return yaml.MarshalWithOptions(value.GetFields(), opts...)
-		}),
-	}
-}
-
-func getGlobalOpts() []yaml.EncodeOption {
-	return slices.Concat(
-		[]yaml.EncodeOption{
-			yaml.CustomMarshaler[*sppb.PlanNode_ChildLink](func(link *sppb.PlanNode_ChildLink) ([]byte, error) {
-				return yaml.MarshalWithOptions(link, yaml.UseJSONMarshaler(), yaml.Flow(true))
-			}),
-		},
-		getStructOpts(),
-	)
 }
 
 type DescribeStatement struct {
