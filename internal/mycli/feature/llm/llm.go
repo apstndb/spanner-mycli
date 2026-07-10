@@ -28,6 +28,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -238,6 +239,20 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *mycli.Session) (
 	slog.Debug("GEMINI timing: geminiComposeQueryWithTools total", "elapsed", time.Since(composeStart))
 	slog.Debug("GEMINI timing: Execute total", "elapsed", time.Since(totalStart))
 
+	return resultFromComposedOutput(composed)
+}
+
+func resultFromComposedOutput(composed *output) (*mycli.Result, error) {
+	if composed == nil {
+		return nil, errors.New("GEMINI returned no response")
+	}
+	if composed.Statement == nil {
+		if composed.ErrorDescription != "" {
+			return nil, fmt.Errorf("GEMINI returned no statement: %s", composed.ErrorDescription)
+		}
+		return nil, errors.New("GEMINI returned no statement")
+	}
+
 	var rows []mycli.Row
 	if composed.ErrorDescription != "" {
 		rows = append(rows, mycli.NewRow("errorDescription", composed.ErrorDescription))
@@ -367,6 +382,9 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 		if err != nil {
 			return nil, fmt.Errorf("tool-use round %d: %w", round, err)
 		}
+		if result == nil {
+			return nil, fmt.Errorf("tool-use round %d: GEMINI returned no response", round)
+		}
 		apiElapsed := time.Since(roundStart)
 
 		functionCalls := result.FunctionCalls()
@@ -375,10 +393,10 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 			break
 		}
 
-		if len(result.Candidates) > 0 {
+		if content := firstCandidateContent(result); content != nil {
 			history = append(history, &genai.Content{
 				Role:  genai.RoleModel,
-				Parts: result.Candidates[0].Content.Parts,
+				Parts: content.Parts,
 			})
 		}
 
@@ -415,4 +433,11 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 		})
 	slog.Debug("GEMINI timing: Phase 2 (structured output)", "elapsed", time.Since(phase2Start))
 	return result, err
+}
+
+func firstCandidateContent(result *genai.GenerateContentResponse) *genai.Content {
+	if result == nil || len(result.Candidates) == 0 || result.Candidates[0] == nil {
+		return nil
+	}
+	return result.Candidates[0].Content
 }
