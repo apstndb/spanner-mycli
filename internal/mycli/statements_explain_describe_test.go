@@ -898,12 +898,12 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
 			},
 			"index: 1\n" +
-				"kind: 1\n" +
-				"display_name: Unit Relation\n" +
-				"child_links:\n" +
-				"- {child_index: 2}\n" +
+				"kind: RELATIONAL\n" +
+				"displayName: Unit Relation\n" +
+				"childLinks:\n" +
+				"- {childIndex: 2}\n" +
 				"metadata: {execution_method: Row}\n" +
-				"execution_stats:\n" +
+				"executionStats:\n" +
 				"  cpu_time: {total: \"0\", unit: msecs}\n" +
 				"  execution_summary: {num_executions: \"1\"}\n" +
 				"  latency: {total: \"0\", unit: msecs}\n" +
@@ -938,7 +938,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 					},
 				},
 			},
-			"index: 1\nkind: 1\ndisplay_name: Child\n",
+			"index: 1\nkind: RELATIONAL\ndisplayName: Child\n",
 			"Incoming Parent Links:\n  - Parent Node Index: 0\n    Parent Node Title: Root\n    Child Link Type: Map\n    Variable: v",
 			false,
 			false,
@@ -962,7 +962,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 					},
 				},
 			},
-			"kind: 1\ndisplay_name: Root\n",
+			"kind: RELATIONAL\ndisplayName: Root\n",
 			"Incoming Parent Links:\n  - No incoming parent links",
 			false,
 			false,
@@ -995,7 +995,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 					},
 				},
 			},
-			"kind: 1\ndisplay_name: Root\nchild_links:\n- {child_index: 99}\n",
+			"kind: RELATIONAL\ndisplayName: Root\nchildLinks:\n- {childIndex: 99}\n",
 			// Assert only spanner-mycli's own "parent links unavailable: "
 			// prefix, not spannerplan's internal validation-error text. The
 			// message wording is explicitly not part of spannerplan's stable

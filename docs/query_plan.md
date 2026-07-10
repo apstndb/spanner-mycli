@@ -217,17 +217,17 @@ spanner> SHOW PLAN NODE 18;
 | Content of Node 18                                                                              |
 +-------------------------------------------------------------------------------------------------+
 | index: 18                                                                                       |
-| kind: 1                                                                                         |
-| display_name: Scan                                                                              |
-| child_links:                                                                                    |
-| - {child_index: 19, variable: SingerId}                                                         |
-| - {child_index: 20, variable: FirstName}                                                        |
-| - {child_index: 21, variable: LastName}                                                         |
-| - {child_index: 22, variable: SingerInfo}                                                       |
-| - {child_index: 23, variable: BirthDate}                                                        |
-| - {child_index: 27, type: Seek Condition}                                                       |
+| kind: RELATIONAL                                                                                |
+| displayName: Scan                                                                               |
+| childLinks:                                                                                     |
+| - {childIndex: 19, variable: SingerId}                                                          |
+| - {childIndex: 20, variable: FirstName}                                                         |
+| - {childIndex: 21, variable: LastName}                                                          |
+| - {childIndex: 22, variable: SingerInfo}                                                        |
+| - {childIndex: 23, variable: BirthDate}                                                         |
+| - {childIndex: 27, type: Seek Condition}                                                        |
 | metadata: {execution_method: Row, scan_method: Row, scan_target: Singers, scan_type: TableScan} |
-| execution_stats:                                                                                |
+| executionStats:                                                                                 |
 |   cpu_time: {mean: "0.04", std_deviation: "0.03", total: "0.08", unit: msecs}                   |
 |   deleted_rows: {mean: "0", std_deviation: "0", total: "0", unit: rows}                         |
 |   execution_summary: {num_executions: "2"}                                                      |
