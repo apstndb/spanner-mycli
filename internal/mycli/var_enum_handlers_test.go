@@ -61,6 +61,26 @@ func TestProtoEnumVarSetRejectsNumericSuffix(t *testing.T) {
 	}
 }
 
+func TestProtoEnumVarSetAcceptsFullNumericValue(t *testing.T) {
+	t.Parallel()
+
+	value := int32(1)
+	variable := &ProtoEnumVar[int32]{
+		ptr: &value,
+		values: map[string]int32{
+			"ALPHA": 1,
+			"BETA":  2,
+		},
+	}
+
+	if err := variable.Set("2"); err != nil {
+		t.Fatalf("Set(2) error = %v, want nil", err)
+	}
+	if value != 2 {
+		t.Errorf("value = %d, want 2", value)
+	}
+}
+
 func TestProtoEnumVarSetInvalidValueListsValuesDeterministically(t *testing.T) {
 	t.Parallel()
 
