@@ -1154,6 +1154,7 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		// Truncated split-point entries reach EOF where an identifier is required.
 		"ADD SPLIT POINTS TABLE",
 		"DROP SPLIT POINTS INDEX",
+		"SYNC PROTO BUNDLE UPSERT '",
 	}
 
 	for _, input := range invalidInputs {

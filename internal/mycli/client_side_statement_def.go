@@ -1275,7 +1275,7 @@ loop:
 }
 
 func parsePaths(p *memefish.Parser) ([]string, error) {
-	expr, err := p.ParseExpr()
+	expr, err := recoverMemefishParserPanic(p.ParseExpr)
 	if err != nil {
 		return nil, err
 	}
