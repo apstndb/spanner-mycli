@@ -1175,6 +1175,23 @@ func TestRenderSystemVariablesHelp(t *testing.T) {
 	}
 }
 
+func TestCommitResponseVariableInfo(t *testing.T) {
+	t.Parallel()
+
+	info, ok := newSystemVariablesWithDefaultsForTest().ListVariableInfo()["COMMIT_RESPONSE"]
+	if !ok {
+		t.Fatal("COMMIT_RESPONSE missing from variable info")
+	}
+	if !info.ReadOnly {
+		t.Error("COMMIT_RESPONSE must be read-only")
+	}
+
+	const wantDescription = "The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT."
+	if info.Description != wantDescription {
+		t.Errorf("COMMIT_RESPONSE description = %q, want %q", info.Description, wantDescription)
+	}
+}
+
 // TestOutputTemplateFileEmptyRestoresDefault is a regression test for the
 // unified output-template loader (issue #725, PR0). Setting
 // CLI_OUTPUT_TEMPLATE_FILE to an empty string (or NULL) must restore the
