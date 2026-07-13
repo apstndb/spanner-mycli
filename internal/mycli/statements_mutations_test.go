@@ -103,3 +103,22 @@ func TestParseMutation(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMutationMalformedInput(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		op   string
+	}{
+		{name: "write", op: "INSERT"},
+		{name: "delete", op: "DELETE"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseMutation("t", tt.op, "'"); err == nil {
+				t.Fatal("parseMutation() error = nil, want malformed-input error")
+			}
+		})
+	}
+}

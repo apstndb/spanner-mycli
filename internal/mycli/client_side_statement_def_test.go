@@ -213,6 +213,27 @@ func TestClientSideStatementDefsNonShadowing(t *testing.T) {
 	}
 }
 
+// TestClientSideStatementPrefixesDoNotPanic exercises every proper prefix of
+// the canonical statement examples. Interactive input routinely presents
+// these truncated forms while the user is still typing, so parsing may return
+// an error but must never panic.
+func TestClientSideStatementPrefixesDoNotPanic(t *testing.T) {
+	t.Parallel()
+
+	for i, def := range mergedDefs {
+		for _, desc := range def.Descriptions {
+			for _, keepOptional := range []bool{false, true} {
+				t.Run(fmt.Sprintf("def%02d/%s/keepOptional=%v", i, desc.Syntax, keepOptional), func(t *testing.T) {
+					example := expandSyntax(t, desc.Syntax, keepOptional)
+					for end := range len(example) {
+						_, _ = mycli.BuildStatementWithDefs(mergedDefs, example[:end])
+					}
+				})
+			}
+		}
+	}
+}
+
 func firstSyntax(def *mycli.StatementDef) string {
 	if len(def.Descriptions) > 0 {
 		return def.Descriptions[0].Syntax
