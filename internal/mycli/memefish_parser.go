@@ -21,6 +21,11 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
+// recoverMemefishParserPanic converts upstream parser panics to returned errors.
+// In memefish v0.7.0, and still in v0.8.0, unclosed string literals and
+// backtick identifiers can reach the lexer's panicfAtPosition path through
+// ParseExpr or ParseType instead of returning an error. Remove this wrapper
+// once a released memefish version converts these cases to returned errors.
 func recoverMemefishParserPanic[T any](parse func() (T, error)) (result T, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
