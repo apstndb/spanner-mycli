@@ -975,6 +975,13 @@ func Test_parseParams(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "unclosed string literal",
+			params: map[string]string{
+				"p1": "'",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {

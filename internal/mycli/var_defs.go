@@ -497,15 +497,14 @@ var varDefs = []varDef{
 						sv.Query.QueryMode = nil
 						return nil
 					}
-					if sv.Query.QueryMode == nil {
-						sv.Query.QueryMode = new(sppb.ExecuteSqlRequest_QueryMode)
+					var mode sppb.ExecuteSqlRequest_QueryMode
+					if sv.Query.QueryMode != nil {
+						mode = *sv.Query.QueryMode
 					}
-					mode := *sv.Query.QueryMode
-					err := QueryModeVar(&mode).Set(value)
-					if err != nil {
+					if err := QueryModeVar(&mode).Set(value); err != nil {
 						return err
 					}
-					*sv.Query.QueryMode = mode
+					sv.Query.QueryMode = &mode
 					return nil
 				},
 			}
@@ -611,7 +610,7 @@ var varDefs = []varDef{
 		// its COMMIT_TIMESTAMP and MUTATION_COUNT columns via the MultiValueVar
 		// capability (commitResponseVar.GetMulti). It is read-only (scopeResult).
 		name:  "COMMIT_RESPONSE",
-		desc:  "The most recent response for a read-write transaction. This is a virtual variable: it can be used in SHOW COMMIT_RESPONSE and SHOW COMMIT_RESPONSE.COMMIT_TIMESTAMP and SHOW COMMIT_RESPONSE.MUTATION_COUNT, but attempting to read its value directly will give an error. Instead use the sub-fields COMMIT_TIMESTAMP and MUTATION_COUNT.",
+		desc:  "The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT.",
 		scope: scopeResult,
 		bind:  func(sv *systemVariables) Variable { return &commitResponseVar{sv: sv} },
 	},

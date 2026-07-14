@@ -1,11 +1,11 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.25.11
+go 1.25.12
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/bigquery v1.77.0
-	cloud.google.com/go/longrunning v1.1.0
+	cloud.google.com/go/bigquery v1.78.0
+	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.92.0
 	cloud.google.com/go/storage v1.63.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -17,7 +17,7 @@ require (
 	github.com/apstndb/go-tabwrap v0.1.4
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/memebridge v0.6.4
-	github.com/apstndb/protoyaml v0.1.0
+	github.com/apstndb/protoyaml v0.1.1
 	github.com/apstndb/spancodec v0.1.2
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.1
@@ -27,7 +27,7 @@ require (
 	github.com/apstndb/spantype v0.3.13
 	github.com/apstndb/spanvalue v0.8.2
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.7.0
+	github.com/cloudspannerecosystem/memefish v0.8.0
 	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.19.0
 	github.com/go-sprout/sprout v1.0.3
@@ -38,7 +38,7 @@ require (
 	github.com/googleapis/go-spanner-cassandra v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/hymkor/go-multiline-ny v0.23.1
-	github.com/junegunn/fzf v0.73.1
+	github.com/junegunn/fzf v0.74.0
 	github.com/k0kubun/pp/v3 v3.5.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.19.0
@@ -53,10 +53,10 @@ require (
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/vbauerster/mpb/v8 v8.12.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/term v0.44.0
+	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.287.0
-	google.golang.org/genai v1.62.0
+	google.golang.org/api v0.287.1
+	google.golang.org/genai v1.63.0
 	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -122,7 +122,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.17 // indirect
-	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
@@ -193,14 +193,14 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260508192327-42602be52be6 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260615183401-62b3387ff324 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260630182238-925bb5da69e7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

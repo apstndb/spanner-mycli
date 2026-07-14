@@ -33,7 +33,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/alecthomas/kong"
 	"github.com/apstndb/spanemuboost"
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"golang.org/x/term"
@@ -303,13 +302,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 	params := make(map[string]ast.Node)
 	for k, v := range paramMap {
-		if typ, err := memefish.ParseType("", v); err == nil {
+		if typ, err := parseMemefishType("", v); err == nil {
 			params[k] = typ
 			continue
 		}
 
 		// ignore ParseType error
-		if expr, err := memefish.ParseExpr("", v); err != nil {
+		if expr, err := parseMemefishExpr("", v); err != nil {
 			return nil, fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
 		} else {
 			params[k] = expr
