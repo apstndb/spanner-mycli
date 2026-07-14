@@ -84,8 +84,8 @@ github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0 h1:VySrhGRfqXUDC
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0/go.mod h1:VwhJDip+HamDWWt+Ol4ECFU0g0HiveA27DeNkt3U8S0=
 github.com/apstndb/memebridge v0.6.4 h1:OoOXj+m5YtosbAPz0pLNVUwhhCohf1mC2o+Dy9WMsjQ=
 github.com/apstndb/memebridge v0.6.4/go.mod h1:gw6dfrUAsT+GvmuRGiG/fnGbrKfiVvnjBriQt6nLnys=
-github.com/apstndb/protoyaml v0.1.0 h1:xbps9Yly1rciJhLOFdA+KLIdEpEcIaTCboFB3QtUMKI=
-github.com/apstndb/protoyaml v0.1.0/go.mod h1:bsZCSj3nYZKfLiKRogOxuUjlURUOJpBb+G5f1b3g5Fc=
+github.com/apstndb/protoyaml v0.1.1 h1:qCxi4l6twinpF+tM3qXG2qeRq6OmIklWK+LWtuM1eBk=
+github.com/apstndb/protoyaml v0.1.1/go.mod h1:bsZCSj3nYZKfLiKRogOxuUjlURUOJpBb+G5f1b3g5Fc=
 github.com/apstndb/ptyhelp v0.2.3 h1:aLFKm19WlM+/hts6EsFLzbGStNiv8yKHcIAyUJ18vMk=
 github.com/apstndb/ptyhelp v0.2.3/go.mod h1:2+LTM9QNEEBkwMRMPjLvCwKD9vPejJ7lAzY1cB7r+Ag=
 github.com/apstndb/spancodec v0.1.2 h1:QPRHmn989WV4lyzvYW7hSyzSYu5106hWDiEA1qMVdc0=
