@@ -27,7 +27,7 @@ require (
 	github.com/apstndb/spantype v0.3.13
 	github.com/apstndb/spanvalue v0.8.2
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/cloudspannerecosystem/memefish v0.7.0
+	github.com/cloudspannerecosystem/memefish v0.8.0
 	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.19.0
 	github.com/go-sprout/sprout v1.0.3
