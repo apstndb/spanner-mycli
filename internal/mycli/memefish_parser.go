@@ -21,21 +21,23 @@ import (
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
-// recoverMemefishParserPanic converts upstream parser panics to returned errors.
-// In memefish v0.7.0, and still in v0.8.0, unclosed string literals and
-// backtick identifiers can reach the lexer's panicfAtPosition path through
-// ParseExpr or ParseType instead of returning an error. Remove this wrapper
-// once a released memefish version converts these cases to returned errors.
+// recoverMemefishParserPanic converts upstream malformed-input panics to
+// returned errors. In memefish v0.7.0, and still in v0.8.0, the initial token
+// read in ParseExpr and ParseType bypasses Lexer.NextToken, so unclosed string
+// literals and backtick identifiers can escape as *memefish.Error panics.
+// Mirror Lexer.NextToken's boundary by re-panicking every other value. Remove
+// this wrapper once a released memefish version returns these errors directly.
 func recoverMemefishParserPanic[T any](parse func() (T, error)) (result T, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			recoveredErr, ok := recovered.(*memefish.Error)
+			if !ok {
+				panic(recovered)
+			}
+
 			var zero T
 			result = zero
-			if recoveredErr, ok := recovered.(error); ok {
-				err = fmt.Errorf("memefish parser panic: %w", recoveredErr)
-			} else {
-				err = fmt.Errorf("memefish parser panic: %v", recovered)
-			}
+			err = fmt.Errorf("memefish parser panic: %w", recoveredErr)
 		}
 	}()
 
