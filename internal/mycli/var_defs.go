@@ -334,24 +334,9 @@ var varDefs = []varDef{
 		scope: scopeStartup,
 		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Display.HistoryFile) },
 	},
-	{
-		name:  "CLI_VERTEXAI_PROJECT",
-		desc:  "Vertex AI project for natural language features.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.VertexAIProject) },
-	},
-	{
-		name:  "CLI_VERTEXAI_MODEL",
-		desc:  "Vertex AI model for natural language features.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.VertexAIModel) },
-	},
-	{
-		name:  "CLI_VERTEXAI_LOCATION",
-		desc:  "Vertex AI location for natural language features.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.VertexAILocation) },
-	},
+	// CLI_VERTEXAI_PROJECT/MODEL/LOCATION moved to internal/mycli/feature/llm as
+	// feature-contributed variables (#778); they are registered through the
+	// Feature seam in the full variant.
 	{
 		name:  "CLI_ROLE",
 		desc:  "Cloud Spanner database role.",

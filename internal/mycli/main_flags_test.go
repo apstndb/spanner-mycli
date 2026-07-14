@@ -2011,8 +2011,9 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 		fmt.Sprintf("default: %s", strconv.Quote(defaultPrompt2)),
 		"default: ~/.spanner_mycli_history",
 		"Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.",
-		fmt.Sprintf("default: %s", defaultVertexAIModel),
-		fmt.Sprintf("default: %s", defaultVertexAILocation),
+		// The --vertexai-model/location default-in-help coverage moved to the
+		// external mycli_test package (#778): those flags now come from the GEMINI
+		// feature, which the feature-less parseTestFlags here does not register.
 		"Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset.",
 		"Default: ON.",
 	} {
@@ -2025,6 +2026,14 @@ func TestHelpOutputDocumentsDefaultsAndAllowedValues(t *testing.T) {
 func TestTOMLConfigKeyAliases(t *testing.T) {
 	t.Parallel()
 
+	// These subtests exercise the flag-agnostic underscoreCompatibleTOMLLoader
+	// (hyphen/underscore alias acceptance, duplicate detection, nested-typo
+	// rejection) using the core --impersonate-service-account flag. They
+	// previously used --vertexai-project, which moved to the GEMINI feature (#778)
+	// and is therefore not registered by the feature-less parseTestFlags.
+	// Feature-flag TOML resolution and CLI precedence are pinned generically in
+	// feature_flags_toml_test.go; the llm variables themselves are covered in the
+	// external llm_variables_test.go with llm.Feature() registered.
 	t.Run("hyphenated key is accepted", func(t *testing.T) {
 		t.Parallel()
 
@@ -2032,7 +2041,7 @@ func TestTOMLConfigKeyAliases(t *testing.T) {
 		if err := os.WriteFile(configFile, []byte(`project = "p"
 instance = "i"
 database = "d"
-vertexai-project = "example-project"
+impersonate-service-account = "example-sa"
 `), 0o644); err != nil {
 			t.Fatalf("Failed to create config file: %v", err)
 		}
@@ -2042,8 +2051,8 @@ vertexai-project = "example-project"
 			t.Fatalf("parseTestFlags() error = %v", err)
 		}
 		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
-		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
-			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		if got := sysVars.Config.ImpersonateServiceAccount; got != "example-sa" {
+			t.Fatalf("ImpersonateServiceAccount = %q, want %q", got, "example-sa")
 		}
 	})
 
@@ -2054,7 +2063,7 @@ vertexai-project = "example-project"
 		if err := os.WriteFile(configFile, []byte(`project = "p"
 instance = "i"
 database = "d"
-vertexai_project = "example-project"
+impersonate_service_account = "example-sa"
 `), 0o644); err != nil {
 			t.Fatalf("Failed to create config file: %v", err)
 		}
@@ -2064,8 +2073,8 @@ vertexai_project = "example-project"
 			t.Fatalf("parseTestFlags() error = %v", err)
 		}
 		sysVars := initSysVarsOrFail(t, &gopts.Spanner)
-		if got := sysVars.Feature.VertexAIProject; got != "example-project" {
-			t.Fatalf("VertexAIProject = %q, want %q", got, "example-project")
+		if got := sysVars.Config.ImpersonateServiceAccount; got != "example-sa" {
+			t.Fatalf("ImpersonateServiceAccount = %q, want %q", got, "example-sa")
 		}
 	})
 
@@ -2076,8 +2085,8 @@ vertexai_project = "example-project"
 		if err := os.WriteFile(configFile, []byte(`project = "p"
 instance = "i"
 database = "d"
-vertexai-project = "example-project"
-vertexai_project = "other-project"
+impersonate-service-account = "example-sa"
+impersonate_service_account = "other-sa"
 `), 0o644); err != nil {
 			t.Fatalf("Failed to create config file: %v", err)
 		}
@@ -2086,7 +2095,7 @@ vertexai_project = "other-project"
 		if err == nil {
 			t.Fatal("parseTestFlags() error = nil, want error")
 		}
-		if !strings.Contains(err.Error(), `duplicate configuration keys for "vertexai-project": vertexai-project, vertexai_project`) {
+		if !strings.Contains(err.Error(), `duplicate configuration keys for "impersonate-service-account": impersonate-service-account, impersonate_service_account`) {
 			t.Fatalf("parseTestFlags() error = %v, want duplicate alias error", err)
 		}
 	})
@@ -2121,13 +2130,17 @@ CLI_FORMAT = "VERTICAL"
 	t.Run("nested typo under scalar flag is rejected", func(t *testing.T) {
 		t.Parallel()
 
+		// The table name must NOT itself be a flag but must be a prefix of real
+		// flags (here emulator-image/emulator-platform), mirroring the original
+		// [vertexai] shape: the flattened typo key is then rejected as unknown
+		// instead of kong trying to bind the table to a scalar flag.
 		configFile := filepath.Join(t.TempDir(), configFileName)
 		if err := os.WriteFile(configFile, []byte(`project = "p"
 instance = "i"
 database = "d"
 
-[vertexai]
-project-id = "example-project"
+[emulator]
+imagee = "example-image"
 `), 0o644); err != nil {
 			t.Fatalf("Failed to create config file: %v", err)
 		}
@@ -2136,7 +2149,7 @@ project-id = "example-project"
 		if err == nil {
 			t.Fatal("parseTestFlags() error = nil, want error")
 		}
-		if !strings.Contains(err.Error(), "unknown configuration keys: vertexai-project-id") {
+		if !strings.Contains(err.Error(), "unknown configuration keys: emulator-imagee") {
 			t.Fatalf("parseTestFlags() error = %v, want nested scalar typo error", err)
 		}
 	})
