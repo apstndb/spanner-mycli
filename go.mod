@@ -22,7 +22,7 @@ require (
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
-	github.com/apstndb/spannerplan v0.2.0
+	github.com/apstndb/spannerplan v0.2.1
 	github.com/apstndb/spanstats v0.1.0
 	github.com/apstndb/spantype v0.3.13
 	github.com/apstndb/spanvalue v0.8.2
