@@ -25,7 +25,7 @@ require (
 	github.com/apstndb/spannerplan v0.2.1
 	github.com/apstndb/spanstats v0.1.0
 	github.com/apstndb/spantype v0.3.13
-	github.com/apstndb/spanvalue v0.8.2
+	github.com/apstndb/spanvalue v0.8.3
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.8.0
 	github.com/creack/pty v1.1.24
