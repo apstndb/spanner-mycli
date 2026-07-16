@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/bigquery v1.78.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.92.0
-	cloud.google.com/go/storage v1.63.0
+	cloud.google.com/go/storage v1.63.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.15.0
 	github.com/apstndb/adcplus v0.2.0
