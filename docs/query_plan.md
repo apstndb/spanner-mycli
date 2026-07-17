@@ -253,6 +253,31 @@ spanner> SHOW PLAN NODE 18;
 2 rows in set (0.00 sec)
 ```
 
+#### `SHOW LAST QUERY PLAN`
+
+Export the last cached query plan as official Cloud Spanner protobuf JSON
+(`google.golang.org/protobuf/encoding/protojson`). This is a lossless handoff
+boundary for external plan viewers. It exports the cached `QueryPlan` message,
+or a `ResultSetStats` envelope when `WITH STATS` is specified.
+
+```
+spanner> SHOW LAST QUERY PLAN;
+spanner> SHOW LAST QUERY PLAN WITH STATS;
+spanner> SHOW LAST QUERY PLAN INTO /tmp/last-plan.json;
+spanner> SHOW LAST QUERY PLAN WITH STATS INTO /tmp/last-stats.json;
+```
+
+Notes:
+
+- Requires a preceding query or `EXPLAIN ANALYZE` that populated the plan cache.
+- `WITH STATS` requires cached query stats (for example from `EXPLAIN ANALYZE` or
+  `CLI_QUERY_MODE=WITH_STATS` / PROFILE).
+- `INTO <path>` rejects empty paths, directories, and non-regular destinations.
+- This export is intentionally not a versioned product contract; treat it as a
+  practical ProtoJSON interchange with the official Spanner plan messages.
+- Human-readable `EXPLAIN LAST QUERY` / `EXPLAIN ANALYZE LAST QUERY` behavior is
+  unchanged.
+
 ## Query plan linter (EARLY EXPERIMENTAL)
 
 `CLI_LINT_PLAN` system variable enables heuristic query plan linter in `EXPLAIN` and `EXPLAIN ANALYZE`.
