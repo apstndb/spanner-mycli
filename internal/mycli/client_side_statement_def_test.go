@@ -70,6 +70,7 @@ var syntaxPlaceholderValues = map[string]string{
 	"<key>":                  "1",
 	"<operation-id-or-name>": "operation123",
 	"<node_id>":              "1",
+	"<path>":                 "/tmp/plan.json",
 	"<fingerprint>":          "1234567890",
 	"<format>":               "CURRENT",
 	"<width>":                "80",

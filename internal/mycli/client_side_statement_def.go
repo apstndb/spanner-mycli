@@ -665,6 +665,27 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
 		},
 	},
+	// SHOW LAST QUERY PLAN — official ProtoJSON export of the cached plan
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export the last cached query plan as official Cloud Spanner ProtoJSON`,
+				Syntax: `SHOW LAST QUERY PLAN [WITH STATS] [INTO <path>]`,
+				Note:   `Writes a QueryPlan (or ResultSetStats with WITH STATS). Requires a preceding query or EXPLAIN ANALYZE. Intended for external plan viewers; not a stable versioned contract.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LAST\s+QUERY\s+PLAN(?P<with_stats>\s+WITH\s+STATS)?(?:\s+INTO\s+(?P<path>\S+))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			intoPath := strings.TrimSpace(groups["path"])
+			if groups["path"] != "" && intoPath == "" {
+				return nil, errors.New("invalid INTO path: empty destination")
+			}
+			return &ShowLastQueryPlanStatement{
+				WithStats: strings.TrimSpace(groups["with_stats"]) != "",
+				IntoPath:  intoPath,
+			}, nil
+		},
+	},
 	// DESCRIBE
 	{
 		Descriptions: []clientSideStatementDescription{

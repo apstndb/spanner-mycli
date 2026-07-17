@@ -783,6 +783,26 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowPlanNodeStatement{NodeID: 42},
 		},
 		{
+			desc:  "SHOW LAST QUERY PLAN",
+			input: "SHOW LAST QUERY PLAN",
+			want:  &ShowLastQueryPlanStatement{},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS",
+			input: "SHOW LAST QUERY PLAN WITH STATS",
+			want:  &ShowLastQueryPlanStatement{WithStats: true},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO path",
+			input: "SHOW LAST QUERY PLAN INTO /tmp/plan.json",
+			want:  &ShowLastQueryPlanStatement{IntoPath: "/tmp/plan.json"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS INTO path",
+			input: "SHOW LAST QUERY PLAN WITH STATS INTO ./out/plan.json",
+			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./out/plan.json"},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
