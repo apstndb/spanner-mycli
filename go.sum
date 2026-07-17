@@ -64,8 +64,8 @@ github.com/apache/arrow/go/v15 v15.0.2 h1:60IliRbiyTWCWjERBCkO1W4Qun9svcYoZrSLcy
 github.com/apache/arrow/go/v15 v15.0.2/go.mod h1:DGXsR3ajT524njufqf95822i+KTh+yea1jass9YXgjA=
 github.com/apstndb/adcplus v0.2.0 h1:AmAQeG4+bDnSc9gZlJr/eUx4tSe8TS3gqZ//9kaY6y0=
 github.com/apstndb/adcplus v0.2.0/go.mod h1:fszAqMYFf5d4e3f3vxk5sEErDh59mq0qICm6is8leyo=
-github.com/apstndb/developerknowledge-go v0.2.0 h1:Hvf17+JZG+n1f7UPcQRAryrtlA31oMSfJtuo53DOEe4=
-github.com/apstndb/developerknowledge-go v0.2.0/go.mod h1:SkrYUXrudPdwg//GnGSnLsjYilMI+9n2+TGUuHo/CcE=
+github.com/apstndb/developerknowledge-go v0.3.0 h1:oNzXjK31Gp3o97Z1qFu22zy4GIv+BSrJo00w2XgIqDo=
+github.com/apstndb/developerknowledge-go v0.3.0/go.mod h1:SkrYUXrudPdwg//GnGSnLsjYilMI+9n2+TGUuHo/CcE=
 github.com/apstndb/genaischema v0.2.0 h1:Xy19ye4xUjU46ZGC7iHLQ6hCKNCin1+IqMCpjel+gfo=
 github.com/apstndb/genaischema v0.2.0/go.mod h1:qUY4LNMs5MeXLcbY3Ic4cW5I1iMnj9USzTTDf1BeezU=
 github.com/apstndb/gh-dev-tools v0.0.0-20250726094924-b386827f58e6 h1:Say3K7FyeOgvYi8/lsn2iDuFmKXA35XlPBNMHIptdo8=
