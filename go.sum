@@ -82,8 +82,8 @@ github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba h1:l9MMbSfCb
 github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba/go.mod h1:adI+0n+0AY1J+qhb7UbW3HjsUD15JCQPIih7FHLcrI4=
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0 h1:VySrhGRfqXUDCrUuAEz70DrDnPrvj/nXGnUHwJF3PG4=
 github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0/go.mod h1:VwhJDip+HamDWWt+Ol4ECFU0g0HiveA27DeNkt3U8S0=
-github.com/apstndb/memebridge v0.6.4 h1:OoOXj+m5YtosbAPz0pLNVUwhhCohf1mC2o+Dy9WMsjQ=
-github.com/apstndb/memebridge v0.6.4/go.mod h1:gw6dfrUAsT+GvmuRGiG/fnGbrKfiVvnjBriQt6nLnys=
+github.com/apstndb/memebridge v0.7.0 h1:6YDUc+xpOtP0aP3p3b6cyWe5qNcBKQW+75ICIOJ90kA=
+github.com/apstndb/memebridge v0.7.0/go.mod h1:TkN51CaMfhBEYrGR9bDoUPpYKoOiTMiSnQNH2/gYZ9o=
 github.com/apstndb/protoyaml v0.1.1 h1:qCxi4l6twinpF+tM3qXG2qeRq6OmIklWK+LWtuM1eBk=
 github.com/apstndb/protoyaml v0.1.1/go.mod h1:bsZCSj3nYZKfLiKRogOxuUjlURUOJpBb+G5f1b3g5Fc=
 github.com/apstndb/ptyhelp v0.2.3 h1:aLFKm19WlM+/hts6EsFLzbGStNiv8yKHcIAyUJ18vMk=
