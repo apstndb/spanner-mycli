@@ -11,7 +11,7 @@ require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.15.0
 	github.com/apstndb/adcplus v0.2.0
-	github.com/apstndb/developerknowledge-go v0.2.0
+	github.com/apstndb/developerknowledge-go v0.3.0
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.4
