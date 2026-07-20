@@ -18,7 +18,7 @@ jobs:
     steps:
       # Checkout must run before setup-go so go-version-file can read go.mod.
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
       - uses: ko-build/setup-ko@v0.10
