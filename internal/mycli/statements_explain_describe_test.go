@@ -64,9 +64,7 @@ func planRowTextCmpOpts() []cmp.Option {
 	return []cmp.Option{
 		cmpopts.IgnoreFields(
 			plantree.RowWithPredicates{},
-			"ChildLinks",
 			"DisplayName",
-			"Keys",
 			"ScalarChildLinks",
 		),
 	}
