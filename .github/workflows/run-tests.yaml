@@ -125,6 +125,6 @@ jobs:
           name: coverage-report
           path: tmp/coverage.html
           retention-days: 7
-      - uses: k1LoW/octocov-action@v1
+      - uses: k1LoW/octocov-action@v1.5.1
         env:
           COVERAGE_ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
