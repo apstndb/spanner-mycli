@@ -803,6 +803,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./out/plan.json"},
 		},
 		{
+			desc:  "SHOW LAST QUERY PLAN INTO double-quoted path",
+			input: `SHOW LAST QUERY PLAN INTO "/tmp/query plans/plan.yaml"`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: "/tmp/query plans/plan.yaml"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS INTO shell-escaped path",
+			input: `SHOW LAST QUERY PLAN WITH STATS INTO ./query\ plans/stats.yml`,
+			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./query plans/stats.yml"},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
@@ -1170,6 +1180,9 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"ADD SPLIT POINTS TABLE",
 		"DROP SPLIT POINTS INDEX",
 		"SYNC PROTO BUNDLE UPSERT '",
+		`SHOW LAST QUERY PLAN INTO "unterminated`,
+		"SHOW LAST QUERY PLAN INTO two paths.json",
+		`SHOW LAST QUERY PLAN INTO ""`,
 	}
 
 	for _, input := range invalidInputs {
