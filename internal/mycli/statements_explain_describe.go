@@ -200,18 +200,27 @@ func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Sessi
 		header = "ResultSetStats (ProtoJSON)"
 	}
 
-	payload, err := marshalOfficialPlan(msg, s.IntoPath)
+	exportPath := s.IntoPath
+	if exportPath != "" {
+		var err error
+		exportPath, err = normalizePlanExportPath(exportPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	payload, err := marshalOfficialPlan(msg, exportPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if s.IntoPath != "" {
-		if err := writePlanExportFile(s.IntoPath, payload); err != nil {
+	if exportPath != "" {
+		if err := writePlanExportFile(exportPath, payload); err != nil {
 			return nil, err
 		}
 		return &Result{
 			TableHeader:  toTableHeader("Exported"),
-			Rows:         sliceOf(toRow(s.IntoPath)),
+			Rows:         sliceOf(toRow(exportPath)),
 			AffectedRows: 1,
 		}, nil
 	}
@@ -257,12 +266,9 @@ func appendTrailingNewline(b []byte) []byte {
 }
 
 func writePlanExportFile(path string, payload []byte) error {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" || cleaned == "." {
-		return errors.New("invalid INTO path: empty destination")
-	}
-	if strings.ContainsRune(cleaned, 0) {
-		return errors.New("invalid INTO path: contains NUL")
+	cleaned, err := normalizePlanExportPath(path)
+	if err != nil {
+		return err
 	}
 
 	if fi, err := os.Lstat(cleaned); err == nil {
@@ -300,6 +306,17 @@ func writePlanExportFile(path string, payload []byte) error {
 		return fmt.Errorf("sync INTO path %s: %w", cleaned, err)
 	}
 	return nil
+}
+
+func normalizePlanExportPath(path string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" || cleaned == "." {
+		return "", errors.New("invalid INTO path: empty destination")
+	}
+	if strings.ContainsRune(cleaned, 0) {
+		return "", errors.New("invalid INTO path: contains NUL")
+	}
+	return cleaned, nil
 }
 
 func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) string {

@@ -683,14 +683,21 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, errors.New("invalid INTO path: empty destination")
 			}
 			if rawPath != "" {
-				paths, err := shellquote.Split(rawPath)
-				if err != nil {
-					return nil, fmt.Errorf("invalid INTO path: %w", err)
+				// Preserve a legacy single-token path verbatim. In particular,
+				// shellquote.Split treats backslashes as escapes, which would turn a
+				// Windows path such as C:\tmp\plan.yaml into C:tmpplan.yaml.
+				if strings.ContainsAny(rawPath, " \t\r\n\"'") {
+					paths, err := shellquote.Split(rawPath)
+					if err != nil {
+						return nil, fmt.Errorf("invalid INTO path: %w", err)
+					}
+					if len(paths) != 1 {
+						return nil, fmt.Errorf("invalid INTO path: expected one destination, got %d", len(paths))
+					}
+					intoPath = paths[0]
+				} else {
+					intoPath = rawPath
 				}
-				if len(paths) != 1 {
-					return nil, fmt.Errorf("invalid INTO path: expected one destination, got %d", len(paths))
-				}
-				intoPath = paths[0]
 				if strings.TrimSpace(intoPath) == "" {
 					return nil, errors.New("invalid INTO path: empty destination")
 				}

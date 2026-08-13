@@ -277,6 +277,7 @@ Notes:
   `CLI_QUERY_MODE=WITH_STATS` / PROFILE).
 - `INTO <path>` accepts shell-style quoted or escaped paths and rejects empty
   paths, multiple path arguments, directories, and non-regular destinations.
+  It does not expand environment variables, `~`, wildcards, or brace patterns.
 - `.yaml` and `.yml` destinations use the ProtoJSON-equivalent YAML mapping.
   All other destinations use ProtoJSON for backward compatibility. Output
   without `INTO` remains ProtoJSON.

@@ -813,6 +813,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./query plans/stats.yml"},
 		},
 		{
+			desc:  "SHOW LAST QUERY PLAN INTO unquoted Windows path",
+			input: `SHOW LAST QUERY PLAN INTO C:\tmp\plan.yaml`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: `C:\tmp\plan.yaml`},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO unquoted literal-backslash path",
+			input: `SHOW LAST QUERY PLAN INTO foo\bar.json`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: `foo\bar.json`},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},

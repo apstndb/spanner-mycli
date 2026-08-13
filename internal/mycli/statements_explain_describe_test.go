@@ -1206,11 +1206,8 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		if err := protoyaml.Unmarshal(b, &roundTrip); err != nil {
 			t.Fatalf("file ProtoYAML unmarshal: %v\npayload:\n%s", err, b)
 		}
-		if roundTrip.GetQueryPlan() == nil || roundTrip.GetQueryStats() == nil {
-			t.Fatalf("round-trip ResultSetStats incomplete: %+v", &roundTrip)
-		}
-		if !proto.Equal(roundTrip.GetQueryPlan(), plan) {
-			t.Fatal("round-trip ResultSetStats query plan differs from the cached plan")
+		if !proto.Equal(&roundTrip, selectProfileResultSet.GetStats()) {
+			t.Fatal("round-trip ResultSetStats differs from the cached stats")
 		}
 	})
 
