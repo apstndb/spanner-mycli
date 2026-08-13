@@ -143,3 +143,108 @@ func TestFirstCandidateContent(t *testing.T) {
 		})
 	}
 }
+
+func TestNewGenAIClientConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		cfg            *config
+		sessionProject string
+		wantBackend    genai.Backend
+		wantProject    string
+		wantLocation   string
+		wantAPIVersion string
+	}{
+		{
+			name:           "enterprise uses connected Spanner project",
+			cfg:            newConfig(),
+			sessionProject: "session-project",
+			wantBackend:    genai.BackendEnterprise,
+			wantProject:    "session-project",
+			wantLocation:   defaultVertexAILocation,
+			wantAPIVersion: "v1",
+		},
+		{
+			name: "enterprise project override wins",
+			cfg: &config{
+				Backend:  genAIBackendEnterprise,
+				Project:  "override-project",
+				Location: "us-central1",
+			},
+			sessionProject: "session-project",
+			wantBackend:    genai.BackendEnterprise,
+			wantProject:    "override-project",
+			wantLocation:   "us-central1",
+			wantAPIVersion: "v1",
+		},
+		{
+			name: "Gemini API does not send Enterprise routing fields",
+			cfg: &config{
+				Backend:  genAIBackendGeminiAPI,
+				Project:  "must-not-leak",
+				Location: "must-not-leak",
+			},
+			sessionProject: "must-not-leak",
+			wantBackend:    genai.BackendGeminiAPI,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := newGenAIClientConfig(tt.cfg, tt.sessionProject)
+			if got.Backend != tt.wantBackend {
+				t.Errorf("Backend = %v, want %v", got.Backend, tt.wantBackend)
+			}
+			if got.Project != tt.wantProject {
+				t.Errorf("Project = %q, want %q", got.Project, tt.wantProject)
+			}
+			if got.Location != tt.wantLocation {
+				t.Errorf("Location = %q, want %q", got.Location, tt.wantLocation)
+			}
+			if got.APIKey != "" {
+				t.Errorf("APIKey = %q, want empty so the SDK reads environment credentials", got.APIKey)
+			}
+			if got.HTTPOptions.APIVersion != tt.wantAPIVersion {
+				t.Errorf("APIVersion = %q, want %q", got.HTTPOptions.APIVersion, tt.wantAPIVersion)
+			}
+		})
+	}
+}
+
+func TestNewThinkingConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		level string
+		want  genai.ThinkingLevel
+	}{
+		{level: thinkingLevelUnspecified},
+		{level: "MINIMAL", want: genai.ThinkingLevelMinimal},
+		{level: "LOW", want: genai.ThinkingLevelLow},
+		{level: "MEDIUM", want: genai.ThinkingLevelMedium},
+		{level: "HIGH", want: genai.ThinkingLevelHigh},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			t.Parallel()
+
+			got := newThinkingConfig(tt.level)
+			if tt.level == thinkingLevelUnspecified {
+				if got != nil {
+					t.Fatalf("newThinkingConfig(%q) = %#v, want nil", tt.level, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("newThinkingConfig(%q) = nil", tt.level)
+			}
+			if got.ThinkingLevel != tt.want {
+				t.Errorf("ThinkingLevel = %q, want %q", got.ThinkingLevel, tt.want)
+			}
+		})
+	}
+}

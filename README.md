@@ -191,9 +191,9 @@ Flags:
       --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
                                                FALSE (never styled)
   -q, --quiet                                  Suppress result lines like 'rows in set' for clean output
-      --vertexai-project=STRING                Vertex AI project
-      --vertexai-model=VERTEXAI-MODEL          Vertex AI model (default: gemini-3-flash-preview)
-      --vertexai-location=VERTEXAI-LOCATION    Vertex AI location (default: global)
+      --vertexai-project=STRING                Gemini Enterprise project override
+      --vertexai-model=VERTEXAI-MODEL          Gemini model (default: gemini-3.7-flash)
+      --vertexai-location=VERTEXAI-LOCATION    Gemini Enterprise location (default: global)
 ```
 <!-- readme-help end -->
 
@@ -2045,13 +2045,32 @@ spanner> PARTITION SELECT * FROM Singers;
 
 ### GenAI support
 
-You can use `GEMINI` statement by setting `vertexai_project` in config file.
+The `GEMINI` statement supports both Gemini Enterprise Agent Platform (the
+Vertex AI backend) and the Gemini API. Gemini Enterprise is the default backend,
+uses Application Default Credentials, and uses the connected Spanner project
+(`CLI_PROJECT`) unless `CLI_VERTEXAI_PROJECT` or `vertexai_project` overrides it.
 
 ```toml
 vertexai_project = "example-project"
 ```
 
-Built-in Spanner reference docs are always available. Setting `DEVELOPERKNOWLEDGE_API_KEY` or `GOOGLE_API_KEY` enables dynamic documentation lookup via the Developer Knowledge API for more comprehensive coverage.
+To use the Gemini API instead, set `GEMINI_API_KEY` or `GOOGLE_API_KEY` in the
+environment and select the backend in spanner-mycli. When both variables are
+set, the Google Gen AI SDK uses `GOOGLE_API_KEY`:
+
+```sql
+SET CLI_GENAI_BACKEND = "GEMINI_API";
+```
+
+`CLI_VERTEXAI_MODEL` selects the model for either backend and defaults to
+`gemini-3.7-flash`. `CLI_GENAI_THINKING_LEVEL` accepts `UNSPECIFIED`, `MINIMAL`,
+`LOW`, `MEDIUM`, or `HIGH`. Its default is `UNSPECIFIED`, which omits the
+thinking configuration and lets the selected model use its own default.
+
+Built-in Spanner reference docs are always available. Dynamic documentation
+lookup via the Developer Knowledge API uses `DEVELOPERKNOWLEDGE_API_KEY`, or
+falls back to `GOOGLE_API_KEY`. `GEMINI_API_KEY` is not used for Developer
+Knowledge lookup.
 
 The generated query is automatically filled in the prompt.
 

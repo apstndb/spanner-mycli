@@ -27,6 +27,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -47,29 +48,33 @@ import (
 )
 
 // defaultVertexAIModel and defaultVertexAILocation are the built-in defaults for
-// the GEMINI feature. They seed both the feature config (so SHOW VARIABLES and
-// generated docs report them unchanged) and the --vertexai-model/location help
-// text via Feature.KongVars. Moved here from internal/mycli when the family was
-// extracted (#778); the full variant supplies them to the kong parser, so the
-// generated --help output is unchanged.
+// the GEMINI feature. They seed both the feature config and the
+// --vertexai-model/location help text via Feature.KongVars.
 const (
-	defaultVertexAIModel    = "gemini-3-flash-preview"
+	defaultVertexAIModel    = "gemini-3.7-flash"
 	defaultVertexAILocation = "global"
+
+	genAIBackendEnterprise = "GEMINI_ENTERPRISE"
+	genAIBackendGeminiAPI  = "GEMINI_API"
+
+	thinkingLevelUnspecified = "UNSPECIFIED"
 )
 
 // docCacheStateKey namespaces the lazy Spanner-reference-doc cache in the
 // per-Session feature store (mycli.FeatureState).
 const docCacheStateKey = "llm.doccache"
 
-// config holds the GEMINI feature's live variable state (the CLI_VERTEXAI_*
-// system variables). Exactly one instance is allocated per Feature() call and
+// config holds the GEMINI feature's live CLI_GENAI_* and CLI_VERTEXAI_* variable
+// state. Exactly one instance is allocated per Feature() call and
 // captured by that Feature's Variable handlers, def handler closure, ApplyFlags
 // closure, and constructed statements, so there is no package-level mutable state
 // (session-isolation commitment, #778 §4.4).
 type config struct {
-	Project  string // CLI_VERTEXAI_PROJECT
-	Model    string // CLI_VERTEXAI_MODEL
-	Location string // CLI_VERTEXAI_LOCATION
+	Backend       string // CLI_GENAI_BACKEND
+	Project       string // CLI_VERTEXAI_PROJECT
+	Model         string // CLI_VERTEXAI_MODEL
+	Location      string // CLI_VERTEXAI_LOCATION
+	ThinkingLevel string // CLI_GENAI_THINKING_LEVEL
 }
 
 // newConfig returns a config seeded with the built-in defaults, matching the
@@ -77,21 +82,56 @@ type config struct {
 // / VertexAILocation (VertexAIProject defaulted to empty).
 func newConfig() *config {
 	return &config{
-		Model:    defaultVertexAIModel,
-		Location: defaultVertexAILocation,
+		Backend:       genAIBackendEnterprise,
+		Model:         defaultVertexAIModel,
+		Location:      defaultVertexAILocation,
+		ThinkingLevel: thinkingLevelUnspecified,
 	}
 }
 
-// flags is the kong-tagged flag struct contributed via Feature.Flags. The flag
-// names, help texts, and help-template variables are identical to the
-// pre-extraction --vertexai-* flags in config.go, so the generated --help text
-// for these flags is unchanged. VertexAIModel/Location are pointers to preserve
-// "unset" semantics (an unset flag must not clobber a TOML/--set value), matching
-// the pre-extraction behavior exactly.
+// enumStringVar stores a canonical string while accepting case-insensitive
+// values and aliases. It also exposes the canonical values to SET completion.
+type enumStringVar struct {
+	ptr     *string
+	values  []string
+	aliases map[string]string
+}
+
+func (v *enumStringVar) Get() (string, error) {
+	return *v.ptr, nil
+}
+
+func (v *enumStringVar) Set(value string) error {
+	normalized := strings.ToUpper(value)
+	if canonical, ok := v.aliases[normalized]; ok {
+		*v.ptr = canonical
+		return nil
+	}
+	for _, valid := range v.values {
+		if normalized == valid {
+			*v.ptr = valid
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(v.values, ", "))
+}
+
+func (v *enumStringVar) ValidValues() []string {
+	values := make([]string, len(v.values))
+	for i, value := range v.values {
+		values[i] = "'" + value + "'"
+	}
+	return values
+}
+
+// flags is the kong-tagged flag struct contributed via Feature.Flags. The legacy
+// --vertexai-* names remain available for configuration compatibility.
+// VertexAIModel/Location are pointers to preserve "unset" semantics (an unset
+// flag must not clobber a TOML/--set value).
 type flags struct {
-	VertexAIProject  string  `name:"vertexai-project" help:"Vertex AI project"`
-	VertexAIModel    *string `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
-	VertexAILocation *string `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
+	VertexAIProject  string  `name:"vertexai-project" help:"Gemini Enterprise project override"`
+	VertexAIModel    *string `name:"vertexai-model" help:"Gemini model (default: ${defaultVertexAIModel})"`
+	VertexAILocation *string `name:"vertexai-location" help:"Gemini Enterprise location (default: ${defaultVertexAILocation})"`
 }
 
 // Feature returns the GEMINI Feature value. Each call allocates a FRESH config
@@ -119,18 +159,37 @@ func Feature() mycli.Feature {
 		},
 		Vars: []mycli.FeatureVar{
 			{
+				Name: "CLI_GENAI_BACKEND",
+				Desc: "GenAI backend: Gemini Enterprise Agent Platform or Gemini API.",
+				Var: &enumStringVar{
+					ptr:    &cfg.Backend,
+					values: []string{genAIBackendEnterprise, genAIBackendGeminiAPI},
+					aliases: map[string]string{
+						"VERTEX_AI": genAIBackendEnterprise,
+					},
+				},
+			},
+			{
+				Name: "CLI_GENAI_THINKING_LEVEL",
+				Desc: "Gemini thinking level. UNSPECIFIED lets the model choose its default.",
+				Var: &enumStringVar{
+					ptr:    &cfg.ThinkingLevel,
+					values: []string{thinkingLevelUnspecified, "MINIMAL", "LOW", "MEDIUM", "HIGH"},
+				},
+			},
+			{
 				Name: "CLI_VERTEXAI_PROJECT",
-				Desc: "Vertex AI project for natural language features.",
+				Desc: "Gemini Enterprise project override. Defaults to CLI_PROJECT when empty.",
 				Var:  mycli.StringVar(&cfg.Project),
 			},
 			{
 				Name: "CLI_VERTEXAI_MODEL",
-				Desc: "Vertex AI model for natural language features.",
+				Desc: "Gemini model for natural language features.",
 				Var:  mycli.StringVar(&cfg.Model),
 			},
 			{
 				Name: "CLI_VERTEXAI_LOCATION",
-				Desc: "Vertex AI location for natural language features.",
+				Desc: "Gemini Enterprise location for natural language features.",
 				Var:  mycli.StringVar(&cfg.Location),
 			},
 		},
@@ -210,9 +269,8 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *mycli.Session) (
 	}
 	slog.Debug("GEMINI timing: GetDatabaseDdlCached", "elapsed", time.Since(ddlStart))
 
-	project := s.cfg.Project
-	location := s.cfg.Location
 	model := s.cfg.Model
+	thinkingLevel := s.cfg.ThinkingLevel
 
 	// Initialize session-scoped doc cache on first GEMINI call.
 	cacheStart := time.Now()
@@ -232,7 +290,8 @@ func (s *GeminiStatement) Execute(ctx context.Context, session *mycli.Session) (
 	slog.Debug("GEMINI timing: getOrCreateDocCache", "elapsed", time.Since(cacheStart))
 
 	composeStart := time.Now()
-	composed, err := geminiComposeQueryWithTools(ctx, resp, project, location, model, s.Text, cache, apiKey != "")
+	clientConfig := newGenAIClientConfig(s.cfg, session.ProjectID())
+	composed, err := geminiComposeQueryWithTools(ctx, resp, clientConfig, model, thinkingLevel, s.Text, cache, apiKey != "")
 	if err != nil {
 		return nil, err
 	}
@@ -337,16 +396,38 @@ Here is the prototext of File Proto Descriptors:
 ` + "```\n" + prototext.Format(fds) + "```"
 }
 
+// newGenAIClientConfig builds the backend-specific SDK configuration. Gemini
+// API authentication is intentionally left to the SDK's GEMINI_API_KEY or
+// GOOGLE_API_KEY environment-variable handling so secrets never become system
+// variable values. The Enterprise backend uses the explicit project override,
+// then the connected Spanner project, then the SDK's GOOGLE_CLOUD_PROJECT
+// fallback.
+func newGenAIClientConfig(cfg *config, sessionProject string) *genai.ClientConfig {
+	clientConfig := &genai.ClientConfig{}
+	if cfg.Backend == genAIBackendGeminiAPI {
+		clientConfig.Backend = genai.BackendGeminiAPI
+		return clientConfig
+	}
+
+	clientConfig.Backend = genai.BackendEnterprise
+	clientConfig.Project = cmp.Or(cfg.Project, sessionProject)
+	clientConfig.Location = cfg.Location
+	clientConfig.HTTPOptions = genai.HTTPOptions{APIVersion: "v1"}
+	return clientConfig
+}
+
+func newThinkingConfig(level string) *genai.ThinkingConfig {
+	if level == thinkingLevelUnspecified {
+		return nil
+	}
+	return &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevel(level)}
+}
+
 // geminiComposeQueryWithTools uses Gemini's function calling to dynamically
 // fetch and search documentation via the docCache.
-func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, project, location, model, s string, cache *docCache, hasAPI bool) (*output, error) {
+func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, clientConfig *genai.ClientConfig, model, thinkingLevel, s string, cache *docCache, hasAPI bool) (*output, error) {
 	clientStart := time.Now()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		Project:     project,
-		Location:    location,
-		Backend:     genai.BackendVertexAI,
-		HTTPOptions: genai.HTTPOptions{APIVersion: "v1"},
-	})
+	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -374,10 +455,8 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 			SystemInstruction: &genai.Content{
 				Parts: []*genai.Part{genai.NewPartFromText(toolPrompt)},
 			},
-			Tools: tools,
-			ThinkingConfig: &genai.ThinkingConfig{
-				ThinkingLevel: genai.ThinkingLevelMinimal,
-			},
+			Tools:          tools,
+			ThinkingConfig: newThinkingConfig(thinkingLevel),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("tool-use round %d: %w", round, err)
@@ -427,9 +506,7 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 			SystemInstruction: &genai.Content{
 				Parts: []*genai.Part{genai.NewPartFromText(basePrompt)},
 			},
-			ThinkingConfig: &genai.ThinkingConfig{
-				ThinkingLevel: genai.ThinkingLevelLow,
-			},
+			ThinkingConfig: newThinkingConfig(thinkingLevel),
 		})
 	slog.Debug("GEMINI timing: Phase 2 (structured output)", "elapsed", time.Since(phase2Start))
 	return result, err
