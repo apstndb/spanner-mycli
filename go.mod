@@ -11,7 +11,7 @@ require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.0
 	github.com/apstndb/adcplus v0.2.0
-	github.com/apstndb/developerknowledge-go v0.3.1
+	github.com/apstndb/developerknowledge-go v0.3.2
 	github.com/apstndb/genaischema v0.2.0
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.4
@@ -42,7 +42,7 @@ require (
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.19.1
-	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/nyaosorg/go-readline-ny v1.15.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/pelletier/go-toml v1.9.5
@@ -51,7 +51,7 @@ require (
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
-	github.com/vbauerster/mpb/v8 v8.13.0
+	github.com/vbauerster/mpb/v8 v8.15.2
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
@@ -136,7 +136,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -172,6 +172,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
+	github.com/vbauerster/cupwriter v0.0.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
