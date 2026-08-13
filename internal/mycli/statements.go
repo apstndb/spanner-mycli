@@ -99,6 +99,10 @@ func (s *ExportDataStatement) String() string {
 func (ExportDataStatement) isNonTransactionalMutationStatement() {}
 
 func (s *ExportDataStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.systemVariables.Query.TryPartitionQuery {
+		return nil, errors.New("EXPORT DATA cannot be executed with CLI_TRY_PARTITION_QUERY=TRUE")
+	}
+
 	// Unlike SELECT and DML, EXPORT DATA cannot use the regular EXPLAIN path:
 	// it must remain outside the session transaction. Fail closed instead of
 	// letting effectiveQueryMode convert PLAN to PROFILE and execute the export.
@@ -106,7 +110,7 @@ func (s *ExportDataStatement) Execute(ctx context.Context, session *Session) (*R
 		return nil, errors.New("EXPORT DATA cannot be executed with CLI_QUERY_MODE=PLAN")
 	}
 
-	return executeSQLImplWithTxn(ctx, session, session.client.Single(), s.SQL, session.systemVariables)
+	return executeSQLImplSingleUse(ctx, session, s.SQL, session.systemVariables)
 }
 
 type DmlStatement struct {
