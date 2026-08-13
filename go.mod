@@ -38,7 +38,7 @@ require (
 	github.com/googleapis/go-spanner-cassandra v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/hymkor/go-multiline-ny v0.23.1
-	github.com/junegunn/fzf v0.74.1
+	github.com/junegunn/fzf v0.74.2
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.19.1
@@ -135,7 +135,7 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
-	github.com/mattn/go-isatty v0.0.22 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
