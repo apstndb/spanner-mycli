@@ -9,7 +9,7 @@ require (
 	cloud.google.com/go/spanner v1.94.0
 	cloud.google.com/go/storage v1.64.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
-	github.com/alecthomas/kong v1.16.0
+	github.com/alecthomas/kong v1.16.1
 	github.com/apstndb/adcplus v0.2.0
 	github.com/apstndb/developerknowledge-go v0.3.2
 	github.com/apstndb/genaischema v0.2.0
