@@ -48,6 +48,13 @@ type MutationStatement interface {
 	isMutationStatement()
 }
 
+// nonTransactionalMutationStatement marks statements that have side effects
+// but must not participate in the Spanner transaction machinery. They are
+// rejected by the READONLY guard without determining a pending transaction.
+type nonTransactionalMutationStatement interface {
+	isNonTransactionalMutationStatement()
+}
+
 // ConditionallyMutatingStatement is a marker interface for statements whose
 // mutation-ness cannot be decided statically from their Go type but only from
 // their content (e.g. a CQL statement text). The READONLY guard in
@@ -82,6 +89,8 @@ var (
 	_ MutationStatement = (*SyncProtoStatement)(nil)
 	_ MutationStatement = (*AddSplitPointsStatement)(nil)
 )
+
+var _ nonTransactionalMutationStatement = (*ExportDataStatement)(nil)
 
 // No core statement implements ConditionallyMutatingStatement any more: both
 // implementations were extracted into feature packages, where each carries its
@@ -426,6 +435,8 @@ func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
 	case kind.IsDML():
 		return &DmlStatement{Dml: raw}, nil
+	case kind.IsExportData():
+		return &ExportDataStatement{SQL: raw}, nil
 	// All ExecuteSQL compatible statements can be executed with SelectStatement.
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil
@@ -451,6 +462,8 @@ func BuildNativeStatementLexical(stripped string, raw string) (Statement, error)
 	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
 	case kind.IsDML():
 		return &DmlStatement{Dml: raw}, nil
+	case kind.IsExportData():
+		return &ExportDataStatement{SQL: raw}, nil
 	// All ExecuteSQL compatible statements can be executed with SelectStatement.
 	case kind.IsExecuteSQLCompatible():
 		return &SelectStatement{Query: raw}, nil

@@ -215,6 +215,22 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true)
+}
+
+// executeSQLImplSingleUse executes SQL outside the session's explicit
+// transaction while preserving normal query options and one-shot request-tag
+// consumption.
+func executeSQLImplSingleUse(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	run := func(ctx context.Context, stmt spanner.Statement, _ bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+		return session.txn.RunSingleUseQueryWithStats(ctx, stmt, mode)
+	}
+	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, run, false)
+}
+
+type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error)
+
+func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool) (*Result, error) {
 	m := newMetrics(sysVars)
 
 	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
@@ -227,7 +243,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 		return nil, err
 	}
 
-	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
+	iter, roTxn, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +260,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	})
 	if err != nil {
 		// Handle aborted transaction
-		if session.txn.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
+		if rollbackActiveTransactionOnAbort && session.txn.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
 			rollback := &RollbackStatement{}
 			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))

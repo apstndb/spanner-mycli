@@ -679,6 +679,26 @@ func TestBuildStatement(t *testing.T) {
 			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
 		},
 		{
+			desc: "EXPORT DATA Spanner Graph algorithm statement",
+			input: `EXPORT DATA OPTIONS (
+  format = "CLOUD_SPANNER",
+  table = "Account",
+  write_mode = 'update_ignore_all'
+) AS
+GRAPH FinGraph
+CALL PageRank() YIELD node, score
+RETURN node.id, score AS page_rank`,
+			want: &ExportDataStatement{SQL: `EXPORT DATA OPTIONS (
+  format = "CLOUD_SPANNER",
+  table = "Account",
+  write_mode = 'update_ignore_all'
+) AS
+GRAPH FinGraph
+CALL PageRank() YIELD node, score
+RETURN node.id, score AS page_rank`},
+			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
+		},
+		{
 			desc:  "EXPLAIN GRAPH statement",
 			input: "EXPLAIN GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:  &ExplainStatement{Explain: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
