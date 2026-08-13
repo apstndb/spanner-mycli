@@ -86,9 +86,21 @@ func TestLLMVariables(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid enum value is rejected", func(t *testing.T) {
+	t.Run("invalid enum values are rejected without mutation", func(t *testing.T) {
+		backendBefore := mycli.ListVariablesForTest(session)["CLI_GENAI_BACKEND"]
+		if err := mycli.SetVariableForTest(session, "CLI_GENAI_BACKEND", "OTHER"); err == nil {
+			t.Fatal("Set(CLI_GENAI_BACKEND, OTHER) error = nil")
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_BACKEND"]; got != backendBefore {
+			t.Errorf("CLI_GENAI_BACKEND after invalid Set = %q, want unchanged %q", got, backendBefore)
+		}
+
+		thinkingBefore := mycli.ListVariablesForTest(session)["CLI_GENAI_THINKING_LEVEL"]
 		if err := mycli.SetVariableForTest(session, "CLI_GENAI_THINKING_LEVEL", "MAXIMUM"); err == nil {
 			t.Fatal("Set(CLI_GENAI_THINKING_LEVEL, MAXIMUM) error = nil")
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_THINKING_LEVEL"]; got != thinkingBefore {
+			t.Errorf("CLI_GENAI_THINKING_LEVEL after invalid Set = %q, want unchanged %q", got, thinkingBefore)
 		}
 	})
 }

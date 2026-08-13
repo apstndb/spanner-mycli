@@ -17,6 +17,7 @@ package llm
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/genai"
 )
 
@@ -246,5 +247,29 @@ func TestNewThinkingConfig(t *testing.T) {
 				t.Errorf("ThinkingLevel = %q, want %q", got.ThinkingLevel, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewFunctionResponsePart(t *testing.T) {
+	t.Parallel()
+
+	response := map[string]any{"result": "ok"}
+	call := &genai.FunctionCall{
+		ID:   "call-123",
+		Name: "search_documents",
+	}
+
+	got := newFunctionResponsePart(call, response)
+	if got.FunctionResponse == nil {
+		t.Fatal("FunctionResponse = nil")
+	}
+	if got.FunctionResponse.ID != call.ID {
+		t.Errorf("FunctionResponse.ID = %q, want %q", got.FunctionResponse.ID, call.ID)
+	}
+	if got.FunctionResponse.Name != call.Name {
+		t.Errorf("FunctionResponse.Name = %q, want %q", got.FunctionResponse.Name, call.Name)
+	}
+	if diff := cmp.Diff(response, got.FunctionResponse.Response); diff != "" {
+		t.Errorf("FunctionResponse.Response mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -160,7 +160,7 @@ func Feature() mycli.Feature {
 		Vars: []mycli.FeatureVar{
 			{
 				Name: "CLI_GENAI_BACKEND",
-				Desc: "GenAI backend: Gemini Enterprise Agent Platform or Gemini API.",
+				Desc: "GenAI backend: GEMINI_ENTERPRISE or GEMINI_API. VERTEX_AI is accepted as an alias for GEMINI_ENTERPRISE.",
 				Var: &enumStringVar{
 					ptr:    &cfg.Backend,
 					values: []string{genAIBackendEnterprise, genAIBackendGeminiAPI},
@@ -423,6 +423,12 @@ func newThinkingConfig(level string) *genai.ThinkingConfig {
 	return &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevel(level)}
 }
 
+func newFunctionResponsePart(call *genai.FunctionCall, response map[string]any) *genai.Part {
+	part := genai.NewPartFromFunctionResponse(call.Name, response)
+	part.FunctionResponse.ID = call.ID
+	return part
+}
+
 // geminiComposeQueryWithTools uses Gemini's function calling to dynamically
 // fetch and search documentation via the docCache.
 func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseDdlResponse, clientConfig *genai.ClientConfig, model, thinkingLevel, s string, cache *docCache, hasAPI bool) (*output, error) {
@@ -484,7 +490,7 @@ func geminiComposeQueryWithTools(ctx context.Context, resp *adminpb.GetDatabaseD
 		for _, fc := range functionCalls {
 			slog.Debug("Gemini tool call", "function", fc.Name, "args", fc.Args)
 			response := executeToolCall(ctx, fc, cache)
-			responseParts = append(responseParts, genai.NewPartFromFunctionResponse(fc.Name, response))
+			responseParts = append(responseParts, newFunctionResponsePart(fc, response))
 		}
 		slog.Debug("GEMINI timing: Phase 1 round", "round", round, "api_call", apiElapsed, "tool_exec", time.Since(toolStart), "functions", len(functionCalls))
 

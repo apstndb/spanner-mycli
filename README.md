@@ -2062,10 +2062,17 @@ set, the Google Gen AI SDK uses `GOOGLE_API_KEY`:
 SET CLI_GENAI_BACKEND = "GEMINI_API";
 ```
 
+The canonical backend values are `GEMINI_ENTERPRISE` and `GEMINI_API`.
+`VERTEX_AI` remains accepted as an alias for `GEMINI_ENTERPRISE`.
+
 `CLI_VERTEXAI_MODEL` selects the model for either backend and defaults to
 `gemini-3.7-flash`. `CLI_GENAI_THINKING_LEVEL` accepts `UNSPECIFIED`, `MINIMAL`,
 `LOW`, `MEDIUM`, or `HIGH`. Its default is `UNSPECIFIED`, which omits the
 thinking configuration and lets the selected model use its own default.
+
+The `GEMINI` statement sends your prompt, the connected database DDL, and its
+proto descriptors to the selected Google Gen AI service. Review your
+organization's data-handling policy before using it with sensitive schemas.
 
 Built-in Spanner reference docs are always available. Dynamic documentation
 lookup via the Developer Knowledge API uses `DEVELOPERKNOWLEDGE_API_KEY`, or
