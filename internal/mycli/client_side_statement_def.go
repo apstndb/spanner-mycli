@@ -16,6 +16,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/kballard/go-shellquote"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 )
@@ -665,20 +666,41 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
 		},
 	},
-	// SHOW LAST QUERY PLAN — official ProtoJSON export of the cached plan
+	// SHOW LAST QUERY PLAN — ProtoJSON or ProtoJSON-equivalent YAML export of the cached plan
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
-				Usage:  `Export the last cached query plan as official Cloud Spanner ProtoJSON`,
+				Usage:  `Export the last cached query plan as ProtoJSON or ProtoJSON-equivalent YAML`,
 				Syntax: `SHOW LAST QUERY PLAN [WITH STATS] [INTO <path>]`,
-				Note:   `Writes a QueryPlan (or ResultSetStats with WITH STATS). Requires a preceding query or EXPLAIN ANALYZE. Intended for external plan viewers; not a stable versioned contract.`,
+				Note:   `Writes YAML for .yaml/.yml paths and ProtoJSON otherwise. Quoted paths are supported. Requires a preceding query or EXPLAIN ANALYZE. Intended for external plan viewers; not a stable versioned contract.`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LAST\s+QUERY\s+PLAN(?P<with_stats>\s+WITH\s+STATS)?(?:\s+INTO\s+(?P<path>\S+))?$`),
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LAST\s+QUERY\s+PLAN(?P<with_stats>\s+WITH\s+STATS)?(?:\s+INTO\s+(?P<path>.+))?$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			intoPath := strings.TrimSpace(groups["path"])
-			if groups["path"] != "" && intoPath == "" {
+			var intoPath string
+			rawPath := strings.TrimSpace(groups["path"])
+			if groups["path"] != "" && rawPath == "" {
 				return nil, errors.New("invalid INTO path: empty destination")
+			}
+			if rawPath != "" {
+				// Preserve a legacy single-token path verbatim. In particular,
+				// shellquote.Split treats backslashes as escapes, which would turn a
+				// Windows path such as C:\tmp\plan.yaml into C:tmpplan.yaml.
+				if strings.ContainsAny(rawPath, " \t\r\n\"'") {
+					paths, err := shellquote.Split(rawPath)
+					if err != nil {
+						return nil, fmt.Errorf("invalid INTO path: %w", err)
+					}
+					if len(paths) != 1 {
+						return nil, fmt.Errorf("invalid INTO path: expected one destination, got %d", len(paths))
+					}
+					intoPath = paths[0]
+				} else {
+					intoPath = rawPath
+				}
+				if strings.TrimSpace(intoPath) == "" {
+					return nil, errors.New("invalid INTO path: empty destination")
+				}
 			}
 			return &ShowLastQueryPlanStatement{
 				WithStats: strings.TrimSpace(groups["with_stats"]) != "",

@@ -165,9 +165,10 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 }
 
 // ShowLastQueryPlanStatement exports the cached last query plan as official
-// Cloud Spanner ProtoJSON (QueryPlan, or ResultSetStats when WITH STATS is set).
-// It is intended as a lossless handoff boundary for external viewers; it does
-// not expose plantree/renderer DTOs.
+// Cloud Spanner ProtoJSON, or as ProtoJSON-equivalent YAML for .yaml/.yml
+// destinations (QueryPlan, or ResultSetStats when WITH STATS is set). It is
+// intended as a lossless handoff boundary for external viewers; it does not
+// expose plantree/renderer DTOs.
 type ShowLastQueryPlanStatement struct {
 	WithStats bool
 	IntoPath  string
@@ -199,18 +200,27 @@ func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Sessi
 		header = "ResultSetStats (ProtoJSON)"
 	}
 
-	payload, err := marshalOfficialPlanProtoJSON(msg)
+	exportPath := s.IntoPath
+	if exportPath != "" {
+		var err error
+		exportPath, err = normalizePlanExportPath(exportPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	payload, err := marshalOfficialPlan(msg, exportPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if s.IntoPath != "" {
-		if err := writePlanProtoJSONFile(s.IntoPath, payload); err != nil {
+	if exportPath != "" {
+		if err := writePlanExportFile(exportPath, payload); err != nil {
 			return nil, err
 		}
 		return &Result{
 			TableHeader:  toTableHeader("Exported"),
-			Rows:         sliceOf(toRow(s.IntoPath)),
+			Rows:         sliceOf(toRow(exportPath)),
 			AffectedRows: 1,
 		}, nil
 	}
@@ -220,6 +230,19 @@ func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Sessi
 		Rows:         sliceOf(toRow(string(payload))),
 		AffectedRows: 1,
 	}, nil
+}
+
+func marshalOfficialPlan(msg proto.Message, path string) ([]byte, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		b, err := protoyaml.Marshal(msg, protoyaml.WithFlowLeafCollections())
+		if err != nil {
+			return nil, fmt.Errorf("marshal ProtoJSON-equivalent YAML: %w", err)
+		}
+		return appendTrailingNewline(b), nil
+	default:
+		return marshalOfficialPlanProtoJSON(msg)
+	}
 }
 
 func marshalOfficialPlanProtoJSON(msg proto.Message) ([]byte, error) {
@@ -232,19 +255,20 @@ func marshalOfficialPlanProtoJSON(msg proto.Message) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal official ProtoJSON: %w", err)
 	}
-	if len(b) == 0 || b[len(b)-1] != '\n' {
-		b = append(b, '\n')
-	}
-	return b, nil
+	return appendTrailingNewline(b), nil
 }
 
-func writePlanProtoJSONFile(path string, payload []byte) error {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" || cleaned == "." {
-		return errors.New("invalid INTO path: empty destination")
+func appendTrailingNewline(b []byte) []byte {
+	if len(b) == 0 || b[len(b)-1] != '\n' {
+		return append(b, '\n')
 	}
-	if strings.ContainsRune(cleaned, 0) {
-		return errors.New("invalid INTO path: contains NUL")
+	return b
+}
+
+func writePlanExportFile(path string, payload []byte) error {
+	cleaned, err := normalizePlanExportPath(path)
+	if err != nil {
+		return err
 	}
 
 	if fi, err := os.Lstat(cleaned); err == nil {
@@ -282,6 +306,17 @@ func writePlanProtoJSONFile(path string, payload []byte) error {
 		return fmt.Errorf("sync INTO path %s: %w", cleaned, err)
 	}
 	return nil
+}
+
+func normalizePlanExportPath(path string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" || cleaned == "." {
+		return "", errors.New("invalid INTO path: empty destination")
+	}
+	if strings.ContainsRune(cleaned, 0) {
+		return "", errors.New("invalid INTO path: contains NUL")
+	}
+	return cleaned, nil
 }
 
 func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) string {

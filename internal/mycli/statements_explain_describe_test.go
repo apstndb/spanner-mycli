@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/protoyaml"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
@@ -19,6 +21,7 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -1153,6 +1156,58 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		var roundTrip sppb.QueryPlan
 		if err := protojson.Unmarshal(b, &roundTrip); err != nil {
 			t.Fatalf("file ProtoJSON unmarshal: %v", err)
+		}
+	})
+
+	for _, extension := range []string{".yaml", ".yml", ".YAML"} {
+		t.Run("into protoyaml "+extension, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "query plan"+extension)
+			got, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
+				systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+			})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got.Rows[0][0].RawText() != path {
+				t.Fatalf("exported path = %q, want %q", got.Rows[0][0].RawText(), path)
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			var roundTrip sppb.QueryPlan
+			if err := protoyaml.Unmarshal(b, &roundTrip); err != nil {
+				t.Fatalf("file ProtoYAML unmarshal: %v\npayload:\n%s", err, b)
+			}
+			if !proto.Equal(&roundTrip, plan) {
+				t.Fatal("round-trip QueryPlan differs from the cached plan")
+			}
+		})
+	}
+
+	t.Run("with stats into protoyaml", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "query stats.yml")
+		_, err := (&ShowLastQueryPlanStatement{WithStats: true, IntoPath: path}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{
+				QueryPlan:  plan,
+				QueryStats: statsMap,
+			}}},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		var roundTrip sppb.ResultSetStats
+		if err := protoyaml.Unmarshal(b, &roundTrip); err != nil {
+			t.Fatalf("file ProtoYAML unmarshal: %v\npayload:\n%s", err, b)
+		}
+		if !proto.Equal(&roundTrip, selectProfileResultSet.GetStats()) {
+			t.Fatal("round-trip ResultSetStats differs from the cached stats")
 		}
 	})
 
