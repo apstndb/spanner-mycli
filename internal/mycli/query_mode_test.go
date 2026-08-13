@@ -70,6 +70,18 @@ func TestEffectiveQueryMode(t *testing.T) {
 	}
 }
 
+func TestExportDataStatementRejectsPlanMode(t *testing.T) {
+	t.Parallel()
+
+	session := newSessionForLocalVarTest(t)
+	session.systemVariables.Query.QueryMode = sppb.ExecuteSqlRequest_PLAN.Enum()
+
+	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session)
+	if err == nil || !strings.Contains(err.Error(), "CLI_QUERY_MODE=PLAN") {
+		t.Fatalf("ExportDataStatement.Execute() error = %v, want PLAN-mode rejection", err)
+	}
+}
+
 func TestSetCLIQueryModeStatsValues(t *testing.T) {
 	t.Parallel()
 

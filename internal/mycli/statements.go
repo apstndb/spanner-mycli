@@ -82,6 +82,33 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	}
 }
 
+// ExportDataStatement runs a Spanner Graph algorithm query and persists its
+// results according to the EXPORT DATA options. The persistence operation is
+// non-transactional, so execution deliberately uses a single-use transaction
+// instead of joining the session's current transaction.
+//
+// https://cloud.google.com/spanner/docs/graph/run-algorithms
+type ExportDataStatement struct {
+	SQL string
+}
+
+func (s *ExportDataStatement) String() string {
+	return s.SQL
+}
+
+func (ExportDataStatement) isNonTransactionalMutationStatement() {}
+
+func (s *ExportDataStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// Unlike SELECT and DML, EXPORT DATA cannot use the regular EXPLAIN path:
+	// it must remain outside the session transaction. Fail closed instead of
+	// letting effectiveQueryMode convert PLAN to PROFILE and execute the export.
+	if lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PLAN {
+		return nil, errors.New("EXPORT DATA cannot be executed with CLI_QUERY_MODE=PLAN")
+	}
+
+	return executeSQLImplWithTxn(ctx, session, session.client.Single(), s.SQL, session.systemVariables)
+}
+
 type DmlStatement struct {
 	Dml string
 }
