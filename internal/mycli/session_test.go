@@ -341,7 +341,7 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 		Config: StartupConfig{
 			EmbeddedClientConfig: &spanner.ClientConfig{
 				DisableNativeMetrics: true,
-				IsExperimentalHost:   true,
+				Type:                 spanner.OMNI,
 				DisableRouteToLeader: true,
 				UserAgent:            "embedded-omni-test",
 			},
@@ -370,8 +370,8 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	if !gotConfig.DisableNativeMetrics {
 		t.Error("DisableNativeMetrics = false, want true")
 	}
-	if !gotConfig.IsExperimentalHost {
-		t.Error("IsExperimentalHost = false, want true")
+	if gotConfig.Type != spanner.OMNI {
+		t.Errorf("Type = %q, want %q", gotConfig.Type, spanner.OMNI)
 	}
 	if !gotConfig.DisableRouteToLeader {
 		t.Error("DisableRouteToLeader = false, want true")
