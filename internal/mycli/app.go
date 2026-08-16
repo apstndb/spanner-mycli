@@ -214,6 +214,7 @@ func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
 			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
+			spanemuboost.WithContainerCustomizers(configureTestcontainersLogger(slog.Default())),
 		}
 		if opts.EmulatorImage != "" {
 			runtimeOpts = append(runtimeOpts, spanemuboost.WithContainerImage(opts.EmulatorImage))

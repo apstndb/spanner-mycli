@@ -141,7 +141,7 @@ type spannerOptions struct {
 	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
-	LogLevel            string            `name:"log-level"`
+	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs."`
 	LogGrpc             bool              `name:"log-grpc" help:"Show gRPC logs"`
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
