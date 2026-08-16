@@ -162,7 +162,8 @@ Flags:
                                                --detached.
       --list-samples                           List available sample databases and exit
       --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
-      --log-level=STRING
+      --log-level=STRING                       Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include
+                                               embedded runtime container lifecycle logs.
       --log-grpc                               Show gRPC logs
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
                                                PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
