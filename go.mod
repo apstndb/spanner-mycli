@@ -4,7 +4,7 @@ go 1.25.13
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/bigquery v1.79.1
+	cloud.google.com/go/bigquery v1.80.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.94.0
 	cloud.google.com/go/storage v1.64.0
