@@ -428,7 +428,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Add split points",
-				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] {TABLE|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Note:   "TableKey is valid only for INDEX entries.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^ADD\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),
@@ -447,7 +448,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Drop split points",
-				Syntax: "DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Syntax: "DROP SPLIT POINTS {TABLE|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Note:   "TableKey is valid only for INDEX entries.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DROP\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),

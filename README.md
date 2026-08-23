@@ -591,8 +591,8 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Export specific tables as SQL INSERT statements                             | `DUMP TABLES <table1> [, <table2>, ...];`                                                                  |                                                                                                                                                                                                           |
 | Show schema update operations                                               | `SHOW SCHEMA UPDATE OPERATIONS;`                                                                           |                                                                                                                                                                                                           |
 | Show specific operation (async)                                             | `SHOW OPERATION <operation-id-or-name> [ASYNC\|SYNC];`                                                     | Attach to and monitor a specific Long Running Operation by its operation ID or full operation name. ASYNC (default) returns current status, SYNC provides real-time monitoring (planned).                 |
-| Add split points                                                            | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`         |                                                                                                                                                                                                           |
-| Drop split points                                                           | `DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                                 |                                                                                                                                                                                                           |
+| Add split points                                                            | `ADD SPLIT POINTS [EXPIRED AT <timestamp>] {TABLE\|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;` | TableKey is valid only for INDEX entries.                                                                                                                                                                 |
+| Drop split points                                                           | `DROP SPLIT POINTS {TABLE\|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...;`                         | TableKey is valid only for INDEX entries.                                                                                                                                                                 |
 | Show split points                                                           | `SHOW SPLIT POINTS;`                                                                                       |                                                                                                                                                                                                           |
 | Show local proto descriptors                                                | `SHOW LOCAL PROTO;`                                                                                        |                                                                                                                                                                                                           |
 | Show remote proto bundle                                                    | `SHOW REMOTE PROTO;`                                                                                       |                                                                                                                                                                                                           |
@@ -1530,6 +1530,8 @@ spanner-mycli can [manage split points](https://cloud.google.com/spanner/docs/cr
 You can add split points using `ADD SPLIT POINTS` statement.
 
 - You can add multiple split points in a statement.
+- Table and index split points can use composite keys.
+- Index split points can include the complete table primary key with `TableKey (...)`.
 - You can specify the expiration of split points.
 
 ```
@@ -1548,7 +1550,7 @@ spanner> ADD SPLIT POINTS EXPIRED AT "2025-05-05T00:00:00Z"
          INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12);
 ```
 
-This syntax is similar to [`gcloud spanner databases splits add --splits-file`](https://cloud.google.com/spanner/docs/create-manage-split-points#create-split-points), but there are some differences.
+The entry structure follows [`gcloud spanner databases splits add --splits-file`](https://cloud.google.com/spanner/docs/create-manage-split-points#create-split-points), including composite keys and the optional index `TableKey (...)` suffix. Literal syntax differs as follows:
 
 - It is implemented using memefish so it follows GoogleSQL lexical structure.
 - `INT64` and `NUMERIC` Spanner data types can be integer literal. For example, `123` or `99.99`

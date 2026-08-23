@@ -935,6 +935,36 @@ INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
 			},
 		},
 		{
+			desc: "ADD SPLIT POINTS statement with composite keys and TableKey",
+			input: `ADD SPLIT POINTS
+TABLE TableD (0, '7ef9db22-d0e5-6041-8937-4bc6a7ef9db2')
+INDEX IndexXYZ ('8762203435012030000', NULL, NULL)
+INDEX IndexABC (0, '2020-06-18T17:24:53Z', '2020-06-18T17:24:53Z') TableKey (123, 'ab,c')`,
+			want: &AddSplitPointsStatement{
+				SplitPoints: []*databasepb.SplitPoints{
+					{
+						Table: "TableD",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("0"), structpb.NewStringValue("7ef9db22-d0e5-6041-8937-4bc6a7ef9db2")}}},
+						},
+					},
+					{
+						Index: "IndexXYZ",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("8762203435012030000"), structpb.NewNullValue(), structpb.NewNullValue()}}},
+						},
+					},
+					{
+						Index: "IndexABC",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("0"), structpb.NewStringValue("2020-06-18T17:24:53Z"), structpb.NewStringValue("2020-06-18T17:24:53Z")}}},
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("123"), structpb.NewStringValue("ab,c")}}},
+						},
+					},
+				},
+			},
+		},
+		{
 			desc: "DROP SPLIT POINTS statement",
 			input: `
 DROP SPLIT POINTS
