@@ -49,7 +49,7 @@ require (
 	github.com/samber/lo v1.53.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/spf13/afero v1.15.0
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/vbauerster/mpb/v8 v8.15.2
 	go.uber.org/zap v1.28.0
@@ -202,7 +202,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260807164820-c8921c73eeea // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 tool (
