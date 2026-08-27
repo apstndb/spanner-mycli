@@ -98,7 +98,7 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 				if err != nil || !handled {
 					t.Fatalf("newSpanvalueRowIteratorWriterFor: handled=%v err=%v", handled, err)
 				}
-				if _, err := writer.WriteRowSeq(md, rowSeq(rawRows), w); err != nil {
+				if _, err := writer.WriteRowSeq(md, writer.RowSeq(rawRows...), w); err != nil {
 					t.Fatalf("WriteRowSeq: %v", err)
 				}
 			} else {
