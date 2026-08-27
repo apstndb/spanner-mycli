@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.123.0
 	cloud.google.com/go/bigquery v1.81.0
 	cloud.google.com/go/longrunning v1.2.0
-	cloud.google.com/go/spanner v1.94.0
+	cloud.google.com/go/spanner v1.95.0
 	cloud.google.com/go/storage v1.65.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.1
