@@ -6,8 +6,11 @@ the code wins - fix this file.
 
 ## Package Layout
 
-All application code lives in `internal/mycli` (package `mycli`); the root
-`main.go` only calls `mycli.Main(version, installFrom)`.
+All application code lives in `internal/mycli` (package `mycli`). The root
+`main.go` is the full binary and calls `mycli.Main(version, installFrom,
+all.All()...)`; `cmd/spanner-mycli-slim/main.go` calls it with no optional
+features. This separate-main design lets ordinary `./...` tooling compile both
+graphs without build tags. See [Slim binary](../docs/slim_binary.md).
 
 Key files in `internal/mycli`:
 
