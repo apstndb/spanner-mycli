@@ -1735,10 +1735,11 @@ func TestReadWriteTransaction(t *testing.T) {
 		}
 
 		// first query
-		query := spanner.NewStatement("SELECT id, active FROM tbl")
-		iter := session.client.Single().Query(ctx, query)
-		defer iter.Stop()
-		if _, err := iter.Next(); err != nil {
+		stmt, err = BuildStatement("SELECT id, active FROM tbl")
+		if err != nil {
+			t.Fatalf("invalid statement: error=%s", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
 			t.Fatalf("unexpected error happened: %s", err)
 		}
 
@@ -1752,11 +1753,19 @@ func TestReadWriteTransaction(t *testing.T) {
 		time.Sleep(10 * time.Second)
 
 		// second query
-		query = spanner.NewStatement("SELECT id, active FROM tbl")
-		iter = session.client.Single().Query(ctx, query)
-		defer iter.Stop()
-		if _, err := iter.Next(); err != nil {
+		query := spanner.NewStatement("SELECT id, active FROM tbl")
+		err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+			iter := tx.Query(ctx, query)
+			defer iter.Stop()
+			_, err := iter.Next()
+			return err
+		})
+		if err != nil {
 			t.Fatalf("error should not happen: %s", err)
+		}
+
+		if _, err := session.txn.CommitReadWriteTransaction(ctx); err != nil {
+			t.Fatalf("failed to commit heartbeat-kept transaction: %s", err)
 		}
 	})
 }
