@@ -79,8 +79,8 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
-	github.com/apstndb/gh-dev-tools v0.0.0-20250726094924-b386827f58e6 // indirect
-	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
+	github.com/apstndb/gh-dev-tools v0.0.0-20260503112106-b5cb9f5ce345 // indirect
+	github.com/apstndb/github-schema-go v0.0.0-20250624135542-f1e99900f6fc // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
 	github.com/apstndb/ptyhelp v0.3.0 // indirect
@@ -100,7 +100,7 @@ require (
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/datastax/go-cassandra-native-protocol v0.0.0-20240903140133-605a850e203b // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/dmarkham/enumer v1.5.11 // indirect
+	github.com/dmarkham/enumer v1.6.3 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
