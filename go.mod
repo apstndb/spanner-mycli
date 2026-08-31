@@ -19,13 +19,13 @@ require (
 	github.com/apstndb/memebridge v0.7.0
 	github.com/apstndb/protoyaml v0.1.1
 	github.com/apstndb/spancodec v0.1.2
-	github.com/apstndb/spanemuboost v0.4.6
+	github.com/apstndb/spanemuboost v0.4.7
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.3.0
 	github.com/apstndb/spanstats v0.1.0
 	github.com/apstndb/spantype v0.3.13
-	github.com/apstndb/spanvalue v0.8.3
+	github.com/apstndb/spanvalue v0.8.4
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.8.1
 	github.com/creack/pty v1.1.24
@@ -83,7 +83,7 @@ require (
 	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
-	github.com/apstndb/ptyhelp v0.2.3 // indirect
+	github.com/apstndb/ptyhelp v0.3.0 // indirect
 	github.com/apstndb/structfields v0.1.0 // indirect
 	github.com/apstndb/structfields/spannertag v0.1.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
