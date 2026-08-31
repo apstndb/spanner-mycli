@@ -4,10 +4,10 @@ go 1.25.13
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/bigquery v1.81.0
+	cloud.google.com/go/bigquery v1.82.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.95.0
-	cloud.google.com/go/storage v1.65.0
+	cloud.google.com/go/storage v1.66.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.1
 	github.com/apstndb/adcplus v0.2.0
@@ -19,13 +19,13 @@ require (
 	github.com/apstndb/memebridge v0.7.0
 	github.com/apstndb/protoyaml v0.1.1
 	github.com/apstndb/spancodec v0.1.2
-	github.com/apstndb/spanemuboost v0.4.6
+	github.com/apstndb/spanemuboost v0.4.7
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.3.0
 	github.com/apstndb/spanstats v0.1.0
 	github.com/apstndb/spantype v0.3.13
-	github.com/apstndb/spanvalue v0.8.3
+	github.com/apstndb/spanvalue v0.8.4
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.8.1
 	github.com/creack/pty v1.1.24
@@ -55,19 +55,19 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.293.0
-	google.golang.org/genai v1.69.0
+	google.golang.org/api v0.295.0
+	google.golang.org/genai v1.70.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
 
 require (
 	cel.dev/expr v0.25.2 // indirect
-	cloud.google.com/go/auth v0.23.0 // indirect
+	cloud.google.com/go/auth v0.23.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	cloud.google.com/go/iam v1.11.0 // indirect
-	cloud.google.com/go/monitoring v1.29.0 // indirect
+	cloud.google.com/go/iam v1.12.0 // indirect
+	cloud.google.com/go/monitoring v1.30.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.6.0 // indirect
@@ -79,11 +79,11 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
-	github.com/apstndb/gh-dev-tools v0.0.0-20250726094924-b386827f58e6 // indirect
-	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
+	github.com/apstndb/gh-dev-tools v0.0.0-20260503112106-b5cb9f5ce345 // indirect
+	github.com/apstndb/github-schema-go v0.0.0-20250624135542-f1e99900f6fc // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
-	github.com/apstndb/ptyhelp v0.2.3 // indirect
+	github.com/apstndb/ptyhelp v0.3.0 // indirect
 	github.com/apstndb/structfields v0.1.0 // indirect
 	github.com/apstndb/structfields/spannertag v0.1.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -100,7 +100,7 @@ require (
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/datastax/go-cassandra-native-protocol v0.0.0-20240903140133-605a850e203b // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/dmarkham/enumer v1.5.11 // indirect
+	github.com/dmarkham/enumer v1.6.3 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
@@ -122,7 +122,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	// The v0.3.21 tag was deleted upstream; this pins the same commit for direct module resolution.
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21-0.20260811172054-82da9ba164a0 // indirect
-	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
@@ -198,9 +198,9 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260807164820-c8921c73eeea // indirect
+	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260715232425-e75dac1f907d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 )
 
