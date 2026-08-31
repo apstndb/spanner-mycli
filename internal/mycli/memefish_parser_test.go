@@ -25,19 +25,23 @@ import (
 func TestRecoverMemefishParserPanic(t *testing.T) {
 	t.Parallel()
 
-	t.Run("known malformed input becomes an error", func(t *testing.T) {
+	t.Run("known malformed input returns an error", func(t *testing.T) {
 		t.Parallel()
 
 		const input = "'unclosed"
 		rawPanic := capturePanicValue(func() {
 			_, _ = memefish.ParseExpr("", input)
 		})
-		_, ok := rawPanic.(*memefish.Error)
-		require.True(t, ok, "raw memefish.ParseExpr panic = %T, want *memefish.Error", rawPanic)
+		require.Nil(t, rawPanic, "raw memefish.ParseExpr panic = %T, want no panic", rawPanic)
+
+		_, rawErr := memefish.ParseExpr("", input)
+		require.Error(t, rawErr)
+		var rawParseErr memefish.MultiError
+		require.ErrorAs(t, rawErr, &rawParseErr)
 
 		_, err := parseMemefishExpr("", input)
 		require.Error(t, err)
-		var parseErr *memefish.Error
+		var parseErr memefish.MultiError
 		require.ErrorAs(t, err, &parseErr)
 	})
 
