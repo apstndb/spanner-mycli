@@ -17,7 +17,6 @@ package mycli
 import (
 	"fmt"
 	"io"
-	"iter"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -43,18 +42,6 @@ func typedReplayFormatConfig(sysVars *systemVariables) (*spanvalue.FormatConfig,
 	default:
 		fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
 		return fc, vfm, err
-	}
-}
-
-// rowSeq adapts a materialized slice of rows to the iter.Seq2 shape consumed by
-// writer.WriteRowSeq. The rows are already decoded, so iteration never errors.
-func rowSeq(rows []*spanner.Row) iter.Seq2[*spanner.Row, error] {
-	return func(yield func(*spanner.Row, error) bool) {
-		for _, r := range rows {
-			if !yield(r, nil) {
-				return
-			}
-		}
 	}
 }
 
@@ -89,7 +76,7 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		// format sets ever diverge.
 		return fmt.Errorf("no spanvalue writer for typed replay in format %v", sv.Display.CLIFormat)
 	}
-	if _, err := writer.WriteRowSeq(result.Typed.Metadata, rowSeq(result.Typed.Rows), w); err != nil {
+	if _, err := writer.WriteRowSeq(result.Typed.Metadata, writer.RowSeq(result.Typed.Rows...), w); err != nil {
 		return normalizeSpanvalueWriterError(err)
 	}
 	return nil
