@@ -104,6 +104,23 @@ Download pre-built binaries from [GitHub Releases](https://github.com/apstndb/sp
 go install github.com/apstndb/spanner-mycli@latest
 ```
 
+### Slim binary
+
+Release assets include `spanner-mycli-slim`, which leaves out the optional
+GEMINI/LLM, BigQuery, and Cassandra-interface CQL statement families. Use it
+when those capabilities are not needed and a smaller binary is preferable;
+the omitted statement keywords and Gemini flags/system variables are not
+available in this variant. All other spanner-mycli behavior is unchanged.
+
+Build the same variant from source with:
+
+```sh
+go build -o spanner-mycli-slim ./cmd/spanner-mycli-slim
+```
+
+For a reproducible full-versus-slim size comparison, including the release
+linker flags, see [Slim binary](docs/slim_binary.md).
+
 ### Container image
 
 Use the container image from GitHub Container Registry.
