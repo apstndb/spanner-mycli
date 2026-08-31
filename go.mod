@@ -83,7 +83,7 @@ require (
 	github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 // indirect
 	github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff // indirect
 	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
-	github.com/apstndb/ptyhelp v0.2.3 // indirect
+	github.com/apstndb/ptyhelp v0.3.0 // indirect
 	github.com/apstndb/structfields v0.1.0 // indirect
 	github.com/apstndb/structfields/spannertag v0.1.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

@@ -86,8 +86,8 @@ github.com/apstndb/memebridge v0.7.0 h1:6YDUc+xpOtP0aP3p3b6cyWe5qNcBKQW+75ICIOJ9
 github.com/apstndb/memebridge v0.7.0/go.mod h1:TkN51CaMfhBEYrGR9bDoUPpYKoOiTMiSnQNH2/gYZ9o=
 github.com/apstndb/protoyaml v0.1.1 h1:qCxi4l6twinpF+tM3qXG2qeRq6OmIklWK+LWtuM1eBk=
 github.com/apstndb/protoyaml v0.1.1/go.mod h1:bsZCSj3nYZKfLiKRogOxuUjlURUOJpBb+G5f1b3g5Fc=
-github.com/apstndb/ptyhelp v0.2.3 h1:aLFKm19WlM+/hts6EsFLzbGStNiv8yKHcIAyUJ18vMk=
-github.com/apstndb/ptyhelp v0.2.3/go.mod h1:2+LTM9QNEEBkwMRMPjLvCwKD9vPejJ7lAzY1cB7r+Ag=
+github.com/apstndb/ptyhelp v0.3.0 h1:YfwGv+95HynHC+uMl+w47pGFlWZZYenCN4EjOnY04FQ=
+github.com/apstndb/ptyhelp v0.3.0/go.mod h1:2+LTM9QNEEBkwMRMPjLvCwKD9vPejJ7lAzY1cB7r+Ag=
 github.com/apstndb/spancodec v0.1.2 h1:QPRHmn989WV4lyzvYW7hSyzSYu5106hWDiEA1qMVdc0=
 github.com/apstndb/spancodec v0.1.2/go.mod h1:muPblFXUB5gkkvBBEM/2zzuVAOvin/dBtDsKagIcivY=
 github.com/apstndb/spanemuboost v0.4.6 h1:9f1qQDLNrPQJiswNLtiTaR0U//zToqxjcEGWGkyThm4=
