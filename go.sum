@@ -90,8 +90,8 @@ github.com/apstndb/ptyhelp v0.3.0 h1:YfwGv+95HynHC+uMl+w47pGFlWZZYenCN4EjOnY04FQ
 github.com/apstndb/ptyhelp v0.3.0/go.mod h1:2+LTM9QNEEBkwMRMPjLvCwKD9vPejJ7lAzY1cB7r+Ag=
 github.com/apstndb/spancodec v0.1.2 h1:QPRHmn989WV4lyzvYW7hSyzSYu5106hWDiEA1qMVdc0=
 github.com/apstndb/spancodec v0.1.2/go.mod h1:muPblFXUB5gkkvBBEM/2zzuVAOvin/dBtDsKagIcivY=
-github.com/apstndb/spanemuboost v0.4.6 h1:9f1qQDLNrPQJiswNLtiTaR0U//zToqxjcEGWGkyThm4=
-github.com/apstndb/spanemuboost v0.4.6/go.mod h1:urUe85EvqomWV4vCj2pALluNhIksbu9RAQZufgq1b8E=
+github.com/apstndb/spanemuboost v0.4.7 h1:+IVu7sJG1D8uTLVb2YZDZpBVazGIleaEriWomu1662M=
+github.com/apstndb/spanemuboost v0.4.7/go.mod h1:urUe85EvqomWV4vCj2pALluNhIksbu9RAQZufgq1b8E=
 github.com/apstndb/spaniter v0.3.1 h1:hhi4+JCF80x696bg7zIco7Vo8kmPbkbTdvSOEhItp50=
 github.com/apstndb/spaniter v0.3.1/go.mod h1:aBSHcHIqgAZXCxFdi734R/wAQUIuCQ6WZ+CjOCxARIM=
 github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6 h1:JP8l0QJZRVSRwBXTxaMMAjrmF0kQDjXlCM0bwTCo5Gs=
@@ -102,8 +102,8 @@ github.com/apstndb/spanstats v0.1.0 h1:wAPqtFn1AfQaIudB4HwTLiIPinwWJw/gQhgE7NQWV
 github.com/apstndb/spanstats v0.1.0/go.mod h1:DFGYC9e7WE0BFQL0st6EQwrl1Pn2FuvDWSefwI9FTWc=
 github.com/apstndb/spantype v0.3.13 h1:FTP3zUpVXMfPlZ3P+1RK6SYHND+96YVht0I+ZHGIzMc=
 github.com/apstndb/spantype v0.3.13/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.8.3 h1:7cjBIVnJ0lIqRZTL560eT5lC6dJjRxAo6svX8zwksPo=
-github.com/apstndb/spanvalue v0.8.3/go.mod h1:krLMj3J9sKS/IBLIUkEUlFufcxeLkIGJon+ypSPgrl0=
+github.com/apstndb/spanvalue v0.8.4 h1:1xpGflaLKQEUeFmSkpE25q2aainyM5zBkyy1FHbVLRI=
+github.com/apstndb/spanvalue v0.8.4/go.mod h1:krLMj3J9sKS/IBLIUkEUlFufcxeLkIGJon+ypSPgrl0=
 github.com/apstndb/structfields v0.1.0 h1:TQbi8EpzLyDr1GOsLWJfMQrtw+cq7BQhNCHhqZTCtEg=
 github.com/apstndb/structfields v0.1.0/go.mod h1:iZuSnr5cvgVvMaEhm0ceB+auA+MeNmA1mtnBA05m9Qw=
 github.com/apstndb/structfields/spannertag v0.1.0 h1:faXv5yYgKHV4DA3V0UpL4D9cTgMM87yacNbno0p3ulM=
