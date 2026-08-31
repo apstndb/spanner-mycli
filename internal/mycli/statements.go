@@ -336,6 +336,14 @@ func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) 
 }
 
 func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *Session) (*Result, error) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	return s.executeSyncModeWithTicks(ctx, session, ticker.C)
+}
+
+// executeSyncModeWithTicks is the SYNC wait loop with an injected tick source so
+// unit tests can exercise poll exits without waiting five seconds.
+func (s *ShowOperationStatement) executeSyncModeWithTicks(ctx context.Context, session *Session, ticks <-chan time.Time) (*Result, error) {
 	operationName := s.OperationId
 
 	// If the operation ID doesn't contain a full path, construct the full operation name
@@ -399,7 +407,7 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 	// Polling loop
 	for !op.GetDone() {
 		select {
-		case <-time.After(5 * time.Second):
+		case <-ticks:
 			// Continue polling
 		case <-ctx.Done():
 			return nil, handleShowOperationSyncWaitError(session, op, operationName, ctx.Err())

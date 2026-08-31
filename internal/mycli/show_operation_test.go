@@ -4,15 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -387,5 +393,100 @@ func TestShowOperationStatement_MetadataTypes(t *testing.T) {
 			progress := stmt.getOperationProgress(op)
 			assert.Equal(t, tt.expectedProg, progress)
 		})
+	}
+}
+
+func TestShowOperationStatement_SyncModeCanceledDDLPoll(t *testing.T) {
+	t.Parallel()
+
+	operationName := "projects/test/instances/test/databases/test/operations/auto_op_123"
+	ddlOp := ddlShowOperation(operationName)
+	server := &showOperationTestServer{responses: []showOperationResponse{
+		{operation: ddlOp},
+		{err: status.Error(codes.Canceled, "context canceled")},
+	}}
+	session := newShowOperationTestSession(t, server)
+	stmt := &ShowOperationStatement{OperationId: "auto_op_123", Mode: "SYNC"}
+	ticks := make(chan time.Time, 1)
+	ticks <- time.Now()
+
+	result, err := stmt.executeSyncModeWithTicks(t.Context(), session, ticks)
+	if result != nil {
+		t.Fatalf("executeSyncModeWithTicks() result = %#v, want nil", result)
+	}
+	if err == nil {
+		t.Fatal("executeSyncModeWithTicks() error = nil, want cancellation hint")
+	}
+	if !strings.Contains(err.Error(), "SHOW OPERATION 'auto_op_123'") {
+		t.Errorf("error missing SHOW OPERATION hint: %v", err)
+	}
+	if status.Code(err) != codes.Canceled {
+		t.Errorf("status.Code(err) = %v, want Canceled; err = %v", status.Code(err), err)
+	}
+	if got := session.SchemaGeneration(); got != 1 {
+		t.Errorf("SchemaGeneration() = %d, want 1", got)
+	}
+}
+
+type showOperationResponse struct {
+	operation *longrunningpb.Operation
+	err       error
+}
+
+type showOperationTestServer struct {
+	longrunningpb.UnimplementedOperationsServer
+	responses []showOperationResponse
+}
+
+func (s *showOperationTestServer) GetOperation(_ context.Context, _ *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
+	if len(s.responses) == 0 {
+		return nil, status.Error(codes.Internal, "unexpected extra GetOperation")
+	}
+	response := s.responses[0]
+	s.responses = s.responses[1:]
+	return response.operation, response.err
+}
+
+func newShowOperationTestSession(t *testing.T, server longrunningpb.OperationsServer) *Session {
+	t.Helper()
+
+	listener := bufconn.Listen(1 << 20)
+	grpcServer := grpc.NewServer()
+	longrunningpb.RegisterOperationsServer(grpcServer, server)
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Errorf("serve operation test server: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	conn, err := grpc.NewClient(
+		"passthrough:///show-operation-test",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("create gRPC test client: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	adminClient, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
+	if err != nil {
+		t.Fatalf("create database admin client: %v", err)
+	}
+	t.Cleanup(func() { _ = adminClient.Close() })
+
+	return &Session{
+		adminClient: adminClient,
+		systemVariables: &systemVariables{Connection: ConnectionVars{
+			Project:  "test",
+			Instance: "test",
+			Database: "test",
+		}},
 	}
 }
