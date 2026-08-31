@@ -679,6 +679,26 @@ func TestBuildStatement(t *testing.T) {
 			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
 		},
 		{
+			desc: "EXPORT DATA Spanner Graph algorithm statement",
+			input: `EXPORT DATA OPTIONS (
+  format = "CLOUD_SPANNER",
+  table = "Account",
+  write_mode = 'update_ignore_all'
+) AS
+GRAPH FinGraph
+CALL PageRank() YIELD node, score
+RETURN node.id, score AS page_rank`,
+			want: &ExportDataStatement{SQL: `EXPORT DATA OPTIONS (
+  format = "CLOUD_SPANNER",
+  table = "Account",
+  write_mode = 'update_ignore_all'
+) AS
+GRAPH FinGraph
+CALL PageRank() YIELD node, score
+RETURN node.id, score AS page_rank`},
+			skipParseModes: []enums.ParseMode{enums.ParseModeMemefishOnly},
+		},
+		{
 			desc:  "EXPLAIN GRAPH statement",
 			input: "EXPLAIN GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id",
 			want:  &ExplainStatement{Explain: "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"},
@@ -783,6 +803,46 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowPlanNodeStatement{NodeID: 42},
 		},
 		{
+			desc:  "SHOW LAST QUERY PLAN",
+			input: "SHOW LAST QUERY PLAN",
+			want:  &ShowLastQueryPlanStatement{},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS",
+			input: "SHOW LAST QUERY PLAN WITH STATS",
+			want:  &ShowLastQueryPlanStatement{WithStats: true},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO path",
+			input: "SHOW LAST QUERY PLAN INTO /tmp/plan.json",
+			want:  &ShowLastQueryPlanStatement{IntoPath: "/tmp/plan.json"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS INTO path",
+			input: "SHOW LAST QUERY PLAN WITH STATS INTO ./out/plan.json",
+			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./out/plan.json"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO double-quoted path",
+			input: `SHOW LAST QUERY PLAN INTO "/tmp/query plans/plan.yaml"`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: "/tmp/query plans/plan.yaml"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN WITH STATS INTO shell-escaped path",
+			input: `SHOW LAST QUERY PLAN WITH STATS INTO ./query\ plans/stats.yml`,
+			want:  &ShowLastQueryPlanStatement{WithStats: true, IntoPath: "./query plans/stats.yml"},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO unquoted Windows path",
+			input: `SHOW LAST QUERY PLAN INTO C:\tmp\plan.yaml`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: `C:\tmp\plan.yaml`},
+		},
+		{
+			desc:  "SHOW LAST QUERY PLAN INTO unquoted literal-backslash path",
+			input: `SHOW LAST QUERY PLAN INTO foo\bar.json`,
+			want:  &ShowLastQueryPlanStatement{IntoPath: `foo\bar.json`},
+		},
+		{
 			desc:  "DESCRIBE SELECT statement",
 			input: "DESCRIBE SELECT * FROM t1",
 			want:  &DescribeStatement{Statement: "SELECT * FROM t1"},
@@ -869,6 +929,36 @@ INDEX SingersByFirstLastName ("Mary", "Sue") TableKey (12)
 						ExpireTime: nil,
 						Keys: []*databasepb.SplitPoints_Key{
 							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("42")}}},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "ADD SPLIT POINTS statement with composite keys and TableKey",
+			input: `ADD SPLIT POINTS
+TABLE TableD (0, '7ef9db22-d0e5-6041-8937-4bc6a7ef9db2')
+INDEX IndexXYZ ('8762203435012030000', NULL, NULL)
+INDEX IndexABC (0, '2020-06-18T17:24:53Z', '2020-06-18T17:24:53Z') TableKey (123, 'ab,c')`,
+			want: &AddSplitPointsStatement{
+				SplitPoints: []*databasepb.SplitPoints{
+					{
+						Table: "TableD",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("0"), structpb.NewStringValue("7ef9db22-d0e5-6041-8937-4bc6a7ef9db2")}}},
+						},
+					},
+					{
+						Index: "IndexXYZ",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("8762203435012030000"), structpb.NewNullValue(), structpb.NewNullValue()}}},
+						},
+					},
+					{
+						Index: "IndexABC",
+						Keys: []*databasepb.SplitPoints_Key{
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("0"), structpb.NewStringValue("2020-06-18T17:24:53Z"), structpb.NewStringValue("2020-06-18T17:24:53Z")}}},
+							{KeyParts: &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("123"), structpb.NewStringValue("ab,c")}}},
 						},
 					},
 				},
@@ -1011,11 +1101,6 @@ TABLE Singers (42)
 			want:  &ShowDdlsStatement{},
 		},
 		{
-			desc:  "GEMINI statement",
-			input: `GEMINI "Show all tables"`,
-			want:  &GeminiStatement{Text: "Show all tables"},
-		},
-		{
 			desc:  "START BATCH DDL statement",
 			input: `START BATCH DDL`,
 			want:  &StartBatchStatement{Mode: batchModeDDL},
@@ -1151,6 +1236,13 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		// as a variable named PARAM.
 		"SET PARAM=1",
 		"SET PARAM = 1",
+		// Truncated split-point entries reach EOF where an identifier is required.
+		"ADD SPLIT POINTS TABLE",
+		"DROP SPLIT POINTS INDEX",
+		"SYNC PROTO BUNDLE UPSERT '",
+		`SHOW LAST QUERY PLAN INTO "unterminated`,
+		"SHOW LAST QUERY PLAN INTO two paths.json",
+		`SHOW LAST QUERY PLAN INTO ""`,
 	}
 
 	for _, input := range invalidInputs {

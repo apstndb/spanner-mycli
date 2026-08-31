@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/template"
@@ -35,6 +37,9 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ExplainStatement struct {
@@ -157,6 +162,161 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 		Rows:         sliceOf(toRow(string(y)), toRow(parentLinksInfo)),
 		AffectedRows: 2,
 	}, nil
+}
+
+// ShowLastQueryPlanStatement exports the cached last query plan as official
+// Cloud Spanner ProtoJSON, or as ProtoJSON-equivalent YAML for .yaml/.yml
+// destinations (QueryPlan, or ResultSetStats when WITH STATS is set). It is
+// intended as a lossless handoff boundary for external viewers; it does not
+// expose plantree/renderer DTOs.
+type ShowLastQueryPlanStatement struct {
+	WithStats bool
+	IntoPath  string
+}
+
+func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	cache := session.systemVariables.LastResult.QueryCache
+	if cache == nil {
+		return nil, errors.New("no query plan cached. Run a query or EXPLAIN ANALYZE first")
+	}
+	if cache.QueryPlan == nil || len(cache.QueryPlan.GetPlanNodes()) == 0 {
+		return nil, errors.New("missing last query plan. This may happen if the Cloud Spanner Emulator is used, as it may not fully support EXPLAIN and EXPLAIN ANALYZE features")
+	}
+
+	var msg proto.Message = cache.QueryPlan
+	header := "QueryPlan (ProtoJSON)"
+	if s.WithStats {
+		if len(cache.QueryStats) == 0 {
+			return nil, errors.New("missing last query stats; run EXPLAIN ANALYZE (or a PROFILE/WITH_STATS query) before SHOW LAST QUERY PLAN WITH STATS")
+		}
+		statsStruct, err := structpb.NewStruct(cache.QueryStats)
+		if err != nil {
+			return nil, fmt.Errorf("convert query stats to protobuf Struct: %w", err)
+		}
+		msg = &sppb.ResultSetStats{
+			QueryPlan:  cache.QueryPlan,
+			QueryStats: statsStruct,
+		}
+		header = "ResultSetStats (ProtoJSON)"
+	}
+
+	exportPath := s.IntoPath
+	if exportPath != "" {
+		var err error
+		exportPath, err = normalizePlanExportPath(exportPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	payload, err := marshalOfficialPlan(msg, exportPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if exportPath != "" {
+		if err := writePlanExportFile(exportPath, payload); err != nil {
+			return nil, err
+		}
+		return &Result{
+			TableHeader:  toTableHeader("Exported"),
+			Rows:         sliceOf(toRow(exportPath)),
+			AffectedRows: 1,
+		}, nil
+	}
+
+	return &Result{
+		TableHeader:  toTableHeader(header),
+		Rows:         sliceOf(toRow(string(payload))),
+		AffectedRows: 1,
+	}, nil
+}
+
+func marshalOfficialPlan(msg proto.Message, path string) ([]byte, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		b, err := protoyaml.Marshal(msg, protoyaml.WithFlowLeafCollections())
+		if err != nil {
+			return nil, fmt.Errorf("marshal ProtoJSON-equivalent YAML: %w", err)
+		}
+		return appendTrailingNewline(b), nil
+	default:
+		return marshalOfficialPlanProtoJSON(msg)
+	}
+}
+
+func marshalOfficialPlanProtoJSON(msg proto.Message) ([]byte, error) {
+	opts := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		EmitUnpopulated: false,
+	}
+	b, err := opts.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal official ProtoJSON: %w", err)
+	}
+	return appendTrailingNewline(b), nil
+}
+
+func appendTrailingNewline(b []byte) []byte {
+	if len(b) == 0 || b[len(b)-1] != '\n' {
+		return append(b, '\n')
+	}
+	return b
+}
+
+func writePlanExportFile(path string, payload []byte) error {
+	cleaned, err := normalizePlanExportPath(path)
+	if err != nil {
+		return err
+	}
+
+	if fi, err := os.Lstat(cleaned); err == nil {
+		if fi.IsDir() {
+			return fmt.Errorf("invalid INTO path: %s is a directory", cleaned)
+		}
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("invalid INTO path: %s is not a regular file", cleaned)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat INTO path %s: %w", cleaned, err)
+	}
+
+	parent := filepath.Dir(cleaned)
+	if parentInfo, err := os.Stat(parent); err != nil {
+		return fmt.Errorf("invalid INTO path parent %s: %w", parent, err)
+	} else if !parentInfo.IsDir() {
+		return fmt.Errorf("invalid INTO path parent %s: not a directory", parent)
+	}
+
+	// Open truncating only after destination checks so we never write through a
+	// non-regular path. Existing regular files are overwritten in place.
+	f, err := os.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("open INTO path %s: %w", cleaned, err)
+	}
+	defer f.Close()
+
+	if n, err := f.Write(payload); err != nil {
+		return fmt.Errorf("write INTO path %s: %w", cleaned, err)
+	} else if n != len(payload) {
+		return fmt.Errorf("write INTO path %s: short write (%d/%d)", cleaned, n, len(payload))
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync INTO path %s: %w", cleaned, err)
+	}
+	return nil
+}
+
+func normalizePlanExportPath(path string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" || cleaned == "." {
+		return "", errors.New("invalid INTO path: empty destination")
+	}
+	if strings.ContainsRune(cleaned, 0) {
+		return "", errors.New("invalid INTO path: contains NUL")
+	}
+	return cleaned, nil
 }
 
 func formatShowPlanNodeIncomingLinks(links []spannerplan.ResolvedParentLink) string {

@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/protoyaml"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan"
 	"github.com/apstndb/spannerplan/plantree"
@@ -19,6 +21,7 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -64,9 +67,7 @@ func planRowTextCmpOpts() []cmp.Option {
 	return []cmp.Option{
 		cmpopts.IgnoreFields(
 			plantree.RowWithPredicates{},
-			"ChildLinks",
 			"DisplayName",
-			"Keys",
 			"ScalarChildLinks",
 		),
 	}
@@ -1055,4 +1056,179 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
+	t.Parallel()
+
+	plan := selectProfileResultSet.GetStats().GetQueryPlan()
+	statsMap := selectProfileResultSet.GetStats().GetQueryStats().AsMap()
+
+	t.Run("no cache", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{},
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want error")
+		}
+	})
+
+	t.Run("missing plan", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{}}},
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want error")
+		}
+	})
+
+	t.Run("query plan protojson", func(t *testing.T) {
+		t.Parallel()
+		got, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if got.AffectedRows != 1 || len(got.Rows) != 1 {
+			t.Fatalf("unexpected result shape: %+v", got)
+		}
+		raw := got.Rows[0][0].RawText()
+		var roundTrip sppb.QueryPlan
+		if err := protojson.Unmarshal([]byte(raw), &roundTrip); err != nil {
+			t.Fatalf("ProtoJSON round-trip unmarshal: %v\npayload:\n%s", err, raw)
+		}
+		if len(roundTrip.GetPlanNodes()) == 0 {
+			t.Fatal("round-trip QueryPlan has no planNodes")
+		}
+	})
+
+	t.Run("with stats missing stats", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{WithStats: true}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want missing-stats error")
+		}
+	})
+
+	t.Run("with stats protojson", func(t *testing.T) {
+		t.Parallel()
+		got, err := (&ShowLastQueryPlanStatement{WithStats: true}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{
+				QueryPlan:  plan,
+				QueryStats: statsMap,
+			}}},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		raw := got.Rows[0][0].RawText()
+		var roundTrip sppb.ResultSetStats
+		if err := protojson.Unmarshal([]byte(raw), &roundTrip); err != nil {
+			t.Fatalf("ProtoJSON round-trip unmarshal: %v\npayload:\n%s", err, raw)
+		}
+		if roundTrip.GetQueryPlan() == nil || roundTrip.GetQueryStats() == nil {
+			t.Fatalf("round-trip ResultSetStats incomplete: %+v", &roundTrip)
+		}
+	})
+
+	t.Run("into file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := dir + "/plan.json"
+		got, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if got.Rows[0][0].RawText() != path {
+			t.Fatalf("exported path = %q, want %q", got.Rows[0][0].RawText(), path)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		var roundTrip sppb.QueryPlan
+		if err := protojson.Unmarshal(b, &roundTrip); err != nil {
+			t.Fatalf("file ProtoJSON unmarshal: %v", err)
+		}
+	})
+
+	for _, extension := range []string{".yaml", ".yml", ".YAML"} {
+		t.Run("into protoyaml "+extension, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "query plan"+extension)
+			got, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
+				systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+			})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got.Rows[0][0].RawText() != path {
+				t.Fatalf("exported path = %q, want %q", got.Rows[0][0].RawText(), path)
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			var roundTrip sppb.QueryPlan
+			if err := protoyaml.Unmarshal(b, &roundTrip); err != nil {
+				t.Fatalf("file ProtoYAML unmarshal: %v\npayload:\n%s", err, b)
+			}
+			if !proto.Equal(&roundTrip, plan) {
+				t.Fatal("round-trip QueryPlan differs from the cached plan")
+			}
+		})
+	}
+
+	t.Run("with stats into protoyaml", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "query stats.yml")
+		_, err := (&ShowLastQueryPlanStatement{WithStats: true, IntoPath: path}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{
+				QueryPlan:  plan,
+				QueryStats: statsMap,
+			}}},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		var roundTrip sppb.ResultSetStats
+		if err := protoyaml.Unmarshal(b, &roundTrip); err != nil {
+			t.Fatalf("file ProtoYAML unmarshal: %v\npayload:\n%s", err, b)
+		}
+		if !proto.Equal(&roundTrip, selectProfileResultSet.GetStats()) {
+			t.Fatal("round-trip ResultSetStats differs from the cached stats")
+		}
+	})
+
+	t.Run("into directory rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		_, err := (&ShowLastQueryPlanStatement{IntoPath: dir}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want directory rejection")
+		}
+	})
+
+	t.Run("into empty rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{IntoPath: "   "}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want empty-path rejection")
+		}
+	})
 }

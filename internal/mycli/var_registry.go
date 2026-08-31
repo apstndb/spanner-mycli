@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -288,24 +287,11 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 }
 
 // parseGoogleSQLValue parses GoogleSQL-style values using memefish
-func parseGoogleSQLValue(value string) (result string) {
+func parseGoogleSQLValue(value string) string {
 	value = strings.TrimSpace(value)
 
-	// Protect against panics from memefish.
-	// While memefish.ParseExpr normally returns errors, it panics in some cases:
-	// - Unclosed string literals (e.g., 'hello or "world)
-	// - Unclosed triple-quoted strings (e.g., ''')
-	// Without this recovery, entering an unclosed string in SET statements
-	// would crash spanner-mycli entirely.
-	defer func() {
-		if r := recover(); r != nil {
-			// If memefish panics, return the original value
-			result = value
-		}
-	}()
-
 	// Try to parse as an expression using memefish
-	expr, err := memefish.ParseExpr("", value)
+	expr, err := parseMemefishExpr("", value)
 	if err != nil {
 		// If parsing fails, return the original value
 		return value

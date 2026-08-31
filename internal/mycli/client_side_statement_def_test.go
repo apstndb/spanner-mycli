@@ -70,6 +70,7 @@ var syntaxPlaceholderValues = map[string]string{
 	"<key>":                  "1",
 	"<operation-id-or-name>": "operation123",
 	"<node_id>":              "1",
+	"<path>":                 "/tmp/plan.json",
 	"<fingerprint>":          "1234567890",
 	"<format>":               "CURRENT",
 	"<width>":                "80",
@@ -206,6 +207,27 @@ func TestClientSideStatementDefsNonShadowing(t *testing.T) {
 							t.Errorf("example %q derived from syntax %q is shadowed by earlier def %d (syntax %q, pattern %q)",
 								example, desc.Syntax, j, firstSyntax(mergedDefs[j]), mergedDefs[j].Pattern)
 						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestClientSideStatementPrefixesDoNotPanic exercises every proper prefix of
+// the canonical statement examples. Interactive input routinely presents
+// these truncated forms while the user is still typing, so parsing may return
+// an error but must never panic.
+func TestClientSideStatementPrefixesDoNotPanic(t *testing.T) {
+	t.Parallel()
+
+	for i, def := range mergedDefs {
+		for _, desc := range def.Descriptions {
+			for _, keepOptional := range []bool{false, true} {
+				t.Run(fmt.Sprintf("def%02d/%s/keepOptional=%v", i, desc.Syntax, keepOptional), func(t *testing.T) {
+					example := expandSyntax(t, desc.Syntax, keepOptional)
+					for end := range len(example) {
+						_, _ = mycli.BuildStatementWithDefs(mergedDefs, example[:end])
 					}
 				})
 			}

@@ -956,6 +956,21 @@ func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanne
 	return iter, roTxn, nil
 }
 
+// RunSingleUseQueryWithStats executes a statement in a single-use read-only
+// transaction even when the session has an active explicit transaction. It
+// preserves the query options and one-shot request-tag behavior of ordinary
+// query execution.
+func (tm *TransactionManager) RunSingleUseQueryWithStats(ctx context.Context, stmt spanner.Statement, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+	if err := tm.ValidateDatabaseOperation(); err != nil {
+		return nil, nil, err
+	}
+
+	opts := tm.buildQueryOptions(&mode)
+	tm.prepareQueryOptions(&opts)
+	iter, roTxn := tm.runSingleUseQuery(ctx, stmt, opts)
+	return iter, roTxn, nil
+}
+
 // RunQuery executes a statement either on the running transaction or on the temporal read-only transaction.
 // It returns row iterator and read-only transaction if the statement was executed on the read-only transaction.
 // An error is returned when no database connection is available; this should not

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -39,6 +40,7 @@ func (e *EnumVar[T]) Set(value string) error {
 			for k := range e.values {
 				validValues = append(validValues, k)
 			}
+			slices.Sort(validValues)
 			return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
 		}
 	}
@@ -108,12 +110,13 @@ func (p *ProtoEnumVar[T]) Set(value string) error {
 		}
 	}
 
-	// Try numeric value
-	var intValue int32
-	if _, err := fmt.Sscanf(value, "%d", &intValue); err == nil {
+	// Try a full numeric value. fmt.Sscanf accepts a valid numeric prefix and
+	// silently ignores its trailing text, which would allow values such as
+	// "1garbage" when 1 is a valid enum value.
+	if intValue, err := strconv.ParseInt(value, 10, 32); err == nil {
 		// Validate it's a known value
 		for _, v := range p.values {
-			if v == intValue {
+			if v == int32(intValue) {
 				*p.ptr = T(intValue)
 				return nil
 			}
@@ -128,6 +131,7 @@ func (p *ProtoEnumVar[T]) Set(value string) error {
 			validValues = append(validValues, k)
 		}
 	}
+	slices.Sort(validValues)
 
 	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
 }

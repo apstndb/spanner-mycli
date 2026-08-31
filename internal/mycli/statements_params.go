@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/apstndb/spancodec"
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 )
@@ -75,7 +74,7 @@ type SetParamTypeStatement struct {
 func (s *SetParamTypeStatement) isDetachedCompatible() {}
 
 func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseType("", s.Type); err != nil {
+	if expr, err := parseMemefishType("", s.Type); err != nil {
 		return nil, err
 	} else {
 		session.systemVariables.Params[s.Name] = expr
@@ -91,7 +90,7 @@ type SetParamValueStatement struct {
 func (s *SetParamValueStatement) isDetachedCompatible() {}
 
 func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if expr, err := memefish.ParseExpr("", s.Value); err != nil {
+	if expr, err := parseMemefishExpr("", s.Value); err != nil {
 		return nil, err
 	} else {
 		session.systemVariables.Params[s.Name] = expr

@@ -964,8 +964,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_INLINE_STATS":             "name:{{.template}}",
 			"CLI_PARSE_MODE":               "FALLBACK",
 			"CLI_LOG_LEVEL":                "INFO",
-			"CLI_VERTEXAI_MODEL":           "test",
-			"CLI_VERTEXAI_PROJECT":         "example-project",
 			"CLI_PROTO_DESCRIPTOR_FILE":    "testdata/protos/order_descriptors.pb",
 			"STATEMENT_TIMEOUT":            "30s",
 			"MAX_PARTITIONED_PARALLELISM":  "10",
@@ -1172,6 +1170,23 @@ func TestRenderSystemVariablesHelp(t *testing.T) {
 
 	if strings.Contains(got, "<name>") {
 		t.Error("renderSystemVariablesHelp() must escape angle brackets in descriptions")
+	}
+}
+
+func TestCommitResponseVariableInfo(t *testing.T) {
+	t.Parallel()
+
+	info, ok := newSystemVariablesWithDefaultsForTest().ListVariableInfo()["COMMIT_RESPONSE"]
+	if !ok {
+		t.Fatal("COMMIT_RESPONSE missing from variable info")
+	}
+	if !info.ReadOnly {
+		t.Error("COMMIT_RESPONSE must be read-only")
+	}
+
+	const wantDescription = "The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT."
+	if info.Description != wantDescription {
+		t.Errorf("COMMIT_RESPONSE description = %q, want %q", info.Description, wantDescription)
 	}
 }
 

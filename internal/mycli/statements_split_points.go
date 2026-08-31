@@ -212,7 +212,7 @@ func peekIdentLike(p *memefish.Parser) (s string, err error) {
 	switch {
 	case tok.Kind == token.TokenIdent:
 		return tok.AsString, nil
-	case char.IsIdentStart(p.Token.Raw[0]):
+	case tok.Raw != "" && char.IsIdentStart(tok.Raw[0]):
 		return tok.Raw, nil
 	default:
 		return "", fmt.Errorf("expected identifier, got %v", p.Token.Raw)
@@ -248,7 +248,7 @@ func parseSplitPointKey(p *memefish.Parser) (*databasepb.SplitPoints_Key, error)
 // parseExpr parses the next expression.
 // Precondition: The first token is skipped because of (*memefish.Parser).ParseExpr() behavior.
 func parseExpr(p *memefish.Parser) (ast.Expr, error) {
-	expr, err := p.ParseExpr()
+	expr, err := recoverMemefishParserPanic(p.ParseExpr)
 	if err != nil {
 		// ParseExpr() returns errors when there are remaining inputs after accepting a complete expression.
 		// We must ignore these errors to continue processing.

@@ -3,6 +3,7 @@ package mycli
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +160,123 @@ func TestRequestPriority(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExportDataRequestUsesIsolatedSingleUseOptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping emulator test in short mode")
+	}
+
+	ctx := t.Context()
+	clients := spanemuboost.SetupClients(t, lazyRuntime,
+		spanemuboost.WithRandomInstanceID(),
+		spanemuboost.WithProjectID(project),
+		spanemuboost.WithDatabaseID(database),
+		spanemuboost.EnableAutoConfig(),
+	)
+	var recorder requestRecorder
+	unaryInterceptor, streamInterceptor := recordRequestsInterceptors(&recorder)
+	conn, err := grpc.NewClient(clients.URI(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(unaryInterceptor),
+		grpc.WithStreamInterceptor(streamInterceptor),
+	)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	sysVars.Connection = ConnectionVars{
+		Project:  clients.ProjectID,
+		Instance: clients.InstanceID,
+		Database: clients.DatabaseID,
+	}
+	sysVars.Query.StatementTimeout = lo.ToPtr(time.Hour)
+	session, err := NewSession(ctx, sysVars, option.WithGRPCConn(conn))
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	if err := session.txn.BeginReadWriteTransaction(ctx, 0, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("failed to begin read-write transaction: %v", err)
+	}
+	iter, _, err := session.txn.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+	if err != nil {
+		t.Fatalf("failed to activate read-write transaction: %v", err)
+	}
+	if _, _, _, _, err := consumeRowIterDiscard(iter); err != nil {
+		t.Fatalf("failed to consume activation query: %v", err)
+	}
+
+	const (
+		exportSQL  = "EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1"
+		requestTag = "graph-export"
+	)
+	sysVars.Transaction.RequestTag = requestTag
+	sysVars.Query.OptimizerVersion = "7"
+	sysVars.Query.OptimizerStatisticsPackage = "auto_test_package"
+	sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.ExactStaleness(time.Minute))
+
+	// The emulator does not implement EXPORT DATA, but it still records the
+	// exact ExecuteSqlRequest before returning the expected syntax error.
+	if _, err := session.ExecuteStatement(ctx, &ExportDataStatement{SQL: exportSQL}); err == nil {
+		t.Fatal("ExportDataStatement.Execute() error = nil, want emulator syntax error")
+	}
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("EXPORT DATA must not replace or close the explicit transaction")
+	}
+	if got := sysVars.Transaction.RequestTag; got != "" {
+		t.Fatalf("STATEMENT_TAG after EXPORT DATA = %q, want consumed", got)
+	}
+
+	var exportRequest *sppb.ExecuteSqlRequest
+	for _, request := range recorder.requests {
+		if execute, ok := request.(*sppb.ExecuteSqlRequest); ok && strings.HasPrefix(execute.GetSql(), "EXPORT DATA") {
+			exportRequest = execute
+			break
+		}
+	}
+	if exportRequest == nil {
+		t.Fatal("recorded requests contain no EXPORT DATA ExecuteSqlRequest")
+	}
+	if exportRequest.GetTransaction().GetSingleUse() == nil {
+		t.Fatalf("EXPORT DATA transaction selector = %T, want single-use", exportRequest.GetTransaction().GetSelector())
+	}
+	if got := exportRequest.GetRequestOptions().GetRequestTag(); got != requestTag {
+		t.Errorf("EXPORT DATA request tag = %q, want %q", got, requestTag)
+	}
+	if got := exportRequest.GetQueryOptions().GetOptimizerVersion(); got != "7" {
+		t.Errorf("EXPORT DATA optimizer version = %q, want 7", got)
+	}
+	if got := exportRequest.GetQueryOptions().GetOptimizerStatisticsPackage(); got != "auto_test_package" {
+		t.Errorf("EXPORT DATA optimizer statistics package = %q, want auto_test_package", got)
+	}
+	if got := exportRequest.GetTransaction().GetSingleUse().GetReadOnly().GetExactStaleness().AsDuration(); got != time.Minute {
+		t.Errorf("EXPORT DATA exact staleness = %v, want %v", got, time.Minute)
+	}
+
+	iter, _, err = session.txn.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+	if err != nil {
+		t.Fatalf("failed to run query after EXPORT DATA: %v", err)
+	}
+	if _, _, _, _, err := consumeRowIterDiscard(iter); err != nil {
+		t.Fatalf("failed to consume query after EXPORT DATA: %v", err)
+	}
+	foundFollowingSelect := false
+	for i := len(recorder.requests) - 1; i >= 0; i-- {
+		execute, ok := recorder.requests[i].(*sppb.ExecuteSqlRequest)
+		if !ok || execute.GetSql() != "SELECT 1" {
+			continue
+		}
+		foundFollowingSelect = true
+		if got := execute.GetRequestOptions().GetRequestTag(); got != "" {
+			t.Errorf("following SELECT request tag = %q, want empty", got)
+		}
+		break
+	}
+	if !foundFollowingSelect {
+		t.Fatal("recorded requests contain no following SELECT ExecuteSqlRequest")
 	}
 }
 

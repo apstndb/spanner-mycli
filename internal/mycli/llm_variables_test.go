@@ -1,0 +1,140 @@
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package mycli_test
+
+// External-package coverage for the extracted GEMINI/LLM variables (#778 PR3),
+// replacing the CLI_VERTEXAI_* cases that lived in the core
+// system_variables_test.go before the move: enumeration (SHOW VARIABLES /
+// completion source), defaults, and Set/Get round-trips with the real llm
+// feature registered.
+
+import (
+	"testing"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/llm"
+)
+
+func TestLLMVariables(t *testing.T) {
+	t.Parallel()
+
+	session := mycli.NewSessionWithFeaturesForTest(t, llm.Feature())
+	listed := mycli.ListVariablesForTest(session)
+
+	// Enumeration + defaults: SHOW VARIABLES and generated docs depend on these
+	// feature-owned values.
+	for name, wantDefault := range map[string]string{
+		"CLI_GENAI_BACKEND":        "GEMINI_ENTERPRISE",
+		"CLI_GENAI_THINKING_LEVEL": "UNSPECIFIED",
+		"CLI_VERTEXAI_PROJECT":     "",
+		"CLI_VERTEXAI_MODEL":       "gemini-3.7-flash",
+		"CLI_VERTEXAI_LOCATION":    "global",
+	} {
+		got, ok := listed[name]
+		if !ok {
+			t.Errorf("variable listing does not include %s", name)
+			continue
+		}
+		if got != wantDefault {
+			t.Errorf("%s default = %q, want %q", name, got, wantDefault)
+		}
+	}
+
+	// Set/Get round-trip through the registry (replaces the removed core
+	// stringTests cases for CLI_VERTEXAI_PROJECT/MODEL).
+	for name, value := range map[string]string{
+		"CLI_GENAI_BACKEND":        "GEMINI_API",
+		"CLI_GENAI_THINKING_LEVEL": "HIGH",
+		"CLI_VERTEXAI_PROJECT":     "example-project",
+		"CLI_VERTEXAI_MODEL":       "test",
+		"CLI_VERTEXAI_LOCATION":    "us-central1",
+	} {
+		if err := mycli.SetVariableForTest(session, name, value); err != nil {
+			t.Errorf("Set(%s, %q) error: %v", name, value, err)
+			continue
+		}
+		if got := mycli.ListVariablesForTest(session)[name]; got != value {
+			t.Errorf("after Set, %s = %q, want %q", name, got, value)
+		}
+	}
+
+	t.Run("enum values are case insensitive and canonicalized", func(t *testing.T) {
+		if err := mycli.SetVariableForTest(session, "CLI_GENAI_BACKEND", "vertex_ai"); err != nil {
+			t.Fatalf("Set(CLI_GENAI_BACKEND) error: %v", err)
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_BACKEND"]; got != "GEMINI_ENTERPRISE" {
+			t.Errorf("CLI_GENAI_BACKEND = %q, want GEMINI_ENTERPRISE", got)
+		}
+
+		if err := mycli.SetVariableForTest(session, "CLI_GENAI_THINKING_LEVEL", "minimal"); err != nil {
+			t.Fatalf("Set(CLI_GENAI_THINKING_LEVEL) error: %v", err)
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_THINKING_LEVEL"]; got != "MINIMAL" {
+			t.Errorf("CLI_GENAI_THINKING_LEVEL = %q, want MINIMAL", got)
+		}
+	})
+
+	t.Run("invalid enum values are rejected without mutation", func(t *testing.T) {
+		backendBefore := mycli.ListVariablesForTest(session)["CLI_GENAI_BACKEND"]
+		if err := mycli.SetVariableForTest(session, "CLI_GENAI_BACKEND", "OTHER"); err == nil {
+			t.Fatal("Set(CLI_GENAI_BACKEND, OTHER) error = nil")
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_BACKEND"]; got != backendBefore {
+			t.Errorf("CLI_GENAI_BACKEND after invalid Set = %q, want unchanged %q", got, backendBefore)
+		}
+
+		thinkingBefore := mycli.ListVariablesForTest(session)["CLI_GENAI_THINKING_LEVEL"]
+		if err := mycli.SetVariableForTest(session, "CLI_GENAI_THINKING_LEVEL", "MAXIMUM"); err == nil {
+			t.Fatal("Set(CLI_GENAI_THINKING_LEVEL, MAXIMUM) error = nil")
+		}
+		if got := mycli.ListVariablesForTest(session)["CLI_GENAI_THINKING_LEVEL"]; got != thinkingBefore {
+			t.Errorf("CLI_GENAI_THINKING_LEVEL after invalid Set = %q, want unchanged %q", got, thinkingBefore)
+		}
+	})
+}
+
+// TestGeminiStatementDispatch relocates the pre-extraction GEMINI parse case
+// (statement_processing_test.go) to the merged def table: the dispatch-built
+// statement must be an *llm.GeminiStatement with the prompt unquoted, and it
+// must keep implementing NO marker interfaces — not a static MutationStatement,
+// not conditionally mutating, and not detached-compatible — exactly like the
+// pre-extraction in-core type.
+func TestGeminiStatementDispatch(t *testing.T) {
+	t.Parallel()
+
+	feat := llm.Feature()
+	defs := mycli.MergedStatementDefs(feat)
+	stmt, err := mycli.BuildStatementWithDefs(defs, `GEMINI "make a query"`)
+	if err != nil {
+		t.Fatalf("BuildStatementWithDefs(GEMINI ...) error: %v", err)
+	}
+	gs, ok := stmt.(*llm.GeminiStatement)
+	if !ok {
+		t.Fatalf("dispatch returned %T, want *llm.GeminiStatement", stmt)
+	}
+	if gs.Text != "make a query" {
+		t.Errorf("GeminiStatement.Text = %q, want unquoted prompt", gs.Text)
+	}
+
+	if _, isMutation := stmt.(mycli.MutationStatement); isMutation {
+		t.Error("GeminiStatement must not be a static MutationStatement")
+	}
+	if conditional, _ := mycli.ClassifyForTest(stmt); conditional {
+		t.Error("GeminiStatement must not be a ConditionallyMutatingStatement")
+	}
+	if _, detached := stmt.(mycli.DetachedCompatible); detached {
+		t.Error("GeminiStatement must not be DetachedCompatible")
+	}
+}

@@ -14,7 +14,6 @@ import (
 	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/apstndb/spanvalue"
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/char"
 	"github.com/samber/lo"
@@ -163,7 +162,7 @@ func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
 	if strings.ToUpper(strings.TrimSpace(s)) == "ALL" {
 		return sliceOf(spanner.Delete(table, spanner.AllKeys())), nil
 	}
-	expr, err := memefish.ParseExpr("", s)
+	expr, err := parseMemefishExpr("", s)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +256,7 @@ func parseLiteralExpr(expr ast.Expr) ([]string, [][]spanner.GenericColumnValue, 
 }
 
 func parseLiteralString(s string) ([]string, [][]spanner.GenericColumnValue, error) {
-	expr, err := memefish.ParseExpr("", s)
+	expr, err := parseMemefishExpr("", s)
 	if err != nil {
 		return nil, nil, err
 	}

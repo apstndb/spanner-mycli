@@ -40,11 +40,12 @@ import (
 )
 
 const (
-	defaultPrompt           = "spanner%t> "
-	defaultPrompt2          = "%P%R> "
-	defaultVertexAIModel    = "gemini-3-flash-preview"
-	defaultVertexAILocation = "global"
-	DefaultAnalyzeColumns   = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
+	defaultPrompt  = "spanner%t> "
+	defaultPrompt2 = "%P%R> "
+	// defaultVertexAIModel / defaultVertexAILocation moved to
+	// internal/mycli/feature/llm (#778); the GEMINI feature supplies them to the
+	// kong parser as help-template vars in the full variant.
+	DefaultAnalyzeColumns = "Rows:{{.Rows.Total}},Exec.:{{.ExecutionSummary.NumExecutions}},Total Latency:{{.Latency}}"
 )
 
 var DefaultParsedAnalyzeColumns = lo.Must(customListToTableRenderDefs(DefaultAnalyzeColumns))
@@ -213,6 +214,7 @@ func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
 			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
+			spanemuboost.WithContainerCustomizers(configureTestcontainersLogger(slog.Default())),
 		}
 		if opts.EmulatorImage != "" {
 			runtimeOpts = append(runtimeOpts, spanemuboost.WithContainerImage(opts.EmulatorImage))

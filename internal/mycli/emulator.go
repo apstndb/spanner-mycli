@@ -16,7 +16,40 @@
 
 package mycli
 
-import "github.com/testcontainers/testcontainers-go"
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
+)
+
+// testcontainersSlogLogger routes Testcontainers lifecycle diagnostics through
+// the CLI logger. Testcontainers does not attach levels to these messages, so
+// treat them as informational: the default WARN level stays quiet, while
+// --log-level=INFO or DEBUG makes them visible.
+type testcontainersSlogLogger struct {
+	logger *slog.Logger
+}
+
+func (l testcontainersSlogLogger) Printf(format string, args ...any) {
+	if l.logger == nil || !l.logger.Enabled(context.Background(), slog.LevelInfo) {
+		return
+	}
+
+	message := strings.TrimRight(fmt.Sprintf(format, args...), "\n")
+	l.logger.Info("testcontainers", "message", message)
+}
+
+func configureTestcontainersLogger(logger *slog.Logger) testcontainers.ContainerCustomizer {
+	adapter := testcontainersSlogLogger{logger: logger}
+	// Docker discovery and some wait strategies log through the package-global
+	// logger instead of the per-container logger, so both must be configured.
+	tclog.SetDefault(adapter)
+	return testcontainers.WithLogger(adapter)
+}
 
 // withPlatform creates a ContainerCustomizer that sets the container platform
 func withPlatform(platform string) testcontainers.ContainerCustomizer {

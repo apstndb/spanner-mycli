@@ -70,6 +70,30 @@ func TestEffectiveQueryMode(t *testing.T) {
 	}
 }
 
+func TestExportDataStatementRejectsPlanMode(t *testing.T) {
+	t.Parallel()
+
+	session := newSessionForLocalVarTest(t)
+	session.systemVariables.Query.QueryMode = sppb.ExecuteSqlRequest_PLAN.Enum()
+
+	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session)
+	if err == nil || !strings.Contains(err.Error(), "CLI_QUERY_MODE=PLAN") {
+		t.Fatalf("ExportDataStatement.Execute() error = %v, want PLAN-mode rejection", err)
+	}
+}
+
+func TestExportDataStatementRejectsTryPartitionQuery(t *testing.T) {
+	t.Parallel()
+
+	session := newSessionForLocalVarTest(t)
+	session.systemVariables.Query.TryPartitionQuery = true
+
+	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session)
+	if err == nil || !strings.Contains(err.Error(), "CLI_TRY_PARTITION_QUERY=TRUE") {
+		t.Fatalf("ExportDataStatement.Execute() error = %v, want partition-probe rejection", err)
+	}
+}
+
 func TestSetCLIQueryModeStatsValues(t *testing.T) {
 	t.Parallel()
 
@@ -106,6 +130,50 @@ func TestSetCLIQueryModeStatsValues(t *testing.T) {
 			}
 			if got["CLI_QUERY_MODE"] != tt.want.String() {
 				t.Errorf("SHOW CLI_QUERY_MODE = %q, want %q", got["CLI_QUERY_MODE"], tt.want.String())
+			}
+		})
+	}
+}
+
+func TestSetCLIQueryModeInvalidDoesNotMutate(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		desc      string
+		initial   *sppb.ExecuteSqlRequest_QueryMode
+		wantNil   bool
+		wantValue sppb.ExecuteSqlRequest_QueryMode
+	}{
+		{
+			desc:    "unset value remains nil",
+			wantNil: true,
+		},
+		{
+			desc:      "configured value remains unchanged",
+			initial:   sppb.ExecuteSqlRequest_WITH_STATS.Enum(),
+			wantValue: sppb.ExecuteSqlRequest_WITH_STATS,
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			sysVars.Query.QueryMode = tt.initial
+			original := sysVars.Query.QueryMode
+
+			if err := sysVars.SetFromSimple("CLI_QUERY_MODE", "INVALID_MODE"); err == nil {
+				t.Fatal("SetFromSimple(CLI_QUERY_MODE, INVALID_MODE) error = nil, want error")
+			}
+
+			if tt.wantNil {
+				if sysVars.Query.QueryMode != nil {
+					t.Errorf("Query.QueryMode = %v, want nil", sysVars.Query.QueryMode)
+				}
+				return
+			}
+			if sysVars.Query.QueryMode != original {
+				t.Errorf("Query.QueryMode pointer changed from %p to %p", original, sysVars.Query.QueryMode)
+			}
+			if sysVars.Query.QueryMode == nil || *sysVars.Query.QueryMode != tt.wantValue {
+				t.Errorf("Query.QueryMode = %v, want %v", sysVars.Query.QueryMode, tt.wantValue)
 			}
 		})
 	}

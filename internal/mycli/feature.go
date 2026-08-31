@@ -79,9 +79,9 @@ type Feature struct {
 	// ApplyFlags, when non-nil, routes parsed flag values into system variables
 	// through the registry after flag parsing. The set argument forwards to
 	// systemVariables.SetFromSimple, keeping feature flags out of the direct
-	// assignment path (consistent with the #725 PR4 direction). It is the seam's
-	// flag-application mechanism; no feature uses it until GEMINI's flags move
-	// (PR3).
+	// assignment path (consistent with the #725 PR4 direction). Invoked by
+	// applyFeatureFlags in initializeSystemVariables, before --set processing;
+	// GEMINI's --vertexai-* flags are the first user (feature/llm).
 	ApplyFlags func(set func(name, value string) error) error
 }
 

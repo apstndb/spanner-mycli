@@ -71,3 +71,9 @@ func ClassifyForTest(stmt Statement) (conditional, mutating bool) {
 	}
 	return true, cm.isConditionallyMutating()
 }
+
+// SetVariableForTest sets a system variable through the session's registry
+// (simple-mode parsing), for external variable round-trip tests.
+func SetVariableForTest(s *Session, name, value string) error {
+	return s.systemVariables.SetFromSimple(name, value)
+}

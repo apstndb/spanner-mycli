@@ -21,6 +21,7 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli"
 	"github.com/apstndb/spanner-mycli/internal/mycli/feature/bigquery"
 	"github.com/apstndb/spanner-mycli/internal/mycli/feature/cql"
+	"github.com/apstndb/spanner-mycli/internal/mycli/feature/llm"
 )
 
 // All returns every optional feature in a fixed, documented order: GEMINI/LLM,
@@ -33,14 +34,15 @@ import (
 // table in All() order. The final order is fixed as (llm, cql, bigquery) rather
 // than the pre-extraction core order (llm, bigquery, cql). The single
 // BIGQUERY/CQL row swap in the generated statement help landed in PR1 (BIGQUERY
-// extraction) alone; CQL now re-appends at the same relative position (before
-// BIGQUERY) and stays byte-identical.
+// extraction) alone; CQL re-appended at the same relative position (before
+// BIGQUERY), and GEMINI/LLM now re-appends at the head, so the generated
+// statement help stays byte-identical.
 //
-// BIGQUERY and CQL are extracted; LLM still lives in core and will be added here
-// (before CQL, preserving the llm, cql, bigquery order) when it is extracted
-// under internal/mycli/feature/llm.
+// All three families (GEMINI/LLM, CQL, BIGQUERY) are now extracted under
+// internal/mycli/feature/{llm,cql,bigquery}.
 func All() []mycli.Feature {
 	return []mycli.Feature{
+		llm.Feature(),
 		cql.Feature(),
 		bigquery.Feature(),
 	}

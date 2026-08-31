@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 // TestReadOnlyGuardCoversBatchStatements is the regression test for issue
@@ -29,6 +30,7 @@ func TestReadOnlyGuardCoversBatchStatements(t *testing.T) {
 		{desc: "CREATE DATABASE", stmt: &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d"}},
 		{desc: "SYNC PROTO BUNDLE", stmt: &SyncProtoStatement{UpsertPaths: []string{"examples.ProtoType"}}},
 		{desc: "ADD SPLIT POINTS", stmt: &AddSplitPointsStatement{}},
+		{desc: "EXPORT DATA", stmt: &ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS GRAPH g RETURN 1"}},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -40,6 +42,37 @@ func TestReadOnlyGuardCoversBatchStatements(t *testing.T) {
 				t.Errorf("%s in READONLY mode: got error %v, want errReadOnly", tt.desc, err)
 			}
 		})
+	}
+}
+
+func TestExportDataStatementUsesNonTransactionalMutationGuard(t *testing.T) {
+	t.Parallel()
+
+	const sql = `EXPORT DATA OPTIONS (
+  format = "CLOUD_SPANNER",
+  table = "Account",
+  write_mode = 'update_ignore_all'
+) AS
+GRAPH FinGraph
+CALL PageRank() YIELD node, score
+RETURN node.id, score`
+
+	stmt, err := BuildStatementWithCommentsWithMode(sql, sql, enums.ParseModeFallback)
+	if err != nil {
+		t.Fatalf("BuildStatementWithCommentsWithMode() error = %v", err)
+	}
+	if _, ok := stmt.(MutationStatement); ok {
+		t.Fatal("ExportDataStatement must not participate in the Spanner transaction machinery")
+	}
+	if _, ok := stmt.(nonTransactionalMutationStatement); !ok {
+		t.Fatal("ExportDataStatement must participate in the non-transactional READONLY guard")
+	}
+
+	session := newSessionForLocalVarTest(t)
+	session.systemVariables.Transaction.ReadOnly = true
+	_, err = session.ExecuteStatement(t.Context(), stmt)
+	if !errors.Is(err, errReadOnly) {
+		t.Fatalf("EXPORT DATA in READONLY mode: got error %v, want errReadOnly", err)
 	}
 }
 

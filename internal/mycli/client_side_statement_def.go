@@ -16,6 +16,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
+	"github.com/kballard/go-shellquote"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 )
@@ -427,7 +428,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Add split points",
-				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Syntax: "ADD SPLIT POINTS [EXPIRED AT <timestamp>] {TABLE|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Note:   "TableKey is valid only for INDEX entries.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^ADD\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),
@@ -446,7 +448,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  "Drop split points",
-				Syntax: "DROP SPLIT POINTS <type> <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Syntax: "DROP SPLIT POINTS {TABLE|INDEX} <fqn> (<key>, ...) [TableKey (<key>, ...)] ...",
+				Note:   "TableKey is valid only for INDEX entries.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DROP\s+SPLIT\s+POINTS\s+(?P<body>.*)$`),
@@ -663,6 +666,48 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				return nil, fmt.Errorf("invalid node ID: %q. Node ID must be an integer", nodeIDStr)
 			}
 			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
+		},
+	},
+	// SHOW LAST QUERY PLAN — ProtoJSON or ProtoJSON-equivalent YAML export of the cached plan
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Export the last cached query plan as ProtoJSON or ProtoJSON-equivalent YAML`,
+				Syntax: `SHOW LAST QUERY PLAN [WITH STATS] [INTO <path>]`,
+				Note:   `Writes YAML for .yaml/.yml paths and ProtoJSON otherwise. Quoted paths are supported. Requires a preceding query or EXPLAIN ANALYZE. Intended for external plan viewers; not a stable versioned contract.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+LAST\s+QUERY\s+PLAN(?P<with_stats>\s+WITH\s+STATS)?(?:\s+INTO\s+(?P<path>.+))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			var intoPath string
+			rawPath := strings.TrimSpace(groups["path"])
+			if groups["path"] != "" && rawPath == "" {
+				return nil, errors.New("invalid INTO path: empty destination")
+			}
+			if rawPath != "" {
+				// Preserve a legacy single-token path verbatim. In particular,
+				// shellquote.Split treats backslashes as escapes, which would turn a
+				// Windows path such as C:\tmp\plan.yaml into C:tmpplan.yaml.
+				if strings.ContainsAny(rawPath, " \t\r\n\"'") {
+					paths, err := shellquote.Split(rawPath)
+					if err != nil {
+						return nil, fmt.Errorf("invalid INTO path: %w", err)
+					}
+					if len(paths) != 1 {
+						return nil, fmt.Errorf("invalid INTO path: expected one destination, got %d", len(paths))
+					}
+					intoPath = paths[0]
+				} else {
+					intoPath = rawPath
+				}
+				if strings.TrimSpace(intoPath) == "" {
+					return nil, errors.New("invalid INTO path: empty destination")
+				}
+			}
+			return &ShowLastQueryPlanStatement{
+				WithStats: strings.TrimSpace(groups["with_stats"]) != "",
+				IntoPath:  intoPath,
+			}, nil
 		},
 	},
 	// DESCRIBE
@@ -1191,25 +1236,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &ExitStatement{}, nil
 		},
 	},
-	// The optional statement family GEMINI/LLM sits at the end of the table.
-	// BIGQUERY (#778) and CQL (#778) were extracted into internal/mycli/feature/
-	// {bigquery,cql}; GEMINI/LLM follows in PR3. Feature-contributed defs are
-	// appended after this core table in feature/all.All() order (llm, cql,
-	// bigquery).
-	// LLM
-	{
-		Descriptions: []clientSideStatementDescription{
-			{
-				Usage:  `Compose query using LLM`,
-				Syntax: `GEMINI "<prompt>"`,
-			},
-		},
-
-		Pattern: regexp.MustCompile(`(?is)^GEMINI\s+(?P<text>.*)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &GeminiStatement{Text: unquoteString(groups["text"])}, nil
-		},
-	},
+	// The optional statement families GEMINI/LLM, CQL, and BIGQUERY were all
+	// extracted into internal/mycli/feature/{llm,cql,bigquery} (#778). Their defs
+	// are appended after this core table in feature/all.All() order (llm, cql,
+	// bigquery), so dispatch order and generated statement help stay byte-identical
+	// across the move.
 }
 
 // Helper functions for HandleGroups implementations
@@ -1275,7 +1306,7 @@ loop:
 }
 
 func parsePaths(p *memefish.Parser) ([]string, error) {
-	expr, err := p.ParseExpr()
+	expr, err := recoverMemefishParserPanic(p.ParseExpr)
 	if err != nil {
 		return nil, err
 	}

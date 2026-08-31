@@ -33,7 +33,6 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/alecthomas/kong"
 	"github.com/apstndb/spanemuboost"
-	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/samber/lo"
 	"golang.org/x/term"
@@ -142,17 +141,17 @@ type spannerOptions struct {
 	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
-	LogLevel            string            `name:"log-level"`
+	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs."`
 	LogGrpc             bool              `name:"log-grpc" help:"Show gRPC logs"`
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
-	QueryMode                 *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS." enum:"NORMAL,PLAN,PROFILE,WITH_STATS,WITH_PLAN_AND_STATS"`
-	Strong                    bool                      `name:"strong" help:"Perform a strong query."`
-	ReadTimestamp             string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
-	VertexAIProject           string                    `name:"vertexai-project" help:"Vertex AI project"`
-	VertexAIModel             *string                   `name:"vertexai-model" help:"Vertex AI model (default: ${defaultVertexAIModel})"`
-	VertexAILocation          *string                   `name:"vertexai-location" help:"Vertex AI location (default: ${defaultVertexAILocation})"`
+	QueryMode     *caseInsensitiveEnumValue `name:"query-mode" help:"Mode in which the query must be processed. Allowed values: NORMAL, PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS." enum:"NORMAL,PLAN,PROFILE,WITH_STATS,WITH_PLAN_AND_STATS"`
+	Strong        bool                      `name:"strong" help:"Perform a strong query."`
+	ReadTimestamp string                    `name:"read-timestamp" help:"Perform a query at the given timestamp."`
+	// --vertexai-project/model/location moved to internal/mycli/feature/llm (#778);
+	// they are contributed through the Feature.Flags/KongVars/ApplyFlags seam in the
+	// full variant, so they no longer live on spannerOptions.
 	DatabaseDialect           *caseInsensitiveEnumValue `name:"database-dialect" help:"The SQL dialect of the Cloud Spanner Database. Allowed values: POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this flag to leave it unset." enum:"POSTGRESQL,GOOGLE_STANDARD_SQL,DATABASE_DIALECT_UNSPECIFIED"`
 	ImpersonateServiceAccount string                    `name:"impersonate-service-account" help:"Impersonate service account email"`
 	Help                      showHelpFlag              `name:"help" short:"h" help:"Show this help message and exit."`
@@ -303,13 +302,13 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 	params := make(map[string]ast.Node)
 	for k, v := range paramMap {
-		if typ, err := memefish.ParseType("", v); err == nil {
+		if typ, err := parseMemefishType("", v); err == nil {
 			params[k] = typ
 			continue
 		}
 
 		// ignore ParseType error
-		if expr, err := memefish.ParseExpr("", v); err != nil {
+		if expr, err := parseMemefishExpr("", v); err != nil {
 			return nil, fmt.Errorf("error on parsing --param=%v=%v: %w", k, v, err)
 		} else {
 			params[k] = expr
@@ -381,12 +380,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	if opts.HistoryFile != nil {
 		sysVars.Display.HistoryFile = *opts.HistoryFile
 	}
-	if opts.VertexAIModel != nil {
-		sysVars.Feature.VertexAIModel = *opts.VertexAIModel
-	}
-	if opts.VertexAILocation != nil {
-		sysVars.Feature.VertexAILocation = *opts.VertexAILocation
-	}
+	// --vertexai-model/location application moved to the GEMINI feature's
+	// ApplyFlags (routed through the registry via SetFromSimple), not direct
+	// assignment (#778).
 
 	// Handle alias flags with precedence for non-hidden flags
 	// Note: This precedence may override normal flag/env/ini precedence
@@ -443,7 +439,7 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	sysVars.Config.LogGrpc = opts.LogGrpc
 	sysVars.Feature.LogLevel = l
 	sysVars.Config.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
-	sysVars.Feature.VertexAIProject = opts.VertexAIProject
+	// --vertexai-project application moved to the GEMINI feature's ApplyFlags (#778).
 	sysVars.Feature.AsyncDDL = opts.Async
 
 	// Handle system command options
@@ -590,6 +586,17 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 		return nil, err
 	}
 
+	// Apply feature-contributed CLI flags through the registry (issue #778). This
+	// is the first user of the Feature.ApplyFlags seam: GEMINI routes its parsed
+	// --vertexai-* flag values into the CLI_VERTEXAI_* system variables via
+	// SetFromSimple, never by direct assignment. It runs here — after the registry
+	// is available (SetFromSimple builds it lazily) and before applyFormatAndSetOptions
+	// below processes --set — so a --set CLI_VERTEXAI_* overrides a flag, matching
+	// the pre-extraction ordering (flag application preceded --set processing).
+	if err := applyFeatureFlags(sysVars, features); err != nil {
+		return nil, err
+	}
+
 	// DefaultAnalyzeColumns is a hardcoded constant that cannot fail.
 	lo.Must0(sysVars.SetFromSimple("CLI_ANALYZE_COLUMNS", DefaultAnalyzeColumns))
 
@@ -620,6 +627,21 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 	}
 
 	return sysVars, nil
+}
+
+// applyFeatureFlags routes each feature's parsed CLI flag values into the
+// system-variable registry via SetFromSimple (issue #778). Features whose
+// ApplyFlags is nil (no CLI flags, e.g. BIGQUERY/CQL) are skipped.
+func applyFeatureFlags(sysVars *systemVariables, features []Feature) error {
+	for _, f := range features {
+		if f.ApplyFlags == nil {
+			continue
+		}
+		if err := f.ApplyFlags(sysVars.SetFromSimple); err != nil {
+			return fmt.Errorf("apply %s feature flags: %w", f.Name, err)
+		}
+	}
+	return nil
 }
 
 func parseFlags(installFrom string, features ...Feature) (globalOptions, *kong.Kong, error) {
@@ -655,13 +677,13 @@ func defaultConfigFiles() []string {
 
 func newFlagParser(gopts *globalOptions, installFrom string, configFiles []string, stdout, stderr io.Writer, features ...Feature) (*kong.Kong, error) {
 	kongVars := kong.Vars{
-		"version":                 getVersion(),
-		"installFrom":             installFrom,
-		"defaultPromptQuoted":     strconv.Quote(defaultPrompt),
-		"defaultPrompt2Quoted":    strconv.Quote(defaultPrompt2),
-		"defaultHistoryFile":      "~/.spanner_mycli_history", // display-only; keep environment-independent for README sync
-		"defaultVertexAIModel":    defaultVertexAIModel,
-		"defaultVertexAILocation": defaultVertexAILocation,
+		"version":              getVersion(),
+		"installFrom":          installFrom,
+		"defaultPromptQuoted":  strconv.Quote(defaultPrompt),
+		"defaultPrompt2Quoted": strconv.Quote(defaultPrompt2),
+		"defaultHistoryFile":   "~/.spanner_mycli_history", // display-only; keep environment-independent for README sync
+		// defaultVertexAIModel/defaultVertexAILocation are supplied by the GEMINI
+		// feature via Feature.KongVars (#778), merged into kongVars below.
 	}
 	// Feature flag structs are appended to the parser via kong.Plugins and their
 	// help-template values via kong.Vars (issue #778). Both are empty until a
