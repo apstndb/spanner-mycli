@@ -428,6 +428,92 @@ func TestShowOperationStatement_SyncModeCanceledDDLPoll(t *testing.T) {
 	}
 }
 
+func TestShowOperationStatement_SyncModeFormatsInitiallyDoneWithoutRefetch(t *testing.T) {
+	t.Parallel()
+
+	operationName := "projects/test/instances/test/databases/test/operations/auto_op_123"
+	done := ddlShowOperation(operationName)
+	done.Done = true
+	server := &showOperationTestServer{responses: []showOperationResponse{
+		{operation: done},
+	}}
+	session := newShowOperationTestSession(t, server)
+	stmt := &ShowOperationStatement{OperationId: "auto_op_123", Mode: "SYNC"}
+
+	result, err := stmt.executeSyncModeWithTicks(t.Context(), session, make(chan time.Time))
+	if err != nil {
+		t.Fatalf("executeSyncModeWithTicks() error = %v", err)
+	}
+	assertDoneShowOperationRow(t, result)
+	if len(server.responses) != 0 {
+		t.Fatalf("unused GetOperation responses = %d, want 0", len(server.responses))
+	}
+}
+
+func TestShowOperationStatement_SyncModeFormatsPollDoneWithoutRefetch(t *testing.T) {
+	t.Parallel()
+
+	operationName := "projects/test/instances/test/databases/test/operations/auto_op_123"
+	inProgress := ddlShowOperation(operationName)
+	done := ddlShowOperation(operationName)
+	done.Done = true
+	server := &showOperationTestServer{responses: []showOperationResponse{
+		{operation: inProgress},
+		{operation: done},
+	}}
+	session := newShowOperationTestSession(t, server)
+	stmt := &ShowOperationStatement{OperationId: "auto_op_123", Mode: "SYNC"}
+	ticks := make(chan time.Time, 1)
+	ticks <- time.Now()
+
+	result, err := stmt.executeSyncModeWithTicks(t.Context(), session, ticks)
+	if err != nil {
+		t.Fatalf("executeSyncModeWithTicks() error = %v", err)
+	}
+	assertDoneShowOperationRow(t, result)
+	if len(server.responses) != 0 {
+		t.Fatalf("unused GetOperation responses = %d, want 0", len(server.responses))
+	}
+}
+
+func TestShowOperationStatement_AsyncModeStillFetches(t *testing.T) {
+	t.Parallel()
+
+	operationName := "projects/test/instances/test/databases/test/operations/auto_op_123"
+	done := ddlShowOperation(operationName)
+	done.Done = true
+	server := &showOperationTestServer{responses: []showOperationResponse{
+		{operation: done},
+	}}
+	session := newShowOperationTestSession(t, server)
+	stmt := &ShowOperationStatement{OperationId: "auto_op_123", Mode: "ASYNC"}
+
+	result, err := stmt.executeAsyncMode(t.Context(), session, operationName)
+	if err != nil {
+		t.Fatalf("executeAsyncMode() error = %v", err)
+	}
+	assertDoneShowOperationRow(t, result)
+	if len(server.responses) != 0 {
+		t.Fatalf("ASYNC skipped GetOperation; unused responses = %d", len(server.responses))
+	}
+}
+
+func assertDoneShowOperationRow(t *testing.T, result *Result) {
+	t.Helper()
+	if result == nil {
+		t.Fatal("result = nil")
+	}
+	if len(result.Rows) != 1 {
+		t.Fatalf("len(result.Rows) = %d, want 1", len(result.Rows))
+	}
+	if got := result.Rows[0][0].RawText(); got != "auto_op_123" {
+		t.Errorf("OPERATION_ID = %q, want auto_op_123", got)
+	}
+	if got := result.Rows[0][2].RawText(); got != "true" {
+		t.Errorf("DONE = %q, want true", got)
+	}
+}
+
 type showOperationResponse struct {
 	operation *longrunningpb.Operation
 	err       error

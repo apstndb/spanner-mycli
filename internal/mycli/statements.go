@@ -362,9 +362,10 @@ func (s *ShowOperationStatement) executeSyncModeWithTicks(ctx context.Context, s
 		return nil, handleShowOperationSyncWaitError(session, nil, operationName, fmt.Errorf("failed to get operation %q: %w", operationName, err))
 	}
 
-	// If operation is already done, return the status
+	// If operation is already done, format the fetched proto. Do not refetch:
+	// a redundant GetOperation can lose the completed result on cancel/deadline.
 	if op.GetDone() {
-		return s.executeAsyncMode(ctx, session, operationName)
+		return formatShowOperation(op)
 	}
 
 	// Start progress monitoring
@@ -435,8 +436,8 @@ func (s *ShowOperationStatement) executeSyncModeWithTicks(ctx context.Context, s
 		bar.SetCurrent(100)
 	}
 
-	// Return final operation status
-	return s.executeAsyncMode(ctx, session, operationName)
+	// Return final operation status from the last poll. Do not refetch.
+	return formatShowOperation(op)
 }
 
 const updateDatabaseDdlMetadataTypeURL = "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata"
@@ -476,7 +477,11 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 	if err != nil {
 		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
 	}
+	return formatShowOperation(op)
+}
 
+// formatShowOperation renders a fetched long-running operation as a SHOW OPERATION result.
+func formatShowOperation(op *longrunningpb.Operation) (*Result, error) {
 	var rows []Row
 
 	// Handle different operation types
@@ -522,7 +527,7 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 	}
 
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("operation %q not found or has no statements", operationName)
+		return nil, fmt.Errorf("operation %q not found or has no statements", op.GetName())
 	}
 
 	return &Result{
