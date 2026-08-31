@@ -68,10 +68,10 @@ github.com/apstndb/developerknowledge-go v0.3.2 h1:aL+BySBJZ4wh46hg5fnajvkvaM4NC
 github.com/apstndb/developerknowledge-go v0.3.2/go.mod h1:SkrYUXrudPdwg//GnGSnLsjYilMI+9n2+TGUuHo/CcE=
 github.com/apstndb/genaischema v0.2.0 h1:Xy19ye4xUjU46ZGC7iHLQ6hCKNCin1+IqMCpjel+gfo=
 github.com/apstndb/genaischema v0.2.0/go.mod h1:qUY4LNMs5MeXLcbY3Ic4cW5I1iMnj9USzTTDf1BeezU=
-github.com/apstndb/gh-dev-tools v0.0.0-20250726094924-b386827f58e6 h1:Say3K7FyeOgvYi8/lsn2iDuFmKXA35XlPBNMHIptdo8=
-github.com/apstndb/gh-dev-tools v0.0.0-20250726094924-b386827f58e6/go.mod h1:KJcLW7zmC5hnK+1FWlbJ11NzdxIC0tFnWBvrusyD3yg=
-github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90 h1:bVqVe2veNMY8HK1YM3nhDhXTdVRGJVlEO9VUpK/3poA=
-github.com/apstndb/github-schema-go v0.0.0-20250623031417-7b63713e7a90/go.mod h1:4xU4lejA6zmr3FFKGHhw5fMOfTTtJ1LBe+mf6IkcYIY=
+github.com/apstndb/gh-dev-tools v0.0.0-20260503112106-b5cb9f5ce345 h1:baIhok0BIgzf33cQy+YVB/mSnqcXw9MF1UZMKxd+ZNI=
+github.com/apstndb/gh-dev-tools v0.0.0-20260503112106-b5cb9f5ce345/go.mod h1:KJcLW7zmC5hnK+1FWlbJ11NzdxIC0tFnWBvrusyD3yg=
+github.com/apstndb/github-schema-go v0.0.0-20250624135542-f1e99900f6fc h1:6k5qkzCo11vpuHI7SUW/0EFGCcQJgRjtgpO9buw2qb8=
+github.com/apstndb/github-schema-go v0.0.0-20250624135542-f1e99900f6fc/go.mod h1:gukmGbKWu39NhEys69zcn1v3cFxZGQ1/7FwNrKtwQsY=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe h1:77G66thy9/0ySW34B9GCIPrv/tc29NBGwarlpbNWm/g=
 github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe/go.mod h1:f/6/38gdf0Vz+uYGVDtVaHzL4ho6JduiF/v/ngQVWos=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250724144043-044ee62273ff h1:qcDUJzSKYWPlv8KyEHThTJpMyg/z4iMjCTpWxKWyCrA=
@@ -152,8 +152,8 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
-github.com/dmarkham/enumer v1.5.11 h1:quorLCaEfzjJ23Pf7PB9lyyaHseh91YfTM/sAD/4Mbo=
-github.com/dmarkham/enumer v1.5.11/go.mod h1:yixql+kDDQRYqcuBM2n9Vlt7NoT9ixgXhaXry8vmRg8=
+github.com/dmarkham/enumer v1.6.3 h1:B4aV4OsfzbrS5rvjILt4mMjiWBA//cKxJUMsvHZ8mEI=
+github.com/dmarkham/enumer v1.6.3/go.mod h1:DyjXaqCglj4GhELF73oWiparNkYkXvmOBLza/o4kO74=
 github.com/docker/go-connections v0.7.0 h1:6SsRfJddP22WMrCkj19x9WKjEDTB+ahsdiGYf0mN39c=
 github.com/docker/go-connections v0.7.0/go.mod h1:no1qkHdjq7kLMGUXYAduOhYPSJxxvgWBh7ogVvptn3Q=
 github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=
