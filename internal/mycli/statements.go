@@ -348,7 +348,10 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		Name: operationName,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get operation %q: %w", operationName, err)
+		// The operation proto is not identified yet, so schema generation is not
+		// bumped. Cancellation still gets a SHOW OPERATION hint because the ID is
+		// already known from the statement.
+		return nil, handleShowOperationSyncWaitError(session, nil, operationName, fmt.Errorf("failed to get operation %q: %w", operationName, err))
 	}
 
 	// If operation is already done, return the status
@@ -399,16 +402,18 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 		case <-time.After(5 * time.Second):
 			// Continue polling
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, handleShowOperationSyncWaitError(session, op, operationName, ctx.Err())
 		}
 
-		// Poll the operation
-		op, err = session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		// Poll the operation. Keep the last identified proto on error so a failed
+		// UpdateDatabaseDdl poll can still invalidate the schema cache.
+		polledOp, err := session.adminClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
 			Name: operationName,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to poll operation %q: %w", operationName, err)
+			return nil, handleShowOperationSyncWaitError(session, op, operationName, fmt.Errorf("failed to poll operation %q: %w", operationName, err))
 		}
+		op = polledOp
 
 		// Update progress bar
 		if bar != nil && !bar.Completed() {
@@ -424,6 +429,35 @@ func (s *ShowOperationStatement) executeSyncMode(ctx context.Context, session *S
 
 	// Return final operation status
 	return s.executeAsyncMode(ctx, session, operationName)
+}
+
+const updateDatabaseDdlMetadataTypeURL = "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata"
+
+func isUpdateDatabaseDdlOperation(op *longrunningpb.Operation) bool {
+	return op.GetMetadata().GetTypeUrl() == updateDatabaseDdlMetadataTypeURL
+}
+
+// handleShowOperationSyncWaitError applies SHOW OPERATION SYNC's wait-exit policy.
+//
+// Schema-cache invalidation is conditional, unlike handleDdlWaitError: this path
+// monitors arbitrary long-running operations, so IncrementSchemaGeneration runs
+// only after an UpdateDatabaseDdl operation has been identified. Cancellation
+// still wraps a SHOW OPERATION hint because the operation ID is known from the
+// statement even when GetOperation never succeeded. The cause is wrapped with %w
+// so errors.Is(err, context.Canceled) continues to work for callers.
+func handleShowOperationSyncWaitError(session *Session, op *longrunningpb.Operation, operationName string, err error) error {
+	if isUpdateDatabaseDdlOperation(op) {
+		session.IncrementSchemaGeneration()
+	}
+	if !isCancellationError(err) {
+		return err
+	}
+	return showOperationSyncCancellationError(operationName, err)
+}
+
+func showOperationSyncCancellationError(operationName string, cause error) error {
+	operationID := lo.LastOrEmpty(strings.Split(operationName, "/"))
+	return fmt.Errorf("stopped waiting for operation; it may still be running server-side, check it with: SHOW OPERATION '%s': %w", operationID, cause)
 }
 
 func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *Session, operationName string) (*Result, error) {
@@ -452,7 +486,7 @@ func (s *ShowOperationStatement) executeAsyncMode(ctx context.Context, session *
 		))
 	} else {
 		switch metadata.GetTypeUrl() {
-		case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+		case updateDatabaseDdlMetadataTypeURL:
 			var md databasepb.UpdateDatabaseDdlMetadata
 			if err := metadata.UnmarshalTo(&md); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal UpdateDatabaseDdlMetadata: %w", err)
@@ -498,7 +532,7 @@ func (s *ShowOperationStatement) getOperationDescription(op *longrunningpb.Opera
 	}
 
 	switch metadata.GetTypeUrl() {
-	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+	case updateDatabaseDdlMetadataTypeURL:
 		var md databasepb.UpdateDatabaseDdlMetadata
 		if err := metadata.UnmarshalTo(&md); err != nil {
 			operationId := lo.LastOrEmpty(strings.Split(op.GetName(), "/"))
@@ -525,7 +559,7 @@ func (s *ShowOperationStatement) getOperationProgress(op *longrunningpb.Operatio
 	}
 
 	switch metadata.GetTypeUrl() {
-	case "type.googleapis.com/google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata":
+	case updateDatabaseDdlMetadataTypeURL:
 		var md databasepb.UpdateDatabaseDdlMetadata
 		if err := metadata.UnmarshalTo(&md); err != nil {
 			return 0.0

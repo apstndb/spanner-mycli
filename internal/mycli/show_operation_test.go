@@ -2,15 +2,163 @@ package mycli
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
+
+func ddlShowOperation(name string) *longrunningpb.Operation {
+	md, err := anypb.New(&databasepb.UpdateDatabaseDdlMetadata{
+		Statements: []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return &longrunningpb.Operation{Name: name, Metadata: md}
+}
+
+func TestShowOperationSyncWaitError(t *testing.T) {
+	t.Parallel()
+
+	ddlOp := ddlShowOperation("projects/p/instances/i/databases/d/operations/op-ddl")
+	otherOp := &longrunningpb.Operation{
+		Name: "projects/p/instances/i/databases/d/operations/op-other",
+	}
+	fullName := "projects/p/instances/i/databases/d/operations/op-ddl"
+
+	tests := []struct {
+		name           string
+		op             *longrunningpb.Operation
+		operationName  string
+		err            error
+		wantGenDelta   uint64
+		wantIsCanceled bool
+		wantIsDeadline bool
+		wantHintOpID   string
+		wantUnchanged  bool
+	}{
+		{
+			name:           "cancel after DDL identified bumps schema and hints",
+			op:             ddlOp,
+			operationName:  fullName,
+			err:            context.Canceled,
+			wantGenDelta:   1,
+			wantIsCanceled: true,
+			wantHintOpID:   "op-ddl",
+		},
+		{
+			name:           "deadline after DDL identified bumps schema and hints",
+			op:             ddlOp,
+			operationName:  "op-ddl",
+			err:            context.DeadlineExceeded,
+			wantGenDelta:   1,
+			wantIsDeadline: true,
+			wantHintOpID:   "op-ddl",
+		},
+		{
+			name:          "grpc cancel after DDL identified bumps schema and hints",
+			op:            ddlOp,
+			operationName: fullName,
+			err:           status.Error(codes.Canceled, "context canceled"),
+			wantGenDelta:  1,
+			wantHintOpID:  "op-ddl",
+		},
+		{
+			name:           "cancel before identification hints without schema bump",
+			op:             nil,
+			operationName:  fullName,
+			err:            context.Canceled,
+			wantGenDelta:   0,
+			wantIsCanceled: true,
+			wantHintOpID:   "op-ddl",
+		},
+		{
+			name:           "cancel of non-DDL operation hints without schema bump",
+			op:             otherOp,
+			operationName:  "projects/p/instances/i/databases/d/operations/op-other",
+			err:            context.Canceled,
+			wantGenDelta:   0,
+			wantIsCanceled: true,
+			wantHintOpID:   "op-other",
+		},
+		{
+			name:          "non-cancel error after DDL identified bumps schema and keeps original",
+			op:            ddlOp,
+			operationName: fullName,
+			err:           errors.New("boom"),
+			wantGenDelta:  1,
+			wantUnchanged: true,
+		},
+		{
+			name:          "non-cancel error before identification does not bump schema",
+			op:            nil,
+			operationName: fullName,
+			err:           errors.New("not found"),
+			wantGenDelta:  0,
+			wantUnchanged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			session := &Session{systemVariables: newSystemVariablesWithDefaultsForTest()}
+			before := session.SchemaGeneration()
+
+			got := handleShowOperationSyncWaitError(session, tt.op, tt.operationName, tt.err)
+			if got == nil {
+				t.Fatal("expected non-nil error")
+			}
+
+			if delta := session.SchemaGeneration() - before; delta != tt.wantGenDelta {
+				t.Errorf("schema generation delta = %d, want %d", delta, tt.wantGenDelta)
+			}
+
+			if tt.wantUnchanged {
+				if !errors.Is(got, tt.err) && got.Error() != tt.err.Error() {
+					t.Errorf("non-cancel error mutated: got %v, want %v", got, tt.err)
+				}
+				if strings.Contains(got.Error(), "SHOW OPERATION") {
+					t.Errorf("non-cancel error unexpectedly contains SHOW OPERATION hint: %v", got)
+				}
+				return
+			}
+
+			if tt.wantIsCanceled && !errors.Is(got, context.Canceled) {
+				t.Errorf("errors.Is(err, context.Canceled) = false; err = %v", got)
+			}
+			if tt.wantIsDeadline && !errors.Is(got, context.DeadlineExceeded) {
+				t.Errorf("errors.Is(err, context.DeadlineExceeded) = false; err = %v", got)
+			}
+			if tt.wantHintOpID != "" && !strings.Contains(got.Error(), "SHOW OPERATION '"+tt.wantHintOpID+"'") {
+				t.Errorf("error missing SHOW OPERATION hint for %q\n  got: %s", tt.wantHintOpID, got)
+			}
+		})
+	}
+}
+
+func TestShowOperationSyncCancellationErrorPreservesCause(t *testing.T) {
+	t.Parallel()
+
+	wrapped := fmt.Errorf("failed to poll operation %q: %w", "op-ddl", context.Canceled)
+	err := showOperationSyncCancellationError("projects/p/instances/i/databases/d/operations/op-ddl", wrapped)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("errors.Is(err, context.Canceled) = false; err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "SHOW OPERATION 'op-ddl'") {
+		t.Fatalf("error missing hint: %v", err)
+	}
+}
 
 func TestShowOperationStatement_getOperationDescription(t *testing.T) {
 	t.Parallel()
