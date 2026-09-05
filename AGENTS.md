@@ -64,7 +64,7 @@ go tool gh-helper releases analyze --milestone v0.19.0
 go tool github-schema type <TypeName>                   # GraphQL schema introspection
 ```
 
-For full gh-helper command reference, see [dev-docs/issue-management.md](dev-docs/issue-management.md).
+For the full GitHub tooling reference, see [dev-docs/issue-management.md](dev-docs/issue-management.md).
 
 ## Core Architecture Overview
 
