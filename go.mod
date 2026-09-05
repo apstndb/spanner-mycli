@@ -1,6 +1,6 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.26.6
+go 1.26.8
 
 require (
 	cloud.google.com/go v0.123.0
