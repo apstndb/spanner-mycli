@@ -44,17 +44,32 @@ For each unresolved thread, evaluate the feedback and choose a response strategy
 
 Thread reply examples:
 ```bash
+set -euo pipefail
 PR="$(gh pr view --json number --jq .number)"
 
+reply_and_resolve() {
+  local thread_id="$1"
+  local body="$2"
+  local reply_json comment_node_id published_comment_id
+
+  reply_json="$(gh pr-review comments reply "$PR" --thread-id "$thread_id" \
+    --body "$body" -R apstndb/spanner-mycli)"
+  comment_node_id="$(jq -er '.comment_node_id' <<<"$reply_json")"
+  published_comment_id="$(gh api graphql -F commentId="$comment_node_id" -f query='query($commentId: ID!) {
+    node(id: $commentId) {
+      ... on PullRequestReviewComment { id pullRequestReview { state } }
+    }
+  }' --jq '.data.node | select(.pullRequestReview.state != "PENDING") | .id')"
+  test "$published_comment_id" = "$comment_node_id"
+  gh pr-review threads resolve "$PR" --thread-id "$thread_id" -R apstndb/spanner-mycli
+}
+
 # Explanation only — provide reasoning
-gh pr-review comments reply "$PR" --thread-id THREAD_ID \
-  --body "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context." \
-  -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID \
+  "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
 
 # Acknowledge praise
-gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "Thank you!" -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID "Thank you!"
 ```
 
 5. After making code changes, run the relevant validation and commit. Push only
@@ -64,16 +79,35 @@ when the user has authorized that separate boundary.
 confirm the reply is published, then resolve it. Make the block self-contained
 and replace the example revision with the specific commit for that thread:
 ```bash
+set -euo pipefail
 PR="$(gh pr view --json number --jq .number)"
 FIX_COMMIT=abc123
 FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
 REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
 
-gh pr-review comments reply "$PR" --thread-id THREAD_ID \
-  --body "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization." \
-  -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve() {
+  local thread_id="$1"
+  local body="$2"
+  local reply_json comment_node_id published_comment_id
+
+  reply_json="$(gh pr-review comments reply "$PR" --thread-id "$thread_id" \
+    --body "$body" -R apstndb/spanner-mycli)"
+  comment_node_id="$(jq -er '.comment_node_id' <<<"$reply_json")"
+  published_comment_id="$(gh api graphql -F commentId="$comment_node_id" -f query='query($commentId: ID!) {
+    node(id: $commentId) {
+      ... on PullRequestReviewComment { id pullRequestReview { state } }
+    }
+  }' --jq '.data.node | select(.pullRequestReview.state != "PENDING") | .id')"
+  test "$published_comment_id" = "$comment_node_id"
+  gh pr-review threads resolve "$PR" --thread-id "$thread_id" -R apstndb/spanner-mycli
+}
+
+reply_and_resolve THREAD_ID \
+  "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization."
 ```
 If the ancestry check fails, the fixing commit is not published in the PR;
 stop before replying or resolving.

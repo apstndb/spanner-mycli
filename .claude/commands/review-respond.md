@@ -19,11 +19,15 @@ when the user has authorized that separate boundary; otherwise stop and request
 authorization before replying or resolving:
 
 ```bash
+set -euo pipefail
 PR="$(gh pr view --json number --jq .number)"
 FIX_COMMIT=abc123
 FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
 REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
 ```
 
 2. Inventory every unresolved review thread, including outdated threads, and
@@ -51,32 +55,47 @@ explain why it is fixed or no longer applicable before resolving it.
 
 Examples:
 ```bash
+set -euo pipefail
 PR="$(gh pr view --json number --jq .number)"
 FIX_COMMIT=abc123
 FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
 REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
+
+reply_and_resolve() {
+  local thread_id="$1"
+  local body="$2"
+  local reply_json comment_node_id published_comment_id
+
+  reply_json="$(gh pr-review comments reply "$PR" --thread-id "$thread_id" \
+    --body "$body" -R apstndb/spanner-mycli)"
+  comment_node_id="$(jq -er '.comment_node_id' <<<"$reply_json")"
+  published_comment_id="$(gh api graphql -F commentId="$comment_node_id" -f query='query($commentId: ID!) {
+    node(id: $commentId) {
+      ... on PullRequestReviewComment { id pullRequestReview { state } }
+    }
+  }' --jq '.data.node | select(.pullRequestReview.state != "PENDING") | .id')"
+  test "$published_comment_id" = "$comment_node_id"
+  gh pr-review threads resolve "$PR" --thread-id "$thread_id" -R apstndb/spanner-mycli
+}
 
 # Code fix — explain what was changed
-gh pr-review comments reply "$PR" --thread-id THREAD_ID \
-  --body "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization." \
-  -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID \
+  "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization."
 
 # Multi-line response for complex fixes
 BODY="Addressed in $FIX_SHA: switched from buffering to streaming output. This prevents memory issues for commands with large output."
-gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "$BODY" -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID "$BODY"
 
 # Acknowledge praise comment (no code change)
-gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "Thank you!" -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID "Thank you!"
 
 # Explanation-only response (no code change)
-gh pr-review comments reply "$PR" --thread-id THREAD_ID \
-  --body "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context." \
-  -R apstndb/spanner-mycli
-gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
+reply_and_resolve THREAD_ID \
+  "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
 ```
 
 Confirm each reply is visible before resolving its thread.
@@ -87,14 +106,14 @@ A reply can remain invisible if an interrupted operation leaves it in a
 *pending* review. Check for leftover pending reviews before treating the
 thread workflow as complete (GitHub only lists your own):
 
-!PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '[.[] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
+!set -o pipefail; PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" | jq -s '[.[][] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
 
 If `pendingReviews` is non-empty, inspect each review's drafted comments, then submit it so the replies become visible:
 
 ```bash
 # inspect what would be published first
-gh api "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
-  --jq '.[] | {in_reply_to_id, body_head: (.body[0:80])}'
+gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
+  --jq '.[] | {in_reply_to_id, body}'
 # then submit (publishes the drafted replies; does not change resolution)
 gh api -X POST "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/events" -f event=COMMENT
 ```

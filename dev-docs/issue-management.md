@@ -72,7 +72,7 @@ paginate its comments before classifying feedback:
 
 ```bash
 set -euo pipefail
-PR="$(gh pr view --json number --jq .number)"
+: "${PR:=$(gh pr view --json number --jq .number)}"
 THREADS_JSON="$(gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli)"
 printf '%s\n' "$THREADS_JSON"
 
@@ -126,15 +126,19 @@ gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" \
 # 5. Verify the exact head, review decision, and merge state
 gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 
-# 6. After additional commits: push, verify the fixing commit is contained in
+# 6. After additional commits: obtain push authorization, push, verify the fixing commit is contained in
 #    the hosted head, then repeat checks, thread and review-body inventory,
 #    exact-head merge-state inspection, and independent current-head review
+set -euo pipefail
 git push
 PR="$(gh pr view --json number --jq .number)"
 FIX_COMMIT=abc123
 FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
 REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
 gh pr checks "$PR" --required --watch --fail-fast
 ```
 
@@ -251,9 +255,10 @@ Agent permission rules for worktrees and destructive operations:
   worktree with uncommitted changes (state what would be lost), history
   rewrites (rebase, amend of pushed commits), branch deletion, and deleting any
   worktree even when it is clean.
-- **Autonomous actions allowed**: standard git operations on feature branches
-  (add/commit/push), test execution, documentation updates, and reporting clean
-  worktrees as cleanup candidates without deleting them.
+- **Autonomous actions allowed**: local feature-branch operations (add/commit),
+  test execution, documentation updates, and reporting clean worktrees as
+  cleanup candidates without deleting them. Push is a separate publication
+  boundary and always requires explicit user authorization.
 - **Best practices**: run `git status` before any destructive operation;
   offer safer alternatives (e.g., commit before deleting); prioritize
   preserving work over convenience.

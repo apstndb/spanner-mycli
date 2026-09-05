@@ -12,9 +12,9 @@ You are completing the PR workflow for #$ARGUMENTS in the spanner-mycli reposito
 
 1. Identify the PR: if #$ARGUMENTS is a PR, use it directly; if it is an issue, find the PR associated with it
 2. Wait for required CI checks with `gh pr checks <PR> --required --watch --fail-fast` — passing checks are the merge gate
-3. Inventory every unresolved review thread with `gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli`, including outdated threads; retrieve the complete inline comment context for every listed ID with the procedure in `dev-docs/issue-management.md`, also read all review bodies and states with paginated `gh api`, then address actionable feedback, publish a meaningful reply, and resolve each addressed thread before merging
-4. Verify the exact head, review decision, and merge state with `gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision`, and confirm independent review evidence covers that head
-5. Squash merge the PR with a descriptive commit message that includes:
+3. Set `PR` to the selected pull request number and preserve it while inventorying every unresolved review thread with `gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli`, including outdated threads; retrieve the complete inline comment context for every listed ID with the procedure in `dev-docs/issue-management.md`, also read all review bodies and states with paginated `gh api`, then address actionable feedback, publish a meaningful reply, and resolve each addressed thread before merging
+4. Record `REVIEWED_HEAD` from `gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision`, and confirm independent review evidence covers that exact head
+5. Squash merge with `gh pr merge "$PR" --squash --match-head-commit "$REVIEWED_HEAD"` and a descriptive commit message that includes:
    - Clear summary of changes
    - Reference to the issue being fixed (if any)
 6. Report any related phantom worktree as a cleanup candidate; do not delete it without explicit user permission
