@@ -1,6 +1,6 @@
 ---
 name: Review Respond
-description: Reply to all review threads with commit hash and resolve
+description: Reply to addressed review threads with commit hash and resolve
 arguments: "[commit_message]"
 ---
 
@@ -8,16 +8,38 @@ arguments: "[commit_message]"
 
 After addressing review feedback, please:
 
-1. Identify the correct commit hash for each fix:
+1. Identify the PR and the correct commit hash for each fix:
 **IMPORTANT**: The commit hash should refer to the specific commit where the issue was fixed, which may NOT be HEAD.
 - Use `git log --oneline -10` to review recent commits
 - For each thread, identify which commit actually addressed that specific feedback
 - If unsure, use `git log --grep="keyword"` or `git show <hash>` to verify the fix
 
-2. Find all unresolved threads (including outdated ones) and respond to each one:
-!go tool gh-helper reviews fetch --unresolved-only
+Verify each fixing commit is already contained in the hosted PR head. Push only
+when the user has authorized that separate boundary; otherwise stop and request
+authorization before replying or resolving:
 
-For each thread ID found above, reply and resolve it, regardless of whether it's marked as outdated.
+```bash
+set -euo pipefail
+PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
+```
+
+2. Inventory every unresolved review thread, including outdated threads, and
+retrieve the complete inline comment context for every listed thread ID with
+[Complete Thread Inventory and Context](../../dev-docs/issue-management.md#complete-thread-inventory-and-context).
+Also read review-level bodies and states before classifying feedback:
+!PR=$(gh pr view --json number --jq .number) && gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
+!PR=$(gh pr view --json number --jq .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
+
+Reply to and resolve each addressed actionable or informational thread. Do not
+mechanically resolve outdated or unrelated threads: inspect each one, and
+explain why it is fixed or no longer applicable before resolving it.
 
 **Reply content guidelines — always write a meaningful reply:**
 - Do NOT just post a commit hash. Explain what was changed and why.
@@ -33,45 +55,78 @@ For each thread ID found above, reply and resolve it, regardless of whether it's
 
 Examples:
 ```bash
+set -euo pipefail
+PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD" || {
+  echo "Fix commit is not contained in the hosted PR head" >&2
+  exit 1
+}
+
+reply_and_resolve() {
+  local thread_id="$1"
+  local body="$2"
+  local reply_json comment_node_id published_comment_id
+
+  reply_json="$(gh pr-review comments reply "$PR" --thread-id "$thread_id" \
+    --body "$body" -R apstndb/spanner-mycli)"
+  comment_node_id="$(jq -er '.comment_node_id' <<<"$reply_json")"
+  published_comment_id="$(gh api graphql -F commentId="$comment_node_id" -f query='query($commentId: ID!) {
+    node(id: $commentId) {
+      ... on PullRequestReviewComment { id pullRequestReview { state } }
+    }
+  }' --jq '.data.node | select(.pullRequestReview.state != "PENDING") | .id')"
+  test "$published_comment_id" = "$comment_node_id"
+  gh pr-review threads resolve "$PR" --thread-id "$thread_id" -R apstndb/spanner-mycli
+}
+
 # Code fix — explain what was changed
-go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve \
-  --message "Removed the redundant nil check. ListVariables() calls ensureRegistry() internally, so the explicit guard was preventing first-use initialization."
+reply_and_resolve THREAD_ID \
+  "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization."
 
 # Multi-line response for complex fixes
-cat <<EOF | go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve
-Switched from buffering to streaming output.
-This prevents memory issues from commands with large output.
-EOF
+BODY="Addressed in $FIX_SHA: switched from buffering to streaming output. This prevents memory issues for commands with large output."
+reply_and_resolve THREAD_ID "$BODY"
 
 # Acknowledge praise comment (no code change)
-go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
+reply_and_resolve THREAD_ID "Thank you!"
 
 # Explanation-only response (no code change)
-go tool gh-helper threads reply THREAD_ID --resolve \
-  --message "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
+reply_and_resolve THREAD_ID \
+  "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
 ```
 
-Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
+Confirm each reply is visible before resolving its thread.
 
 3. Verify no PENDING review is holding your replies:
 
-`gh-helper threads reply --resolve` resolves the thread, but if a reply ends up batched into a *pending* review (e.g., an interrupted submit) instead of being posted directly, the reply stays invisible until that review is submitted — leaving "resolved threads with no visible reply." Check for leftover pending reviews (GitHub only lists your own):
+A reply can remain invisible if an interrupted operation leaves it in a
+*pending* review. Check for leftover pending reviews before treating the
+thread workflow as complete (GitHub only lists your own):
 
-!PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '[.[] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
+!set -o pipefail; PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" | jq -s '[.[][] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
 
 If `pendingReviews` is non-empty, inspect each review's drafted comments, then submit it so the replies become visible:
 
 ```bash
 # inspect what would be published first
-gh api "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
-  --jq '.[] | {in_reply_to_id, body_head: (.body[0:80])}'
+gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
+  --jq '.[] | {in_reply_to_id, body}'
 # then submit (publishes the drafted replies; does not change resolution)
 gh api -X POST "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/events" -f event=COMMENT
 ```
 
-Proceed only once `pendingReviews` is empty (`[]`).
+Proceed only once the result is `{"pendingReviews":[]}`.
 
 4. After all threads are resolved, wait for CI checks on the pushed fixes — they are the merge gate:
-!go tool gh-helper reviews wait --exclude-reviews
+!gh pr checks --required --watch --fail-fast
 
-**Gemini review is best-effort (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17** and is unavailable after. Do not request a new review (`--request-review`) or wait for one; if another review happens to arrive before the sunset, handle its threads by repeating steps 1-2.
+Then re-read the hosted head, merge state, and review decision, and obtain
+independent review evidence for that exact head:
+!gh pr view --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
+
+Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait
+for or request a GitHub bot review. Obtain independent review evidence for the
+exact current head through an available local or delegated route.

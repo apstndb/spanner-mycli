@@ -63,13 +63,23 @@ Fixes #ISSUE_NUMBER
 
 5. Wait for CI checks — they are the merge gate:
 ```bash
-go tool gh-helper reviews wait --exclude-reviews --timeout 15m
+gh pr checks --required --watch --fail-fast
 ```
 
-6. Check once (non-blocking) whether review feedback arrived, and address any unresolved threads with `/review-cycle`:
+6. Inventory all unresolved review threads and review-level feedback, verify the exact head and merge state, and address actionable feedback with `/review-cycle`:
 ```bash
-go tool gh-helper reviews fetch --unresolved-only
+PR="$(gh pr view --json number --jq .number)"
+gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
+gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" \
+  --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
+gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 ```
-Gemini review is best-effort until 2026-07-17 and unavailable after (issue #693) — if none arrived, do not wait for one or request one.
+
+Use the complete per-thread context procedure linked from `/review-cycle` for
+every thread ID before classifying or resolving feedback.
+
+Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait
+for or request a GitHub bot review. Obtain independent review evidence for the
+exact current head through an available local or delegated route.
 
 **Important**: Use `--body-file` or heredoc for PR body content with special characters. Never pass backtick-containing strings directly in shell commands.

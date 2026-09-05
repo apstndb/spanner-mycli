@@ -12,7 +12,7 @@ dev-docs/
 ├── README.md                    # This file - index
 ├── architecture-guide.md        # Code map and pointers to authoritative doc comments
 ├── development-insights.md      # Development workflow notes (manual verification, panic policy)
-├── issue-management.md          # gh-helper reference, labels, PR process, worktrees
+├── issue-management.md          # GitHub tooling, labels, PR process, worktrees
 └── patterns/
     ├── system-variables.md      # Adding and modifying system variables
     └── testing.md               # Test tiers, style, isolation, coverage
@@ -24,7 +24,7 @@ dev-docs/
   statement.
 - [Development Insights](development-insights.md) - manual verification with
   the embedded emulator, panic vs error policy, review-loop pointers.
-- [Issue Management](issue-management.md) - full gh-helper command reference,
+- [Issue Management](issue-management.md) - GitHub CLI and helper reference,
   review workflow, label system, release-notes labels, git and phantom
   worktree practices.
 - [System Variable Patterns](patterns/system-variables.md) - the

@@ -34,10 +34,10 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: CI checks are the merge gate (item 8). Before merging, run `go tool gh-helper reviews wait <PR> --exclude-reviews` to wait for checks. Gemini review is best-effort until its sunset on 2026-07-17 and unavailable after (#693): if one arrives, address its feedback; never block on it, re-request it (`--request-review`), or request summaries (`--request-summary`). Do not request Copilot reviews for this repository.
+5. **PR merge process**: CI checks are the merge gate (item 8). Before merging, use `gh pr checks <PR> --required --watch --fail-fast`, inspect all unresolved threads plus review-level feedback, re-read the exact head/review decision/merge state with `gh pr view`, and confirm independent review evidence covers that head. Gemini Code Assist review is unavailable (#693); never wait for or request it. Do not request Copilot reviews for this repository.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
-8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
+8. **GitHub checks must pass**: All required CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
 
 ## Essential Commands
 
@@ -49,11 +49,14 @@ make test-quick               # Quick tests during development
 make check-race               # Unit tests with race detector (CI also runs this)
 make fmt                      # Format code
 
+# Pull request checks and review threads
+gh pr checks <PR> --required --watch --fail-fast
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
+gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli
+gh pr-review comments reply <PR> --thread-id <ID> --body <TEXT> -R apstndb/spanner-mycli
+gh pr-review threads resolve <PR> --thread-id <ID> -R apstndb/spanner-mycli
+
 # Development tools (Go tool directive, managed via go.mod)
-go tool gh-helper reviews fetch <PR>                    # Fetch review data
-go tool gh-helper reviews fetch <PR> --unresolved-only  # Only unresolved threads
-go tool gh-helper reviews wait <PR> --exclude-reviews   # Wait for CI checks (merge gate)
-go tool gh-helper threads reply <THREAD_ID> --commit-hash <HASH> --resolve
 go tool gh-helper issues show <N> --include-sub         # Show issue with sub-issues
 go tool gh-helper issues edit <N> --parent <P>          # Link as sub-issue
 go tool gh-helper labels add bug,enhancement --items 254,267
@@ -61,7 +64,7 @@ go tool gh-helper releases analyze --milestone v0.19.0
 go tool github-schema type <TypeName>                   # GraphQL schema introspection
 ```
 
-For full gh-helper command reference, see [dev-docs/issue-management.md](dev-docs/issue-management.md).
+For the full GitHub tooling reference, see [dev-docs/issue-management.md](dev-docs/issue-management.md).
 
 ## Core Architecture Overview
 
@@ -124,9 +127,9 @@ Details: [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/iss
 ## GitHub Issues/PRs
 
 - **Language**: ALL GitHub communications MUST be in English
-- **Tool priority**: `gh-helper` → `gh` CLI → GitHub MCP
-- **Review workflow**: `go tool gh-helper reviews fetch` for feedback analysis (CRITICAL - prevents missing issues). Plan fixes → commit & push → reply with commit hash and resolve threads. Do not request follow-up reviews (Gemini sunset, #693); never request Copilot review.
-- **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` for content with special characters. NEVER pass backtick-containing strings directly in shell commands.
+- **Tool priority**: native `gh` for PR/check state, `gh pr-review` for review threads, `gh-helper` for issue/label/release operations, then GitHub MCP. Pin `gh pr-review` as documented in `dev-docs/issue-management.md`.
+- **Review workflow**: inventory all unresolved threads with `gh pr-review threads list`, including outdated threads, retrieve complete inline comment context for every listed ID, and inspect review-level bodies/states separately; plan fixes → commit & authorized push → verify the fixing commit is contained in the hosted PR head → reply with the fixing commit hash → confirm publication → resolve the thread. Obtain an independent review for the exact current head through an available local or delegated route. Gemini is unavailable (#693); never request Copilot review.
+- **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` where the command supports it. `gh pr-review comments reply` v1.6.2 supports `--body` but not `--body-file`, so pass a safely quoted variable. NEVER pass backtick-containing strings directly in shell commands.
 - **Documentation labels**: `docs-user` (README, docs/), `docs-dev` (dev-docs/, AGENTS.md, CLAUDE.md), `ignore-for-release` (dev-docs only PRs)
 - **Gemini style guide** (`.gemini/styleguide.md`): MUST obtain user permission before modifying
 
