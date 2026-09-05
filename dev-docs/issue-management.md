@@ -88,7 +88,7 @@ while IFS= read -r THREAD_ID; do
       }
     }
   }' --jq '.data.node'
-done < <(jq -r '.[].id' <<<"$THREADS_JSON")
+done < <(jq -r '.[].threadId' <<<"$THREADS_JSON")
 ```
 
 Treat the IDs in `THREADS_JSON` as the coverage checklist. Do not declare the
