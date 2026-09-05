@@ -100,7 +100,7 @@ Download pre-built binaries from [GitHub Releases](https://github.com/apstndb/sp
 [Install Go](https://go.dev/doc/install) and run the following command.
 
 ```
-# Requires Go 1.25+
+# Requires Go 1.26+
 go install github.com/apstndb/spanner-mycli@latest
 ```
 
