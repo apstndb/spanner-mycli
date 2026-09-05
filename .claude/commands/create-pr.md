@@ -66,11 +66,13 @@ Fixes #ISSUE_NUMBER
 gh pr checks --required --watch --fail-fast
 ```
 
-6. Inventory unresolved, non-outdated review threads, verify the exact head and merge state, and address any actionable threads with `/review-cycle`:
+6. Inventory all unresolved review threads and review-level feedback, verify the exact head and merge state, and address actionable feedback with `/review-cycle`:
 ```bash
 PR="$(gh pr view --json number --jq .number)"
-gh pr-review review view "$PR" --unresolved --not_outdated -R apstndb/spanner-mycli
-gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,state
+gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
+gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" \
+  --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
+gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 ```
 
 Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait

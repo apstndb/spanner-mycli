@@ -15,16 +15,20 @@ it). Review threads use the `gh pr-review` extension pinned to the version
 validated by this workflow:
 
 ```bash
-gh extension install Agynio/gh-pr-review --pin v1.6.2
+gh extension install Agynio/gh-pr-review --pin v1.6.2 --force
+gh extension list
 ```
+
+Confirm that `gh extension list` reports `gh pr-review` at v1.6.2. The
+`--force` flag updates an existing installation instead of silently retaining a
+different version.
 
 ```bash
 # PR checks and exact merge state (native gh)
 gh pr checks <PR> --required --watch --fail-fast
-gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 
 # Review thread operations (gh pr-review v1.6.2)
-gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli
 gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli
 gh pr-review comments reply <PR> --thread-id <ID> --body <TEXT> -R apstndb/spanner-mycli
 gh pr-review threads resolve <PR> --thread-id <ID> -R apstndb/spanner-mycli
@@ -70,23 +74,35 @@ gh pr create --title "feat: new feature" --body-file body.md
 # 2. Merge gate: wait for CI checks to pass
 gh pr checks <PR> --required --watch --fail-fast
 
-# 3. Inventory unresolved, non-outdated review threads
-gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli
+# 3. Inventory every unresolved review thread, including outdated threads
+gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli
 
-# 4. Verify the exact head and merge state
-gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state
+# 4. Read review-level bodies and states with pagination
+gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" \
+  --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
 
-# 5. After additional commits: push, then repeat checks, thread inventory,
+# 5. Verify the exact head, review decision, and merge state
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
+
+# 6. After additional commits: push, verify the fixing commit is contained in
+#    the hosted head, then repeat checks, thread and review-body inventory,
 #    exact-head merge-state inspection, and independent current-head review
 git push
+REMOTE_HEAD="$(gh pr view <PR> --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor <FIX_SHA> "$REMOTE_HEAD"
 gh pr checks <PR> --required --watch --fail-fast
 ```
 
-Thread resolution order matters: commit, push, reply with a message that names
-the fixing commit hash, confirm that the reply is published, then resolve with
-`gh pr-review threads resolve`. A reply without a pushed commit is not
-verifiable. Also read review bodies, not just threads - severity notes
-("critical", "high") may appear only there.
+Thread resolution order matters: commit, authorized push, verify the fixing
+commit is contained in the hosted PR head, reply with a message that names that
+hash, confirm that the reply is published, then resolve with
+`gh pr-review threads resolve`. A reply without a pushed commit is not verifiable. Inventory
+all unresolved threads before filtering; a fixed thread commonly becomes
+outdated. Also read review bodies and states, not just threads - blockers and
+severity notes may appear only there.
+
+`gh pr-review comments reply` v1.6.2 accepts `--body` but not `--body-file`.
+Use a safely quoted shell variable for multi-line or special-character content.
 
 See AGENTS.md for the authoritative merge-gate rules. Obtain independent review
 evidence for the exact current head through an available local or delegated

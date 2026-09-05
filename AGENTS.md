@@ -34,10 +34,10 @@ spanner-mycli is a personal fork of spanner-cli, an interactive CLI for Google C
 2. **Resolve conflicts with origin/main** - ensure branch can merge cleanly
 3. **Never push/commit directly to main branch** - always use feature branches + PRs
 4. **Squash merge only** - enforced via Repository Ruleset
-5. **PR merge process**: CI checks are the merge gate (item 8). Before merging, use `gh pr checks <PR> --required --watch --fail-fast`, inspect unresolved threads separately with `gh pr-review`, and re-read the exact head and merge state with `gh pr view`. Gemini Code Assist review is unavailable (#693); never wait for or request it. Do not request Copilot reviews for this repository.
+5. **PR merge process**: CI checks are the merge gate (item 8). Before merging, use `gh pr checks <PR> --required --watch --fail-fast`, inspect all unresolved threads plus review-level feedback, re-read the exact head/review decision/merge state with `gh pr view`, and confirm independent review evidence covers that head. Gemini Code Assist review is unavailable (#693); never wait for or request it. Do not request Copilot reviews for this repository.
 6. **Squash merge commits**: MUST include descriptive summary of PR changes
 7. **GitHub comment editing**: NEVER use `gh pr comment --edit-last` - always specify exact comment ID
-8. **GitHub checks must pass**: All CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
+8. **GitHub checks must pass**: All required CI checks MUST pass before merging. Always investigate failures - never assume they are transient.
 
 ## Essential Commands
 
@@ -51,8 +51,8 @@ make fmt                      # Format code
 
 # Pull request checks and review threads
 gh pr checks <PR> --required --watch --fail-fast
-gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state
-gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
+gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli
 gh pr-review comments reply <PR> --thread-id <ID> --body <TEXT> -R apstndb/spanner-mycli
 gh pr-review threads resolve <PR> --thread-id <ID> -R apstndb/spanner-mycli
 
@@ -128,8 +128,8 @@ Details: [dev-docs/issue-management.md#phantom-worktree-management](dev-docs/iss
 
 - **Language**: ALL GitHub communications MUST be in English
 - **Tool priority**: native `gh` for PR/check state, `gh pr-review` for review threads, `gh-helper` for issue/label/release operations, then GitHub MCP. Pin `gh pr-review` as documented in `dev-docs/issue-management.md`.
-- **Review workflow**: inventory unresolved, non-outdated threads with `gh pr-review review view`; plan fixes → commit & push → reply with the fixing commit hash in the message → confirm publication → resolve the thread. Obtain an independent review for the exact current head through an available local or delegated route. Gemini is unavailable (#693); never request Copilot review.
-- **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` for content with special characters. NEVER pass backtick-containing strings directly in shell commands.
+- **Review workflow**: inventory all unresolved threads with `gh pr-review threads list`, including outdated threads, and inspect review-level bodies/states separately; plan fixes → commit & authorized push → verify the fixing commit is contained in the hosted PR head → reply with the fixing commit hash → confirm publication → resolve the thread. Obtain an independent review for the exact current head through an available local or delegated route. Gemini is unavailable (#693); never request Copilot review.
+- **Safe content handling**: ALWAYS use stdin, variables, or `--body-file` where the command supports it. `gh pr-review comments reply` v1.6.2 supports `--body` but not `--body-file`, so pass a safely quoted variable. NEVER pass backtick-containing strings directly in shell commands.
 - **Documentation labels**: `docs-user` (README, docs/), `docs-dev` (dev-docs/, AGENTS.md, CLAUDE.md), `ignore-for-release` (dev-docs only PRs)
 - **Gemini style guide** (`.gemini/styleguide.md`): MUST obtain user permission before modifying
 

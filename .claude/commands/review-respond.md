@@ -8,18 +8,30 @@ arguments: "[commit_message]"
 
 After addressing review feedback, please:
 
-1. Identify the correct commit hash for each fix:
+1. Identify the PR and the correct commit hash for each fix:
 **IMPORTANT**: The commit hash should refer to the specific commit where the issue was fixed, which may NOT be HEAD.
 - Use `git log --oneline -10` to review recent commits
 - For each thread, identify which commit actually addressed that specific feedback
 - If unsure, use `git log --grep="keyword"` or `git show <hash>` to verify the fix
 
-2. Find unresolved, non-outdated review threads and classify each one:
-!gh pr-review review view "$(gh pr view --json number --jq .number)" --unresolved --not_outdated -R apstndb/spanner-mycli
+Verify each fixing commit is already contained in the hosted PR head. Push only
+when the user has authorized that separate boundary; otherwise stop and request
+authorization before replying or resolving:
+
+```bash
+PR="$(gh pr view --json number --jq .number)"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor FIX_SHA "$REMOTE_HEAD"
+```
+
+2. Inventory every unresolved review thread, including outdated threads, and
+read review-level bodies and states before classifying feedback:
+!PR=$(gh pr view --json number --jq .number) && gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
+!PR=$(gh pr view --json number --jq .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
 
 Reply to and resolve each addressed actionable or informational thread. Do not
-mechanically resolve outdated or unrelated threads; inspect them only when the
-user asks or when they still describe a live problem.
+mechanically resolve outdated or unrelated threads: inspect each one, and
+explain why it is fixed or no longer applicable before resolving it.
 
 **Reply content guidelines — always write a meaningful reply:**
 - Do NOT just post a commit hash. Explain what was changed and why.
@@ -79,10 +91,14 @@ gh api "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/comments" \
 gh api -X POST "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/events" -f event=COMMENT
 ```
 
-Proceed only once `pendingReviews` is empty (`[]`).
+Proceed only once the result is `{"pendingReviews":[]}`.
 
 4. After all threads are resolved, wait for CI checks on the pushed fixes — they are the merge gate:
 !gh pr checks --required --watch --fail-fast
+
+Then re-read the hosted head, merge state, and review decision, and obtain
+independent review evidence for that exact head:
+!gh pr view --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 
 Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait
 for or request a GitHub bot review. Obtain independent review evidence for the
