@@ -37,11 +37,12 @@ make build
 
 ## Review Workflow
 
-The PR review loop (gh-helper commands, Gemini review rules, thread
-resolution etiquette) is defined in [AGENTS.md](../AGENTS.md) and
-[issue-management.md](issue-management.md). The one rule worth repeating:
-push the fix first, then reply to each review thread with the commit hash and
-resolve it - a reply without a pushed commit is not verifiable.
+The PR review loop (required checks, structured thread handling, independent
+current-head review, and thread resolution etiquette) is defined in
+[AGENTS.md](../AGENTS.md) and [issue-management.md](issue-management.md). The
+one rule worth repeating: push the fix first, then reply to each review thread
+with the commit hash, confirm publication, and resolve it - a reply without a
+pushed commit is not verifiable.
 
 ## Related Documentation
 

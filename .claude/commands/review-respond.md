@@ -1,6 +1,6 @@
 ---
 name: Review Respond
-description: Reply to all review threads with commit hash and resolve
+description: Reply to addressed review threads with commit hash and resolve
 arguments: "[commit_message]"
 ---
 
@@ -14,10 +14,12 @@ After addressing review feedback, please:
 - For each thread, identify which commit actually addressed that specific feedback
 - If unsure, use `git log --grep="keyword"` or `git show <hash>` to verify the fix
 
-2. Find all unresolved threads (including outdated ones) and respond to each one:
-!go tool gh-helper reviews fetch --unresolved-only
+2. Find unresolved, non-outdated review threads and classify each one:
+!gh pr-review review view "$(gh pr view --json number --jq .number)" --unresolved --not_outdated -R apstndb/spanner-mycli
 
-For each thread ID found above, reply and resolve it, regardless of whether it's marked as outdated.
+Reply to and resolve each addressed actionable or informational thread. Do not
+mechanically resolve outdated or unrelated threads; inspect them only when the
+user asks or when they still describe a live problem.
 
 **Reply content guidelines — always write a meaningful reply:**
 - Do NOT just post a commit hash. Explain what was changed and why.
@@ -33,29 +35,37 @@ For each thread ID found above, reply and resolve it, regardless of whether it's
 
 Examples:
 ```bash
+PR="$(gh pr view --json number --jq .number)"
+
 # Code fix — explain what was changed
-go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve \
-  --message "Removed the redundant nil check. ListVariables() calls ensureRegistry() internally, so the explicit guard was preventing first-use initialization."
+gh pr-review comments reply "$PR" --thread-id THREAD_ID \
+  --body "Addressed in abc123: removed the redundant nil check because ListVariables() performs first-use initialization." \
+  -R apstndb/spanner-mycli
+gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 
 # Multi-line response for complex fixes
-cat <<EOF | go tool gh-helper threads reply THREAD_ID --commit-hash abc123 --resolve
-Switched from buffering to streaming output.
-This prevents memory issues from commands with large output.
-EOF
+BODY="Addressed in abc123: switched from buffering to streaming output. This prevents memory issues for commands with large output."
+gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "$BODY" -R apstndb/spanner-mycli
+gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 
 # Acknowledge praise comment (no code change)
-go tool gh-helper threads reply THREAD_ID --message "Thank you!" --resolve
+gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "Thank you!" -R apstndb/spanner-mycli
+gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 
 # Explanation-only response (no code change)
-go tool gh-helper threads reply THREAD_ID --resolve \
-  --message "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context."
+gh pr-review comments reply "$PR" --thread-id THREAD_ID \
+  --body "This is intentional: the regex requires \\s+ after SET to avoid matching bare SET as a variable context." \
+  -R apstndb/spanner-mycli
+gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 ```
 
-Note: Even threads marked as "outdated" should be replied to and resolved, as they may contain valuable feedback that was addressed.
+Confirm each reply is visible before resolving its thread.
 
 3. Verify no PENDING review is holding your replies:
 
-`gh-helper threads reply --resolve` resolves the thread, but if a reply ends up batched into a *pending* review (e.g., an interrupted submit) instead of being posted directly, the reply stays invisible until that review is submitted — leaving "resolved threads with no visible reply." Check for leftover pending reviews (GitHub only lists your own):
+A reply can remain invisible if an interrupted operation leaves it in a
+*pending* review. Check for leftover pending reviews before treating the
+thread workflow as complete (GitHub only lists your own):
 
 !PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '[.[] | select(.state=="PENDING")] | {pendingReviews: map({id, html_url})}'
 
@@ -72,6 +82,8 @@ gh api -X POST "repos/{owner}/{repo}/pulls/$PR/reviews/<REVIEW_ID>/events" -f ev
 Proceed only once `pendingReviews` is empty (`[]`).
 
 4. After all threads are resolved, wait for CI checks on the pushed fixes — they are the merge gate:
-!go tool gh-helper reviews wait --exclude-reviews
+!gh pr checks --required --watch --fail-fast
 
-**Gemini review is best-effort (issue #693)**: consumer Gemini Code Assist code review ceases on **2026-07-17** and is unavailable after. Do not request a new review (`--request-review`) or wait for one; if another review happens to arrive before the sunset, handle its threads by repeating steps 1-2.
+Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait
+for or request a GitHub bot review. Obtain independent review evidence for the
+exact current head through an available local or delegated route.

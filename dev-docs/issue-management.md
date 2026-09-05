@@ -8,23 +8,26 @@ and development tools usage for spanner-mycli.
 > commands and workflows here are designed for programmatic execution. Human
 > contributors may work manually; agents should follow them as written.
 
-## gh-helper Command Reference
+## GitHub Tooling Reference
 
-Tools are managed via the Go tool directive (`go install tool` installs them).
+`gh-helper` is managed via the Go tool directive (`go install tool` installs
+it). Review threads use the `gh pr-review` extension pinned to the version
+validated by this workflow:
 
 ```bash
-# Review operations
-go tool gh-helper reviews fetch <PR>                     # Fetch review data including threads
-go tool gh-helper reviews fetch <PR> --unresolved-only   # Only unresolved threads
-go tool gh-helper reviews fetch <PR> --no-bodies         # Exclude review bodies (lightweight)
-go tool gh-helper reviews wait <PR>                      # Wait for reviews and checks
-go tool gh-helper reviews wait <PR> --async              # Check once (non-blocking)
-go tool gh-helper reviews wait <PR> --exclude-reviews    # Wait for PR checks only
+gh extension install Agynio/gh-pr-review --pin v1.6.2
+```
 
-# Thread operations
-go tool gh-helper threads show <ID1> <ID2>               # Show threads
-go tool gh-helper threads reply <ID> --commit-hash <HASH> --resolve
-go tool gh-helper threads resolve <ID1> <ID2> <ID3>      # Batch resolve
+```bash
+# PR checks and exact merge state (native gh)
+gh pr checks <PR> --required --watch --fail-fast
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state
+
+# Review thread operations (gh pr-review v1.6.2)
+gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli
+gh pr-review threads list <PR> --unresolved -R apstndb/spanner-mycli
+gh pr-review comments reply <PR> --thread-id <ID> --body <TEXT> -R apstndb/spanner-mycli
+gh pr-review threads resolve <PR> --thread-id <ID> -R apstndb/spanner-mycli
 
 # Issue operations
 go tool gh-helper issues show <N> --include-sub          # Show issue with sub-issues
@@ -46,42 +49,48 @@ go tool gh-helper releases analyze --milestone v0.19.0
 go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31
 ```
 
-Use gh-helper for all sub-issue operations; raw GraphQL is only needed for
-custom field selections it does not expose. Always verify linkage after
-creation with `issues show <parent> --include-sub`.
+Use gh-helper for sub-issue, label, and release-analysis operations. Use native
+`gh` for PR checks and merge state, and `gh pr-review` for review threads. If
+the pinned extension is unavailable, fall back to `gh api graphql` for thread
+semantics rather than coupling check waiting to a review aggregator. Always
+verify issue linkage after creation with `issues show <parent> --include-sub`.
 
 ## Review Workflow
 
-**CI checks are the merge gate.** Consumer Gemini Code Assist code review is
-best-effort until its sunset on 2026-07-17 and unavailable after that date
-(#693). Until then a review may still arrive automatically on PR creation;
-if it does, address the feedback like any other review. Never block on a
-Gemini review, extend waits for one, or re-request one (`--request-review`
-and `--request-summary` are no longer part of the workflow).
+**CI checks are the merge gate.** Keep checks, review-thread handling, and
+independent code review as separate evidence. Consumer Gemini Code Assist code
+review is unavailable (#693), so never wait for or request it. Historical
+Gemini-authored threads remain ordinary feedback. Do not request Copilot review
+for this repository.
 
 ```bash
 # 1. Create PR
 gh pr create --title "feat: new feature" --body-file body.md
 
 # 2. Merge gate: wait for CI checks to pass
-go tool gh-helper reviews wait <PR> --exclude-reviews --timeout 15m
+gh pr checks <PR> --required --watch --fail-fast
 
-# 3. Best-effort (until 2026-07-17): check once whether review feedback
-#    arrived — non-blocking; do not wait or re-request if it did not
-go tool gh-helper reviews fetch <PR> --unresolved-only
+# 3. Inventory unresolved, non-outdated review threads
+gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli
 
-# 4. After additional commits: push, then re-run the checks gate
+# 4. Verify the exact head and merge state
+gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state
+
+# 5. After additional commits: push, then repeat checks, thread inventory,
+#    exact-head merge-state inspection, and independent current-head review
 git push
-go tool gh-helper reviews wait <PR> --exclude-reviews --timeout 15m
+gh pr checks <PR> --required --watch --fail-fast
 ```
 
-Thread resolution order matters: commit, push, then reply with the commit
-hash and resolve (`threads reply <ID> --commit-hash <HASH> --resolve`). A
-reply without a pushed commit is not verifiable. Also read review bodies, not
-just threads - severity notes ("critical", "high") may appear only there.
+Thread resolution order matters: commit, push, reply with a message that names
+the fixing commit hash, confirm that the reply is published, then resolve with
+`gh pr-review threads resolve`. A reply without a pushed commit is not
+verifiable. Also read review bodies, not just threads - severity notes
+("critical", "high") may appear only there.
 
-See AGENTS.md for the authoritative merge-gate rules. Never request Copilot
-reviews for this repository.
+See AGENTS.md for the authoritative merge-gate rules. Obtain independent review
+evidence for the exact current head through an available local or delegated
+route; this is separate from GitHub's required checks.
 
 ## Issue Management
 
@@ -179,10 +188,11 @@ Agent permission rules for worktrees and destructive operations:
 
 - **Always request user permission**: any `--force` operation, deleting a
   worktree with uncommitted changes (state what would be lost), history
-  rewrites (rebase, amend of pushed commits), branch deletion.
-- **Autonomous actions allowed**: deleting a clean worktree whose issue is
-  resolved, standard git operations on feature branches (add/commit/push),
-  test execution, documentation updates.
+  rewrites (rebase, amend of pushed commits), branch deletion, and deleting any
+  worktree even when it is clean.
+- **Autonomous actions allowed**: standard git operations on feature branches
+  (add/commit/push), test execution, documentation updates, and reporting clean
+  worktrees as cleanup candidates without deleting them.
 - **Best practices**: run `git status` before any destructive operation;
   offer safer alternatives (e.g., commit before deleting); prioritize
   preserving work over convenience.

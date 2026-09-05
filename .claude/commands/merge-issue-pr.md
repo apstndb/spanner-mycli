@@ -11,14 +11,16 @@ You are completing the PR workflow for #$ARGUMENTS in the spanner-mycli reposito
 ## Your task
 
 1. Identify the PR: if #$ARGUMENTS is a PR, use it directly; if it is an issue, find the PR associated with it
-2. Wait for CI checks to complete using `go tool gh-helper reviews wait <PR> --exclude-reviews` — passing checks are the merge gate
-3. Check for unresolved review threads with `go tool gh-helper reviews fetch <PR> --unresolved-only`; if any exist, address and resolve them before merging. Do not wait for new reviews to arrive.
-4. Squash merge the PR with a descriptive commit message that includes:
+2. Wait for required CI checks with `gh pr checks <PR> --required --watch --fail-fast` — passing checks are the merge gate
+3. Check unresolved, non-outdated review threads with `gh pr-review review view <PR> --unresolved --not_outdated -R apstndb/spanner-mycli`; address actionable feedback, publish a meaningful reply, and resolve each addressed thread before merging
+4. Verify the exact head and merge state with `gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state`, and confirm independent review evidence covers that head
+5. Squash merge the PR with a descriptive commit message that includes:
    - Clear summary of changes
    - Reference to the issue being fixed (if any)
-5. Clean up the phantom worktree for this issue if it exists
+6. Report any related phantom worktree as a cleanup candidate; do not delete it without explicit user permission
 
 Important notes:
-- **CI checks are the merge gate.** Gemini review is best-effort until its sunset on **2026-07-17** and unavailable after (issue #693): if a review already arrived, address its feedback; never wait for one or request one (no `--request-review`, no `--request-summary`, no `/gemini` comments).
+- **CI checks are the merge gate.** Consumer Gemini Code Assist review is unavailable (issue #693); never wait for or request it. Do not request Copilot review for this repository.
+- Review threads and independent current-head review are separate evidence from CI checks
 - Use the squash merge method as enforced by the repository ruleset
 - Include a meaningful commit message that describes the changes made in the PR
