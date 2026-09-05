@@ -10,6 +10,9 @@ Please show me:
 1. Every unresolved review thread, including outdated threads:
 !gh pr-review threads list "$(gh pr view --json number --jq .number)" --unresolved -R apstndb/spanner-mycli
 
+For every listed thread ID, show the complete inline comment context using
+[Complete Thread Inventory and Context](../../dev-docs/issue-management.md#complete-thread-inventory-and-context).
+
 2. Review-level bodies and states:
 !PR=$(gh pr view --json number -q .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
 

@@ -75,6 +75,9 @@ gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" \
 gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
 ```
 
+Use the complete per-thread context procedure linked from `/review-cycle` for
+every thread ID before classifying or resolving feedback.
+
 Consumer Gemini Code Assist review is unavailable (issue #693). Do not wait
 for or request a GitHub bot review. Obtain independent review evidence for the
 exact current head through an available local or delegated route.

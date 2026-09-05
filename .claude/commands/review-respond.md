@@ -20,12 +20,16 @@ authorization before replying or resolving:
 
 ```bash
 PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
 REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor FIX_SHA "$REMOTE_HEAD"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
 ```
 
 2. Inventory every unresolved review thread, including outdated threads, and
-read review-level bodies and states before classifying feedback:
+retrieve the complete inline comment context for every listed thread ID with
+[Complete Thread Inventory and Context](../../dev-docs/issue-management.md#complete-thread-inventory-and-context).
+Also read review-level bodies and states before classifying feedback:
 !PR=$(gh pr view --json number --jq .number) && gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
 !PR=$(gh pr view --json number --jq .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
 
@@ -48,15 +52,19 @@ explain why it is fixed or no longer applicable before resolving it.
 Examples:
 ```bash
 PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
 
 # Code fix — explain what was changed
 gh pr-review comments reply "$PR" --thread-id THREAD_ID \
-  --body "Addressed in abc123: removed the redundant nil check because ListVariables() performs first-use initialization." \
+  --body "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization." \
   -R apstndb/spanner-mycli
 gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 
 # Multi-line response for complex fixes
-BODY="Addressed in abc123: switched from buffering to streaming output. This prevents memory issues for commands with large output."
+BODY="Addressed in $FIX_SHA: switched from buffering to streaming output. This prevents memory issues for commands with large output."
 gh pr-review comments reply "$PR" --thread-id THREAD_ID --body "$BODY" -R apstndb/spanner-mycli
 gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 

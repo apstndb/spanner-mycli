@@ -15,13 +15,22 @@ it). Review threads use the `gh pr-review` extension pinned to the version
 validated by this workflow:
 
 ```bash
-gh extension install Agynio/gh-pr-review --pin v1.6.2 --force
+# For a new installation:
+gh extension install Agynio/gh-pr-review --pin v1.6.2
 gh extension list
 ```
 
-Confirm that `gh extension list` reports `gh pr-review` at v1.6.2. The
-`--force` flag updates an existing installation instead of silently retaining a
-different version.
+If it is already installed, obtain local tool-update authority, then replace
+it to establish the exact pin; `install --force` upgrades to latest and drops
+the requested pin:
+
+```bash
+gh extension remove pr-review
+gh extension install Agynio/gh-pr-review --pin v1.6.2
+gh extension list
+```
+
+Confirm that `gh extension list` reports `gh pr-review` at v1.6.2.
 
 ```bash
 # PR checks and exact merge state (native gh)
@@ -52,6 +61,39 @@ go tool gh-helper labels add-from-issues --pr 254        # Inherit labels from c
 go tool gh-helper releases analyze --milestone v0.19.0
 go tool gh-helper releases analyze --since 2024-01-01 --until 2024-01-31
 ```
+
+### Complete Thread Inventory and Context
+
+`gh pr-review threads list` is the authoritative paginated inventory, but it
+does not include inline comment bodies. `gh pr-review review view` includes
+body context but is capped at the first 100 reviews, threads, and comments in
+v1.6.2. Therefore, fetch every listed unresolved thread ID directly and
+paginate its comments before classifying feedback:
+
+```bash
+set -euo pipefail
+PR="$(gh pr view --json number --jq .number)"
+THREADS_JSON="$(gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli)"
+printf '%s\n' "$THREADS_JSON"
+
+while IFS= read -r THREAD_ID; do
+  gh api graphql --paginate -F threadId="$THREAD_ID" -f query='query($threadId: ID!, $endCursor: String) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        id isResolved isOutdated path line
+        comments(first: 100, after: $endCursor) {
+          nodes { id databaseId author { login } body createdAt url }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }' --jq '.data.node'
+done < <(jq -r '.[].id' <<<"$THREADS_JSON")
+```
+
+Treat the IDs in `THREADS_JSON` as the coverage checklist. Do not declare the
+review clean until full context was retrieved for every ID and review-level
+bodies/states were inspected separately.
 
 Use gh-helper for sub-issue, label, and release-analysis operations. Use native
 `gh` for PR checks and merge state, and `gh pr-review` for review threads. If
@@ -88,18 +130,21 @@ gh pr view <PR> --json headRefOid,mergeable,mergeStateStatus,state,reviewDecisio
 #    the hosted head, then repeat checks, thread and review-body inventory,
 #    exact-head merge-state inspection, and independent current-head review
 git push
-REMOTE_HEAD="$(gh pr view <PR> --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor <FIX_SHA> "$REMOTE_HEAD"
-gh pr checks <PR> --required --watch --fail-fast
+PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+gh pr checks "$PR" --required --watch --fail-fast
 ```
 
 Thread resolution order matters: commit, authorized push, verify the fixing
 commit is contained in the hosted PR head, reply with a message that names that
 hash, confirm that the reply is published, then resolve with
-`gh pr-review threads resolve`. A reply without a pushed commit is not verifiable. Inventory
-all unresolved threads before filtering; a fixed thread commonly becomes
-outdated. Also read review bodies and states, not just threads - blockers and
-severity notes may appear only there.
+`gh pr-review threads resolve`. A reply without a pushed commit is not
+verifiable. Inventory all unresolved threads before filtering; a fixed thread
+commonly becomes outdated. Also read review bodies and states, not just threads
+- blockers and severity notes may appear only there.
 
 `gh pr-review comments reply` v1.6.2 accepts `--body` but not `--body-file`.
 Use a safely quoted shell variable for multi-line or special-character content.

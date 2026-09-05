@@ -15,7 +15,10 @@ or request a GitHub bot review. Review threads and independent current-head
 review are separate from the CI gate.
 
 2. Record the hosted head and review decision, inventory every unresolved
-thread (including outdated threads), and read review-level bodies and states:
+thread (including outdated threads), retrieve the complete inline comment
+context for every listed thread ID with the procedure in
+[Complete Thread Inventory and Context](../../dev-docs/issue-management.md#complete-thread-inventory-and-context),
+and read review-level bodies and states:
 !PR=$(gh pr view --json number --jq .number) && gh pr-review threads list "$PR" --unresolved -R apstndb/spanner-mycli
 !PR=$(gh pr view --json number --jq .number) && gh api --paginate "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | {id, user: .user.login, state, submitted_at, body}'
 !gh pr view --json headRefOid,mergeable,mergeStateStatus,state,reviewDecision
@@ -55,24 +58,25 @@ gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycl
 ```
 
 5. After making code changes, run the relevant validation and commit. Push only
-when the user has authorized that separate boundary. Record the fixing commit
-and verify that it is contained in the hosted PR head before replying:
-```bash
-FIX_SHA="$(git rev-parse HEAD)"
-REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
-git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
-```
-If the ancestry check fails, the fixing commit is not published in the PR;
-stop before replying or resolving.
+when the user has authorized that separate boundary.
 
 6. Reply to each code-fix thread with the verified commit hash and explanation,
-confirm the reply is published, then resolve it:
+confirm the reply is published, then resolve it. Make the block self-contained
+and replace the example revision with the specific commit for that thread:
 ```bash
+PR="$(gh pr view --json number --jq .number)"
+FIX_COMMIT=abc123
+FIX_SHA="$(git rev-parse "$FIX_COMMIT^{commit}")"
+REMOTE_HEAD="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+git merge-base --is-ancestor "$FIX_SHA" "$REMOTE_HEAD"
+
 gh pr-review comments reply "$PR" --thread-id THREAD_ID \
   --body "Addressed in $FIX_SHA: removed the redundant nil check because ListVariables() performs first-use initialization." \
   -R apstndb/spanner-mycli
 gh pr-review threads resolve "$PR" --thread-id THREAD_ID -R apstndb/spanner-mycli
 ```
+If the ancestry check fails, the fixing commit is not published in the PR;
+stop before replying or resolving.
 Then wait for CI checks on the hosted head:
 !gh pr checks --required --watch --fail-fast
 
