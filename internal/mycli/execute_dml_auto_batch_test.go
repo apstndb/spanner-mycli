@@ -27,6 +27,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var errInjectedCommitFailure = errors.New("injected commit failure")
+
 func TestAutoBatchDMLLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping emulator integration test in short mode")
@@ -409,13 +411,17 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 			t.Fatal("need nonempty automatic queue before failing commit")
 		}
 		var attemptReached bool
-		session.txn.commitOverride = func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error) {
+		session.txn.commitOverride = func(ctx context.Context, txn *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error) {
 			attemptReached = true
-			return spanner.CommitResponse{}, errors.New("injected commit failure")
+			// End the abandoned server txn so a later real RW commit can run.
+			// This is still a simulated call result, not CommitWithReturnResp.
+			txn.Rollback(ctx)
+			return spanner.CommitResponse{}, errInjectedCommitFailure
 		}
 		t.Cleanup(func() { session.txn.commitOverride = nil })
 		_, err := session.txn.CommitReadWriteTransaction(ctx)
-		if err == nil || !strings.Contains(err.Error(), "injected commit failure") {
+		session.txn.commitOverride = nil
+		if !errors.Is(err, errInjectedCommitFailure) {
 			t.Fatalf("direct commit failure: %v", err)
 		}
 		if !attemptReached {
@@ -425,9 +431,13 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 			t.Fatal("failed commit left queue or RW context")
 		}
 		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (2)")
 		mustExec(t, ctx, session, "COMMIT")
 		if got := countID(t, ctx, session, 1); got != 0 {
 			t.Fatalf("flushed insert survived failed commit into a later transaction: got %d", got)
+		}
+		if got := countID(t, ctx, session, 2); got != 1 {
+			t.Fatalf("later RW commit did not persist Id=2: got %d", got)
 		}
 	})
 
