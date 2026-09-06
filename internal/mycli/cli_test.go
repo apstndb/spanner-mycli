@@ -353,7 +353,7 @@ Empty set
 				// displayResult does, so decorated cases (markdown fence,
 				// echo) assert the full byte-identical output.
 				cli := &Cli{SystemVariables: test.sysVars}
-				sink := cli.newResultSink(out, test.input)
+				sink := cli.newResultSink(context.Background(), out, test.input)
 				err := printResult(test.sysVars, test.screenWidth, sink, test.result, false)
 				if err == nil {
 					err = sink.finish()
