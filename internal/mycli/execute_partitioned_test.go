@@ -24,6 +24,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,6 +52,7 @@ type partitionFanInServer struct {
 	hang        bool
 	started     chan struct{}
 	startedOnce sync.Once
+	execs       atomic.Int32
 }
 
 func (s *partitionFanInServer) markStarted() {
@@ -81,6 +83,7 @@ func (s *partitionFanInServer) PartitionQuery(context.Context, *sppb.PartitionQu
 }
 
 func (s *partitionFanInServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
+	s.execs.Add(1)
 	s.markStarted()
 	if s.hang {
 		<-stream.Context().Done()
@@ -328,6 +331,50 @@ func TestRunPartitionedRowSeqCancelDuringSubmit(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("cancel during submission did not join producers")
+	}
+}
+
+func TestRunPartitionedRowSeqSkipsUnsubmittedAfterCancel(t *testing.T) {
+	// Package-level submit hook; do not run in parallel with other fan-in tests.
+	const n = 32
+	var submitted atomic.Int32
+	testOnPartitionSubmit = func() { submitted.Add(1) }
+	t.Cleanup(func() { testOnPartitionSubmit = nil })
+
+	started := make(chan struct{})
+	server := &partitionFanInServer{nPartitions: n, rowsPer: 1, hang: true, started: started}
+	tx, parts := startPartitionFanIn(t, server)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+			for _, err := range rows {
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first worker did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !isCancelErr(err) {
+			t.Fatalf("got %v, want cancellation", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancel did not join producers")
+	}
+	gotSubmit := int(submitted.Load())
+	gotRPC := int(server.execs.Load())
+	t.Logf("p.Go submissions=%d ExecuteStreamingSql=%d partitions=%d", gotSubmit, gotRPC, n)
+	if gotSubmit > 2 {
+		t.Fatalf("submitted %d partitions after cancel; later unsubmitted work should be skipped", gotSubmit)
 	}
 }
 

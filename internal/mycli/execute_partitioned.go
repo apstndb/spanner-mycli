@@ -172,6 +172,12 @@ type partitionedRow struct {
 	err error
 }
 
+// testOnPartitionSubmit is invoked immediately before each pool.Go during
+// partitioned fan-in. Production leaves it nil. Tests use it to observe
+// whether canceled shutdown still schedules remaining partitions; conc
+// ContextPool.Go does not itself skip work after context cancel.
+var testOnPartitionSubmit func()
+
 // runPartitionedRowSeq executes all partitions with bounded concurrency and
 // hands consume the row-type metadata plus a merged, fallible row sequence.
 // The single consumer serializes output, so sinks need no locking. Metadata is
@@ -207,7 +213,16 @@ func runPartitionedRowSeq(
 		// cannot starve the consumer. Go() waits for a free worker when the pool
 		// is full; a worker that has a row waits to send on the unbuffered
 		// channel. Consume must therefore be running before every Go() returns.
+		// Stop scheduling once the child context is canceled: conc Go() does not
+		// short-circuit on a canceled context, so the remaining list would
+		// otherwise still be submitted after shutdown.
 		for _, partition := range partitions {
+			if childCtx.Err() != nil {
+				break
+			}
+			if testOnPartitionSubmit != nil {
+				testOnPartitionSubmit()
+			}
 			p.Go(func(workerCtx context.Context) error {
 				rowIter := batchROTx.Execute(workerCtx, partition)
 				var result spaniter.RowIteratorResult
