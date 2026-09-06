@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -30,9 +32,15 @@ import (
 
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
+	"github.com/kballard/go-shellquote"
 )
 
-const pagerHelperEnv = "SPANNER_MYCLI_PAGER_HELPER"
+const (
+	pagerHelperEnv    = "SPANNER_MYCLI_PAGER_HELPER"
+	pagerReadyFailEnv = "SPANNER_MYCLI_PAGER_READY_FAIL"
+	pagerStopFirstEnv = "SPANNER_MYCLI_PAGER_STOP_FIRST"
+	pagerUnquotedEnv  = "SPANNER_MYCLI_PAGER_UNQUOTED"
+)
 
 func init() {
 	mode := os.Getenv(pagerHelperEnv)
@@ -63,6 +71,8 @@ func runPagerHelper(mode string) int {
 		fmt.Println("pager-hang-ready")
 		_ = os.Stdout.Sync()
 		select {}
+	case "hang-silent":
+		select {}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown pager helper %q\n", mode)
 		return 2
@@ -75,8 +85,20 @@ func setPagerHelper(t *testing.T, mode string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PAGER", exe)
+	pager := exe
+	if os.Getenv(pagerUnquotedEnv) != "1" {
+		pager = shellquote.Join(exe)
+	}
+	t.Setenv("PAGER", pager)
 	t.Setenv(pagerHelperEnv, mode)
+}
+
+// reapPagerAfterCancel registers stop then cancel so Cleanup LIFO cancels
+// the child before Wait. Hang helpers do not exit on stdin EOF.
+func reapPagerAfterCancel(t *testing.T, cancel context.CancelFunc, stop func() error) {
+	t.Helper()
+	t.Cleanup(func() { _ = stop() })
+	t.Cleanup(cancel)
 }
 
 func waitErr(t *testing.T, done <-chan error, d time.Duration, what string) error {
@@ -191,8 +213,7 @@ func TestStartPagerCancelAfterSuccessfulWrite(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = stop() })
-	t.Cleanup(cancel)
+	reapPagerAfterCancel(t, cancel, stop)
 
 	select {
 	case <-stdout.ready:
@@ -308,13 +329,13 @@ func (w *readyWriter) Write(p []byte) (int, error) {
 func TestStartPagerCancelDuringBlockedWrite(t *testing.T) {
 	setPagerHelper(t, "hang")
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	stdout := &readyWriter{ready: make(chan struct{})}
 	out, stop, err := startPager(ctx, stdout)
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
-	defer func() { _ = stop() }()
+	reapPagerAfterCancel(t, cancel, stop)
 
 	select {
 	case <-stdout.ready:
@@ -476,4 +497,170 @@ func isBrokenPipe(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "pipe")
+}
+
+func TestPagerHangSilentReadyTimeoutInner(t *testing.T) {
+	if os.Getenv(pagerReadyFailEnv) != "1" {
+		t.Skip("inner subprocess for ready-timeout cleanup")
+	}
+	setPagerHelper(t, "hang-silent")
+	ctx, cancel := context.WithCancel(context.Background())
+	_, stop, err := startPager(ctx, io.Discard)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if os.Getenv(pagerStopFirstEnv) == "1" {
+		t.Cleanup(cancel)
+		t.Cleanup(func() { _ = stop() })
+	} else {
+		reapPagerAfterCancel(t, cancel, stop)
+	}
+	t.Fatal("hang pager did not print ready")
+}
+
+func TestPagerReadyTimeoutCleanupCancelsBeforeWait(t *testing.T) {
+	cmd := pagerTestCommand(t, "^TestPagerHangSilentReadyTimeoutInner$")
+	cmd.Env = append(cmd.Env, pagerReadyFailEnv+"=1")
+	configurePagerSubprocess(cmd)
+	done := make(chan error, 1)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("inner test passed; want readiness assertion failure")
+		}
+	case <-time.After(5 * time.Second):
+		killPagerSubprocess(cmd)
+		t.Fatal("outer watchdog: inner ready-timeout test did not exit after cancel-then-wait")
+	}
+}
+
+func TestPagerReadyTimeoutStopFirstNeedsKill(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group kill of hang helper is Unix-only; Windows limitation recorded")
+	}
+	cmd := pagerTestCommand(t, "^TestPagerHangSilentReadyTimeoutInner$")
+	cmd.Env = append(cmd.Env, pagerReadyFailEnv+"=1", pagerStopFirstEnv+"=1")
+	configurePagerSubprocess(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		t.Fatalf("stop-first inner exited before outer wait (%v); cleanup hang was not reproduced", err)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	killPagerSubprocess(cmd)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("killed stop-first inner did not exit")
+	}
+}
+
+func TestStartPagerHelperPathWithSpaces(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("space-path helper copy is exercised on Unix; Windows path quoting is covered by shellquote.Join in setPagerHelper")
+	}
+	src, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "pager tests")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "mycli.test")
+	if err := copyFile(dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1", "-test.v")
+	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("space-path helper test failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "PASS") {
+		t.Fatalf("space-path helper output missing PASS:\n%s", out)
+	}
+}
+
+func TestStartPagerHelperPathWithSpacesUnquotedFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("space-path negative quoting is Unix-only")
+	}
+	src, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "pager tests")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "mycli.test")
+	if err := copyFile(dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1")
+	cmd.Env = append(filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv), pagerUnquotedEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("unquoted space path succeeded; want helper startup failure\n%s", out)
+	}
+}
+
+func pagerTestCommand(t *testing.T, run string) *exec.Cmd {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run="+run, "-test.count=1")
+	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
+	return cmd
+}
+
+func filterEnv(env []string, drop ...string) []string {
+	skip := make(map[string]struct{}, len(drop))
+	for _, k := range drop {
+		skip[k] = struct{}{}
+	}
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, found := skip[k]; found {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+func copyFile(dst, src string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
 }
