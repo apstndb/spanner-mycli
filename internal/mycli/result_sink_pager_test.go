@@ -1,0 +1,677 @@
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package mycli
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
+	"github.com/kballard/go-shellquote"
+)
+
+const (
+	pagerHelperEnv    = "SPANNER_MYCLI_PAGER_HELPER"
+	pagerReadyFailEnv = "SPANNER_MYCLI_PAGER_READY_FAIL"
+	pagerStopFirstEnv = "SPANNER_MYCLI_PAGER_STOP_FIRST"
+	pagerUnquotedEnv  = "SPANNER_MYCLI_PAGER_UNQUOTED"
+)
+
+func init() {
+	mode := os.Getenv(pagerHelperEnv)
+	if mode == "" {
+		return
+	}
+	os.Exit(runPagerHelper(mode))
+}
+
+func runPagerHelper(mode string) int {
+	switch mode {
+	case "cat":
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+		return 0
+	case "head1":
+		line, err := bufio.NewReader(os.Stdin).ReadBytes('\n')
+		if len(line) == 0 && err != nil && !errors.Is(err, io.EOF) {
+			return 1
+		}
+		_, _ = os.Stdout.Write(line)
+		return 0
+	case "exit2":
+		return 2
+	case "cat-exit2":
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+		return 2
+	case "hang":
+		fmt.Println("pager-hang-ready")
+		_ = os.Stdout.Sync()
+		select {}
+	case "hang-silent":
+		select {}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown pager helper %q\n", mode)
+		return 2
+	}
+}
+
+func setPagerHelper(t *testing.T, mode string) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pager := exe
+	if os.Getenv(pagerUnquotedEnv) != "1" {
+		pager = shellquote.Join(exe)
+	}
+	t.Setenv("PAGER", pager)
+	t.Setenv(pagerHelperEnv, mode)
+}
+
+// reapPagerAfterCancel registers stop then cancel so Cleanup LIFO cancels
+// the child before Wait. Hang helpers do not exit on stdin EOF.
+func reapPagerAfterCancel(t *testing.T, cancel context.CancelFunc, stop func() error) {
+	t.Helper()
+	t.Cleanup(func() { _ = stop() })
+	t.Cleanup(cancel)
+}
+
+func waitErr(t *testing.T, done <-chan error, d time.Duration, what string) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(d):
+		t.Fatalf("watchdog: %s did not finish", what)
+		return nil
+	}
+}
+
+func largePagerInput() string {
+	return strings.Repeat("audit line\n", 1<<16)
+}
+
+func TestStartPagerCompleteConsumption(t *testing.T) {
+	setPagerHelper(t, "cat")
+	var buf bytes.Buffer
+	out, stop, err := startPager(context.Background(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := "hello pager\nsecond line\n"
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(out, payload)
+		done <- err
+	}()
+	if err := waitErr(t, done, 3*time.Second, "cat pager write"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("repeated stop: %v", err)
+	}
+	if got := buf.String(); got != payload {
+		t.Fatalf("pager stdout = %q, want %q", got, payload)
+	}
+}
+
+func TestStartPagerEarlyExit(t *testing.T) {
+	setPagerHelper(t, "head1")
+	out, stop, err := startPager(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stop() }()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(out, largePagerInput())
+		done <- err
+	}()
+	err = waitErr(t, done, 3*time.Second, "early-exit pager write")
+	if err == nil {
+		t.Fatal("large write succeeded after pager early exit; want write error")
+	}
+}
+
+func TestStartPagerEarlyExitHeadUnix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses head(1)")
+	}
+	t.Setenv("PAGER", "head -n 1")
+	out, stop, err := startPager(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stop() }()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(out, largePagerInput())
+		done <- err
+	}()
+	err = waitErr(t, done, 3*time.Second, "head -n 1 pager write")
+	if err == nil {
+		t.Fatal("large write succeeded after head -n 1 exit; want write error")
+	}
+}
+
+func TestStartPagerShortOutputNonzeroExit(t *testing.T) {
+	setPagerHelper(t, "cat-exit2")
+	out, stop, err := startPager(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stop() })
+	if _, err := io.WriteString(out, "one line\n"); err != nil {
+		t.Fatalf("short write: %v", err)
+	}
+	err = stop()
+	if err == nil {
+		t.Fatal("stop succeeded after pager exited 2; short output must not hide nonzero Wait")
+	}
+	if !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("stop err = %v, want pager wait exit status 2", err)
+	}
+	if err := stop(); err == nil || !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("repeated stop should keep the wait error, got %v", err)
+	}
+}
+
+func TestStartPagerCancelAfterSuccessfulWrite(t *testing.T) {
+	setPagerHelper(t, "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &readyWriter{ready: make(chan struct{})}
+	out, stop, err := startPager(ctx, stdout)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	reapPagerAfterCancel(t, cancel, stop)
+
+	select {
+	case <-stdout.ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hang pager did not print ready")
+	}
+	if _, err := io.WriteString(out, "fits-in-pipe\n"); err != nil {
+		t.Fatalf("short write before cancel: %v", err)
+	}
+	cancel()
+	err = stop()
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("stop after cancel = %v, want context.Canceled", err)
+	}
+}
+
+func TestResultSinkFinishDecorationFailureReaps(t *testing.T) {
+	// Package-level decorate hook; do not run in parallel with other pager tests.
+	testFailPagerDecorate = func() error { return errors.New("injected decorate failure") }
+	t.Cleanup(func() { testFailPagerDecorate = nil })
+
+	setPagerHelper(t, "exit2")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	cli.SystemVariables.Display.MarkdownCodeblock = true
+	var buf bytes.Buffer
+	sink := cli.newResultSink(context.Background(), &buf, "SHOW VARIABLES")
+	err := sink.finish()
+	if err == nil {
+		t.Fatal("finish succeeded after injected decorate failure")
+	}
+	if !strings.Contains(err.Error(), "injected decorate failure") {
+		t.Fatalf("finish err = %v, want injected decorate failure", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("finish err = %v, want joined pager wait so the child was reaped", err)
+	}
+	sink.abort()
+	if err := sink.finish(); err != nil {
+		t.Fatalf("repeated finish after abort: %v", err)
+	}
+}
+
+func TestExecuteStatementShortPagerFailure(t *testing.T) {
+	setPagerHelper(t, "cat-exit2")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(context.Background(), &ShowVariablesStatement{}, false, "SHOW VARIABLES", &buf)
+		done <- err
+	}()
+	err := waitErr(t, done, 5*time.Second, "executeStatement short pager failure")
+	if err == nil {
+		t.Fatal("executeStatement succeeded although pager exited 2 after consuming a short result")
+	}
+}
+
+func TestStartPagerFailingChild(t *testing.T) {
+	setPagerHelper(t, "exit2")
+	out, stop, err := startPager(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stop() }()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(out, largePagerInput())
+		done <- err
+	}()
+	if err := waitErr(t, done, 3*time.Second, "failing pager write"); err == nil {
+		t.Fatal("write succeeded through pager that exited 2")
+	}
+	if err := stop(); err == nil || !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("stop after failing child = %v, want pager wait exit status 2", err)
+	}
+}
+
+func TestStartPagerInvalidAndMissingCommand(t *testing.T) {
+	t.Run("whitespace", func(t *testing.T) {
+		t.Setenv("PAGER", "   ")
+		_, _, err := startPager(context.Background(), io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "invalid pager command") {
+			t.Fatalf("err = %v, want invalid pager command", err)
+		}
+	})
+	t.Run("missing", func(t *testing.T) {
+		t.Setenv("PAGER", "spanner-mycli-pager-command-missing")
+		_, stop, err := startPager(context.Background(), io.Discard)
+		if err == nil {
+			_ = stop()
+			t.Fatal("missing pager command started")
+		}
+		if !strings.Contains(err.Error(), "failed to start pager") {
+			t.Fatalf("err = %v, want failed to start pager", err)
+		}
+	})
+}
+
+type readyWriter struct {
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (w *readyWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("pager-hang-ready")) {
+		w.once.Do(func() { close(w.ready) })
+	}
+	return len(p), nil
+}
+
+func TestStartPagerCancelDuringBlockedWrite(t *testing.T) {
+	setPagerHelper(t, "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &readyWriter{ready: make(chan struct{})}
+	out, stop, err := startPager(ctx, stdout)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	reapPagerAfterCancel(t, cancel, stop)
+
+	select {
+	case <-stdout.ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hang pager did not print ready")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := out.Write(bytes.Repeat([]byte("x"), 1<<20))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("blocked write returned before cancel: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	cancel()
+	err = waitErr(t, done, 3*time.Second, "canceled pager write")
+	if err == nil {
+		t.Fatal("canceled write succeeded")
+	}
+	if !errors.Is(err, context.Canceled) && !isBrokenPipe(err) {
+		t.Logf("canceled write error: %v", err)
+	}
+}
+
+func TestResultSinkCancelBeforeLazyStart(t *testing.T) {
+	setPagerHelper(t, "hang")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	cli.SystemVariables.Display.MarkdownCodeblock = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var buf bytes.Buffer
+	sink := cli.newResultSink(ctx, &buf, "SHOW VARIABLES")
+	n, err := sink.Write([]byte("should-not-write"))
+	if n != 0 {
+		t.Fatalf("wrote %d bytes before lazy start", n)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Write err = %v, want context.Canceled", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("canceled sink started pager/decorations: %q", buf.String())
+	}
+	sink.abort()
+	sink.abort()
+	if err := sink.finish(); err != nil {
+		t.Fatalf("finish after abort: %v", err)
+	}
+}
+
+func TestResultSinkRepeatedFinishAbort(t *testing.T) {
+	setPagerHelper(t, "cat")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	var buf bytes.Buffer
+	sink := cli.newResultSink(context.Background(), &buf, "")
+	if _, err := sink.Write([]byte("row\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.finish(); err != nil {
+		t.Fatalf("repeated finish: %v", err)
+	}
+	sink.abort()
+	sink.abort()
+	if !strings.Contains(buf.String(), "row") {
+		t.Fatalf("missing payload: %q", buf.String())
+	}
+}
+
+// largeStreamStatement writes a payload larger than a typical OS pipe
+// buffer through the session output writer, which executeStatement binds
+// to the resultSink. It exists only to exercise the streamed pager path.
+type largeStreamStatement struct{}
+
+func (largeStreamStatement) isDetachedCompatible() {}
+
+func (largeStreamStatement) Execute(_ context.Context, session *Session) (*Result, error) {
+	w := session.outputWriter()
+	if w == nil {
+		return nil, errors.New("no output writer")
+	}
+	if _, err := io.WriteString(w, largePagerInput()); err != nil {
+		return nil, err
+	}
+	return &Result{Streamed: true, KeepVariables: true}, nil
+}
+
+func TestExecuteStatementPagerEarlyExit(t *testing.T) {
+	setPagerHelper(t, "head1")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(context.Background(), largeStreamStatement{}, false, "SELECT large", &buf)
+		done <- err
+	}()
+	err := waitErr(t, done, 5*time.Second, "executeStatement pager early exit")
+	if err == nil {
+		t.Fatal("executeStatement succeeded after pager early exit; incomplete output must not be full success")
+	}
+}
+
+func TestExecuteStatementPagerCancelBeforeStart(t *testing.T) {
+	setPagerHelper(t, "hang")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(ctx, &ShowVariablesStatement{}, false, "SHOW VARIABLES", &buf)
+		done <- err
+	}()
+	err := waitErr(t, done, 5*time.Second, "executeStatement cancel before pager start")
+	if err == nil {
+		t.Fatal("executeStatement succeeded on canceled context")
+	}
+	if strings.Contains(buf.String(), "pager-hang-ready") {
+		t.Fatalf("canceled executeStatement started hang pager: %q", buf.String())
+	}
+}
+
+func TestPrintResultPagerEarlyExit(t *testing.T) {
+	setPagerHelper(t, "head1")
+	outBuf := &bytes.Buffer{}
+	sysVars := &systemVariables{
+		Display: DisplayVars{
+			UsePager:  true,
+			CLIFormat: enums.DisplayModeCSV,
+		},
+		StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
+	}
+	cli := &Cli{SystemVariables: sysVars}
+	result := &Result{TableHeader: toTableHeader("col1"), Rows: []Row{toRow(largePagerInput())}}
+	done := make(chan error, 1)
+	go func() {
+		done <- cli.PrintResult(80, result, false, "", outBuf)
+	}()
+	err := waitErr(t, done, 5*time.Second, "PrintResult pager early exit")
+	if err == nil {
+		t.Fatal("PrintResult succeeded after pager early exit")
+	}
+}
+
+func isBrokenPipe(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrClosedPipe) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "pipe")
+}
+
+func TestPagerHangSilentReadyTimeoutInner(t *testing.T) {
+	if os.Getenv(pagerReadyFailEnv) != "1" {
+		t.Skip("inner subprocess for ready-timeout cleanup")
+	}
+	setPagerHelper(t, "hang-silent")
+	ctx, cancel := context.WithCancel(context.Background())
+	_, stop, err := startPager(ctx, io.Discard)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if os.Getenv(pagerStopFirstEnv) == "1" {
+		t.Cleanup(cancel)
+		t.Cleanup(func() { _ = stop() })
+	} else {
+		reapPagerAfterCancel(t, cancel, stop)
+	}
+	t.Fatal("hang pager did not print ready")
+}
+
+func TestPagerReadyTimeoutCleanupCancelsBeforeWait(t *testing.T) {
+	cmd := pagerTestCommand(t, "^TestPagerHangSilentReadyTimeoutInner$")
+	cmd.Env = append(cmd.Env, pagerReadyFailEnv+"=1")
+	configurePagerSubprocess(cmd)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	done := make(chan error, 1)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("inner test passed; want readiness assertion failure")
+		}
+		got := out.String()
+		if !strings.Contains(got, "hang pager did not print ready") {
+			t.Fatalf("inner output missing readiness assertion marker:\n%s", got)
+		}
+	case <-time.After(5 * time.Second):
+		killPagerSubprocess(cmd)
+		t.Fatal("outer watchdog: inner ready-timeout test did not exit after cancel-then-wait")
+	}
+}
+
+func TestPagerReadyTimeoutStopFirstNeedsKill(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group kill of hang helper is Unix-only; Windows limitation recorded")
+	}
+	cmd := pagerTestCommand(t, "^TestPagerHangSilentReadyTimeoutInner$")
+	cmd.Env = append(cmd.Env, pagerReadyFailEnv+"=1", pagerStopFirstEnv+"=1")
+	configurePagerSubprocess(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		t.Fatalf("stop-first inner exited before outer wait (%v); cleanup hang was not reproduced", err)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	killPagerSubprocess(cmd)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("killed stop-first inner did not exit")
+	}
+}
+
+func TestStartPagerHelperPathWithSpaces(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("space-path helper copy is exercised on Unix; Windows path quoting is covered by shellquote.Join in setPagerHelper")
+	}
+	src, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "pager tests")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "mycli.test")
+	if err := copyFile(dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1", "-test.v")
+	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("space-path helper test failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "PASS") {
+		t.Fatalf("space-path helper output missing PASS:\n%s", out)
+	}
+}
+
+func TestStartPagerHelperPathWithSpacesUnquotedFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("space-path negative quoting is Unix-only")
+	}
+	src, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "pager tests")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "mycli.test")
+	if err := copyFile(dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1")
+	cmd.Env = append(filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv), pagerUnquotedEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("unquoted space path succeeded; want helper startup failure\n%s", out)
+	}
+	got := string(out)
+	if !strings.Contains(got, "failed to start pager") {
+		t.Fatalf("unquoted space path missing helper-startup failure:\n%s", got)
+	}
+}
+
+func pagerTestCommand(t *testing.T, run string) *exec.Cmd {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run="+run, "-test.count=1", "-test.v")
+	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
+	return cmd
+}
+
+func filterEnv(env []string, drop ...string) []string {
+	skip := make(map[string]struct{}, len(drop))
+	for _, k := range drop {
+		skip[k] = struct{}{}
+	}
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, found := skip[k]; found {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+func copyFile(dst, src string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
