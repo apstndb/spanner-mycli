@@ -172,7 +172,7 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		mustExec(t, ctx, session, "BEGIN")
 		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
 		_, err := execSQL(t, ctx, session, "EXPLAIN ANALYZE SELECT Id FROM AuditBatch WHERE Id = 1")
-		if err != nil && !strings.Contains(err.Error(), "query plan") && !strings.Contains(err.Error(), "EXPLAIN ANALYZE") {
+		if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
 			t.Fatalf("EXPLAIN ANALYZE SELECT: %v", err)
 		}
 		if session.txn.HasAutomaticDML() {
@@ -358,11 +358,11 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		if !session.txn.HasAutomaticDML() {
 			t.Fatal("expected pending automatic DML")
 		}
-		if !session.txn.HeartbeatEnabled() {
+		if !session.txn.heartbeatEnabled() {
 			t.Fatal("enqueue did not enable the RW heartbeat")
 		}
 		mustExec(t, ctx, session, "ROLLBACK")
-		if session.txn.HeartbeatEnabled() {
+		if session.txn.heartbeatEnabled() {
 			t.Fatal("heartbeat remained after rollback")
 		}
 	})
@@ -400,7 +400,7 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("commit RPC failure after flush is not replayable", func(t *testing.T) {
+	t.Run("simulated commit result failure after flush is not replayable", func(t *testing.T) {
 		session := newAutoBatchSession(t)
 		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
 		mustExec(t, ctx, session, "BEGIN")
@@ -408,18 +408,18 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		if !session.txn.HasAutomaticDML() {
 			t.Fatal("need nonempty automatic queue before failing commit")
 		}
-		var hookCalled bool
-		session.txn.commitAfterFlushHook = func() error {
-			hookCalled = true
-			return errors.New("injected commit failure")
+		var attemptReached bool
+		session.txn.commitOverride = func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error) {
+			attemptReached = true
+			return spanner.CommitResponse{}, errors.New("injected commit failure")
 		}
-		t.Cleanup(func() { session.txn.commitAfterFlushHook = nil })
+		t.Cleanup(func() { session.txn.commitOverride = nil })
 		_, err := session.txn.CommitReadWriteTransaction(ctx)
 		if err == nil || !strings.Contains(err.Error(), "injected commit failure") {
 			t.Fatalf("direct commit failure: %v", err)
 		}
-		if !hookCalled {
-			t.Fatal("commit hook did not run; Locked flush path was not reached")
+		if !attemptReached {
+			t.Fatal("commit override did not run; commit-attempt boundary was not reached")
 		}
 		if session.txn.HasAutomaticDML() || session.txn.InReadWriteTransaction() {
 			t.Fatal("failed commit left queue or RW context")
@@ -489,12 +489,13 @@ func TestEnqueueAutomaticDMLEnablesHeartbeat(t *testing.T) {
 			<-ctx.Done()
 		},
 	}
+	t.Cleanup(tm.tc.Close)
 	tm.autoDMLGeneration = 1
 	ok, err := tm.TryEnqueueAutomaticDML(spanner.NewStatement("INSERT INTO t (id) VALUES (1)"))
 	if err != nil || !ok {
 		t.Fatalf("TryEnqueueAutomaticDML: ok=%v err=%v", ok, err)
 	}
-	if !tm.HeartbeatEnabled() {
+	if !tm.heartbeatEnabled() {
 		t.Fatal("enqueue did not mark heartbeat enabled")
 	}
 	select {
@@ -502,7 +503,6 @@ func TestEnqueueAutomaticDMLEnablesHeartbeat(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("heartbeat goroutine did not start")
 	}
-	tm.tc.Close()
 	if !tm.HasAutomaticDML() {
 		t.Fatal("heartbeat enablement flushed or discarded the queue")
 	}
@@ -564,11 +564,11 @@ func assertQueryAbortClearsOwner(t *testing.T, ctx context.Context, sql string) 
 	mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
 	mustExec(t, ctx, session, "BEGIN")
 	mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
-	session.txn.queryAfterFlushHook = func() error {
-		return status.Error(codes.Aborted, "injected after flush")
+	session.txn.queryAfterCollectHook = func() error {
+		return status.Error(codes.Aborted, "injected collector result")
 	}
 	_, err := execSQL(t, ctx, session, sql)
-	session.txn.queryAfterFlushHook = nil
+	session.txn.queryAfterCollectHook = nil
 	if spanner.ErrCode(err) != codes.Aborted {
 		t.Fatalf("%s abort: %v", sql, err)
 	}

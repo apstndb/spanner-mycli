@@ -218,9 +218,6 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
 		return nil, err
 	}
-	if err := session.txn.invokeQueryAfterFlushHook(); err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
-	}
 	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true)
 }
 
@@ -279,6 +276,9 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Metrics:      m,
 		ValueFmtMode: vfm,
 	})
+	if err == nil && session != nil && session.txn != nil {
+		err = session.txn.invokeQueryAfterCollectHook()
+	}
 	if err != nil {
 		if rollbackActiveTransactionOnAbort {
 			return nil, rollbackReadWriteIfAborted(ctx, session, err)

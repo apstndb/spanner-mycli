@@ -145,12 +145,12 @@ type TransactionManager struct {
 	autoDMLGeneration uint64
 
 	// Test seams. Production remains nil.
-	// queryAfterFlushHook runs after a successful automatic flush on executing
-	// read paths, before the user query RPC.
-	// commitAfterFlushHook runs after a successful automatic flush inside
-	// CommitReadWriteTransactionLocked, before CommitWithReturnResp.
-	queryAfterFlushHook  func() error
-	commitAfterFlushHook func() error
+	// queryAfterCollectHook runs after the ordinary collector or PROFILE
+	// iterator consumer returns, so injected errors share those error branches.
+	// commitOverride substitutes CommitWithReturnResp; cleanup after the
+	// attempt is unchanged.
+	queryAfterCollectHook func() error
+	commitOverride        func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error)
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -712,16 +712,14 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		return spanner.CommitResponse{}, err
 	}
 
-	if tm.commitAfterFlushHook != nil {
-		if err := tm.commitAfterFlushHook(); err != nil {
-			if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
-				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
-			return spanner.CommitResponse{}, err
-		}
+	var resp spanner.CommitResponse
+	var err error
+	if tm.commitOverride != nil {
+		// Simulated call result, not an observed Commit RPC failure.
+		resp, err = tm.commitOverride(ctx, rwTxn)
+	} else {
+		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
-
-	resp, err := rwTxn.CommitWithReturnResp(ctx)
 
 	// Always clear transaction context after commit attempt.
 	// A failed commit invalidates the transaction on the server,

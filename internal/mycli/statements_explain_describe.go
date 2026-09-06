@@ -442,9 +442,6 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
 		return nil, err
 	}
-	if err := session.txn.invokeQueryAfterFlushHook(); err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
-	}
 
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
@@ -465,6 +462,9 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		actualRows++
 		return nil
 	})
+	if err == nil {
+		err = session.txn.invokeQueryAfterCollectHook()
+	}
 	if err != nil {
 		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}

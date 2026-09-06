@@ -132,16 +132,15 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	return dmls, counts, nil
 }
 
-// HeartbeatEnabled reports whether the current RW context has heartbeats armed.
-func (tm *TransactionManager) HeartbeatEnabled() bool {
+func (tm *TransactionManager) heartbeatEnabled() bool {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 	return tm.tc.IsHeartbeatEnabled()
 }
 
-func (tm *TransactionManager) invokeQueryAfterFlushHook() error {
+func (tm *TransactionManager) invokeQueryAfterCollectHook() error {
 	tm.mu.RLock()
-	hook := tm.queryAfterFlushHook
+	hook := tm.queryAfterCollectHook
 	tm.mu.RUnlock()
 	if hook == nil {
 		return nil
