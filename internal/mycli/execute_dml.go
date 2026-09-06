@@ -12,8 +12,12 @@ import (
 	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/samber/lo"
 )
+
+var errReturningDMLNotSupportedInBatch = errors.New("THEN RETURN is not supported in batch DML")
 
 func isInsert(sql string) bool {
 	token, err := gsqlutils.FirstNonHintToken("", sql)
@@ -27,6 +31,9 @@ func isInsert(sql string) bool {
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
 	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
+		if dmlHasReturningClause(sql) {
+			return nil, errReturningDMLNotSupportedInBatch
+		}
 		stmt, err := newStatement(sql, session.systemVariables.Params, false)
 		if err != nil {
 			return nil, err
@@ -37,18 +44,26 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 	case *BulkDdlStatement:
 		return nil, errors.New("there is active batch DDL")
 	default:
-		// Get both transaction flags in a single lock acquisition
-		inTransaction, inReadWriteTransaction := session.txn.GetTransactionFlagsWithLock()
-
-		if inReadWriteTransaction && session.systemVariables.Transaction.AutoBatchDML {
+		hasReturning := dmlHasReturningClause(sql)
+		if session.systemVariables.Transaction.AutoBatchDML && !hasReturning {
 			stmt, err := newStatement(sql, session.systemVariables.Params, false)
 			if err != nil {
 				return nil, err
 			}
-			session.batch.SetCurrent(&BatchDMLStatement{DMLs: []spanner.Statement{stmt}})
-			return &Result{}, nil
+			enqueued, err := session.txn.TryEnqueueAutomaticDML(stmt)
+			if err != nil {
+				return nil, err
+			}
+			if enqueued {
+				return &Result{}, nil
+			}
 		}
 
+		if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+			return nil, err
+		}
+
+		inTransaction, _ := session.txn.GetTransactionFlagsWithLock()
 		if !inTransaction &&
 			!isInsert(sql) &&
 			session.systemVariables.Transaction.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
@@ -57,6 +72,48 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 
 		return executeDML(ctx, session, sql)
 	}
+}
+
+// dmlHasReturningClause reports whether sql includes a THEN RETURN clause.
+// The AST path ignores comments and string literals. If memefish cannot parse
+// the statement, a token scan is used; lexer errors fail closed toward the
+// row-producing executeDML path so automatic BatchUpdate cannot drop rows.
+func dmlHasReturningClause(sql string) bool {
+	stmt, err := parseMemefishStatement("", sql)
+	if err == nil {
+		switch s := stmt.(type) {
+		case *ast.Insert:
+			return s.ThenReturn != nil
+		case *ast.Delete:
+			return s.ThenReturn != nil
+		case *ast.Update:
+			return s.ThenReturn != nil
+		default:
+			return false
+		}
+	}
+	return dmlHasReturningClauseLexical(sql)
+}
+
+func dmlHasReturningClauseLexical(sql string) bool {
+	sawThen := false
+	for tok, err := range gsqlutils.NewLexerSeq("", sql) {
+		if err != nil {
+			return true
+		}
+		if sawThen && tokenKeywordLike(tok, "RETURN") {
+			return true
+		}
+		sawThen = tokenKeywordLike(tok, "THEN")
+	}
+	return false
+}
+
+func tokenKeywordLike(tok token.Token, keyword string) bool {
+	if tok.IsKeywordLike(keyword) {
+		return true
+	}
+	return tok.Kind == token.TokenKind(keyword)
 }
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
@@ -69,17 +126,25 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		return nil, err
 	}
 
+	return newBatchDMLResult(dmls, affectedRowSlice, result), nil
+}
+
+func newBatchDMLResult(dmls []spanner.Statement, affectedRowSlice []int64, result *DMLResult) *Result {
+	var commit spanner.CommitResponse
+	if result != nil {
+		commit = result.CommitResponse
+	}
 	return &Result{
 		IsExecutedDML:   true, // This is a batch DML statement
-		CommitTimestamp: result.CommitResponse.CommitTs,
-		CommitStats:     result.CommitResponse.CommitStats,
+		CommitTimestamp: commit.CommitTs,
+		CommitStats:     commit.CommitStats,
 		Rows: slices.Collect(iterutil.ZipShortestBy(slices.Values(dmls), slices.Values(affectedRowSlice), func(s spanner.Statement, affectedRows int64) Row {
 			return toRow(s.SQL, strconv.FormatInt(affectedRows, 10))
 		})),
 		TableHeader:      toTableHeader("DML", "Rows"),
-		AffectedRows:     int(result.Affected),
+		AffectedRows:     int(lo.Sum(affectedRowSlice)),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
-	}, nil
+	}
 }
 
 func executeDML(ctx context.Context, session *Session, sql string) (*Result, error) {

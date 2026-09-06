@@ -215,6 +215,9 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
 	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true)
 }
 

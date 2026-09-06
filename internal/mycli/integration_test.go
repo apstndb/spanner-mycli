@@ -1190,6 +1190,50 @@ func TestBatchStatements(t *testing.T) {
 			},
 			// No cmpOpts needed - TableHeader should be nil for batch statements
 		},
+		{
+			desc: "AUTO_BATCH_DML disable before COMMIT still flushes",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2, false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"SET AUTO_BATCH_DML = FALSE", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+				}},
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
+					AffectedRows: 1,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("2", "false")),
+				}},
+			},
+		},
+		{
+			desc: "AUTO_BATCH_DML rollback does not resurrect queued DML",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (1, true)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2, false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+				}},
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
+					AffectedRows: 1,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("2", "false")),
+				}},
+			},
+		},
 	}
 
 	runStatementTests(t, tests)

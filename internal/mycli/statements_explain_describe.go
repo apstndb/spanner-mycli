@@ -435,6 +435,10 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 }
 
 func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
+
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -557,6 +561,10 @@ func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Al
 }
 
 func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
+
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err

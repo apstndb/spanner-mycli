@@ -134,6 +134,15 @@ type TransactionManager struct {
 	// It lives on the TransactionManager rather than on transactionContext so it
 	// survives the pending -> active context replacement in Begin*TransactionLocked.
 	localVarUndo []savedLocalVar
+
+	// autoDML is the transaction-owned automatic DML queue. Manual START/RUN/ABORT
+	// batches stay on Session.batch. Do not store this list on transactionContext:
+	// that struct is replaced pending->active, owns the heartbeat, and sits behind
+	// non-reentrant mu. autoDMLGeneration identifies the RW transaction that
+	// accepted the work so leftover statements cannot execute in a later owner.
+	autoDML           []spanner.Statement
+	autoDMLOwner      uint64
+	autoDMLGeneration uint64
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -336,6 +345,7 @@ func (tm *TransactionManager) clearTransactionContext() {
 			(*tcPtr).Close()
 		}
 		*tcPtr = nil
+		tm.discardAutomaticDMLLocked()
 		return nil
 	})
 }
@@ -648,6 +658,12 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		oldTc.Close()
 	}
 
+	// A new RW owner must not inherit leftover automatic work. Pending->active
+	// replacement is not a terminal discard of a live owner; any residual here
+	// is cross-owner and is dropped rather than replayed.
+	tm.autoDMLGeneration++
+	tm.discardAutomaticDMLLocked()
+
 	// Set new transaction context
 	tm.tc = &transactionContext{
 		attrs: transactionAttributes{
@@ -684,6 +700,10 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
+	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
+		return spanner.CommitResponse{}, err
+	}
+
 	resp, err := rwTxn.CommitWithReturnResp(ctx)
 
 	// Always clear transaction context after commit attempt.
@@ -691,6 +711,7 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 	// so we must clear the context regardless of the outcome.
 	tm.tc.Close()
 	tm.tc = nil
+	tm.discardAutomaticDMLLocked()
 
 	// Return the response and error as-is, preserving any partial commit info
 	return resp, err
@@ -724,6 +745,7 @@ func (tm *TransactionManager) RollbackReadWriteTransactionLocked(ctx context.Con
 	// Clear transaction context after rollback
 	tm.tc.Close()
 	tm.tc = nil
+	tm.discardAutomaticDMLLocked()
 
 	return nil
 }
@@ -843,6 +865,7 @@ func (tm *TransactionManager) closeTransactionWithMode(mode transactionMode, clo
 		// Close and clear the transaction context
 		(*tcPtr).Close()
 		*tcPtr = nil
+		tm.discardAutomaticDMLLocked()
 		return nil
 	})
 }
