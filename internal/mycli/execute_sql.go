@@ -215,7 +215,25 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 // executeSQLImplWithVars is the actual implementation that accepts custom system variables
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
 	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true)
+}
+
+// rollbackReadWriteIfAborted rolls back a live RW owner when err is Aborted so
+// RecreateClient can replace the session. The initiating error is preserved.
+func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error) error {
+	if err == nil || session == nil || session.txn == nil {
+		return err
+	}
+	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
+		return err
+	}
+	if _, rollbackErr := (&RollbackStatement{}).Execute(ctx, session); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+	}
+	return err
 }
 
 // executeSQLImplSingleUse executes SQL outside the session's explicit
@@ -258,13 +276,12 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Metrics:      m,
 		ValueFmtMode: vfm,
 	})
+	if err == nil && session != nil && session.txn != nil {
+		err = session.txn.invokeQueryAfterCollectHook()
+	}
 	if err != nil {
-		// Handle aborted transaction
-		if rollbackActiveTransactionOnAbort && session.txn.InReadWriteTransaction() && spanner.ErrCode(err) == codes.Aborted {
-			rollback := &RollbackStatement{}
-			if _, rollbackErr := rollback.Execute(ctx, session); rollbackErr != nil {
-				return nil, errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-			}
+		if rollbackActiveTransactionOnAbort {
+			return nil, rollbackReadWriteIfAborted(ctx, session, err)
 		}
 		return nil, err
 	}

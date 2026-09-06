@@ -210,7 +210,7 @@ func (h *SessionHandler) validateSessionSwitch() error {
 	if h.txn.InTransaction() {
 		return errors.New("cannot switch session while a transaction is active; COMMIT, ROLLBACK, or CLOSE it first")
 	}
-	if h.batch.IsActive() {
+	if h.batch.IsActive() || (h.txn != nil && h.txn.HasAutomaticDML()) {
 		return errors.New("cannot switch session while a batch is active; RUN BATCH or ABORT BATCH first")
 	}
 	return nil
@@ -719,6 +719,16 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 	}, nil
 }
 
+func (s *Session) pendingBatchInfo() *BatchInfo {
+	if info := s.batch.Info(); info != nil {
+		return info
+	}
+	if s.txn != nil {
+		return s.txn.AutomaticBatchInfo()
+	}
+	return nil
+}
+
 var errReadOnly = errors.New("can't execute this statement in READONLY mode")
 
 func (s *Session) failStatementIfReadOnly() error {
@@ -744,7 +754,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 
 	defer func() {
 		if result != nil {
-			result.BatchInfo = s.batch.Info()
+			result.BatchInfo = s.pendingBatchInfo()
 		}
 	}()
 	// SET LOCAL values revert when the transaction ends for any reason:

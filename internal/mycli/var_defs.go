@@ -104,7 +104,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "AUTO_BATCH_DML",
-		desc:  "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
+		desc:  "A BOOL indicating whether DML in an explicit read-write transaction is buffered until COMMIT, a later execute-now statement, or RUN BATCH. SET only changes future buffering. The default is false.",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.AutoBatchDML) },
 	},

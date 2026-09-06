@@ -689,6 +689,9 @@ type StartBatchStatement struct {
 }
 
 func (s *StartBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if session.txn != nil && session.txn.HasAutomaticDML() {
+		return nil, fmt.Errorf("already in batch, you should execute ABORT BATCH")
+	}
 	if err := session.batch.Start(s.Mode); err != nil {
 		return nil, err
 	}
@@ -699,6 +702,9 @@ type AbortBatchStatement struct{}
 
 func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	session.batch.Abort()
+	if session.txn != nil {
+		session.txn.DiscardAutomaticDML()
+	}
 	return &Result{KeepVariables: true}, nil
 }
 
@@ -712,14 +718,28 @@ func runBatch(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.failStatementIfReadOnly(); err != nil {
 		return nil, err
 	}
-	batch, err := session.batch.TakeForExecution()
+	if session.batch.IsActive() {
+		batch, err := session.batch.TakeForExecution()
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := session.ExecuteStatement(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+
+	if session.txn == nil || !session.txn.HasAutomaticDML() {
+		return nil, errors.New("no active batch")
+	}
+	result, err := session.txn.FlushAutomaticDML(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	result, err := session.ExecuteStatement(ctx, batch)
-	if err != nil {
-		return nil, err
+	if result == nil {
+		return nil, errors.New("no active batch")
 	}
 	return result, nil
 }

@@ -31,6 +31,9 @@ func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []
 		b.Ddls = append(b.Ddls, ddls...)
 		return &Result{}, nil
 	default:
+		if session.txn != nil && session.txn.HasAutomaticDML() {
+			return nil, errors.New("there is active batch DML")
+		}
 		return executeDdlStatements(ctx, session, ddls)
 	}
 }
