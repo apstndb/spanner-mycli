@@ -523,6 +523,9 @@ func TestPagerReadyTimeoutCleanupCancelsBeforeWait(t *testing.T) {
 	cmd := pagerTestCommand(t, "^TestPagerHangSilentReadyTimeoutInner$")
 	cmd.Env = append(cmd.Env, pagerReadyFailEnv+"=1")
 	configurePagerSubprocess(cmd)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
 	done := make(chan error, 1)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -532,6 +535,10 @@ func TestPagerReadyTimeoutCleanupCancelsBeforeWait(t *testing.T) {
 	case err := <-done:
 		if err == nil {
 			t.Fatal("inner test passed; want readiness assertion failure")
+		}
+		got := out.String()
+		if !strings.Contains(got, "hang pager did not print ready") {
+			t.Fatalf("inner output missing readiness assertion marker:\n%s", got)
 		}
 	case <-time.After(5 * time.Second):
 		killPagerSubprocess(cmd)
@@ -619,6 +626,10 @@ func TestStartPagerHelperPathWithSpacesUnquotedFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("unquoted space path succeeded; want helper startup failure\n%s", out)
 	}
+	got := string(out)
+	if !strings.Contains(got, "failed to start pager") {
+		t.Fatalf("unquoted space path missing helper-startup failure:\n%s", got)
+	}
 }
 
 func pagerTestCommand(t *testing.T, run string) *exec.Cmd {
@@ -627,7 +638,7 @@ func pagerTestCommand(t *testing.T, run string) *exec.Cmd {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(exe, "-test.run="+run, "-test.count=1")
+	cmd := exec.Command(exe, "-test.run="+run, "-test.count=1", "-test.v")
 	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
 	return cmd
 }
