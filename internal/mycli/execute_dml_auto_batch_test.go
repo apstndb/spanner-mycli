@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestAutoBatchDMLLifecycle(t *testing.T) {
@@ -146,20 +148,20 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		mustExec(t, ctx, session, "ROLLBACK")
 	})
 
-	t.Run("EXPLAIN ANALYZE DML flushes then executes", func(t *testing.T) {
+	t.Run("EXPLAIN ANALYZE DML UPDATE depends on queued insert", func(t *testing.T) {
 		session := newAutoBatchSession(t)
 		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
 		mustExec(t, ctx, session, "BEGIN")
 		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
-		_, err := execSQL(t, ctx, session, "EXPLAIN ANALYZE INSERT INTO AuditBatch (Id) VALUES (2)")
-		if err != nil && !strings.Contains(err.Error(), "query plan") && !strings.Contains(err.Error(), "EXPLAIN ANALYZE") {
+		_, err := execSQL(t, ctx, session, "EXPLAIN ANALYZE UPDATE AuditBatch SET Flag = TRUE WHERE Id = 1")
+		if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
 			t.Fatalf("EXPLAIN ANALYZE DML: %v", err)
 		}
 		if session.txn.HasAutomaticDML() {
 			t.Fatal("EXPLAIN ANALYZE DML left automatic work queued")
 		}
-		if got := countID(t, ctx, session, 1); got != 1 {
-			t.Fatalf("queued insert was not flushed before EXPLAIN ANALYZE DML: got %d", got)
+		if !flagTrue(t, ctx, session, 1) {
+			t.Fatal("PROFILE DML UPDATE did not observe the queued insert")
 		}
 		mustExec(t, ctx, session, "ROLLBACK")
 	})
@@ -348,6 +350,95 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		mustExec(t, ctx, session, "ABORT BATCH")
 	})
 
+	t.Run("enqueue enables heartbeat while queue remains pending", func(t *testing.T) {
+		session := newAutoBatchSession(t)
+		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
+		if !session.txn.HasAutomaticDML() {
+			t.Fatal("expected pending automatic DML")
+		}
+		if !session.txn.HeartbeatEnabled() {
+			t.Fatal("enqueue did not enable the RW heartbeat")
+		}
+		mustExec(t, ctx, session, "ROLLBACK")
+		if session.txn.HeartbeatEnabled() {
+			t.Fatal("heartbeat remained after rollback")
+		}
+	})
+
+	t.Run("DESCRIBE leaves automatic queue", func(t *testing.T) {
+		session := newAutoBatchSession(t)
+		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
+		if _, err := execSQL(t, ctx, session, "DESCRIBE SELECT Id FROM AuditBatch"); err != nil {
+			t.Fatalf("DESCRIBE: %v", err)
+		}
+		if !session.txn.HasAutomaticDML() {
+			t.Fatal("DESCRIBE flushed the automatic queue")
+		}
+		mustExec(t, ctx, session, "ROLLBACK")
+	})
+
+	t.Run("direct manager commit flushes nonempty automatic queue", func(t *testing.T) {
+		session := newAutoBatchSession(t)
+		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
+		if !session.txn.HasAutomaticDML() {
+			t.Fatal("need nonempty automatic queue before direct commit")
+		}
+		if _, err := session.txn.CommitReadWriteTransaction(ctx); err != nil {
+			t.Fatalf("CommitReadWriteTransaction: %v", err)
+		}
+		if session.txn.HasAutomaticDML() || session.txn.InReadWriteTransaction() {
+			t.Fatal("direct commit left queue or RW context")
+		}
+		if got := countID(t, ctx, session, 1); got != 1 {
+			t.Fatalf("direct commit did not persist flushed insert: got %d", got)
+		}
+	})
+
+	t.Run("commit RPC failure after flush is not replayable", func(t *testing.T) {
+		session := newAutoBatchSession(t)
+		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
+		if !session.txn.HasAutomaticDML() {
+			t.Fatal("need nonempty automatic queue before failing commit")
+		}
+		var hookCalled bool
+		session.txn.commitAfterFlushHook = func() error {
+			hookCalled = true
+			return errors.New("injected commit failure")
+		}
+		t.Cleanup(func() { session.txn.commitAfterFlushHook = nil })
+		_, err := session.txn.CommitReadWriteTransaction(ctx)
+		if err == nil || !strings.Contains(err.Error(), "injected commit failure") {
+			t.Fatalf("direct commit failure: %v", err)
+		}
+		if !hookCalled {
+			t.Fatal("commit hook did not run; Locked flush path was not reached")
+		}
+		if session.txn.HasAutomaticDML() || session.txn.InReadWriteTransaction() {
+			t.Fatal("failed commit left queue or RW context")
+		}
+		mustExec(t, ctx, session, "BEGIN")
+		mustExec(t, ctx, session, "COMMIT")
+		if got := countID(t, ctx, session, 1); got != 0 {
+			t.Fatalf("flushed insert survived failed commit into a later transaction: got %d", got)
+		}
+	})
+
+	t.Run("ordinary query abort after flush clears owner", func(t *testing.T) {
+		assertQueryAbortClearsOwner(t, ctx, "SELECT Id FROM AuditBatch WHERE Id = 1")
+	})
+
+	t.Run("PROFILE query abort after flush clears owner", func(t *testing.T) {
+		assertQueryAbortClearsOwner(t, ctx, "EXPLAIN ANALYZE SELECT Id FROM AuditBatch WHERE Id = 1")
+	})
+
 	t.Run("implicit DML stays immediate with option true", func(t *testing.T) {
 		session := newAutoBatchSession(t)
 		mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
@@ -383,6 +474,37 @@ func TestSetLocalAutoBatchDMLRestoreWithoutClient(t *testing.T) {
 	}
 	if got := mustGetVar(t, session, "AUTO_BATCH_DML"); got != "FALSE" {
 		t.Fatalf("restored value: got %q, want FALSE", got)
+	}
+}
+
+func TestEnqueueAutomaticDMLEnablesHeartbeat(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	tm := NewTransactionManager(nil, sysVars, spanner.ClientConfig{})
+	started := make(chan struct{})
+	tm.tc = &transactionContext{
+		attrs: transactionAttributes{mode: transactionModeReadWrite},
+		heartbeatFunc: func(ctx context.Context) {
+			close(started)
+			<-ctx.Done()
+		},
+	}
+	tm.autoDMLGeneration = 1
+	ok, err := tm.TryEnqueueAutomaticDML(spanner.NewStatement("INSERT INTO t (id) VALUES (1)"))
+	if err != nil || !ok {
+		t.Fatalf("TryEnqueueAutomaticDML: ok=%v err=%v", ok, err)
+	}
+	if !tm.HeartbeatEnabled() {
+		t.Fatal("enqueue did not mark heartbeat enabled")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat goroutine did not start")
+	}
+	tm.tc.Close()
+	if !tm.HasAutomaticDML() {
+		t.Fatal("heartbeat enablement flushed or discarded the queue")
 	}
 }
 
@@ -428,4 +550,41 @@ func countID(t *testing.T, ctx context.Context, session *Session, id int) int {
 	t.Helper()
 	res := mustExec(t, ctx, session, "SELECT Id FROM AuditBatch WHERE Id = "+strconv.Itoa(id))
 	return res.AffectedRows
+}
+
+func flagTrue(t *testing.T, ctx context.Context, session *Session, id int) bool {
+	t.Helper()
+	res := mustExec(t, ctx, session, "SELECT Id FROM AuditBatch WHERE Id = "+strconv.Itoa(id)+" AND Flag = TRUE")
+	return res.AffectedRows == 1
+}
+
+func assertQueryAbortClearsOwner(t *testing.T, ctx context.Context, sql string) {
+	t.Helper()
+	session := newAutoBatchSession(t)
+	mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
+	session.txn.queryAfterFlushHook = func() error {
+		return status.Error(codes.Aborted, "injected after flush")
+	}
+	_, err := execSQL(t, ctx, session, sql)
+	session.txn.queryAfterFlushHook = nil
+	if spanner.ErrCode(err) != codes.Aborted {
+		t.Fatalf("%s abort: %v", sql, err)
+	}
+	if session.txn.HasAutomaticDML() || session.txn.InReadWriteTransaction() {
+		t.Fatalf("%s abort left queue or RW context", sql)
+	}
+	if err := session.RecreateClient(ctx); err != nil {
+		t.Fatalf("RecreateClient after %s abort: %v", sql, err)
+	}
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (2)")
+	mustExec(t, ctx, session, "COMMIT")
+	if got := countID(t, ctx, session, 1); got != 0 {
+		t.Fatalf("%s abort replayed old write: got %d", sql, got)
+	}
+	if got := countID(t, ctx, session, 2); got != 1 {
+		t.Fatalf("%s abort blocked a later transaction: Id=2 got %d", sql, got)
+	}
 }

@@ -143,6 +143,14 @@ type TransactionManager struct {
 	autoDML           []spanner.Statement
 	autoDMLOwner      uint64
 	autoDMLGeneration uint64
+
+	// Test seams. Production remains nil.
+	// queryAfterFlushHook runs after a successful automatic flush on executing
+	// read paths, before the user query RPC.
+	// commitAfterFlushHook runs after a successful automatic flush inside
+	// CommitReadWriteTransactionLocked, before CommitWithReturnResp.
+	queryAfterFlushHook  func() error
+	commitAfterFlushHook func() error
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -702,6 +710,15 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 
 	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
 		return spanner.CommitResponse{}, err
+	}
+
+	if tm.commitAfterFlushHook != nil {
+		if err := tm.commitAfterFlushHook(); err != nil {
+			if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
+				err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+			}
+			return spanner.CommitResponse{}, err
+		}
 	}
 
 	resp, err := rwTxn.CommitWithReturnResp(ctx)

@@ -68,6 +68,10 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 		}
 		tm.autoDML = append(tm.autoDML, stmt)
 		tm.autoDMLOwner = tm.autoDMLGeneration
+		// Queued automatic DML is uncommitted work on an already-started RW
+		// owner. Enable the existing keepalive now; waiting until flush is too
+		// late to cover the think/paste interval before COMMIT or a read.
+		tm.tc.EnableHeartbeat()
 		enqueued = true
 		return nil
 	})
@@ -126,4 +130,21 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 		return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
 	return dmls, counts, nil
+}
+
+// HeartbeatEnabled reports whether the current RW context has heartbeats armed.
+func (tm *TransactionManager) HeartbeatEnabled() bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.tc.IsHeartbeatEnabled()
+}
+
+func (tm *TransactionManager) invokeQueryAfterFlushHook() error {
+	tm.mu.RLock()
+	hook := tm.queryAfterFlushHook
+	tm.mu.RUnlock()
+	if hook == nil {
+		return nil
+	}
+	return hook()
 }
