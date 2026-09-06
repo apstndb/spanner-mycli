@@ -46,13 +46,14 @@ import (
 
 type partitionFanInServer struct {
 	sppb.UnimplementedSpannerServer
-	nPartitions int
-	rowsPer     int
-	errToken    string
-	hang        bool
-	started     chan struct{}
-	startedOnce sync.Once
-	execs       atomic.Int32
+	nPartitions     int
+	rowsPer         int
+	errToken        string
+	hang            bool
+	hangExceptFirst bool
+	started         chan struct{}
+	startedOnce     sync.Once
+	execs           atomic.Int32
 }
 
 func (s *partitionFanInServer) markStarted() {
@@ -85,11 +86,11 @@ func (s *partitionFanInServer) PartitionQuery(context.Context, *sppb.PartitionQu
 func (s *partitionFanInServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
 	s.execs.Add(1)
 	s.markStarted()
-	if s.hang {
+	token := string(r.PartitionToken)
+	if s.hang || (s.hangExceptFirst && token != "0") {
 		<-stream.Context().Done()
 		return stream.Context().Err()
 	}
-	token := string(r.PartitionToken)
 	if s.errToken != "" && token == s.errToken {
 		return status.Error(codes.Internal, "injected partition error")
 	}
@@ -175,6 +176,58 @@ func isCancelErr(err error) bool {
 	return err != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled || spanner.ErrCode(err) == codes.Canceled)
 }
 
+func isInjectedPartitionErr(err error) bool {
+	if err == nil || isCancelErr(err) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if !strings.Contains(err.Error(), "injected partition error") {
+		return false
+	}
+	return status.Code(err) == codes.Internal || spanner.ErrCode(err) == codes.Internal
+}
+
+// fanInRun owns a live parent context (no auto-deadline) and joins on cleanup.
+type fanInRun struct {
+	cancel context.CancelFunc
+	done   chan error
+	joined atomic.Bool
+}
+
+func startFanIn(t *testing.T, fn func(context.Context) error) *fanInRun {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	r := &fanInRun{cancel: cancel, done: make(chan error, 1)}
+	t.Cleanup(func() { r.join(t) })
+	go func() { r.done <- fn(ctx) }()
+	return r
+}
+
+func (r *fanInRun) join(t *testing.T) {
+	t.Helper()
+	if !r.joined.CompareAndSwap(false, true) {
+		return
+	}
+	r.cancel()
+	select {
+	case <-r.done:
+	case <-time.After(3 * time.Second):
+		t.Error("fan-in did not join after cancel")
+	}
+}
+
+func (r *fanInRun) waitLive(t *testing.T) error {
+	t.Helper()
+	select {
+	case err := <-r.done:
+		r.joined.Store(true)
+		return err
+	case <-time.After(3 * time.Second):
+		r.join(t)
+		t.Fatal("watchdog: fan-in did not finish while parent stayed live")
+		return nil
+	}
+}
+
 func TestRunPartitionedRowSeqMorePartitionsThanWorkers(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -236,24 +289,7 @@ func TestRunPartitionedRowSeqWorkerError(t *testing.T) {
 	t.Parallel()
 	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 2, rowsPer: 1, errToken: "0"})
 	err := runWithTimeout(t, 3*time.Second, func(ctx context.Context) error {
-		return runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
-			_, err := collectPartitionValues(t, md, rows)
-			return err
-		})
-	})
-	if err == nil {
-		t.Fatal("want partition error, got nil")
-	}
-}
-
-func TestRunPartitionedRowSeqParentCancel(t *testing.T) {
-	t.Parallel()
-	started := make(chan struct{})
-	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 2, rowsPer: 1, hang: true, started: started})
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() {
-		done <- runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+		return runPartitionedRowSeq(ctx, tx, parts, 1, func(_ *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
 			for _, err := range rows {
 				if err != nil {
 					return err
@@ -261,27 +297,42 @@ func TestRunPartitionedRowSeqParentCancel(t *testing.T) {
 			}
 			return nil
 		})
-	}()
+	})
+	if !isInjectedPartitionErr(err) {
+		t.Fatalf("got %v, want injected Internal partition error (not nil metadata, cancel, or deadline)", err)
+	}
+}
+
+func TestRunPartitionedRowSeqParentCancel(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 2, rowsPer: 1, hang: true, started: started})
+	run := startFanIn(t, func(ctx context.Context) error {
+		return runPartitionedRowSeq(ctx, tx, parts, 1, func(_ *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+			for _, err := range rows {
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("workers did not start")
 	}
-	cancel()
-	select {
-	case err := <-done:
-		if !isCancelErr(err) {
-			t.Fatalf("got %v, want cancellation", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("parent cancel did not join producers")
+	run.cancel()
+	err := run.waitLive(t)
+	if !isCancelErr(err) {
+		t.Fatalf("got %v, want cancellation", err)
 	}
 }
 
 func TestRunPartitionedRowSeqEarlyConsumerStop(t *testing.T) {
 	t.Parallel()
-	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 3, rowsPer: 20})
-	err := runWithTimeout(t, 3*time.Second, func(ctx context.Context) error {
+	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 3, rowsPer: 8, hangExceptFirst: true})
+	run := startFanIn(t, func(ctx context.Context) error {
 		return runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
 			if md == nil {
 				return errors.New("nil metadata")
@@ -297,6 +348,7 @@ func TestRunPartitionedRowSeqEarlyConsumerStop(t *testing.T) {
 			return nil
 		})
 	})
+	err := run.waitLive(t)
 	if err == nil || err.Error() != "consumer stop" {
 		t.Fatalf("got %v, want consumer stop", err)
 	}
@@ -306,10 +358,8 @@ func TestRunPartitionedRowSeqCancelDuringSubmit(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})
 	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 8, rowsPer: 1, hang: true, started: started})
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() {
-		done <- runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+	run := startFanIn(t, func(ctx context.Context) error {
+		return runPartitionedRowSeq(ctx, tx, parts, 1, func(_ *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
 			for _, err := range rows {
 				if err != nil {
 					return err
@@ -317,20 +367,16 @@ func TestRunPartitionedRowSeqCancelDuringSubmit(t *testing.T) {
 			}
 			return nil
 		})
-	}()
+	})
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("first worker did not start")
 	}
-	cancel()
-	select {
-	case err := <-done:
-		if !isCancelErr(err) {
-			t.Fatalf("got %v, want cancellation", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancel during submission did not join producers")
+	run.cancel()
+	err := run.waitLive(t)
+	if !isCancelErr(err) {
+		t.Fatalf("got %v, want cancellation", err)
 	}
 }
 
@@ -344,10 +390,8 @@ func TestRunPartitionedRowSeqSkipsUnsubmittedAfterCancel(t *testing.T) {
 	started := make(chan struct{})
 	server := &partitionFanInServer{nPartitions: n, rowsPer: 1, hang: true, started: started}
 	tx, parts := startPartitionFanIn(t, server)
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() {
-		done <- runPartitionedRowSeq(ctx, tx, parts, 1, func(md *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
+	run := startFanIn(t, func(ctx context.Context) error {
+		return runPartitionedRowSeq(ctx, tx, parts, 1, func(_ *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) error {
 			for _, err := range rows {
 				if err != nil {
 					return err
@@ -355,20 +399,16 @@ func TestRunPartitionedRowSeqSkipsUnsubmittedAfterCancel(t *testing.T) {
 			}
 			return nil
 		})
-	}()
+	})
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("first worker did not start")
 	}
-	cancel()
-	select {
-	case err := <-done:
-		if !isCancelErr(err) {
-			t.Fatalf("got %v, want cancellation", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancel did not join producers")
+	run.cancel()
+	err := run.waitLive(t)
+	if !isCancelErr(err) {
+		t.Fatalf("got %v, want cancellation", err)
 	}
 	gotSubmit := int(submitted.Load())
 	gotRPC := int(server.execs.Load())
@@ -462,25 +502,23 @@ func TestStreamPartitionedQueryJSONLAndSQLInsert(t *testing.T) {
 
 func TestStreamPartitionedQueryWriteFailure(t *testing.T) {
 	t.Parallel()
-	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 2, rowsPer: 8})
+	tx, parts := startPartitionFanIn(t, &partitionFanInServer{nPartitions: 3, rowsPer: 8, hangExceptFirst: true})
 	sysVars := newSystemVariablesWithDefaults()
 	sysVars.Display.CLIFormat = enums.DisplayModeCSV
 	fc, err := decoder.FormatConfigWithProto(nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = runWithTimeout(t, 3*time.Second, func(ctx context.Context) error {
+	run := startFanIn(t, func(ctx context.Context) error {
 		_, _, err := streamPartitionedQuery(ctx, &failAfterWrites{after: 1}, tx, parts, 1, &sysVars, fc, format.DisplayValues)
-		if err == nil {
-			return errors.New("want write failure")
-		}
-		if !strings.Contains(err.Error(), "injected write failure") {
-			return fmt.Errorf("got %v, want injected write failure", err)
-		}
-		return nil
+		return err
 	})
-	if err != nil {
-		t.Fatal(err)
+	err = run.waitLive(t)
+	if err == nil || !strings.Contains(err.Error(), "injected write failure") {
+		t.Fatalf("got %v, want injected write failure", err)
+	}
+	if isCancelErr(err) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("write failure must not be a cancel/deadline substitute: %v", err)
 	}
 }
 
