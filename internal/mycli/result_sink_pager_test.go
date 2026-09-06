@@ -56,6 +56,9 @@ func runPagerHelper(mode string) int {
 		return 0
 	case "exit2":
 		return 2
+	case "cat-exit2":
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+		return 2
 	case "hang":
 		fmt.Println("pager-hang-ready")
 		_ = os.Stdout.Sync()
@@ -157,6 +160,98 @@ func TestStartPagerEarlyExitHeadUnix(t *testing.T) {
 	}
 }
 
+func TestStartPagerShortOutputNonzeroExit(t *testing.T) {
+	setPagerHelper(t, "cat-exit2")
+	out, stop, err := startPager(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stop() })
+	if _, err := io.WriteString(out, "one line\n"); err != nil {
+		t.Fatalf("short write: %v", err)
+	}
+	err = stop()
+	if err == nil {
+		t.Fatal("stop succeeded after pager exited 2; short output must not hide nonzero Wait")
+	}
+	if !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("stop err = %v, want pager wait exit status 2", err)
+	}
+	if err := stop(); err == nil || !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("repeated stop should keep the wait error, got %v", err)
+	}
+}
+
+func TestStartPagerCancelAfterSuccessfulWrite(t *testing.T) {
+	setPagerHelper(t, "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &readyWriter{ready: make(chan struct{})}
+	out, stop, err := startPager(ctx, stdout)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stop() })
+	t.Cleanup(cancel)
+
+	select {
+	case <-stdout.ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hang pager did not print ready")
+	}
+	if _, err := io.WriteString(out, "fits-in-pipe\n"); err != nil {
+		t.Fatalf("short write before cancel: %v", err)
+	}
+	cancel()
+	err = stop()
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("stop after cancel = %v, want context.Canceled", err)
+	}
+}
+
+func TestResultSinkFinishDecorationFailureReaps(t *testing.T) {
+	// Package-level decorate hook; do not run in parallel with other pager tests.
+	testFailPagerDecorate = func() error { return errors.New("injected decorate failure") }
+	t.Cleanup(func() { testFailPagerDecorate = nil })
+
+	setPagerHelper(t, "exit2")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	cli.SystemVariables.Display.MarkdownCodeblock = true
+	var buf bytes.Buffer
+	sink := cli.newResultSink(context.Background(), &buf, "SHOW VARIABLES")
+	err := sink.finish()
+	if err == nil {
+		t.Fatal("finish succeeded after injected decorate failure")
+	}
+	if !strings.Contains(err.Error(), "injected decorate failure") {
+		t.Fatalf("finish err = %v, want injected decorate failure", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("finish err = %v, want joined pager wait so the child was reaped", err)
+	}
+	sink.abort()
+	if err := sink.finish(); err != nil {
+		t.Fatalf("repeated finish after abort: %v", err)
+	}
+}
+
+func TestExecuteStatementShortPagerFailure(t *testing.T) {
+	setPagerHelper(t, "cat-exit2")
+	cli := newDecorationTestCli()
+	cli.SystemVariables.Display.UsePager = true
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(context.Background(), &ShowVariablesStatement{}, false, "SHOW VARIABLES", &buf)
+		done <- err
+	}()
+	err := waitErr(t, done, 5*time.Second, "executeStatement short pager failure")
+	if err == nil {
+		t.Fatal("executeStatement succeeded although pager exited 2 after consuming a short result")
+	}
+}
+
 func TestStartPagerFailingChild(t *testing.T) {
 	setPagerHelper(t, "exit2")
 	out, stop, err := startPager(context.Background(), io.Discard)
@@ -172,8 +267,8 @@ func TestStartPagerFailingChild(t *testing.T) {
 	if err := waitErr(t, done, 3*time.Second, "failing pager write"); err == nil {
 		t.Fatal("write succeeded through pager that exited 2")
 	}
-	if err := stop(); err != nil {
-		t.Fatalf("stop after failing child: %v", err)
+	if err := stop(); err == nil || !strings.Contains(err.Error(), "exit status 2") {
+		t.Fatalf("stop after failing child = %v, want pager wait exit status 2", err)
 	}
 }
 

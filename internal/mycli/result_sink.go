@@ -94,6 +94,14 @@ func (s *resultSink) start() error {
 	}
 	s.out = out
 
+	// Test seam: fail after the pager is owned and before decorations so
+	// finish/abort must still Wait. Production leaves this nil.
+	if testFailPagerDecorate != nil {
+		err := testFailPagerDecorate()
+		s.startErr = err
+		return err
+	}
+
 	if s.c.SystemVariables.Display.MarkdownCodeblock {
 		if _, err := fmt.Fprintln(out, "```sql"); err != nil {
 			s.startErr = s.wrapPagerWrite(err)
@@ -144,22 +152,21 @@ func (s *resultSink) wrapPagerWrite(err error) error {
 // force-starts the sink so statements that produced no other output still
 // emit the decoration pair (e.g. an empty ```sql fence), matching the
 // historical printResult output byte for byte. Call it only on the success
-// path; use abort for error unwinding.
+// path; use abort for error unwinding. The pager is reaped even when start
+// or the closing fence fails, and done is set only after that reap.
 func (s *resultSink) finish() error {
 	if s.done {
 		return nil
 	}
+	err := s.start()
+	if err == nil && s.fenceOpen {
+		if _, ferr := fmt.Fprintln(s.out, "```"); ferr != nil {
+			err = s.wrapPagerWrite(ferr)
+		}
+	}
+	err = errors.Join(err, s.reapPager())
 	s.done = true
-	if err := s.start(); err != nil {
-		return err
-	}
-	if s.fenceOpen {
-		fmt.Fprintln(s.out, "```")
-	}
-	if s.stopPager != nil {
-		return s.stopPager()
-	}
-	return nil
+	return err
 }
 
 // abort unwinds the sink on the error path without forcing decorations: a
@@ -170,16 +177,20 @@ func (s *resultSink) abort() {
 	if s.done {
 		return
 	}
-	s.done = true
-	if s.out == nil {
-		return // never started; nothing to unwind
-	}
-	if s.fenceOpen {
+	if s.out != nil && s.fenceOpen {
 		fmt.Fprintln(s.out, "```")
 	}
-	if s.stopPager != nil {
-		_ = s.stopPager() // Wait errors are logged by stop; see startPager.
+	_ = s.reapPager()
+	s.done = true
+}
+
+func (s *resultSink) reapPager() error {
+	stop := s.stopPager
+	s.stopPager = nil
+	if stop == nil {
+		return nil
 	}
+	return stop()
 }
 
 // startPager launches $PAGER (default "less") writing to w and returns the
@@ -191,9 +202,12 @@ func (s *resultSink) abort() {
 // PipeWriter stays open, so a later Write blocks forever. StdinPipe is an
 // *os.File, so the child closing stdin yields EPIPE and unblocks writers.
 // CommandContext(ctx) kills the child on statement cancel, which is the same
-// unblock path. stop does not return Wait errors (historical teardown);
-// incomplete output is reported by Write instead, so a user-quit pager is not
-// treated as a fully successful statement.
+// unblock path. stop Wait()s exactly once and returns close/wait errors:
+// canceled contexts map to ctx.Err(), and a nonzero child exit after stdin
+// EOF is an unexpected pager failure (not full success). Interactive user
+// quit while bytes are still being written already fails at Write (EPIPE).
+// If the entire payload fit in the OS pipe and the pager exited 0 after
+// reading only a prefix, that incomplete display is not detectable from Wait.
 func startPager(ctx context.Context, w io.Writer) (io.Writer, func() error, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -223,16 +237,25 @@ func startPager(ctx context.Context, w io.Writer) (io.Writer, func() error, erro
 	}
 
 	var once sync.Once
+	var stopErr error
 	stop := func() error {
 		once.Do(func() {
 			if err := stdin.Close(); err != nil && !ignorePagerCloseErr(err) {
 				slog.Error("failed to close pager stdin", "err", err)
+				stopErr = err
 			}
 			if err := cmd.Wait(); err != nil {
+				if ctx.Err() != nil {
+					stopErr = ctx.Err()
+					return
+				}
 				slog.Error("failed to wait for pager command", "err", err)
+				if stopErr == nil {
+					stopErr = fmt.Errorf("pager wait: %w", err)
+				}
 			}
 		})
-		return nil
+		return stopErr
 	}
 	return stdin, stop, nil
 }
@@ -240,3 +263,8 @@ func startPager(ctx context.Context, w io.Writer) (io.Writer, func() error, erro
 func ignorePagerCloseErr(err error) bool {
 	return errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe)
 }
+
+// testFailPagerDecorate is invoked after a pager is acquired and before
+// decorations. Production leaves it nil. Tests must not run in parallel
+// with other pager tests while it is set.
+var testFailPagerDecorate func() error
