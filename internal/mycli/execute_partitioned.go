@@ -196,45 +196,52 @@ func runPartitionedRowSeq(
 	ch := make(chan partitionedRow)
 	var capturedMD atomic.Pointer[sppb.ResultSetMetadata]
 
-	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
-	for _, partition := range partitions {
-		p.Go(func(workerCtx context.Context) error {
-			rowIter := batchROTx.Execute(workerCtx, partition)
-			var result spaniter.RowIteratorResult
-			rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
-			captureMetadata := func() {
-				if capturedMD.Load() != nil {
-					return
-				}
-				if rowIter.Metadata != nil {
-					capturedMD.CompareAndSwap(nil, rowIter.Metadata)
-				}
-				if result.Metadata != nil {
-					capturedMD.CompareAndSwap(nil, result.Metadata)
-				}
-			}
-			for row, err := range rows {
-				captureMetadata()
-				if err != nil {
-					select {
-					case ch <- partitionedRow{err: err}:
-					case <-workerCtx.Done():
-					}
-					return err
-				}
-				select {
-				case ch <- partitionedRow{row: row}:
-				case <-workerCtx.Done():
-					return workerCtx.Err()
-				}
-			}
-			captureMetadata()
-			return nil
-		})
+	if parallelism < 1 {
+		parallelism = 1
 	}
 
+	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
 	producersDone := make(chan error, 1)
 	go func() {
+		// Submit inside this goroutine so conc Pool.Go blocking at MaxGoroutines
+		// cannot starve the consumer. Go() waits for a free worker when the pool
+		// is full; a worker that has a row waits to send on the unbuffered
+		// channel. Consume must therefore be running before every Go() returns.
+		for _, partition := range partitions {
+			p.Go(func(workerCtx context.Context) error {
+				rowIter := batchROTx.Execute(workerCtx, partition)
+				var result spaniter.RowIteratorResult
+				rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
+				captureMetadata := func() {
+					if capturedMD.Load() != nil {
+						return
+					}
+					if rowIter.Metadata != nil {
+						capturedMD.CompareAndSwap(nil, rowIter.Metadata)
+					}
+					if result.Metadata != nil {
+						capturedMD.CompareAndSwap(nil, result.Metadata)
+					}
+				}
+				for row, err := range rows {
+					captureMetadata()
+					if err != nil {
+						select {
+						case ch <- partitionedRow{err: err}:
+						case <-workerCtx.Done():
+						}
+						return err
+					}
+					select {
+					case ch <- partitionedRow{row: row}:
+					case <-workerCtx.Done():
+						return workerCtx.Err()
+					}
+				}
+				captureMetadata()
+				return nil
+			})
+		}
 		producersDone <- p.Wait()
 		close(ch)
 	}()
