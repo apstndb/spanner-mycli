@@ -349,6 +349,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL and data as SQL statements`,
 				Syntax: `DUMP DATABASE`,
+				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl. That admin RPC is not timestamp-bound to the dump transaction.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
@@ -361,6 +362,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL only as SQL statements`,
 				Syntax: `DUMP SCHEMA`,
+				Note:   `Exports cached database DDL only. Does not require a fresh GetDatabaseDdl call.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+SCHEMA$`),
@@ -373,11 +375,12 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export specific tables as SQL INSERT statements`,
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
+				Note:   `Table names are [<schema>.]<table>. Data only; no DDL. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			tables, err := parseTableNameList(groups["tables"])
+			tables, err := parseDumpTableIDList(groups["tables"])
 			if err != nil {
 				return nil, fmt.Errorf("invalid table list in DUMP TABLES: %w", err)
 			}

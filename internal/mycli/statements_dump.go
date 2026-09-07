@@ -11,6 +11,8 @@ import (
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DumpDatabaseStatement represents DUMP DATABASE statement
@@ -32,7 +34,7 @@ func (s *DumpSchemaStatement) Execute(ctx context.Context, session *Session) (*R
 // DumpTablesStatement represents DUMP TABLES statement
 // It exports data only for specified tables (no DDL)
 type DumpTablesStatement struct {
-	Tables []string
+	Tables []tableID
 }
 
 func (s *DumpTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
@@ -48,12 +50,21 @@ const (
 	dumpModeTables                   // Export specific tables only
 )
 
-func (m dumpMode) shouldExportDDL() bool  { return m == dumpModeDatabase || m == dumpModeSchema }
 func (m dumpMode) shouldExportData() bool { return m == dumpModeDatabase || m == dumpModeTables }
 
 // executeDump is the main entry point for all dump operations.
 // It decides between streaming and buffered mode based on the output stream and settings.
-func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
+type dumpTablePlan struct {
+	ID      tableID
+	Columns []string
+}
+
+type dumpPlan struct {
+	Tables []dumpTablePlan
+	DDL    []byte
+}
+
+func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID) (*Result, error) {
 	if session.adminClient == nil {
 		return nil, fmt.Errorf("admin client is not initialized")
 	}
@@ -62,26 +73,48 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	if session.systemVariables.Feature.DatabaseDialect == dbadminpb.DatabaseDialect_POSTGRESQL {
 		return nil, fmt.Errorf("DUMP statements are not yet supported for PostgreSQL dialect databases")
 	}
-	outStream := session.outputWriter()
-	// Use streaming whenever there is a real output stream. DUMP output is not a
-	// table layout, so CLI_TABLE_STREAMING=false should not force row buffering here.
-	if outStream != nil && outStream != io.Discard {
-		return executeDumpStreaming(ctx, session, mode, specificTables, outStream)
+	if mode == dumpModeSchema {
+		plan, err := prepareDumpSchema(ctx, session)
+		if err != nil {
+			return nil, err
+		}
+		return writeDumpPlan(ctx, session, mode, plan, nil)
 	}
-	return executeDumpBuffered(ctx, session, mode, specificTables)
+
+	var result *Result
+	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
+		plan, err := prepareDumpWithTxn(ctx, session, mode, specificTables, txn)
+		if err != nil {
+			return err
+		}
+		result, err = writeDumpPlan(ctx, session, mode, plan, txn)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func writeDumpPlan(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+	outStream := session.outputWriter()
+	if outStream != nil && outStream != io.Discard {
+		return executeDumpStreamingWithTxn(ctx, session, mode, plan, outStream, txn)
+	}
+	return executeDumpBufferedWithTxn(ctx, session, mode, plan, txn)
 }
 
 // buildSelectQueryWithColumns creates a SELECT query with explicit column list.
 // Identifiers are quoted via spanvalue's dialect-aware helpers so reserved words
 // and qualified table names are rendered correctly for the current database.
-func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []string, tableName string) string {
+func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []string, id tableID) string {
 	quotedColumns := make([]string, len(columns))
 	for i, col := range columns {
 		quotedColumns[i] = spanvalue.QuoteIdentifier(dialect, col)
 	}
 	return fmt.Sprintf("SELECT %s FROM %s",
 		strings.Join(quotedColumns, ", "),
-		spanvalue.QuoteQualifiedIdentifier(dialect, tableName),
+		quoteTableID(dialect, id),
 	)
 }
 
@@ -90,37 +123,7 @@ func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []st
 // It excludes generated columns and other non-writable column types.
 // Returns column names in their original form, ordered by ORDINAL_POSITION.
 // NOTE: INFORMATION_SCHEMA queries cannot be used in read-write transactions.
-func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, tableName string) ([]string, error) {
-	// Handle both simple and schema-qualified table names.
-	// Cloud Spanner table identifiers can only contain letters, numbers, and underscores.
-	// Dots are used exclusively to separate schema from table name in fully qualified names (FQNs).
-	// Examples: "Users" (simple) or "myschema.Users" (schema-qualified)
-	// Reference: https://cloud.google.com/spanner/docs/reference/standard-sql/data-definition-language#names
-	//
-	// Note: The current dependency resolver only queries tables from the default schema (empty string),
-	// so it will only return simple table names. However, we support schema-qualified names
-	// for future extensibility when we might need to export from non-default schemas.
-	parts := strings.Split(tableName, ".")
-	var tableSchema, tableNameOnly string
-
-	switch len(parts) {
-	case 1:
-		// Simple table name - use default schema (empty string)
-		tableSchema = ""
-		tableNameOnly = parts[0]
-	case 2:
-		// Schema-qualified table name (e.g., "myschema.Users")
-		tableSchema = parts[0]
-		tableNameOnly = parts[1]
-	default:
-		// More than one dot is invalid - dots can only separate schema from table
-		return nil, fmt.Errorf("invalid table name format: %s (expected 'table' or 'schema.table')", tableName)
-	}
-
-	// Build the query to get writable columns
-	// IS_GENERATED = 'NEVER' filters out all non-writable columns including:
-	// - Generated columns (STORED and virtual)
-	// - Any future non-writable column types
+func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, id tableID) ([]string, error) {
 	query := `
 		SELECT COLUMN_NAME
 		FROM INFORMATION_SCHEMA.COLUMNS
@@ -132,8 +135,8 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 	stmt := spanner.Statement{
 		SQL: query,
 		Params: map[string]interface{}{
-			"schema": tableSchema,
-			"table":  tableNameOnly,
+			"schema": id.Schema,
+			"table":  id.Name,
 		},
 	}
 
@@ -150,7 +153,7 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query writable columns for %s: %w", tableName, err)
+		return nil, fmt.Errorf("failed to query writable columns for %s: %w", id.FQN(), err)
 	}
 
 	// Return empty slice for tables with no writable columns (e.g., all generated columns)
@@ -158,77 +161,133 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 	return columns, nil
 }
 
-// executeDumpBuffered performs dump operation with buffering.
-// All output is collected in memory before being returned.
-func executeDumpBuffered(ctx context.Context, session *Session, mode dumpMode, specificTables []string) (*Result, error) {
-	var out bytes.Buffer
-	var affectedRows int
+func wrapDumpGetDdlError(err error) error {
+	if status.Code(err) == codes.PermissionDenied {
+		return fmt.Errorf("dump requires spanner.databases.getDdl permission: %w", err)
+	}
+	return fmt.Errorf("dump GetDatabaseDdl: %w", err)
+}
 
-	// Export DDL first if requested (DDL doesn't need transaction consistency)
-	if mode.shouldExportDDL() {
-		ddlResult, err := exportDDL(ctx, session)
+func prepareDumpSchema(ctx context.Context, session *Session) (*dumpPlan, error) {
+	ddlResult, err := exportDDL(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("export DDL: %w", err)
+	}
+	return &dumpPlan{DDL: ddlResult.RenderedOutput}, nil
+}
+
+func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, txn *spanner.ReadOnlyTransaction) (*dumpPlan, error) {
+	plan := &dumpPlan{}
+	var freshDDL []string
+	haveFresh := false
+	fetchFresh := func() ([]string, error) {
+		if haveFresh {
+			return freshDDL, nil
+		}
+		resp, err := session.GetDatabaseDdlFresh(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("export DDL: %w", err)
+			return nil, wrapDumpGetDdlError(err)
 		}
-		if _, err := out.Write(ddlResult.RenderedOutput); err != nil {
-			return nil, fmt.Errorf("write DDL: %w", err)
-		}
+		freshDDL = resp.GetStatements()
+		haveFresh = true
+		return freshDDL, nil
 	}
 
-	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
-	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
-		// Get tables to export (this queries INFORMATION_SCHEMA)
-		if !mode.shouldExportData() {
-			return nil
+	resolver := NewDependencyResolver()
+	if err := resolver.BuildDependencyGraphWithTxn(ctx, txn); err != nil {
+		return nil, err
+	}
+	if session.dumpReadTxnProbe != nil {
+		session.dumpReadTxnProbe("catalog", txn)
+	}
+	var selected []tableID
+	if specificTables != nil {
+		for _, id := range specificTables {
+			if err := resolver.lookupExplicit(id); err != nil {
+				return nil, err
+			}
 		}
-		tables, err := getTableDependencyOrderWithTxn(ctx, txn, specificTables)
+		selected = specificTables
+	} else {
+		for id := range resolver.tables {
+			selected = append(selected, id)
+		}
+	}
+	if mode == dumpModeDatabase {
+		stmts, err := fetchFresh()
 		if err != nil {
-			return fmt.Errorf("failed to get table dependency order: %w", err)
+			return nil, err
 		}
-
-		for _, table := range tables {
-			// Get writable columns using the same transaction
-			columns, err := getWritableColumnsWithTxn(ctx, txn, table)
-			if err != nil {
-				return fmt.Errorf("failed to get writable columns for table %s: %w", table, err)
-			}
-
-			// Skip tables with no writable columns (e.g., all generated columns)
-			if len(columns) == 0 {
-				fmt.Fprintf(&out, "-- Skipping table %s (no writable columns)\n", table)
-				continue
-			}
-
-			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
-
-			dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table)
-			if err != nil {
-				return fmt.Errorf("export table %s: %w", table, err)
-			}
-
-			fmt.Fprintf(&out, "-- Data for table %s\n", table)
-
-			if err := writeCapturedDumpOutput(&out, dumpOutput); err != nil {
-				return fmt.Errorf("write data for table %s: %w", table, err)
-			}
-
-			if dataResult.AffectedRows > 0 {
-				fmt.Fprintln(&out)
-			}
-
-			affectedRows += dataResult.AffectedRows
+		plan.DDL = renderDDLStatements(stmts)
+		if err := resolver.applyInterleaveParents(stmts, selected); err != nil {
+			return nil, err
 		}
-		return nil
-	})
+	} else if mode.shouldExportData() && resolver.selectedNeedsInterleaveDDL(selected) {
+		stmts, err := fetchFresh()
+		if err != nil {
+			return nil, err
+		}
+		if err := resolver.applyInterleaveParents(stmts, selected); err != nil {
+			return nil, err
+		}
+	}
+	if !mode.shouldExportData() {
+		return plan, nil
+	}
+	order, err := resolver.GetOrderForTables(selected)
 	if err != nil {
 		return nil, err
 	}
+	for _, id := range order {
+		columns, err := getWritableColumnsWithTxn(ctx, txn, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get writable columns for table %s: %w", id.FQN(), err)
+		}
+		plan.Tables = append(plan.Tables, dumpTablePlan{ID: id, Columns: columns})
+	}
+	return plan, nil
+}
 
-	return &Result{
-		AffectedRows:   affectedRows,
-		RenderedOutput: out.Bytes(),
-	}, nil
+func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+	var out bytes.Buffer
+	probed := false
+	probeOutput := func() {
+		if session.dumpReadTxnProbe != nil && !probed {
+			probed = true
+			session.dumpReadTxnProbe("output", txn)
+		}
+	}
+	if len(plan.DDL) > 0 {
+		probeOutput()
+		if _, err := out.Write(plan.DDL); err != nil {
+			return nil, fmt.Errorf("write DDL: %w", err)
+		}
+	}
+	if !mode.shouldExportData() {
+		return &Result{RenderedOutput: out.Bytes()}, nil
+	}
+	var affectedRows int
+	for _, table := range plan.Tables {
+		probeOutput()
+		if len(table.Columns) == 0 {
+			fmt.Fprintf(&out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
+			continue
+		}
+		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
+		dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table.ID.FQN())
+		if err != nil {
+			return nil, fmt.Errorf("export table %s: %w", table.ID.FQN(), err)
+		}
+		fmt.Fprintf(&out, "-- Data for table %s\n", table.ID.FQN())
+		if err := writeCapturedDumpOutput(&out, dumpOutput); err != nil {
+			return nil, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
+		}
+		if dataResult.AffectedRows > 0 {
+			fmt.Fprintln(&out)
+		}
+		affectedRows += dataResult.AffectedRows
+	}
+	return &Result{AffectedRows: affectedRows, RenderedOutput: out.Bytes()}, nil
 }
 
 func writeCapturedDumpOutput(out io.Writer, output string) error {
@@ -257,71 +316,45 @@ func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *span
 	return result, buf.String(), err
 }
 
-// executeDumpStreaming performs dump operation with streaming output.
-// Data is written directly to the output stream as it's processed,
-// avoiding memory buildup for large tables.
-func executeDumpStreaming(ctx context.Context, session *Session, mode dumpMode, specificTables []string, out io.Writer) (*Result, error) {
-	// Export DDL first if requested (DDL doesn't need transaction consistency)
-	if mode.shouldExportDDL() {
-		ddlResult, err := exportDDL(ctx, session)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export DDL: %w", err)
+// executeDumpStreamingWithTxn writes dump output directly to out.
+// Callers that export data must pass the same read-only transaction used
+// for catalog preflight. SCHEMA has no data txn.
+func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, out io.Writer, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+	probed := false
+	probeOutput := func() {
+		if session.dumpReadTxnProbe != nil && !probed {
+			probed = true
+			session.dumpReadTxnProbe("output", txn)
 		}
-		if _, err := out.Write(ddlResult.RenderedOutput); err != nil {
+	}
+	if len(plan.DDL) > 0 {
+		probeOutput()
+		if _, err := out.Write(plan.DDL); err != nil {
 			return nil, fmt.Errorf("failed to write DDL: %w", err)
 		}
 	}
-
-	// Execute all INFORMATION_SCHEMA queries and data export within a single transaction for consistency
-	var totalAffectedRows int
-	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
-		// Get tables to export (this queries INFORMATION_SCHEMA)
-		if !mode.shouldExportData() {
-			return nil
-		}
-		tables, err := getTableDependencyOrderWithTxn(ctx, txn, specificTables)
-		if err != nil {
-			return fmt.Errorf("failed to get table dependency order: %w", err)
-		}
-
-		for _, table := range tables {
-			// Get writable columns using the same transaction
-			columns, err := getWritableColumnsWithTxn(ctx, txn, table)
-			if err != nil {
-				return fmt.Errorf("failed to get writable columns for table %s: %w", table, err)
-			}
-
-			// Skip tables with no writable columns (e.g., all generated columns)
-			if len(columns) == 0 {
-				fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table)
-				continue
-			}
-
-			// Build SELECT query with explicit column list
-			selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, columns, table)
-
-			// Write table comment
-			fmt.Fprintf(out, "-- Data for table %s\n", table)
-
-			// Execute SELECT with explicit columns - SQL formatter streams INSERT statements directly to output
-			// Use the transaction variant since we're already within a transaction
-			dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-				enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
-			if err != nil {
-				return fmt.Errorf("failed to export table %s: %w", table, err)
-			}
-
-			totalAffectedRows += dataResult.AffectedRows
-			if dataResult.AffectedRows > 0 {
-				fmt.Fprintln(out, "")
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	if !mode.shouldExportData() {
+		return &Result{Streamed: true}, nil
 	}
-
+	var totalAffectedRows int
+	for _, table := range plan.Tables {
+		probeOutput()
+		if len(table.Columns) == 0 {
+			fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
+			continue
+		}
+		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
+		fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN())
+		dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table.ID.FQN())
+		if err != nil {
+			return nil, fmt.Errorf("failed to export table %s: %w", table.ID.FQN(), err)
+		}
+		totalAffectedRows += dataResult.AffectedRows
+		if dataResult.AffectedRows > 0 {
+			fmt.Fprintln(out, "")
+		}
+	}
 	return &Result{AffectedRows: totalAffectedRows, Streamed: true}, nil
 }
 
@@ -349,20 +382,16 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	return &Result{RenderedOutput: out.Bytes()}, nil
 }
 
-// getTableDependencyOrderWithTxn returns tables in dependency order using a transaction for consistency.
-// It handles both INTERLEAVE IN PARENT relationships and foreign key constraints.
-func getTableDependencyOrderWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, specificTables []string) ([]string, error) {
-	resolver := NewDependencyResolver()
-
-	// Build the complete dependency graph using the transaction
-	if err := resolver.BuildDependencyGraphWithTxn(ctx, txn); err != nil {
-		return nil, fmt.Errorf("failed to build dependency graph: %w", err)
+func renderDDLStatements(statements []string) []byte {
+	var out bytes.Buffer
+	fmt.Fprintln(&out, "-- Database DDL exported by spanner-mycli")
+	fmt.Fprintln(&out)
+	for _, stmt := range statements {
+		if !strings.HasSuffix(stmt, ";") {
+			stmt += ";"
+		}
+		fmt.Fprintln(&out, stmt)
+		fmt.Fprintln(&out)
 	}
-
-	// Get tables in dependency order
-	if len(specificTables) > 0 {
-		return resolver.GetOrderForTables(specificTables)
-	}
-
-	return resolver.GetTableOrder()
+	return out.Bytes()
 }

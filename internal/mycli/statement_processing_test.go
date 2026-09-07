@@ -220,12 +220,17 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "DUMP TABLES statement with a single table",
 			input: "DUMP TABLES t1",
-			want:  &DumpTablesStatement{Tables: []string{"t1"}},
+			want:  &DumpTablesStatement{Tables: []tableID{{Name: "t1"}}},
 		},
 		{
 			desc:  "DUMP TABLES statement with multiple tables",
 			input: "DUMP TABLES t1, sch1.t2, `order`",
-			want:  &DumpTablesStatement{Tables: []string{"t1", "sch1.t2", "order"}},
+			want:  &DumpTablesStatement{Tables: []tableID{{Name: "t1"}, {Schema: "sch1", Name: "t2"}, {Name: "order"}}},
+		},
+		{
+			desc:  "DUMP TABLES statement with a quoted identifier containing a dot",
+			input: "DUMP TABLES `a.b`",
+			want:  &DumpTablesStatement{Tables: []tableID{{Name: "a.b"}}},
 		},
 		{
 			desc:  "CREATE VIEW statement",
@@ -1232,6 +1237,7 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"DUMP TABLES ,",
 		"DUMP TABLES t1,",
 		"DUMP TABLES t1,,t2",
+		"DUMP TABLES a.b.c",
 		// PARAM is a statement keyword; previously fell through to generic SET
 		// as a variable named PARAM.
 		"SET PARAM=1",
@@ -1555,6 +1561,11 @@ func TestParseTableNameList(t *testing.T) {
 		{
 			desc:    "missing comma between tables",
 			input:   "t1 t2",
+			wantErr: true,
+		},
+		{
+			desc:    "three-component path",
+			input:   "a.b.c",
 			wantErr: true,
 		},
 	} {
