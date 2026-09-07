@@ -4,10 +4,10 @@ go 1.26.8
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/bigquery v1.82.0
+	cloud.google.com/go/bigquery v1.83.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.95.0
-	cloud.google.com/go/storage v1.66.0
+	cloud.google.com/go/storage v1.67.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.1
 	github.com/apstndb/adcplus v0.2.0
@@ -41,7 +41,7 @@ require (
 	github.com/junegunn/fzf v0.74.3
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/klauspost/compress v1.19.2
+	github.com/klauspost/compress v1.20.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/nyaosorg/go-readline-ny v1.15.1
 	github.com/olekukonko/tablewriter v1.1.4
