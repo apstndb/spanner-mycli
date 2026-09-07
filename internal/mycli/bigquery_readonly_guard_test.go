@@ -22,6 +22,7 @@ package mycli_test
 // READONLY session.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/apstndb/spanner-mycli/internal/mycli"
@@ -51,6 +52,13 @@ func TestReadOnlyGuardBlocksMutatingBigQuery(t *testing.T) {
 		{desc: "DELETE blocked", sql: "DELETE FROM dataset.table WHERE TRUE"},
 		{desc: "CREATE blocked", sql: "CREATE TABLE dataset.table AS SELECT 1"},
 		{desc: "unrecognized keyword blocked", sql: "FROBNICATE dataset.table"},
+		{desc: "SELECT then DELETE blocked", sql: "SELECT 1; DELETE FROM dataset.table WHERE TRUE"},
+		{desc: "dash CR DELETE blocked", sql: "SELECT 1; -- comment\rDELETE FROM dataset.table WHERE TRUE"},
+		{desc: "CALL root blocked", sql: "CALL dataset.proc()"},
+		{desc: "EXPORT root blocked", sql: "EXPORT DATA OPTIONS(uri='gs://b/p') AS SELECT 1"},
+		{desc: "EXECUTE IMMEDIATE blocked", sql: "EXECUTE IMMEDIATE 'SELECT 1'"},
+		{desc: "truncated octal blocked", sql: "SELECT \"\\0"},
+		{desc: "empty payload blocked", sql: "/* comment only */"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -77,6 +85,10 @@ func TestReadOnlyGuardAllowsReadOnlyBigQuery(t *testing.T) {
 	}{
 		{desc: "SELECT", sql: "SELECT 1"},
 		{desc: "WITH", sql: "WITH cte AS (SELECT 1) SELECT * FROM cte"},
+		{desc: "read-only script", sql: "SELECT 1; SELECT 2"},
+		{desc: "comment then SELECT", sql: "-- comment\nSELECT 1"},
+		{desc: "parenthesized SELECT", sql: "(SELECT 1)"},
+		{desc: "FROM pipe", sql: "FROM dataset.table |> SELECT *"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -95,6 +107,38 @@ func TestReadOnlyGuardAllowsReadOnlyBigQuery(t *testing.T) {
 			if mycli.IsReadOnlyError(err) {
 				t.Errorf("%s BIGQUERY wrongly blocked by READONLY guard: %v", tt.desc, err)
 			}
+			if !isMissingBigQueryProject(err) {
+				t.Errorf("%s: got error %v, want missing BigQuery project", tt.desc, err)
+			}
 		})
 	}
+}
+
+func TestReadOnlyFalseReachesMissingProject(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		desc string
+		sql  string
+	}{
+		{desc: "SELECT", sql: "SELECT 1"},
+		{desc: "SELECT then DELETE", sql: "SELECT 1; DELETE FROM dataset.table WHERE TRUE"},
+		{desc: "dash CR DELETE", sql: "SELECT 1; -- comment\rDELETE FROM dataset.table WHERE TRUE"},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+			session := mycli.NewSessionForTest(t)
+			_, err := session.ExecuteStatement(t.Context(), buildBigQuery(t, tt.sql))
+			if mycli.IsReadOnlyError(err) {
+				t.Errorf("%s READONLY=false wrongly blocked by READONLY guard: %v", tt.desc, err)
+			}
+			if !isMissingBigQueryProject(err) {
+				t.Errorf("%s: got error %v, want missing BigQuery project", tt.desc, err)
+			}
+		})
+	}
+}
+
+func isMissingBigQueryProject(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "BigQuery project not configured")
 }

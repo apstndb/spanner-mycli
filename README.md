@@ -2105,6 +2105,7 @@ spanner> SELECT IF(table_schema != '', CONCAT(table_schema, '.', table_name), ta
 spanner-mycli can execute BigQuery SQL with the `BIGQUERY` client-side statement.
 Configure the target project with `CLI_BIGQUERY_PROJECT` (defaults to `CLI_PROJECT` when empty).
 Optional job settings are available via `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED`.
+`READONLY` sessions allow `BIGQUERY` scripts only when every statement is a query (`SELECT`, `WITH`, or `FROM`-pipe / parenthesized query); mixed or unrecognized payloads are rejected locally before a BigQuery job is created.
 
 ```
 spanner> SET CLI_BIGQUERY_PROJECT = 'my-gcp-project';
