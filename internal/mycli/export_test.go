@@ -21,16 +21,26 @@ package mycli
 // cycle with feature packages — drive a real Session through the guard.
 
 import (
+	"context"
 	"errors"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// NewSessionForTest builds a database-connected Session wired for the
+// pending-transaction lifecycle (no RPCs), for external-package dispatch tests.
+func NewSessionForTest(t *testing.T) *Session {
+	t.Helper()
+	return newSessionForLocalVarTest(t)
+}
 
 // NewReadOnlySessionForTest builds a READONLY, database-connected Session wired
 // for the pending-transaction lifecycle (no RPCs), for external-package dispatch
 // tests.
 func NewReadOnlySessionForTest(t *testing.T) *Session {
 	t.Helper()
-	s := newSessionForLocalVarTest(t)
+	s := NewSessionForTest(t)
 	s.systemVariables.Transaction.ReadOnly = true
 	return s
 }
@@ -76,4 +86,21 @@ func ClassifyForTest(stmt Statement) (conditional, mutating bool) {
 // (simple-mode parsing), for external variable round-trip tests.
 func SetVariableForTest(s *Session, name, value string) error {
 	return s.systemVariables.SetFromSimple(name, value)
+}
+
+// UseStatementDefsForTest temporarily replaces the process-wide client-side
+// statement table so external tests can exercise feature registration through
+// Cli.parseStatement (MCP execute_statement). Restored on cleanup.
+func UseStatementDefsForTest(t *testing.T, defs []*StatementDef) {
+	t.Helper()
+	prev := activeStatementDefs
+	activeStatementDefs = defs
+	t.Cleanup(func() { activeStatementDefs = prev })
+}
+
+// SetupMCPClientServerForTest starts an in-memory MCP client/server pair around
+// session, using the same helper as the MCP integration tests.
+func SetupMCPClientServerForTest(t *testing.T, ctx context.Context, session *Session) (*mcp.ClientSession, *mcp.Server, error) {
+	t.Helper()
+	return setupMCPClientServer(t, ctx, session)
 }
