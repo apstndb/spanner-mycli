@@ -36,7 +36,10 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 
 	t.Run("READONLY mutating script", func(t *testing.T) {
 		session := mycli.NewReadOnlySessionForTest(t)
-		got := callMCPExecuteStatement(t, session, mutatingScript)
+		got, isError := callMCPExecuteStatement(t, session, mutatingScript)
+		if !isError {
+			t.Fatalf("IsError=false, want true; got %q", got)
+		}
 		if !strings.Contains(got, readOnlyErr) {
 			t.Fatalf("got %q, want READONLY error", got)
 		}
@@ -47,7 +50,10 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 
 	t.Run("READONLY query script", func(t *testing.T) {
 		session := mycli.NewReadOnlySessionForTest(t)
-		got := callMCPExecuteStatement(t, session, readOnlyScript)
+		got, isError := callMCPExecuteStatement(t, session, readOnlyScript)
+		if !isError {
+			t.Fatalf("IsError=false, want true; got %q", got)
+		}
 		if strings.Contains(got, readOnlyErr) {
 			t.Fatalf("query script wrongly blocked by READONLY: %q", got)
 		}
@@ -58,7 +64,10 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 
 	t.Run("READONLY false mutating script", func(t *testing.T) {
 		session := mycli.NewSessionForTest(t)
-		got := callMCPExecuteStatement(t, session, mutatingScript)
+		got, isError := callMCPExecuteStatement(t, session, mutatingScript)
+		if !isError {
+			t.Fatalf("IsError=false, want true; got %q", got)
+		}
 		if strings.Contains(got, readOnlyErr) {
 			t.Fatalf("READONLY=false wrongly blocked: %q", got)
 		}
@@ -69,7 +78,10 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 
 	t.Run("READONLY overlapping comment", func(t *testing.T) {
 		session := mycli.NewReadOnlySessionForTest(t)
-		got := callMCPExecuteStatement(t, session, overlapScript)
+		got, isError := callMCPExecuteStatement(t, session, overlapScript)
+		if !isError {
+			t.Fatalf("IsError=false, want true; got %q", got)
+		}
 		if !strings.Contains(got, readOnlyErr) {
 			t.Fatalf("got %q, want READONLY error", got)
 		}
@@ -80,7 +92,10 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 
 	t.Run("READONLY false overlapping comment", func(t *testing.T) {
 		session := mycli.NewSessionForTest(t)
-		got := callMCPExecuteStatement(t, session, overlapScript)
+		got, isError := callMCPExecuteStatement(t, session, overlapScript)
+		if !isError {
+			t.Fatalf("IsError=false, want true; got %q", got)
+		}
 		if strings.Contains(got, readOnlyErr) {
 			t.Fatalf("READONLY=false wrongly blocked: %q", got)
 		}
@@ -88,9 +103,20 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 			t.Fatalf("got %q, want missing BigQuery project", got)
 		}
 	})
+
+	t.Run("READONLY local HELP", func(t *testing.T) {
+		session := mycli.NewReadOnlySessionForTest(t)
+		got, isError := callMCPExecuteStatement(t, session, "HELP")
+		if isError {
+			t.Fatalf("HELP IsError=true, want false; got %q", got)
+		}
+		if !strings.Contains(got, "Usage") {
+			t.Fatalf("HELP output missing Usage: %q", got)
+		}
+	})
 }
 
-func callMCPExecuteStatement(t *testing.T, session *mycli.Session, statement string) string {
+func callMCPExecuteStatement(t *testing.T, session *mycli.Session, statement string) (string, bool) {
 	t.Helper()
 	ctx := t.Context()
 	client, _, err := mycli.SetupMCPClientServerForTest(t, ctx, session)
@@ -107,6 +133,7 @@ func callMCPExecuteStatement(t *testing.T, session *mycli.Session, statement str
 		t.Fatalf("CallTool: %v", err)
 	}
 	var got string
+	isError := result != nil && result.IsError
 	if result != nil {
 		for _, content := range result.Content {
 			if text, ok := content.(*mcp.TextContent); ok {
@@ -115,5 +142,5 @@ func callMCPExecuteStatement(t *testing.T, session *mycli.Session, statement str
 			}
 		}
 	}
-	return got
+	return got, isError
 }

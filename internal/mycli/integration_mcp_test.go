@@ -126,16 +126,10 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		},
 	}
 	result, err := mcpClient.CallTool(ctx, params)
-	// Handle errors
 	if err != nil {
-		if wantError {
-			t.Logf("Got expected error: %v", err)
-			return // Expected error
-		}
-		t.Fatalf("Failed to call execute_statement tool: %v", err)
+		t.Fatalf("unexpected protocol error: %v", err)
 	}
 
-	// Extract the text content from the result
 	gotOutput := ""
 	if result != nil && len(result.Content) > 0 {
 		for _, content := range result.Content {
@@ -146,23 +140,17 @@ func testExecuteStatementTool(t *testing.T, ctx context.Context, session *Sessio
 		}
 	}
 
-	// For error cases, check if we got an error message in the output
 	if wantError {
-		t.Logf("Testing error case, got output: %q", gotOutput)
-		// Check if the output contains error indicators or is empty
-		// Empty output means the statement failed before producing any results
-		if strings.Contains(gotOutput, "ERROR:") ||
-			strings.Contains(gotOutput, "error:") ||
-			strings.Contains(gotOutput, "unknown statement") ||
-			strings.Contains(gotOutput, "syntax error") ||
-			strings.Contains(gotOutput, "invalid") ||
-			strings.Contains(gotOutput, "Invalid") ||
-			len(gotOutput) == 0 {
-			t.Logf("Got expected error in output")
-			return
+		if result == nil || !result.IsError {
+			t.Fatalf("IsError=false, want true; output=%q", gotOutput)
 		}
-		t.Errorf("Expected error but got successful output: %s", gotOutput)
+		if !strings.Contains(gotOutput, "ERROR:") {
+			t.Fatalf("expected ERROR: tool text, got %q", gotOutput)
+		}
 		return
+	}
+	if result != nil && result.IsError {
+		t.Fatalf("unexpected IsError on success; output=%q", gotOutput)
 	}
 
 	// Extract the first line of the result message (after the table output)
