@@ -139,6 +139,34 @@ func containsStr(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
+func TestAncestorFKDoesNotRejectValidInterleave(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		parent tableID
+		child  tableID
+	}{
+		{name: "parent sorts first", parent: tid("AParent"), child: tid("ZChild")},
+		{name: "child sorts first", parent: tid("Parent"), child: tid("Child")},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			dr := NewDependencyResolver()
+			dr.tables = map[tableID]*TableDependency{
+				tt.parent: {ID: tt.parent, FKParents: []tableID{tt.child}},
+				tt.child:  {ID: tt.child, InterleaveParent: parentPtr(tt.parent)},
+			}
+			got, err := dr.GetOrderForTables([]tableID{tt.parent, tt.child})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff([]string{tt.parent.FQN(), tt.child.FQN()}, fqnList(got)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
 func fourParentResolver() *DependencyResolver {
 	dr := NewDependencyResolver()
 	dr.tables = map[tableID]*TableDependency{
@@ -260,5 +288,20 @@ func TestGetOrderForTablesNamedFKAndSynonym(t *testing.T) {
 	}
 	if _, err := syn.GetOrderForTables([]tableID{tid("Alias")}); err == nil || !containsStr(err.Error(), "not a base table") {
 		t.Fatalf("synonym: %v", err)
+	}
+
+	dr = NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tidn("Beta", "CrossChild"): {ID: tidn("Beta", "CrossChild"), ParentBasename: "Parent"},
+	}
+	dr.objects = map[tableID]catalogObject{
+		tidn("Beta", "CrossChild"): {ID: tidn("Beta", "CrossChild"), Type: "BASE TABLE"},
+		tid("Parent"):              {ID: tid("Parent"), Type: "SYNONYM"},
+	}
+	if err := dr.lookupExplicit(tid("Parent")); err == nil || !containsStr(err.Error(), "not a base table") {
+		t.Fatalf("synonym candidate: %v", err)
+	}
+	if !dr.selectedNeedsInterleaveDDL([]tableID{tidn("Beta", "CrossChild"), tid("Parent")}) {
+		t.Fatal("predicate still sees the same-basename synonym; caller must validate first")
 	}
 }

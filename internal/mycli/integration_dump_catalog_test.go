@@ -23,6 +23,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
@@ -175,6 +176,23 @@ func TestDumpCatalogNamedUsersBufferedStreamingReplay(t *testing.T) {
 	alphaOnly := dumpSQL(t, session, &DumpTablesStatement{Tables: []tableID{tidn("Alpha", "Users")}})
 	if !strings.Contains(alphaOnly, "INSERT INTO `Alpha`.`Users`") || strings.Contains(alphaOnly, "default") || strings.Contains(alphaOnly, "beta") {
 		t.Fatalf("Alpha.Users dump mismatch:\n%s", alphaOnly)
+	}
+	betaOnly := dumpSQL(t, session, &DumpTablesStatement{Tables: []tableID{tidn("Beta", "Users")}})
+	if !strings.Contains(betaOnly, "INSERT INTO `Beta`.`Users`") || strings.Contains(betaOnly, "default") || strings.Contains(betaOnly, "alpha") {
+		t.Fatalf("Beta.Users dump mismatch:\n%s", betaOnly)
+	}
+	allThree := &DumpTablesStatement{Tables: []tableID{tid("Users"), tidn("Alpha", "Users"), tidn("Beta", "Users")}}
+	bufferedTables := dumpSQL(t, session, allThree)
+	streamedTables := dumpStreamingSQL(t, session, allThree)
+	for _, output := range []string{bufferedTables, streamedTables} {
+		if !strings.Contains(output, "INSERT INTO `Users`") ||
+			!strings.Contains(output, "INSERT INTO `Alpha`.`Users`") ||
+			!strings.Contains(output, "INSERT INTO `Beta`.`Users`") ||
+			!strings.Contains(output, "default") ||
+			!strings.Contains(output, "alpha") ||
+			!strings.Contains(output, "beta") {
+			t.Fatalf("explicit three-table dump missing identities:\n%s", output)
+		}
 	}
 
 	buffered := dumpSQL(t, session, &DumpDatabaseStatement{})
@@ -336,6 +354,28 @@ func TestDumpCatalogCrossSchemaFKAndView(t *testing.T) {
 	}
 	_, session := initializeWithRandomDB(t, ddls, dmls)
 
+	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
+		dr := NewDependencyResolver()
+		if err := dr.BuildDependencyGraphWithTxn(t.Context(), txn); err != nil {
+			return err
+		}
+		alpha := dr.tables[tidn("Alpha", "Child")]
+		beta := dr.tables[tidn("Beta", "Child")]
+		if alpha == nil || beta == nil {
+			t.Fatalf("missing children in catalog")
+		}
+		if diff := cmp.Diff([]tableID{tidn("Beta", "Parent")}, alpha.FKParents); diff != "" {
+			t.Fatalf("Alpha.Child FKParents: %s", diff)
+		}
+		if diff := cmp.Diff([]tableID{tidn("Alpha", "Parent")}, beta.FKParents); diff != "" {
+			t.Fatalf("Beta.Child FKParents: %s", diff)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	out := dumpSQL(t, session, &DumpDatabaseStatement{})
 	if dataCommentIndex(out, "Beta.Parent") > dataCommentIndex(out, "Alpha.Child") {
 		t.Fatalf("Beta.Parent must precede Alpha.Child:\n%s", out)
@@ -352,7 +392,7 @@ func TestDumpCatalogCrossSchemaFKAndView(t *testing.T) {
 		t.Fatalf("absent FK parent was added:\n%s", childOnly)
 	}
 
-	_, err := (&DumpTablesStatement{Tables: []tableID{tid("V")}}).Execute(t.Context(), session)
+	_, err = (&DumpTablesStatement{Tables: []tableID{tid("V")}}).Execute(t.Context(), session)
 	if err == nil || !strings.Contains(err.Error(), "not a base table") {
 		t.Fatalf("view dump error = %v", err)
 	}
@@ -367,7 +407,12 @@ func TestDumpPlanSkipsNoWritableColumns(t *testing.T) {
 	skipIfShortIntegration(t)
 	_, session := initializeWithRandomDB(t, nil, nil)
 	plan := &dumpPlan{Tables: []dumpTablePlan{{ID: tid("Ghost"), Columns: nil}}}
-	result, err := executeDumpBuffered(t.Context(), session, dumpModeTables, plan)
+	var result *Result
+	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
+		var err error
+		result, err = executeDumpBufferedWithTxn(t.Context(), session, dumpModeTables, plan, txn)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,5 +453,138 @@ func TestDumpCatalogEmulatorGetDdlCorpus(t *testing.T) {
 		if _, err := extractInterleaveParent(ddl.GetStatements(), child.id, child.parent); err != nil {
 			t.Fatalf("emulator GetDdl corpus %s: %v\n%s", child.id.FQN(), err, strings.Join(ddl.GetStatements(), "\n---\n"))
 		}
+	}
+}
+
+func TestDumpSameReadTransaction(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	ddls := []string{
+		"CREATE TABLE Parent (Id INT64 NOT NULL) PRIMARY KEY(Id)",
+		"CREATE TABLE Child (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id, ChildId), INTERLEAVE IN PARENT Parent ON DELETE CASCADE",
+	}
+	dmls := []string{
+		"INSERT INTO Parent (Id) VALUES (1)",
+		"INSERT INTO Child (Id, ChildId) VALUES (1, 1)",
+	}
+	for _, explicit := range []bool{false, true} {
+		for _, mode := range []string{"database", "tables"} {
+			for _, streaming := range []bool{false, true} {
+				name := mode + "_automatic"
+				if explicit {
+					name = mode + "_explicit"
+				}
+				if streaming {
+					name += "_streaming"
+				} else {
+					name += "_buffered"
+				}
+				t.Run(name, func(t *testing.T) {
+					_, session := initializeWithRandomDB(t, ddls, dmls)
+					if explicit {
+						if _, err := session.txn.BeginReadOnlyTransaction(t.Context(), timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+							t.Fatal(err)
+						}
+					}
+					var catalogTxn, outputTxn *spanner.ReadOnlyTransaction
+					session.dumpReadTxnProbe = func(phase string, txn *spanner.ReadOnlyTransaction) {
+						switch phase {
+						case "catalog":
+							catalogTxn = txn
+						case "output":
+							outputTxn = txn
+						}
+					}
+					if streaming {
+						original := session.systemVariables.StreamManager
+						session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &strings.Builder{}, original.GetErrStream())
+						defer func() { session.systemVariables.StreamManager = original }()
+					}
+					var stmt Statement = &DumpDatabaseStatement{}
+					if mode == "tables" {
+						stmt = &DumpTablesStatement{Tables: []tableID{tid("Parent"), tid("Child")}}
+					}
+					result, err := stmt.Execute(t.Context(), session)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if catalogTxn == nil || outputTxn == nil {
+						t.Fatalf("missing txn observations catalog=%p output=%p result=%+v", catalogTxn, outputTxn, result)
+					}
+					if catalogTxn != outputTxn {
+						t.Fatalf("catalog txn %p != output txn %p", catalogTxn, outputTxn)
+					}
+					if explicit {
+						if !session.txn.InReadOnlyTransaction() {
+							t.Fatal("explicit RO transaction was closed")
+						}
+					} else if session.txn.InReadOnlyTransaction() {
+						t.Fatal("automatic RO transaction was left open")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestDumpInvalidSameBasenameCandidateDoesNotGetDdl(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	ddls := append(fourParentCatalogDDL(),
+		"CREATE SCHEMA Gamma",
+		"CREATE VIEW Gamma.Parent SQL SECURITY INVOKER AS SELECT Parent.Id FROM Parent",
+	)
+	_, session := initializeWithRandomDB(t, ddls, nil)
+	session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+		t.Fatal("GetDatabaseDdlFresh should not be called")
+		return nil, errors.New("fail-if-called")
+	}
+
+	cases := []struct {
+		name   string
+		tables []tableID
+		errSub string
+	}{
+		{name: "missing", tables: []tableID{tidn("Beta", "CrossChild"), tidn("Missing", "Parent")}, errSub: "not found"},
+		{name: "view", tables: []tableID{tidn("Beta", "CrossChild"), tidn("Gamma", "Parent")}, errSub: "not a base table"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name+"_buffered", func(t *testing.T) {
+			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session)
+			if err == nil || !strings.Contains(err.Error(), tt.errSub) {
+				t.Fatalf("error = %v, want %q", err, tt.errSub)
+			}
+		})
+		t.Run(tt.name+"_streaming", func(t *testing.T) {
+			var buf strings.Builder
+			original := session.systemVariables.StreamManager
+			session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
+			defer func() { session.systemVariables.StreamManager = original }()
+			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session)
+			if err == nil || !strings.Contains(err.Error(), tt.errSub) {
+				t.Fatalf("error = %v, want %q", err, tt.errSub)
+			}
+			if buf.Len() != 0 {
+				t.Fatalf("expected zero output, got %q", buf.String())
+			}
+		})
+	}
+}
+
+func TestDumpAncestorFKInterleaveAccepted(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	ddls := []string{
+		"CREATE TABLE AParent (Id INT64 NOT NULL, ChildId INT64) PRIMARY KEY (Id)",
+		"CREATE TABLE ZChild (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY (Id, ChildId), INTERLEAVE IN PARENT AParent ON DELETE CASCADE",
+		"ALTER TABLE AParent ADD CONSTRAINT FK_Child FOREIGN KEY (Id, ChildId) REFERENCES ZChild (Id, ChildId)",
+	}
+	_, session := initializeWithRandomDB(t, ddls, nil)
+	out := dumpSQL(t, session, &DumpDatabaseStatement{})
+	if !strings.Contains(out, "CREATE TABLE") {
+		t.Fatalf("expected DDL:\n%s", out)
+	}
+	if strings.Contains(out, "circular foreign key") {
+		t.Fatalf("rejected valid ancestor FK schema:\n%s", out)
 	}
 }

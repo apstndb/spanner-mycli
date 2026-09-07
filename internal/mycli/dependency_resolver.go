@@ -309,8 +309,18 @@ func (dr *DependencyResolver) topologicalSort(tablesToExport []tableID) ([]table
 			if parent == id {
 				continue
 			}
+			// Skip FK edges that point from an interleave ancestor to a
+			// selected descendant. Following them would visit the child
+			// before its INTERLEAVE parent. This is not A11 cycle restoration.
+			if dr.hasInterleavePathBetween(id, parent) {
+				continue
+			}
 			if visiting[parent] {
-				if dep.InterleaveParent != nil || (dr.tables[parent] != nil && dr.tables[parent].InterleaveParent != nil) {
+				parentDep := dr.tables[parent]
+				if dep.InterleaveParent != nil || (parentDep != nil && parentDep.InterleaveParent != nil) {
+					continue
+				}
+				if dr.hasInterleavePathBetween(parent, id) || dr.hasInterleavePathBetween(id, parent) {
 					continue
 				}
 				cycle := append(append([]tableID{}, visitPath...), parent)
@@ -341,4 +351,22 @@ func (dr *DependencyResolver) topologicalSort(tablesToExport []tableID) ([]table
 		}
 	}
 	return sorted, nil
+}
+
+// hasInterleavePathBetween reports whether descendant is in the selected
+// INTERLEAVE lineage of ancestor (ancestor is a parent/grandparent of descendant).
+func (dr *DependencyResolver) hasInterleavePathBetween(ancestor, descendant tableID) bool {
+	current := dr.tables[descendant]
+	seen := make(map[tableID]bool)
+	for current != nil && current.InterleaveParent != nil {
+		if seen[current.ID] {
+			break
+		}
+		seen[current.ID] = true
+		if *current.InterleaveParent == ancestor {
+			return true
+		}
+		current = dr.tables[*current.InterleaveParent]
+	}
+	return false
 }

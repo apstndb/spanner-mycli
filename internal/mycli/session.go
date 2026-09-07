@@ -118,6 +118,11 @@ type Session struct {
 	// dumpDDLOverride replaces GetDatabaseDdlFresh in tests.
 	dumpDDLOverride func(context.Context) (*adminpb.GetDatabaseDdlResponse, error)
 
+	// dumpReadTxnProbe, if set, is invoked from the dump read-only callback
+	// with the same transaction used for catalog preflight and first output.
+	// Tests only; must not acquire the transaction mutex.
+	dumpReadTxnProbe func(phase string, txn *spanner.ReadOnlyTransaction)
+
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
